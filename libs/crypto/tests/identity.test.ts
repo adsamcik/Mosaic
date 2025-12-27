@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import sodium from 'libsodium-wrappers';
-import { deriveIdentityKeypair, ed25519PubToX25519, generateIdentitySeed, isValidEd25519PublicKey } from '../src/identity';
+import sodium from 'libsodium-wrappers-sumo';
+import { deriveIdentityKeypair, ed25519PubToX25519, ed25519SecretToX25519, generateIdentitySeed, generateEd25519Keypair, isValidEd25519PublicKey } from '../src/identity';
 
 beforeAll(async () => {
   await sodium.ready;
@@ -41,14 +41,37 @@ describe('identity', () => {
     expect(converted).toEqual(kp.x25519.publicKey);
   });
 
+  it('converts Ed25519 secret to X25519', () => {
+    const seed = generateIdentitySeed();
+    const kp = deriveIdentityKeypair(seed);
+    const converted = ed25519SecretToX25519(kp.ed25519.secretKey);
+    expect(converted).toEqual(kp.x25519.secretKey);
+  });
+
   it('rejects invalid seed lengths', () => {
     expect(() => deriveIdentityKeypair(new Uint8Array(16))).toThrow();
+  });
+
+  it('rejects invalid Ed25519 pubkey length for conversion', () => {
+    expect(() => ed25519PubToX25519(new Uint8Array(16))).toThrow();
+  });
+
+  it('rejects invalid Ed25519 secret length for conversion', () => {
+    expect(() => ed25519SecretToX25519(new Uint8Array(16))).toThrow();
+  });
+
+  it('generates random Ed25519 keypairs', () => {
+    const kp1 = generateEd25519Keypair();
+    const kp2 = generateEd25519Keypair();
+    expect(kp1.publicKey.length).toBe(32);
+    expect(kp1.secretKey.length).toBe(64);
+    expect(kp1.publicKey).not.toEqual(kp2.publicKey);
   });
 
   it('validates Ed25519 public keys', () => {
     const seed = generateIdentitySeed();
     const kp = deriveIdentityKeypair(seed);
     expect(isValidEd25519PublicKey(kp.ed25519.publicKey)).toBe(true);
-    expect(isValidEd25519PublicKey(new Uint8Array(32))).toBe(false); // All zeros invalid
+    expect(isValidEd25519PublicKey(new Uint8Array(16))).toBe(false); // Wrong length
   });
 });

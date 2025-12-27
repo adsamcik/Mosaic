@@ -5,7 +5,7 @@
  * Uses domain separation to prevent cross-protocol attacks.
  */
 
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import { CryptoError, CryptoErrorCode, MANIFEST_SIGN_CONTEXT } from './types';
 import { concat, toBytes } from './utils';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import { concat, constantTimeEqual, sha256, sha256Sync, memzero, randomBytes, toBase64, fromBase64 } from '../src/utils';
 
 beforeAll(async () => {

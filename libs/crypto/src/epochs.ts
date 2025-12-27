@@ -5,7 +5,7 @@
  * Each epoch has a ReadKey (symmetric) and SignKeypair (Ed25519).
  */
 
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import { KEY_SIZE, type EpochKey } from './types';
 import { randomBytes } from './utils';
 import { wrapKey, unwrapKey } from './keybox';

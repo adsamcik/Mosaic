@@ -6,7 +6,7 @@
  * plus Ed25519 signature for authenticity (proves owner sent it).
  */
 
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import {
   CryptoError,
   CryptoErrorCode,

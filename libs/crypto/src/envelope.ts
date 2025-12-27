@@ -13,7 +13,7 @@
  * - Reserved: 27 bytes MUST be zero (validated on decrypt)
  */
 
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import {
   CryptoError,
   CryptoErrorCode,

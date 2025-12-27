@@ -4,7 +4,7 @@
  * Helper functions for byte manipulation and cryptographic operations.
  */
 
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 
 /**
  * Concatenate multiple Uint8Arrays into a single array.

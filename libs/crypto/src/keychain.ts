@@ -5,7 +5,7 @@
  * and HKDF-style expansion for key hierarchy.
  */
 
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import type { DerivedKeys, Argon2Params } from './types';
 import { getArgon2Params } from './argon2-params';
 import { memzero, randomBytes } from './utils';

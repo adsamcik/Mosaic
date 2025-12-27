@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import { deriveKeys, unwrapAccountKey, rewrapAccountKey, generateSalts } from '../src/keychain';
 
 beforeAll(async () => {

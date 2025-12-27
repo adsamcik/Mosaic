@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import { signManifest, verifyManifest, signShard, verifyShard, signWithContext, verifyWithContext } from '../src/signer';
 
 beforeAll(async () => {

@@ -6,7 +6,7 @@
  * X25519 is used for key exchange (sealed boxes).
  */
 
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import { CryptoError, CryptoErrorCode, KEY_SIZE, type IdentityKeypair } from './types';
 import { randomBytes } from './utils';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import { encryptShard, decryptShard, peekHeader, verifyShard } from '../src/envelope';
 import { ENVELOPE_HEADER_SIZE, ENVELOPE_VERSION } from '../src/types';
 

@@ -5,7 +5,7 @@
  * Used for encrypting keys with other keys.
  */
 
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import { CryptoError, CryptoErrorCode, KEY_SIZE, NONCE_SIZE, TAG_SIZE } from './types';
 
 /** Minimum wrapped key length: nonce (24) + tag (16) + at least 1 byte */

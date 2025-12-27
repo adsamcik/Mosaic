@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import { sealAndSignBundle, verifyAndOpenBundle, createEpochKeyBundle } from '../src/sharing';
 import { deriveIdentityKeypair, generateIdentitySeed } from '../src/identity';
 import { generateEpochKey } from '../src/epochs';

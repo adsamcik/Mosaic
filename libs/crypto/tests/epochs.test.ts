@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import sodium from 'libsodium-wrappers';
-import { generateEpochKey, wrapEpochKey, unwrapEpochKey, rotateEpochKey, isValidEpochKey } from '../src/epochs';
+import sodium from 'libsodium-wrappers-sumo';
+import { generateEpochKey, serializeEpochKeyPublic, wrapEpochKey, unwrapEpochKey, rotateEpochKey, isValidEpochKey } from '../src/epochs';
 
 beforeAll(async () => {
   await sodium.ready;
@@ -22,6 +22,13 @@ describe('epochs', () => {
     const e1 = generateEpochKey(1);
     const e2 = generateEpochKey(1);
     expect(e1.readKey).not.toEqual(e2.readKey);
+  });
+
+  it('serializes epoch key public info', () => {
+    const epoch = generateEpochKey(5);
+    const serialized = serializeEpochKeyPublic(epoch);
+    expect(serialized.epochId).toBe(5);
+    expect(typeof serialized.signPublicKey).toBe('string');
   });
 
   it('round-trips wrap/unwrap', () => {
@@ -48,5 +55,7 @@ describe('epochs', () => {
     
     expect(isValidEpochKey({ ...valid, epochId: -1 })).toBe(false);
     expect(isValidEpochKey({ ...valid, readKey: new Uint8Array(16) })).toBe(false);
+    expect(isValidEpochKey({ ...valid, signKeypair: { ...valid.signKeypair, publicKey: new Uint8Array(16) } })).toBe(false);
+    expect(isValidEpochKey({ ...valid, signKeypair: { ...valid.signKeypair, secretKey: new Uint8Array(16) } })).toBe(false);
   });
 });

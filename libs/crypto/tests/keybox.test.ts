@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import sodium from 'libsodium-wrappers';
+import sodium from 'libsodium-wrappers-sumo';
 import { wrapKey, unwrapKey, wrapSymmetricKey, unwrapSymmetricKey } from '../src/keybox';
 import { CryptoErrorCode } from '../src/types';
 
