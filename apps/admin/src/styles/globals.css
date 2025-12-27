@@ -1407,3 +1407,366 @@ body {
 .leaflet-tooltip-right::before {
   border-right-color: var(--color-border);
 }
+
+/* ============================================================================
+   Settings Page Styles
+   ============================================================================ */
+
+/* Settings button in header */
+.settings-button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.settings-button:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-primary);
+}
+
+/* Settings page layout */
+.settings-page {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.settings-header {
+  margin-bottom: var(--spacing-lg);
+}
+
+.settings-title {
+  font-size: 1.5rem;
+}
+
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+/* Settings sections */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  padding-left: var(--spacing-xs);
+}
+
+/* Settings card */
+.settings-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+/* Settings loading/error states */
+.settings-loading,
+.settings-error {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-text-muted);
+}
+
+.settings-error {
+  color: var(--color-error);
+}
+
+/* Account info rows */
+.account-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.info-label {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.info-value {
+  color: var(--color-text);
+  font-size: 0.875rem;
+  text-align: right;
+}
+
+.info-mono {
+  font-family: monospace;
+  font-size: 0.75rem;
+  background: var(--color-bg);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+}
+
+.info-link {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.info-link:hover {
+  text-decoration: underline;
+}
+
+/* Storage quota */
+.storage-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.storage-bar {
+  height: 8px;
+  background: var(--color-bg);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.storage-bar-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.storage-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.storage-percent {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+/* Setting rows */
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.setting-row:last-of-type {
+  border-bottom: none;
+}
+
+.setting-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.setting-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.setting-description {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+/* Settings form controls */
+.setting-select {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.setting-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* Toggle switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 2px;
+  bottom: 2px;
+  background: var(--color-text-muted);
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+  background: white;
+}
+
+.toggle-switch input:focus + .toggle-slider {
+  border-color: var(--color-primary);
+}
+
+/* Settings actions */
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Save message */
+.save-message {
+  font-size: 0.75rem;
+  text-align: right;
+  margin-top: var(--spacing-sm);
+}
+
+.save-message.success {
+  color: var(--color-success);
+}
+
+.save-message.error {
+  color: var(--color-error);
+}
+
+/* Danger button */
+.button-danger {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-error);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.button-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.button-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Clear data list in dialog */
+.clear-data-list {
+  margin: var(--spacing-sm) 0 var(--spacing-md) var(--spacing-lg);
+  padding: 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.clear-data-list li {
+  margin-bottom: var(--spacing-xs);
+}
+
+/* About section */
+.about-description {
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.about-description p {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+/* Responsive adjustments for settings */
+@media (max-width: 600px) {
+  .settings-page {
+    padding: 0;
+  }
+
+  .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+  }
+
+  .setting-select {
+    width: 100%;
+  }
+
+  .info-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-xs);
+  }
+
+  .info-value {
+    text-align: left;
+  }
+
+  .settings-actions {
+    flex-direction: column;
+  }
+
+  .settings-actions button {
+    width: 100%;
+  }
+}
+

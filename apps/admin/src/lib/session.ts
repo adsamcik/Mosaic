@@ -5,10 +5,8 @@ import { getApi, toBase64, fromBase64 } from './api';
 import { clearAllEpochKeys } from './epoch-key-store';
 import { clearAllCachedMetadata } from './album-metadata-service';
 import { clearAllCovers } from './album-cover-service';
+import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
 import type { User } from './api-types';
-
-/** Idle timeout in milliseconds (30 minutes) */
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Events that reset the idle timer */
 const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart', 'scroll'] as const;
@@ -28,6 +26,7 @@ class SessionManager {
   private _currentUser: User | null = null;
   private listeners = new Set<SessionListener>();
   private boundResetIdleTimer: () => void;
+  private settingsUnsubscribe: (() => void) | null = null;
 
   constructor() {
     this.boundResetIdleTimer = this.resetIdleTimer.bind(this);
@@ -112,6 +111,13 @@ class SessionManager {
     this._isLoggedIn = true;
     this.notify();
 
+    // Subscribe to settings changes to update idle timeout
+    this.settingsUnsubscribe = subscribeToSettings(() => {
+      if (this._isLoggedIn) {
+        this.resetIdleTimer();
+      }
+    });
+
     // Start idle timeout tracking
     this.resetIdleTimer();
     this.attachIdleListeners();
@@ -125,6 +131,12 @@ class SessionManager {
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
+    }
+
+    // Unsubscribe from settings changes
+    if (this.settingsUnsubscribe) {
+      this.settingsUnsubscribe();
+      this.settingsUnsubscribe = null;
     }
 
     // Remove activity listeners
@@ -160,7 +172,7 @@ class SessionManager {
     this.idleTimer = window.setTimeout(() => {
       console.log('Session idle timeout - logging out');
       void this.logout();
-    }, IDLE_TIMEOUT_MS);
+    }, getIdleTimeoutMs());
   }
 
   private attachIdleListeners(): void {
