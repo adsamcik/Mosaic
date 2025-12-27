@@ -196,7 +196,24 @@ Cross-Origin-Embedder-Policy: require-corp
 
 ## Workflow Requirements
 
-After completing each unit of work:
+### Task Tracking with Todos
+
+**Always use the todo tool** to track all work that needs to be done. This ensures visibility and prevents tasks from being forgotten.
+
+- **Create todos immediately** when identifying work items, bugs, or improvements
+- **Break down complex tasks** into smaller, actionable todo items
+- **Mark todos in-progress** before starting work (one at a time)
+- **Mark todos completed** immediately after finishing each item
+- **Never batch completions** - update status as soon as each task is done
+- **Include context** in todo descriptions: file paths, function names, acceptance criteria
+
+Example todo workflow:
+1. User requests a feature → Create todos for each implementation step
+2. Pick first todo → Mark as in-progress
+3. Complete the work → Mark as completed, commit
+4. Repeat until all todos are done
+
+### After Completing Each Unit of Work
 
 1. **Test** - Run relevant tests to verify correctness
    - Unit tests for new/modified functions
