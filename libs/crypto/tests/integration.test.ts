@@ -16,6 +16,7 @@ import sodium from 'libsodium-wrappers-sumo';
 import {
   // Key derivation
   deriveKeys,
+  unwrapAccountKey,
   generateSalts,
   getArgon2Params,
   // Identity
@@ -48,28 +49,35 @@ beforeAll(async () => {
 });
 
 describe('integration: user registration flow', () => {
-  it('derives consistent keys from password', async () => {
+  it('derives and unwraps consistent account key', async () => {
     const password = 'correct-horse-battery-staple';
     const { userSalt, accountSalt } = generateSalts();
     const params = getArgon2Params();
 
-    // First derivation
+    // First derivation - generates random L2 account key
     const keys1 = await deriveKeys(password, userSalt, accountSalt, params);
+    const accountKeyWrapped = keys1.accountKeyWrapped;
 
-    // Second derivation with same inputs should produce same keys
-    const keys2 = await deriveKeys(password, userSalt, accountSalt, params);
+    // Store the account key for comparison
+    const originalAccountKey = new Uint8Array(keys1.accountKey);
 
-    expect(keys1.masterKey).toEqual(keys2.masterKey);
-    expect(keys1.rootKey).toEqual(keys2.rootKey);
-    expect(keys1.accountKey).toEqual(keys2.accountKey);
+    // Second login - unwrap the stored account key
+    const unwrappedKey = await unwrapAccountKey(
+      password,
+      userSalt,
+      accountSalt,
+      accountKeyWrapped,
+      params
+    );
+
+    // Unwrapped key should match original
+    expect(unwrappedKey).toEqual(originalAccountKey);
 
     // Clean up
     memzero(keys1.masterKey);
     memzero(keys1.rootKey);
     memzero(keys1.accountKey);
-    memzero(keys2.masterKey);
-    memzero(keys2.rootKey);
-    memzero(keys2.accountKey);
+    memzero(unwrappedKey);
   });
 
   it('derives different keys with different passwords', async () => {
@@ -158,8 +166,9 @@ describe('integration: album creation and photo upload', () => {
   });
 
   it('encrypts multiple shards for a large photo', async () => {
-    const CHUNK_SIZE = 6 * 1024 * 1024; // 6MB
-    const totalSize = 15 * 1024 * 1024; // 15MB photo = 3 shards
+    // Use smaller chunks for faster testing
+    const CHUNK_SIZE = 64 * 1024; // 64KB per chunk
+    const totalSize = 180 * 1024; // 180KB photo = 3 shards
     const shardCount = Math.ceil(totalSize / CHUNK_SIZE);
 
     const shards: Array<{ ciphertext: Uint8Array; sha256: string }> = [];

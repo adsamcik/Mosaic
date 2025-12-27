@@ -278,9 +278,22 @@ export const TUS_ENDPOINT = `${API_BASE}/files`;
 
 /**
  * Helper to convert Uint8Array to base64 string for JSON serialization.
+ * Uses chunked processing to avoid call stack overflow for large arrays.
  */
 export function toBase64(data: Uint8Array): string {
-  return btoa(String.fromCharCode(...data));
+  // For large arrays, we need to chunk to avoid call stack overflow
+  const CHUNK_SIZE = 8192;
+  if (data.length <= CHUNK_SIZE) {
+    return btoa(String.fromCharCode(...data));
+  }
+
+  // Process in chunks
+  let binary = '';
+  for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+    const chunk = data.subarray(i, Math.min(i + CHUNK_SIZE, data.length));
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
 }
 
 /**

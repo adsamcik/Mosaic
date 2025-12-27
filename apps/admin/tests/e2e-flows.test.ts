@@ -8,10 +8,11 @@
  * layer and storage APIs since we're testing in Node/happy-dom environment.
  */
 
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
 import {
   deriveKeys,
+  unwrapAccountKey,
   generateSalts,
   getArgon2Params,
   deriveIdentityKeypair,
@@ -28,7 +29,7 @@ import {
   memzero,
   type IdentityKeypair,
   type EpochKey,
-} from '@mosaic/crypto';
+} from '../../../libs/crypto/src';
 
 beforeAll(async () => {
   await sodium.ready;
@@ -83,18 +84,25 @@ describe('e2e: new user registration flow', () => {
     const { userSalt, accountSalt } = generateSalts();
     const params = getArgon2Params();
 
-    // Device 1: Initial registration
+    // Device 1: Initial registration - generates random L2 account key
     const keysDevice1 = await deriveKeys(password, userSalt, accountSalt, params);
     const identityDevice1 = deriveIdentityKeypair(keysDevice1.accountKey);
 
-    // Simulate storing identity pubkey on server
+    // Simulate storing wrapped account key and identity pubkey on server
+    const storedWrappedKey = keysDevice1.accountKeyWrapped;
     const storedIdentityPubkey = toBase64(identityDevice1.ed25519.publicKey);
 
-    // Device 2: Login on new device (salts synced from server)
-    const keysDevice2 = await deriveKeys(password, userSalt, accountSalt, params);
-    const identityDevice2 = deriveIdentityKeypair(keysDevice2.accountKey);
+    // Device 2: Login on new device - unwrap the stored account key
+    const accountKeyDevice2 = await unwrapAccountKey(
+      password,
+      userSalt,
+      accountSalt,
+      storedWrappedKey,
+      params
+    );
+    const identityDevice2 = deriveIdentityKeypair(accountKeyDevice2);
 
-    // Both devices should derive the same identity
+    // Both devices should derive the same identity (since they use the same account key)
     const device2Pubkey = toBase64(identityDevice2.ed25519.publicKey);
     expect(device2Pubkey).toBe(storedIdentityPubkey);
 
@@ -102,9 +110,7 @@ describe('e2e: new user registration flow', () => {
     memzero(keysDevice1.masterKey);
     memzero(keysDevice1.rootKey);
     memzero(keysDevice1.accountKey);
-    memzero(keysDevice2.masterKey);
-    memzero(keysDevice2.rootKey);
-    memzero(keysDevice2.accountKey);
+    memzero(accountKeyDevice2);
   });
 
   it('wrong password produces different identity', async () => {
