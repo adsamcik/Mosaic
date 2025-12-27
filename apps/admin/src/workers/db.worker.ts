@@ -1,6 +1,5 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
-import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import sodium from 'libsodium-wrappers-sumo';
 import type {
   DbWorkerApi,
@@ -9,6 +8,37 @@ import type {
   Bounds,
   GeoPoint,
 } from './types';
+
+// sql.js types - the actual module is loaded dynamically from public folder
+type SqlJsStatic = Awaited<ReturnType<typeof import('sql.js').default>>;
+type DatabaseType = import('sql.js').Database;
+
+// Store the loaded sql.js instance
+let cachedSqlJs: SqlJsStatic | null = null;
+
+/**
+ * Load sql.js from the public folder.
+ * This approach avoids Vite's module transformation issues in Workers.
+ * sql.js is fetched and evaluated directly, bypassing ESM import issues.
+ */
+async function loadSqlJs(): Promise<SqlJsStatic> {
+  if (cachedSqlJs) return cachedSqlJs;
+  
+  // Fetch and evaluate sql.js from public folder
+  const response = await fetch('/sql-wasm.js');
+  const scriptText = await response.text();
+  
+  // sql.js exports initSqlJs as a global - capture it via Function constructor
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const initSqlJs = new Function(scriptText + '\nreturn initSqlJs;')();
+  
+  // Initialize sql.js with WASM file path
+  cachedSqlJs = await initSqlJs({
+    locateFile: () => '/sql-wasm.wasm',
+  });
+  
+  return cachedSqlJs!;
+}
 
 /** Nonce size for XChaCha20-Poly1305 */
 const NONCE_SIZE = 24;
@@ -21,7 +51,7 @@ const TAG_SIZE = 16;
  */
 class DbWorker implements DbWorkerApi {
   private sql: SqlJsStatic | null = null;
-  private db: Database | null = null;
+  private db: DatabaseType | null = null;
   private sessionKey: Uint8Array | null = null;
   private sodiumReady = false;
 
@@ -41,9 +71,7 @@ class DbWorker implements DbWorkerApi {
     // Initialize libsodium and SQL.js WASM in parallel
     const [, sqlModule] = await Promise.all([
       this.ensureSodiumReady(),
-      initSqlJs({
-        locateFile: (_file: string) => `/sql-wasm.wasm`,
-      }),
+      loadSqlJs(),
     ]);
 
     this.sql = sqlModule;
@@ -392,14 +420,17 @@ class DbWorker implements DbWorkerApi {
 // Create worker instance
 const worker = new DbWorker();
 
-// Expose for regular Worker usage
-Comlink.expose(worker);
+// For regular Worker, expose on self
+// For SharedWorker, expose on each connection's port
+// Check if we're in a SharedWorker context
+const isSharedWorker = typeof (self as any).onconnect !== 'undefined' || 
+  self.constructor.name === 'SharedWorkerGlobalScope';
 
-// Handle SharedWorker connections
-declare const self: SharedWorkerGlobalScope;
-if (typeof self.onconnect !== 'undefined') {
-  self.onconnect = (event: MessageEvent) => {
+if (isSharedWorker) {
+  (self as any).onconnect = (event: MessageEvent) => {
     const port = event.ports[0];
     Comlink.expose(worker, port);
   };
+} else {
+  Comlink.expose(worker);
 }

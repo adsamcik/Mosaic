@@ -19,6 +19,22 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
+    // Proxy API requests to backend during development
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        // Forward all headers including Remote-User for E2E tests
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            // Forward Remote-User header if present
+            if (req.headers['remote-user']) {
+              proxyReq.setHeader('Remote-User', req.headers['remote-user']);
+            }
+          });
+        },
+      },
+    },
   },
 
   // Worker configuration

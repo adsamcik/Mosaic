@@ -90,8 +90,8 @@ test.describe('Authentication', () => {
       // Enter password and submit
       await loginPage.login(TEST_CONSTANTS.PASSWORD);
 
-      // Should transition to app shell
-      await loginPage.expectLoginSuccess();
+      // Wait for app shell to appear
+      await expect(authenticatedPage.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
 
       // Verify app shell elements
       const appShell = new AppShell(authenticatedPage);

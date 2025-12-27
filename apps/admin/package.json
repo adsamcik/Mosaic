@@ -10,7 +10,8 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "postinstall": "node -e \"const fs=require('fs'),p='node_modules/sql.js/dist/';['sql-wasm.js','sql-wasm.wasm'].forEach(f=>fs.copyFileSync(p+f,'public/'+f))\""
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.13",

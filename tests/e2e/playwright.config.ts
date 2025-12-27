@@ -29,7 +29,7 @@ export default defineConfig({
   // Shared settings for all tests
   use: {
     // Base URL for the frontend
-    baseURL: process.env.BASE_URL || 'http://localhost:8080',
+    baseURL: process.env.BASE_URL || 'http://localhost:5173',
     
     // Collect trace when retrying a failed test
     trace: 'on-first-retry',

@@ -50,6 +50,9 @@ appsettings.*.json
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# sql.js WASM files (copied from node_modules at install time)
+apps/admin/public/sql-wasm.*
+
 # OS
 .DS_Store
 Thumbs.db
@@ -67,6 +70,9 @@ pnpm-debug.log*
 coverage/
 .nyc_output/
 TestResults/
+playwright-report/
+test-results/
+results/
 
 # Database
 *.db
