@@ -1,0 +1,66 @@
+# EditorConfig helps maintain consistent coding styles
+# https://editorconfig.org
+
+root = true
+
+[*]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# C# files
+[*.cs]
+indent_size = 4
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+csharp_prefer_braces = true:warning
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+
+# Project files
+[*.{csproj,props,targets}]
+indent_size = 2
+
+# TypeScript/JavaScript
+[*.{ts,tsx,js,jsx}]
+indent_size = 2
+quote_type = single
+
+# JSON files
+[*.json]
+indent_size = 2
+
+# YAML files
+[*.{yml,yaml}]
+indent_size = 2
+
+# Markdown
+[*.md]
+trim_trailing_whitespace = false
+
+# SQL
+[*.sql]
+indent_size = 4
+
+# Shell scripts
+[*.sh]
+end_of_line = lf
+
+# PowerShell
+[*.ps1]
+end_of_line = crlf
+indent_size = 4
+
+# Docker
+[Dockerfile*]
+indent_size = 4

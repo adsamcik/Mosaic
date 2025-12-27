@@ -1,0 +1,89 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+
+# .NET
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.nupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Frontend
+.vite/
+*.local
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+appsettings.*.json
+!appsettings.json
+!appsettings.Development.json.example
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+TestResults/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Docker
+docker-compose.override.yml
+
+# Backup files
+*.bak
+*.backup
+
+# OPFS / Browser storage artifacts (dev)
+.opfs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
