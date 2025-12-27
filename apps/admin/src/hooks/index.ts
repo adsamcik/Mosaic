@@ -7,3 +7,5 @@ export type { SyncStatus, SyncProgress, UseSyncResult } from './useSync';
 export { useEpochKey, useAlbumEpochKeys } from './useEpochKeys';
 export { useAlbumCover } from './useAlbumCover';
 export type { UseAlbumCoverResult, AlbumCover } from './useAlbumCover';
+export { useLightbox } from './useLightbox';
+export type { LightboxState, LightboxControls, UseLightboxResult } from './useLightbox';

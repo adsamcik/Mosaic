@@ -6,6 +6,8 @@ interface PhotoThumbnailProps {
   photo: PhotoMeta;
   /** Epoch read key for decryption */
   epochReadKey?: Uint8Array;
+  /** Callback when thumbnail is clicked */
+  onClick?: () => void;
 }
 
 /** Loading state for thumbnail */
@@ -19,7 +21,7 @@ type ThumbnailState =
  * Photo Thumbnail Component
  * Displays a single photo in the grid with encrypted shard loading
  */
-export function PhotoThumbnail({ photo, epochReadKey }: PhotoThumbnailProps) {
+export function PhotoThumbnail({ photo, epochReadKey, onClick }: PhotoThumbnailProps) {
   const [state, setState] = useState<ThumbnailState>({ status: 'idle' });
 
   // Load photo when component mounts or photo changes
@@ -128,7 +130,10 @@ export function PhotoThumbnail({ photo, epochReadKey }: PhotoThumbnailProps) {
             <span className="error-message">Failed to load</span>
             <button
               className="retry-button"
-              onClick={handleRetry}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRetry();
+              }}
               title="Retry loading"
             >
               ↻
@@ -138,8 +143,34 @@ export function PhotoThumbnail({ photo, epochReadKey }: PhotoThumbnailProps) {
     }
   };
 
+  // Handle click - don't propagate from retry button
+  const handleClick = useCallback(() => {
+    if (onClick && state.status === 'loaded') {
+      onClick();
+    }
+  }, [onClick, state.status]);
+
+  // Handle keyboard activation
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if ((event.key === 'Enter' || event.key === ' ') && onClick && state.status === 'loaded') {
+        event.preventDefault();
+        onClick();
+      }
+    },
+    [onClick, state.status]
+  );
+
   return (
-    <div className="photo-thumbnail" data-testid="photo-thumbnail">
+    <div
+      className="photo-thumbnail"
+      data-testid="photo-thumbnail"
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick && state.status === 'loaded' ? 0 : undefined}
+      aria-label={onClick ? `View ${photo.filename}` : undefined}
+    >
       <div className="photo-content">{renderContent()}</div>
       <div className="photo-info">
         <span className="photo-filename" title={photo.filename}>
