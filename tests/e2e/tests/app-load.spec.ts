@@ -2,25 +2,21 @@
  * App Load Tests
  *
  * Basic tests to verify the application loads correctly.
+ * Phase 1: Fixed assertions and improved error handling.
  */
 
 import { test, expect } from '../fixtures';
 
 test.describe('App Loading', () => {
-  test('loads the application', async ({ page }) => {
+  test('loads the application and shows login form', async ({ page }) => {
     await page.goto('/');
 
-    // Should show either login form or app shell
+    // Should show login form initially
     const loginForm = page.getByTestId('login-form');
-    const appShell = page.getByTestId('app-shell');
-
-    const hasLogin = await loginForm.isVisible().catch(() => false);
-    const hasApp = await appShell.isVisible().catch(() => false);
-
-    expect(hasLogin || hasApp).toBeTruthy();
+    await expect(loginForm).toBeVisible({ timeout: 30000 });
   });
 
-  test('has correct security headers', async ({ page }) => {
+  test('has correct security headers for SharedArrayBuffer', async ({ page }) => {
     const response = await page.goto('/');
 
     expect(response).not.toBeNull();
@@ -31,13 +27,7 @@ test.describe('App Loading', () => {
     expect(headers['cross-origin-embedder-policy']).toBe('require-corp');
   });
 
-  test('loads static assets', async ({ page }) => {
-    await page.goto('/');
-
-    // Wait for JavaScript to load
-    await page.waitForLoadState('networkidle');
-
-    // Check for console errors
+  test('loads static assets without critical errors', async ({ page }) => {
     const errors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
@@ -45,24 +35,44 @@ test.describe('App Loading', () => {
       }
     });
 
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
     // Give time for any deferred loading
     await page.waitForTimeout(2000);
 
     // Filter out expected errors (e.g., API not available in some test modes)
     const criticalErrors = errors.filter(
-      (e) => !e.includes('Failed to fetch') && !e.includes('NetworkError')
+      (e) => !e.includes('Failed to fetch') && 
+             !e.includes('NetworkError') &&
+             !e.includes('net::ERR')
     );
 
     expect(criticalErrors).toHaveLength(0);
   });
 
-  test('is responsive on mobile', async ({ page }) => {
+  test('is responsive on mobile viewport', async ({ page }) => {
     // Set mobile viewport
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto('/');
 
-    // Should still render correctly
-    const body = await page.locator('body');
-    await expect(body).toBeVisible();
+    // Should still render login form correctly
+    const loginForm = page.getByTestId('login-form');
+    await expect(loginForm).toBeVisible({ timeout: 30000 });
+  });
+
+  test('renders main elements correctly', async ({ page }) => {
+    await page.goto('/');
+
+    // Wait for page to load
+    await page.waitForLoadState('networkidle');
+
+    // Should have title element
+    const title = page.locator('h1');
+    await expect(title.first()).toBeVisible();
+
+    // Should have a form or input
+    const passwordInput = page.getByLabel('Password');
+    await expect(passwordInput).toBeVisible({ timeout: 30000 });
   });
 });
