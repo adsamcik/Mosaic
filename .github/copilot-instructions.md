@@ -253,6 +253,14 @@ cd apps/backend/Mosaic.Backend && dotnet test
 
 **You must run tests and report the output.** Do not say "tests should pass"—prove they passed.
 
+**CRITICAL: Non-Interactive Mode**
+
+Tests MUST be run in non-interactive mode. Never use watch mode or interactive prompts:
+- Use `npm test` (not `npm test -- --watch`)
+- Use `vitest run` (not `vitest` which defaults to watch mode)
+- Redirect output if needed: `npm test 2>&1`
+- If a test command hangs waiting for input, kill it and use the correct non-interactive flag
+
 ### Anti-Patterns (Forbidden)
 
 - **`// TODO` comments** - Unless the user explicitly requests a placeholder
