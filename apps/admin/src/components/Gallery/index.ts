@@ -6,3 +6,5 @@ export { PhotoLightbox } from './PhotoLightbox';
 export type { PhotoLightboxProps } from './PhotoLightbox';
 export { MapView } from './MapView';
 export type { MapViewProps, BBox } from './MapView';
+export { DeletePhotoDialog } from './DeletePhotoDialog';
+export type { DeletePhotoDialogProps } from './DeletePhotoDialog';

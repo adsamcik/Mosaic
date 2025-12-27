@@ -1,10 +1,12 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useState, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { usePhotos } from '../../hooks/usePhotos';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
+import { usePhotoActions } from '../../hooks/usePhotoActions';
 import { PhotoThumbnail } from './PhotoThumbnail';
 import { PhotoLightbox } from './PhotoLightbox';
+import { DeletePhotoDialog } from './DeletePhotoDialog';
 import type { PhotoMeta } from '../../workers/types';
 
 /** Number of columns in the grid */
@@ -18,17 +20,28 @@ const PRELOAD_COUNT = 2;
 
 interface PhotoGridProps {
   albumId: string;
+  /** Callback when photos are deleted (for refreshing) */
+  onPhotosDeleted?: () => void;
 }
 
 /**
  * Virtualized Photo Grid Component
  * Uses TanStack Virtual for efficient rendering of large photo collections
  */
-export function PhotoGrid({ albumId }: PhotoGridProps) {
+export function PhotoGrid({ albumId, onPhotosDeleted }: PhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const { photos, isLoading, error } = usePhotos(albumId);
+  const { photos, isLoading, error, refetch } = usePhotos(albumId);
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
   const lightbox = useLightbox(photos);
+  const photoActions = usePhotoActions();
+
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+
+  // Delete dialog state
+  const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
+  const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<string | undefined>();
 
   const rowCount = Math.ceil(photos.length / COLUMNS);
 
@@ -62,9 +75,114 @@ export function PhotoGrid({ albumId }: PhotoGridProps) {
   }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, photos]);
 
   // Handle photo click to open lightbox
-  const handlePhotoClick = (photoIndex: number) => {
-    lightbox.open(photoIndex);
-  };
+  const handlePhotoClick = useCallback((photoIndex: number) => {
+    if (!selectionMode) {
+      lightbox.open(photoIndex);
+    }
+  }, [selectionMode, lightbox]);
+
+  // Handle selection change for a single photo
+  const handleSelectionChange = useCallback((photoId: string, selected: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(photoId);
+      } else {
+        next.delete(photoId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Toggle selection mode
+  const toggleSelectionMode = useCallback(() => {
+    setSelectionMode(prev => {
+      if (prev) {
+        // Exiting selection mode - clear selections
+        setSelectedIds(new Set());
+      }
+      return !prev;
+    });
+  }, []);
+
+  // Select all photos
+  const selectAll = useCallback(() => {
+    setSelectedIds(new Set(photos.map(p => p.id)));
+  }, [photos]);
+
+  // Clear selection
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  // Handle delete button click for a single photo
+  const handleDeletePhoto = useCallback((photo: PhotoMeta, thumbnailUrl?: string) => {
+    setDeleteTarget([photo]);
+    setDeleteThumbnailUrl(thumbnailUrl);
+  }, []);
+
+  // Handle delete from lightbox
+  const handleDeleteFromLightbox = useCallback(() => {
+    if (lightbox.currentPhoto) {
+      setDeleteTarget([lightbox.currentPhoto]);
+      setDeleteThumbnailUrl(undefined); // Lightbox shows full image, not thumbnail
+    }
+  }, [lightbox.currentPhoto]);
+
+  // Handle bulk delete
+  const handleBulkDelete = useCallback(() => {
+    const selectedPhotos = photos.filter(p => selectedIds.has(p.id));
+    if (selectedPhotos.length > 0) {
+      setDeleteTarget(selectedPhotos);
+      setDeleteThumbnailUrl(undefined);
+    }
+  }, [photos, selectedIds]);
+
+  // Confirm deletion
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deleteTarget || deleteTarget.length === 0) return;
+
+    try {
+      if (deleteTarget.length === 1) {
+        // Single photo delete
+        const photoToDelete = deleteTarget[0];
+        if (photoToDelete) {
+          await photoActions.deletePhoto(photoToDelete.id, albumId);
+        }
+      } else {
+        // Bulk delete
+        await photoActions.deletePhotos(
+          deleteTarget.map(p => p.id),
+          albumId
+        );
+      }
+
+      // Close dialog
+      setDeleteTarget(null);
+      setDeleteThumbnailUrl(undefined);
+
+      // Clear selection
+      setSelectedIds(new Set());
+
+      // Close lightbox if open
+      if (lightbox.isOpen) {
+        lightbox.close();
+      }
+
+      // Refresh photos
+      refetch();
+      onPhotosDeleted?.();
+    } catch {
+      // Error is handled by usePhotoActions and shown in dialog
+    }
+  }, [deleteTarget, photoActions, albumId, lightbox, refetch, onPhotosDeleted]);
+
+  // Cancel deletion
+  const handleCancelDelete = useCallback(() => {
+    setDeleteTarget(null);
+    setDeleteThumbnailUrl(undefined);
+    photoActions.clearError();
+  }, [photoActions]);
 
   if (isLoading || keysLoading) {
     return (
@@ -97,8 +215,54 @@ export function PhotoGrid({ albumId }: PhotoGridProps) {
     ? epochKeys.get(lightbox.currentPhoto.epochId)
     : undefined;
 
+  const selectedCount = selectedIds.size;
+
   return (
     <>
+      {/* Selection toolbar */}
+      <div className="photo-grid-toolbar" data-testid="photo-grid-toolbar">
+        <button
+          className={`button-secondary ${selectionMode ? 'button-active' : ''}`}
+          onClick={toggleSelectionMode}
+          data-testid="selection-mode-button"
+        >
+          {selectionMode ? 'Cancel' : 'Select'}
+        </button>
+
+        {selectionMode && (
+          <>
+            <button
+              className="button-secondary"
+              onClick={selectAll}
+              data-testid="select-all-button"
+            >
+              Select All
+            </button>
+            {selectedCount > 0 && (
+              <>
+                <span className="selection-count" data-testid="selection-count">
+                  {selectedCount} selected
+                </span>
+                <button
+                  className="button-secondary"
+                  onClick={clearSelection}
+                  data-testid="clear-selection-button"
+                >
+                  Clear
+                </button>
+                <button
+                  className="button-danger"
+                  onClick={handleBulkDelete}
+                  data-testid="bulk-delete-button"
+                >
+                  Delete ({selectedCount})
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </div>
+
       <div ref={parentRef} className="photo-grid-container" data-testid="photo-grid">
         <div
           className="photo-grid-virtual"
@@ -127,18 +291,17 @@ export function PhotoGrid({ albumId }: PhotoGridProps) {
                 if (!photo) return null;
                 // Get epoch read key for this photo
                 const epochReadKey = epochKeys.get(photo.epochId);
-                return epochReadKey ? (
+                const isSelected = selectedIds.has(photo.id);
+                return (
                   <PhotoThumbnail
                     key={photo.id}
                     photo={photo}
-                    epochReadKey={epochReadKey}
+                    {...(epochReadKey && { epochReadKey })}
                     onClick={() => handlePhotoClick(photoIndex)}
-                  />
-                ) : (
-                  <PhotoThumbnail
-                    key={photo.id}
-                    photo={photo}
-                    onClick={() => handlePhotoClick(photoIndex)}
+                    isSelected={isSelected}
+                    onSelectionChange={(selected: boolean) => handleSelectionChange(photo.id, selected)}
+                    onDelete={() => handleDeletePhoto(photo)}
+                    selectionMode={selectionMode}
                   />
                 );
               })}
@@ -158,6 +321,19 @@ export function PhotoGrid({ albumId }: PhotoGridProps) {
           hasNext={lightbox.hasNext}
           hasPrevious={lightbox.hasPrevious}
           preloadQueue={preloadQueue}
+          onDelete={handleDeleteFromLightbox}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {deleteTarget && deleteTarget.length > 0 && (
+        <DeletePhotoDialog
+          photos={deleteTarget}
+          thumbnailUrl={deleteThumbnailUrl}
+          isDeleting={photoActions.isDeleting}
+          onConfirm={handleConfirmDelete}
+          onCancel={handleCancelDelete}
+          error={photoActions.error}
         />
       )}
     </>

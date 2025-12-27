@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getDbClient } from '../lib/db-client';
 import type { PhotoMeta } from '../workers/types';
 
@@ -9,6 +9,12 @@ export function usePhotos(albumId: string) {
   const [photos, setPhotos] = useState<PhotoMeta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Function to trigger a refresh
+  const refetch = useCallback(() => {
+    setRefreshTrigger(prev => prev + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +46,7 @@ export function usePhotos(albumId: string) {
     return () => {
       cancelled = true;
     };
-  }, [albumId]);
+  }, [albumId, refreshTrigger]);
 
-  return { photos, isLoading, error };
+  return { photos, isLoading, error, refetch };
 }

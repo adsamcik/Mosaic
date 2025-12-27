@@ -1770,3 +1770,211 @@ body {
   }
 }
 
+/* ===========================================================================
+   Photo Deletion & Selection Styles
+   =========================================================================== */
+
+/* Photo Grid Toolbar */
+.photo-grid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
+  margin-bottom: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.selection-count {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  padding: 0 var(--spacing-sm);
+}
+
+.button-active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+/* Photo Thumbnail Selection */
+.photo-thumbnail {
+  position: relative;
+}
+
+.photo-thumbnail-selected {
+  outline: 3px solid var(--color-primary);
+  outline-offset: -3px;
+}
+
+.photo-thumbnail-selection-mode {
+  cursor: pointer;
+}
+
+.photo-selection-overlay {
+  position: absolute;
+  top: var(--spacing-xs);
+  left: var(--spacing-xs);
+  z-index: 10;
+}
+
+.photo-checkbox {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.photo-delete-button {
+  position: absolute;
+  top: var(--spacing-xs);
+  right: var(--spacing-xs);
+  z-index: 10;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.photo-thumbnail:hover .photo-delete-button {
+  opacity: 1;
+}
+
+.photo-delete-button:hover {
+  background: var(--color-error);
+}
+
+/* Delete Photo Dialog */
+.delete-photo-dialog {
+  max-width: 400px;
+}
+
+.delete-warning {
+  color: var(--color-text);
+  background: rgba(239, 68, 68, 0.1);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--color-error);
+}
+
+.delete-photo-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+}
+
+.delete-preview-image {
+  max-width: 200px;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.delete-preview-placeholder {
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.delete-preview-placeholder .photo-icon {
+  font-size: 3rem;
+}
+
+.delete-preview-info {
+  text-align: center;
+}
+
+.delete-preview-filename {
+  display: block;
+  font-weight: 500;
+  margin-bottom: var(--spacing-xs);
+  word-break: break-all;
+}
+
+.delete-preview-date {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.delete-error {
+  margin-top: var(--spacing-md);
+}
+
+.button-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: var(--spacing-xs);
+}
+
+/* Lightbox Delete Button */
+.lightbox-delete-button {
+  position: absolute;
+  top: var(--spacing-md);
+  right: calc(var(--spacing-md) + 40px);
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  z-index: 15;
+}
+
+.lightbox-delete-button:hover {
+  background: var(--color-error);
+  color: white;
+}
+
+/* Ensure button-danger is available */
+.button-danger {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-error);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.button-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.button-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+

@@ -8,6 +8,14 @@ interface PhotoThumbnailProps {
   epochReadKey?: Uint8Array;
   /** Callback when thumbnail is clicked */
   onClick?: () => void;
+  /** Whether this photo is selected (for bulk operations) */
+  isSelected?: boolean;
+  /** Callback when selection changes */
+  onSelectionChange?: (selected: boolean) => void;
+  /** Callback to delete this photo */
+  onDelete?: () => void;
+  /** Whether selection mode is active */
+  selectionMode?: boolean;
 }
 
 /** Loading state for thumbnail */
@@ -21,8 +29,17 @@ type ThumbnailState =
  * Photo Thumbnail Component
  * Displays a single photo in the grid with encrypted shard loading
  */
-export function PhotoThumbnail({ photo, epochReadKey, onClick }: PhotoThumbnailProps) {
+export function PhotoThumbnail({
+  photo,
+  epochReadKey,
+  onClick,
+  isSelected = false,
+  onSelectionChange,
+  onDelete,
+  selectionMode = false,
+}: PhotoThumbnailProps) {
   const [state, setState] = useState<ThumbnailState>({ status: 'idle' });
+  const [isHovered, setIsHovered] = useState(false);
 
   // Load photo when component mounts or photo changes
   useEffect(() => {
@@ -143,34 +160,103 @@ export function PhotoThumbnail({ photo, epochReadKey, onClick }: PhotoThumbnailP
     }
   };
 
-  // Handle click - don't propagate from retry button
+  // Handle click - in selection mode, toggle selection; otherwise open photo
   const handleClick = useCallback(() => {
-    if (onClick && state.status === 'loaded') {
+    if (selectionMode && onSelectionChange) {
+      onSelectionChange(!isSelected);
+    } else if (onClick && state.status === 'loaded') {
       onClick();
     }
-  }, [onClick, state.status]);
+  }, [selectionMode, onSelectionChange, isSelected, onClick, state.status]);
+
+  // Handle checkbox click in selection mode
+  const handleCheckboxClick = useCallback(
+    (event: React.MouseEvent) => {
+      event.stopPropagation();
+      if (onSelectionChange) {
+        onSelectionChange(!isSelected);
+      }
+    },
+    [onSelectionChange, isSelected]
+  );
+
+  // Handle delete button click
+  const handleDeleteClick = useCallback(
+    (event: React.MouseEvent) => {
+      event.stopPropagation();
+      if (onDelete) {
+        onDelete();
+      }
+    },
+    [onDelete]
+  );
 
   // Handle keyboard activation
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if ((event.key === 'Enter' || event.key === ' ') && onClick && state.status === 'loaded') {
         event.preventDefault();
-        onClick();
+        if (selectionMode && onSelectionChange) {
+          onSelectionChange(!isSelected);
+        } else {
+          onClick();
+        }
+      }
+      // Delete on Delete/Backspace key when focused
+      if ((event.key === 'Delete' || event.key === 'Backspace') && onDelete) {
+        event.preventDefault();
+        onDelete();
       }
     },
-    [onClick, state.status]
+    [onClick, state.status, selectionMode, onSelectionChange, isSelected, onDelete]
   );
+
+  // Get thumbnail URL for delete dialog if loaded
+  const thumbnailUrl = state.status === 'loaded' ? state.result.blobUrl : undefined;
 
   return (
     <div
-      className="photo-thumbnail"
+      className={`photo-thumbnail ${isSelected ? 'photo-thumbnail-selected' : ''} ${selectionMode ? 'photo-thumbnail-selection-mode' : ''}`}
       data-testid="photo-thumbnail"
       onClick={handleClick}
       onKeyDown={handleKeyDown}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick && state.status === 'loaded' ? 0 : undefined}
       aria-label={onClick ? `View ${photo.filename}` : undefined}
+      aria-selected={isSelected}
+      data-photo-id={photo.id}
+      data-thumbnail-url={thumbnailUrl}
     >
+      {/* Selection checkbox (shown in selection mode or on hover) */}
+      {(selectionMode || (isHovered && onSelectionChange)) && (
+        <div className="photo-selection-overlay">
+          <input
+            type="checkbox"
+            className="photo-checkbox"
+            checked={isSelected}
+            onChange={() => onSelectionChange?.(!isSelected)}
+            onClick={handleCheckboxClick}
+            aria-label={`Select ${photo.filename}`}
+            data-testid="photo-checkbox"
+          />
+        </div>
+      )}
+
+      {/* Delete button (shown on hover when not in selection mode) */}
+      {isHovered && !selectionMode && onDelete && (
+        <button
+          className="photo-delete-button"
+          onClick={handleDeleteClick}
+          aria-label={`Delete ${photo.filename}`}
+          title="Delete photo"
+          data-testid="photo-delete-button"
+        >
+          🗑️
+        </button>
+      )}
+
       <div className="photo-content">{renderContent()}</div>
       <div className="photo-info">
         <span className="photo-filename" title={photo.filename}>

@@ -9,3 +9,5 @@ export { useAlbumCover } from './useAlbumCover';
 export type { UseAlbumCoverResult, AlbumCover } from './useAlbumCover';
 export { useLightbox } from './useLightbox';
 export type { LightboxState, LightboxControls, UseLightboxResult } from './useLightbox';
+export { usePhotoActions, PhotoDeleteError } from './usePhotoActions';
+export type { UsePhotoActionsResult, BulkDeleteResult } from './usePhotoActions';

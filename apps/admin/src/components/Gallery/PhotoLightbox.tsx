@@ -29,6 +29,8 @@ export interface PhotoLightboxProps {
   preloadQueue?: PhotoMeta[];
   /** Show photo metadata */
   showMetadata?: boolean;
+  /** Callback to delete the current photo */
+  onDelete?: () => void;
 }
 
 /** Loading state for the full-resolution photo */
@@ -75,6 +77,7 @@ export function PhotoLightbox({
   hasPrevious = false,
   preloadQueue = [],
   showMetadata = true,
+  onDelete,
 }: PhotoLightboxProps) {
   const [loadState, setLoadState] = useState<LoadState>({ status: 'loading', progress: 0 });
   const [showInfo, setShowInfo] = useState(false);
@@ -219,6 +222,48 @@ export function PhotoLightbox({
   const toggleInfo = useCallback(() => {
     setShowInfo((prev) => !prev);
   }, []);
+
+  // Handle delete button click
+  const handleDelete = useCallback(() => {
+    if (onDelete) {
+      onDelete();
+    }
+  }, [onDelete]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      switch (event.key) {
+        case 'Escape':
+          onClose();
+          break;
+        case 'ArrowLeft':
+          if (hasPrevious && onPrevious) {
+            onPrevious();
+          }
+          break;
+        case 'ArrowRight':
+          if (hasNext && onNext) {
+            onNext();
+          }
+          break;
+        case 'Delete':
+        case 'Backspace':
+          if (onDelete) {
+            event.preventDefault();
+            onDelete();
+          }
+          break;
+        case 'i':
+        case 'I':
+          toggleInfo();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, hasPrevious, onPrevious, hasNext, onNext, onDelete, toggleInfo]);
 
   // Render loading state
   const renderLoading = () => (
@@ -368,6 +413,19 @@ export function PhotoLightbox({
           data-testid="lightbox-info-toggle"
         >
           ℹ
+        </button>
+      )}
+
+      {/* Delete button */}
+      {onDelete && (
+        <button
+          className="lightbox-delete-button"
+          onClick={handleDelete}
+          aria-label="Delete photo"
+          title="Delete photo (Delete key)"
+          data-testid="lightbox-delete"
+        >
+          🗑️
         </button>
       )}
 
