@@ -39,7 +39,7 @@ export function AlbumList({ onSelectAlbum }: AlbumListProps) {
   }
 
   return (
-    <div className="album-list">
+    <div className="album-list" data-testid="album-list">
       <h2 className="album-list-title">Albums</h2>
       <div className="album-grid">
         {albums.map((album) => (

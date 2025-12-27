@@ -1,0 +1,112 @@
+# Mosaic - Integration & E2E Test Environment
+# Use: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
+
+services:
+  # PostgreSQL database for testing
+  postgres:
+    image: postgres:17-alpine
+    container_name: mosaic-test-postgres
+    environment:
+      POSTGRES_DB: mosaic_test
+      POSTGRES_USER: mosaic
+      POSTGRES_PASSWORD: test
+    tmpfs:
+      - /var/lib/postgresql/data  # Use tmpfs for faster tests
+    networks:
+      - mosaic-test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mosaic -d mosaic_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  # .NET Backend API
+  backend:
+    build:
+      context: ./apps/backend/Mosaic.Backend
+      dockerfile: Dockerfile
+    container_name: mosaic-test-backend
+    environment:
+      ASPNETCORE_ENVIRONMENT: Testing
+      ConnectionStrings__Default: "Host=postgres;Database=mosaic_test;Username=mosaic;Password=test"
+      Storage__Path: /app/data/blobs
+      Auth__TrustedProxies__0: "0.0.0.0/0"  # Trust all for testing
+      Quota__DefaultMaxBytes: "10737418240"
+    volumes:
+      - test_blobs:/app/data/blobs
+    networks:
+      - mosaic-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # React Frontend for E2E tests
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+    container_name: mosaic-test-frontend
+    networks:
+      - mosaic-test
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # API Integration Tests
+  api-tests:
+    build:
+      context: .
+      dockerfile: tests/integration/Dockerfile
+    container_name: mosaic-test-api
+    environment:
+      API_BASE_URL: http://backend:8080
+      TEST_USER: testuser@example.com
+    networks:
+      - mosaic-test
+    depends_on:
+      backend:
+        condition: service_healthy
+    profiles:
+      - api-tests
+
+  # E2E Tests with Playwright
+  e2e-tests:
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile
+    container_name: mosaic-test-e2e
+    environment:
+      BASE_URL: http://frontend:8080
+      API_URL: http://backend:8080
+      CI: "true"
+    volumes:
+      - ./tests/e2e/results:/app/test-results
+      - ./tests/e2e/playwright-report:/app/playwright-report
+    networks:
+      - mosaic-test
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    profiles:
+      - e2e-tests
+
+volumes:
+  test_blobs:
+    driver: local
+
+networks:
+  mosaic-test:
+    driver: bridge

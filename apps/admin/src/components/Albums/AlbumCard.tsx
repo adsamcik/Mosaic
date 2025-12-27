@@ -16,7 +16,7 @@ interface AlbumCardProps {
  */
 export function AlbumCard({ album, onClick }: AlbumCardProps) {
   return (
-    <button className="album-card" onClick={onClick}>
+    <button className="album-card" onClick={onClick} data-testid="album-card">
       <div className="album-cover">
         <span className="album-icon">📁</span>
       </div>

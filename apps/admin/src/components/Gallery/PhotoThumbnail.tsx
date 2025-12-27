@@ -13,7 +13,7 @@ export function PhotoThumbnail({ photo }: PhotoThumbnailProps) {
   // For now, show a placeholder with photo metadata
   
   return (
-    <div className="photo-thumbnail">
+    <div className="photo-thumbnail" data-testid="photo-thumbnail">
       <div className="photo-placeholder">
         <span className="photo-icon">🖼️</span>
       </div>

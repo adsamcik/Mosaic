@@ -57,7 +57,7 @@ export function PhotoGrid({ albumId }: PhotoGridProps) {
   }
 
   return (
-    <div ref={parentRef} className="photo-grid-container">
+    <div ref={parentRef} className="photo-grid-container" data-testid="photo-grid">
       <div
         className="photo-grid-virtual"
         style={{

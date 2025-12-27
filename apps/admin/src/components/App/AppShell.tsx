@@ -24,7 +24,7 @@ export function AppShell() {
   };
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-testid="app-shell">
       <header className="app-header">
         <div className="header-left">
           <h1 className="app-title">🖼️ Mosaic</h1>

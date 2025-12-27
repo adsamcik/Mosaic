@@ -11,7 +11,7 @@ interface GalleryProps {
  */
 export function Gallery({ albumId }: GalleryProps) {
   return (
-    <div className="gallery">
+    <div className="gallery" data-testid="gallery">
       <div className="gallery-header">
         <h2 className="gallery-title">Photos</h2>
         <UploadButton albumId={albumId} />

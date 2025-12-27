@@ -1,0 +1,138 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            libs/crypto/package-lock.json
+            apps/admin/package-lock.json
+      
+      - name: Install crypto library dependencies
+        working-directory: libs/crypto
+        run: npm ci
+      
+      - name: Run crypto library tests
+        working-directory: libs/crypto
+        run: npm run test:run -- --coverage
+      
+      - name: Install admin dependencies
+        working-directory: apps/admin
+        run: npm ci
+      
+      - name: Run admin tests
+        working-directory: apps/admin
+        run: npm test -- run
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build and start services
+        run: |
+          docker compose -f docker-compose.test.yml build
+          docker compose -f docker-compose.test.yml up -d postgres backend frontend
+      
+      - name: Wait for services
+        run: |
+          timeout 120 bash -c 'until docker compose -f docker-compose.test.yml ps | grep -q "healthy"; do sleep 2; done'
+      
+      - name: Run API integration tests
+        run: docker compose -f docker-compose.test.yml run --rm api-tests
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: tests/integration/results/
+      
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build and start services
+        run: |
+          docker compose -f docker-compose.test.yml build
+          docker compose -f docker-compose.test.yml up -d postgres backend frontend
+      
+      - name: Wait for services
+        run: |
+          timeout 120 bash -c 'until docker compose -f docker-compose.test.yml ps | grep -q "healthy"; do sleep 2; done'
+      
+      - name: Run E2E tests
+        run: docker compose -f docker-compose.test.yml run --rm e2e-tests
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-test-results
+          path: |
+            tests/e2e/results/
+            tests/e2e/playwright-report/
+      
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  build-check:
+    name: Build Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+      
+      - name: Build backend
+        working-directory: apps/backend/Mosaic.Backend
+        run: dotnet build --configuration Release
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      
+      - name: Build crypto library
+        working-directory: libs/crypto
+        run: |
+          npm ci
+          npm run build
+      
+      - name: Build frontend
+        working-directory: apps/admin
+        run: |
+          npm ci
+          npm run build

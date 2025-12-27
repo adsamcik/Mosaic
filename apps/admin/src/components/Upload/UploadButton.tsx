@@ -46,6 +46,7 @@ export function UploadButton({ albumId }: UploadButtonProps) {
         onClick={handleClick}
         disabled={isUploading}
         className="upload-button"
+        data-testid="upload-button"
       >
         {isUploading ? 'Uploading...' : '📷 Upload'}
       </button>
