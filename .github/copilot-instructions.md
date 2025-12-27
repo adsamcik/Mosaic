@@ -164,8 +164,17 @@ export function encryptShard(
 
 - Unit tests for all crypto functions
 - Integration tests for API endpoints
+- E2E tests for user-facing flows
 - Test edge cases: empty inputs, max sizes, invalid data
 - Verify cryptographic invariants (nonce uniqueness, key wiping)
+
+### Coverage Thresholds
+- Crypto library: 85% lines/functions, 75% branches
+- Run `npm run test:coverage` to verify coverage
+- Coverage must not regress from current levels
+
+### Test-First Approach (Recommended)
+For complex logic, write the test first to clarify expected behavior. This ensures coverage and forces clear API design before implementation.
 
 ## Browser Support
 
@@ -196,40 +205,80 @@ Cross-Origin-Embedder-Policy: require-corp
 
 ## Workflow Requirements
 
-### Task Tracking with Todos
+### Execution Rules
 
-**Always use the todo tool** to track all work that needs to be done. This ensures visibility and prevents tasks from being forgotten.
+**Complete every task fully in this session.** You are an autonomous agent—execute immediately, do not defer.
 
-- **Create todos immediately** when identifying work items, bugs, or improvements
-- **Break down complex tasks** into smaller, actionable todo items
-- **Mark todos in-progress** before starting work (one at a time)
-- **Mark todos completed** immediately after finishing each item
-- **Never batch completions** - update status as soon as each task is done
-- **Include context** in todo descriptions: file paths, function names, acceptance criteria
+- **Do the work now** - Implement features, write tests, run them, commit. All in one session.
+- **Never defer** - Do not suggest "you could add tests later" or "consider implementing X."
+- **Never leave incomplete work** - No stubs, no placeholders, no partial implementations.
+- **Never suggest future improvements** - If it should be done, do it now.
+- **Forbidden phrases**: "optionally," "you might want to," "consider adding," "as a next step," "you could also"
 
-Example todo workflow:
-1. User requests a feature → Create todos for each implementation step
-2. Pick first todo → Mark as in-progress
-3. Complete the work → Mark as completed, commit
-4. Repeat until all todos are done
+If a task has multiple parts, complete ALL parts before responding. Do not ask permission to continue—just do it.
 
-### After Completing Each Unit of Work
+### Definition of Done
 
-1. **Test** - Run relevant tests to verify correctness
-   - Unit tests for new/modified functions
-   - Integration tests if API changes
-   - Manual verification for UI changes
-2. **Verify** - Check for errors and warnings
-   - No TypeScript/C# compiler errors
-   - No ESLint/linting warnings
-   - No failing tests
-3. **Commit** - Create atomic, well-described commits
-   - Use conventional commit format: `type(scope): description`
-   - Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
-   - Keep commits focused on a single logical change
-   - Example: `feat(crypto): implement XChaCha20-Poly1305 envelope encryption`
+**Every task—regardless of size—must satisfy ALL criteria before completion:**
 
-Never leave work uncommitted. Each completed feature, fix, or refactor should result in a passing test suite and a clean commit.
+- [ ] Feature code implemented (no stubs, no placeholders, no `// TODO`)
+- [ ] Unit tests written and passing
+- [ ] Integration tests added if API changes
+- [ ] E2E tests added if UI changes
+- [ ] Tests executed locally with output reported (e.g., "23 passed, 94% coverage")
+- [ ] No TypeScript/C#/ESLint errors or warnings
+- [ ] Committed with conventional format: `type(scope): description`
+
+This applies equally to quick fixes, new features, and refactors. No exceptions.
+
+### Local Test Commands
+
+Run these commands to verify your work:
+
+```bash
+# Crypto library
+cd libs/crypto && npm test
+cd libs/crypto && npm run test:coverage  # Verify 85% threshold
+
+# Frontend
+cd apps/admin && npm test
+
+# Backend
+cd apps/backend/Mosaic.Backend && dotnet test
+
+# Full suite (all tests)
+./scripts/run-tests.ps1 -Suite all     # Windows
+./scripts/run-tests.sh --suite all     # Linux/Mac
+```
+
+**You must run tests and report the output.** Do not say "tests should pass"—prove they passed.
+
+### Anti-Patterns (Forbidden)
+
+- **`// TODO` comments** - Unless the user explicitly requests a placeholder
+- **Placeholder implementations** - `throw new NotImplementedException()`, `pass`, empty functions
+- **Deferring tests** - "Tests can be added later" is never acceptable
+- **Suggesting manual verification** - "You can test this by..." — run the tests yourself
+- **Incomplete error handling** - Every error path must be handled
+- **Weasel words** - "optionally," "might," "could," "consider," "perhaps"
+
+### Blockers Policy
+
+**If you cannot complete the task, ask immediately.** Do not:
+- Leave partial work and suggest the user finish it
+- Defer to a future session
+- Make assumptions about ambiguous requirements
+
+Valid reasons to ask:
+- Missing dependency that cannot be installed
+- Ambiguous requirements needing clarification
+- Conflicting constraints in the request
+- External service unavailable
+
+Invalid reasons (just do it):
+- "This might take a while" — do it anyway
+- "This requires multiple files" — edit them all
+- "I'm not sure about the test approach" — pick a reasonable approach and implement it
 ## Subagent Delegation
 
 Use subagents to parallelize and delegate complex work. Subagents are autonomous agents that can research, search, and execute multi-step tasks independently.
