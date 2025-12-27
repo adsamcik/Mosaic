@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
-import { concat, constantTimeEqual, sha256, sha256Sync, memzero, randomBytes, toBase64, fromBase64 } from '../src/utils';
+import { concat, constantTimeEqual, sha256, sha256Sync, memzero, randomBytes, toBase64, fromBase64, toBytes, fromBytes } from '../src/utils';
 
 beforeAll(async () => {
   await sodium.ready;
@@ -86,6 +86,28 @@ describe('utils', () => {
       const buf = new Uint8Array([1, 2, 3, 4]);
       memzero(buf);
       expect(buf).toEqual(new Uint8Array([0, 0, 0, 0]));
+    });
+  });
+
+  describe('toBytes and fromBytes', () => {
+    it('converts string to bytes and back', () => {
+      const original = 'Hello, World! 🌍';
+      const bytes = toBytes(original);
+      const restored = fromBytes(bytes);
+      expect(restored).toBe(original);
+    });
+
+    it('handles empty string', () => {
+      const empty = '';
+      const bytes = toBytes(empty);
+      expect(bytes.length).toBe(0);
+      expect(fromBytes(bytes)).toBe(empty);
+    });
+
+    it('handles unicode characters', () => {
+      const unicode = '日本語テスト';
+      const bytes = toBytes(unicode);
+      expect(fromBytes(bytes)).toBe(unicode);
     });
   });
 });

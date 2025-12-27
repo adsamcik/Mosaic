@@ -26,14 +26,20 @@ export interface DerivedKeys {
 }
 
 /**
- * Per-album epoch key set.
- * ReadKey encrypts content, SignKeypair signs manifests.
+ * Per-album epoch key set with tiered access keys.
+ * Each tier has a separate HKDF-derived key for cryptographic separation.
  */
 export interface EpochKey {
   /** Epoch identifier (increments on key rotation) */
   epochId: number;
-  /** 32 bytes - XChaCha20 encryption key for shards */
-  readKey: Uint8Array;
+  /** 32 bytes - Master seed for deriving tier keys */
+  epochSeed: Uint8Array;
+  /** 32 bytes - XChaCha20 key for thumbnail shards (300px) */
+  thumbKey: Uint8Array;
+  /** 32 bytes - XChaCha20 key for preview shards (1200px) */
+  previewKey: Uint8Array;
+  /** 32 bytes - XChaCha20 key for original shards (full resolution) */
+  fullKey: Uint8Array;
   /** Ed25519 keypair for signing manifests */
   signKeypair: {
     /** 32 bytes - public verification key */
@@ -41,6 +47,32 @@ export interface EpochKey {
     /** 64 bytes - secret signing key */
     secretKey: Uint8Array;
   };
+}
+
+/**
+ * Content tier for shard encryption.
+ * Each tier uses a different derived key.
+ */
+export enum ShardTier {
+  /** 300px thumbnail */
+  THUMB = 1,
+  /** 1200px preview */
+  PREVIEW = 2,
+  /** Full resolution original */
+  ORIGINAL = 3,
+}
+
+/**
+ * Access tier for share links.
+ * Determines which tier keys are included.
+ */
+export enum AccessTier {
+  /** Thumbnails only (300px) */
+  THUMB = 1,
+  /** Thumbnails + previews (1200px) */
+  PREVIEW = 2,
+  /** Full access including originals */
+  FULL = 3,
 }
 
 /**
@@ -63,6 +95,7 @@ export interface IdentityKeypair {
 /**
  * Epoch key bundle transmitted to album members.
  * Encrypted via sealed box and signed by owner.
+ * Contains full epoch seed for deriving all tier keys.
  */
 export interface EpochKeyBundle {
   /** Bundle format version */
@@ -73,13 +106,35 @@ export interface EpochKeyBundle {
   epochId: number;
   /** Recipient's Ed25519 public key (fingerprint binding) */
   recipientPubkey: Uint8Array;
-  /** 32 bytes - XChaCha20 read key */
-  readKey: Uint8Array;
+  /** 32 bytes - Master seed for deriving tier keys */
+  epochSeed: Uint8Array;
   /** Ed25519 signing keypair for this epoch */
   signKeypair: {
     publicKey: Uint8Array;
     secretKey: Uint8Array;
   };
+}
+
+/**
+ * Link-derived keys for share link authentication and wrapping.
+ */
+export interface LinkKeys {
+  /** 16 bytes - Server lookup identifier (never reveals secret) */
+  linkId: Uint8Array;
+  /** 32 bytes - Key for wrapping tier keys */
+  wrappingKey: Uint8Array;
+}
+
+/**
+ * Wrapped tier key for share link storage.
+ */
+export interface WrappedTierKey {
+  /** Access tier this key provides */
+  tier: AccessTier;
+  /** 24-byte nonce used for encryption */
+  nonce: Uint8Array;
+  /** Encrypted key bytes (ciphertext || tag) */
+  encryptedKey: Uint8Array;
 }
 
 // =============================================================================
@@ -89,6 +144,15 @@ export interface EpochKeyBundle {
 /**
  * 64-byte shard envelope header.
  * Used as AAD for AEAD encryption.
+ *
+ * Header Format (64 bytes):
+ * - Magic:    4 bytes  "SGzk" (0x53 0x47 0x7a 0x6b)
+ * - Version:  1 byte   0x03
+ * - EpochID:  4 bytes  Little-endian u32
+ * - ShardID:  4 bytes  Little-endian u32
+ * - Nonce:    24 bytes Random (MUST be unique per encryption)
+ * - Tier:     1 byte   ShardTier enum (1=thumb, 2=preview, 3=original)
+ * - Reserved: 26 bytes MUST be zero (validated on decrypt)
  */
 export interface ShardHeader {
   /** Magic bytes "SGzk" (4 bytes) */
@@ -101,7 +165,9 @@ export interface ShardHeader {
   shardId: number;
   /** 24 random bytes - MUST be unique per encryption */
   nonce: Uint8Array;
-  /** 27 bytes - MUST be zero, validated on decrypt */
+  /** Content tier (1 byte) */
+  tier: ShardTier;
+  /** 26 bytes - MUST be zero, validated on decrypt */
   reserved: Uint8Array;
 }
 

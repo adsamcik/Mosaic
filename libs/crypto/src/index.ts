@@ -19,6 +19,8 @@ export type {
   ManifestEnvelope,
   Argon2Params,
   BundleValidationContext,
+  LinkKeys,
+  WrappedTierKey,
 } from './types';
 
 export {
@@ -33,6 +35,8 @@ export {
   MAX_SHARD_SIZE,
   BUNDLE_SIGN_CONTEXT,
   MANIFEST_SIGN_CONTEXT,
+  ShardTier,
+  AccessTier,
 } from './types';
 
 // Re-export Argon2 utilities
@@ -112,6 +116,8 @@ export {
   unwrapEpochKey,
   rotateEpochKey,
   isValidEpochKey,
+  deriveTierKeys,
+  getTierKey,
 } from './epochs';
 
 // Re-export sharing
@@ -120,6 +126,23 @@ export {
   verifyAndOpenBundle,
   createEpochKeyBundle,
 } from './sharing';
+
+// Re-export link sharing
+export {
+  LINK_SECRET_SIZE,
+  LINK_ID_SIZE,
+  generateLinkSecret,
+  deriveLinkKeys,
+  wrapTierKeyForLink,
+  wrapAllTierKeysForLink,
+  unwrapTierKeyFromLink,
+  encodeLinkSecret,
+  decodeLinkSecret,
+  encodeLinkId,
+  decodeLinkId,
+  createShareLinkUrl,
+  parseShareLinkUrl,
+} from './link-sharing';
 
 import type {
   DerivedKeys,

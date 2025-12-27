@@ -56,7 +56,7 @@ export function sealAndSignBundle(
     albumId: bundle.albumId,
     epochId: bundle.epochId,
     recipientPubkey: toBase64(bundle.recipientPubkey),
-    readKey: toBase64(bundle.readKey),
+    epochSeed: toBase64(bundle.epochSeed),
     signKeypair: {
       publicKey: toBase64(bundle.signKeypair.publicKey),
       secretKey: toBase64(bundle.signKeypair.secretKey),
@@ -132,7 +132,7 @@ export function verifyAndOpenBundle(
     albumId: string;
     epochId: number;
     recipientPubkey: string;
-    readKey: string;
+    epochSeed: string;
     signKeypair: {
       publicKey: string;
       secretKey: string;
@@ -181,7 +181,7 @@ export function verifyAndOpenBundle(
     albumId: bundleJson.albumId,
     epochId: bundleJson.epochId,
     recipientPubkey,
-    readKey: fromBase64(bundleJson.readKey),
+    epochSeed: fromBase64(bundleJson.epochSeed),
     signKeypair: {
       publicKey: fromBase64(bundleJson.signKeypair.publicKey),
       secretKey: fromBase64(bundleJson.signKeypair.secretKey),
@@ -194,7 +194,7 @@ export function verifyAndOpenBundle(
  *
  * @param albumId - Album identifier
  * @param epochId - Epoch identifier
- * @param readKey - Epoch read key (32 bytes)
+ * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
  * @param signKeypair - Epoch signing keypair
  * @param recipientPubkey - Recipient's Ed25519 public key
  * @returns Epoch key bundle ready for sealing
@@ -202,7 +202,7 @@ export function verifyAndOpenBundle(
 export function createEpochKeyBundle(
   albumId: string,
   epochId: number,
-  readKey: Uint8Array,
+  epochSeed: Uint8Array,
   signKeypair: { publicKey: Uint8Array; secretKey: Uint8Array },
   recipientPubkey: Uint8Array
 ): EpochKeyBundle {
@@ -211,7 +211,7 @@ export function createEpochKeyBundle(
     albumId,
     epochId,
     recipientPubkey,
-    readKey,
+    epochSeed,
     signKeypair,
   };
 }

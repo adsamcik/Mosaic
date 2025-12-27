@@ -60,4 +60,31 @@ describe('keychain', () => {
     await expect(deriveKeys(password, new Uint8Array(8), accountSalt, fastParams)).rejects.toThrow();
     await expect(deriveKeys(password, userSalt, new Uint8Array(8), fastParams)).rejects.toThrow();
   });
+
+  it('rejects wrapped account key too short', async () => {
+    // Need at least 24 (nonce) + 16 (tag) + 1 (data) = 41 bytes
+    const tooShort = new Uint8Array(30);
+    await expect(unwrapAccountKey(password, userSalt, accountSalt, tooShort, fastParams)).rejects.toThrow('too short');
+  });
+
+  it('rejects invalid salt lengths for unwrapAccountKey', async () => {
+    const keys = await deriveKeys(password, userSalt, accountSalt, fastParams);
+    await expect(unwrapAccountKey(password, new Uint8Array(8), accountSalt, keys.accountKeyWrapped, fastParams)).rejects.toThrow();
+    await expect(unwrapAccountKey(password, userSalt, new Uint8Array(8), keys.accountKeyWrapped, fastParams)).rejects.toThrow();
+  });
+
+  it('rejects rewrapAccountKey with invalid account key length', async () => {
+    const invalidAccountKey = new Uint8Array(16); // Should be 32 bytes
+    await expect(rewrapAccountKey(invalidAccountKey, 'new-password', userSalt, accountSalt, fastParams)).rejects.toThrow('32 bytes');
+  });
+
+  it('generates valid random salts', () => {
+    const salts1 = generateSalts();
+    const salts2 = generateSalts();
+    expect(salts1.userSalt.length).toBe(16);
+    expect(salts1.accountSalt.length).toBe(16);
+    // Should be random (different each time)
+    expect(salts1.userSalt).not.toEqual(salts2.userSalt);
+    expect(salts1.accountSalt).not.toEqual(salts2.accountSalt);
+  });
 });

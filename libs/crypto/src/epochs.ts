@@ -2,31 +2,97 @@
  * Mosaic Crypto Library - Epochs Module
  *
  * Epoch key management for album encryption.
- * Each epoch has a ReadKey (symmetric) and SignKeypair (Ed25519).
+ * Each epoch has tiered keys (thumb, preview, full) derived via HKDF
+ * and a SignKeypair (Ed25519) for manifest signing.
  */
 
 import sodium from 'libsodium-wrappers-sumo';
-import { KEY_SIZE, type EpochKey } from './types';
-import { randomBytes } from './utils';
+import { KEY_SIZE, ShardTier, type EpochKey } from './types';
+import { randomBytes, toBytes } from './utils';
 import { wrapKey, unwrapKey } from './keybox';
 
+/** HKDF context for thumb tier key derivation */
+const THUMB_KEY_CONTEXT = toBytes('mosaic:tier:thumb:v1');
+/** HKDF context for preview tier key derivation */
+const PREVIEW_KEY_CONTEXT = toBytes('mosaic:tier:preview:v1');
+/** HKDF context for full tier key derivation */
+const FULL_KEY_CONTEXT = toBytes('mosaic:tier:full:v1');
+
 /**
- * Generate a new epoch key set.
- * Creates a random read key and Ed25519 signing keypair.
+ * Derive a tier key from epoch seed using HKDF-style BLAKE2b.
+ *
+ * @param epochSeed - 32-byte master seed
+ * @param context - Domain separation context
+ * @returns 32-byte derived tier key
+ */
+function deriveTierKey(epochSeed: Uint8Array, context: Uint8Array): Uint8Array {
+  return sodium.crypto_generichash(KEY_SIZE, context, epochSeed);
+}
+
+/**
+ * Derive all tier keys from an epoch seed.
+ *
+ * @param epochSeed - 32-byte master seed
+ * @returns Object with thumbKey, previewKey, fullKey
+ */
+export function deriveTierKeys(epochSeed: Uint8Array): {
+  thumbKey: Uint8Array;
+  previewKey: Uint8Array;
+  fullKey: Uint8Array;
+} {
+  if (epochSeed.length !== KEY_SIZE) {
+    throw new Error(`Epoch seed must be ${KEY_SIZE} bytes, got ${epochSeed.length}`);
+  }
+  return {
+    thumbKey: deriveTierKey(epochSeed, THUMB_KEY_CONTEXT),
+    previewKey: deriveTierKey(epochSeed, PREVIEW_KEY_CONTEXT),
+    fullKey: deriveTierKey(epochSeed, FULL_KEY_CONTEXT),
+  };
+}
+
+/**
+ * Get the appropriate tier key for a given shard tier.
+ *
+ * @param epochKey - Epoch key with all tier keys
+ * @param tier - Shard tier to get key for
+ * @returns The tier-specific encryption key
+ */
+export function getTierKey(epochKey: EpochKey, tier: ShardTier): Uint8Array {
+  switch (tier) {
+    case 1: // THUMB
+      return epochKey.thumbKey;
+    case 2: // PREVIEW
+      return epochKey.previewKey;
+    case 3: // ORIGINAL
+      return epochKey.fullKey;
+    default:
+      throw new Error(`Invalid shard tier: ${tier}`);
+  }
+}
+
+/**
+ * Generate a new epoch key set with tiered keys.
+ * Creates a random seed, derives tier keys, and generates Ed25519 signing keypair.
  *
  * @param epochId - Epoch identifier (increments on key rotation)
- * @returns New epoch key with ReadKey and SignKeypair
+ * @returns New epoch key with tiered keys and SignKeypair
  */
 export function generateEpochKey(epochId: number): EpochKey {
-  // Generate random read key for content encryption
-  const readKey = randomBytes(KEY_SIZE);
+  // Generate random seed for deriving tier keys
+  const epochSeed = randomBytes(KEY_SIZE);
+
+  // Derive tier keys via HKDF
+  const { thumbKey, previewKey, fullKey } = deriveTierKeys(epochSeed);
 
   // Generate Ed25519 keypair for manifest signing
   const signKeypair = sodium.crypto_sign_keypair();
 
   return {
     epochId,
-    readKey,
+    epochSeed,
+    thumbKey,
+    previewKey,
+    fullKey,
     signKeypair: {
       publicKey: signKeypair.publicKey,
       secretKey: signKeypair.privateKey,
@@ -36,7 +102,7 @@ export function generateEpochKey(epochId: number): EpochKey {
 
 /**
  * Serialize epoch key for storage/transmission.
- * Does NOT include the secret key - only public components.
+ * Does NOT include secret keys - only public components.
  *
  * @param epochKey - Epoch key to serialize
  * @returns JSON-safe object (public info only)
@@ -56,9 +122,10 @@ export function serializeEpochKeyPublic(epochKey: EpochKey): {
 
 /**
  * Wrap epoch key for secure storage.
- * Encrypts both readKey and signKeypair.secretKey.
+ * Encrypts epochSeed and signKeypair.secretKey.
+ * Tier keys can be re-derived from epochSeed when unwrapped.
  *
- * Format: wrappedReadKey || wrappedSignSecret
+ * Format: length(2) || wrappedSeed || wrappedSignSecret
  *
  * @param epochKey - Epoch key to wrap
  * @param wrapper - Wrapping key (32 bytes)
@@ -72,18 +139,18 @@ export function wrapEpochKey(
   signPublicKey: Uint8Array;
   wrapped: Uint8Array;
 } {
-  // Wrap the read key
-  const wrappedReadKey = wrapKey(epochKey.readKey, wrapper);
+  // Wrap the epoch seed (tier keys will be re-derived on unwrap)
+  const wrappedSeed = wrapKey(epochKey.epochSeed, wrapper);
 
   // Wrap the signing secret key
   const wrappedSignSecret = wrapKey(epochKey.signKeypair.secretKey, wrapper);
 
-  // Combine: length(2) || wrappedReadKey || wrappedSignSecret
-  const wrapped = new Uint8Array(2 + wrappedReadKey.length + wrappedSignSecret.length);
+  // Combine: length(2) || wrappedSeed || wrappedSignSecret
+  const wrapped = new Uint8Array(2 + wrappedSeed.length + wrappedSignSecret.length);
   const view = new DataView(wrapped.buffer);
-  view.setUint16(0, wrappedReadKey.length, true);
-  wrapped.set(wrappedReadKey, 2);
-  wrapped.set(wrappedSignSecret, 2 + wrappedReadKey.length);
+  view.setUint16(0, wrappedSeed.length, true);
+  wrapped.set(wrappedSeed, 2);
+  wrapped.set(wrappedSignSecret, 2 + wrappedSeed.length);
 
   return {
     epochId: epochKey.epochId,
@@ -94,12 +161,13 @@ export function wrapEpochKey(
 
 /**
  * Unwrap epoch key from storage.
+ * Derives tier keys from the unwrapped epochSeed.
  *
  * @param epochId - Epoch identifier
  * @param signPublicKey - Ed25519 signing public key
  * @param wrapped - Wrapped key data
  * @param wrapper - Wrapping key (32 bytes)
- * @returns Unwrapped epoch key
+ * @returns Unwrapped epoch key with all tier keys
  */
 export function unwrapEpochKey(
   epochId: number,
@@ -108,17 +176,23 @@ export function unwrapEpochKey(
   wrapper: Uint8Array
 ): EpochKey {
   const view = new DataView(wrapped.buffer, wrapped.byteOffset);
-  const readKeyLen = view.getUint16(0, true);
+  const seedLen = view.getUint16(0, true);
 
-  const wrappedReadKey = wrapped.slice(2, 2 + readKeyLen);
-  const wrappedSignSecret = wrapped.slice(2 + readKeyLen);
+  const wrappedSeed = wrapped.slice(2, 2 + seedLen);
+  const wrappedSignSecret = wrapped.slice(2 + seedLen);
 
-  const readKey = unwrapKey(wrappedReadKey, wrapper);
+  const epochSeed = unwrapKey(wrappedSeed, wrapper);
   const signSecretKey = unwrapKey(wrappedSignSecret, wrapper);
+
+  // Derive tier keys from seed
+  const { thumbKey, previewKey, fullKey } = deriveTierKeys(epochSeed);
 
   return {
     epochId,
-    readKey,
+    epochSeed,
+    thumbKey,
+    previewKey,
+    fullKey,
     signKeypair: {
       publicKey: signPublicKey,
       secretKey: signSecretKey,
@@ -148,7 +222,19 @@ export function isValidEpochKey(epochKey: EpochKey): boolean {
     return false;
   }
 
-  if (epochKey.readKey.length !== KEY_SIZE) {
+  if (epochKey.epochSeed.length !== KEY_SIZE) {
+    return false;
+  }
+
+  if (epochKey.thumbKey.length !== KEY_SIZE) {
+    return false;
+  }
+
+  if (epochKey.previewKey.length !== KEY_SIZE) {
+    return false;
+  }
+
+  if (epochKey.fullKey.length !== KEY_SIZE) {
     return false;
   }
 

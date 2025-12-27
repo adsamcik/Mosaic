@@ -54,6 +54,64 @@ describe('signer', () => {
       expect(verifyWithContext(data, sig, ctx, keypair.publicKey)).toBe(true);
       expect(verifyWithContext(data, sig, 'WrongContext', keypair.publicKey)).toBe(false);
     });
+
+    it('rejects invalid key length for signWithContext', () => {
+      const data = new Uint8Array([1, 2, 3]);
+      expect(() => signWithContext(data, 'ctx', new Uint8Array(32))).toThrow();
+    });
+
+    it('returns false for invalid signature length in verifyWithContext', () => {
+      const data = new Uint8Array([1, 2, 3]);
+      const invalidSig = new Uint8Array(32); // Should be 64
+      expect(verifyWithContext(data, invalidSig, 'ctx', keypair.publicKey)).toBe(false);
+    });
+
+    it('returns false for invalid public key length in verifyWithContext', () => {
+      const data = new Uint8Array([1, 2, 3]);
+      const sig = signWithContext(data, 'ctx', keypair.privateKey);
+      expect(verifyWithContext(data, sig, 'ctx', new Uint8Array(16))).toBe(false);
+    });
+
+    it('returns false when verifyWithContext crypto throws', () => {
+      const data = new Uint8Array([1, 2, 3]);
+      // Create a signature that looks valid but is garbage
+      const fakeSig = sodium.randombytes_buf(64);
+      expect(verifyWithContext(data, fakeSig, 'ctx', keypair.publicKey)).toBe(false);
+    });
+  });
+
+  describe('shard signing edge cases', () => {
+    it('rejects invalid key length for signShard', () => {
+      expect(() => signShard(header, ciphertext, new Uint8Array(32))).toThrow();
+    });
+
+    it('returns false for invalid signature length in verifyShard', () => {
+      const invalidSig = new Uint8Array(32); // Should be 64
+      expect(verifyShard(header, ciphertext, invalidSig, keypair.publicKey)).toBe(false);
+    });
+
+    it('returns false for invalid public key length in verifyShard', () => {
+      const sig = signShard(header, ciphertext, keypair.privateKey);
+      expect(verifyShard(header, ciphertext, sig, new Uint8Array(16))).toBe(false);
+    });
+
+    it('returns false when verifyShard crypto throws', () => {
+      // Create a signature that looks valid length but is garbage
+      const fakeSig = sodium.randombytes_buf(64);
+      expect(verifyShard(header, ciphertext, fakeSig, keypair.publicKey)).toBe(false);
+    });
+  });
+
+  describe('manifest edge cases', () => {
+    it('returns false for invalid signature length in verifyManifest', () => {
+      const invalidSig = new Uint8Array(32); // Should be 64
+      expect(verifyManifest(manifest, invalidSig, keypair.publicKey)).toBe(false);
+    });
+
+    it('returns false when verifyManifest crypto throws', () => {
+      const fakeSig = sodium.randombytes_buf(64);
+      expect(verifyManifest(manifest, fakeSig, keypair.publicKey)).toBe(false);
+    });
   });
 
   it('rejects invalid key lengths', () => {

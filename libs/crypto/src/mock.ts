@@ -127,9 +127,13 @@ export const mockCrypto: CryptoLib = {
   },
 
   generateEpochKey(epochId: number): EpochKey {
+    const epochSeed = mockBytes(32, epochId * 100);
     return {
       epochId,
-      readKey: mockBytes(32, epochId * 100),
+      epochSeed,
+      thumbKey: mockBytes(32, epochId * 100 + 10),
+      previewKey: mockBytes(32, epochId * 100 + 20),
+      fullKey: mockBytes(32, epochId * 100 + 30),
       signKeypair: {
         publicKey: mockBytes(32, epochId * 100 + 1),
         secretKey: mockBytes(64, epochId * 100 + 2),
@@ -308,7 +312,7 @@ export const mockCrypto: CryptoLib = {
       albumId: parsed.a,
       epochId: parsed.e,
       recipientPubkey: myIdentityKeypair.ed25519.publicKey,
-      readKey: mockBytes(32, parsed.e * 10),
+      epochSeed: mockBytes(32, parsed.e * 10),
       signKeypair: {
         publicKey: mockBytes(32, parsed.e * 10 + 1),
         secretKey: mockBytes(64, parsed.e * 10 + 2),

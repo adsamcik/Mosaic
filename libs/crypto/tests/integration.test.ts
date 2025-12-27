@@ -42,6 +42,7 @@ import {
   type DerivedKeys,
   type IdentityKeypair,
   type EpochKey,
+  ShardTier,
 } from '../src';
 
 beforeAll(async () => {
@@ -148,12 +149,13 @@ describe('integration: album creation and photo upload', () => {
     // Simulate a 1MB photo chunk
     const photoData = sodium.randombytes_buf(1024 * 1024);
 
-    // Encrypt shard
+    // Encrypt shard using fullKey (for original resolution)
     const encrypted = await encryptShard(
       photoData,
-      epochKey.readKey,
+      epochKey.fullKey,
       epochKey.epochId,
-      0 // shard index
+      0, // shard index
+      ShardTier.ORIGINAL
     );
 
     // Verify SHA256 hash
@@ -161,7 +163,7 @@ describe('integration: album creation and photo upload', () => {
     expect(isValid).toBe(true);
 
     // Decrypt shard
-    const decrypted = await decryptShard(encrypted.ciphertext, epochKey.readKey);
+    const decrypted = await decryptShard(encrypted.ciphertext, epochKey.fullKey);
     expect(decrypted).toEqual(photoData);
   });
 
@@ -179,9 +181,10 @@ describe('integration: album creation and photo upload', () => {
 
       const encrypted = await encryptShard(
         chunk,
-        epochKey.readKey,
+        epochKey.fullKey,
         epochKey.epochId,
-        i
+        i,
+        ShardTier.ORIGINAL
       );
 
       shards.push(encrypted);
@@ -269,11 +272,11 @@ describe('integration: album sharing between users', () => {
   });
 
   it('owner can share epoch key with recipient', () => {
-    // Owner creates epoch key bundle for recipient
+    // Owner creates epoch key bundle for recipient (using epochSeed for sharing)
     const bundle = createEpochKeyBundle(
       albumId,
       epochKey.epochId,
-      epochKey.readKey,
+      epochKey.epochSeed,
       epochKey.signKeypair,
       recipientIdentity.ed25519.publicKey
     );
@@ -294,28 +297,29 @@ describe('integration: album sharing between users', () => {
       { albumId, minEpochId: 0 }
     );
 
-    // Recipient should have the epoch key
+    // Recipient should have the epoch seed
     expect(opened.albumId).toBe(albumId);
     expect(opened.epochId).toBe(epochKey.epochId);
-    expect(opened.readKey).toEqual(epochKey.readKey);
+    expect(opened.epochSeed).toEqual(epochKey.epochSeed);
     expect(opened.signKeypair.publicKey).toEqual(epochKey.signKeypair.publicKey);
   });
 
   it('recipient can decrypt photos shared by owner', async () => {
-    // Owner encrypts a photo
+    // Owner encrypts a photo using fullKey
     const photoData = new TextEncoder().encode('This is a secret photo!');
     const encrypted = await encryptShard(
       photoData,
-      epochKey.readKey,
+      epochKey.fullKey,
       epochKey.epochId,
-      0
+      0,
+      ShardTier.ORIGINAL
     );
 
     // Simulate sharing: recipient receives epoch key bundle
     const bundle = createEpochKeyBundle(
       albumId,
       epochKey.epochId,
-      epochKey.readKey,
+      epochKey.epochSeed,
       epochKey.signKeypair,
       recipientIdentity.ed25519.publicKey
     );
@@ -332,8 +336,10 @@ describe('integration: album sharing between users', () => {
       { albumId, minEpochId: 0 }
     );
 
-    // Recipient decrypts the photo using the shared key
-    const decrypted = await decryptShard(encrypted.ciphertext, opened.readKey);
+    // Recipient derives tier keys from epochSeed and decrypts
+    const { deriveTierKeys } = await import('../src/epochs');
+    const tierKeys = deriveTierKeys(opened.epochSeed);
+    const decrypted = await decryptShard(encrypted.ciphertext, tierKeys.fullKey);
     expect(new TextDecoder().decode(decrypted)).toBe('This is a secret photo!');
   });
 
@@ -347,7 +353,7 @@ describe('integration: album sharing between users', () => {
     const fakeBundle = createEpochKeyBundle(
       albumId,
       epochKey.epochId,
-      epochKey.readKey,
+      epochKey.epochSeed,
       epochKey.signKeypair,
       recipientIdentity.ed25519.publicKey
     );
@@ -374,7 +380,7 @@ describe('integration: album sharing between users', () => {
     const bundle = createEpochKeyBundle(
       albumId,
       epochKey.epochId,
-      epochKey.readKey,
+      epochKey.epochSeed,
       epochKey.signKeypair,
       recipientIdentity.ed25519.publicKey
     );
@@ -432,26 +438,26 @@ describe('integration: epoch key rotation', () => {
   it('old photos encrypted with epoch1 are still readable after rotation', async () => {
     // Encrypt photo with epoch 1
     const oldPhoto = new TextEncoder().encode('Photo from before rotation');
-    const encrypted = await encryptShard(oldPhoto, epoch1.readKey, 1, 0);
+    const encrypted = await encryptShard(oldPhoto, epoch1.fullKey, 1, 0, ShardTier.ORIGINAL);
 
     // Rotation happens - epoch 2 created
     // Member should still have epoch 1 key cached
 
     // Decrypt with epoch 1 key still works
-    const decrypted = await decryptShard(encrypted.ciphertext, epoch1.readKey);
+    const decrypted = await decryptShard(encrypted.ciphertext, epoch1.fullKey);
     expect(new TextDecoder().decode(decrypted)).toBe('Photo from before rotation');
   });
 
   it('new photos use epoch2 key', async () => {
     // New photo uploaded after rotation
     const newPhoto = new TextEncoder().encode('Photo after rotation');
-    const encrypted = await encryptShard(newPhoto, epoch2.readKey, 2, 0);
+    const encrypted = await encryptShard(newPhoto, epoch2.fullKey, 2, 0, ShardTier.ORIGINAL);
 
     // Cannot decrypt with old epoch key
-    await expect(decryptShard(encrypted.ciphertext, epoch1.readKey)).rejects.toThrow();
+    await expect(decryptShard(encrypted.ciphertext, epoch1.fullKey)).rejects.toThrow();
 
     // Can decrypt with new epoch key
-    const decrypted = await decryptShard(encrypted.ciphertext, epoch2.readKey);
+    const decrypted = await decryptShard(encrypted.ciphertext, epoch2.fullKey);
     expect(new TextDecoder().decode(decrypted)).toBe('Photo after rotation');
   });
 
@@ -460,7 +466,7 @@ describe('integration: epoch key rotation', () => {
     const memberBundle = createEpochKeyBundle(
       albumId,
       epoch2.epochId,
-      epoch2.readKey,
+      epoch2.epochSeed,
       epoch2.signKeypair,
       memberIdentity.ed25519.publicKey
     );
@@ -508,10 +514,10 @@ describe('integration: base64 serialization for API transport', () => {
   it('serializes epoch key bundle for API transport', () => {
     const epochKey = generateEpochKey(1);
 
-    // Simulate API payload
+    // Simulate API payload (now uses epochSeed for distribution)
     const apiPayload = {
       epochId: epochKey.epochId,
-      readKey: toBase64(epochKey.readKey),
+      epochSeed: toBase64(epochKey.epochSeed),
       signPubkey: toBase64(epochKey.signKeypair.publicKey),
     };
 
@@ -520,8 +526,8 @@ describe('integration: base64 serialization for API transport', () => {
     const parsed = JSON.parse(json);
 
     // Recover binary
-    const recoveredReadKey = fromBase64(parsed.readKey);
-    expect(recoveredReadKey).toEqual(epochKey.readKey);
+    const recoveredEpochSeed = fromBase64(parsed.epochSeed);
+    expect(recoveredEpochSeed).toEqual(epochKey.epochSeed);
   });
 });
 
@@ -549,17 +555,18 @@ describe('integration: complete photo lifecycle', () => {
       tags: ['vacation', '2024'],
     };
 
-    // Encrypt photo data (simulated 2MB file)
+    // Encrypt photo data (simulated 2MB file) using fullKey
     const photoData = sodium.randombytes_buf(2 * 1024 * 1024);
-    const encrypted = await encryptShard(photoData, epochKey.readKey, 1, 0);
+    const encrypted = await encryptShard(photoData, epochKey.fullKey, 1, 0, ShardTier.ORIGINAL);
 
-    // Encrypt and sign manifest
+    // Encrypt and sign manifest (also using fullKey for metadata)
     const manifestJson = JSON.stringify(photoMetadata);
     const manifestEncrypted = await encryptShard(
       new TextEncoder().encode(manifestJson),
-      epochKey.readKey,
+      epochKey.fullKey,
       1,
-      0
+      0,
+      ShardTier.ORIGINAL
     );
     const signature = signManifest(
       manifestEncrypted.ciphertext,
@@ -587,14 +594,14 @@ describe('integration: complete photo lifecycle', () => {
     expect(sigValid).toBe(true);
 
     // Decrypt manifest
-    const decryptedManifest = await decryptShard(receivedMeta, epochKey.readKey);
+    const decryptedManifest = await decryptShard(receivedMeta, epochKey.fullKey);
     const metadata = JSON.parse(new TextDecoder().decode(decryptedManifest));
     expect(metadata.filename).toBe('vacation.jpg');
     expect(metadata.tags).toContain('vacation');
 
     // === STEP 6: View Photo ===
     // Download and decrypt shard
-    const decryptedPhoto = await decryptShard(encrypted.ciphertext, epochKey.readKey);
+    const decryptedPhoto = await decryptShard(encrypted.ciphertext, epochKey.fullKey);
     expect(decryptedPhoto).toEqual(photoData);
 
     // Cleanup
@@ -603,7 +610,10 @@ describe('integration: complete photo lifecycle', () => {
     memzero(keys.accountKey);
     memzero(identity.ed25519.secretKey);
     memzero(identity.x25519.secretKey);
-    memzero(epochKey.readKey);
+    memzero(epochKey.epochSeed);
+    memzero(epochKey.thumbKey);
+    memzero(epochKey.previewKey);
+    memzero(epochKey.fullKey);
     memzero(epochKey.signKeypair.secretKey);
   });
 });

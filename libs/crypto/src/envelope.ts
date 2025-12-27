@@ -10,7 +10,8 @@
  * - EpochID:  4 bytes  Little-endian u32
  * - ShardID:  4 bytes  Little-endian u32
  * - Nonce:    24 bytes Random (MUST be unique per encryption)
- * - Reserved: 27 bytes MUST be zero (validated on decrypt)
+ * - Tier:     1 byte   ShardTier enum (1=thumb, 2=preview, 3=original)
+ * - Reserved: 26 bytes MUST be zero (validated on decrypt)
  */
 
 import sodium from 'libsodium-wrappers-sumo';
@@ -23,6 +24,7 @@ import {
   KEY_SIZE,
   NONCE_SIZE,
   MAX_SHARD_SIZE,
+  ShardTier,
   type ShardHeader,
   type EncryptedShard,
 } from './types';
@@ -37,10 +39,11 @@ const OFFSET_VERSION = 4;
 const OFFSET_EPOCH_ID = 5;
 const OFFSET_SHARD_ID = 9;
 const OFFSET_NONCE = 13;
-const OFFSET_RESERVED = 37;
+const OFFSET_TIER = 37;
+const OFFSET_RESERVED = 38;
 
-/** Reserved bytes length */
-const RESERVED_LENGTH = 27;
+/** Reserved bytes length (reduced by 1 for tier byte) */
+const RESERVED_LENGTH = 26;
 
 /**
  * Build a shard envelope header.
@@ -48,9 +51,10 @@ const RESERVED_LENGTH = 27;
  *
  * @param epochId - Epoch identifier
  * @param shardId - Shard index within photo
+ * @param tier - Shard content tier (thumb, preview, original)
  * @returns 64-byte header
  */
-function buildHeader(epochId: number, shardId: number): Uint8Array {
+function buildHeader(epochId: number, shardId: number, tier: ShardTier): Uint8Array {
   const header = new Uint8Array(ENVELOPE_HEADER_SIZE);
   const view = new DataView(header.buffer);
 
@@ -70,7 +74,10 @@ function buildHeader(epochId: number, shardId: number): Uint8Array {
   const nonce = sodium.randombytes_buf(NONCE_SIZE);
   header.set(nonce, OFFSET_NONCE);
 
-  // Reserved (27 bytes) - already zeroed from Uint8Array constructor
+  // Tier (1 byte)
+  header[OFFSET_TIER] = tier;
+
+  // Reserved (26 bytes) - already zeroed from Uint8Array constructor
 
   return header;
 }
@@ -113,6 +120,16 @@ function parseHeader(envelope: Uint8Array): ShardHeader {
     );
   }
 
+  // Parse and validate tier
+  const tierByte = header[OFFSET_TIER]!;
+  if (tierByte < ShardTier.THUMB || tierByte > ShardTier.ORIGINAL) {
+    throw new CryptoError(
+      `Invalid shard tier: ${tierByte}`,
+      CryptoErrorCode.INVALID_ENVELOPE
+    );
+  }
+  const tier = tierByte as ShardTier;
+
   // Validate reserved bytes are zero
   const reserved = header.slice(OFFSET_RESERVED, OFFSET_RESERVED + RESERVED_LENGTH);
   for (let i = 0; i < RESERVED_LENGTH; i++) {
@@ -130,6 +147,7 @@ function parseHeader(envelope: Uint8Array): ShardHeader {
     epochId: view.getUint32(OFFSET_EPOCH_ID, true),
     shardId: view.getUint32(OFFSET_SHARD_ID, true),
     nonce: header.slice(OFFSET_NONCE, OFFSET_NONCE + NONCE_SIZE),
+    tier,
     reserved,
   };
 }
@@ -141,21 +159,23 @@ function parseHeader(envelope: Uint8Array): ShardHeader {
  * This ensures header tampering is detected during decryption.
  *
  * @param data - Plaintext data to encrypt (max 6MB)
- * @param readKey - Epoch read key (32 bytes)
+ * @param tierKey - Tier-specific encryption key (32 bytes)
  * @param epochId - Current epoch ID
  * @param shardIndex - Shard index within photo
+ * @param tier - Content tier (thumb, preview, original)
  * @returns Encrypted shard with SHA256 hash
  * @throws CryptoError if inputs are invalid
  */
 export async function encryptShard(
   data: Uint8Array,
-  readKey: Uint8Array,
+  tierKey: Uint8Array,
   epochId: number,
-  shardIndex: number
+  shardIndex: number,
+  tier: ShardTier = ShardTier.ORIGINAL
 ): Promise<EncryptedShard> {
-  if (readKey.length !== KEY_SIZE) {
+  if (tierKey.length !== KEY_SIZE) {
     throw new CryptoError(
-      `ReadKey must be ${KEY_SIZE} bytes, got ${readKey.length}`,
+      `Tier key must be ${KEY_SIZE} bytes, got ${tierKey.length}`,
       CryptoErrorCode.INVALID_KEY_LENGTH
     );
   }
@@ -167,8 +187,8 @@ export async function encryptShard(
     );
   }
 
-  // Build header with fresh random nonce
-  const header = buildHeader(epochId, shardIndex);
+  // Build header with fresh random nonce and tier
+  const header = buildHeader(epochId, shardIndex, tier);
   const nonce = header.slice(OFFSET_NONCE, OFFSET_NONCE + NONCE_SIZE);
 
   // Encrypt with header as AAD
@@ -177,7 +197,7 @@ export async function encryptShard(
     header, // AAD - authenticated additional data
     null,   // nsec (unused in this algorithm)
     nonce,
-    readKey
+    tierKey
   );
 
   // Combine header + ciphertext
@@ -199,19 +219,20 @@ export async function encryptShard(
  *
  * Validates header, checks reserved bytes, then decrypts.
  * Header tampering is detected via AAD verification.
+ * Use peekHeader() first to determine the tier and select the correct key.
  *
  * @param envelope - Complete envelope (header + ciphertext)
- * @param readKey - Epoch read key (32 bytes)
+ * @param tierKey - Tier-specific decryption key (32 bytes)
  * @returns Decrypted plaintext
  * @throws CryptoError if decryption fails or envelope is invalid
  */
 export async function decryptShard(
   envelope: Uint8Array,
-  readKey: Uint8Array
+  tierKey: Uint8Array
 ): Promise<Uint8Array> {
-  if (readKey.length !== KEY_SIZE) {
+  if (tierKey.length !== KEY_SIZE) {
     throw new CryptoError(
-      `ReadKey must be ${KEY_SIZE} bytes, got ${readKey.length}`,
+      `Tier key must be ${KEY_SIZE} bytes, got ${tierKey.length}`,
       CryptoErrorCode.INVALID_KEY_LENGTH
     );
   }
@@ -235,7 +256,7 @@ export async function decryptShard(
       ciphertext,
       header,         // AAD
       headerData.nonce,
-      readKey
+      tierKey
     );
     return plaintext;
   } catch {
@@ -248,21 +269,23 @@ export async function decryptShard(
 
 /**
  * Parse shard header without decrypting.
- * Useful for routing shards to correct epoch key.
+ * Useful for routing shards to correct epoch key and tier key.
  *
  * @param envelope - Complete envelope
- * @returns Parsed header fields (epochId, shardId, nonce)
+ * @returns Parsed header fields (epochId, shardId, tier, nonce)
  * @throws CryptoError if header is malformed
  */
 export function peekHeader(envelope: Uint8Array): {
   epochId: number;
   shardId: number;
+  tier: ShardTier;
   nonce: Uint8Array;
 } {
   const header = parseHeader(envelope);
   return {
     epochId: header.epochId,
     shardId: header.shardId,
+    tier: header.tier,
     nonce: header.nonce,
   };
 }

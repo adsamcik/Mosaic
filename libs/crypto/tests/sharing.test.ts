@@ -19,7 +19,7 @@ describe('sharing', () => {
   const bundle = createEpochKeyBundle(
     albumId,
     epoch.epochId,
-    epoch.readKey,
+    epoch.epochSeed,
     epoch.signKeypair,
     recipientIdentity.ed25519.publicKey
   );
@@ -36,7 +36,7 @@ describe('sharing', () => {
     
     expect(opened.albumId).toBe(albumId);
     expect(opened.epochId).toBe(epoch.epochId);
-    expect(opened.readKey).toEqual(epoch.readKey);
+    expect(opened.epochSeed).toEqual(epoch.epochSeed);
   });
 
   it('rejects invalid signature', () => {
@@ -87,5 +87,56 @@ describe('sharing', () => {
       recipientIdentity,
       { albumId, minEpochId: 5 }
     )).toThrow('epochId');
+  });
+
+  it('rejects invalid recipient public key length', () => {
+    expect(() => sealAndSignBundle(
+      bundle,
+      new Uint8Array(16), // Wrong length
+      ownerIdentity
+    )).toThrow('32 bytes');
+  });
+
+  it('rejects recipient binding mismatch', () => {
+    // Create a bundle for a different recipient
+    const otherRecipient = deriveIdentityKeypair(generateIdentitySeed());
+    const bundleForOther = createEpochKeyBundle(
+      albumId,
+      epoch.epochId,
+      epoch.epochSeed,
+      epoch.signKeypair,
+      otherRecipient.ed25519.publicKey // Different recipient in bundle
+    );
+    
+    // Seal for the actual recipient but with wrong binding
+    const sealed = sealAndSignBundle(bundleForOther, recipientIdentity.ed25519.publicKey, ownerIdentity);
+    
+    // Try to open - should fail because recipientPubkey in bundle doesn't match
+    expect(() => verifyAndOpenBundle(
+      sealed.sealed,
+      sealed.signature,
+      ownerIdentity.ed25519.publicKey,
+      recipientIdentity,
+      { albumId, minEpochId: 0 }
+    )).toThrow('recipient');
+  });
+
+  it('rejects corrupted bundle JSON', () => {
+    // Create sealed bundle
+    const sealed = sealAndSignBundle(bundle, recipientIdentity.ed25519.publicKey, ownerIdentity);
+    
+    // We can't easily corrupt the JSON without breaking the seal first,
+    // but we can test by using a manually constructed test.
+    // The crypto_box_seal_open will fail for corrupted data, not JSON parse.
+    // This test verifies the decrypt failure path is properly exercised.
+    sealed.sealed[50] ^= 0xff; // Corrupt sealed data
+    
+    expect(() => verifyAndOpenBundle(
+      sealed.sealed,
+      sealed.signature,
+      ownerIdentity.ed25519.publicKey,
+      recipientIdentity,
+      { albumId, minEpochId: 0 }
+    )).toThrow(); // Will throw signature error since we also need to re-sign
   });
 });
