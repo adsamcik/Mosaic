@@ -1,3 +1,5 @@
+import { useAlbumCover } from '../../hooks/useAlbumCover';
+
 /** Album data with optional encrypted name fields */
 interface Album {
   id: string;
@@ -38,8 +40,9 @@ function getDisplayName(album: Album): string {
  * Displays a single album in the list with decrypted name support.
  *
  * Shows:
+ * - Cover thumbnail when available
+ * - Loading indicator while fetching
  * - Decrypted name when available
- * - Loading indicator while decrypting
  * - Placeholder name on error
  */
 export function AlbumCard({ album, onClick }: AlbumCardProps) {
@@ -47,10 +50,36 @@ export function AlbumCard({ album, onClick }: AlbumCardProps) {
   const isLoading = album.isDecrypting;
   const hasError = album.decryptionFailed;
 
+  // Fetch album cover thumbnail
+  const {
+    coverUrl,
+    isLoading: isCoverLoading,
+    error: coverError,
+  } = useAlbumCover(album.id);
+
   return (
     <button className="album-card" onClick={onClick} data-testid="album-card">
-      <div className="album-cover">
-        <span className="album-icon">📁</span>
+      <div className="album-cover" data-testid="album-cover">
+        {isCoverLoading ? (
+          <div className="album-cover-loading" data-testid="album-cover-loading">
+            <div className="cover-spinner" />
+          </div>
+        ) : coverUrl ? (
+          <img
+            src={coverUrl}
+            alt={displayName}
+            className="album-cover-image"
+            data-testid="album-cover-image"
+          />
+        ) : (
+          <span
+            className="album-icon"
+            data-testid="album-icon"
+            title={coverError ? 'Failed to load cover' : 'No photos'}
+          >
+            📁
+          </span>
+        )}
       </div>
       <div className="album-info">
         <h3 className="album-name" data-testid="album-name">

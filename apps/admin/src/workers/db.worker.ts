@@ -133,7 +133,9 @@ class DbWorker implements DbWorkerApi {
         lng REAL,
         tags TEXT,
         created_at TEXT,
-        updated_at TEXT
+        updated_at TEXT,
+        shard_ids TEXT,
+        epoch_id INTEGER
       );
       
       -- Indexes for common queries
@@ -208,8 +210,8 @@ class DbWorker implements DbWorkerApi {
 
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO photos 
-      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const m of manifests) {
@@ -230,6 +232,8 @@ class DbWorker implements DbWorkerApi {
           JSON.stringify(m.meta.tags),
           m.meta.createdAt,
           m.meta.updatedAt,
+          JSON.stringify(m.shardIds),
+          m.versionCreated,
         ]);
       }
     }
@@ -333,6 +337,8 @@ class DbWorker implements DbWorkerApi {
       });
       // Parse tags from JSON string
       obj['tags'] = JSON.parse((obj['tags'] as string) || '[]') as string[];
+      // Parse shardIds from JSON string
+      obj['shardIds'] = JSON.parse((obj['shardIds'] as string) || '[]') as string[];
       return obj as unknown as PhotoMeta;
     });
   }
