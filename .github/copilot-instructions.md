@@ -213,3 +213,47 @@ After completing each unit of work:
    - Example: `feat(crypto): implement XChaCha20-Poly1305 envelope encryption`
 
 Never leave work uncommitted. Each completed feature, fix, or refactor should result in a passing test suite and a clean commit.
+## Subagent Delegation
+
+Use subagents to parallelize and delegate complex work. Subagents are autonomous agents that can research, search, and execute multi-step tasks independently.
+
+### When to Use Subagents
+
+- **Research tasks** - Investigating unfamiliar APIs, libraries, or patterns
+- **Code search** - Finding implementations, usages, or patterns across the codebase
+- **Multi-file analysis** - Understanding how components interact across the project
+- **Parallel investigations** - When multiple independent research tasks are needed
+- **Complex refactoring research** - Mapping all usages before making changes
+
+### Subagent Guidelines
+
+1. **Be specific** - Provide detailed prompts with clear objectives and expected outputs
+2. **Define scope** - Specify whether the agent should research only or also write code
+3. **Request structured output** - Tell the agent exactly what information to return
+4. **Trust but verify** - Agent outputs are generally reliable but should be validated
+
+### Example Delegation Patterns
+
+```
+# Research pattern
+"Search the codebase for all usages of EpochKey. List each file, 
+the function/method using it, and whether it's being created, 
+read, or modified. Return a structured summary."
+
+# Multi-component analysis
+"Analyze how the upload flow works end-to-end: from the Upload 
+component through the worker to the API. Document the data 
+transformations at each step. Do not write code."
+
+# Cross-cutting search
+"Find all places where we handle authentication errors. Include 
+frontend components, API clients, and backend middleware. Report 
+file paths and line numbers for each occurrence."
+```
+
+### Benefits
+
+- **Efficiency** - Delegate research while focusing on implementation
+- **Thoroughness** - Agents systematically explore without missing edge cases
+- **Parallelism** - Multiple investigations can inform a cohesive solution
+- **Context gathering** - Build comprehensive understanding before coding
