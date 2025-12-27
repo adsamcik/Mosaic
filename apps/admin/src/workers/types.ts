@@ -17,6 +17,10 @@ export interface PhotoMeta {
   tags: string[];
   createdAt: string;
   updatedAt: string;
+  /** Shard IDs for this photo's encrypted data */
+  shardIds: string[];
+  /** Epoch ID for key lookup */
+  epochId: number;
 }
 
 /** Encrypted manifest record from server */

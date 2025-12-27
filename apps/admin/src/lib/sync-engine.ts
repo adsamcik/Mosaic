@@ -181,15 +181,37 @@ class SyncEngine extends EventTarget {
   }
 
   /**
-   * Clear cached epoch keys (call on logout)
-   */
-  clearCache(): void {
-    epochKeyCache.clear();
-  }
+ * Clear cached epoch keys (call on logout)
+ */
+clearCache(): void {
+  epochKeyCache.clear();
+}
 
-  private dispatchSyncEvent(type: SyncEventType, detail: SyncEventDetail): void {
-    this.dispatchEvent(new CustomEvent(type, { detail }));
+/**
+ * Get epoch read key from cache (if available)
+ * Returns null if key not cached - caller should trigger sync first
+ */
+getEpochKey(albumId: string, epochId: number): Uint8Array | null {
+  const albumKeys = epochKeyCache.get(albumId);
+  return albumKeys?.get(epochId) ?? null;
+}
+
+/**
+ * Store an epoch read key in the cache
+ * Used when unwrapping keys after sync
+ */
+setEpochKey(albumId: string, epochId: number, readKey: Uint8Array): void {
+  let albumKeys = epochKeyCache.get(albumId);
+  if (!albumKeys) {
+    albumKeys = new Map();
+    epochKeyCache.set(albumId, albumKeys);
   }
+  albumKeys.set(epochId, readKey);
+}
+
+private dispatchSyncEvent(type: SyncEventType, detail: SyncEventDetail): void {
+  this.dispatchEvent(new CustomEvent(type, { detail }));
+}
 }
 
 /** Global sync engine instance */

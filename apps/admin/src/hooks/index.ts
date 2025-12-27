@@ -4,3 +4,4 @@ export { useUpload } from './useUpload';
 export { useSession } from './useSession';
 export { useSync } from './useSync';
 export type { SyncStatus, SyncProgress, UseSyncResult } from './useSync';
+export { useEpochKey, useAlbumEpochKeys } from './useEpochKeys';

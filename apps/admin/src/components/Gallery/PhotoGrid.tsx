@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { usePhotos } from '../../hooks/usePhotos';
+import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { PhotoThumbnail } from './PhotoThumbnail';
 
 /** Number of columns in the grid */
@@ -20,6 +21,7 @@ interface PhotoGridProps {
 export function PhotoGrid({ albumId }: PhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const { photos, isLoading, error } = usePhotos(albumId);
+  const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
 
   const rowCount = Math.ceil(photos.length / COLUMNS);
 
@@ -30,7 +32,7 @@ export function PhotoGrid({ albumId }: PhotoGridProps) {
     overscan: 5,
   });
 
-  if (isLoading) {
+  if (isLoading || keysLoading) {
     return (
       <div className="photo-grid-loading">
         <div className="loading-spinner" />
@@ -81,9 +83,21 @@ export function PhotoGrid({ albumId }: PhotoGridProps) {
           >
             {Array.from({ length: COLUMNS }).map((_, colIndex) => {
               const photo = photos[virtualRow.index * COLUMNS + colIndex];
-              return photo ? (
-                <PhotoThumbnail key={photo.id} photo={photo} />
-              ) : null;
+              if (!photo) return null;
+              // Get epoch read key for this photo
+              const epochReadKey = epochKeys.get(photo.epochId);
+              return epochReadKey ? (
+                <PhotoThumbnail
+                  key={photo.id}
+                  photo={photo}
+                  epochReadKey={epochReadKey}
+                />
+              ) : (
+                <PhotoThumbnail
+                  key={photo.id}
+                  photo={photo}
+                />
+              );
             })}
           </div>
         ))}
