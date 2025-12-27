@@ -26,42 +26,46 @@ Write-Host ""
 Push-Location $ProjectRoot
 
 try {
-    # Build if requested or if running for first time
-    if ($Build) {
-        Write-Info "📦 Building test containers..."
-        docker compose -f docker-compose.test.yml build
-        if ($LASTEXITCODE -ne 0) { throw "Build failed" }
-    }
+    $exitCode = 0
+    $needsDocker = $Suite -eq 'all' -or $Suite -eq 'api' -or $Suite -eq 'e2e'
 
-    # Start infrastructure
-    Write-Info "🚀 Starting test infrastructure..."
-    docker compose -f docker-compose.test.yml up -d postgres backend frontend
-    if ($LASTEXITCODE -ne 0) { throw "Failed to start infrastructure" }
+    # Only start Docker infrastructure if needed
+    if ($needsDocker) {
+        # Build if requested or if running for first time
+        if ($Build) {
+            Write-Info "📦 Building test containers..."
+            docker compose -f docker-compose.test.yml build
+            if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+        }
 
-    # Wait for services to be healthy
-    Write-Info "⏳ Waiting for services to be healthy..."
-    $maxWait = 60
-    $waited = 0
-    while ($waited -lt $maxWait) {
-        $healthy = docker compose -f docker-compose.test.yml ps --format json | 
-            ConvertFrom-Json | 
-            Where-Object { $_.Health -eq "healthy" }
-        
-        if ($healthy.Count -ge 3) {
-            Write-Success "✅ All services healthy"
-            break
+        # Start infrastructure
+        Write-Info "🚀 Starting test infrastructure..."
+        docker compose -f docker-compose.test.yml up -d postgres backend frontend
+        if ($LASTEXITCODE -ne 0) { throw "Failed to start infrastructure" }
+
+        # Wait for services to be healthy
+        Write-Info "⏳ Waiting for services to be healthy..."
+        $maxWait = 60
+        $waited = 0
+        while ($waited -lt $maxWait) {
+            $healthy = docker compose -f docker-compose.test.yml ps --format json | 
+                ConvertFrom-Json | 
+                Where-Object { $_.Health -eq "healthy" }
+            
+            if ($healthy.Count -ge 3) {
+                Write-Success "✅ All services healthy"
+                break
+            }
+            
+            Start-Sleep -Seconds 2
+            $waited += 2
+            Write-Host "." -NoNewline
         }
         
-        Start-Sleep -Seconds 2
-        $waited += 2
-        Write-Host "." -NoNewline
+        if ($waited -ge $maxWait) {
+            throw "Services did not become healthy in time"
+        }
     }
-    
-    if ($waited -ge $maxWait) {
-        throw "Services did not become healthy in time"
-    }
-
-    $exitCode = 0
 
     # Run API integration tests
     if ($Suite -eq 'all' -or $Suite -eq 'api') {
@@ -96,10 +100,22 @@ try {
         Push-Location "$ProjectRoot/libs/crypto"
         npm test -- run
         if ($LASTEXITCODE -ne 0) { 
-            Write-Err "❌ Unit tests failed"
+            Write-Err "❌ Crypto unit tests failed"
             $exitCode = 1
         } else {
-            Write-Success "✅ Unit tests passed"
+            Write-Success "✅ Crypto unit tests passed"
+        }
+        Pop-Location
+
+        Write-Info ""
+        Write-Info "🧩 Running admin frontend tests..."
+        Push-Location "$ProjectRoot/apps/admin"
+        npm test -- run
+        if ($LASTEXITCODE -ne 0) { 
+            Write-Err "❌ Admin tests failed"
+            $exitCode = 1
+        } else {
+            Write-Success "✅ Admin tests passed"
         }
         Pop-Location
     }
@@ -114,11 +130,11 @@ try {
     exit $exitCode
 }
 finally {
-    if (-not $Keep) {
+    if ($needsDocker -and -not $Keep) {
         Write-Info ""
         Write-Info "🧹 Cleaning up..."
         docker compose -f docker-compose.test.yml down -v
-    } else {
+    } elseif ($needsDocker -and $Keep) {
         Write-Warn "⚠️  Keeping containers running (use 'docker compose -f docker-compose.test.yml down -v' to clean up)"
     }
     Pop-Location
