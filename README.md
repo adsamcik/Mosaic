@@ -56,13 +56,55 @@ mosaic/
 └── scripts/            # Deployment scripts
 ```
 
+## Docker Deployment
+
+### Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/mosaic.git
+cd mosaic
+
+# Configure environment
+cp .env.example .env
+# Edit .env and set POSTGRES_PASSWORD
+
+# Build and start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f
+```
+
+The application will be available at `http://localhost:8080`.
+
+### Production Deployment
+
+For production, you should:
+
+1. Set a strong `POSTGRES_PASSWORD` in `.env`
+2. Put a reverse proxy (Caddy, Traefik, nginx) in front for TLS termination
+3. Configure your reverse proxy to pass the `Remote-User` header for authentication
+
+### Development with Docker
+
+Use the development compose file for a PostgreSQL database while running the app locally:
+
+```bash
+# Start only the database
+docker compose -f docker-compose.dev.yml up -d
+
+# Optionally include pgAdmin for DB management
+docker compose -f docker-compose.dev.yml --profile tools up -d
+```
+
 ## Development
 
 ### Prerequisites
 
 - Node.js 20+
 - .NET 10 SDK
-- PostgreSQL 16+
+- PostgreSQL 16+ (or use Docker)
 - pnpm (recommended)
 
 ### Getting Started
@@ -71,6 +113,9 @@ mosaic/
 # Clone the repository
 git clone https://github.com/your-org/mosaic.git
 cd mosaic
+
+# Start PostgreSQL (optional - use Docker)
+docker compose -f docker-compose.dev.yml up -d
 
 # Install frontend dependencies
 cd apps/admin

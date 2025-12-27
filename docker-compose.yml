@@ -1,0 +1,82 @@
+# Mosaic - Zero-Knowledge Encrypted Photo Gallery
+# Docker Compose deployment configuration
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:17-alpine
+    container_name: mosaic-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mosaic
+      POSTGRES_USER: mosaic
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mosaic-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mosaic -d mosaic"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # .NET Backend API
+  backend:
+    build:
+      context: ./apps/backend/Mosaic.Backend
+      dockerfile: Dockerfile
+    container_name: mosaic-backend
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: "Host=postgres;Database=mosaic;Username=mosaic;Password=${POSTGRES_PASSWORD:-changeme}"
+      Storage__Path: /app/data/blobs
+      Auth__TrustedProxies__0: "172.16.0.0/12"
+      Auth__TrustedProxies__1: "10.0.0.0/8"
+      Auth__TrustedProxies__2: "192.168.0.0/16"
+      Quota__DefaultMaxBytes: ${DEFAULT_QUOTA_BYTES:-10737418240}
+    volumes:
+      - blob_data:/app/data/blobs
+    networks:
+      - mosaic-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # React Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+    container_name: mosaic-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:8080"
+    networks:
+      - mosaic-internal
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  blob_data:
+    driver: local
+
+networks:
+  mosaic-internal:
+    driver: bridge

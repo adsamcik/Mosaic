@@ -1,0 +1,60 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node.js
+**/node_modules/
+**/npm-debug.log
+**/yarn-error.log
+**/.npm/
+
+# Build outputs
+**/dist/
+**/build/
+**/coverage/
+**/.next/
+**/out/
+
+# .NET
+**/bin/
+**/obj/
+**/*.user
+**/*.suo
+**/.vs/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Test files
+**/tests/
+**/*.test.ts
+**/*.spec.ts
+**/vitest.config.ts
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
