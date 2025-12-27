@@ -41,7 +41,9 @@ vi.mock('../src/hooks/useMemberManagement', () => ({
     isInviting: false,
     inviteError: null,
     removeMember: vi.fn().mockResolvedValue(undefined),
+    removeMemberWithRotation: vi.fn().mockResolvedValue(undefined),
     isRemoving: false,
+    removalStep: null,
     lookupUser: vi.fn().mockResolvedValue({ id: 'user-4', identityPubkey: 'abc123' }),
     isLookingUp: false,
     isOwner: true,
@@ -368,6 +370,184 @@ describe('InviteMemberDialog', () => {
       const dialog = getByTestId('invite-member-dialog') as HTMLElement;
       expect(dialog.getAttribute('aria-modal')).toBe('true');
       cleanup();
+    });
+  });
+});
+
+describe('MemberList - Remove Member Dialog', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  describe('showing remove dialog', () => {
+    it('shows confirmation dialog when remove button is clicked', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      let root: ReturnType<typeof createRoot>;
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+      });
+
+      // Click remove button for user-2 (editor)
+      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      expect(removeButton).not.toBeNull();
+      
+      await act(async () => {
+        removeButton.click();
+      });
+
+      // Dialog should appear
+      const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
+      expect(dialog).not.toBeNull();
+
+      await act(async () => {
+        root!.unmount();
+      });
+      container.remove();
+    });
+
+    it('shows member name in confirmation dialog', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      let root: ReturnType<typeof createRoot>;
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+      });
+
+      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      await act(async () => {
+        removeButton.click();
+      });
+
+      const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
+      expect(dialog?.textContent).toContain('User user-2');
+
+      await act(async () => {
+        root!.unmount();
+      });
+      container.remove();
+    });
+
+    it('shows warning about key rotation in dialog', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      let root: ReturnType<typeof createRoot>;
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+      });
+
+      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      await act(async () => {
+        removeButton.click();
+      });
+
+      const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
+      expect(dialog?.textContent).toContain('rotate the encryption keys');
+
+      await act(async () => {
+        root!.unmount();
+      });
+      container.remove();
+    });
+  });
+
+  describe('dialog actions', () => {
+    it('closes dialog when cancel is clicked', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      let root: ReturnType<typeof createRoot>;
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+      });
+
+      // Open dialog
+      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      await act(async () => {
+        removeButton.click();
+      });
+
+      // Click cancel
+      const cancelButton = document.querySelector('[data-testid="cancel-remove-button"]') as HTMLButtonElement;
+      await act(async () => {
+        cancelButton.click();
+      });
+
+      // Dialog should be closed
+      const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
+      expect(dialog).toBeNull();
+
+      await act(async () => {
+        root!.unmount();
+      });
+      container.remove();
+    });
+
+    it('closes dialog when backdrop is clicked', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      let root: ReturnType<typeof createRoot>;
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+      });
+
+      // Open dialog
+      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      await act(async () => {
+        removeButton.click();
+      });
+
+      // Click backdrop
+      const backdrop = document.querySelector('[data-testid="remove-dialog-backdrop"]') as HTMLElement;
+      await act(async () => {
+        backdrop.click();
+      });
+
+      // Dialog should be closed
+      const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
+      expect(dialog).toBeNull();
+
+      await act(async () => {
+        root!.unmount();
+      });
+      container.remove();
+    });
+  });
+
+  describe('accessibility', () => {
+    it('remove dialog has proper aria attributes', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      let root: ReturnType<typeof createRoot>;
+      await act(async () => {
+        root = createRoot(container);
+        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+      });
+
+      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      await act(async () => {
+        removeButton.click();
+      });
+
+      const dialog = document.querySelector('[data-testid="remove-member-dialog"]') as HTMLElement;
+      expect(dialog.getAttribute('aria-labelledby')).toBe('remove-member-title');
+      expect(dialog.getAttribute('aria-modal')).toBe('true');
+
+      await act(async () => {
+        root!.unmount();
+      });
+      container.remove();
     });
   });
 });

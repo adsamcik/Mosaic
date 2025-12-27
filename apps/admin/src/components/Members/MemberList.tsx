@@ -3,10 +3,15 @@
  *
  * Displays list of album members with roles and management actions.
  * Owner can invite new members and remove existing ones.
+ * Member removal triggers epoch key rotation for security.
  */
 
-import { useState } from 'react';
-import { useMemberManagement, type MemberInfo } from '../../hooks/useMemberManagement';
+import { useState, useCallback } from 'react';
+import {
+  useMemberManagement,
+  type MemberInfo,
+  type RemovalProgressStep,
+} from '../../hooks/useMemberManagement';
 import { InviteMemberDialog } from './InviteMemberDialog';
 
 interface MemberListProps {
@@ -16,6 +21,24 @@ interface MemberListProps {
   isOpen: boolean;
   /** Called when panel should close */
   onClose: () => void;
+}
+
+/**
+ * Get display label for removal progress step
+ */
+function getProgressLabel(step: RemovalProgressStep): string {
+  switch (step) {
+    case 'removing':
+      return 'Removing member...';
+    case 'rotating':
+      return 'Rotating keys...';
+    case 'clearing':
+      return 'Clearing caches...';
+    case 'complete':
+      return 'Done!';
+    default:
+      return 'Processing...';
+  }
 }
 
 /**
@@ -56,7 +79,7 @@ function getRoleBadgeClass(role: string): string {
  * Displays album members in a side panel with:
  * - Member list with roles
  * - Invite button (for owner)
- * - Remove buttons (for owner)
+ * - Remove buttons (for owner) with confirmation and key rotation
  */
 export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
   const {
@@ -66,30 +89,44 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
     inviteMember,
     isInviting,
     inviteError,
-    removeMember,
+    removeMemberWithRotation,
     isRemoving,
+    removalStep,
     lookupUser,
     isLookingUp,
     isOwner,
   } = useMemberManagement(albumId);
 
   const [showInviteDialog, setShowInviteDialog] = useState(false);
-  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
+  const [showRemoveDialog, setShowRemoveDialog] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<MemberInfo | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
-  const handleRemove = async (member: MemberInfo) => {
-    if (!confirm(`Remove ${member.displayName} from this album?`)) {
-      return;
-    }
+  const handleRemoveClick = useCallback((member: MemberInfo) => {
+    setMemberToRemove(member);
+    setRemoveError(null);
+    setShowRemoveDialog(true);
+  }, []);
 
-    setRemovingUserId(member.userId);
+  const handleConfirmRemove = useCallback(async () => {
+    if (!memberToRemove) return;
+
     try {
-      await removeMember(member.userId);
-    } catch {
-      // Error is shown via UI
-    } finally {
-      setRemovingUserId(null);
+      await removeMemberWithRotation(memberToRemove.userId);
+      setShowRemoveDialog(false);
+      setMemberToRemove(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to remove member';
+      setRemoveError(message);
     }
-  };
+  }, [memberToRemove, removeMemberWithRotation]);
+
+  const handleCancelRemove = useCallback(() => {
+    if (isRemoving) return; // Prevent cancel during removal
+    setShowRemoveDialog(false);
+    setMemberToRemove(null);
+    setRemoveError(null);
+  }, [isRemoving]);
 
   const handleInvite = async (recipientId: string, role: 'editor' | 'viewer') => {
     await inviteMember(recipientId, role);
@@ -169,14 +206,12 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
                     {isOwner && member.role !== 'owner' && (
                       <button
                         className="button-secondary button-small remove-button"
-                        onClick={() => handleRemove(member)}
-                        disabled={isRemoving && removingUserId === member.userId}
+                        onClick={() => handleRemoveClick(member)}
+                        disabled={isRemoving}
                         aria-label={`Remove ${member.displayName}`}
                         data-testid={`remove-member-${member.userId}`}
                       >
-                        {isRemoving && removingUserId === member.userId
-                          ? 'Removing...'
-                          : 'Remove'}
+                        Remove
                       </button>
                     )}
                   </li>
@@ -192,6 +227,74 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
           )}
         </div>
       </aside>
+
+      {/* Remove Member Confirmation Dialog */}
+      {showRemoveDialog && memberToRemove && (
+        <div
+          className="dialog-backdrop"
+          onClick={handleCancelRemove}
+          role="presentation"
+          data-testid="remove-dialog-backdrop"
+        >
+          <dialog
+            className="dialog remove-member-dialog"
+            open
+            aria-labelledby="remove-member-title"
+            aria-modal="true"
+            data-testid="remove-member-dialog"
+          >
+            <h2 id="remove-member-title" className="dialog-title">
+              Remove Member
+            </h2>
+
+            <div className="dialog-content">
+              <p>
+                Are you sure you want to remove{' '}
+                <strong>{memberToRemove.displayName}</strong> from this album?
+              </p>
+              <p className="dialog-warning">
+                ⚠️ This will rotate the encryption keys. The removed member will
+                not be able to access any new photos added after removal.
+              </p>
+
+              {isRemoving && removalStep && (
+                <div className="removal-progress" data-testid="removal-progress">
+                  <div className="loading-spinner" />
+                  <span>{getProgressLabel(removalStep)}</span>
+                </div>
+              )}
+
+              {removeError && (
+                <div className="dialog-error" data-testid="remove-error">
+                  <span className="error-icon">⚠️</span>
+                  <span>{removeError}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={handleCancelRemove}
+                disabled={isRemoving}
+                data-testid="cancel-remove-button"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button-danger"
+                onClick={handleConfirmRemove}
+                disabled={isRemoving}
+                data-testid="confirm-remove-button"
+              >
+                {isRemoving ? 'Removing...' : 'Remove Member'}
+              </button>
+            </div>
+          </dialog>
+        </div>
+      )}
 
       <InviteMemberDialog
         isOpen={showInviteDialog}

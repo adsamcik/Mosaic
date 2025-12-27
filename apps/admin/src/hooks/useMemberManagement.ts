@@ -9,6 +9,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { getApi, toBase64, fromBase64 } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
+import {
+  rotateEpoch,
+  clearPhotoCaches,
+  EpochRotationError,
+} from '../lib/epoch-rotation-service';
 import type { AlbumMember, UserPublic, CreateEpochKeyRequest } from '../lib/api-types';
 
 /** Error thrown by member management operations */
@@ -45,12 +50,21 @@ export enum MemberManagementErrorCode {
   ALREADY_MEMBER = 'ALREADY_MEMBER',
   /** No epoch keys available */
   NO_EPOCH_KEYS = 'NO_EPOCH_KEYS',
+  /** Failed to rotate epoch key */
+  ROTATION_FAILED = 'ROTATION_FAILED',
 }
 
 /** Member with additional display info */
 export interface MemberInfo extends AlbumMember {
   displayName: string;
 }
+
+/** Removal progress step for UI feedback */
+export type RemovalProgressStep = 
+  | 'removing'       // Removing member from server
+  | 'rotating'       // Rotating epoch keys
+  | 'clearing'       // Clearing caches
+  | 'complete';      // Operation complete
 
 /** Hook return type */
 export interface UseMemberManagementReturn {
@@ -71,10 +85,17 @@ export interface UseMemberManagementReturn {
   isInviting: boolean;
   /** Error during invite */
   inviteError: string | null;
-  /** Remove a member */
+  /** Remove a member (without key rotation) */
   removeMember: (userId: string) => Promise<void>;
+  /** Remove a member and rotate epoch keys */
+  removeMemberWithRotation: (
+    userId: string,
+    onProgress?: (step: RemovalProgressStep) => void
+  ) => Promise<void>;
   /** Whether remove is in progress */
   isRemoving: boolean;
+  /** Current removal progress step */
+  removalStep: RemovalProgressStep | null;
   /** Lookup user by ID or pubkey */
   lookupUser: (query: string) => Promise<UserPublic>;
   /** Whether lookup is in progress */
@@ -96,6 +117,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
   const [isInviting, setIsInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [removalStep, setRemovalStep] = useState<RemovalProgressStep | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -316,6 +338,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
   const removeMember = useCallback(
     async (userId: string) => {
       setIsRemoving(true);
+      setRemovalStep('removing');
       try {
         const api = getApi();
         await api.removeAlbumMember(albumId, userId);
@@ -331,6 +354,72 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
         );
       } finally {
         setIsRemoving(false);
+        setRemovalStep(null);
+      }
+    },
+    [albumId]
+  );
+
+  /**
+   * Remove a member and rotate epoch keys.
+   *
+   * This is the secure removal path that:
+   * 1. Removes the member from the album
+   * 2. Generates a fresh epoch key (CRITICAL: completely random)
+   * 3. Distributes the new key to all remaining members
+   * 4. Clears local caches
+   *
+   * Use this when you want to ensure the removed member
+   * cannot access any future photos.
+   */
+  const removeMemberWithRotation = useCallback(
+    async (
+      userId: string,
+      onProgress?: (step: RemovalProgressStep) => void
+    ) => {
+      setIsRemoving(true);
+      setRemovalStep('removing');
+      onProgress?.('removing');
+
+      try {
+        const api = getApi();
+
+        // Step 1: Remove member
+        await api.removeAlbumMember(albumId, userId);
+        setMembers((prev) => prev.filter((m) => m.userId !== userId));
+
+        // Step 2: Rotate epoch keys
+        setRemovalStep('rotating');
+        onProgress?.('rotating');
+        await rotateEpoch(albumId);
+
+        // Step 3: Clear local caches
+        setRemovalStep('clearing');
+        onProgress?.('clearing');
+        await clearPhotoCaches(albumId);
+
+        // Step 4: Complete
+        setRemovalStep('complete');
+        onProgress?.('complete');
+      } catch (err) {
+        // Wrap epoch rotation errors
+        if (err instanceof EpochRotationError) {
+          throw new MemberManagementError(
+            `Failed to rotate keys: ${err.message}`,
+            MemberManagementErrorCode.ROTATION_FAILED,
+            err
+          );
+        }
+
+        const error = err instanceof Error ? err : new Error(String(err));
+        throw new MemberManagementError(
+          `Failed to remove member: ${error.message}`,
+          MemberManagementErrorCode.REMOVE_FAILED,
+          error
+        );
+      } finally {
+        setIsRemoving(false);
+        setRemovalStep(null);
       }
     },
     [albumId]
@@ -355,7 +444,9 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
     isInviting,
     inviteError,
     removeMember,
+    removeMemberWithRotation,
     isRemoving,
+    removalStep,
     lookupUser,
     isLookingUp,
     isOwner,

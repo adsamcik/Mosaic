@@ -1,0 +1,273 @@
+/**
+ * Epoch Rotation Service
+ *
+ * Handles epoch key rotation after member removal.
+ * Generates fresh keys and distributes to remaining members.
+ *
+ * SECURITY: New epoch keys MUST be completely fresh random bytes.
+ * NEVER derive from previous epoch keys.
+ */
+
+import { getApi, toBase64, fromBase64 } from './api';
+import { getCryptoClient } from './crypto-client';
+import { clearAlbumKeys, setEpochKey, type EpochKeyBundle } from './epoch-key-store';
+import { fetchAndUnwrapEpochKeys } from './epoch-key-service';
+import type { AlbumMember, CreateEpochKeyRequest } from './api-types';
+
+/** Error thrown when epoch rotation fails */
+export class EpochRotationError extends Error {
+  constructor(
+    message: string,
+    public readonly code: EpochRotationErrorCode,
+    public readonly cause?: Error
+  ) {
+    super(message);
+    this.name = 'EpochRotationError';
+  }
+}
+
+/** Epoch rotation error codes */
+export enum EpochRotationErrorCode {
+  /** Failed to get album info */
+  ALBUM_FETCH_FAILED = 'ALBUM_FETCH_FAILED',
+  /** Failed to get members list */
+  MEMBERS_FETCH_FAILED = 'MEMBERS_FETCH_FAILED',
+  /** Identity not derived */
+  IDENTITY_NOT_DERIVED = 'IDENTITY_NOT_DERIVED',
+  /** No members to distribute keys to */
+  NO_RECIPIENTS = 'NO_RECIPIENTS',
+  /** Failed to generate new epoch key */
+  KEY_GENERATION_FAILED = 'KEY_GENERATION_FAILED',
+  /** Failed to seal key bundle */
+  SEAL_FAILED = 'SEAL_FAILED',
+  /** Failed to call rotate API */
+  ROTATE_FAILED = 'ROTATE_FAILED',
+  /** Recipient has no identity pubkey */
+  RECIPIENT_NO_PUBKEY = 'RECIPIENT_NO_PUBKEY',
+}
+
+/** Result of epoch rotation */
+export interface EpochRotationResult {
+  /** New epoch ID */
+  newEpochId: number;
+  /** Number of members who received the new key */
+  recipientCount: number;
+}
+
+/** Progress callback for rotation steps */
+export type RotationProgressCallback = (step: RotationStep) => void;
+
+/** Rotation progress steps */
+export enum RotationStep {
+  /** Fetching album information */
+  FETCHING_ALBUM = 'FETCHING_ALBUM',
+  /** Generating new epoch key */
+  GENERATING_KEY = 'GENERATING_KEY',
+  /** Fetching remaining members */
+  FETCHING_MEMBERS = 'FETCHING_MEMBERS',
+  /** Sealing keys for members */
+  SEALING_KEYS = 'SEALING_KEYS',
+  /** Calling rotate API */
+  CALLING_API = 'CALLING_API',
+  /** Updating local cache */
+  UPDATING_CACHE = 'UPDATING_CACHE',
+  /** Rotation complete */
+  COMPLETE = 'COMPLETE',
+}
+
+/**
+ * Rotate the epoch key for an album.
+ *
+ * This function:
+ * 1. Gets current epoch ID from album
+ * 2. Generates completely fresh random epoch key (CRITICAL for security)
+ * 3. Fetches remaining members list
+ * 4. Seals new key bundle to each member's identity pubkey
+ * 5. Calls rotate API with all bundles
+ * 6. Clears old keys and caches new epoch key
+ *
+ * @param albumId - Album to rotate keys for
+ * @param onProgress - Optional callback for progress updates
+ * @returns New epoch ID and recipient count
+ * @throws EpochRotationError if rotation fails
+ */
+export async function rotateEpoch(
+  albumId: string,
+  onProgress?: RotationProgressCallback
+): Promise<EpochRotationResult> {
+  const api = getApi();
+  const crypto = await getCryptoClient();
+
+  // Step 1: Get album to determine current epoch ID
+  onProgress?.(RotationStep.FETCHING_ALBUM);
+  let currentEpochId: number;
+  try {
+    const album = await api.getAlbum(albumId);
+    currentEpochId = album.currentEpochId;
+  } catch (err) {
+    throw new EpochRotationError(
+      'Failed to get album information',
+      EpochRotationErrorCode.ALBUM_FETCH_FAILED,
+      err instanceof Error ? err : undefined
+    );
+  }
+
+  // Step 2: Generate fresh epoch key
+  // SECURITY: This MUST be completely random, never derived from previous keys
+  onProgress?.(RotationStep.GENERATING_KEY);
+  const newEpochId = currentEpochId + 1;
+  let newEpochKey: { readKey: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array };
+  try {
+    newEpochKey = await crypto.generateEpochKey(newEpochId);
+  } catch (err) {
+    throw new EpochRotationError(
+      'Failed to generate new epoch key',
+      EpochRotationErrorCode.KEY_GENERATION_FAILED,
+      err instanceof Error ? err : undefined
+    );
+  }
+
+  // Step 3: Get remaining members
+  onProgress?.(RotationStep.FETCHING_MEMBERS);
+  let members: AlbumMember[];
+  try {
+    members = await api.listAlbumMembers(albumId);
+  } catch (err) {
+    throw new EpochRotationError(
+      'Failed to fetch remaining members',
+      EpochRotationErrorCode.MEMBERS_FETCH_FAILED,
+      err instanceof Error ? err : undefined
+    );
+  }
+
+  if (members.length === 0) {
+    throw new EpochRotationError(
+      'No members to distribute keys to',
+      EpochRotationErrorCode.NO_RECIPIENTS
+    );
+  }
+
+  // Step 4: Ensure identity is derived
+  const identityPubkey = await crypto.getIdentityPublicKey();
+  if (!identityPubkey) {
+    try {
+      await crypto.deriveIdentity();
+    } catch (err) {
+      throw new EpochRotationError(
+        'Identity not derived - please log in again',
+        EpochRotationErrorCode.IDENTITY_NOT_DERIVED,
+        err instanceof Error ? err : undefined
+      );
+    }
+  }
+  const signerPubkey = await crypto.getIdentityPublicKey();
+  if (!signerPubkey) {
+    throw new EpochRotationError(
+      'Identity not derived - please log in again',
+      EpochRotationErrorCode.IDENTITY_NOT_DERIVED
+    );
+  }
+
+  // Step 5: Seal key bundle to each member
+  onProgress?.(RotationStep.SEALING_KEYS);
+  const epochKeys: CreateEpochKeyRequest[] = [];
+
+  for (const member of members) {
+    // Get recipient's identity pubkey
+    const recipientPubkey = member.user?.identityPubkey;
+    if (!recipientPubkey) {
+      throw new EpochRotationError(
+        `Member ${member.userId} has no identity public key`,
+        EpochRotationErrorCode.RECIPIENT_NO_PUBKEY
+      );
+    }
+
+    try {
+      const recipientPubkeyBytes = fromBase64(recipientPubkey);
+      
+      const sealed = await crypto.createEpochKeyBundle(
+        albumId,
+        newEpochId,
+        newEpochKey.readKey,
+        newEpochKey.signPublicKey,
+        newEpochKey.signSecretKey,
+        recipientPubkeyBytes
+      );
+
+      epochKeys.push({
+        recipientId: member.userId,
+        epochId: newEpochId,
+        encryptedKeyBundle: toBase64(sealed.encryptedBundle),
+        ownerSignature: toBase64(sealed.signature),
+        sharerPubkey: toBase64(signerPubkey),
+        signPubkey: toBase64(newEpochKey.signPublicKey),
+      });
+    } catch (err) {
+      throw new EpochRotationError(
+        `Failed to seal key bundle for member ${member.userId}`,
+        EpochRotationErrorCode.SEAL_FAILED,
+        err instanceof Error ? err : undefined
+      );
+    }
+  }
+
+  // Step 6: Call rotate API
+  onProgress?.(RotationStep.CALLING_API);
+  try {
+    await api.rotateEpoch(albumId, newEpochId, { epochKeys });
+  } catch (err) {
+    throw new EpochRotationError(
+      'Failed to rotate epoch on server',
+      EpochRotationErrorCode.ROTATE_FAILED,
+      err instanceof Error ? err : undefined
+    );
+  }
+
+  // Step 7: Update local cache
+  onProgress?.(RotationStep.UPDATING_CACHE);
+
+  // Clear old epoch keys from store
+  clearAlbumKeys(albumId);
+
+  // Cache the new epoch key for current user
+  const newBundle: EpochKeyBundle = {
+    epochId: newEpochId,
+    readKey: newEpochKey.readKey,
+    signKeypair: {
+      publicKey: newEpochKey.signPublicKey,
+      secretKey: newEpochKey.signSecretKey,
+    },
+  };
+  setEpochKey(albumId, newBundle);
+
+  onProgress?.(RotationStep.COMPLETE);
+
+  return {
+    newEpochId,
+    recipientCount: epochKeys.length,
+  };
+}
+
+/**
+ * Clear photo caches for an album after key rotation.
+ *
+ * This ensures old cached data (encrypted with old keys) is cleared.
+ * New photos will be fetched and decrypted with new keys.
+ *
+ * @param albumId - Album to clear caches for
+ */
+export async function clearPhotoCaches(albumId: string): Promise<void> {
+  // Clear epoch keys (already done in rotateEpoch, but safe to call again)
+  clearAlbumKeys(albumId);
+
+  // Note: Photo cache clearing would be done by the database worker
+  // For now, the sync engine will refetch on next sync
+  // TODO: Add db.clearAlbumPhotos(albumId) when db-client supports it
+
+  // Refresh epoch keys from server for current user
+  try {
+    await fetchAndUnwrapEpochKeys(albumId);
+  } catch {
+    // Ignore errors - will be fetched on next access
+  }
+}
