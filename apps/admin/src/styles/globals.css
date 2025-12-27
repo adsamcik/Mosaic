@@ -255,6 +255,27 @@ body {
 .album-name {
   font-size: 1rem;
   margin-bottom: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.album-name-loading {
+  color: var(--color-text-muted);
+}
+
+.loading-dots {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.album-name-error {
+  font-size: 0.75rem;
+  cursor: help;
 }
 
 .album-count {

@@ -3,6 +3,7 @@ import { getCryptoClient, closeCryptoClient } from './crypto-client';
 import { closeGeoClient } from './geo-client';
 import { getApi, toBase64, fromBase64 } from './api';
 import { clearAllEpochKeys } from './epoch-key-store';
+import { clearAllCachedMetadata } from './album-metadata-service';
 import type { User } from './api-types';
 
 /** Idle timeout in milliseconds (30 minutes) */
@@ -127,6 +128,9 @@ class SessionManager {
 
     // Remove activity listeners
     this.detachIdleListeners();
+
+    // Clear cached metadata from memory
+    clearAllCachedMetadata();
 
     // Clear epoch keys from memory
     clearAllEpochKeys();
