@@ -1,0 +1,178 @@
+using Microsoft.EntityFrameworkCore;
+using Mosaic.Backend.Data.Entities;
+
+namespace Mosaic.Backend.Data;
+
+public class MosaicDbContext : DbContext
+{
+    public MosaicDbContext(DbContextOptions<MosaicDbContext> options) : base(options) { }
+
+    public DbSet<User> Users => Set<User>();
+    public DbSet<Album> Albums => Set<Album>();
+    public DbSet<AlbumMember> AlbumMembers => Set<AlbumMember>();
+    public DbSet<EpochKey> EpochKeys => Set<EpochKey>();
+    public DbSet<Manifest> Manifests => Set<Manifest>();
+    public DbSet<Shard> Shards => Set<Shard>();
+    public DbSet<ManifestShard> ManifestShards => Set<ManifestShard>();
+    public DbSet<UserQuota> UserQuotas => Set<UserQuota>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // User
+        modelBuilder.Entity<User>(e =>
+        {
+            e.HasIndex(u => u.AuthSub).IsUnique();
+        });
+
+        // Album
+        modelBuilder.Entity<Album>(e =>
+        {
+            e.HasOne(a => a.Owner)
+                .WithMany(u => u.OwnedAlbums)
+                .HasForeignKey(a => a.OwnerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(a => a.OwnerId);
+        });
+
+        // AlbumMember
+        modelBuilder.Entity<AlbumMember>(e =>
+        {
+            e.HasKey(am => new { am.AlbumId, am.UserId });
+
+            e.HasOne(am => am.Album)
+                .WithMany(a => a.Members)
+                .HasForeignKey(am => am.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(am => am.User)
+                .WithMany(u => u.Memberships)
+                .HasForeignKey(am => am.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(am => am.Inviter)
+                .WithMany()
+                .HasForeignKey(am => am.InvitedBy)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasIndex(am => am.UserId);
+            e.HasIndex(am => am.AlbumId)
+                .HasFilter("revoked_at IS NULL");
+        });
+
+        // EpochKey
+        modelBuilder.Entity<EpochKey>(e =>
+        {
+            e.HasOne(ek => ek.Album)
+                .WithMany(a => a.EpochKeys)
+                .HasForeignKey(ek => ek.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(ek => ek.Recipient)
+                .WithMany(u => u.EpochKeys)
+                .HasForeignKey(ek => ek.RecipientId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(ek => new { ek.AlbumId, ek.RecipientId, ek.EpochId }).IsUnique();
+            e.HasIndex(ek => new { ek.RecipientId, ek.AlbumId });
+        });
+
+        // Manifest
+        modelBuilder.Entity<Manifest>(e =>
+        {
+            e.HasOne(m => m.Album)
+                .WithMany(a => a.Manifests)
+                .HasForeignKey(m => m.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(m => new { m.AlbumId, m.VersionCreated });
+        });
+
+        // Shard
+        modelBuilder.Entity<Shard>(e =>
+        {
+            e.HasOne(s => s.Uploader)
+                .WithMany()
+                .HasForeignKey(s => s.UploaderId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasIndex(s => s.PendingExpiresAt)
+                .HasFilter("status = 'PENDING'");
+
+            e.Property(s => s.Status)
+                .HasConversion<string>();
+        });
+
+        // ManifestShard
+        modelBuilder.Entity<ManifestShard>(e =>
+        {
+            e.HasKey(ms => new { ms.ManifestId, ms.ShardId });
+            e.HasIndex(ms => ms.ShardId);
+
+            e.HasOne(ms => ms.Manifest)
+                .WithMany(m => m.ManifestShards)
+                .HasForeignKey(ms => ms.ManifestId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(ms => ms.Shard)
+                .WithMany(s => s.ManifestShards)
+                .HasForeignKey(ms => ms.ShardId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // UserQuota
+        modelBuilder.Entity<UserQuota>(e =>
+        {
+            e.HasKey(q => q.UserId);
+            e.HasOne(q => q.User)
+                .WithOne(u => u.Quota)
+                .HasForeignKey<UserQuota>(q => q.UserId);
+        });
+
+        // Use snake_case for PostgreSQL
+        foreach (var entity in modelBuilder.Model.GetEntityTypes())
+        {
+            var tableName = entity.GetTableName();
+            if (tableName != null)
+            {
+                entity.SetTableName(ToSnakeCase(tableName));
+            }
+
+            foreach (var property in entity.GetProperties())
+            {
+                property.SetColumnName(ToSnakeCase(property.Name));
+            }
+
+            foreach (var key in entity.GetKeys())
+            {
+                var keyName = key.GetName();
+                if (keyName != null)
+                {
+                    key.SetName(ToSnakeCase(keyName));
+                }
+            }
+
+            foreach (var foreignKey in entity.GetForeignKeys())
+            {
+                var fkName = foreignKey.GetConstraintName();
+                if (fkName != null)
+                {
+                    foreignKey.SetConstraintName(ToSnakeCase(fkName));
+                }
+            }
+
+            foreach (var index in entity.GetIndexes())
+            {
+                var indexName = index.GetDatabaseName();
+                if (indexName != null)
+                {
+                    index.SetDatabaseName(ToSnakeCase(indexName));
+                }
+            }
+        }
+    }
+
+    private static string ToSnakeCase(string name) =>
+        string.Concat(name.Select((c, i) =>
+            i > 0 && char.IsUpper(c) ? "_" + char.ToLower(c) : char.ToLower(c).ToString()));
+}

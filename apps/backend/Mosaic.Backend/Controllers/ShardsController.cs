@@ -1,0 +1,89 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Mosaic.Backend.Data;
+using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Services;
+
+namespace Mosaic.Backend.Controllers;
+
+[ApiController]
+[Route("api/shards")]
+public class ShardsController : ControllerBase
+{
+    private readonly MosaicDbContext _db;
+    private readonly IStorageService _storage;
+
+    public ShardsController(MosaicDbContext db, IStorageService storage)
+    {
+        _db = db;
+        _storage = storage;
+    }
+
+    private async Task<User?> GetUser()
+    {
+        var authSub = HttpContext.Items["AuthSub"] as string;
+        if (authSub == null) return null;
+        return await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+    }
+
+    /// <summary>
+    /// Download an encrypted shard
+    /// </summary>
+    [HttpGet("{shardId}")]
+    public async Task<IActionResult> Download(Guid shardId)
+    {
+        var user = await GetUser();
+        if (user == null) return Unauthorized();
+
+        var shard = await _db.Shards.FindAsync(shardId);
+        if (shard == null) return NotFound();
+        if (shard.Status != ShardStatus.ACTIVE) return NotFound();
+
+        // Verify user has access to at least one album containing this shard
+        var hasAccess = await _db.ManifestShards
+            .Where(ms => ms.ShardId == shardId)
+            .AnyAsync(ms => _db.AlbumMembers.Any(am =>
+                am.AlbumId == ms.Manifest.AlbumId &&
+                am.UserId == user.Id &&
+                am.RevokedAt == null));
+
+        if (!hasAccess) return Forbid();
+
+        var stream = await _storage.OpenReadAsync(shard.StorageKey);
+        return File(stream, "application/octet-stream");
+    }
+
+    /// <summary>
+    /// Get shard metadata
+    /// </summary>
+    [HttpGet("{shardId}/meta")]
+    public async Task<IActionResult> GetMeta(Guid shardId)
+    {
+        var user = await GetUser();
+        if (user == null) return Unauthorized();
+
+        var shard = await _db.Shards.FindAsync(shardId);
+        if (shard == null) return NotFound();
+
+        // Only uploader or users with access can view metadata
+        if (shard.UploaderId != user.Id)
+        {
+            var hasAccess = await _db.ManifestShards
+                .Where(ms => ms.ShardId == shardId)
+                .AnyAsync(ms => _db.AlbumMembers.Any(am =>
+                    am.AlbumId == ms.Manifest.AlbumId &&
+                    am.UserId == user.Id &&
+                    am.RevokedAt == null));
+
+            if (!hasAccess) return Forbid();
+        }
+
+        return Ok(new
+        {
+            shard.Id,
+            shard.SizeBytes,
+            shard.Status,
+            shard.StatusUpdatedAt
+        });
+    }
+}
