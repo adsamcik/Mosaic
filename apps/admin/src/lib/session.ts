@@ -14,7 +14,109 @@ const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart', 'scroll'] as cons
 /** Salt storage key in localStorage */
 const USER_SALT_KEY = 'mosaic:userSalt';
 
+/** PBKDF2 iterations for salt encryption key derivation */
+const SALT_ENCRYPTION_ITERATIONS = 100000;
+
 type SessionListener = () => void;
+
+/**
+ * Error thrown when salt decryption fails (wrong password on new device)
+ */
+export class SaltDecryptionError extends Error {
+  constructor(message: string = 'Failed to decrypt salt - incorrect password') {
+    super(message);
+    this.name = 'SaltDecryptionError';
+  }
+}
+
+/**
+ * Derive a key for encrypting/decrypting the user salt.
+ * Uses PBKDF2 with username as salt (since we don't have the user salt yet).
+ * This solves the chicken-egg problem: we need a key before we have the salt.
+ */
+async function deriveSaltEncryptionKey(
+  password: string,
+  username: string
+): Promise<CryptoKey> {
+  // Import password as a key
+  const passwordKey = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+
+  // Use username as the salt for PBKDF2
+  const usernameSalt = new TextEncoder().encode(username);
+
+  // Derive AES-GCM key
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: usernameSalt,
+      iterations: SALT_ENCRYPTION_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    passwordKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+/**
+ * Encrypt the user salt with a password-derived key.
+ * Returns the encrypted salt and nonce as base64 strings.
+ */
+export async function encryptSalt(
+  salt: Uint8Array,
+  password: string,
+  username: string
+): Promise<{ encryptedSalt: string; saltNonce: string }> {
+  const key = await deriveSaltEncryptionKey(password, username);
+
+  // Generate random nonce (12 bytes for AES-GCM)
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+
+  // Encrypt the salt
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
+    key,
+    salt as Uint8Array<ArrayBuffer>
+  );
+
+  return {
+    encryptedSalt: toBase64(new Uint8Array(encrypted)),
+    saltNonce: toBase64(nonce),
+  };
+}
+
+/**
+ * Decrypt the user salt with a password-derived key.
+ * Throws SaltDecryptionError if decryption fails (wrong password).
+ */
+export async function decryptSalt(
+  encryptedSaltBase64: string,
+  saltNonceBase64: string,
+  password: string,
+  username: string
+): Promise<Uint8Array> {
+  const key = await deriveSaltEncryptionKey(password, username);
+  const encryptedSalt = fromBase64(encryptedSaltBase64);
+  const nonce = fromBase64(saltNonceBase64);
+
+  try {
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
+      key,
+      encryptedSalt as Uint8Array<ArrayBuffer>
+    );
+    return new Uint8Array(decrypted);
+  } catch {
+    throw new SaltDecryptionError();
+  }
+}
 
 /**
  * Session Manager
@@ -59,7 +161,9 @@ class SessionManager {
 
   /**
    * Log in with password
-   * Initializes crypto and database workers
+   * Initializes crypto and database workers.
+   * Syncs user salt with server for multi-device support.
+   * @throws SaltDecryptionError if server has salt but decryption fails (wrong password)
    */
   async login(password: string): Promise<void> {
     // Request persistent storage for OPFS
@@ -74,17 +178,39 @@ class SessionManager {
     const api = getApi();
     this._currentUser = await api.getCurrentUser();
 
-    // Get or generate user salt
-    // Salt is stored locally and used for Argon2id key derivation
+    // Multi-device salt synchronization:
+    // 1. Check if server has encrypted salt
+    // 2. If yes: decrypt with password+username key, use for main key derivation
+    // 3. If no: use local salt or generate new, encrypt and upload to server
     let userSalt: Uint8Array;
-    const storedSalt = localStorage.getItem(USER_SALT_KEY);
-    
-    if (storedSalt) {
-      userSalt = fromBase64(storedSalt);
-    } else {
-      // First login on this device - generate a new salt
-      userSalt = crypto.getRandomValues(new Uint8Array(16));
+    const username = this._currentUser.authSub;
+
+    if (this._currentUser.encryptedSalt && this._currentUser.saltNonce) {
+      // Server has salt - decrypt it (new device or returning user)
+      // If decryption fails, password is wrong - throw error
+      userSalt = await decryptSalt(
+        this._currentUser.encryptedSalt,
+        this._currentUser.saltNonce,
+        password,
+        username
+      );
+      // Store locally for faster subsequent logins
       localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+    } else {
+      // Server has no salt - use local or generate new
+      const storedSalt = localStorage.getItem(USER_SALT_KEY);
+      
+      if (storedSalt) {
+        userSalt = fromBase64(storedSalt);
+      } else {
+        // First login ever - generate a new salt
+        userSalt = crypto.getRandomValues(new Uint8Array(16));
+        localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+      }
+
+      // Encrypt and upload salt to server for multi-device sync
+      const { encryptedSalt, saltNonce } = await encryptSalt(userSalt, password, username);
+      await api.updateCurrentUser({ encryptedSalt, saltNonce });
     }
 
     // Account salt is derived from user ID for deterministic derivation

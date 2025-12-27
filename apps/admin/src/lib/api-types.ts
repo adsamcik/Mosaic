@@ -31,6 +31,10 @@ export interface User {
   authSub: string;
   identityPubkey?: string;
   createdAt: string;
+  /** Base64-encoded encrypted user salt for multi-device sync */
+  encryptedSalt?: string;
+  /** Base64-encoded nonce used for salt encryption (12 bytes for AES-GCM) */
+  saltNonce?: string;
 }
 
 export interface UserPublic {
@@ -40,6 +44,10 @@ export interface UserPublic {
 
 export interface UpdateUserRequest {
   identityPubkey?: string;
+  /** Base64-encoded encrypted user salt */
+  encryptedSalt?: string;
+  /** Base64-encoded nonce for salt encryption */
+  saltNonce?: string;
 }
 
 // =============================================================================

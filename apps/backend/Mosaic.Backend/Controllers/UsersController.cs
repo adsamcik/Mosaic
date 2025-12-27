@@ -61,6 +61,8 @@ public class UsersController : ControllerBase
             user.AuthSub,
             user.IdentityPubkey,
             user.CreatedAt,
+            EncryptedSalt = user.EncryptedSalt != null ? Convert.ToBase64String(user.EncryptedSalt) : null,
+            SaltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null,
             Quota = quota != null ? new
             {
                 quota.MaxStorageBytes,
@@ -69,23 +71,64 @@ public class UsersController : ControllerBase
         });
     }
 
-    public record UpdateUserRequest(string IdentityPubkey);
+    public record UpdateUserRequest(
+        string? IdentityPubkey = null,
+        string? EncryptedSalt = null,
+        string? SaltNonce = null
+    );
 
     /// <summary>
-    /// Update user identity public key
+    /// Update user profile (identity pubkey and/or encrypted salt)
     /// </summary>
     [HttpPut("me")]
     public async Task<IActionResult> UpdateMe([FromBody] UpdateUserRequest request)
     {
         var user = await GetOrCreateUser();
 
-        // Only allow setting identity pubkey once (or if empty)
-        if (!string.IsNullOrEmpty(user.IdentityPubkey) && user.IdentityPubkey != request.IdentityPubkey)
+        // Update identity pubkey if provided
+        if (request.IdentityPubkey != null)
         {
-            return BadRequest(new { error = "Identity pubkey already set" });
+            // Only allow setting identity pubkey once (or if empty)
+            if (!string.IsNullOrEmpty(user.IdentityPubkey) && user.IdentityPubkey != request.IdentityPubkey)
+            {
+                return BadRequest(new { error = "Identity pubkey already set" });
+            }
+            user.IdentityPubkey = request.IdentityPubkey;
         }
 
-        user.IdentityPubkey = request.IdentityPubkey;
+        // Update encrypted salt if provided
+        if (request.EncryptedSalt != null && request.SaltNonce != null)
+        {
+            try
+            {
+                var encryptedSaltBytes = Convert.FromBase64String(request.EncryptedSalt);
+                var saltNonceBytes = Convert.FromBase64String(request.SaltNonce);
+
+                // Validate lengths: encrypted salt should be 16 bytes + 16 bytes auth tag = 32 bytes
+                // Nonce should be 12 bytes for AES-GCM
+                if (saltNonceBytes.Length != 12)
+                {
+                    return BadRequest(new { error = "Invalid salt nonce length, expected 12 bytes" });
+                }
+                if (encryptedSaltBytes.Length < 16)
+                {
+                    return BadRequest(new { error = "Invalid encrypted salt length" });
+                }
+
+                user.EncryptedSalt = encryptedSaltBytes;
+                user.SaltNonce = saltNonceBytes;
+            }
+            catch (FormatException)
+            {
+                return BadRequest(new { error = "Invalid base64 encoding for salt or nonce" });
+            }
+        }
+        else if (request.EncryptedSalt != null || request.SaltNonce != null)
+        {
+            // Both must be provided together
+            return BadRequest(new { error = "Both encryptedSalt and saltNonce must be provided together" });
+        }
+
         await _db.SaveChangesAsync();
 
         return Ok(new
@@ -93,7 +136,9 @@ public class UsersController : ControllerBase
             user.Id,
             user.AuthSub,
             user.IdentityPubkey,
-            user.CreatedAt
+            user.CreatedAt,
+            EncryptedSalt = user.EncryptedSalt != null ? Convert.ToBase64String(user.EncryptedSalt) : null,
+            SaltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null
         });
     }
 

@@ -81,6 +81,9 @@ results/
 *.sqlite
 *.sqlite3
 
+# Blob storage (development)
+apps/backend/Mosaic.Backend/Data/blobs/
+
 # Docker
 docker-compose.override.yml
 
