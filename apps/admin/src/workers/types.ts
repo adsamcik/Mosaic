@@ -1,0 +1,197 @@
+/**
+ * Shared types for worker communication
+ */
+
+/** Photo metadata stored in local SQLite */
+export interface PhotoMeta {
+  id: string;
+  assetId: string;
+  albumId: string;
+  filename: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  takenAt?: string;
+  lat?: number;
+  lng?: number;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Encrypted manifest record from server */
+export interface ManifestRecord {
+  id: string;
+  albumId: string;
+  versionCreated: number;
+  isDeleted: boolean;
+  encryptedMeta: Uint8Array;
+  signature: string;
+  signerPubkey: string;
+  shardIds: string[];
+}
+
+/** Decrypted manifest with photo metadata */
+export interface DecryptedManifest {
+  id: string;
+  albumId: string;
+  versionCreated: number;
+  isDeleted: boolean;
+  meta: PhotoMeta;
+  shardIds: string[];
+}
+
+/** Geographic point for map clustering */
+export interface GeoPoint {
+  id: string;
+  lat: number;
+  lng: number;
+}
+
+/** Map bounding box */
+export interface Bounds {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
+/** Album state in local database */
+export interface AlbumState {
+  id: string;
+  currentVersion: number;
+}
+
+/**
+ * Database Worker API
+ * Manages SQLite-WASM database with encrypted persistence to OPFS
+ */
+export interface DbWorkerApi {
+  /**
+   * Initialize the database with a session key for encryption
+   * @param sessionKey - 32-byte key for database encryption
+   */
+  init(sessionKey: Uint8Array): Promise<void>;
+
+  /**
+   * Close the database and clear session key
+   */
+  close(): Promise<void>;
+
+  // Album state management
+  getAlbumVersion(albumId: string): Promise<number>;
+  setAlbumVersion(albumId: string, version: number): Promise<void>;
+
+  // Manifest operations
+  insertManifests(manifests: DecryptedManifest[]): Promise<void>;
+  deleteManifest(id: string): Promise<void>;
+
+  // Photo queries
+  getPhotos(albumId: string, limit: number, offset: number): Promise<PhotoMeta[]>;
+  getPhotoCount(albumId: string): Promise<number>;
+  searchPhotos(albumId: string, query: string): Promise<PhotoMeta[]>;
+  getPhotosForMap(albumId: string, bounds: Bounds): Promise<GeoPoint[]>;
+  getPhotoById(id: string): Promise<PhotoMeta | null>;
+}
+
+/** Encrypted shard result */
+export interface EncryptedShard {
+  ciphertext: Uint8Array;
+  sha256: string;
+}
+
+/**
+ * Crypto Worker API
+ * Handles all cryptographic operations in a dedicated worker
+ */
+export interface CryptoWorkerApi {
+  /**
+   * Initialize crypto with user credentials
+   * Derives L0 → L1 keys and unwraps L2 account key
+   */
+  init(
+    password: string,
+    userSalt: Uint8Array,
+    accountSalt: Uint8Array
+  ): Promise<void>;
+
+  /**
+   * Clear all keys from memory
+   */
+  clear(): Promise<void>;
+
+  /**
+   * Get session key for database encryption
+   */
+  getSessionKey(): Promise<Uint8Array>;
+
+  /**
+   * Encrypt a photo shard
+   */
+  encryptShard(
+    data: Uint8Array,
+    readKey: Uint8Array,
+    epochId: number,
+    shardIndex: number
+  ): Promise<EncryptedShard>;
+
+  /**
+   * Decrypt a photo shard
+   */
+  decryptShard(envelope: Uint8Array, readKey: Uint8Array): Promise<Uint8Array>;
+
+  /**
+   * Decrypt manifest metadata
+   */
+  decryptManifest(
+    encryptedMeta: Uint8Array,
+    readKey: Uint8Array
+  ): Promise<PhotoMeta>;
+
+  /**
+   * Verify manifest signature
+   */
+  verifyManifest(
+    manifest: Uint8Array,
+    signature: Uint8Array,
+    pubKey: Uint8Array
+  ): Promise<boolean>;
+}
+
+/** GeoJSON Feature for map clustering */
+export interface GeoFeature {
+  type: 'Feature';
+  geometry: {
+    type: 'Point';
+    coordinates: [number, number]; // [lng, lat]
+  };
+  properties: {
+    id: string;
+    cluster?: boolean;
+    cluster_id?: number;
+    point_count?: number;
+  };
+}
+
+/**
+ * Geo Worker API
+ * Handles map clustering with Supercluster
+ */
+export interface GeoWorkerApi {
+  /**
+   * Load points into the clusterer
+   */
+  load(points: GeoFeature[]): void;
+
+  /**
+   * Get clusters for a bounding box at a zoom level
+   * @param bbox - [westLng, southLat, eastLng, northLat]
+   * @param zoom - Map zoom level (0-20)
+   */
+  getClusters(bbox: [number, number, number, number], zoom: number): GeoFeature[];
+
+  /**
+   * Get leaf points for a cluster
+   */
+  getLeaves(clusterId: number, limit: number, offset: number): GeoFeature[];
+}

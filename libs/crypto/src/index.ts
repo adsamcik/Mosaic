@@ -45,6 +45,82 @@ export {
   ARGON2_PRESETS,
 } from './argon2-params';
 
+// Re-export utils
+export {
+  concat,
+  constantTimeEqual,
+  sha256,
+  sha256Sync,
+  memzero,
+  randomBytes,
+  toBase64,
+  fromBase64,
+  toBytes,
+  fromBytes,
+} from './utils';
+
+// Re-export keychain
+export {
+  deriveKeys,
+  unwrapAccountKey,
+  rewrapAccountKey,
+  generateSalts,
+} from './keychain';
+
+// Re-export keybox
+export {
+  wrapKey,
+  unwrapKey,
+  wrapSymmetricKey,
+  unwrapSymmetricKey,
+} from './keybox';
+
+// Re-export envelope
+export {
+  encryptShard,
+  decryptShard,
+  peekHeader,
+  parseShardHeader,
+  verifyShard,
+} from './envelope';
+
+// Re-export identity
+export {
+  deriveIdentityKeypair,
+  ed25519PubToX25519,
+  ed25519SecretToX25519,
+  generateIdentitySeed,
+  generateEd25519Keypair,
+  isValidEd25519PublicKey,
+} from './identity';
+
+// Re-export signer
+export {
+  signManifest,
+  verifyManifest,
+  signShard,
+  verifyShard as verifyShardSignature,
+  signWithContext,
+  verifyWithContext,
+} from './signer';
+
+// Re-export epochs
+export {
+  generateEpochKey,
+  serializeEpochKeyPublic,
+  wrapEpochKey,
+  unwrapEpochKey,
+  rotateEpochKey,
+  isValidEpochKey,
+} from './epochs';
+
+// Re-export sharing
+export {
+  sealAndSignBundle,
+  verifyAndOpenBundle,
+  createEpochKeyBundle,
+} from './sharing';
+
 import type {
   DerivedKeys,
   EpochKey,

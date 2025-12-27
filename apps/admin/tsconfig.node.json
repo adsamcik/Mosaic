@@ -10,11 +10,7 @@
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "moduleDetection": "force",
-
-    /* Composite for references */
-    "composite": true,
-    "outDir": "./dist-node",
-    "declaration": true,
+    "noEmit": true,
 
     /* Linting */
     "strict": true,

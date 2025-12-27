@@ -4,6 +4,7 @@ node_modules/
 
 # Build outputs
 dist/
+dist-node/
 build/
 out/
 bin/
@@ -11,6 +12,7 @@ obj/
 *.dll
 *.exe
 *.pdb
+*.tsbuildinfo
 
 # .NET
 *.user

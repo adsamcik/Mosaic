@@ -31,8 +31,9 @@ export default defineConfig({
     sourcemap: true,
   },
 
-  // Optimize libsodium-wrappers
+  // Dependency optimization
   optimizeDeps: {
     include: ['libsodium-wrappers'],
+    exclude: ['sql.js'],
   },
 });
