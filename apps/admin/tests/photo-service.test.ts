@@ -11,6 +11,10 @@ import {
   clearPhotoCache,
   getCacheStats,
   PhotoAssemblyError,
+  loadThumbnailFromBase64,
+  releaseThumbnail,
+  clearThumbnailCache,
+  getThumbnailCacheStats,
 } from '../src/lib/photo-service';
 
 // Mock dependencies
@@ -320,5 +324,122 @@ describe('PhotoAssemblyError', () => {
   it('is instanceof Error', () => {
     const error = new PhotoAssemblyError('photo-123', new Error('test'));
     expect(error).toBeInstanceOf(Error);
+  });
+});
+
+describe('Thumbnail Loading', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearPhotoCache();
+    blobUrlCounter = 0;
+    mockBlobUrls.clear();
+
+    // Mock URL methods
+    globalThis.URL.createObjectURL = vi.fn((blob: Blob) => {
+      const url = `blob:mock-${++blobUrlCounter}`;
+      mockBlobUrls.set(url, blob);
+      return url;
+    });
+
+    globalThis.URL.revokeObjectURL = vi.fn((url: string) => {
+      mockBlobUrls.delete(url);
+    });
+  });
+
+  afterEach(() => {
+    globalThis.URL.createObjectURL = originalCreateObjectURL;
+    globalThis.URL.revokeObjectURL = originalRevokeObjectURL;
+  });
+
+  describe('loadThumbnailFromBase64', () => {
+    it('decodes base64 and returns blob URL', () => {
+      // Base64 of "JPEG" (4 bytes)
+      const base64 = 'SlBFRw==';
+      
+      const result = loadThumbnailFromBase64('photo-1', base64);
+      
+      expect(result.blobUrl).toMatch(/^blob:mock-/);
+      expect(result.mimeType).toBe('image/jpeg');
+      expect(result.size).toBe(4);
+    });
+
+    it('returns cached result on second call', () => {
+      const base64 = 'SlBFRw==';
+      
+      const result1 = loadThumbnailFromBase64('photo-2', base64);
+      const result2 = loadThumbnailFromBase64('photo-2', base64);
+      
+      expect(result1.blobUrl).toBe(result2.blobUrl);
+      // createObjectURL should only be called once
+      expect(globalThis.URL.createObjectURL).toHaveBeenCalledTimes(1);
+    });
+
+    it('creates separate cache entries for different photos', () => {
+      const base64 = 'SlBFRw==';
+      
+      const result1 = loadThumbnailFromBase64('photo-a', base64);
+      const result2 = loadThumbnailFromBase64('photo-b', base64);
+      
+      expect(result1.blobUrl).not.toBe(result2.blobUrl);
+      expect(globalThis.URL.createObjectURL).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('releaseThumbnail', () => {
+    it('decreases ref count without error', () => {
+      const base64 = 'SlBFRw==';
+      loadThumbnailFromBase64('photo-release', base64);
+      
+      // Should not throw
+      expect(() => releaseThumbnail('photo-release')).not.toThrow();
+    });
+
+    it('does not throw for non-existent photo', () => {
+      expect(() => releaseThumbnail('nonexistent')).not.toThrow();
+    });
+  });
+
+  describe('clearThumbnailCache', () => {
+    it('clears all cached thumbnails', () => {
+      const base64 = 'SlBFRw==';
+      loadThumbnailFromBase64('photo-clear-1', base64);
+      loadThumbnailFromBase64('photo-clear-2', base64);
+      
+      clearThumbnailCache();
+      
+      const stats = getThumbnailCacheStats();
+      expect(stats.entries).toBe(0);
+      expect(stats.sizeBytes).toBe(0);
+    });
+
+    it('revokes blob URLs when clearing', () => {
+      const base64 = 'SlBFRw==';
+      loadThumbnailFromBase64('photo-revoke', base64);
+      
+      clearThumbnailCache();
+      
+      expect(globalThis.URL.revokeObjectURL).toHaveBeenCalled();
+    });
+  });
+
+  describe('getThumbnailCacheStats', () => {
+    it('returns initial empty stats', () => {
+      clearThumbnailCache();
+      const stats = getThumbnailCacheStats();
+      
+      expect(stats.entries).toBe(0);
+      expect(stats.sizeBytes).toBe(0);
+      expect(stats.maxSizeBytes).toBeGreaterThan(0);
+    });
+
+    it('tracks cache size after loading thumbnails', () => {
+      const base64 = 'SlBFRw==';
+      loadThumbnailFromBase64('photo-stats', base64);
+      
+      const stats = getThumbnailCacheStats();
+      
+      expect(stats.entries).toBe(1);
+      expect(stats.sizeBytes).toBe(4); // "JPEG" is 4 bytes
+    });
   });
 });

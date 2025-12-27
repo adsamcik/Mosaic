@@ -2,6 +2,22 @@ import { openDB, type IDBPDatabase } from 'idb';
 import * as tus from 'tus-js-client';
 import { getCryptoClient } from './crypto-client';
 import { TUS_ENDPOINT } from './api';
+import {
+  generateThumbnail,
+  isSupportedImageType,
+} from './thumbnail-generator';
+
+/**
+ * Convert Uint8Array to base64 string
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(binary);
+}
 
 /** Chunk size for splitting files (6MB) */
 const CHUNK_SIZE = 6 * 1024 * 1024;
@@ -20,6 +36,12 @@ export interface UploadTask {
   progress: number;
   completedShards: Array<{ index: number; shardId: string }>;
   error?: string;
+  /** Generated thumbnail base64 (set during upload) */
+  thumbnailBase64?: string;
+  /** Thumbnail width */
+  thumbWidth?: number;
+  /** Thumbnail height */
+  thumbHeight?: number;
 }
 
 /** Persisted task state (for resume after reload) */
@@ -32,6 +54,12 @@ interface PersistedTask {
   totalChunks: number;
   completedShards: Array<{ index: number; shardId: string }>;
   status: string;
+  /** Base64-encoded thumbnail (generated once, persisted for resume) */
+  thumbnailBase64?: string;
+  /** Thumbnail width */
+  thumbWidth?: number;
+  /** Thumbnail height */
+  thumbHeight?: number;
 }
 
 /** IndexedDB schema */
@@ -179,6 +207,30 @@ class UploadQueue {
     try {
       task.status = 'uploading';
       await this.updatePersistedTask(task.id, { status: 'uploading' });
+
+      // Generate thumbnail if not already done (resume support)
+      if (!task.thumbnailBase64 && isSupportedImageType(task.file.type)) {
+        try {
+          const thumbResult = await generateThumbnail(task.file);
+          const thumbnailBase64 = uint8ArrayToBase64(thumbResult.data);
+          const thumbWidth = thumbResult.width;
+          const thumbHeight = thumbResult.height;
+
+          task.thumbnailBase64 = thumbnailBase64;
+          task.thumbWidth = thumbWidth;
+          task.thumbHeight = thumbHeight;
+
+          // Persist thumbnail for resume support
+          await this.updatePersistedTask(task.id, {
+            thumbnailBase64,
+            thumbWidth,
+            thumbHeight,
+          });
+        } catch (thumbError) {
+          // Log but don't fail upload if thumbnail generation fails
+          console.warn('Thumbnail generation failed:', thumbError);
+        }
+      }
 
       const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
       const shardIds: string[] = new Array(totalChunks);

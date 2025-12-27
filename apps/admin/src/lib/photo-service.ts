@@ -8,10 +8,12 @@
  * - In-memory cache for decrypted thumbnails
  * - Blob URL lifecycle management
  * - Parallel shard downloads
+ * - Embedded thumbnail support for fast gallery loading
  */
 
 import { getCryptoClient } from './crypto-client';
 import { downloadShards, type ProgressCallback } from './shard-service';
+import { base64ToUint8Array } from './thumbnail-generator';
 
 /**
  * Cached photo entry with blob URL and reference count
@@ -247,6 +249,8 @@ export function clearPhotoCache(): void {
   }
   photoCache.clear();
   currentCacheSize = 0;
+  // Also clear thumbnails when clearing photo cache
+  clearThumbnailCache();
 }
 
 /**
@@ -287,4 +291,142 @@ export async function preloadPhotos(
   });
 
   await Promise.allSettled(loads);
+}
+
+// =============================================================================
+// Thumbnail Loading
+// =============================================================================
+
+/** Cache for thumbnail blob URLs */
+const thumbnailCache = new Map<string, CacheEntry>();
+
+/** Current thumbnail cache size in bytes */
+let thumbnailCacheSize = 0;
+
+/** Maximum thumbnail cache size (20MB - smaller than full photos) */
+const MAX_THUMBNAIL_CACHE_SIZE = 20 * 1024 * 1024;
+
+/**
+ * Evict oldest thumbnail entries to make room for new data
+ */
+function evictThumbnailCache(requiredSpace: number): void {
+  if (
+    thumbnailCacheSize + requiredSpace <= MAX_THUMBNAIL_CACHE_SIZE &&
+    thumbnailCache.size < MAX_CACHE_ENTRIES
+  ) {
+    return;
+  }
+
+  const entries = Array.from(thumbnailCache.entries()).sort(
+    ([, a], [, b]) => a.lastAccess - b.lastAccess
+  );
+
+  for (const [id, entry] of entries) {
+    if (entry.refCount > 0) continue;
+
+    URL.revokeObjectURL(entry.blobUrl);
+    thumbnailCacheSize -= entry.blob.size;
+    thumbnailCache.delete(id);
+
+    if (
+      thumbnailCacheSize + requiredSpace <= MAX_THUMBNAIL_CACHE_SIZE &&
+      thumbnailCache.size < MAX_CACHE_ENTRIES
+    ) {
+      break;
+    }
+  }
+}
+
+/**
+ * Load a thumbnail from embedded base64 data in photo metadata
+ *
+ * This is the fast path for gallery view - no network requests needed
+ * since the thumbnail is already embedded in the manifest metadata.
+ *
+ * @param photoId - Unique photo identifier
+ * @param thumbnailBase64 - Base64-encoded JPEG thumbnail
+ * @returns Thumbnail load result with blob URL
+ */
+export function loadThumbnailFromBase64(
+  photoId: string,
+  thumbnailBase64: string
+): PhotoLoadResult {
+  const cacheKey = `thumb:${photoId}`;
+
+  // Check cache first
+  const cached = thumbnailCache.get(cacheKey);
+  if (cached) {
+    cached.refCount++;
+    cached.lastAccess = Date.now();
+    return {
+      blobUrl: cached.blobUrl,
+      mimeType: 'image/jpeg',
+      size: cached.blob.size,
+    };
+  }
+
+  // Decode base64 to bytes
+  const bytes = base64ToUint8Array(thumbnailBase64);
+
+  // Create blob and URL - copy bytes to new ArrayBuffer for Blob compatibility
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  const blob = new Blob([buffer], { type: 'image/jpeg' });
+  const blobUrl = URL.createObjectURL(blob);
+
+  // Cache the result
+  evictThumbnailCache(blob.size);
+  const entry: CacheEntry = {
+    blobUrl,
+    blob,
+    refCount: 1,
+    lastAccess: Date.now(),
+  };
+  thumbnailCache.set(cacheKey, entry);
+  thumbnailCacheSize += blob.size;
+
+  return {
+    blobUrl,
+    mimeType: 'image/jpeg',
+    size: blob.size,
+  };
+}
+
+/**
+ * Release a reference to a cached thumbnail
+ *
+ * @param photoId - The photo ID to release thumbnail for
+ */
+export function releaseThumbnail(photoId: string): void {
+  const cacheKey = `thumb:${photoId}`;
+  const entry = thumbnailCache.get(cacheKey);
+  if (entry) {
+    entry.refCount = Math.max(0, entry.refCount - 1);
+  }
+}
+
+/**
+ * Clear all cached thumbnails
+ */
+export function clearThumbnailCache(): void {
+  for (const entry of thumbnailCache.values()) {
+    URL.revokeObjectURL(entry.blobUrl);
+  }
+  thumbnailCache.clear();
+  thumbnailCacheSize = 0;
+}
+
+/**
+ * Get thumbnail cache statistics
+ */
+export function getThumbnailCacheStats(): {
+  entries: number;
+  sizeBytes: number;
+  maxSizeBytes: number;
+} {
+  return {
+    entries: thumbnailCache.size,
+    sizeBytes: thumbnailCacheSize,
+    maxSizeBytes: MAX_THUMBNAIL_CACHE_SIZE,
+  };
 }

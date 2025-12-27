@@ -21,6 +21,12 @@ export interface PhotoMeta {
   shardIds: string[];
   /** Epoch ID for key lookup */
   epochId: number;
+  /** Base64-encoded JPEG thumbnail (embedded in manifest for fast loading) */
+  thumbnail?: string;
+  /** Thumbnail width in pixels */
+  thumbWidth?: number;
+  /** Thumbnail height in pixels */
+  thumbHeight?: number;
 }
 
 /** Encrypted manifest record from server */
