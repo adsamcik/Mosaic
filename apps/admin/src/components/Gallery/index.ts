@@ -1,4 +1,5 @@
 export { Gallery } from './Gallery';
+export type { GalleryViewMode } from './Gallery';
 export { PhotoGrid } from './PhotoGrid';
 export { PhotoThumbnail } from './PhotoThumbnail';
 export { PhotoLightbox } from './PhotoLightbox';
