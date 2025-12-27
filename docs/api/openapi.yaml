@@ -1,0 +1,992 @@
+openapi: 3.1.0
+info:
+  title: Mosaic API
+  version: 1.0.0
+  description: |
+    Zero-knowledge encrypted photo gallery API.
+    
+    The server never sees plaintext photos or metadata—all encryption/decryption 
+    happens client-side. The server stores encrypted blobs and facilitates 
+    synchronization between clients.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: /api
+    description: API base path (behind reverse proxy)
+
+security:
+  - RemoteUser: []
+
+tags:
+  - name: Health
+    description: Service health endpoints
+  - name: Users
+    description: User management
+  - name: Albums
+    description: Album CRUD and synchronization
+  - name: Members
+    description: Album membership management
+  - name: Epoch Keys
+    description: Epoch key distribution
+  - name: Manifests
+    description: Photo manifest operations
+  - name: Shards
+    description: Encrypted blob storage
+
+paths:
+  # ===========================================================================
+  # Health
+  # ===========================================================================
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check service health
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  # ===========================================================================
+  # Users
+  # ===========================================================================
+  /users/me:
+    get:
+      operationId: getCurrentUser
+      summary: Get current authenticated user
+      tags: [Users]
+      responses:
+        '200':
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      operationId: updateCurrentUser
+      summary: Update current user (e.g., identity pubkey)
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/{userId}:
+    get:
+      operationId: getUser
+      summary: Get a user's public info (for key exchange)
+      tags: [Users]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: User public info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPublic'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/by-pubkey/{pubkey}:
+    get:
+      operationId: getUserByPubkey
+      summary: Look up user by identity public key
+      tags: [Users]
+      parameters:
+        - name: pubkey
+          in: path
+          required: true
+          description: Base64-encoded Ed25519 public key
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPublic'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Albums
+  # ===========================================================================
+  /albums:
+    get:
+      operationId: listAlbums
+      summary: List albums the user has access to
+      tags: [Albums]
+      responses:
+        '200':
+          description: List of albums
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Album'
+
+    post:
+      operationId: createAlbum
+      summary: Create a new album
+      tags: [Albums]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAlbumRequest'
+      responses:
+        '201':
+          description: Album created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Album'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /albums/{albumId}:
+    get:
+      operationId: getAlbum
+      summary: Get album details
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      responses:
+        '200':
+          description: Album details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Album'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: deleteAlbum
+      summary: Delete an album (owner only)
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      responses:
+        '204':
+          description: Album deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /albums/{albumId}/sync:
+    get:
+      operationId: syncAlbum
+      summary: Get album changes since a version
+      description: |
+        Returns manifests created after the specified version.
+        Used for incremental synchronization.
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+        - name: since
+          in: query
+          required: true
+          description: Version to sync from (exclusive)
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: limit
+          in: query
+          description: Maximum number of manifests to return
+          schema:
+            type: integer
+            default: 100
+            maximum: 500
+      responses:
+        '200':
+          description: Sync response with manifests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Members
+  # ===========================================================================
+  /albums/{albumId}/members:
+    get:
+      operationId: listAlbumMembers
+      summary: List album members
+      tags: [Members]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      responses:
+        '200':
+          description: List of members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AlbumMember'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      operationId: inviteToAlbum
+      summary: Invite a user to the album
+      description: |
+        Creates membership and distributes epoch keys to the new member.
+        The epoch keys array must contain sealed bundles for all current epochs.
+      tags: [Members]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteRequest'
+      responses:
+        '201':
+          description: Invitation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /albums/{albumId}/members/{userId}:
+    delete:
+      operationId: removeAlbumMember
+      summary: Remove a member from the album
+      description: |
+        Revokes membership. A new epoch should be created after removal
+        to ensure forward secrecy.
+      tags: [Members]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Member removed
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Epoch Keys
+  # ===========================================================================
+  /albums/{albumId}/epoch-keys:
+    get:
+      operationId: getEpochKeys
+      summary: Get epoch keys for current user
+      description: Returns all epoch key bundles encrypted for the current user.
+      tags: [Epoch Keys]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      responses:
+        '200':
+          description: List of epoch key records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EpochKeyRecord'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      operationId: createEpochKey
+      summary: Create a new epoch key record
+      description: |
+        Used when rotating keys or sharing with new members.
+        The encrypted bundle is sealed to the recipient.
+      tags: [Epoch Keys]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEpochKeyRequest'
+      responses:
+        '201':
+          description: Epoch key created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpochKeyRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /albums/{albumId}/epochs/{epochId}/rotate:
+    post:
+      operationId: rotateEpoch
+      summary: Create a new epoch (key rotation)
+      description: |
+        Creates a new epoch with fresh keys. Used after member removal.
+        Must include epoch keys for all current members.
+      tags: [Epoch Keys]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+        - name: epochId
+          in: path
+          required: true
+          description: New epoch ID (must be greater than current)
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotateEpochRequest'
+      responses:
+        '201':
+          description: Epoch created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ===========================================================================
+  # Manifests
+  # ===========================================================================
+  /manifests:
+    post:
+      operationId: createManifest
+      summary: Create a photo manifest
+      description: |
+        Links uploaded shards to a signed manifest.
+        Shards must be in PENDING status and owned by the user.
+        This operation is atomic.
+      tags: [Manifests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateManifestRequest'
+      responses:
+        '201':
+          description: Manifest created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /manifests/{manifestId}:
+    get:
+      operationId: getManifest
+      summary: Get manifest details
+      tags: [Manifests]
+      parameters:
+        - name: manifestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Manifest details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestRecord'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: deleteManifest
+      summary: Soft-delete a manifest
+      description: Marks manifest as deleted. Shards will be garbage collected.
+      tags: [Manifests]
+      parameters:
+        - name: manifestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Manifest deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Shards
+  # ===========================================================================
+  /shards/{shardId}:
+    get:
+      operationId: downloadShard
+      summary: Download encrypted shard
+      tags: [Shards]
+      parameters:
+        - name: shardId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Encrypted shard data
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /shards:
+    post:
+      operationId: createShardUpload
+      summary: Initialize shard upload (Tus protocol)
+      description: |
+        Creates a new shard upload. Returns Tus endpoint for resumable upload.
+        Shard remains in PENDING status until linked to a manifest.
+      tags: [Shards]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateShardRequest'
+      responses:
+        '201':
+          description: Upload initialized
+          headers:
+            Location:
+              description: Tus upload URL
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShardCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          description: Shard too large (max 6MB)
+
+components:
+  # ===========================================================================
+  # Security Schemes
+  # ===========================================================================
+  securitySchemes:
+    RemoteUser:
+      type: apiKey
+      in: header
+      name: Remote-User
+      description: |
+        User identity from trusted reverse proxy.
+        Only accepted from configured trusted IP ranges.
+
+  # ===========================================================================
+  # Parameters
+  # ===========================================================================
+  parameters:
+    AlbumId:
+      name: albumId
+      in: path
+      required: true
+      description: Album UUID
+      schema:
+        type: string
+        format: uuid
+
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: User UUID
+      schema:
+        type: string
+        format: uuid
+
+  # ===========================================================================
+  # Responses
+  # ===========================================================================
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Schemas
+  # ===========================================================================
+  schemas:
+    # -------------------------------------------------------------------------
+    # Common
+    # -------------------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional error context
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          description: API version
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, warn, fail]
+          description: Individual health check results
+
+    # -------------------------------------------------------------------------
+    # Users
+    # -------------------------------------------------------------------------
+    User:
+      type: object
+      required:
+        - id
+        - authSub
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        authSub:
+          type: string
+          description: Authentication subject from Remote-User header
+        identityPubkey:
+          type: string
+          description: Base64-encoded Ed25519 public key
+        createdAt:
+          type: string
+          format: date-time
+
+    UserPublic:
+      type: object
+      required:
+        - id
+        - identityPubkey
+      properties:
+        id:
+          type: string
+          format: uuid
+        identityPubkey:
+          type: string
+          description: Base64-encoded Ed25519 public key
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        identityPubkey:
+          type: string
+          description: Base64-encoded Ed25519 public key
+
+    # -------------------------------------------------------------------------
+    # Albums
+    # -------------------------------------------------------------------------
+    Album:
+      type: object
+      required:
+        - id
+        - ownerId
+        - currentVersion
+        - currentEpochId
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        ownerId:
+          type: string
+          format: uuid
+        currentVersion:
+          type: integer
+          format: int64
+          description: Monotonically increasing version for sync
+        currentEpochId:
+          type: integer
+          description: Current epoch for new uploads
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateAlbumRequest:
+      type: object
+      required:
+        - initialEpochKey
+      properties:
+        initialEpochKey:
+          $ref: '#/components/schemas/CreateEpochKeyRequest'
+          description: Epoch key bundle for the owner
+
+    # -------------------------------------------------------------------------
+    # Members
+    # -------------------------------------------------------------------------
+    AlbumMember:
+      type: object
+      required:
+        - userId
+        - role
+        - joinedAt
+      properties:
+        userId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [owner, editor, viewer]
+        invitedBy:
+          type: string
+          format: uuid
+        joinedAt:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/UserPublic'
+          description: Included user info for display
+
+    InviteRequest:
+      type: object
+      required:
+        - recipientId
+        - role
+        - epochKeys
+      properties:
+        recipientId:
+          type: string
+          format: uuid
+          description: User to invite
+        role:
+          type: string
+          enum: [editor, viewer]
+        epochKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateEpochKeyRequest'
+          description: Sealed epoch key bundles for all epochs
+
+    # -------------------------------------------------------------------------
+    # Epoch Keys
+    # -------------------------------------------------------------------------
+    EpochKeyRecord:
+      type: object
+      required:
+        - id
+        - albumId
+        - epochId
+        - encryptedKeyBundle
+        - ownerSignature
+        - sharerPubkey
+        - signPubkey
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        albumId:
+          type: string
+          format: uuid
+        epochId:
+          type: integer
+        encryptedKeyBundle:
+          type: string
+          format: byte
+          description: Base64-encoded sealed box ciphertext
+        ownerSignature:
+          type: string
+          format: byte
+          description: Base64-encoded Ed25519 signature
+        sharerPubkey:
+          type: string
+          format: byte
+          description: Base64-encoded Ed25519 public key of sharer
+        signPubkey:
+          type: string
+          format: byte
+          description: Base64-encoded epoch signing public key
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateEpochKeyRequest:
+      type: object
+      required:
+        - recipientId
+        - epochId
+        - encryptedKeyBundle
+        - ownerSignature
+        - sharerPubkey
+        - signPubkey
+      properties:
+        recipientId:
+          type: string
+          format: uuid
+        epochId:
+          type: integer
+        encryptedKeyBundle:
+          type: string
+          format: byte
+          description: Base64-encoded sealed box ciphertext
+        ownerSignature:
+          type: string
+          format: byte
+          description: Base64-encoded Ed25519 signature
+        sharerPubkey:
+          type: string
+          format: byte
+          description: Base64-encoded Ed25519 public key of sharer
+        signPubkey:
+          type: string
+          format: byte
+          description: Base64-encoded epoch signing public key
+
+    RotateEpochRequest:
+      type: object
+      required:
+        - epochKeys
+      properties:
+        epochKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateEpochKeyRequest'
+          description: Epoch key bundles for all current members
+
+    # -------------------------------------------------------------------------
+    # Sync
+    # -------------------------------------------------------------------------
+    SyncResponse:
+      type: object
+      required:
+        - manifests
+        - albumVersion
+        - hasMore
+      properties:
+        manifests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManifestRecord'
+        albumVersion:
+          type: integer
+          format: int64
+          description: Current album version
+        hasMore:
+          type: boolean
+          description: Whether more manifests are available
+
+    # -------------------------------------------------------------------------
+    # Manifests
+    # -------------------------------------------------------------------------
+    ManifestRecord:
+      type: object
+      required:
+        - id
+        - albumId
+        - versionCreated
+        - isDeleted
+        - encryptedMeta
+        - signature
+        - signerPubkey
+        - shardIds
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        albumId:
+          type: string
+          format: uuid
+        versionCreated:
+          type: integer
+          format: int64
+        isDeleted:
+          type: boolean
+        encryptedMeta:
+          type: string
+          format: byte
+          description: Base64-encoded encrypted photo metadata
+        signature:
+          type: string
+          description: Base64-encoded Ed25519 signature
+        signerPubkey:
+          type: string
+          description: Base64-encoded epoch signing public key
+        shardIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Ordered list of shard IDs
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateManifestRequest:
+      type: object
+      required:
+        - albumId
+        - encryptedMeta
+        - signature
+        - signerPubkey
+        - shardIds
+      properties:
+        albumId:
+          type: string
+          format: uuid
+        encryptedMeta:
+          type: string
+          format: byte
+          description: Base64-encoded encrypted photo metadata
+        signature:
+          type: string
+          description: Base64-encoded Ed25519 signature
+        signerPubkey:
+          type: string
+          description: Base64-encoded epoch signing public key
+        shardIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Ordered list of shard IDs to link
+
+    ManifestCreated:
+      type: object
+      required:
+        - id
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          format: int64
+          description: Album version after this manifest
+
+    # -------------------------------------------------------------------------
+    # Shards
+    # -------------------------------------------------------------------------
+    CreateShardRequest:
+      type: object
+      required:
+        - sizeBytes
+      properties:
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 6291456
+          description: Expected shard size in bytes (max 6MB)
+
+    ShardCreated:
+      type: object
+      required:
+        - id
+        - uploadUrl
+      properties:
+        id:
+          type: string
+          format: uuid
+        uploadUrl:
+          type: string
+          description: Tus upload endpoint URL

@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mosaic - Argon2id Benchmark</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card h2 {
+      font-size: 1.1rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .device-info {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .info-item {
+      padding: 0.75rem;
+      background: var(--bg);
+      border-radius: 8px;
+    }
+
+    .info-item .label {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .info-item .value {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.75rem;
+    }
+
+    th {
+      color: var(--text-muted);
+      font-weight: 500;
+      font-size: 0.85rem;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    td {
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .status {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+
+    .status-pending { background: rgba(245,158,11,0.2); color: var(--warning); }
+    .status-running { background: rgba(59,130,246,0.2); color: var(--primary); }
+    .status-done { background: rgba(34,197,94,0.2); color: var(--success); }
+    .status-error { background: rgba(239,68,68,0.2); color: var(--danger); }
+
+    .time {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .time-optimal {
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .time-fast {
+      color: var(--warning);
+    }
+
+    .time-slow {
+      color: var(--danger);
+    }
+
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      opacity: 0.9;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .controls {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .runs-select {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 0.5rem;
+      border-radius: 6px;
+    }
+
+    .json-output {
+      background: var(--bg);
+      padding: 1rem;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .recommendation {
+      background: rgba(34,197,94,0.1);
+      border: 1px solid var(--success);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+    }
+
+    .recommendation h3 {
+      color: var(--success);
+      margin-bottom: 0.5rem;
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: var(--bg);
+      border-radius: 2px;
+      margin-top: 1rem;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--primary);
+      transition: width 0.3s ease;
+    }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔐 Argon2id Benchmark</h1>
+    <p class="subtitle">Testing password hashing performance for Mosaic</p>
+
+    <div class="card">
+      <h2>📱 Device Information</h2>
+      <div class="device-info">
+        <div class="info-item">
+          <div class="label">Device Type</div>
+          <div class="value" id="deviceType">Detecting...</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Memory</div>
+          <div class="value" id="deviceMemory">Unknown</div>
+        </div>
+        <div class="info-item">
+          <div class="label">CPU Cores</div>
+          <div class="value" id="cpuCores">Unknown</div>
+        </div>
+        <div class="info-item">
+          <div class="label">User Agent</div>
+          <div class="value" id="userAgent" style="font-size: 0.75rem; word-break: break-all;">-</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⚡ Benchmark</h2>
+      <div class="controls">
+        <button id="runBtn" onclick="runBenchmark()">Run Benchmark</button>
+        <label>
+          Runs per config:
+          <select id="runsSelect" class="runs-select">
+            <option value="1">1</option>
+            <option value="3" selected>3</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="progress-bar hidden" id="progressBar">
+        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Configuration</th>
+            <th>Memory</th>
+            <th>Iterations</th>
+            <th>Parallelism</th>
+            <th>Status</th>
+            <th>Median Time</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody">
+          <tr>
+            <td>Desktop</td>
+            <td>64 MB</td>
+            <td>3</td>
+            <td>1</td>
+            <td><span class="status status-pending">Pending</span></td>
+            <td class="time">-</td>
+          </tr>
+          <tr>
+            <td>Desktop High</td>
+            <td>128 MB</td>
+            <td>3</td>
+            <td>1</td>
+            <td><span class="status status-pending">Pending</span></td>
+            <td class="time">-</td>
+          </tr>
+          <tr>
+            <td>Mobile</td>
+            <td>32 MB</td>
+            <td>4</td>
+            <td>1</td>
+            <td><span class="status status-pending">Pending</span></td>
+            <td class="time">-</td>
+          </tr>
+          <tr>
+            <td>Mobile Light</td>
+            <td>16 MB</td>
+            <td>6</td>
+            <td>1</td>
+            <td><span class="status status-pending">Pending</span></td>
+            <td class="time">-</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div id="recommendation" class="recommendation hidden">
+        <h3>📋 Recommendation</h3>
+        <p id="recommendationText"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📄 JSON Output</h2>
+      <div class="json-output" id="jsonOutput">Run benchmark to see results...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    // Detect device info
+    const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    document.getElementById('deviceType').textContent = isMobile ? '📱 Mobile' : '💻 Desktop';
+    document.getElementById('deviceMemory').textContent = navigator.deviceMemory 
+      ? `${navigator.deviceMemory} GB` 
+      : 'API not available';
+    document.getElementById('cpuCores').textContent = navigator.hardwareConcurrency || 'Unknown';
+    document.getElementById('userAgent').textContent = navigator.userAgent;
+
+    // Benchmark configurations
+    const configs = [
+      { name: 'Desktop', memory: 64 * 1024, iterations: 3, parallelism: 1 },
+      { name: 'Desktop High', memory: 128 * 1024, iterations: 3, parallelism: 1 },
+      { name: 'Mobile', memory: 32 * 1024, iterations: 4, parallelism: 1 },
+      { name: 'Mobile Light', memory: 16 * 1024, iterations: 6, parallelism: 1 },
+    ];
+
+    let sodium = null;
+    let results = [];
+
+    // Load libsodium
+    async function loadSodium() {
+      if (sodium) return sodium;
+      
+      // Try CDN
+      try {
+        const module = await import('https://esm.sh/libsodium-wrappers@0.7.15');
+        await module.default.ready;
+        sodium = module.default;
+        return sodium;
+      } catch (e) {
+        console.error('Failed to load libsodium:', e);
+        throw new Error('Failed to load libsodium. Check your network connection.');
+      }
+    }
+
+    function formatTime(ms) {
+      if (ms < 100) return `${ms.toFixed(0)}ms`;
+      if (ms < 1000) return `${ms.toFixed(0)}ms`;
+      return `${(ms / 1000).toFixed(2)}s`;
+    }
+
+    function getTimeClass(ms) {
+      if (ms >= 500 && ms <= 1000) return 'time-optimal';
+      if (ms < 500) return 'time-fast';
+      return 'time-slow';
+    }
+
+    function updateRow(index, status, time = null, allTimes = null) {
+      const rows = document.getElementById('resultsBody').rows;
+      const row = rows[index];
+      
+      // Update status
+      const statusCell = row.cells[4];
+      statusCell.innerHTML = `<span class="status status-${status}">${status.charAt(0).toUpperCase() + status.slice(1)}</span>`;
+      
+      // Update time
+      if (time !== null) {
+        const timeCell = row.cells[5];
+        timeCell.innerHTML = `<span class="time ${getTimeClass(time)}">${formatTime(time)}</span>`;
+        if (allTimes) {
+          timeCell.innerHTML += `<br><span style="font-size: 0.75rem; color: var(--text-muted)">[${allTimes.map(t => formatTime(t)).join(', ')}]</span>`;
+        }
+      }
+    }
+
+    function updateProgress(current, total) {
+      const progressBar = document.getElementById('progressBar');
+      const progressFill = document.getElementById('progressFill');
+      progressBar.classList.remove('hidden');
+      progressFill.style.width = `${(current / total) * 100}%`;
+    }
+
+    async function runBenchmark() {
+      const btn = document.getElementById('runBtn');
+      btn.disabled = true;
+      btn.textContent = 'Loading libsodium...';
+      
+      results = [];
+      
+      try {
+        const sodium = await loadSodium();
+        btn.textContent = 'Running...';
+        
+        const runs = parseInt(document.getElementById('runsSelect').value);
+        const testPassword = 'benchmark-password-test-12345';
+        const testSalt = sodium.randombytes_buf(sodium.crypto_pwhash_SALTBYTES);
+        
+        const totalSteps = configs.length * runs;
+        let currentStep = 0;
+        
+        for (let i = 0; i < configs.length; i++) {
+          const config = configs[i];
+          updateRow(i, 'running');
+          
+          const times = [];
+          
+          for (let r = 0; r < runs; r++) {
+            const start = performance.now();
+            
+            sodium.crypto_pwhash(
+              32,
+              testPassword,
+              testSalt,
+              config.iterations,
+              config.memory * 1024, // KiB to bytes
+              sodium.crypto_pwhash_ALG_ARGON2ID13
+            );
+            
+            const elapsed = performance.now() - start;
+            times.push(elapsed);
+            
+            currentStep++;
+            updateProgress(currentStep, totalSteps);
+            
+            // Let UI update
+            await new Promise(r => setTimeout(r, 10));
+          }
+          
+          // Calculate median
+          times.sort((a, b) => a - b);
+          const median = times[Math.floor(times.length / 2)];
+          
+          results.push({
+            name: config.name,
+            params: {
+              memory: config.memory,
+              iterations: config.iterations,
+              parallelism: config.parallelism,
+            },
+            medianMs: median,
+            allTimesMs: times,
+          });
+          
+          updateRow(i, 'done', median, times);
+        }
+        
+        // Show recommendation
+        showRecommendation();
+        
+        // Show JSON
+        const output = {
+          timestamp: new Date().toISOString(),
+          device: {
+            type: isMobile ? 'mobile' : 'desktop',
+            memory: navigator.deviceMemory || null,
+            cores: navigator.hardwareConcurrency || null,
+            userAgent: navigator.userAgent,
+          },
+          runs,
+          results,
+        };
+        document.getElementById('jsonOutput').textContent = JSON.stringify(output, null, 2);
+        
+      } catch (error) {
+        console.error('Benchmark error:', error);
+        document.getElementById('jsonOutput').textContent = `Error: ${error.message}`;
+      }
+      
+      btn.disabled = false;
+      btn.textContent = 'Run Benchmark';
+      document.getElementById('progressBar').classList.add('hidden');
+    }
+
+    function showRecommendation() {
+      const recommendation = document.getElementById('recommendation');
+      const text = document.getElementById('recommendationText');
+      
+      // Find configs in target range (500-1000ms)
+      const optimal = results.filter(r => r.medianMs >= 500 && r.medianMs <= 1000);
+      
+      if (optimal.length > 0) {
+        // Prefer the one with most memory in range
+        const best = optimal.reduce((a, b) => 
+          a.params.memory > b.params.memory ? a : b
+        );
+        text.innerHTML = `
+          <strong>${best.name}</strong> configuration is recommended for this device.<br>
+          Memory: ${best.params.memory / 1024} MB, 
+          Iterations: ${best.params.iterations}, 
+          Median time: ${formatTime(best.medianMs)}
+        `;
+      } else {
+        // Find closest to 750ms target
+        const target = 750;
+        const closest = results.reduce((a, b) => 
+          Math.abs(a.medianMs - target) < Math.abs(b.medianMs - target) ? a : b
+        );
+        text.innerHTML = `
+          No configuration achieved the target 500-1000ms range.<br>
+          Closest: <strong>${closest.name}</strong> at ${formatTime(closest.medianMs)}.
+          ${closest.medianMs < 500 
+            ? 'Consider increasing memory or iterations.' 
+            : 'Consider decreasing memory or iterations.'}
+        `;
+      }
+      
+      recommendation.classList.remove('hidden');
+    }
+
+    // Export for button onclick
+    window.runBenchmark = runBenchmark;
+  </script>
+</body>
+</html>
