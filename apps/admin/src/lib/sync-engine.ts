@@ -2,50 +2,42 @@ import { getDbClient } from './db-client';
 import { getCryptoClient } from './crypto-client';
 import { getApi, fromBase64 } from './api';
 import type { DecryptedManifest } from '../workers/types';
-
-/** Epoch key cache: albumId -> epochId -> readKey */
-const epochKeyCache = new Map<string, Map<number, Uint8Array>>();
+import {
+  getEpochKey,
+  setEpochKey as storeEpochKey,
+  clearAllEpochKeys,
+} from './epoch-key-store';
+import {
+  fetchAndUnwrapEpochKeys,
+  getOrFetchEpochKey,
+} from './epoch-key-service';
 
 /**
- * Get or fetch epoch read key for an album/epoch
+ * Get epoch read key for an album/epoch.
+ * Uses the epoch key store and service for proper unwrapping.
+ *
+ * @param albumId - Album ID
+ * @param epochId - Epoch ID
+ * @returns Read key if available, null otherwise
  */
 async function getEpochReadKey(
   albumId: string,
   epochId: number
 ): Promise<Uint8Array | null> {
-  // Check cache first
-  let albumKeys = epochKeyCache.get(albumId);
-  if (albumKeys?.has(epochId)) {
-    return albumKeys.get(epochId)!;
+  // Check cache first via epoch-key-store
+  const cached = getEpochKey(albumId, epochId);
+  if (cached) {
+    return cached.readKey;
   }
 
-  // Fetch epoch keys from server
-  const api = getApi();
-  const epochKeys = await api.getEpochKeys(albumId);
-
-  // Initialize cache for album if needed
-  if (!albumKeys) {
-    albumKeys = new Map();
-    epochKeyCache.set(albumId, albumKeys);
+  // Fetch and unwrap epoch keys from server
+  try {
+    const bundle = await getOrFetchEpochKey(albumId, epochId);
+    return bundle.readKey;
+  } catch (err) {
+    console.warn(`Failed to get epoch key ${epochId} for album ${albumId}:`, err);
+    return null;
   }
-
-  // For now, store the encrypted key bundles
-  // TODO: When crypto worker has identity key support, unwrap these
-  for (const ek of epochKeys) {
-    // The epoch key needs to be unwrapped using the user's identity key
-    // For now, we'll need to extend the crypto worker to support this
-    // This is a placeholder that stores the encrypted bundle
-    const bundle = fromBase64(ek.encryptedKeyBundle);
-    
-    // TODO: Properly unwrap using crypto.openEpochKeyBundle
-    // For now, we can't proceed without identity key support
-    // albumKeys.set(ek.epochId, await crypto.openEpochKeyBundle(bundle, ...));
-    
-    // Temporary: skip if we can't unwrap
-    console.warn(`Epoch key ${ek.epochId} needs unwrapping (${bundle.length} bytes)`);
-  }
-
-  return albumKeys.get(epochId) ?? null;
 }
 
 /** Sync event types */
@@ -181,37 +173,54 @@ class SyncEngine extends EventTarget {
   }
 
   /**
- * Clear cached epoch keys (call on logout)
- */
-clearCache(): void {
-  epochKeyCache.clear();
-}
-
-/**
- * Get epoch read key from cache (if available)
- * Returns null if key not cached - caller should trigger sync first
- */
-getEpochKey(albumId: string, epochId: number): Uint8Array | null {
-  const albumKeys = epochKeyCache.get(albumId);
-  return albumKeys?.get(epochId) ?? null;
-}
-
-/**
- * Store an epoch read key in the cache
- * Used when unwrapping keys after sync
- */
-setEpochKey(albumId: string, epochId: number, readKey: Uint8Array): void {
-  let albumKeys = epochKeyCache.get(albumId);
-  if (!albumKeys) {
-    albumKeys = new Map();
-    epochKeyCache.set(albumId, albumKeys);
+   * Clear cached epoch keys (call on logout)
+   */
+  clearCache(): void {
+    clearAllEpochKeys();
   }
-  albumKeys.set(epochId, readKey);
-}
 
-private dispatchSyncEvent(type: SyncEventType, detail: SyncEventDetail): void {
-  this.dispatchEvent(new CustomEvent(type, { detail }));
-}
+  /**
+   * Get epoch read key from cache (if available)
+   * Returns null if key not cached - caller should trigger sync first
+   */
+  getEpochKey(albumId: string, epochId: number): Uint8Array | null {
+    const bundle = getEpochKey(albumId, epochId);
+    return bundle?.readKey ?? null;
+  }
+
+  /**
+   * Store an epoch read key in the cache
+   * Used when unwrapping keys after sync
+   */
+  setEpochKey(albumId: string, epochId: number, readKey: Uint8Array): void {
+    // Create a minimal bundle with just the read key
+    // Full bundle would include signKeypair, but for legacy compatibility
+    // we support storing just the read key
+    storeEpochKey(albumId, {
+      epochId,
+      readKey,
+      signKeypair: {
+        publicKey: new Uint8Array(32),
+        secretKey: new Uint8Array(64),
+      },
+    });
+  }
+
+  /**
+   * Ensure epoch keys are loaded for an album before sync.
+   * Fetches and unwraps keys from server if not cached.
+   */
+  async ensureEpochKeys(albumId: string): Promise<void> {
+    try {
+      await fetchAndUnwrapEpochKeys(albumId);
+    } catch (err) {
+      console.warn(`Failed to load epoch keys for album ${albumId}:`, err);
+    }
+  }
+
+  private dispatchSyncEvent(type: SyncEventType, detail: SyncEventDetail): void {
+    this.dispatchEvent(new CustomEvent(type, { detail }));
+  }
 }
 
 /** Global sync engine instance */

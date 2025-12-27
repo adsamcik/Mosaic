@@ -2,6 +2,7 @@ import { getDbClient, closeDbClient } from './db-client';
 import { getCryptoClient, closeCryptoClient } from './crypto-client';
 import { closeGeoClient } from './geo-client';
 import { getApi, toBase64, fromBase64 } from './api';
+import { clearAllEpochKeys } from './epoch-key-store';
 import type { User } from './api-types';
 
 /** Idle timeout in milliseconds (30 minutes) */
@@ -97,6 +98,10 @@ class SessionManager {
     const cryptoClient = await getCryptoClient();
     await cryptoClient.init(password, userSalt, paddedAccountSalt);
 
+    // Derive identity keypair for epoch key operations
+    // This is needed to open sealed epoch key bundles
+    await cryptoClient.deriveIdentity();
+
     // Initialize database worker with session key
     const db = await getDbClient();
     const sessionKey = await cryptoClient.getSessionKey();
@@ -122,6 +127,9 @@ class SessionManager {
 
     // Remove activity listeners
     this.detachIdleListeners();
+
+    // Clear epoch keys from memory
+    clearAllEpochKeys();
 
     // Close all workers and clear keys
     await closeDbClient();

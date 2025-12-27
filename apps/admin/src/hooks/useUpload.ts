@@ -1,5 +1,28 @@
 import { useState, useCallback } from 'react';
 import { uploadQueue } from '../lib/upload-queue';
+import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
+
+/** Error thrown when upload fails */
+export class UploadError extends Error {
+  constructor(
+    message: string,
+    public readonly code: UploadErrorCode,
+    public readonly cause?: Error
+  ) {
+    super(message);
+    this.name = 'UploadError';
+  }
+}
+
+/** Upload error codes */
+export enum UploadErrorCode {
+  /** Failed to get epoch key for album */
+  EPOCH_KEY_FAILED = 'EPOCH_KEY_FAILED',
+  /** Upload queue not initialized */
+  QUEUE_NOT_INITIALIZED = 'QUEUE_NOT_INITIALIZED',
+  /** Generic upload error */
+  UPLOAD_FAILED = 'UPLOAD_FAILED',
+}
 
 /**
  * Hook for file upload functionality
@@ -7,19 +30,31 @@ import { uploadQueue } from '../lib/upload-queue';
 export function useUpload() {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<UploadError | null>(null);
 
   const upload = useCallback(async (file: File, albumId: string) => {
     setIsUploading(true);
     setProgress(0);
+    setError(null);
 
     try {
       // Initialize upload queue if needed
       await uploadQueue.init();
 
-      // TODO: Get epoch key from album
-      // For now, use placeholder values
-      const epochId = 1;
-      const readKey = new Uint8Array(32);
+      // Get the current epoch key for this album
+      let epochKey;
+      try {
+        epochKey = await getCurrentOrFetchEpochKey(albumId);
+      } catch (err) {
+        const uploadError = new UploadError(
+          `Failed to get epoch key for album: ${err instanceof Error ? err.message : String(err)}`,
+          UploadErrorCode.EPOCH_KEY_FAILED,
+          err instanceof Error ? err : undefined
+        );
+        setError(uploadError);
+        setIsUploading(false);
+        throw uploadError;
+      }
 
       // Set up progress callback
       uploadQueue.onProgress = (task) => {
@@ -31,18 +66,43 @@ export function useUpload() {
         setProgress(1);
       };
 
-      uploadQueue.onError = (_, error) => {
-        console.error('Upload failed:', error);
+      uploadQueue.onError = (_, uploadErr) => {
+        console.error('Upload failed:', uploadErr);
+        setError(
+          new UploadError(
+            uploadErr.message,
+            UploadErrorCode.UPLOAD_FAILED,
+            uploadErr
+          )
+        );
         setIsUploading(false);
       };
 
-      // Add file to queue
-      await uploadQueue.add(file, albumId, epochId, readKey);
-    } catch (error) {
-      console.error('Upload error:', error);
-      setIsUploading(false);
+      // Add file to queue with real epoch key
+      await uploadQueue.add(
+        file,
+        albumId,
+        epochKey.epochId,
+        epochKey.readKey
+      );
+    } catch (err) {
+      // Only handle errors not already handled above
+      if (!(err instanceof UploadError)) {
+        console.error('Upload error:', err);
+        const uploadError = new UploadError(
+          err instanceof Error ? err.message : String(err),
+          UploadErrorCode.UPLOAD_FAILED,
+          err instanceof Error ? err : undefined
+        );
+        setError(uploadError);
+        setIsUploading(false);
+      }
     }
   }, []);
 
-  return { upload, isUploading, progress };
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  return { upload, isUploading, progress, error, clearError };
 }
