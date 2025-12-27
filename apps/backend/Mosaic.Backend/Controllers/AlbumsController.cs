@@ -60,6 +60,7 @@ public class AlbumsController : ControllerBase
             {
                 am.Album.Id,
                 am.Album.OwnerId,
+                am.Album.CurrentEpochId,
                 am.Album.CurrentVersion,
                 am.Album.CreatedAt,
                 am.Role
@@ -98,6 +99,7 @@ public class AlbumsController : ControllerBase
         {
             album.Id,
             album.OwnerId,
+            album.CurrentEpochId,
             album.CurrentVersion,
             album.CreatedAt
         });
@@ -124,6 +126,7 @@ public class AlbumsController : ControllerBase
         {
             album.Id,
             album.OwnerId,
+            album.CurrentEpochId,
             album.CurrentVersion,
             album.CreatedAt,
             membership.Role
@@ -167,7 +170,8 @@ public class AlbumsController : ControllerBase
         return Ok(new
         {
             Manifests = manifests,
-            AlbumVersion = album!.CurrentVersion,
+            CurrentEpochId = album!.CurrentEpochId,
+            AlbumVersion = album.CurrentVersion,
             HasMore = manifests.Count == 100
         });
     }

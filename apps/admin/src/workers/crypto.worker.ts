@@ -1,38 +1,99 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
+import sodium from 'libsodium-wrappers-sumo';
 import type { CryptoWorkerApi, PhotoMeta, EncryptedShard } from './types';
 
+// Import real crypto functions from @mosaic/crypto
+import {
+  deriveKeys,
+  encryptShard as cryptoEncryptShard,
+  decryptShard as cryptoDecryptShard,
+  verifyManifest as cryptoVerifyManifest,
+  memzero,
+  getArgon2Params,
+} from '@mosaic/crypto';
+
 /**
- * Mock Crypto Worker Implementation
- * 
- * This is a placeholder for parallel development.
- * Will be replaced with real libsodium implementation from libs/crypto
- * when Stream A (Crypto) integration is complete.
+ * Crypto Worker Implementation
+ *
+ * Real implementation using libsodium-wrappers-sumo and @mosaic/crypto.
+ * All cryptographic operations run in this dedicated worker thread.
  */
 class CryptoWorker implements CryptoWorkerApi {
+  /** Session key derived from password for database encryption */
   private sessionKey: Uint8Array | null = null;
 
-  async init(
-    password: string,
-    _userSalt: Uint8Array,
-    _accountSalt: Uint8Array
-  ): Promise<void> {
-    // Mock: Derive session key from password using Web Crypto SHA-256
-    // Real implementation will use Argon2id → HKDF key derivation
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    this.sessionKey = new Uint8Array(hashBuffer);
-  }
+  /** Account key (L2) for key hierarchy operations */
+  private accountKey: Uint8Array | null = null;
 
-  async clear(): Promise<void> {
-    if (this.sessionKey) {
-      // Clear sensitive key material
-      this.sessionKey.fill(0);
-      this.sessionKey = null;
+  /** Whether libsodium has been initialized */
+  private sodiumReady = false;
+
+  /**
+   * Ensure libsodium is initialized before crypto operations.
+   */
+  private async ensureSodiumReady(): Promise<void> {
+    if (!this.sodiumReady) {
+      await sodium.ready;
+      this.sodiumReady = true;
     }
   }
 
+  /**
+   * Initialize crypto with user credentials.
+   * Derives L0 → L1 → L2 key hierarchy using Argon2id + HKDF.
+   *
+   * @param password - User password
+   * @param userSalt - 16-byte salt stored on server (per-user)
+   * @param accountSalt - 16-byte salt stored on server (unique per account)
+   */
+  async init(
+    password: string,
+    userSalt: Uint8Array,
+    accountSalt: Uint8Array
+  ): Promise<void> {
+    await this.ensureSodiumReady();
+
+    // Get device-appropriate Argon2 parameters
+    const params = getArgon2Params();
+
+    // Derive full key hierarchy
+    const keys = await deriveKeys(password, userSalt, accountSalt, params);
+
+    // Store account key for future operations
+    this.accountKey = new Uint8Array(keys.accountKey);
+
+    // Derive session key from account key using BLAKE2b
+    // This provides a separate key for database encryption
+    this.sessionKey = sodium.crypto_generichash(32, keys.accountKey);
+
+    // Wipe intermediate keys
+    memzero(keys.masterKey);
+    memzero(keys.rootKey);
+    // Note: Keep accountKey reference, but wipe the DerivedKeys copy
+    memzero(keys.accountKey);
+  }
+
+  /**
+   * Clear all keys from memory.
+   */
+  async clear(): Promise<void> {
+    if (this.sessionKey) {
+      memzero(this.sessionKey);
+      this.sessionKey = null;
+    }
+    if (this.accountKey) {
+      memzero(this.accountKey);
+      this.accountKey = null;
+    }
+  }
+
+  /**
+   * Get session key for database encryption.
+   *
+   * @returns Copy of the 32-byte session key
+   * @throws Error if worker not initialized
+   */
   async getSessionKey(): Promise<Uint8Array> {
     if (!this.sessionKey) {
       throw new Error('Crypto worker not initialized');
@@ -41,99 +102,96 @@ class CryptoWorker implements CryptoWorkerApi {
     return new Uint8Array(this.sessionKey);
   }
 
+  /**
+   * Encrypt a photo shard using XChaCha20-Poly1305.
+   *
+   * Creates a 64-byte envelope header with fresh random nonce,
+   * then encrypts data with header as AAD for tamper detection.
+   *
+   * @param data - Plaintext data to encrypt (max 6MB)
+   * @param readKey - Epoch read key (32 bytes)
+   * @param epochId - Current epoch ID
+   * @param shardIndex - Shard index within photo
+   * @returns Encrypted shard with SHA256 hash
+   */
   async encryptShard(
     data: Uint8Array,
-    _readKey: Uint8Array,
+    readKey: Uint8Array,
     epochId: number,
     shardIndex: number
   ): Promise<EncryptedShard> {
-    // Mock: Create fake envelope with 64-byte header
-    // Real implementation will use XChaCha20-Poly1305
-    const header = new Uint8Array(64);
-    
-    // Magic bytes: "SGzk" (0x53, 0x47, 0x7a, 0x6b)
-    header[0] = 0x53;
-    header[1] = 0x47;
-    header[2] = 0x7a;
-    header[3] = 0x6b;
-    
-    // Version (1 byte)
-    header[4] = 0x03;
-    
-    // Epoch ID (4 bytes, big-endian)
-    const epochView = new DataView(header.buffer);
-    epochView.setUint32(5, epochId, false);
-    
-    // Shard index (4 bytes, big-endian)
-    epochView.setUint32(9, shardIndex, false);
-    
-    // Nonce (24 bytes) - mock random
-    const nonce = new Uint8Array(24);
-    crypto.getRandomValues(nonce);
-    header.set(nonce, 13);
-    
-    // Reserved (27 bytes) - already zeros
-    
-    // Combine header + data (mock - no actual encryption)
-    const ciphertext = new Uint8Array(64 + data.length);
-    ciphertext.set(header);
-    ciphertext.set(data, 64);
-
-    // Compute SHA-256 hash
-    const hashBuffer = await crypto.subtle.digest('SHA-256', ciphertext);
-    const hashArray = new Uint8Array(hashBuffer);
-    const sha256 = btoa(String.fromCharCode(...hashArray));
-
-    return { ciphertext, sha256 };
+    await this.ensureSodiumReady();
+    return cryptoEncryptShard(data, readKey, epochId, shardIndex);
   }
 
+  /**
+   * Decrypt a photo shard.
+   *
+   * Validates envelope header, checks reserved bytes are zero,
+   * then decrypts using XChaCha20-Poly1305 with header as AAD.
+   *
+   * @param envelope - Complete envelope (header + ciphertext)
+   * @param readKey - Epoch read key (32 bytes)
+   * @returns Decrypted plaintext
+   * @throws Error if decryption fails or envelope is invalid
+   */
   async decryptShard(
     envelope: Uint8Array,
-    _readKey: Uint8Array
+    readKey: Uint8Array
   ): Promise<Uint8Array> {
-    // Mock: Strip 64-byte header
-    // Real implementation will verify header and decrypt with XChaCha20-Poly1305
-    if (envelope.length < 64) {
-      throw new Error('Invalid envelope: too short');
-    }
-    
-    // Verify magic bytes
-    if (
-      envelope[0] !== 0x53 ||
-      envelope[1] !== 0x47 ||
-      envelope[2] !== 0x7a ||
-      envelope[3] !== 0x6b
-    ) {
-      throw new Error('Invalid envelope: bad magic bytes');
-    }
-    
-    return envelope.slice(64);
+    await this.ensureSodiumReady();
+    return cryptoDecryptShard(envelope, readKey);
   }
 
+  /**
+   * Decrypt manifest metadata.
+   *
+   * Manifest metadata is encrypted as a shard (with epoch 0, shard 0),
+   * containing JSON-encoded PhotoMeta.
+   *
+   * @param encryptedMeta - Encrypted manifest bytes (envelope format)
+   * @param readKey - Epoch read key (32 bytes)
+   * @returns Decrypted and parsed PhotoMeta
+   */
   async decryptManifest(
     encryptedMeta: Uint8Array,
-    _readKey: Uint8Array
+    readKey: Uint8Array
   ): Promise<PhotoMeta> {
-    // Mock: Parse as JSON directly (no decryption)
-    // Real implementation will decrypt with epoch key
+    await this.ensureSodiumReady();
+
+    // Manifest metadata uses the envelope format
+    // Epoch 0 and shard 0 are reserved for manifest metadata
+    const plaintext = await cryptoDecryptShard(encryptedMeta, readKey);
+
+    // Parse JSON from decrypted bytes
     const decoder = new TextDecoder();
-    const json = decoder.decode(encryptedMeta);
-    
+    const json = decoder.decode(plaintext);
+
     try {
       return JSON.parse(json) as PhotoMeta;
     } catch {
-      throw new Error('Failed to parse manifest metadata');
+      throw new Error('Failed to parse manifest metadata: invalid JSON');
     }
   }
 
+  /**
+   * Verify manifest signature using Ed25519.
+   *
+   * Uses domain separation (Mosaic_Manifest_v1 context prefix)
+   * to prevent signature reuse attacks.
+   *
+   * @param manifest - Manifest bytes that were signed
+   * @param signature - Ed25519 signature (64 bytes)
+   * @param pubKey - Ed25519 signing public key (32 bytes)
+   * @returns true if signature is valid
+   */
   async verifyManifest(
-    _manifest: Uint8Array,
-    _signature: Uint8Array,
-    _pubKey: Uint8Array
+    manifest: Uint8Array,
+    signature: Uint8Array,
+    pubKey: Uint8Array
   ): Promise<boolean> {
-    // Mock: Always return true
-    // Real implementation will verify Ed25519 signature
-    return true;
+    await this.ensureSodiumReady();
+    return cryptoVerifyManifest(manifest, signature, pubKey);
   }
 }
 

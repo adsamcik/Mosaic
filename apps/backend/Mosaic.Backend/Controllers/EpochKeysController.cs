@@ -6,7 +6,7 @@ using Mosaic.Backend.Data.Entities;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/epoch-keys")]
+[Route("api/albums/{albumId}/epoch-keys")]
 public class EpochKeysController : ControllerBase
 {
     private readonly MosaicDbContext _db;
@@ -44,21 +44,21 @@ public class EpochKeysController : ControllerBase
     }
 
     /// <summary>
-    /// Get epoch keys for albums the current user has access to
+    /// Get epoch keys for the current user in this album
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> List([FromQuery] Guid? albumId)
+    public async Task<IActionResult> List(Guid albumId)
     {
         var user = await GetOrCreateUser();
 
-        var query = _db.EpochKeys.Where(ek => ek.RecipientId == user.Id);
+        // Verify user has access to album
+        var hasAccess = await _db.AlbumMembers
+            .AnyAsync(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null);
 
-        if (albumId.HasValue)
-        {
-            query = query.Where(ek => ek.AlbumId == albumId.Value);
-        }
+        if (!hasAccess) return Forbid();
 
-        var keys = await query
+        var keys = await _db.EpochKeys
+            .Where(ek => ek.AlbumId == albumId && ek.RecipientId == user.Id)
             .Select(ek => new
             {
                 ek.Id,
@@ -76,7 +76,6 @@ public class EpochKeysController : ControllerBase
     }
 
     public record CreateEpochKeyRequest(
-        Guid AlbumId,
         Guid RecipientId,
         int EpochId,
         byte[] EncryptedKeyBundle,
@@ -89,14 +88,14 @@ public class EpochKeysController : ControllerBase
     /// Create a new epoch key for a recipient
     /// </summary>
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateEpochKeyRequest request)
+    public async Task<IActionResult> Create(Guid albumId, [FromBody] CreateEpochKeyRequest request)
     {
         var user = await GetOrCreateUser();
 
         // Verify album ownership or editor role
         var membership = await _db.AlbumMembers
             .FirstOrDefaultAsync(am =>
-                am.AlbumId == request.AlbumId &&
+                am.AlbumId == albumId &&
                 am.UserId == user.Id &&
                 am.RevokedAt == null);
 
@@ -111,7 +110,7 @@ public class EpochKeysController : ControllerBase
         // Check for existing key
         var existing = await _db.EpochKeys
             .FirstOrDefaultAsync(ek =>
-                ek.AlbumId == request.AlbumId &&
+                ek.AlbumId == albumId &&
                 ek.RecipientId == request.RecipientId &&
                 ek.EpochId == request.EpochId);
 
@@ -121,7 +120,7 @@ public class EpochKeysController : ControllerBase
         var epochKey = new EpochKey
         {
             Id = Guid.NewGuid(),
-            AlbumId = request.AlbumId,
+            AlbumId = albumId,
             RecipientId = request.RecipientId,
             EpochId = request.EpochId,
             EncryptedKeyBundle = request.EncryptedKeyBundle,
@@ -133,7 +132,7 @@ public class EpochKeysController : ControllerBase
         _db.EpochKeys.Add(epochKey);
         await _db.SaveChangesAsync();
 
-        return Created($"/api/epoch-keys/{epochKey.Id}", new
+        return Created($"/api/albums/{albumId}/epoch-keys/{epochKey.Id}", new
         {
             epochKey.Id,
             epochKey.AlbumId,
@@ -147,11 +146,12 @@ public class EpochKeysController : ControllerBase
     /// Get a specific epoch key
     /// </summary>
     [HttpGet("{keyId}")]
-    public async Task<IActionResult> Get(Guid keyId)
+    public async Task<IActionResult> Get(Guid albumId, Guid keyId)
     {
         var user = await GetOrCreateUser();
 
-        var key = await _db.EpochKeys.FindAsync(keyId);
+        var key = await _db.EpochKeys
+            .FirstOrDefaultAsync(ek => ek.Id == keyId && ek.AlbumId == albumId);
         if (key == null) return NotFound();
 
         // Only recipient can view
@@ -168,5 +168,97 @@ public class EpochKeysController : ControllerBase
             key.SignPubkey,
             key.CreatedAt
         });
+    }
+
+    public record RotateEpochRequest(
+        CreateEpochKeyRequest[] EpochKeys
+    );
+
+    /// <summary>
+    /// Rotate to a new epoch (key rotation after member removal)
+    /// </summary>
+    [HttpPost("/api/albums/{albumId}/epochs/{epochId}/rotate")]
+    public async Task<IActionResult> Rotate(Guid albumId, int epochId, [FromBody] RotateEpochRequest request)
+    {
+        var user = await GetOrCreateUser();
+
+        // Verify album ownership
+        var album = await _db.Albums.FindAsync(albumId);
+        if (album == null) return NotFound();
+
+        if (album.OwnerId != user.Id) return Forbid();
+
+        // Validate epoch ID is greater than current
+        if (epochId <= album.CurrentEpochId)
+        {
+            return BadRequest($"New epoch ID must be greater than current ({album.CurrentEpochId})");
+        }
+
+        // Use a transaction for atomicity
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            // Increment album's CurrentEpochId
+            album.CurrentEpochId = epochId;
+            album.UpdatedAt = DateTime.UtcNow;
+
+            // Create epoch keys for all provided members
+            foreach (var keyRequest in request.EpochKeys)
+            {
+                // Check recipient exists and is a member
+                var isMember = await _db.AlbumMembers
+                    .AnyAsync(am => am.AlbumId == albumId && 
+                                   am.UserId == keyRequest.RecipientId && 
+                                   am.RevokedAt == null);
+
+                if (!isMember)
+                {
+                    await tx.RollbackAsync();
+                    return BadRequest($"Recipient {keyRequest.RecipientId} is not a member of this album");
+                }
+
+                // Check for existing key
+                var existing = await _db.EpochKeys
+                    .FirstOrDefaultAsync(ek =>
+                        ek.AlbumId == albumId &&
+                        ek.RecipientId == keyRequest.RecipientId &&
+                        ek.EpochId == epochId);
+
+                if (existing != null)
+                {
+                    await tx.RollbackAsync();
+                    return Conflict($"Epoch key already exists for recipient {keyRequest.RecipientId}");
+                }
+
+                var epochKey = new EpochKey
+                {
+                    Id = Guid.NewGuid(),
+                    AlbumId = albumId,
+                    RecipientId = keyRequest.RecipientId,
+                    EpochId = epochId,
+                    EncryptedKeyBundle = keyRequest.EncryptedKeyBundle,
+                    OwnerSignature = keyRequest.OwnerSignature,
+                    SharerPubkey = keyRequest.SharerPubkey,
+                    SignPubkey = keyRequest.SignPubkey
+                };
+
+                _db.EpochKeys.Add(epochKey);
+            }
+
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Created($"/api/albums/{albumId}/epochs/{epochId}", new
+            {
+                AlbumId = albumId,
+                EpochId = epochId,
+                KeyCount = request.EpochKeys.Length
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 }

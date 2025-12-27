@@ -4,6 +4,7 @@ public class Album
 {
     public Guid Id { get; set; }
     public Guid OwnerId { get; set; }
+    public int CurrentEpochId { get; set; } = 1;
     public long CurrentVersion { get; set; } = 1;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

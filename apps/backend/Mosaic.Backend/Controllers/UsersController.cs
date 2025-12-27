@@ -96,4 +96,43 @@ public class UsersController : ControllerBase
             user.CreatedAt
         });
     }
+
+    /// <summary>
+    /// Get a user's public info (for key exchange)
+    /// </summary>
+    [HttpGet("{userId:guid}")]
+    public async Task<IActionResult> GetUser(Guid userId)
+    {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found" });
+        }
+
+        return Ok(new
+        {
+            user.Id,
+            user.IdentityPubkey
+        });
+    }
+
+    /// <summary>
+    /// Look up user by identity public key
+    /// </summary>
+    [HttpGet("by-pubkey/{pubkey}")]
+    public async Task<IActionResult> GetUserByPubkey(string pubkey)
+    {
+        // pubkey is base64-encoded, URL encoding handled by ASP.NET Core
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.IdentityPubkey == pubkey);
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found" });
+        }
+
+        return Ok(new
+        {
+            user.Id,
+            user.IdentityPubkey
+        });
+    }
 }
