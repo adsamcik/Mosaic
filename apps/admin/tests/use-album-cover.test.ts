@@ -6,12 +6,11 @@
  * since @testing-library/react is not available.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  getAlbumCover,
-  getCachedCover,
-  clearAllCovers,
-  type AlbumCover,
+    clearAllCovers,
+    getAlbumCover,
+    getCachedCover
 } from '../src/lib/album-cover-service';
 import { getCurrentOrFetchEpochKey } from '../src/lib/epoch-key-service';
 

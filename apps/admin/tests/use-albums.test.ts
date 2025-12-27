@@ -4,7 +4,7 @@
  * Tests the useAlbums hook behavior for listing and creating albums.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock API implementation
 const mockApi = {

@@ -4,18 +4,18 @@
  * Tests for album name decryption and caching functionality.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  decryptAlbumName,
-  getDecryptedAlbumName,
-  getCachedMetadata,
-  setCachedMetadata,
-  clearCachedMetadata,
-  clearAllCachedMetadata,
-  getStoredEncryptedName,
-  setStoredEncryptedName,
-  clearStoredEncryptedName,
-  AlbumMetadataError,
+    AlbumMetadataError,
+    clearAllCachedMetadata,
+    clearCachedMetadata,
+    clearStoredEncryptedName,
+    decryptAlbumName,
+    getCachedMetadata,
+    getDecryptedAlbumName,
+    getStoredEncryptedName,
+    setCachedMetadata,
+    setStoredEncryptedName,
 } from '../src/lib/album-metadata-service';
 
 // Mock the crypto client

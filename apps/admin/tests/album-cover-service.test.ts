@@ -4,16 +4,16 @@
  * Tests for album cover fetching and caching functionality.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  getFirstPhotoForAlbum,
-  getAlbumCover,
-  getCachedCover,
-  releaseCover,
-  clearAllCovers,
-  hasCachedCover,
-  getCoverCacheSize,
-  AlbumCoverError,
+    AlbumCoverError,
+    clearAllCovers,
+    getAlbumCover,
+    getCachedCover,
+    getCoverCacheSize,
+    getFirstPhotoForAlbum,
+    hasCachedCover,
+    releaseCover,
 } from '../src/lib/album-cover-service';
 import type { PhotoMeta } from '../src/workers/types';
 

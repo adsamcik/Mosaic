@@ -4,10 +4,9 @@
  * Tests for the photo lightbox/detail view component.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PhotoLightbox } from '../src/components/Gallery/PhotoLightbox';
 import type { PhotoMeta } from '../src/workers/types';
 

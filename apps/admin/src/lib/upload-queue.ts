@@ -1,10 +1,10 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import * as tus from 'tus-js-client';
-import { getCryptoClient } from './crypto-client';
 import { TUS_ENDPOINT } from './api';
+import { getCryptoClient } from './crypto-client';
 import {
-  generateThumbnail,
-  isSupportedImageType,
+    generateThumbnail,
+    isSupportedImageType,
 } from './thumbnail-generator';
 
 /**

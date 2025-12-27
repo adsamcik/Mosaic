@@ -4,13 +4,13 @@
  * Tests for epoch key rotation after member removal.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  rotateEpoch,
-  clearPhotoCaches,
-  EpochRotationError,
-  EpochRotationErrorCode,
-  RotationStep,
+    clearPhotoCaches,
+    EpochRotationError,
+    EpochRotationErrorCode,
+    rotateEpoch,
+    RotationStep,
 } from '../src/lib/epoch-rotation-service';
 
 // Mock dependencies
@@ -33,10 +33,10 @@ vi.mock('../src/lib/epoch-key-service', () => ({
   fetchAndUnwrapEpochKeys: vi.fn().mockResolvedValue([]),
 }));
 
-import { getApi, toBase64 } from '../src/lib/api';
+import { getApi } from '../src/lib/api';
 import { getCryptoClient } from '../src/lib/crypto-client';
-import { clearAlbumKeys, setEpochKey } from '../src/lib/epoch-key-store';
 import { fetchAndUnwrapEpochKeys } from '../src/lib/epoch-key-service';
+import { clearAlbumKeys, setEpochKey } from '../src/lib/epoch-key-store';
 
 describe('epoch-rotation-service', () => {
   // Mock data

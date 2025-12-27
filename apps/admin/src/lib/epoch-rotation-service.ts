@@ -8,11 +8,11 @@
  * NEVER derive from previous epoch keys.
  */
 
-import { getApi, toBase64, fromBase64 } from './api';
-import { getCryptoClient } from './crypto-client';
-import { clearAlbumKeys, setEpochKey, type EpochKeyBundle } from './epoch-key-store';
-import { fetchAndUnwrapEpochKeys } from './epoch-key-service';
+import { fromBase64, getApi, toBase64 } from './api';
 import type { AlbumMember, CreateEpochKeyRequest } from './api-types';
+import { getCryptoClient } from './crypto-client';
+import { fetchAndUnwrapEpochKeys } from './epoch-key-service';
+import { clearAlbumKeys, setEpochKey, type EpochKeyBundle } from './epoch-key-store';
 
 /** Error thrown when epoch rotation fails */
 export class EpochRotationError extends Error {

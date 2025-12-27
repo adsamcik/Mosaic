@@ -4,14 +4,14 @@
  * Tests for the thumbnail generation service.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  generateThumbnail,
-  generateThumbnailBase64,
-  isSupportedImageType,
-  calculateDimensions,
-  base64ToUint8Array,
-  ThumbnailError,
+    base64ToUint8Array,
+    calculateDimensions,
+    generateThumbnail,
+    generateThumbnailBase64,
+    isSupportedImageType,
+    ThumbnailError,
 } from '../src/lib/thumbnail-generator';
 
 // =============================================================================

@@ -1,13 +1,13 @@
-import { useState, useMemo, useCallback } from 'react';
-import { PhotoGrid } from './PhotoGrid';
-import { MapView } from './MapView';
-import { UploadButton } from '../Upload/UploadButton';
-import { MemberList } from '../Members/MemberList';
-import { usePhotos } from '../../hooks/usePhotos';
-import { useLightbox } from '../../hooks/useLightbox';
+import { useCallback, useMemo, useState } from 'react';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
-import { PhotoLightbox } from './PhotoLightbox';
+import { useLightbox } from '../../hooks/useLightbox';
+import { usePhotos } from '../../hooks/usePhotos';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
+import { MemberList } from '../Members/MemberList';
+import { UploadButton } from '../Upload/UploadButton';
+import { MapView } from './MapView';
+import { PhotoGrid } from './PhotoGrid';
+import { PhotoLightbox } from './PhotoLightbox';
 
 /** View mode for the gallery */
 export type GalleryViewMode = 'grid' | 'map';

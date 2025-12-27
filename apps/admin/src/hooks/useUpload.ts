@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
-import { uploadQueue } from '../lib/upload-queue';
+import { useCallback, useState } from 'react';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
+import { uploadQueue } from '../lib/upload-queue';
 
 /** Error thrown when upload fails */
 export class UploadError extends Error {

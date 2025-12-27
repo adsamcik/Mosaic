@@ -5,11 +5,11 @@
  * Manages loading state and cleans up blob URLs on unmount.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  getAlbumCover,
-  getCachedCover,
-  type AlbumCover,
+    getAlbumCover,
+    getCachedCover,
+    type AlbumCover,
 } from '../lib/album-cover-service';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
 

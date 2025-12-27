@@ -5,9 +5,9 @@
  * Verifies that encrypted salt can be synced between devices via server.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { encryptSalt, decryptSalt, SaltDecryptionError } from '../src/lib/session';
-import { toBase64, fromBase64 } from '../src/lib/api';
+import { describe, expect, it } from 'vitest';
+import { fromBase64, toBase64 } from '../src/lib/api';
+import { decryptSalt, encryptSalt, SaltDecryptionError } from '../src/lib/session';
 
 describe('Salt Encryption/Decryption', () => {
   const testPassword = 'test-password-123';

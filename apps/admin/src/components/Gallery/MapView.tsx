@@ -5,9 +5,9 @@
  * Integrates with the geo worker for efficient Supercluster-based clustering.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getGeoClient } from '../../lib/geo-client';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
 

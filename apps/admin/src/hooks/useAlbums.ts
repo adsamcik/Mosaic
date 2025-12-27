@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
-import { getApi, toBase64 } from '../lib/api';
-import { getCryptoClient } from '../lib/crypto-client';
-import { setEpochKey, getCurrentEpochKey } from '../lib/epoch-key-store';
-import { ensureEpochKeysLoaded } from '../lib/epoch-key-service';
-import {
-  getDecryptedAlbumName,
-  getStoredEncryptedName,
-  setStoredEncryptedName,
-} from '../lib/album-metadata-service';
+import { useCallback, useEffect, useState } from 'react';
 import type { Album } from '../components/Albums/AlbumCard';
+import {
+    getDecryptedAlbumName,
+    getStoredEncryptedName,
+    setStoredEncryptedName,
+} from '../lib/album-metadata-service';
+import { getApi, toBase64 } from '../lib/api';
 import type { Album as ApiAlbum } from '../lib/api-types';
+import { getCryptoClient } from '../lib/crypto-client';
+import { ensureEpochKeysLoaded } from '../lib/epoch-key-service';
+import { getCurrentEpochKey, setEpochKey } from '../lib/epoch-key-store';
 
 /**
  * Encrypt album name using XChaCha20-Poly1305 with the epoch read key.

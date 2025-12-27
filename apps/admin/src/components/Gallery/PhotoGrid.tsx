@@ -1,13 +1,13 @@
-import { useRef, useMemo, useState, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { usePhotos } from '../../hooks/usePhotos';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
-import { PhotoThumbnail } from './PhotoThumbnail';
-import { PhotoLightbox } from './PhotoLightbox';
-import { DeletePhotoDialog } from './DeletePhotoDialog';
+import { usePhotos } from '../../hooks/usePhotos';
 import type { PhotoMeta } from '../../workers/types';
+import { DeletePhotoDialog } from './DeletePhotoDialog';
+import { PhotoLightbox } from './PhotoLightbox';
+import { PhotoThumbnail } from './PhotoThumbnail';
 
 /** Number of columns in the grid */
 const COLUMNS = 4;

@@ -4,10 +4,10 @@
  * Tests the member management hook logic.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  MemberManagementError,
-  MemberManagementErrorCode,
+    MemberManagementError,
+    MemberManagementErrorCode,
 } from '../src/hooks/useMemberManagement';
 
 // Mock the dependencies

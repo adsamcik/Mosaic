@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { AlbumList } from '../Albums/AlbumList';
 import { LogoutButton } from '../Auth/LogoutButton';
 import { Gallery } from '../Gallery/Gallery';
-import { AlbumList } from '../Albums/AlbumList';
 import { SettingsPage } from '../Settings/SettingsPage';
 
 type View = 'albums' | 'gallery' | 'settings';

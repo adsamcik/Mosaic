@@ -1,10 +1,9 @@
 /**
  * Gallery Component Tests
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Gallery } from '../src/components/Gallery/Gallery';
 import type { PhotoMeta } from '../src/workers/types';
 

@@ -5,9 +5,9 @@
  * Supports keyboard navigation, touch gestures, and preloading.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { loadPhoto, preloadPhotos, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
-import { loadPhoto, releasePhoto, preloadPhotos, type PhotoLoadResult } from '../../lib/photo-service';
 
 /** Props for the PhotoLightbox component */
 export interface PhotoLightboxProps {

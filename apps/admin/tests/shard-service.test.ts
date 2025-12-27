@@ -4,11 +4,11 @@
  * Tests for the shard download service.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  downloadShard,
-  downloadShards,
-  ShardDownloadError,
+    downloadShard,
+    downloadShards,
+    ShardDownloadError,
 } from '../src/lib/shard-service';
 
 // Store original fetch

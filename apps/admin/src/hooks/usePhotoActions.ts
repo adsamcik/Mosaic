@@ -5,14 +5,14 @@
  * Handles server API calls, local database cleanup, and cache invalidation.
  */
 
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
+import { getCachedCover, releaseCover } from '../lib/album-cover-service';
 import { getApi } from '../lib/api';
 import { getDbClient } from '../lib/db-client';
 import {
-  releasePhoto,
-  releaseThumbnail,
+    releasePhoto,
+    releaseThumbnail,
 } from '../lib/photo-service';
-import { releaseCover, getCachedCover } from '../lib/album-cover-service';
 
 /**
  * Error thrown when photo deletion fails

@@ -5,7 +5,7 @@
  * Provides navigation between photos and keyboard controls.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { PhotoMeta } from '../workers/types';
 
 /**

@@ -5,16 +5,16 @@
  * Handles cryptographic operations for sealing epoch keys to recipients.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { getApi, toBase64, fromBase64 } from '../lib/api';
+import { useCallback, useEffect, useState } from 'react';
+import { fromBase64, getApi, toBase64 } from '../lib/api';
+import type { AlbumMember, CreateEpochKeyRequest, UserPublic } from '../lib/api-types';
 import { getCryptoClient } from '../lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
 import {
-  rotateEpoch,
-  clearPhotoCaches,
-  EpochRotationError,
+    clearPhotoCaches,
+    EpochRotationError,
+    rotateEpoch,
 } from '../lib/epoch-rotation-service';
-import type { AlbumMember, UserPublic, CreateEpochKeyRequest } from '../lib/api-types';
 
 /** Error thrown by member management operations */
 export class MemberManagementError extends Error {

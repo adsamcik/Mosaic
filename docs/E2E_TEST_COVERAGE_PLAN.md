@@ -23,36 +23,36 @@ This document provides a comprehensive end-to-end test coverage plan for Mosaic,
 
 ### Existing Test Files
 
-| Test File | Coverage |
-|-----------|----------|
-| `app-load.spec.ts` | App loading, security headers (COOP/COEP), static assets, mobile responsiveness |
-| `auth.spec.ts` | Login form display, password input, empty password validation |
-| `albums.spec.ts` | Album list display, empty state, album creation |
-| `gallery.spec.ts` | Photo grid display, upload button, keyboard navigation |
-| `upload.spec.ts` | File picker, image acceptance, progress indicator |
-| `accessibility.spec.ts` | Headings, alt text, button names, form labels, focus, contrast |
+| Test File               | Coverage                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| `app-load.spec.ts`      | App loading, security headers (COOP/COEP), static assets, mobile responsiveness |
+| `auth.spec.ts`          | Login form display, password input, empty password validation                   |
+| `albums.spec.ts`        | Album list display, empty state, album creation                                 |
+| `gallery.spec.ts`       | Photo grid display, upload button, keyboard navigation                          |
+| `upload.spec.ts`        | File picker, image acceptance, progress indicator                               |
+| `accessibility.spec.ts` | Headings, alt text, button names, form labels, focus, contrast                  |
 
 ### Existing Infrastructure
 
-| Component | Status |
-|-----------|--------|
-| `authenticatedPage` fixture | ✅ Injects Remote-User header |
-| `testUser` fixture | ✅ Generates unique test users |
-| `LoginPage` POM | ✅ Basic login interactions |
-| `AppShellPage` POM | ✅ Album list, create/upload buttons |
-| `GalleryPage` POM | ✅ Photo grid, photo selection |
-| API test helpers | ✅ Create album, upload shard |
+| Component                   | Status                              |
+| --------------------------- | ----------------------------------- |
+| `authenticatedPage` fixture | ✅ Injects Remote-User header        |
+| `testUser` fixture          | ✅ Generates unique test users       |
+| `LoginPage` POM             | ✅ Basic login interactions          |
+| `AppShellPage` POM          | ✅ Album list, create/upload buttons |
+| `GalleryPage` POM           | ✅ Photo grid, photo selection       |
+| API test helpers            | ✅ Create album, upload shard        |
 
 ### Critical Gaps
 
-| Gap | Impact | Priority |
-|-----|--------|----------|
-| **No complete login flow** | Can't test actual authentication | P0 |
-| **No logout/session tests** | Security vulnerability untested | P0 |
-| **No photo round-trip test** | Core feature unverified | P0 |
-| **No sharing flow tests** | Collaboration untested | P0 |
-| **No error scenario tests** | Failure modes unknown | P1 |
-| **Soft assertions hiding failures** | False positives | P1 |
+| Gap                                 | Impact                           | Priority |
+| ----------------------------------- | -------------------------------- | -------- |
+| **No complete login flow**          | Can't test actual authentication | P0       |
+| **No logout/session tests**         | Security vulnerability untested  | P0       |
+| **No photo round-trip test**        | Core feature unverified          | P0       |
+| **No sharing flow tests**           | Collaboration untested           | P0       |
+| **No error scenario tests**         | Failure modes unknown            | P1       |
+| **Soft assertions hiding failures** | False positives                  | P1       |
 
 ---
 
@@ -60,47 +60,47 @@ This document provides a comprehensive end-to-end test coverage plan for Mosaic,
 
 ### P0 - Critical Path (Must Have)
 
-| ID | Test Scenario | Components | Est. Effort |
-|----|---------------|------------|-------------|
-| P0-1 | Complete password login → app access | Auth, Crypto Worker, Session | Medium |
-| P0-2 | Logout with key wiping verification | Session, Crypto Worker | Low |
-| P0-3 | Photo upload → sync → view round-trip | Upload, Crypto, Sync, Gallery | High |
-| P0-4 | Album sharing between two users | Sharing, Epoch Keys, Sealed Boxes | High |
-| P0-5 | Wrong password rejection | Auth, Error Handling | Low |
-| P0-6 | Session idle timeout | Session Management | Medium |
+| ID   | Test Scenario                         | Components                        | Est. Effort |
+| ---- | ------------------------------------- | --------------------------------- | ----------- |
+| P0-1 | Complete password login → app access  | Auth, Crypto Worker, Session      | Medium      |
+| P0-2 | Logout with key wiping verification   | Session, Crypto Worker            | Low         |
+| P0-3 | Photo upload → sync → view round-trip | Upload, Crypto, Sync, Gallery     | High        |
+| P0-4 | Album sharing between two users       | Sharing, Epoch Keys, Sealed Boxes | High        |
+| P0-5 | Wrong password rejection              | Auth, Error Handling              | Low         |
+| P0-6 | Session idle timeout                  | Session Management                | Medium      |
 
 ### P1 - Core Features (Should Have)
 
-| ID | Test Scenario | Components | Est. Effort |
-|----|---------------|------------|-------------|
-| P1-1 | Album CRUD (create, view, delete) | Albums API, AlbumList | Medium |
-| P1-2 | Member management (add/remove) | Members API, Sharing | Medium |
-| P1-3 | Epoch key rotation after member removal | Epochs, Crypto | High |
-| P1-4 | Delta sync with version tracking | Sync Engine | Medium |
-| P1-5 | Network failure during upload | Tus, Error Handling | Medium |
-| P1-6 | Quota exceeded handling | Quotas, Error UI | Low |
-| P1-7 | API error responses (401, 403, 404) | All Controllers | Medium |
+| ID   | Test Scenario                           | Components            | Est. Effort |
+| ---- | --------------------------------------- | --------------------- | ----------- |
+| P1-1 | Album CRUD (create, view, delete)       | Albums API, AlbumList | Medium      |
+| P1-2 | Member management (add/remove)          | Members API, Sharing  | Medium      |
+| P1-3 | Epoch key rotation after member removal | Epochs, Crypto        | High        |
+| P1-4 | Delta sync with version tracking        | Sync Engine           | Medium      |
+| P1-5 | Network failure during upload           | Tus, Error Handling   | Medium      |
+| P1-6 | Quota exceeded handling                 | Quotas, Error UI      | Low         |
+| P1-7 | API error responses (401, 403, 404)     | All Controllers       | Medium      |
 
 ### P2 - Extended Coverage (Nice to Have)
 
-| ID | Test Scenario | Components | Est. Effort |
-|----|---------------|------------|-------------|
-| P2-1 | Large file chunking (>6MB) | Upload, Shards | Low |
-| P2-2 | Upload resume after page reload | IndexedDB, Tus | Medium |
-| P2-3 | Virtualized scroll performance | TanStack Virtual | Low |
-| P2-4 | Offline photo viewing | OPFS, SQLite | Medium |
-| P2-5 | Keyboard navigation flow | Accessibility | Low |
-| P2-6 | axe-core WCAG compliance | Accessibility | Medium |
-| P2-7 | Cross-tab session sync | BroadcastChannel | Medium |
+| ID   | Test Scenario                   | Components       | Est. Effort |
+| ---- | ------------------------------- | ---------------- | ----------- |
+| P2-1 | Large file chunking (>6MB)      | Upload, Shards   | Low         |
+| P2-2 | Upload resume after page reload | IndexedDB, Tus   | Medium      |
+| P2-3 | Virtualized scroll performance  | TanStack Virtual | Low         |
+| P2-4 | Offline photo viewing           | OPFS, SQLite     | Medium      |
+| P2-5 | Keyboard navigation flow        | Accessibility    | Low         |
+| P2-6 | axe-core WCAG compliance        | Accessibility    | Medium      |
+| P2-7 | Cross-tab session sync          | BroadcastChannel | Medium      |
 
 ### P3 - Future Features
 
-| ID | Test Scenario | Components | Est. Effort |
-|----|---------------|------------|-------------|
-| P3-1 | Map view with geo clustering | MapView, Geo Worker | Medium |
-| P3-2 | Photo search with FTS5 | DB Worker, Search UI | Medium |
-| P3-3 | Photo lightbox/full view | PhotoViewer | Medium |
-| P3-4 | Password change flow | Keychain, Key Migration | High |
+| ID   | Test Scenario                | Components              | Est. Effort |
+| ---- | ---------------------------- | ----------------------- | ----------- |
+| P3-1 | Map view with geo clustering | MapView, Geo Worker     | Medium      |
+| P3-2 | Photo search with FTS5       | DB Worker, Search UI    | Medium      |
+| P3-3 | Photo lightbox/full view     | PhotoViewer             | Medium      |
+| P3-4 | Password change flow         | Keychain, Key Migration | High        |
 
 ---
 
@@ -281,69 +281,69 @@ Scenario: Remove member and rotate keys
 
 ### 1. Authentication & Authorization
 
-| Scenario | Method | Endpoint | Expected | Status |
-|----------|--------|----------|----------|--------|
-| Valid Remote-User creates user | GET | /api/users/me | 200 + user object | ⬜ |
-| Missing Remote-User header | GET | /api/users/me | 401 Unauthorized | ⬜ |
-| Untrusted IP rejected | GET | /api/users/me | 401 Unauthorized | ⬜ |
-| Invalid Remote-User format | GET | /api/users/me | 400 Bad Request | ⬜ |
+| Scenario                       | Method | Endpoint      | Expected          | Status |
+| ------------------------------ | ------ | ------------- | ----------------- | ------ |
+| Valid Remote-User creates user | GET    | /api/users/me | 200 + user object | ⬜      |
+| Missing Remote-User header     | GET    | /api/users/me | 401 Unauthorized  | ⬜      |
+| Untrusted IP rejected          | GET    | /api/users/me | 401 Unauthorized  | ⬜      |
+| Invalid Remote-User format     | GET    | /api/users/me | 400 Bad Request   | ⬜      |
 
 ### 2. Album Operations
 
-| Scenario | Method | Endpoint | Expected | Status |
-|----------|--------|----------|----------|--------|
-| Create album | POST | /api/albums | 201 + album | ⬜ |
-| List user's albums | GET | /api/albums | 200 + array | ⬜ |
-| Get album details | GET | /api/albums/{id} | 200 + album | ⬜ |
-| Get album (not member) | GET | /api/albums/{id} | 403 Forbidden | ⬜ |
-| Delete album (owner) | DELETE | /api/albums/{id} | 204 | ⬜ |
-| Delete album (not owner) | DELETE | /api/albums/{id} | 403 Forbidden | ⬜ |
-| Sync from version 0 | GET | /api/albums/{id}/sync?since=0 | 200 + manifests | ⬜ |
-| Incremental sync | GET | /api/albums/{id}/sync?since=5 | 200 + delta | ⬜ |
+| Scenario                 | Method | Endpoint                      | Expected        | Status |
+| ------------------------ | ------ | ----------------------------- | --------------- | ------ |
+| Create album             | POST   | /api/albums                   | 201 + album     | ⬜      |
+| List user's albums       | GET    | /api/albums                   | 200 + array     | ⬜      |
+| Get album details        | GET    | /api/albums/{id}              | 200 + album     | ⬜      |
+| Get album (not member)   | GET    | /api/albums/{id}              | 403 Forbidden   | ⬜      |
+| Delete album (owner)     | DELETE | /api/albums/{id}              | 204             | ⬜      |
+| Delete album (not owner) | DELETE | /api/albums/{id}              | 403 Forbidden   | ⬜      |
+| Sync from version 0      | GET    | /api/albums/{id}/sync?since=0 | 200 + manifests | ⬜      |
+| Incremental sync         | GET    | /api/albums/{id}/sync?since=5 | 200 + delta     | ⬜      |
 
 ### 3. Member Management
 
-| Scenario | Method | Endpoint | Expected | Status |
-|----------|--------|----------|----------|--------|
-| List members | GET | /api/albums/{id}/members | 200 + array | ⬜ |
-| Invite member (owner) | POST | /api/albums/{id}/members | 201 + member | ⬜ |
-| Invite member (editor) | POST | /api/albums/{id}/members | 201 (allowed) | ⬜ |
-| Invite member (viewer) | POST | /api/albums/{id}/members | 403 Forbidden | ⬜ |
-| Invite non-existent user | POST | /api/albums/{id}/members | 404 Not Found | ⬜ |
-| Invite duplicate member | POST | /api/albums/{id}/members | 409 Conflict | ⬜ |
-| Remove member | DELETE | /api/albums/{id}/members/{userId} | 204 | ⬜ |
-| Remove owner | DELETE | /api/albums/{id}/members/{ownerId} | 400 Bad Request | ⬜ |
+| Scenario                 | Method | Endpoint                           | Expected        | Status |
+| ------------------------ | ------ | ---------------------------------- | --------------- | ------ |
+| List members             | GET    | /api/albums/{id}/members           | 200 + array     | ⬜      |
+| Invite member (owner)    | POST   | /api/albums/{id}/members           | 201 + member    | ⬜      |
+| Invite member (editor)   | POST   | /api/albums/{id}/members           | 201 (allowed)   | ⬜      |
+| Invite member (viewer)   | POST   | /api/albums/{id}/members           | 403 Forbidden   | ⬜      |
+| Invite non-existent user | POST   | /api/albums/{id}/members           | 404 Not Found   | ⬜      |
+| Invite duplicate member  | POST   | /api/albums/{id}/members           | 409 Conflict    | ⬜      |
+| Remove member            | DELETE | /api/albums/{id}/members/{userId}  | 204             | ⬜      |
+| Remove owner             | DELETE | /api/albums/{id}/members/{ownerId} | 400 Bad Request | ⬜      |
 
 ### 4. Epoch Keys
 
-| Scenario | Method | Endpoint | Expected | Status |
-|----------|--------|----------|----------|--------|
-| Get epoch keys | GET | /api/albums/{id}/keys | 200 + array | ⬜ |
-| Create epoch key | POST | /api/albums/{id}/keys | 201 | ⬜ |
-| Duplicate key | POST | /api/albums/{id}/keys | 409 Conflict | ⬜ |
-| Rotate epoch | POST | /api/albums/{id}/epochs/{n}/rotate | 200 | ⬜ |
-| Rotate to lower epoch | POST | /api/albums/{id}/epochs/{n}/rotate | 400 Bad Request | ⬜ |
+| Scenario              | Method | Endpoint                           | Expected        | Status |
+| --------------------- | ------ | ---------------------------------- | --------------- | ------ |
+| Get epoch keys        | GET    | /api/albums/{id}/keys              | 200 + array     | ⬜      |
+| Create epoch key      | POST   | /api/albums/{id}/keys              | 201             | ⬜      |
+| Duplicate key         | POST   | /api/albums/{id}/keys              | 409 Conflict    | ⬜      |
+| Rotate epoch          | POST   | /api/albums/{id}/epochs/{n}/rotate | 200             | ⬜      |
+| Rotate to lower epoch | POST   | /api/albums/{id}/epochs/{n}/rotate | 400 Bad Request | ⬜      |
 
 ### 5. Manifests & Shards
 
-| Scenario | Method | Endpoint | Expected | Status |
-|----------|--------|----------|----------|--------|
-| Create manifest | POST | /api/manifests | 201 + manifest | ⬜ |
-| Create manifest (viewer) | POST | /api/manifests | 403 Forbidden | ⬜ |
-| Get manifest | GET | /api/manifests/{id} | 200 + manifest | ⬜ |
-| Delete manifest | DELETE | /api/manifests/{id} | 204 | ⬜ |
-| Download shard | GET | /api/shards/{id} | 200 + binary | ⬜ |
-| Download shard (no access) | GET | /api/shards/{id} | 403 Forbidden | ⬜ |
+| Scenario                   | Method | Endpoint            | Expected       | Status |
+| -------------------------- | ------ | ------------------- | -------------- | ------ |
+| Create manifest            | POST   | /api/manifests      | 201 + manifest | ⬜      |
+| Create manifest (viewer)   | POST   | /api/manifests      | 403 Forbidden  | ⬜      |
+| Get manifest               | GET    | /api/manifests/{id} | 200 + manifest | ⬜      |
+| Delete manifest            | DELETE | /api/manifests/{id} | 204            | ⬜      |
+| Download shard             | GET    | /api/shards/{id}    | 200 + binary   | ⬜      |
+| Download shard (no access) | GET    | /api/shards/{id}    | 403 Forbidden  | ⬜      |
 
 ### 6. Tus Upload
 
-| Scenario | Method | Endpoint | Expected | Status |
-|----------|--------|----------|----------|--------|
-| Create upload | POST | /api/files | 201 + Location | ⬜ |
-| Upload chunk | PATCH | /api/files/{id} | 204 | ⬜ |
-| Complete upload | PATCH | /api/files/{id} | 204 + shard created | ⬜ |
-| Upload exceeds quota | POST | /api/files | Quota error | ⬜ |
-| Upload exceeds 6MB | POST | /api/files | 413 Too Large | ⬜ |
+| Scenario             | Method | Endpoint        | Expected            | Status |
+| -------------------- | ------ | --------------- | ------------------- | ------ |
+| Create upload        | POST   | /api/files      | 201 + Location      | ⬜      |
+| Upload chunk         | PATCH  | /api/files/{id} | 204                 | ⬜      |
+| Complete upload      | PATCH  | /api/files/{id} | 204 + shard created | ⬜      |
+| Upload exceeds quota | POST   | /api/files      | Quota error         | ⬜      |
+| Upload exceeds 6MB   | POST   | /api/files      | 413 Too Large       | ⬜      |
 
 ---
 
@@ -353,14 +353,14 @@ Scenario: Remove member and rotate keys
 
 Since E2E tests should treat the app as a black box, verify crypto correctness through **observable behavior**:
 
-| Crypto Property | Observable Behavior |
-|-----------------|---------------------|
-| Encryption works | Uploaded photo displays correctly after sync |
-| Decryption works | Downloaded photo matches original |
-| Integrity works | Corrupted data shows error, not garbage |
-| Signing works | Synced data appears; tampered data rejected |
-| Key derivation works | Same password = same access across devices |
-| Key wiping works | After logout, can't access data without password |
+| Crypto Property      | Observable Behavior                              |
+| -------------------- | ------------------------------------------------ |
+| Encryption works     | Uploaded photo displays correctly after sync     |
+| Decryption works     | Downloaded photo matches original                |
+| Integrity works      | Corrupted data shows error, not garbage          |
+| Signing works        | Synced data appears; tampered data rejected      |
+| Key derivation works | Same password = same access across devices       |
+| Key wiping works     | After logout, can't access data without password |
 
 ### Test Scenarios
 
@@ -432,49 +432,49 @@ Scenario: Idle timeout wipes keys
 
 ### Accessibility Testing
 
-| Test | axe-core Rule | Status |
-|------|---------------|--------|
-| Heading hierarchy | heading-order | ⬜ |
-| Image alt text | image-alt | ⬜ |
-| Button accessible names | button-name | ⬜ |
-| Form label associations | label | ⬜ |
-| Color contrast (4.5:1) | color-contrast | ⬜ |
-| Focus indicators | focus-visible | ⬜ |
-| Keyboard navigation | keyboard | ⬜ |
-| ARIA live regions | aria-live | ⬜ |
+| Test                    | axe-core Rule  | Status |
+| ----------------------- | -------------- | ------ |
+| Heading hierarchy       | heading-order  | ⬜      |
+| Image alt text          | image-alt      | ⬜      |
+| Button accessible names | button-name    | ⬜      |
+| Form label associations | label          | ⬜      |
+| Color contrast (4.5:1)  | color-contrast | ⬜      |
+| Focus indicators        | focus-visible  | ⬜      |
+| Keyboard navigation     | keyboard       | ⬜      |
+| ARIA live regions       | aria-live      | ⬜      |
 
 ### Performance Testing
 
-| Metric | Target | Test Approach |
-|--------|--------|---------------|
-| Time to Interactive | < 3s | Measure on slow 3G |
-| First Contentful Paint | < 1.5s | Lighthouse CI |
-| Virtualized scroll FPS | 60fps | Performance API |
-| 10K photos load | < 2s | Synthetic data test |
-| Upload throughput | > 5MB/s | Large file upload |
+| Metric                 | Target  | Test Approach       |
+| ---------------------- | ------- | ------------------- |
+| Time to Interactive    | < 3s    | Measure on slow 3G  |
+| First Contentful Paint | < 1.5s  | Lighthouse CI       |
+| Virtualized scroll FPS | 60fps   | Performance API     |
+| 10K photos load        | < 2s    | Synthetic data test |
+| Upload throughput      | > 5MB/s | Large file upload   |
 
 ### Security Testing
 
-| Test | Description | Status |
-|------|-------------|--------|
-| COOP/COEP headers | Required for SharedArrayBuffer | ✅ |
-| CSP header validation | Prevent XSS | ⬜ |
-| No secrets in DOM | Keys not in document | ⬜ |
-| No secrets in console | Keys not logged | ⬜ |
-| Session fixation | New session on login | ⬜ |
-| CSRF protection | Token validation | ⬜ |
+| Test                  | Description                    | Status |
+| --------------------- | ------------------------------ | ------ |
+| COOP/COEP headers     | Required for SharedArrayBuffer | ✅      |
+| CSP header validation | Prevent XSS                    | ⬜      |
+| No secrets in DOM     | Keys not in document           | ⬜      |
+| No secrets in console | Keys not logged                | ⬜      |
+| Session fixation      | New session on login           | ⬜      |
+| CSRF protection       | Token validation               | ⬜      |
 
 ### Error Handling
 
-| Error Type | Expected Behavior | Status |
-|------------|-------------------|--------|
-| Network timeout | Retry with backoff, show error | ⬜ |
-| 401 Unauthorized | Redirect to login | ⬜ |
-| 403 Forbidden | Show access denied message | ⬜ |
-| 404 Not Found | Show not found page | ⬜ |
-| 500 Server Error | Show generic error, allow retry | ⬜ |
-| Crypto failure | Show specific error, no data corruption | ⬜ |
-| OPFS quota exceeded | Show storage full message | ⬜ |
+| Error Type          | Expected Behavior                       | Status |
+| ------------------- | --------------------------------------- | ------ |
+| Network timeout     | Retry with backoff, show error          | ⬜      |
+| 401 Unauthorized    | Redirect to login                       | ⬜      |
+| 403 Forbidden       | Show access denied message              | ⬜      |
+| 404 Not Found       | Show not found page                     | ⬜      |
+| 500 Server Error    | Show generic error, allow retry         | ⬜      |
+| Crypto failure      | Show specific error, no data corruption | ⬜      |
+| OPFS quota exceeded | Show storage full message               | ⬜      |
 
 ---
 
@@ -572,13 +572,13 @@ async function mockApiError(
 
 ### Mock Requirements
 
-| Mock | Purpose | Implementation |
-|------|---------|----------------|
-| Fast Crypto Worker | Skip slow Argon2id for most tests | Reduce iterations to 1 |
-| OPFS Mock | Tests without real filesystem | Memory-based implementation |
-| Tus Mock | Predictable upload behavior | Immediate success/failure |
-| Network Conditions | Offline/slow testing | Playwright route interception |
-| Time Mock | Idle timeout testing | `page.clock` API |
+| Mock               | Purpose                           | Implementation                |
+| ------------------ | --------------------------------- | ----------------------------- |
+| Fast Crypto Worker | Skip slow Argon2id for most tests | Reduce iterations to 1        |
+| OPFS Mock          | Tests without real filesystem     | Memory-based implementation   |
+| Tus Mock           | Predictable upload behavior       | Immediate success/failure     |
+| Network Conditions | Offline/slow testing              | Playwright route interception |
+| Time Mock          | Idle timeout testing              | `page.clock` API              |
 
 ---
 
@@ -653,31 +653,31 @@ async function mockApiError(
 
 ### Test Images
 
-| File | Size | Purpose |
-|------|------|---------|
-| `1x1-red.png` | ~70B | Minimal valid image |
-| `100x100-gradient.jpg` | ~2KB | Small JPEG |
-| `1920x1080-photo.jpg` | ~500KB | Typical photo |
-| `6MB-exactly.jpg` | 6MB | Max shard size |
-| `15MB-large.jpg` | 15MB | Multi-shard test |
+| File                   | Size   | Purpose             |
+| ---------------------- | ------ | ------------------- |
+| `1x1-red.png`          | ~70B   | Minimal valid image |
+| `100x100-gradient.jpg` | ~2KB   | Small JPEG          |
+| `1920x1080-photo.jpg`  | ~500KB | Typical photo       |
+| `6MB-exactly.jpg`      | 6MB    | Max shard size      |
+| `15MB-large.jpg`       | 15MB   | Multi-shard test    |
 
 ### Test Users
 
-| User | Role | Purpose |
-|------|------|---------|
-| `alice@test` | Owner | Primary test user |
-| `bob@test` | Editor | Sharing recipient |
-| `carol@test` | Viewer | Read-only member |
-| `dave@test` | Stranger | Unauthorized access tests |
+| User         | Role     | Purpose                   |
+| ------------ | -------- | ------------------------- |
+| `alice@test` | Owner    | Primary test user         |
+| `bob@test`   | Editor   | Sharing recipient         |
+| `carol@test` | Viewer   | Read-only member          |
+| `dave@test`  | Stranger | Unauthorized access tests |
 
 ### Test Albums
 
-| Album | Contents | Purpose |
-|-------|----------|---------|
-| `empty-album` | 0 photos | Empty state testing |
-| `small-album` | 5 photos | Basic functionality |
-| `large-album` | 1000 photos | Virtualization testing |
-| `shared-album` | 10 photos | Sharing flow testing |
+| Album          | Contents    | Purpose                |
+| -------------- | ----------- | ---------------------- |
+| `empty-album`  | 0 photos    | Empty state testing    |
+| `small-album`  | 5 photos    | Basic functionality    |
+| `large-album`  | 1000 photos | Virtualization testing |
+| `shared-album` | 10 photos   | Sharing flow testing   |
 
 ---
 

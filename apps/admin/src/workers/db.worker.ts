@@ -2,11 +2,11 @@
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
 import type {
-  DbWorkerApi,
-  PhotoMeta,
-  DecryptedManifest,
-  Bounds,
-  GeoPoint,
+    Bounds,
+    DbWorkerApi,
+    DecryptedManifest,
+    GeoPoint,
+    PhotoMeta,
 } from './types';
 
 // sql.js types - the actual module is loaded dynamically from public folder

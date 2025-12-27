@@ -2,17 +2,17 @@
  * Epoch Key Store Unit Tests
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  getEpochKey,
-  getCurrentEpochKey,
-  setEpochKey,
-  hasEpochKey,
-  getCachedEpochIds,
-  clearAlbumKeys,
-  clearAllEpochKeys,
-  getCacheSize,
-  type EpochKeyBundle,
+    clearAlbumKeys,
+    clearAllEpochKeys,
+    getCachedEpochIds,
+    getCacheSize,
+    getCurrentEpochKey,
+    getEpochKey,
+    hasEpochKey,
+    setEpochKey,
+    type EpochKeyBundle,
 } from '../src/lib/epoch-key-store';
 
 describe('Epoch Key Store', () => {

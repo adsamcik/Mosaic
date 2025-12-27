@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { PhotoMeta } from '../../workers/types';
+import { useCallback, useEffect, useState } from 'react';
 import { loadPhoto, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
+import type { PhotoMeta } from '../../workers/types';
 
 interface PhotoThumbnailProps {
   photo: PhotoMeta;

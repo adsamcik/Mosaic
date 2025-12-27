@@ -1,16 +1,16 @@
-import { getDbClient } from './db-client';
-import { getCryptoClient } from './crypto-client';
-import { getApi, fromBase64 } from './api';
 import type { DecryptedManifest } from '../workers/types';
+import { fromBase64, getApi } from './api';
+import { getCryptoClient } from './crypto-client';
+import { getDbClient } from './db-client';
 import {
-  getEpochKey,
-  setEpochKey as storeEpochKey,
-  clearAllEpochKeys,
-} from './epoch-key-store';
-import {
-  fetchAndUnwrapEpochKeys,
-  getOrFetchEpochKey,
+    fetchAndUnwrapEpochKeys,
+    getOrFetchEpochKey,
 } from './epoch-key-service';
+import {
+    clearAllEpochKeys,
+    getEpochKey,
+    setEpochKey as storeEpochKey,
+} from './epoch-key-store';
 
 /**
  * Get epoch read key for an album/epoch.
@@ -227,4 +227,5 @@ class SyncEngine extends EventTarget {
 export const syncEngine = new SyncEngine();
 
 // Re-export types for convenience
-export type { SyncEventType, SyncEventDetail };
+export type { SyncEventDetail, SyncEventType };
+

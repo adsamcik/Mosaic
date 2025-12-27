@@ -5,16 +5,16 @@
  * Uses crypto worker for cryptographic operations.
  */
 
-import { getApi, fromBase64 } from './api';
+import { fromBase64, getApi } from './api';
+import type { EpochKeyRecord } from './api-types';
 import { getCryptoClient } from './crypto-client';
 import {
-  getEpochKey,
-  setEpochKey,
-  getCurrentEpochKey,
-  hasEpochKey,
-  type EpochKeyBundle,
+    getCurrentEpochKey,
+    getEpochKey,
+    hasEpochKey,
+    setEpochKey,
+    type EpochKeyBundle,
 } from './epoch-key-store';
-import type { EpochKeyRecord } from './api-types';
 
 /** Error thrown when epoch key operations fail */
 export class EpochKeyError extends Error {

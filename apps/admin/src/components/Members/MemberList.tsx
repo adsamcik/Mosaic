@@ -6,11 +6,11 @@
  * Member removal triggers epoch key rotation for security.
  */
 
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import {
-  useMemberManagement,
-  type MemberInfo,
-  type RemovalProgressStep,
+    useMemberManagement,
+    type MemberInfo,
+    type RemovalProgressStep,
 } from '../../hooks/useMemberManagement';
 import { InviteMemberDialog } from './InviteMemberDialog';
 

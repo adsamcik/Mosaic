@@ -1,18 +1,18 @@
 /**
  * Settings Service Tests
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  getSettings,
-  saveSettings,
-  updateSettings,
-  getSetting,
-  setSetting,
-  resetSettings,
-  getDefaultSettings,
-  getIdleTimeoutMs,
-  subscribeToSettings,
-  type UserSettings,
+    getDefaultSettings,
+    getIdleTimeoutMs,
+    getSetting,
+    getSettings,
+    resetSettings,
+    saveSettings,
+    setSetting,
+    subscribeToSettings,
+    updateSettings,
+    type UserSettings,
 } from '../src/lib/settings-service';
 
 describe('settings-service', () => {

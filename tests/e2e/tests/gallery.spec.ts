@@ -5,7 +5,7 @@
  * Phase 1: Fixed soft assertions, added proper waits.
  */
 
-import { test, expect, GalleryPage, ApiHelper, LoginPage, TEST_CONSTANTS } from '../fixtures';
+import { ApiHelper, expect, GalleryPage, LoginPage, test, TEST_CONSTANTS } from '../fixtures';
 
 test.describe('Photo Gallery', () => {
   const apiHelper = new ApiHelper();

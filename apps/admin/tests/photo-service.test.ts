@@ -4,17 +4,17 @@
  * Tests for the photo assembly and caching service.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  loadPhoto,
-  releasePhoto,
-  clearPhotoCache,
-  getCacheStats,
-  PhotoAssemblyError,
-  loadThumbnailFromBase64,
-  releaseThumbnail,
-  clearThumbnailCache,
-  getThumbnailCacheStats,
+    clearPhotoCache,
+    clearThumbnailCache,
+    getCacheStats,
+    getThumbnailCacheStats,
+    loadPhoto,
+    loadThumbnailFromBase64,
+    PhotoAssemblyError,
+    releasePhoto,
+    releaseThumbnail,
 } from '../src/lib/photo-service';
 
 // Mock dependencies

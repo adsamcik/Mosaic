@@ -2,17 +2,17 @@
  * Epoch Key Service Unit Tests
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { EpochKeyRecord } from '../src/lib/api-types';
 import {
-  fetchAndUnwrapEpochKeys,
-  getOrFetchEpochKey,
-  getCurrentOrFetchEpochKey,
-  ensureEpochKeysLoaded,
-  EpochKeyError,
-  EpochKeyErrorCode,
+    ensureEpochKeysLoaded,
+    EpochKeyError,
+    EpochKeyErrorCode,
+    fetchAndUnwrapEpochKeys,
+    getCurrentOrFetchEpochKey,
+    getOrFetchEpochKey,
 } from '../src/lib/epoch-key-service';
 import { clearAllEpochKeys, getEpochKey, setEpochKey } from '../src/lib/epoch-key-store';
-import type { EpochKeyRecord } from '../src/lib/api-types';
 
 // Mock the API client
 vi.mock('../src/lib/api', () => ({

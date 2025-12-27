@@ -1,10 +1,9 @@
 /**
  * Settings Page Component Tests
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsPage } from '../src/components/Settings/SettingsPage';
 import type { User } from '../src/lib/api-types';
 

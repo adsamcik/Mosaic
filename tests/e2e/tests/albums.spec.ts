@@ -5,7 +5,7 @@
  * Phase 1: Fixed soft assertions, added proper waits.
  */
 
-import { test, expect, AppShell, ApiHelper, LoginPage, TEST_CONSTANTS } from '../fixtures';
+import { ApiHelper, AppShell, expect, LoginPage, test, TEST_CONSTANTS } from '../fixtures';
 
 test.describe('Album Management', () => {
   const apiHelper = new ApiHelper();

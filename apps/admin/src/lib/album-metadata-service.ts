@@ -5,8 +5,8 @@
  * that are encrypted with epoch read keys.
  */
 
-import { getCryptoClient } from './crypto-client';
 import { fromBase64 } from './api';
+import { getCryptoClient } from './crypto-client';
 
 /**
  * Error thrown when album metadata decryption fails

@@ -3,8 +3,8 @@ import type { DbWorkerApi } from '../workers/types';
 
 // Import worker constructor via Vite's ?worker suffix
 // This ensures Vite properly bundles and transforms the worker
-import DbWorkerConstructor from '../workers/db.worker.ts?worker';
 import DbSharedWorkerConstructor from '../workers/db.worker.ts?sharedworker';
+import DbWorkerConstructor from '../workers/db.worker.ts?worker';
 
 let worker: SharedWorker | Worker | null = null;
 let api: Comlink.Remote<DbWorkerApi> | null = null;

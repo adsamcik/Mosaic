@@ -4,12 +4,11 @@
  * Tests the member management components using vitest + happy-dom.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
-import { MemberList } from '../src/components/Members/MemberList';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InviteMemberDialog } from '../src/components/Members/InviteMemberDialog';
+import { MemberList } from '../src/components/Members/MemberList';
 
 // Mock the useMemberManagement hook
 vi.mock('../src/hooks/useMemberManagement', () => ({

@@ -5,9 +5,9 @@
  * The cover photo is the first photo in the album (by taken_at date).
  */
 
+import type { PhotoMeta } from '../workers/types';
 import { getDbClient } from './db-client';
 import { loadPhoto, releasePhoto } from './photo-service';
-import type { PhotoMeta } from '../workers/types';
 
 /**
  * Error thrown when album cover operations fail

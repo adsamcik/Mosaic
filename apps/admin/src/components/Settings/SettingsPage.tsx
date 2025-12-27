@@ -9,23 +9,23 @@
  * - About
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { session } from '../../lib/session';
+import { useCallback, useEffect, useState } from 'react';
+import { clearAllCovers } from '../../lib/album-cover-service';
+import { clearAllCachedMetadata } from '../../lib/album-metadata-service';
 import { getApi } from '../../lib/api';
-import {
-  getSettings,
-  saveSettings,
-  getDefaultSettings,
-  type UserSettings,
-  type IdleTimeoutMinutes,
-  type Theme,
-  type ThumbnailQuality,
-} from '../../lib/settings-service';
+import type { User } from '../../lib/api-types';
 import { closeDbClient } from '../../lib/db-client';
 import { clearAllEpochKeys } from '../../lib/epoch-key-store';
-import { clearAllCachedMetadata } from '../../lib/album-metadata-service';
-import { clearAllCovers } from '../../lib/album-cover-service';
-import type { User } from '../../lib/api-types';
+import { session } from '../../lib/session';
+import {
+    getDefaultSettings,
+    getSettings,
+    saveSettings,
+    type IdleTimeoutMinutes,
+    type Theme,
+    type ThumbnailQuality,
+    type UserSettings,
+} from '../../lib/settings-service';
 
 // =============================================================================
 // Types

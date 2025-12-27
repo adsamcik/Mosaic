@@ -4,10 +4,9 @@
  * Tests for photo deletion functionality including single and bulk delete.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createElement, useState, useCallback } from 'react';
+import { act, createElement, useCallback, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Use vi.hoisted to create mocks before vi.mock hoisting
 const mocks = vi.hoisted(() => ({
@@ -47,7 +46,7 @@ vi.mock('../src/lib/album-cover-service', () => ({
 }));
 
 // Import after mocks are set up
-import { usePhotoActions, PhotoDeleteError } from '../src/hooks/usePhotoActions';
+import { PhotoDeleteError, usePhotoActions } from '../src/hooks/usePhotoActions';
 
 // Test component that captures hook result and updates on state changes
 function TestComponent({ onResult }: { onResult: (result: ReturnType<typeof usePhotoActions>) => void }) {

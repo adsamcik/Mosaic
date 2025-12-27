@@ -5,7 +5,7 @@
  * Handles user lookup, role selection, and invite flow.
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { UserPublic } from '../../lib/api-types';
 
 interface InviteMemberDialogProps {

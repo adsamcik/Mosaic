@@ -1,12 +1,12 @@
-import { getDbClient, closeDbClient } from './db-client';
-import { getCryptoClient, closeCryptoClient } from './crypto-client';
-import { closeGeoClient } from './geo-client';
-import { getApi, toBase64, fromBase64 } from './api';
-import { clearAllEpochKeys } from './epoch-key-store';
-import { clearAllCachedMetadata } from './album-metadata-service';
 import { clearAllCovers } from './album-cover-service';
-import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
+import { clearAllCachedMetadata } from './album-metadata-service';
+import { fromBase64, getApi, toBase64 } from './api';
 import type { User } from './api-types';
+import { closeCryptoClient, getCryptoClient } from './crypto-client';
+import { closeDbClient, getDbClient } from './db-client';
+import { clearAllEpochKeys } from './epoch-key-store';
+import { closeGeoClient } from './geo-client';
+import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
 
 /** Events that reset the idle timer */
 const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart', 'scroll'] as const;

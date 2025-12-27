@@ -4,10 +4,9 @@
  * Tests the CreateAlbumDialog component behavior using vitest + happy-dom.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreateAlbumDialog } from '../src/components/Albums/CreateAlbumDialog';
 
 // Helper to render component and get elements

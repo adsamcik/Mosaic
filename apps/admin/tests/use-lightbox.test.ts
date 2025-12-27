@@ -6,10 +6,9 @@
  * since @testing-library/react is not available.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createElement, useState } from 'react';
+import { act, createElement, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLightbox } from '../src/hooks/useLightbox';
 import type { PhotoMeta } from '../src/workers/types';
 

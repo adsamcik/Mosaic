@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { syncEngine } from '../lib/sync-engine';
-import { getApi, fromBase64 } from '../lib/api';
+import { useCallback, useEffect, useState } from 'react';
+import { fromBase64, getApi } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
+import { syncEngine } from '../lib/sync-engine';
 
 /**
  * Hook to get epoch read key for decryption
