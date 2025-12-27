@@ -156,6 +156,68 @@ export interface CryptoWorkerApi {
     signature: Uint8Array,
     pubKey: Uint8Array
   ): Promise<boolean>;
+
+  /**
+   * Get the user's identity public key (Ed25519)
+   * Returns null if identity keypair not yet derived
+   */
+  getIdentityPublicKey(): Promise<Uint8Array | null>;
+
+  /**
+   * Derive identity keypair from account key
+   * Must be called after init() and before identity-dependent operations
+   */
+  deriveIdentity(): Promise<void>;
+
+  /**
+   * Open (decrypt) an epoch key bundle
+   * @param bundle - Encrypted epoch key bundle from server
+   * @param senderPubkey - Ed25519 public key of the sender (for signature verification)
+   * @param albumId - Album ID for context validation
+   * @param minEpochId - Minimum acceptable epoch ID (prevents replay)
+   * @returns Decrypted epoch key (readKey + signKeypair)
+   */
+  openEpochKeyBundle(
+    bundle: Uint8Array,
+    senderPubkey: Uint8Array,
+    albumId: string,
+    minEpochId: number
+  ): Promise<{ readKey: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }>;
+
+  /**
+   * Create an epoch key bundle for sharing with another user
+   * @param albumId - Album ID
+   * @param epochId - Epoch ID
+   * @param readKey - Epoch read key (32 bytes)
+   * @param signKeypair - Epoch signing keypair
+   * @param recipientPubkey - Recipient's Ed25519 identity public key
+   * @returns Sealed and signed bundle ready for transmission
+   */
+  createEpochKeyBundle(
+    albumId: string,
+    epochId: number,
+    readKey: Uint8Array,
+    signPublicKey: Uint8Array,
+    signSecretKey: Uint8Array,
+    recipientPubkey: Uint8Array
+  ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array }>;
+
+  /**
+   * Generate a new epoch key for album creation or rotation
+   * @param epochId - Epoch ID
+   * @returns New epoch key with readKey and signKeypair
+   */
+  generateEpochKey(
+    epochId: number
+  ): Promise<{ readKey: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }>;
+
+  /**
+   * Sign manifest data for upload
+   * @param manifestData - Manifest bytes to sign
+   * @param signSecretKey - Epoch sign secret key (64 bytes)
+   * @returns Ed25519 signature (64 bytes)
+   */
+  signManifest(manifestData: Uint8Array, signSecretKey: Uint8Array): Promise<Uint8Array>;
 }
 
 /** GeoJSON Feature for map clustering */

@@ -1,12 +1,17 @@
 import { getDbClient, closeDbClient } from './db-client';
 import { getCryptoClient, closeCryptoClient } from './crypto-client';
 import { closeGeoClient } from './geo-client';
+import { getApi, toBase64, fromBase64 } from './api';
+import type { User } from './api-types';
 
 /** Idle timeout in milliseconds (30 minutes) */
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Events that reset the idle timer */
 const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart', 'scroll'] as const;
+
+/** Salt storage key in localStorage */
+const USER_SALT_KEY = 'mosaic:userSalt';
 
 type SessionListener = () => void;
 
@@ -17,6 +22,7 @@ type SessionListener = () => void;
 class SessionManager {
   private idleTimer: number | null = null;
   private _isLoggedIn = false;
+  private _currentUser: User | null = null;
   private listeners = new Set<SessionListener>();
   private boundResetIdleTimer: () => void;
 
@@ -27,6 +33,11 @@ class SessionManager {
   /** Whether user is currently logged in */
   get isLoggedIn(): boolean {
     return this._isLoggedIn;
+  }
+
+  /** Current authenticated user */
+  get currentUser(): User | null {
+    return this._currentUser;
   }
 
   /**
@@ -57,19 +68,38 @@ class SessionManager {
       }
     }
 
-    // Initialize crypto worker with password
-    const crypto = await getCryptoClient();
+    // Get current user from backend (authenticated via reverse proxy)
+    const api = getApi();
+    this._currentUser = await api.getCurrentUser();
+
+    // Get or generate user salt
+    // Salt is stored locally and used for Argon2id key derivation
+    let userSalt: Uint8Array;
+    const storedSalt = localStorage.getItem(USER_SALT_KEY);
     
-    // TODO: Fetch user salt from server based on username
-    // For now, use placeholder salts
-    const userSalt = new Uint8Array(16);
-    const accountSalt = new Uint8Array(16);
+    if (storedSalt) {
+      userSalt = fromBase64(storedSalt);
+    } else {
+      // First login on this device - generate a new salt
+      userSalt = crypto.getRandomValues(new Uint8Array(16));
+      localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+    }
+
+    // Account salt is derived from user ID for deterministic derivation
+    // This ensures the same keys are derived regardless of device
+    const accountSalt = new TextEncoder().encode(this._currentUser.id).slice(0, 16);
     
-    await crypto.init(password, userSalt, accountSalt);
+    // Pad to 16 bytes if user ID is shorter
+    const paddedAccountSalt = new Uint8Array(16);
+    paddedAccountSalt.set(accountSalt);
+
+    // Initialize crypto worker with password and salts
+    const cryptoClient = await getCryptoClient();
+    await cryptoClient.init(password, userSalt, paddedAccountSalt);
 
     // Initialize database worker with session key
     const db = await getDbClient();
-    const sessionKey = await crypto.getSessionKey();
+    const sessionKey = await cryptoClient.getSessionKey();
     await db.init(sessionKey);
 
     this._isLoggedIn = true;
@@ -98,7 +128,8 @@ class SessionManager {
     await closeCryptoClient();
     closeGeoClient();
 
-    // Clear session storage
+    // Clear session state
+    this._currentUser = null;
     sessionStorage.clear();
 
     this._isLoggedIn = false;

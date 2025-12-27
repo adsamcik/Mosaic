@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
+import sodium from 'libsodium-wrappers-sumo';
 import type {
   DbWorkerApi,
   PhotoMeta,
@@ -8,6 +9,11 @@ import type {
   Bounds,
   GeoPoint,
 } from './types';
+
+/** Nonce size for XChaCha20-Poly1305 */
+const NONCE_SIZE = 24;
+/** Auth tag size */
+const TAG_SIZE = 16;
 
 /**
  * Database Worker Implementation
@@ -17,21 +23,44 @@ class DbWorker implements DbWorkerApi {
   private sql: SqlJsStatic | null = null;
   private db: Database | null = null;
   private sessionKey: Uint8Array | null = null;
+  private sodiumReady = false;
+
+  /**
+   * Ensure libsodium is initialized before crypto operations.
+   */
+  private async ensureSodiumReady(): Promise<void> {
+    if (!this.sodiumReady) {
+      await sodium.ready;
+      this.sodiumReady = true;
+    }
+  }
 
   async init(sessionKey: Uint8Array): Promise<void> {
     this.sessionKey = sessionKey;
 
-    // Initialize SQL.js WASM
-    this.sql = await initSqlJs({
-      locateFile: (_file: string) => `/sql-wasm.wasm`,
-    });
+    // Initialize libsodium and SQL.js WASM in parallel
+    const [, sqlModule] = await Promise.all([
+      this.ensureSodiumReady(),
+      initSqlJs({
+        locateFile: (_file: string) => `/sql-wasm.wasm`,
+      }),
+    ]);
+
+    this.sql = sqlModule;
 
     // Try to load existing DB from OPFS
     const existingData = await this.loadFromOPFS();
     if (existingData) {
-      // TODO: Decrypt with sessionKey when crypto integration is done
-      const decrypted = await this.decryptBlob(existingData);
-      this.db = new this.sql.Database(decrypted);
+      try {
+        // Decrypt existing database with XChaCha20-Poly1305
+        const decrypted = await this.decryptBlob(existingData);
+        this.db = new this.sql.Database(decrypted);
+      } catch (error) {
+        // Decryption failed - could be wrong password or corrupted data
+        // Start fresh with a new database
+        console.warn('Failed to decrypt existing database, starting fresh:', error);
+        this.db = new this.sql.Database();
+      }
     } else {
       this.db = new this.sql.Database();
     }
@@ -301,7 +330,7 @@ class DbWorker implements DbWorkerApi {
     if (!this.db) return;
 
     const data = this.db.export();
-    // TODO: Encrypt with sessionKey when crypto integration is done
+    // Encrypt database with XChaCha20-Poly1305 using session key
     const encrypted = await this.encryptBlob(data);
 
     const root = await navigator.storage.getDirectory();
@@ -316,15 +345,47 @@ class DbWorker implements DbWorkerApi {
     await writable.close();
   }
 
-  // Placeholder encryption - will be replaced with real XChaCha20-Poly1305
+  /**
+   * Encrypt data using XChaCha20-Poly1305.
+   * Format: nonce (24 bytes) || ciphertext (data + 16 byte auth tag)
+   */
   private async encryptBlob(data: Uint8Array): Promise<Uint8Array> {
-    // Mock: Return data as-is (to be replaced in crypto integration)
-    return data;
+    if (!this.sessionKey) {
+      throw new Error('Session key not initialized');
+    }
+
+    // Generate fresh random nonce (24 bytes for XChaCha20-Poly1305)
+    const nonce = sodium.randombytes_buf(NONCE_SIZE);
+
+    // Encrypt with XChaCha20-Poly1305
+    const ciphertext = sodium.crypto_secretbox_easy(data, nonce, this.sessionKey);
+
+    // Return nonce || ciphertext
+    const result = new Uint8Array(NONCE_SIZE + ciphertext.length);
+    result.set(nonce, 0);
+    result.set(ciphertext, NONCE_SIZE);
+
+    return result;
   }
 
   private async decryptBlob(data: Uint8Array): Promise<Uint8Array> {
-    // Mock: Return data as-is (to be replaced in crypto integration)
-    return data;
+    if (!this.sessionKey) {
+      throw new Error('Session key not initialized');
+    }
+
+    // Minimum length: nonce + tag + 1 byte of data
+    if (data.length < NONCE_SIZE + TAG_SIZE + 1) {
+      throw new Error('Encrypted data too short');
+    }
+
+    const nonce = data.slice(0, NONCE_SIZE);
+    const ciphertext = data.slice(NONCE_SIZE);
+
+    try {
+      return sodium.crypto_secretbox_open_easy(ciphertext, nonce, this.sessionKey);
+    } catch {
+      throw new Error('Decryption failed - authentication error');
+    }
   }
 }
 

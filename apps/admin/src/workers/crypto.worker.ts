@@ -6,11 +6,17 @@ import type { CryptoWorkerApi, PhotoMeta, EncryptedShard } from './types';
 // Import real crypto functions from @mosaic/crypto
 import {
   deriveKeys,
+  deriveIdentityKeypair,
   encryptShard as cryptoEncryptShard,
   decryptShard as cryptoDecryptShard,
   verifyManifest as cryptoVerifyManifest,
+  signManifest as cryptoSignManifest,
+  generateEpochKey as cryptoGenerateEpochKey,
+  sealAndSignBundle,
+  verifyAndOpenBundle,
   memzero,
   getArgon2Params,
+  type IdentityKeypair,
 } from '@mosaic/crypto';
 
 /**
@@ -25,6 +31,9 @@ class CryptoWorker implements CryptoWorkerApi {
 
   /** Account key (L2) for key hierarchy operations */
   private accountKey: Uint8Array | null = null;
+
+  /** User identity keypair (Ed25519 + X25519) */
+  private identityKeypair: IdentityKeypair | null = null;
 
   /** Whether libsodium has been initialized */
   private sodiumReady = false;
@@ -85,6 +94,11 @@ class CryptoWorker implements CryptoWorkerApi {
     if (this.accountKey) {
       memzero(this.accountKey);
       this.accountKey = null;
+    }
+    if (this.identityKeypair) {
+      memzero(this.identityKeypair.ed25519.secretKey);
+      memzero(this.identityKeypair.x25519.secretKey);
+      this.identityKeypair = null;
     }
   }
 
@@ -192,6 +206,140 @@ class CryptoWorker implements CryptoWorkerApi {
   ): Promise<boolean> {
     await this.ensureSodiumReady();
     return cryptoVerifyManifest(manifest, signature, pubKey);
+  }
+
+  /**
+   * Get the user's identity public key (Ed25519).
+   * Returns null if identity keypair not yet derived.
+   */
+  async getIdentityPublicKey(): Promise<Uint8Array | null> {
+    if (!this.identityKeypair) {
+      return null;
+    }
+    return new Uint8Array(this.identityKeypair.ed25519.publicKey);
+  }
+
+  /**
+   * Derive identity keypair from account key.
+   * Must be called after init() and before identity-dependent operations.
+   */
+  async deriveIdentity(): Promise<void> {
+    if (!this.accountKey) {
+      throw new Error('Crypto worker not initialized');
+    }
+    await this.ensureSodiumReady();
+
+    // Derive identity keypair from account key
+    this.identityKeypair = deriveIdentityKeypair(this.accountKey);
+  }
+
+  /**
+   * Open (decrypt) an epoch key bundle.
+   */
+  async openEpochKeyBundle(
+    bundle: Uint8Array,
+    senderPubkey: Uint8Array,
+    albumId: string,
+    minEpochId: number
+  ): Promise<{ readKey: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }> {
+    if (!this.identityKeypair) {
+      throw new Error('Identity not derived - call deriveIdentity() first');
+    }
+    await this.ensureSodiumReady();
+
+    // Parse the bundle format: signature (64) || sealed box
+    if (bundle.length < 64) {
+      throw new Error('Bundle too short');
+    }
+    const signature = bundle.slice(0, 64);
+    const sealedBox = bundle.slice(64);
+
+    // Build validation context
+    const context = {
+      albumId,
+      minEpochId,
+    };
+
+    // Verify and open the bundle
+    const opened = verifyAndOpenBundle(
+      sealedBox,
+      signature,
+      senderPubkey,
+      this.identityKeypair,
+      context
+    );
+
+    return {
+      readKey: opened.readKey,
+      signPublicKey: opened.signKeypair.publicKey,
+      signSecretKey: opened.signKeypair.secretKey,
+    };
+  }
+
+  /**
+   * Create an epoch key bundle for sharing with another user.
+   */
+  async createEpochKeyBundle(
+    albumId: string,
+    epochId: number,
+    readKey: Uint8Array,
+    signPublicKey: Uint8Array,
+    signSecretKey: Uint8Array,
+    recipientPubkey: Uint8Array
+  ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array }> {
+    if (!this.identityKeypair) {
+      throw new Error('Identity not derived - call deriveIdentity() first');
+    }
+    await this.ensureSodiumReady();
+
+    // Create the epoch key bundle
+    const bundle = {
+      version: 1,
+      albumId,
+      epochId,
+      recipientPubkey,
+      readKey,
+      signKeypair: {
+        publicKey: signPublicKey,
+        secretKey: signSecretKey,
+      },
+    };
+
+    // Seal and sign the bundle
+    const sealed = sealAndSignBundle(bundle, recipientPubkey, this.identityKeypair);
+
+    return {
+      encryptedBundle: sealed.sealed,
+      signature: sealed.signature,
+    };
+  }
+
+  /**
+   * Generate a new epoch key for album creation or rotation.
+   */
+  async generateEpochKey(
+    epochId: number
+  ): Promise<{ readKey: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }> {
+    await this.ensureSodiumReady();
+
+    const epochKey = cryptoGenerateEpochKey(epochId);
+
+    return {
+      readKey: epochKey.readKey,
+      signPublicKey: epochKey.signKeypair.publicKey,
+      signSecretKey: epochKey.signKeypair.secretKey,
+    };
+  }
+
+  /**
+   * Sign manifest data for upload.
+   */
+  async signManifest(
+    manifestData: Uint8Array,
+    signSecretKey: Uint8Array
+  ): Promise<Uint8Array> {
+    await this.ensureSodiumReady();
+    return cryptoSignManifest(manifestData, signSecretKey);
   }
 }
 

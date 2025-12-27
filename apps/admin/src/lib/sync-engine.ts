@@ -1,28 +1,52 @@
 import { getDbClient } from './db-client';
 import { getCryptoClient } from './crypto-client';
-import type { ManifestRecord, DecryptedManifest } from '../workers/types';
+import { getApi, fromBase64 } from './api';
+import type { DecryptedManifest } from '../workers/types';
+
+/** Epoch key cache: albumId -> epochId -> readKey */
+const epochKeyCache = new Map<string, Map<number, Uint8Array>>();
 
 /**
- * Mock API client for parallel development
- * Will be replaced with real API when Stream B (Backend) is complete
+ * Get or fetch epoch read key for an album/epoch
  */
-const mockApi = {
-  async getAlbum(id: string) {
-    return { id, currentVersion: 100 };
-  },
+async function getEpochReadKey(
+  albumId: string,
+  epochId: number
+): Promise<Uint8Array | null> {
+  // Check cache first
+  let albumKeys = epochKeyCache.get(albumId);
+  if (albumKeys?.has(epochId)) {
+    return albumKeys.get(epochId)!;
+  }
 
-  async syncDelta(
-    _albumId: string,
-    _since: number
-  ): Promise<{
-    manifests: ManifestRecord[];
-    albumVersion: number;
-    hasMore: boolean;
-  }> {
-    // Return empty data for mock
-    return { manifests: [], albumVersion: 100, hasMore: false };
-  },
-};
+  // Fetch epoch keys from server
+  const api = getApi();
+  const epochKeys = await api.getEpochKeys(albumId);
+
+  // Initialize cache for album if needed
+  if (!albumKeys) {
+    albumKeys = new Map();
+    epochKeyCache.set(albumId, albumKeys);
+  }
+
+  // For now, store the encrypted key bundles
+  // TODO: When crypto worker has identity key support, unwrap these
+  for (const ek of epochKeys) {
+    // The epoch key needs to be unwrapped using the user's identity key
+    // For now, we'll need to extend the crypto worker to support this
+    // This is a placeholder that stores the encrypted bundle
+    const bundle = fromBase64(ek.encryptedKeyBundle);
+    
+    // TODO: Properly unwrap using crypto.openEpochKeyBundle
+    // For now, we can't proceed without identity key support
+    // albumKeys.set(ek.epochId, await crypto.openEpochKeyBundle(bundle, ...));
+    
+    // Temporary: skip if we can't unwrap
+    console.warn(`Epoch key ${ek.epochId} needs unwrapping (${bundle.length} bytes)`);
+  }
+
+  return albumKeys.get(epochId) ?? null;
+}
 
 /** Sync event types */
 type SyncEventType = 'sync-start' | 'sync-progress' | 'sync-complete' | 'sync-error';
@@ -49,9 +73,9 @@ class SyncEngine extends EventTarget {
   /**
    * Sync an album from the server
    * @param albumId - Album ID to sync
-   * @param readKey - Epoch read key for decryption
+   * @param readKey - Epoch read key for decryption (optional if using cached keys)
    */
-  async sync(albumId: string, readKey: Uint8Array): Promise<void> {
+  async sync(albumId: string, readKey?: Uint8Array): Promise<void> {
     if (this.syncing) {
       console.warn('Sync already in progress');
       return;
@@ -65,21 +89,38 @@ class SyncEngine extends EventTarget {
     try {
       const db = await getDbClient();
       const crypto = await getCryptoClient();
+      const api = getApi();
 
       // Get local version
       const localVersion = await db.getAlbumVersion(albumId);
 
       // Fetch delta from server
-      const response = await mockApi.syncDelta(albumId, localVersion);
+      const response = await api.syncAlbum(albumId, localVersion);
 
       // Decrypt manifests
       const decrypted: DecryptedManifest[] = [];
       for (const m of response.manifests) {
+        // Get epoch read key for this manifest
+        let epochReadKey = readKey;
+        if (!epochReadKey) {
+          const cachedKey = await getEpochReadKey(albumId, m.versionCreated);
+          if (!cachedKey) {
+            console.warn(`No epoch key available for manifest ${m.id}`);
+            continue;
+          }
+          epochReadKey = cachedKey;
+        }
+
+        // Decode base64 values from API
+        const encryptedMeta = fromBase64(m.encryptedMeta);
+        const signature = fromBase64(m.signature);
+        const signerPubkey = fromBase64(m.signerPubkey);
+
         // Verify signature before decryption
         const isValid = await crypto.verifyManifest(
-          m.encryptedMeta,
-          new TextEncoder().encode(m.signature),
-          new TextEncoder().encode(m.signerPubkey)
+          encryptedMeta,
+          signature,
+          signerPubkey
         );
 
         if (!isValid) {
@@ -88,7 +129,7 @@ class SyncEngine extends EventTarget {
         }
 
         // Decrypt metadata
-        const meta = await crypto.decryptManifest(m.encryptedMeta, readKey);
+        const meta = await crypto.decryptManifest(encryptedMeta, epochReadKey);
 
         decrypted.push({
           id: m.id,
@@ -137,6 +178,13 @@ class SyncEngine extends EventTarget {
     if (this.syncAbortController) {
       this.syncAbortController.abort();
     }
+  }
+
+  /**
+   * Clear cached epoch keys (call on logout)
+   */
+  clearCache(): void {
+    epochKeyCache.clear();
   }
 
   private dispatchSyncEvent(type: SyncEventType, detail: SyncEventDetail): void {

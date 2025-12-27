@@ -1,53 +1,47 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { getApi } from '../lib/api';
 import type { Album } from '../components/Albums/AlbumCard';
 
-// Mock albums for development
-const MOCK_ALBUMS: Album[] = [
-  { id: '1', name: 'Vacation 2024', photoCount: 45, createdAt: '2024-06-15T10:00:00Z' },
-  { id: '2', name: 'Family', photoCount: 128, createdAt: '2024-01-01T00:00:00Z' },
-  { id: '3', name: 'Work Events', photoCount: 23, createdAt: '2024-03-20T14:30:00Z' },
-];
-
 /**
- * Hook to fetch albums
+ * Hook to fetch albums from the API
  */
 export function useAlbums() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadAlbums = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-    async function loadAlbums() {
-      try {
-        setIsLoading(true);
-        setError(null);
+      const api = getApi();
+      const apiAlbums = await api.listAlbums();
 
-        // TODO: Fetch albums from API
-        // For now, use mock data with simulated delay
-        await new Promise((r) => setTimeout(r, 500));
+      // Transform API albums to frontend format
+      // Note: Album names are encrypted and stored in album metadata
+      // For now, use a placeholder name based on ID
+      const transformedAlbums: Album[] = apiAlbums.map((album) => ({
+        id: album.id,
+        // Placeholder name until we have encrypted album metadata
+        name: `Album ${album.id.slice(0, 8)}`,
+        // Photo count is not returned from API - would need to sync first
+        // This could be tracked in local DB after sync
+        photoCount: 0,
+        createdAt: album.createdAt,
+      }));
 
-        if (!cancelled) {
-          setAlbums(MOCK_ALBUMS);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err : new Error(String(err)));
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
+      setAlbums(transformedAlbums);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setIsLoading(false);
     }
-
-    void loadAlbums();
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
-  return { albums, isLoading, error };
+  useEffect(() => {
+    void loadAlbums();
+  }, [loadAlbums]);
+
+  return { albums, isLoading, error, refetch: loadAlbums };
 }

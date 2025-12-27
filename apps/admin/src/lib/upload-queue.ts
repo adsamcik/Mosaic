@@ -1,5 +1,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
+import * as tus from 'tus-js-client';
 import { getCryptoClient } from './crypto-client';
+import { TUS_ENDPOINT } from './api';
 
 /** Chunk size for splitting files (6MB) */
 const CHUNK_SIZE = 6 * 1024 * 1024;
@@ -202,8 +204,13 @@ class UploadQueue {
           i
         );
 
-        // Upload via Tus protocol (mock for now)
-        const shardId = await this.tusUpload(task.albumId, encrypted.ciphertext);
+        // Upload via Tus resumable protocol
+        const shardId = await this.tusUpload(
+          task.albumId,
+          encrypted.ciphertext,
+          encrypted.sha256,
+          i
+        );
         shardIds[i] = shardId;
 
         // Persist progress for resume
@@ -244,16 +251,52 @@ class UploadQueue {
   }
 
   /**
-   * Upload data via Tus protocol
-   * TODO: Replace with real tus-js-client integration
+   * Upload data via Tus resumable protocol
+   * @param albumId - Album to upload to
+   * @param data - Encrypted shard data
+   * @param sha256 - SHA256 hash of the encrypted data for verification
+   * @param shardIndex - Index of this shard in the file
+   * @returns Shard ID from server
    */
-  private async tusUpload(_albumId: string, _data: Uint8Array): Promise<string> {
-    // Mock implementation - simulates network delay
-    await new Promise((r) => setTimeout(r, 50 + Math.random() * 100));
-    
-    // Return a random shard ID
-    // Real implementation will return the shard ID from the server
-    return crypto.randomUUID();
+  private async tusUpload(
+    albumId: string,
+    data: Uint8Array,
+    sha256: string,
+    shardIndex: number
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      // Create a new ArrayBuffer to satisfy TypeScript's BlobPart type
+      const buffer = new ArrayBuffer(data.byteLength);
+      new Uint8Array(buffer).set(data);
+      
+      const upload = new tus.Upload(new Blob([buffer]), {
+        endpoint: TUS_ENDPOINT,
+        retryDelays: [0, 1000, 3000, 5000],
+        chunkSize: data.length, // Single chunk since shards are max 6MB
+        metadata: {
+          albumId,
+          shardIndex: String(shardIndex),
+          sha256,
+        },
+        onError: (error) => {
+          reject(new Error(`Upload failed: ${error.message}`));
+        },
+        onSuccess: () => {
+          // Extract shard ID from the upload URL
+          const url = upload.url;
+          if (!url) {
+            reject(new Error('No upload URL returned'));
+            return;
+          }
+          // URL format: /api/files/{shardId}
+          const shardId = url.substring(url.lastIndexOf('/') + 1);
+          resolve(shardId);
+        },
+      });
+
+      // Start the upload
+      upload.start();
+    });
   }
 }
 
