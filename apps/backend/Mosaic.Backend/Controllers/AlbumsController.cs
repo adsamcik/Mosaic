@@ -5,6 +5,43 @@ using Mosaic.Backend.Data.Entities;
 
 namespace Mosaic.Backend.Controllers;
 
+/// <summary>
+/// Request to create a new album with initial epoch key
+/// </summary>
+public class CreateAlbumRequest
+{
+    /// <summary>
+    /// Initial epoch key bundle for the owner
+    /// </summary>
+    public required InitialEpochKeyRequest InitialEpochKey { get; set; }
+}
+
+/// <summary>
+/// Initial epoch key data for album creation
+/// </summary>
+public class InitialEpochKeyRequest
+{
+    /// <summary>
+    /// Base64-encoded sealed box containing encrypted epoch key bundle
+    /// </summary>
+    public required byte[] EncryptedKeyBundle { get; set; }
+
+    /// <summary>
+    /// Base64-encoded Ed25519 signature from owner
+    /// </summary>
+    public required byte[] OwnerSignature { get; set; }
+
+    /// <summary>
+    /// Base64-encoded Ed25519 public key of sharer (owner for initial key)
+    /// </summary>
+    public required byte[] SharerPubkey { get; set; }
+
+    /// <summary>
+    /// Base64-encoded Ed25519 epoch signing public key
+    /// </summary>
+    public required byte[] SignPubkey { get; set; }
+}
+
 [ApiController]
 [Route("api/albums")]
 public class AlbumsController : ControllerBase
@@ -74,35 +111,87 @@ public class AlbumsController : ControllerBase
     /// Create a new album
     /// </summary>
     [HttpPost]
-    public async Task<IActionResult> Create()
+    public async Task<IActionResult> Create([FromBody] CreateAlbumRequest request)
     {
         var user = await GetOrCreateUser();
 
-        var album = new Album
+        // Validate request
+        if (request.InitialEpochKey == null)
         {
-            Id = Guid.NewGuid(),
-            OwnerId = user.Id
-        };
-        _db.Albums.Add(album);
+            return BadRequest(new { error = "initialEpochKey is required" });
+        }
 
-        // Add owner as member
-        _db.AlbumMembers.Add(new AlbumMember
+        if (request.InitialEpochKey.EncryptedKeyBundle == null || request.InitialEpochKey.EncryptedKeyBundle.Length == 0)
         {
-            AlbumId = album.Id,
-            UserId = user.Id,
-            Role = "owner"
-        });
+            return BadRequest(new { error = "encryptedKeyBundle is required" });
+        }
 
-        await _db.SaveChangesAsync();
-
-        return Created($"/api/albums/{album.Id}", new
+        if (request.InitialEpochKey.OwnerSignature == null || request.InitialEpochKey.OwnerSignature.Length == 0)
         {
-            album.Id,
-            album.OwnerId,
-            album.CurrentEpochId,
-            album.CurrentVersion,
-            album.CreatedAt
-        });
+            return BadRequest(new { error = "ownerSignature is required" });
+        }
+
+        if (request.InitialEpochKey.SharerPubkey == null || request.InitialEpochKey.SharerPubkey.Length == 0)
+        {
+            return BadRequest(new { error = "sharerPubkey is required" });
+        }
+
+        if (request.InitialEpochKey.SignPubkey == null || request.InitialEpochKey.SignPubkey.Length == 0)
+        {
+            return BadRequest(new { error = "signPubkey is required" });
+        }
+
+        // Create album, member, and epoch key in single transaction
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            var album = new Album
+            {
+                Id = Guid.NewGuid(),
+                OwnerId = user.Id,
+                CurrentEpochId = 1,
+                CurrentVersion = 1
+            };
+            _db.Albums.Add(album);
+
+            // Add owner as member
+            _db.AlbumMembers.Add(new AlbumMember
+            {
+                AlbumId = album.Id,
+                UserId = user.Id,
+                Role = "owner"
+            });
+
+            // Create initial epoch key for owner
+            _db.EpochKeys.Add(new EpochKey
+            {
+                Id = Guid.NewGuid(),
+                AlbumId = album.Id,
+                RecipientId = user.Id,
+                EpochId = 1,
+                EncryptedKeyBundle = request.InitialEpochKey.EncryptedKeyBundle,
+                OwnerSignature = request.InitialEpochKey.OwnerSignature,
+                SharerPubkey = request.InitialEpochKey.SharerPubkey,
+                SignPubkey = request.InitialEpochKey.SignPubkey
+            });
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return Created($"/api/albums/{album.Id}", new
+            {
+                album.Id,
+                album.OwnerId,
+                album.CurrentEpochId,
+                album.CurrentVersion,
+                album.CreatedAt
+            });
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     /// <summary>
