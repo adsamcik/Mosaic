@@ -96,11 +96,12 @@ class SyncEngine extends EventTarget {
       const decrypted: DecryptedManifest[] = [];
       for (const m of response.manifests) {
         // Get epoch read key for this manifest
+        // Use the passed readKey if available, otherwise look up by the album's current epoch
         let epochReadKey = readKey;
         if (!epochReadKey) {
-          const cachedKey = await getEpochReadKey(albumId, m.versionCreated);
+          const cachedKey = await getEpochReadKey(albumId, response.currentEpochId);
           if (!cachedKey) {
-            log.warn(`No epoch key available for manifest ${m.id}`);
+            log.warn(`No epoch key available for album ${albumId} epoch ${response.currentEpochId}`);
             continue;
           }
           epochReadKey = cachedKey;
@@ -153,6 +154,7 @@ class SyncEngine extends EventTarget {
         return;
       }
 
+      log.info(`Dispatching sync-complete event for album ${albumId}`);
       this.dispatchSyncEvent('sync-complete', { albumId });
     } catch (error) {
       this.dispatchSyncEvent('sync-error', {

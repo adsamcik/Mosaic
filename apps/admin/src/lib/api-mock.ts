@@ -342,6 +342,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
 
       return {
         manifests,
+        currentEpochId: album.currentEpochId,
         albumVersion: album.currentVersion,
         hasMore: since + count < album.currentVersion,
       };

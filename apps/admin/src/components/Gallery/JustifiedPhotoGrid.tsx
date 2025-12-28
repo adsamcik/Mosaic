@@ -17,6 +17,7 @@ import {
   getVisibleRows,
   type JustifiedRow,
 } from '../../lib/justified-layout';
+import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
 import type { PhotoMeta } from '../../workers/types';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
@@ -45,9 +46,41 @@ interface JustifiedPhotoGridProps {
  * Uses a Google Photos-style layout with efficient rendering
  */
 export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: JustifiedPhotoGridProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
+  
+  // Store the actual container element for scroll/height access
+  const containerElementRef = useRef<HTMLDivElement | null>(null);
+  
+  // Store ResizeObserver instance so we can clean it up
+  const observerRef = useRef<ResizeObserver | null>(null);
+  
+  // Callback ref - called when the container element is attached/detached from DOM
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    // Store the element
+    containerElementRef.current = node;
+    
+    // Clean up previous observer
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    
+    if (node) {
+      // Create new observer for this node
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          setContainerWidth(entry.contentRect.width);
+        }
+      });
+      
+      observer.observe(node);
+      observerRef.current = observer;
+      
+      // Set initial width
+      setContainerWidth(node.clientWidth);
+    }
+  }, []);
 
   const { photos, isLoading, error, refetch } = usePhotos(albumId, searchQuery);
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
@@ -63,22 +96,20 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
   const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
   const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<string | undefined>();
 
-  // Measure container width on mount and resize
+  // Listen for sync-complete events to refresh photos (e.g., after upload)
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setContainerWidth(entry.contentRect.width);
+    const handleSyncComplete = (event: Event) => {
+      const detail = (event as CustomEvent<SyncEventDetail>).detail;
+      if (detail.albumId === albumId) {
+        refetch();
       }
-    });
+    };
 
-    observer.observe(container);
-    setContainerWidth(container.clientWidth);
-
-    return () => observer.disconnect();
-  }, []);
+    syncEngine.addEventListener('sync-complete', handleSyncComplete);
+    return () => {
+      syncEngine.removeEventListener('sync-complete', handleSyncComplete);
+    };
+  }, [albumId, refetch]);
 
   // Compute justified layout
   const rows = useMemo((): JustifiedRow[] => {
@@ -98,7 +129,7 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
   );
 
   // Get viewport height
-  const viewportHeight = containerRef.current?.clientHeight ?? 800;
+  const viewportHeight = containerElementRef.current?.clientHeight ?? 800;
 
   // Compute visible rows for virtualization
   const { startIndex, endIndex } = useMemo(
@@ -255,21 +286,6 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
     );
   }
 
-  // Empty state
-  if (photos.length === 0) {
-    return (
-      <div className="justified-grid-empty" data-testid="justified-grid-empty">
-        <div className="empty-state-icon">📷</div>
-        <h3>No photos yet</h3>
-        {permissions.canUpload ? (
-          <p>Upload some photos to get started</p>
-        ) : (
-          <p>This album is empty</p>
-        )}
-      </div>
-    );
-  }
-
   // Get the epoch read key for the current lightbox photo
   const currentEpochReadKey = lightbox.currentPhoto
     ? epochKeys.get(lightbox.currentPhoto.epochId)
@@ -328,13 +344,25 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
         </div>
       )}
 
-      {/* Virtualized grid container */}
+      {/* Virtualized grid container - ALWAYS rendered so ResizeObserver can measure it */}
       <div
         ref={containerRef}
         className="justified-grid-container"
         onScroll={handleScroll}
         data-testid="justified-grid"
       >
+        {/* Empty state - show inside container so ref is always attached */}
+        {photos.length === 0 ? (
+          <div className="justified-grid-empty" data-testid="justified-grid-empty">
+            <div className="empty-state-icon">📷</div>
+            <h3>No photos yet</h3>
+            {permissions.canUpload ? (
+              <p>Upload some photos to get started</p>
+            ) : (
+              <p>This album is empty</p>
+            )}
+          </div>
+        ) : (
         <div
           className="justified-grid-content"
           style={{ height: totalHeight, position: 'relative' }}
@@ -384,6 +412,7 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Photo Lightbox */}

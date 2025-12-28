@@ -7,6 +7,7 @@ import { useLightbox } from '../../hooks/useLightbox';
 import { useAlbumMembers } from '../../hooks/useAlbumMembers';
 import { usePhotos } from '../../hooks/usePhotos';
 import { useSync } from '../../hooks/useSync';
+import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
 import { createLogger } from '../../lib/logger';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
 import { MemberList } from '../Members/MemberList';
@@ -99,6 +100,21 @@ export function Gallery({ albumId }: GalleryProps) {
         log.error(`Initial sync failed for album ${albumId}:`, err);
       });
   }, [albumId, epochKeys, epochKeysLoading, syncAlbum, reloadPhotos]);
+
+  // Listen for sync-complete events to refresh photos (e.g., after upload)
+  useEffect(() => {
+    const handleSyncComplete = (event: Event) => {
+      const detail = (event as CustomEvent<SyncEventDetail>).detail;
+      if (detail.albumId === albumId) {
+        reloadPhotos();
+      }
+    };
+
+    syncEngine.addEventListener('sync-complete', handleSyncComplete);
+    return () => {
+      syncEngine.removeEventListener('sync-complete', handleSyncComplete);
+    };
+  }, [albumId, reloadPhotos]);
 
   // Convert photos to GeoFeatures for map view
   const geoFeatures = useMemo(() => photosToGeoFeatures(photos), [photos]);

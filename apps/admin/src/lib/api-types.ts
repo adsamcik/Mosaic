@@ -352,6 +352,7 @@ export interface NearLimitsResponse {
 
 export interface SyncResponse {
   manifests: ManifestRecord[];
+  currentEpochId: number;
   albumVersion: number;
   hasMore: boolean;
 }

@@ -446,7 +446,8 @@ export class GalleryPage {
   }
 
   get photos() {
-    return this.page.getByTestId('photo-thumbnail');
+    // Match both regular grid thumbnails and justified view thumbnails
+    return this.page.locator('[data-testid="photo-thumbnail"], [data-testid="justified-photo-thumbnail"]');
   }
 
   get uploadButton() {
@@ -482,8 +483,8 @@ export class GalleryPage {
     await this.page.waitForFunction(() => {
       const btn = document.querySelector('[data-testid="upload-button"]');
       // Wait until it's no longer showing "Uploading" (upload complete)
-      // or a photo appears in the gallery
-      const hasPhoto = document.querySelector('[data-testid="photo-thumbnail"]');
+      // or a photo appears in the gallery (check both view types)
+      const hasPhoto = document.querySelector('[data-testid="photo-thumbnail"], [data-testid="justified-photo-thumbnail"]');
       const isUploading = btn?.textContent?.includes('Uploading');
       return hasPhoto || (btn && !isUploading);
     }, { timeout: 60000 });
