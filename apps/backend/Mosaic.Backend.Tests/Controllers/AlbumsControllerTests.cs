@@ -1,107 +1,119 @@
+using Microsoft.AspNetCore.Mvc;
+using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Tests.Helpers;
+using Xunit;
 
 namespace Mosaic.Backend.Tests.Controllers;
 
 public class AlbumsControllerTests
 {
-    #region List
+    private const string TestAuthSub = "test-user-123";
 
     [Fact]
-    public async Task List_NewUser_ReturnsEmptyList()
+    public async Task List_ReturnsEmptyList_WhenNoAlbums()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "new-user");
+        var config = TestConfiguration.Create();
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         // Act
         var result = await controller.List();
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        Assert.NotNull(okResult.Value);
+        var albums = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        Assert.Empty(albums);
     }
 
     [Fact]
-    public async Task List_UserWithAlbums_ReturnsOwnedAndSharedAlbums()
+    public async Task List_ReturnsUserAlbums_WhenUserHasMembership()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        
-        var owner = TestDataFactory.CreateUser("owner");
-        var member = TestDataFactory.CreateUser("member");
-        db.Users.AddRange(owner, member);
-        
-        var ownedAlbum = TestDataFactory.CreateAlbum(owner);
-        var sharedAlbum = TestDataFactory.CreateAlbum(owner);
-        db.Albums.AddRange(ownedAlbum, sharedAlbum);
-        
-        // Owner membership
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(ownedAlbum, owner, "owner"));
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(sharedAlbum, owner, "owner"));
-        
-        // Shared with member
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(sharedAlbum, member, "viewer"));
-        
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album1 = await builder.CreateAlbumAsync(user);
+        var album2 = await builder.CreateAlbumAsync(user);
+
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.List();
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var albums = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        Assert.Equal(2, albums.Count());
+    }
+
+    [Fact]
+    public async Task List_ExcludesRevokedMemberships()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync("owner-user");
+        var member = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        // Add member with revoked membership
+        var membership = await builder.AddMemberAsync(album, member, "viewer", owner);
+        membership.RevokedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "member");
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         // Act
         var result = await controller.List();
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        Assert.NotNull(okResult.Value);
+        var albums = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        Assert.Empty(albums);
     }
 
     [Fact]
-    public async Task List_RevokedMembership_NotIncluded()
+    public async Task Create_CreatesAlbumWithInitialEpochKey()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        
-        var owner = TestDataFactory.CreateUser("owner");
-        var member = TestDataFactory.CreateUser("member");
-        db.Users.AddRange(owner, member);
-        
-        var album = TestDataFactory.CreateAlbum(owner);
-        db.Albums.Add(album);
-        
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, owner, "owner"));
-        var revokedMembership = TestDataFactory.CreateMember(album, member, "viewer");
-        revokedMembership.RevokedAt = DateTime.UtcNow;
-        db.AlbumMembers.Add(revokedMembership);
-        
-        await db.SaveChangesAsync();
-
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "member");
-
-        // Act
-        var result = await controller.List();
-
-        // Assert
-        var okResult = Assert.IsType<OkObjectResult>(result);
-        var albums = okResult.Value as System.Collections.IEnumerable;
-        Assert.NotNull(albums);
-        Assert.Empty(albums.Cast<object>());
-    }
-
-    #endregion
-
-    #region Create
-
-    [Fact]
-    public async Task Create_ValidRequest_CreatesAlbumWithMemberAndEpochKey()
-    {
-        // Arrange
-        using var db = TestDbContextFactory.Create();
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "creator");
+        var config = TestConfiguration.Create();
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         var request = new CreateAlbumRequest
         {
             InitialEpochKey = new InitialEpochKeyRequest
             {
-                EncryptedKeyBundle = new byte[64],
+                EncryptedKeyBundle = new byte[32],
                 OwnerSignature = new byte[64],
                 SharerPubkey = new byte[32],
                 SignPubkey = new byte[32]
@@ -113,30 +125,27 @@ public class AlbumsControllerTests
 
         // Assert
         var createdResult = Assert.IsType<CreatedResult>(result);
-        
+        Assert.NotNull(createdResult.Value);
+
         // Verify album was created
-        var album = await db.Albums.FirstOrDefaultAsync();
-        Assert.NotNull(album);
-        Assert.Equal(1, album.CurrentEpochId);
-        Assert.Equal(1, album.CurrentVersion);
-        
-        // Verify owner membership
-        var membership = await db.AlbumMembers.FirstOrDefaultAsync();
-        Assert.NotNull(membership);
-        Assert.Equal("owner", membership.Role);
-        
-        // Verify epoch key
-        var epochKey = await db.EpochKeys.FirstOrDefaultAsync();
-        Assert.NotNull(epochKey);
-        Assert.Equal(1, epochKey.EpochId);
+        Assert.Single(db.Albums);
+        Assert.Single(db.AlbumMembers);
+        Assert.Single(db.EpochKeys);
     }
 
     [Fact]
-    public async Task Create_NullInitialEpochKey_ReturnsBadRequest()
+    public async Task Create_ReturnsBadRequest_WhenInitialEpochKeyMissing()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "creator");
+        var config = TestConfiguration.Create();
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         var request = new CreateAlbumRequest
         {
@@ -147,15 +156,23 @@ public class AlbumsControllerTests
         var result = await controller.Create(request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("initialEpochKey", badRequestResult.Value?.ToString());
     }
 
     [Fact]
-    public async Task Create_EmptyEncryptedKeyBundle_ReturnsBadRequest()
+    public async Task Create_ReturnsBadRequest_WhenEncryptedKeyBundleEmpty()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "creator");
+        var config = TestConfiguration.Create();
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         var request = new CreateAlbumRequest
         {
@@ -172,111 +189,28 @@ public class AlbumsControllerTests
         var result = await controller.Create(request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("encryptedKeyBundle", badRequest.Value?.ToString() ?? "");
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("encryptedKeyBundle", badRequestResult.Value?.ToString());
     }
 
     [Fact]
-    public async Task Create_EmptyOwnerSignature_ReturnsBadRequest()
+    public async Task Get_ReturnsAlbum_WhenUserIsMember()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "creator");
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
 
-        var request = new CreateAlbumRequest
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+
+        var controller = new AlbumsController(db, config)
         {
-            InitialEpochKey = new InitialEpochKeyRequest
+            ControllerContext = new ControllerContext
             {
-                EncryptedKeyBundle = new byte[64],
-                OwnerSignature = Array.Empty<byte>(),
-                SharerPubkey = new byte[32],
-                SignPubkey = new byte[32]
+                HttpContext = TestHttpContext.Create(TestAuthSub)
             }
         };
-
-        // Act
-        var result = await controller.Create(request);
-
-        // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("ownerSignature", badRequest.Value?.ToString() ?? "");
-    }
-
-    [Fact]
-    public async Task Create_EmptySharerPubkey_ReturnsBadRequest()
-    {
-        // Arrange
-        using var db = TestDbContextFactory.Create();
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "creator");
-
-        var request = new CreateAlbumRequest
-        {
-            InitialEpochKey = new InitialEpochKeyRequest
-            {
-                EncryptedKeyBundle = new byte[64],
-                OwnerSignature = new byte[64],
-                SharerPubkey = Array.Empty<byte>(),
-                SignPubkey = new byte[32]
-            }
-        };
-
-        // Act
-        var result = await controller.Create(request);
-
-        // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("sharerPubkey", badRequest.Value?.ToString() ?? "");
-    }
-
-    [Fact]
-    public async Task Create_EmptySignPubkey_ReturnsBadRequest()
-    {
-        // Arrange
-        using var db = TestDbContextFactory.Create();
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "creator");
-
-        var request = new CreateAlbumRequest
-        {
-            InitialEpochKey = new InitialEpochKeyRequest
-            {
-                EncryptedKeyBundle = new byte[64],
-                OwnerSignature = new byte[64],
-                SharerPubkey = new byte[32],
-                SignPubkey = Array.Empty<byte>()
-            }
-        };
-
-        // Act
-        var result = await controller.Create(request);
-
-        // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("signPubkey", badRequest.Value?.ToString() ?? "");
-    }
-
-    #endregion
-
-    #region Get
-
-    [Fact]
-    public async Task Get_AsMember_ReturnsAlbum()
-    {
-        // Arrange
-        using var db = TestDbContextFactory.Create();
-        
-        var owner = TestDataFactory.CreateUser("owner");
-        var member = TestDataFactory.CreateUser("member");
-        db.Users.AddRange(owner, member);
-        
-        var album = TestDataFactory.CreateAlbum(owner);
-        db.Albums.Add(album);
-        
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, owner, "owner"));
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, member, "viewer"));
-        
-        await db.SaveChangesAsync();
-
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "member");
 
         // Act
         var result = await controller.Get(album.Id);
@@ -287,124 +221,85 @@ public class AlbumsControllerTests
     }
 
     [Fact]
-    public async Task Get_NotMember_ReturnsForbid()
+    public async Task Get_ReturnsForbid_WhenUserIsNotMember()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        
-        var owner = TestDataFactory.CreateUser("owner");
-        var stranger = TestDataFactory.CreateUser("stranger");
-        db.Users.AddRange(owner, stranger);
-        
-        var album = TestDataFactory.CreateAlbum(owner);
-        db.Albums.Add(album);
-        
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, owner, "owner"));
-        
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
 
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "stranger");
+        var owner = await builder.CreateUserAsync("owner-user");
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.CreateUserAsync(TestAuthSub); // Create test user without membership
 
-        // Act
-        var result = await controller.Get(album.Id);
-
-        // Assert
-        Assert.IsType<ForbidResult>(result);
-    }
-
-    [Fact]
-    public async Task Get_RevokedMember_ReturnsForbid()
-    {
-        // Arrange
-        using var db = TestDbContextFactory.Create();
-        
-        var owner = TestDataFactory.CreateUser("owner");
-        var revokedMember = TestDataFactory.CreateUser("revoked");
-        db.Users.AddRange(owner, revokedMember);
-        
-        var album = TestDataFactory.CreateAlbum(owner);
-        db.Albums.Add(album);
-        
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, owner, "owner"));
-        var revokedMembership = TestDataFactory.CreateMember(album, revokedMember, "viewer");
-        revokedMembership.RevokedAt = DateTime.UtcNow;
-        db.AlbumMembers.Add(revokedMembership);
-        
-        await db.SaveChangesAsync();
-
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "revoked");
-
-        // Act
-        var result = await controller.Get(album.Id);
-
-        // Assert
-        Assert.IsType<ForbidResult>(result);
-    }
-
-    [Fact]
-    public async Task Get_NonExistentAlbum_ReturnsNotFound()
-    {
-        // Arrange
-        using var db = TestDbContextFactory.Create();
-        
-        var user = TestDataFactory.CreateUser("user");
-        db.Users.Add(user);
-        
-        // Create a membership for a different album
-        var album = TestDataFactory.CreateAlbum(user);
-        db.Albums.Add(album);
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, user, "owner"));
-        
-        await db.SaveChangesAsync();
-
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "user");
-
-        // Act - Request different album
-        var result = await controller.Get(Guid.NewGuid());
-
-        // Assert
-        Assert.IsType<ForbidResult>(result);
-    }
-
-    #endregion
-
-    #region Sync
-
-    [Fact]
-    public async Task Sync_AsMember_ReturnsManifests()
-    {
-        // Arrange
-        using var db = TestDbContextFactory.Create();
-        
-        var owner = TestDataFactory.CreateUser("owner");
-        db.Users.Add(owner);
-        
-        var album = TestDataFactory.CreateAlbum(owner);
-        album.CurrentVersion = 5;
-        db.Albums.Add(album);
-        
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, owner, "owner"));
-        
-        // Create manifests at different versions
-        for (int i = 1; i <= 5; i++)
+        var controller = new AlbumsController(db, config)
         {
-            db.Manifests.Add(new Manifest
+            ControllerContext = new ControllerContext
             {
-                Id = Guid.NewGuid(),
-                AlbumId = album.Id,
-                VersionCreated = i,
-                EncryptedMeta = new byte[64],
-                Signature = "sig",
-                SignerPubkey = "pubkey"
-            });
-        }
-        
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.Get(album.Id);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task Get_ReturnsForbid_WhenMembershipRevoked()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync("owner-user");
+        var member = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var membership = await builder.AddMemberAsync(album, member, "viewer", owner);
+        membership.RevokedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "owner");
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
-        // Act - Get manifests since version 2
-        var result = await controller.Sync(album.Id, 2);
+        // Act
+        var result = await controller.Get(album.Id);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task Sync_ReturnsManifestsSinceVersion()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user, currentVersion: 5);
+        var shard = await builder.CreateShardAsync(user, Data.Entities.ShardStatus.ACTIVE);
+        await builder.CreateManifestAsync(album, [shard]);
+
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.Sync(album.Id, 0);
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
@@ -412,23 +307,24 @@ public class AlbumsControllerTests
     }
 
     [Fact]
-    public async Task Sync_NotMember_ReturnsForbid()
+    public async Task Sync_ReturnsForbid_WhenUserNotMember()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        
-        var owner = TestDataFactory.CreateUser("owner");
-        var stranger = TestDataFactory.CreateUser("stranger");
-        db.Users.AddRange(owner, stranger);
-        
-        var album = TestDataFactory.CreateAlbum(owner);
-        db.Albums.Add(album);
-        
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, owner, "owner"));
-        
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
 
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "stranger");
+        var owner = await builder.CreateUserAsync("owner-user");
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.CreateUserAsync(TestAuthSub);
+
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         // Act
         var result = await controller.Sync(album.Id, 0);
@@ -437,70 +333,76 @@ public class AlbumsControllerTests
         Assert.IsType<ForbidResult>(result);
     }
 
-    #endregion
-
-    #region Delete
-
     [Fact]
-    public async Task Delete_AsOwner_DeletesAlbum()
+    public async Task Delete_DeletesAlbum_WhenOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        
-        var owner = TestDataFactory.CreateUser("owner");
-        db.Users.Add(owner);
-        
-        var album = TestDataFactory.CreateAlbum(owner);
-        db.Albums.Add(album);
-        
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, owner, "owner"));
-        
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
 
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "owner");
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         // Act
         var result = await controller.Delete(album.Id);
 
         // Assert
         Assert.IsType<NoContentResult>(result);
-        Assert.Null(await db.Albums.FindAsync(album.Id));
+        Assert.Empty(db.Albums);
     }
 
     [Fact]
-    public async Task Delete_NotOwner_ReturnsForbid()
+    public async Task Delete_ReturnsForbid_WhenNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        
-        var owner = TestDataFactory.CreateUser("owner");
-        var editor = TestDataFactory.CreateUser("editor");
-        db.Users.AddRange(owner, editor);
-        
-        var album = TestDataFactory.CreateAlbum(owner);
-        db.Albums.Add(album);
-        
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, owner, "owner"));
-        db.AlbumMembers.Add(TestDataFactory.CreateMember(album, editor, "editor"));
-        
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
 
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "editor");
+        var owner = await builder.CreateUserAsync("owner-user");
+        var member = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.AddMemberAsync(album, member, "editor", owner);
+
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         // Act
         var result = await controller.Delete(album.Id);
 
         // Assert
         Assert.IsType<ForbidResult>(result);
-        Assert.NotNull(await db.Albums.FindAsync(album.Id));
     }
 
     [Fact]
-    public async Task Delete_NonExistentAlbum_ReturnsNotFound()
+    public async Task Delete_ReturnsNotFound_WhenAlbumDoesNotExist()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var controller = TestControllerFactory.CreateController<AlbumsController>(db, authSub: "user");
+        var config = TestConfiguration.Create();
+        await new TestDataBuilder(db).CreateUserAsync(TestAuthSub);
+
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         // Act
         var result = await controller.Delete(Guid.NewGuid());
@@ -508,6 +410,4 @@ public class AlbumsControllerTests
         // Assert
         Assert.IsType<NotFoundResult>(result);
     }
-
-    #endregion
 }

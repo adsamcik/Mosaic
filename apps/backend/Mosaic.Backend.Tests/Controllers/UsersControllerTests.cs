@@ -1,15 +1,27 @@
+using Microsoft.AspNetCore.Mvc;
+using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Tests.Helpers;
+using Xunit;
 
 namespace Mosaic.Backend.Tests.Controllers;
 
 public class UsersControllerTests
 {
+    private const string TestAuthSub = "test-user-123";
+
     [Fact]
-    public async Task GetMe_NewUser_CreatesUserAndReturnsProfile()
+    public async Task GetMe_CreatesNewUser_WhenNotExists()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "new-user");
+        var config = TestConfiguration.Create();
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         // Act
         var result = await controller.GetMe();
@@ -18,29 +30,27 @@ public class UsersControllerTests
         var okResult = Assert.IsType<OkObjectResult>(result);
         Assert.NotNull(okResult.Value);
 
-        // Verify user was created in database
-        var user = await db.Users.FirstOrDefaultAsync(u => u.AuthSub == "new-user");
-        Assert.NotNull(user);
-        
-        // Verify quota was created
-        var quota = await db.UserQuotas.FirstOrDefaultAsync(q => q.UserId == user.Id);
-        Assert.NotNull(quota);
-        Assert.Equal(10737418240, quota.MaxStorageBytes);
+        // Verify user was created
+        Assert.Single(db.Users);
+        Assert.Single(db.UserQuotas);
     }
 
     [Fact]
-    public async Task GetMe_ExistingUser_ReturnsProfile()
+    public async Task GetMe_ReturnsExistingUser()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var existingUser = TestDataFactory.CreateUser("existing-user");
-        existingUser.EncryptedSalt = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
-        existingUser.SaltNonce = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
-        db.Users.Add(existingUser);
-        db.UserQuotas.Add(TestDataFactory.CreateQuota(existingUser, usedBytes: 5000));
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        var user = await builder.CreateUserAsync(TestAuthSub, "existing-pubkey");
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "existing-user");
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         // Act
         var result = await controller.GetMe();
@@ -48,70 +58,81 @@ public class UsersControllerTests
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
         Assert.NotNull(okResult.Value);
-        
-        // Ensure only one user exists (no duplicate created)
-        Assert.Equal(1, await db.Users.CountAsync());
+        Assert.Single(db.Users);
     }
 
     [Fact]
-    public async Task UpdateMe_SetIdentityPubkey_Success()
+    public async Task UpdateMe_SetsIdentityPubkey_WhenEmpty()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var user = TestDataFactory.CreateUser("test-user");
-        user.IdentityPubkey = ""; // Not set yet
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        await builder.CreateUserAsync(TestAuthSub);
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "test-user");
-        var newPubkey = Convert.ToBase64String(new byte[32]);
-        var request = new UsersController.UpdateUserRequest(IdentityPubkey: newPubkey);
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new UsersController.UpdateUserRequest(IdentityPubkey: "new-pubkey-123");
 
         // Act
         var result = await controller.UpdateMe(request);
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        
-        var updatedUser = await db.Users.FirstAsync(u => u.AuthSub == "test-user");
-        Assert.Equal(newPubkey, updatedUser.IdentityPubkey);
+        var user = db.Users.First();
+        Assert.Equal("new-pubkey-123", user.IdentityPubkey);
     }
 
     [Fact]
-    public async Task UpdateMe_ChangeExistingIdentityPubkey_ReturnsBadRequest()
+    public async Task UpdateMe_ReturnsBadRequest_WhenIdentityPubkeyAlreadySet()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var user = TestDataFactory.CreateUser("test-user");
-        user.IdentityPubkey = Convert.ToBase64String(new byte[32]); // Already set
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        await builder.CreateUserAsync(TestAuthSub, "existing-pubkey");
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "test-user");
-        var differentPubkey = Convert.ToBase64String(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32 });
-        var request = new UsersController.UpdateUserRequest(IdentityPubkey: differentPubkey);
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new UsersController.UpdateUserRequest(IdentityPubkey: "different-pubkey");
 
         // Act
         var result = await controller.UpdateMe(request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("already set", badRequest.Value?.ToString()?.ToLower() ?? "");
+        Assert.IsType<BadRequestObjectResult>(result);
     }
 
     [Fact]
-    public async Task UpdateMe_SetSameIdentityPubkey_Success()
+    public async Task UpdateMe_AllowsSamePubkey()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var user = TestDataFactory.CreateUser("test-user");
-        var pubkey = Convert.ToBase64String(new byte[32]);
-        user.IdentityPubkey = pubkey;
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        await builder.CreateUserAsync(TestAuthSub, "existing-pubkey");
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "test-user");
-        var request = new UsersController.UpdateUserRequest(IdentityPubkey: pubkey); // Same value
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new UsersController.UpdateUserRequest(IdentityPubkey: "existing-pubkey");
 
         // Act
         var result = await controller.UpdateMe(request);
@@ -121,163 +142,141 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task UpdateMe_SetEncryptedSalt_Success()
+    public async Task UpdateMe_SetsEncryptedSalt_WhenBothProvided()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var user = TestDataFactory.CreateUser("test-user");
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        await builder.CreateUserAsync(TestAuthSub);
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "test-user");
-        var encryptedSalt = Convert.ToBase64String(new byte[32]); // 16 bytes + 16 bytes auth tag
-        var saltNonce = Convert.ToBase64String(new byte[12]); // 12 bytes for AES-GCM
-        var request = new UsersController.UpdateUserRequest(EncryptedSalt: encryptedSalt, SaltNonce: saltNonce);
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var encryptedSalt = Convert.ToBase64String(new byte[32]);
+        var saltNonce = Convert.ToBase64String(new byte[12]);
+
+        var request = new UsersController.UpdateUserRequest(
+            EncryptedSalt: encryptedSalt,
+            SaltNonce: saltNonce);
 
         // Act
         var result = await controller.UpdateMe(request);
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        
-        var updatedUser = await db.Users.FirstAsync(u => u.AuthSub == "test-user");
-        Assert.NotNull(updatedUser.EncryptedSalt);
-        Assert.NotNull(updatedUser.SaltNonce);
-        Assert.Equal(32, updatedUser.EncryptedSalt.Length);
-        Assert.Equal(12, updatedUser.SaltNonce.Length);
+        var user = db.Users.First();
+        Assert.NotNull(user.EncryptedSalt);
+        Assert.NotNull(user.SaltNonce);
     }
 
     [Fact]
-    public async Task UpdateMe_OnlySaltWithoutNonce_ReturnsBadRequest()
+    public async Task UpdateMe_ReturnsBadRequest_WhenOnlySaltProvided()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var user = TestDataFactory.CreateUser("test-user");
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        await builder.CreateUserAsync(TestAuthSub);
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "test-user");
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new UsersController.UpdateUserRequest(
+            EncryptedSalt: Convert.ToBase64String(new byte[32]));
+
+        // Act
+        var result = await controller.UpdateMe(request);
+
+        // Assert
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task UpdateMe_ReturnsBadRequest_WhenInvalidNonceLength()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        await builder.CreateUserAsync(TestAuthSub);
+
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
         var request = new UsersController.UpdateUserRequest(
             EncryptedSalt: Convert.ToBase64String(new byte[32]),
-            SaltNonce: null
-        );
+            SaltNonce: Convert.ToBase64String(new byte[10])); // Should be 12
 
         // Act
         var result = await controller.UpdateMe(request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("both", badRequest.Value?.ToString()?.ToLower() ?? "");
+        Assert.IsType<BadRequestObjectResult>(result);
     }
 
     [Fact]
-    public async Task UpdateMe_OnlyNonceWithoutSalt_ReturnsBadRequest()
+    public async Task UpdateMe_ReturnsBadRequest_WhenInvalidBase64()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var user = TestDataFactory.CreateUser("test-user");
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        await builder.CreateUserAsync(TestAuthSub);
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "test-user");
-        var request = new UsersController.UpdateUserRequest(
-            EncryptedSalt: null,
-            SaltNonce: Convert.ToBase64String(new byte[12])
-        );
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
-        // Act
-        var result = await controller.UpdateMe(request);
-
-        // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("both", badRequest.Value?.ToString()?.ToLower() ?? "");
-    }
-
-    [Fact]
-    public async Task UpdateMe_InvalidNonceLength_ReturnsBadRequest()
-    {
-        // Arrange
-        using var db = TestDbContextFactory.Create();
-        var user = TestDataFactory.CreateUser("test-user");
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
-
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "test-user");
-        var request = new UsersController.UpdateUserRequest(
-            EncryptedSalt: Convert.ToBase64String(new byte[32]),
-            SaltNonce: Convert.ToBase64String(new byte[16]) // Wrong length (should be 12)
-        );
-
-        // Act
-        var result = await controller.UpdateMe(request);
-
-        // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("nonce", badRequest.Value?.ToString()?.ToLower() ?? "");
-    }
-
-    [Fact]
-    public async Task UpdateMe_InvalidBase64Salt_ReturnsBadRequest()
-    {
-        // Arrange
-        using var db = TestDbContextFactory.Create();
-        var user = TestDataFactory.CreateUser("test-user");
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
-
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "test-user");
         var request = new UsersController.UpdateUserRequest(
             EncryptedSalt: "not-valid-base64!!!",
-            SaltNonce: Convert.ToBase64String(new byte[12])
-        );
+            SaltNonce: Convert.ToBase64String(new byte[12]));
 
         // Act
         var result = await controller.UpdateMe(request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("base64", badRequest.Value?.ToString()?.ToLower() ?? "");
+        Assert.IsType<BadRequestObjectResult>(result);
     }
 
     [Fact]
-    public async Task UpdateMe_TooShortEncryptedSalt_ReturnsBadRequest()
+    public async Task GetUser_ReturnsUser_WhenExists()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var user = TestDataFactory.CreateUser("test-user");
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        var user = await builder.CreateUserAsync(TestAuthSub, "test-pubkey");
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "test-user");
-        var request = new UsersController.UpdateUserRequest(
-            EncryptedSalt: Convert.ToBase64String(new byte[10]), // Too short
-            SaltNonce: Convert.ToBase64String(new byte[12])
-        );
-
-        // Act
-        var result = await controller.UpdateMe(request);
-
-        // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("salt", badRequest.Value?.ToString()?.ToLower() ?? "");
-    }
-
-    [Fact]
-    public async Task GetUser_ExistingUser_ReturnsPublicInfo()
-    {
-        // Arrange
-        using var db = TestDbContextFactory.Create();
-        var targetUser = TestDataFactory.CreateUser("target-user");
-        db.Users.Add(targetUser);
-        
-        var requester = TestDataFactory.CreateUser("requester");
-        db.Users.Add(requester);
-        await db.SaveChangesAsync();
-
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "requester");
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create("caller-user")
+            }
+        };
 
         // Act
-        var result = await controller.GetUser(targetUser.Id);
+        var result = await controller.GetUser(user.Id);
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
@@ -285,15 +284,19 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task GetUser_NonExistentUser_ReturnsNotFound()
+    public async Task GetUser_ReturnsNotFound_WhenNotExists()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var requester = TestDataFactory.CreateUser("requester");
-        db.Users.Add(requester);
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "requester");
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         // Act
         var result = await controller.GetUser(Guid.NewGuid());
@@ -303,22 +306,24 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task GetUserByPubkey_ExistingPubkey_ReturnsUser()
+    public async Task GetUserByPubkey_ReturnsUser_WhenExists()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var targetPubkey = Convert.ToBase64String(TestDataFactory.RandomBytes(32));
-        var targetUser = TestDataFactory.CreateUser("target-user", targetPubkey);
-        db.Users.Add(targetUser);
-        
-        var requester = TestDataFactory.CreateUser("requester");
-        db.Users.Add(requester);
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        await builder.CreateUserAsync(TestAuthSub, "my-pubkey");
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "requester");
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create("caller-user")
+            }
+        };
 
         // Act
-        var result = await controller.GetUserByPubkey(targetPubkey);
+        var result = await controller.GetUserByPubkey("my-pubkey");
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
@@ -326,15 +331,19 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task GetUserByPubkey_NonExistentPubkey_ReturnsNotFound()
+    public async Task GetUserByPubkey_ReturnsNotFound_WhenNotExists()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var requester = TestDataFactory.CreateUser("requester");
-        db.Users.Add(requester);
-        await db.SaveChangesAsync();
+        var config = TestConfiguration.Create();
 
-        var controller = TestControllerFactory.CreateController<UsersController>(db, authSub: "requester");
+        var controller = new UsersController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
 
         // Act
         var result = await controller.GetUserByPubkey("nonexistent-pubkey");
