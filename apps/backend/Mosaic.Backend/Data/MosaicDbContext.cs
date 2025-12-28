@@ -37,6 +37,10 @@ public class MosaicDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(a => a.OwnerId);
+
+            // Index for efficient expired album cleanup queries
+            e.HasIndex(a => a.ExpiresAt)
+                .HasFilter("expires_at IS NOT NULL");
         });
 
         // AlbumMember

@@ -15,9 +15,20 @@ public class Album
     /// </summary>
     public string? EncryptedName { get; set; }
 
+    /// <summary>
+    /// When the album will be automatically deleted. Null means no expiration.
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
+
+    /// <summary>
+    /// Number of days before expiration to warn members. Default is 7 days.
+    /// </summary>
+    public int ExpirationWarningDays { get; set; } = 7;
+
     // Navigation
     public User Owner { get; set; } = null!;
     public ICollection<AlbumMember> Members { get; set; } = [];
     public ICollection<Manifest> Manifests { get; set; } = [];
     public ICollection<EpochKey> EpochKeys { get; set; } = [];
+    public AlbumLimits? Limits { get; set; }
 }
