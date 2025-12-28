@@ -72,7 +72,9 @@ Directory.CreateDirectory(storagePath);
 app.MapTus("/api/files", async httpContext => new tusdotnet.Models.DefaultTusConfiguration
 {
     Store = new TusDiskStore(storagePath),
-    MaxAllowedUploadSizeInBytes = 6 * 1024 * 1024, // 6 MB max shard size
+    // Max shard payload is 6 MB, plus 64-byte envelope header + 16-byte auth tag = 6,291,536 bytes
+    // We use 7 MB to give margin for any additional overhead
+    MaxAllowedUploadSizeInBytes = 7 * 1024 * 1024,
     Events = new()
     {
         OnBeforeCreateAsync = async ctx =>
