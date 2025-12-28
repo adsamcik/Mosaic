@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi, afterEach } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
 import {
   generateLinkSecret,
@@ -283,6 +283,51 @@ describe('link-sharing', () => {
       const result = parseShareLinkUrl(`https://photos.example.com/s/${shortId}#k=${encodedSecret}`);
       expect(result).toBeNull();
     });
+
+    it('returns null for completely invalid URL', () => {
+      // This triggers the catch block because new URL() throws for invalid URLs
+      // Use undefined/null-like input that will cause URL constructor to throw
+      const result = parseShareLinkUrl('://');
+      expect(result).toBeNull();
+    });
+
+    it('returns null for another invalid URL format', () => {
+      const result = parseShareLinkUrl('');
+      expect(result).toBeNull();
+    });
+
+    it('returns null for URL with invalid base64 in linkId', () => {
+      const secret = generateLinkSecret();
+      const encodedSecret = encodeLinkSecret(secret);
+      
+      // Use invalid base64 characters for linkId
+      const result = parseShareLinkUrl(`https://photos.example.com/s/@@@invalid@@@#k=${encodedSecret}`);
+      expect(result).toBeNull();
+    });
+
+    it('returns null for URL with invalid base64 in secret', () => {
+      const secret = generateLinkSecret();
+      const { linkId } = deriveLinkKeys(secret);
+      const encoded = sodium.to_base64(linkId, sodium.base64_variants.URLSAFE_NO_PADDING);
+      
+      // Use invalid base64 characters for secret
+      const result = parseShareLinkUrl(`https://photos.example.com/s/${encoded}#k=!!!invalid!!!`);
+      expect(result).toBeNull();
+    });
+
+    it('returns null for tampered linkId that does not match secret', () => {
+      // Create a valid link first
+      const secret = generateLinkSecret();
+      const encodedSecret = encodeLinkSecret(secret);
+      
+      // Create a DIFFERENT linkId that doesn't match the secret
+      const wrongLinkId = sodium.randombytes_buf(16);
+      const wrongEncodedLinkId = sodium.to_base64(wrongLinkId, sodium.base64_variants.URLSAFE_NO_PADDING);
+      
+      // This URL has valid format but linkId doesn't match the secret's derived linkId
+      const result = parseShareLinkUrl(`https://photos.example.com/s/${wrongEncodedLinkId}#k=${encodedSecret}`);
+      expect(result).toBeNull();
+    });
   });
 
   describe('integration: complete link sharing flow', () => {
@@ -370,6 +415,32 @@ describe('link-sharing', () => {
       for (const w of wrapped2) {
         const key = unwrapTierKeyFromLink(w, w.tier, wrappingKey);
         expect(key.length).toBe(32);
+      }
+    });
+  });
+
+  describe('parseShareLinkUrl error handling', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('returns null when internal operation throws unexpectedly', () => {
+      // Create a valid URL first
+      const secret = generateLinkSecret();
+      const url = createShareLinkUrl('https://photos.example.com', secret);
+      
+      // Mock sodium.memcmp to throw (it's called after all validations pass)
+      const originalMemcmp = sodium.memcmp;
+      const mockMemcmp = () => {
+        throw new Error('Simulated internal failure');
+      };
+      (sodium as Record<string, unknown>).memcmp = mockMemcmp;
+      
+      try {
+        const result = parseShareLinkUrl(url);
+        expect(result).toBeNull();
+      } finally {
+        (sodium as Record<string, unknown>).memcmp = originalMemcmp;
       }
     });
   });

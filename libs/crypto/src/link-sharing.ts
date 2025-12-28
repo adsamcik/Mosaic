@@ -261,7 +261,8 @@ export function parseShareLinkUrl(url: string): {
     }
 
     return { linkId, linkSecret };
-  } catch {
+  } catch (_error: unknown) {
+    // Catch any parsing or validation errors
     return null;
   }
 }

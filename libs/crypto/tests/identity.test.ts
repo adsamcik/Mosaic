@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi, afterEach } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
 import { deriveIdentityKeypair, ed25519PubToX25519, ed25519SecretToX25519, generateIdentitySeed, generateEd25519Keypair, isValidEd25519PublicKey } from '../src/identity';
+import { CryptoError, CryptoErrorCode } from '../src/types';
 
 beforeAll(async () => {
   await sodium.ready;
@@ -48,61 +49,248 @@ describe('identity', () => {
     expect(converted).toEqual(kp.x25519.secretKey);
   });
 
-  it('rejects invalid seed lengths', () => {
-    expect(() => deriveIdentityKeypair(new Uint8Array(16))).toThrow();
+  describe('deriveIdentityKeypair validation', () => {
+    it('rejects seed that is too short (16 bytes)', () => {
+      const shortSeed = new Uint8Array(16);
+      expect(() => deriveIdentityKeypair(shortSeed)).toThrow(CryptoError);
+    });
+
+    it('rejects seed that is too long (48 bytes)', () => {
+      const longSeed = new Uint8Array(48);
+      expect(() => deriveIdentityKeypair(longSeed)).toThrow(CryptoError);
+    });
+
+    it('error message includes expected byte count (32)', () => {
+      try {
+        deriveIdentityKeypair(new Uint8Array(16));
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect((e as CryptoError).message).toContain('32 bytes');
+        expect((e as CryptoError).message).toContain('got 16');
+        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+      }
+    });
+
+    it('error message includes actual byte count received', () => {
+      try {
+        deriveIdentityKeypair(new Uint8Array(48));
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect((e as CryptoError).message).toContain('32 bytes');
+        expect((e as CryptoError).message).toContain('got 48');
+      }
+    });
   });
 
-  it('rejects invalid Ed25519 pubkey length for conversion', () => {
-    expect(() => ed25519PubToX25519(new Uint8Array(16))).toThrow();
+  describe('ed25519PubToX25519 validation', () => {
+    it('rejects public key that is too short (16 bytes)', () => {
+      expect(() => ed25519PubToX25519(new Uint8Array(16))).toThrow(CryptoError);
+    });
+
+    it('rejects public key that is too long (48 bytes)', () => {
+      expect(() => ed25519PubToX25519(new Uint8Array(48))).toThrow(CryptoError);
+    });
+
+    it('error message includes expected byte count (32)', () => {
+      try {
+        ed25519PubToX25519(new Uint8Array(16));
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect((e as CryptoError).message).toContain('32 bytes');
+        expect((e as CryptoError).message).toContain('got 16');
+        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+      }
+    });
+
+    it('error message includes actual byte count for too-long key', () => {
+      try {
+        ed25519PubToX25519(new Uint8Array(64));
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect((e as CryptoError).message).toContain('32 bytes');
+        expect((e as CryptoError).message).toContain('got 64');
+      }
+    });
   });
 
-  it('rejects invalid Ed25519 secret length for conversion', () => {
-    expect(() => ed25519SecretToX25519(new Uint8Array(16))).toThrow();
+  describe('ed25519SecretToX25519 validation', () => {
+    it('rejects secret key that is too short (32 bytes)', () => {
+      expect(() => ed25519SecretToX25519(new Uint8Array(32))).toThrow(CryptoError);
+    });
+
+    it('rejects secret key that is too long (96 bytes)', () => {
+      expect(() => ed25519SecretToX25519(new Uint8Array(96))).toThrow(CryptoError);
+    });
+
+    it('error message includes expected byte count (64)', () => {
+      try {
+        ed25519SecretToX25519(new Uint8Array(32));
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect((e as CryptoError).message).toContain('64 bytes');
+        expect((e as CryptoError).message).toContain('got 32');
+        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+      }
+    });
+
+    it('error message includes actual byte count for too-long key', () => {
+      try {
+        ed25519SecretToX25519(new Uint8Array(128));
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect((e as CryptoError).message).toContain('64 bytes');
+        expect((e as CryptoError).message).toContain('got 128');
+      }
+    });
   });
 
-  it('generates random Ed25519 keypairs', () => {
-    const kp1 = generateEd25519Keypair();
-    const kp2 = generateEd25519Keypair();
-    expect(kp1.publicKey.length).toBe(32);
-    expect(kp1.secretKey.length).toBe(64);
-    expect(kp1.publicKey).not.toEqual(kp2.publicKey);
+  describe('isValidEd25519PublicKey validation', () => {
+    it('returns true for valid public key', () => {
+      const seed = generateIdentitySeed();
+      const kp = deriveIdentityKeypair(seed);
+      expect(isValidEd25519PublicKey(kp.ed25519.publicKey)).toBe(true);
+    });
+
+    it('returns false for key that is too short', () => {
+      expect(isValidEd25519PublicKey(new Uint8Array(16))).toBe(false);
+    });
+
+    it('returns false for key that is too long', () => {
+      expect(isValidEd25519PublicKey(new Uint8Array(48))).toBe(false);
+    });
+
+    it('returns false for all-zeros key (not on curve)', () => {
+      const invalidKey = new Uint8Array(32).fill(0);
+      expect(isValidEd25519PublicKey(invalidKey)).toBe(false);
+    });
+
+    it('returns false for low-order point', () => {
+      // Small order point - libsodium should reject this
+      const lowOrderPoint = new Uint8Array(32);
+      lowOrderPoint[0] = 1;
+      expect(isValidEd25519PublicKey(lowOrderPoint)).toBe(false);
+    });
   });
 
-  it('validates Ed25519 public keys', () => {
-    const seed = generateIdentitySeed();
-    const kp = deriveIdentityKeypair(seed);
-    expect(isValidEd25519PublicKey(kp.ed25519.publicKey)).toBe(true);
-    expect(isValidEd25519PublicKey(new Uint8Array(16))).toBe(false); // Wrong length
+  describe('generateEd25519Keypair', () => {
+    it('generates valid keypairs', () => {
+      const kp = generateEd25519Keypair();
+      expect(kp.publicKey.length).toBe(32);
+      expect(kp.secretKey.length).toBe(64);
+    });
+
+    it('generates unique keypairs each time', () => {
+      const kp1 = generateEd25519Keypair();
+      const kp2 = generateEd25519Keypair();
+      expect(kp1.publicKey).not.toEqual(kp2.publicKey);
+      expect(kp1.secretKey).not.toEqual(kp2.secretKey);
+    });
   });
 
-  it('returns false for isValidEd25519PublicKey with invalid key that fails conversion', () => {
-    // A 32-byte key that is not a valid Ed25519 public key (all zeros is not on curve)
-    const invalidKey = new Uint8Array(32).fill(0);
-    expect(isValidEd25519PublicKey(invalidKey)).toBe(false);
-  });
+  describe('mocked conversion errors', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
 
-  it('handles ed25519PubToX25519 conversion failure for torsion point', () => {
-    // Try with a key that might cause issues - point of small order
-    // libsodium should handle this, but we test the error path
-    const lowOrderPoint = new Uint8Array(32);
-    lowOrderPoint[0] = 1; // Not a valid public key
-    
-    // This should throw or return false based on libsodium behavior
-    // We're testing the error handling path
-    try {
-      ed25519PubToX25519(lowOrderPoint);
-      // If it doesn't throw, the conversion might still be invalid
-      // but we've at least exercised the code path
-    } catch (e) {
-      expect((e as Error).message).toContain('convert');
-    }
-  });
+    it('throws KEY_CONVERSION_FAILED when deriveIdentityKeypair pk conversion fails', () => {
+      const seed = generateIdentitySeed();
+      const originalFn = sodium.crypto_sign_ed25519_pk_to_curve25519;
+      sodium.crypto_sign_ed25519_pk_to_curve25519 = vi.fn(() => {
+        throw new Error('Simulated conversion failure');
+      }) as typeof sodium.crypto_sign_ed25519_pk_to_curve25519;
+      
+      try {
+        expect(() => deriveIdentityKeypair(seed)).toThrow(CryptoError);
+        try {
+          deriveIdentityKeypair(seed);
+        } catch (e) {
+          expect((e as CryptoError).message).toContain('Failed to convert Ed25519 to X25519');
+          expect((e as CryptoError).code).toBe(CryptoErrorCode.KEY_CONVERSION_FAILED);
+          expect((e as CryptoError).cause).toBeInstanceOf(Error);
+        }
+      } finally {
+        sodium.crypto_sign_ed25519_pk_to_curve25519 = originalFn;
+      }
+    });
 
-  it('handles ed25519SecretToX25519 with valid secret key', () => {
-    const seed = generateIdentitySeed();
-    const kp = deriveIdentityKeypair(seed);
-    // This should work without throwing
-    const x25519Secret = ed25519SecretToX25519(kp.ed25519.secretKey);
-    expect(x25519Secret.length).toBe(32);
+    it('throws KEY_CONVERSION_FAILED when deriveIdentityKeypair sk conversion fails', () => {
+      const seed = generateIdentitySeed();
+      const originalFn = sodium.crypto_sign_ed25519_sk_to_curve25519;
+      sodium.crypto_sign_ed25519_sk_to_curve25519 = vi.fn(() => {
+        throw new Error('Simulated sk conversion failure');
+      }) as typeof sodium.crypto_sign_ed25519_sk_to_curve25519;
+      
+      try {
+        expect(() => deriveIdentityKeypair(seed)).toThrow(CryptoError);
+        try {
+          deriveIdentityKeypair(seed);
+        } catch (e) {
+          expect((e as CryptoError).message).toContain('Failed to convert Ed25519 to X25519');
+          expect((e as CryptoError).code).toBe(CryptoErrorCode.KEY_CONVERSION_FAILED);
+        }
+      } finally {
+        sodium.crypto_sign_ed25519_sk_to_curve25519 = originalFn;
+      }
+    });
+
+    it('throws KEY_CONVERSION_FAILED when ed25519SecretToX25519 fails', () => {
+      const seed = generateIdentitySeed();
+      const kp = deriveIdentityKeypair(seed);
+      const originalFn = sodium.crypto_sign_ed25519_sk_to_curve25519;
+      sodium.crypto_sign_ed25519_sk_to_curve25519 = vi.fn(() => {
+        throw new Error('Simulated conversion failure');
+      }) as typeof sodium.crypto_sign_ed25519_sk_to_curve25519;
+      
+      try {
+        expect(() => ed25519SecretToX25519(kp.ed25519.secretKey)).toThrow(CryptoError);
+        try {
+          ed25519SecretToX25519(kp.ed25519.secretKey);
+        } catch (e) {
+          expect((e as CryptoError).message).toContain('Failed to convert Ed25519 secret key to X25519');
+          expect((e as CryptoError).code).toBe(CryptoErrorCode.KEY_CONVERSION_FAILED);
+          expect((e as CryptoError).cause).toBeInstanceOf(Error);
+        }
+      } finally {
+        sodium.crypto_sign_ed25519_sk_to_curve25519 = originalFn;
+      }
+    });
+
+    it('throws KEY_CONVERSION_FAILED when ed25519PubToX25519 fails', () => {
+      const seed = generateIdentitySeed();
+      const kp = deriveIdentityKeypair(seed);
+      const originalFn = sodium.crypto_sign_ed25519_pk_to_curve25519;
+      sodium.crypto_sign_ed25519_pk_to_curve25519 = vi.fn(() => {
+        throw new Error('Simulated conversion failure');
+      }) as typeof sodium.crypto_sign_ed25519_pk_to_curve25519;
+      
+      try {
+        expect(() => ed25519PubToX25519(kp.ed25519.publicKey)).toThrow(CryptoError);
+        try {
+          ed25519PubToX25519(kp.ed25519.publicKey);
+        } catch (e) {
+          expect((e as CryptoError).message).toContain('Failed to convert Ed25519 public key to X25519');
+          expect((e as CryptoError).code).toBe(CryptoErrorCode.KEY_CONVERSION_FAILED);
+          expect((e as CryptoError).cause).toBeInstanceOf(Error);
+        }
+      } finally {
+        sodium.crypto_sign_ed25519_pk_to_curve25519 = originalFn;
+      }
+    });
+
+    it('isValidEd25519PublicKey returns false when conversion throws', () => {
+      const seed = generateIdentitySeed();
+      const kp = deriveIdentityKeypair(seed);
+      const originalFn = sodium.crypto_sign_ed25519_pk_to_curve25519;
+      sodium.crypto_sign_ed25519_pk_to_curve25519 = vi.fn(() => {
+        throw new Error('Simulated conversion failure');
+      }) as typeof sodium.crypto_sign_ed25519_pk_to_curve25519;
+      
+      try {
+        // Even with a valid public key, if conversion fails, should return false
+        expect(isValidEd25519PublicKey(kp.ed25519.publicKey)).toBe(false);
+      } finally {
+        sodium.crypto_sign_ed25519_pk_to_curve25519 = originalFn;
+      }
+    });
   });
 });

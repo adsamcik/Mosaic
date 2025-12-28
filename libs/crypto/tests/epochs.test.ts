@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
-import { generateEpochKey, serializeEpochKeyPublic, wrapEpochKey, unwrapEpochKey, rotateEpochKey, isValidEpochKey, deriveTierKeys } from '../src/epochs';
+import { generateEpochKey, serializeEpochKeyPublic, wrapEpochKey, unwrapEpochKey, rotateEpochKey, isValidEpochKey, deriveTierKeys, getTierKey } from '../src/epochs';
+import { ShardTier } from '../src/types';
 
 beforeAll(async () => {
   await sodium.ready;
@@ -77,5 +78,54 @@ describe('epochs', () => {
     expect(isValidEpochKey({ ...valid, fullKey: new Uint8Array(16) })).toBe(false);
     expect(isValidEpochKey({ ...valid, signKeypair: { ...valid.signKeypair, publicKey: new Uint8Array(16) } })).toBe(false);
     expect(isValidEpochKey({ ...valid, signKeypair: { ...valid.signKeypair, secretKey: new Uint8Array(16) } })).toBe(false);
+  });
+
+  it('validates epochId is a number (kills typeof mutation)', () => {
+    const valid = generateEpochKey(1);
+    
+    // Test non-number epochId values - these should all be invalid
+    // This kills the mutation: typeof epochKey.epochId !== 'number' → false
+    expect(isValidEpochKey({ ...valid, epochId: '1' as unknown as number })).toBe(false);
+    expect(isValidEpochKey({ ...valid, epochId: undefined as unknown as number })).toBe(false);
+    expect(isValidEpochKey({ ...valid, epochId: null as unknown as number })).toBe(false);
+    expect(isValidEpochKey({ ...valid, epochId: {} as unknown as number })).toBe(false);
+  });
+
+  it('accepts epochId=0 as valid (kills boundary mutation)', () => {
+    // epochId=0 should be VALID - this kills the mutation: epochId < 0 → epochId <= 0
+    const epochZero = generateEpochKey(0);
+    expect(epochZero.epochId).toBe(0);
+    expect(isValidEpochKey(epochZero)).toBe(true);
+  });
+
+  it('rejects invalid seed length in deriveTierKeys', () => {
+    const invalidSeed = new Uint8Array(16); // Should be 32 bytes
+    expect(() => deriveTierKeys(invalidSeed)).toThrow('32 bytes');
+  });
+
+  describe('getTierKey', () => {
+    it('returns thumbKey for THUMB tier', () => {
+      const epoch = generateEpochKey(1);
+      const key = getTierKey(epoch, ShardTier.THUMB);
+      expect(key).toEqual(epoch.thumbKey);
+    });
+
+    it('returns previewKey for PREVIEW tier', () => {
+      const epoch = generateEpochKey(1);
+      const key = getTierKey(epoch, ShardTier.PREVIEW);
+      expect(key).toEqual(epoch.previewKey);
+    });
+
+    it('returns fullKey for ORIGINAL tier', () => {
+      const epoch = generateEpochKey(1);
+      const key = getTierKey(epoch, ShardTier.ORIGINAL);
+      expect(key).toEqual(epoch.fullKey);
+    });
+
+    it('throws for invalid tier', () => {
+      const epoch = generateEpochKey(1);
+      expect(() => getTierKey(epoch, 0 as ShardTier)).toThrow('Invalid shard tier');
+      expect(() => getTierKey(epoch, 99 as ShardTier)).toThrow('Invalid shard tier');
+    });
   });
 });

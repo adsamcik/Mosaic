@@ -57,6 +57,30 @@ describe('utils', () => {
       const data = new Uint8Array([1, 2, 3]);
       expect(sha256Sync(data)).toBe(sha256Sync(data));
     });
+
+    it('returns a non-empty base64url string', () => {
+      const data = new Uint8Array([1, 2, 3, 4, 5]);
+      const hash = sha256Sync(data);
+      // Must be a non-empty string
+      expect(typeof hash).toBe('string');
+      expect(hash.length).toBeGreaterThan(0);
+      // SHA256 produces 32 bytes = 43 base64url chars (no padding)
+      expect(hash.length).toBe(43);
+      // Verify it's valid base64url (no + or / or =)
+      expect(hash).toMatch(/^[A-Za-z0-9_-]+$/);
+    });
+
+    it('produces different hashes for different data', () => {
+      const hash1 = sha256Sync(new Uint8Array([1, 2, 3]));
+      const hash2 = sha256Sync(new Uint8Array([1, 2, 4]));
+      expect(hash1).not.toBe(hash2);
+    });
+
+    it('handles empty input', () => {
+      const hash = sha256Sync(new Uint8Array(0));
+      expect(typeof hash).toBe('string');
+      expect(hash.length).toBe(43);
+    });
   });
 
   describe('randomBytes', () => {
@@ -108,6 +132,32 @@ describe('utils', () => {
       const unicode = '日本語テスト';
       const bytes = toBytes(unicode);
       expect(fromBytes(bytes)).toBe(unicode);
+    });
+
+    it('fromBytes decodes known UTF-8 byte sequence', () => {
+      // "Hello" in UTF-8 bytes
+      const helloBytes = new Uint8Array([72, 101, 108, 108, 111]);
+      const result = fromBytes(helloBytes);
+      expect(result).toBe('Hello');
+      expect(typeof result).toBe('string');
+      expect(result.length).toBe(5);
+    });
+
+    it('fromBytes handles multi-byte UTF-8 sequences', () => {
+      // "é" is 0xC3 0xA9 in UTF-8
+      const accentBytes = new Uint8Array([0xC3, 0xA9]);
+      expect(fromBytes(accentBytes)).toBe('é');
+      
+      // "€" is 0xE2 0x82 0xAC in UTF-8
+      const euroBytes = new Uint8Array([0xE2, 0x82, 0xAC]);
+      expect(fromBytes(euroBytes)).toBe('€');
+    });
+
+    it('fromBytes is the inverse of toBytes', () => {
+      const testStrings = ['', 'a', 'abc', 'Hello World', '日本語', '🎉🎊🎁'];
+      for (const str of testStrings) {
+        expect(fromBytes(toBytes(str))).toBe(str);
+      }
     });
   });
 });
