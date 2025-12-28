@@ -17,7 +17,7 @@ export interface TierKey {
   tier: AccessTierType;
   key: Uint8Array;
   /** Sign public key for manifest verification */
-  signPubkey?: Uint8Array;
+  signPubkey?: Uint8Array | undefined;
 }
 
 /** Link key state */
@@ -112,12 +112,15 @@ async function saveTierKeys(
   const keys: StoredLinkKeys['keys'] = [];
   for (const [epochId, tierMap] of tierKeys) {
     for (const [tier, tierKey] of tierMap) {
-      keys.push({
+      const entry: StoredLinkKeys['keys'][number] = {
         epochId,
         tier,
         key: toBase64(tierKey.key),
-        signPubkey: tierKey.signPubkey ? toBase64(tierKey.signPubkey) : undefined,
-      });
+      };
+      if (tierKey.signPubkey) {
+        entry.signPubkey = toBase64(tierKey.signPubkey);
+      }
+      keys.push(entry);
     }
   }
 

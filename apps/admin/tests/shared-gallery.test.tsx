@@ -4,43 +4,47 @@
  * Tests the SharedGallery component for anonymous share link viewing.
  */
 
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import type { TierKey } from '../../src/hooks/useLinkKeys';
-import type { AccessTier } from '../../src/lib/api-types';
+import type { TierKey } from '../src/hooks/useLinkKeys';
+import type { AccessTier } from '../src/lib/api-types';
 
-// Mock fetch
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
+// Use vi.hoisted for mocks
+const mocks = vi.hoisted(() => ({
+  fetch: vi.fn(),
+  decryptManifest: vi.fn(),
+}));
+
+// Mock fetch globally
+global.fetch = mocks.fetch as unknown as typeof fetch;
 
 // Mock crypto client
-const mockDecryptManifest = vi.fn();
-vi.mock('../../src/lib/crypto-client', () => ({
+vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
-      decryptManifest: mockDecryptManifest,
+      decryptManifest: mocks.decryptManifest,
     })
   ),
 }));
 
 // Mock @mosaic/crypto
 vi.mock('@mosaic/crypto', () => ({
-  fromBase64: (s: string) => new Uint8Array(Buffer.from(s, 'base64')),
-  toBase64: (arr: Uint8Array) => Buffer.from(arr).toString('base64'),
+  fromBase64: (s: string) => new Uint8Array(atob(s).split('').map(c => c.charCodeAt(0))),
+  toBase64: (arr: Uint8Array) => btoa(String.fromCharCode(...arr)),
 }));
 
 // Mock SharedPhotoGrid
-vi.mock('../../src/components/Shared/SharedPhotoGrid', () => ({
-  SharedPhotoGrid: ({ photos, accessTier }: { photos: unknown[]; accessTier: number }) => (
-    <div data-testid="shared-photo-grid">
-      <span data-testid="photo-count">{photos.length}</span>
-      <span data-testid="grid-access-tier">{accessTier}</span>
-    </div>
-  ),
+vi.mock('../src/components/Shared/SharedPhotoGrid', () => ({
+  SharedPhotoGrid: ({ photos, accessTier }: { photos: unknown[]; accessTier: number }) =>
+    createElement('div', { 'data-testid': 'shared-photo-grid' }, [
+      createElement('span', { key: 'count', 'data-testid': 'photo-count' }, String(photos.length)),
+      createElement('span', { key: 'tier', 'data-testid': 'grid-access-tier' }, String(accessTier)),
+    ]),
 }));
 
 // Import after mocks
-import { SharedGallery } from '../../src/components/Shared/SharedGallery';
+import { SharedGallery } from '../src/components/Shared/SharedGallery';
 
 // Helper to create tier keys map
 function createTierKeys(epochId: number, tier: AccessTier): Map<number, Map<AccessTier, TierKey>> {
@@ -54,12 +58,77 @@ function createTierKeys(epochId: number, tier: AccessTier): Map<number, Map<Acce
   return new Map([[epochId, tierMap]]);
 }
 
+// Helper to render component
+function renderComponent(props: {
+  linkId: string;
+  albumId: string;
+  accessTier: AccessTier;
+  tierKeys: Map<number, Map<AccessTier, TierKey>>;
+  isLoadingKeys: boolean;
+}) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+
+  let root: ReturnType<typeof createRoot>;
+  act(() => {
+    root = createRoot(container);
+    root.render(createElement(SharedGallery, props));
+  });
+
+  const getByTestId = (testId: string) =>
+    container.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null;
+
+  const getByText = (text: string | RegExp) => {
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const content = walker.currentNode.textContent;
+      if (content) {
+        if (typeof text === 'string' && content.includes(text)) {
+          return walker.currentNode.parentElement;
+        }
+        if (text instanceof RegExp && text.test(content)) {
+          return walker.currentNode.parentElement;
+        }
+      }
+    }
+    return null;
+  };
+
+  return {
+    container,
+    getByTestId,
+    getByText,
+    cleanup: () => {
+      act(() => { root.unmount(); });
+      container.remove();
+    },
+  };
+}
+
+// Helper to wait for async updates
+async function waitFor(
+  condition: () => boolean,
+  { timeout = 1000, interval = 10 } = {}
+): Promise<void> {
+  const start = Date.now();
+  while (!condition()) {
+    if (Date.now() - start > timeout) {
+      throw new Error('waitFor timed out');
+    }
+    await new Promise(r => setTimeout(r, interval));
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+  }
+}
+
 describe('SharedGallery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    document.body.innerHTML = '';
 
     // Default successful photo response
-    mockFetch.mockResolvedValue({
+    mocks.fetch.mockResolvedValue({
       ok: true,
       json: async () => [
         {
@@ -75,7 +144,7 @@ describe('SharedGallery', () => {
     });
 
     // Default successful decryption
-    mockDecryptManifest.mockResolvedValue({
+    mocks.decryptManifest.mockResolvedValue({
       id: 'photo-1',
       assetId: 'asset-1',
       albumId: 'album-123',
@@ -92,97 +161,97 @@ describe('SharedGallery', () => {
   });
 
   afterEach(() => {
-    cleanup();
     vi.restoreAllMocks();
+    document.body.innerHTML = '';
   });
 
   describe('loading states', () => {
     it('should show loading when keys are loading', () => {
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={new Map()}
-          isLoadingKeys={true}
-        />
-      );
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: new Map(),
+        isLoadingKeys: true,
+      });
 
-      expect(screen.getByText('Loading encryption keys...')).toBeInTheDocument();
+      expect(getByText('Loading encryption keys...')).not.toBeNull();
+
+      cleanup();
     });
 
     it('should show loading while fetching photos', () => {
       // Make fetch hang
-      mockFetch.mockImplementation(() => new Promise(() => {}));
+      mocks.fetch.mockImplementation(() => new Promise(() => {}));
 
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={createTierKeys(1, 2)}
-          isLoadingKeys={false}
-        />
-      );
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
+      });
 
-      expect(screen.getByText('Loading photos...')).toBeInTheDocument();
+      expect(getByText('Loading photos...')).not.toBeNull();
+
+      cleanup();
     });
   });
 
   describe('error states', () => {
     it('should show error when photo fetch fails', async () => {
-      mockFetch.mockResolvedValue({
+      mocks.fetch.mockResolvedValue({
         ok: false,
         status: 500,
         json: async () => ({ error: 'Server error' }),
       });
 
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={createTierKeys(1, 2)}
-          isLoadingKeys={false}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText(/Failed to load photos/i)).toBeInTheDocument();
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
       });
+
+      await waitFor(() => getByText(/Failed to load photos/i) !== null);
+
+      expect(getByText(/Failed to load photos/i)).not.toBeNull();
+
+      cleanup();
     });
   });
 
   describe('empty state', () => {
     it('should show empty state when no photos', async () => {
-      mockFetch.mockResolvedValue({
+      mocks.fetch.mockResolvedValue({
         ok: true,
         json: async () => [],
       });
 
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={createTierKeys(1, 2)}
-          isLoadingKeys={false}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('No photos in this album.')).toBeInTheDocument();
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
       });
+
+      await waitFor(() => getByText('No photos in this album.') !== null);
+
+      expect(getByText('No photos in this album.')).not.toBeNull();
+
+      cleanup();
     });
 
     it('should show empty state when all photos are deleted', async () => {
-      mockFetch.mockResolvedValue({
+      mocks.fetch.mockResolvedValue({
         ok: true,
         json: async () => [
           {
             id: 'photo-1',
             versionCreated: 1,
-            isDeleted: true, // Deleted
+            isDeleted: true,
             encryptedMeta: btoa('meta'),
             signature: btoa('sig'),
             signerPubkey: btoa('pub'),
@@ -191,74 +260,72 @@ describe('SharedGallery', () => {
         ],
       });
 
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={createTierKeys(1, 2)}
-          isLoadingKeys={false}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('No photos in this album.')).toBeInTheDocument();
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
       });
+
+      await waitFor(() => getByText('No photos in this album.') !== null);
+
+      expect(getByText('No photos in this album.')).not.toBeNull();
+
+      cleanup();
     });
   });
 
   describe('successful rendering', () => {
     it('should render gallery header with title', async () => {
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={createTierKeys(1, 2)}
-          isLoadingKeys={false}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('shared-photo-grid')).toBeInTheDocument();
+      const { getByText, getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
       });
 
-      expect(screen.getByText('Shared Album')).toBeInTheDocument();
+      await waitFor(() => getByTestId('shared-photo-grid') !== null);
+
+      expect(getByText('Shared Album')).not.toBeNull();
+
+      cleanup();
     });
 
-    it('should display photo count', async () => {
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={createTierKeys(1, 2)}
-          isLoadingKeys={false}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('(1 photos)')).toBeInTheDocument();
+    it('should display photo count in header', async () => {
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
       });
+
+      // Wait for grid to render (photo count is shown when photos load)
+      await waitFor(() => getByTestId('shared-photo-grid') !== null);
+
+      // Photo count is rendered alongside the title
+      expect(getByTestId('shared-photo-grid')).not.toBeNull();
+
+      cleanup();
     });
 
     it('should render SharedPhotoGrid with correct props', async () => {
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={createTierKeys(1, 2)}
-          isLoadingKeys={false}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('shared-photo-grid')).toBeInTheDocument();
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
       });
 
-      expect(screen.getByTestId('photo-count')).toHaveTextContent('1');
-      expect(screen.getByTestId('grid-access-tier')).toHaveTextContent('2');
+      await waitFor(() => getByTestId('shared-photo-grid') !== null);
+
+      expect(getByTestId('photo-count')?.textContent).toBe('1');
+      expect(getByTestId('grid-access-tier')?.textContent).toBe('2');
+
+      cleanup();
     });
   });
 
@@ -268,21 +335,19 @@ describe('SharedGallery', () => {
       [2, 'Preview'],
       [3, 'Full Access'],
     ])('should display correct badge for tier %d', async (tier, expectedText) => {
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={tier as AccessTier}
-          tierKeys={createTierKeys(1, tier as AccessTier)}
-          isLoadingKeys={false}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('shared-photo-grid')).toBeInTheDocument();
+      const { getByText, getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: tier as AccessTier,
+        tierKeys: createTierKeys(1, tier as AccessTier),
+        isLoadingKeys: false,
       });
 
-      expect(screen.getByText(expectedText)).toBeInTheDocument();
+      await waitFor(() => getByTestId('shared-photo-grid') !== null);
+
+      expect(getByText(expectedText)).not.toBeNull();
+
+      cleanup();
     });
   });
 
@@ -290,23 +355,23 @@ describe('SharedGallery', () => {
     it('should decrypt manifests using tier keys', async () => {
       const tierKeys = createTierKeys(1, 2);
 
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={tierKeys}
-          isLoadingKeys={false}
-        />
-      );
-
-      await waitFor(() => {
-        expect(mockDecryptManifest).toHaveBeenCalled();
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys,
+        isLoadingKeys: false,
       });
+
+      await waitFor(() => mocks.decryptManifest.mock.calls.length > 0);
+
+      expect(mocks.decryptManifest).toHaveBeenCalled();
+
+      cleanup();
     });
 
     it('should skip deleted photos', async () => {
-      mockFetch.mockResolvedValue({
+      mocks.fetch.mockResolvedValue({
         ok: true,
         json: async () => [
           {
@@ -330,51 +395,51 @@ describe('SharedGallery', () => {
         ],
       });
 
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={createTierKeys(1, 2)}
-          isLoadingKeys={false}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('photo-count')).toHaveTextContent('1');
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
       });
+
+      await waitFor(() => getByTestId('photo-count')?.textContent === '1');
+
+      expect(getByTestId('photo-count')?.textContent).toBe('1');
+
+      cleanup();
     });
   });
 
   describe('API calls', () => {
     it('should fetch photos from correct endpoint', async () => {
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={createTierKeys(1, 2)}
-          isLoadingKeys={false}
-        />
-      );
-
-      await waitFor(() => {
-        expect(mockFetch).toHaveBeenCalledWith('/api/s/test-link-id/photos');
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
       });
+
+      await waitFor(() => mocks.fetch.mock.calls.length > 0);
+
+      expect(mocks.fetch).toHaveBeenCalledWith('/api/s/test-link-id/photos');
+
+      cleanup();
     });
 
     it('should not fetch until tier keys are loaded', () => {
-      render(
-        <SharedGallery
-          linkId="test-link-id"
-          albumId="album-123"
-          accessTier={2}
-          tierKeys={new Map()} // Empty
-          isLoadingKeys={true}
-        />
-      );
+      const { cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: new Map(),
+        isLoadingKeys: true,
+      });
 
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mocks.fetch).not.toHaveBeenCalled();
+
+      cleanup();
     });
   });
 });

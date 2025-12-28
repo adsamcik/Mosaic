@@ -11,27 +11,27 @@ import type { PhotoMeta } from '../../workers/types';
 import { downloadShard } from '../../lib/shard-service';
 import { getCryptoClient } from '../../lib/crypto-client';
 
-interface SharedPhotoLightboxProps {
+export interface SharedPhotoLightboxProps {
   /** Current photo to display */
   photo: PhotoMeta;
   /** Tier key for decryption */
-  tierKey?: Uint8Array;
+  tierKey?: Uint8Array | undefined;
   /** Access tier for this share link */
   accessTier: AccessTierType;
   /** Close handler */
   onClose: () => void;
   /** Next photo handler */
-  onNext?: () => void;
+  onNext?: (() => void) | undefined;
   /** Previous photo handler */
-  onPrevious?: () => void;
+  onPrevious?: (() => void) | undefined;
   /** Whether there is a next photo */
   hasNext: boolean;
   /** Whether there is a previous photo */
   hasPrevious: boolean;
   /** Queue of photos to preload */
-  preloadQueue?: PhotoMeta[];
+  preloadQueue?: PhotoMeta[] | undefined;
   /** Get tier key for preloading */
-  getTierKey?: (epochId: number, tier: AccessTierType) => Uint8Array | undefined;
+  getTierKey?: ((epochId: number, tier: AccessTierType) => Uint8Array | undefined) | undefined;
 }
 
 /** Photo loading state */

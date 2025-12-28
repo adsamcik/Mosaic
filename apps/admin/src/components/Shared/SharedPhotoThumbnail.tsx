@@ -9,11 +9,11 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import type { PhotoMeta } from '../../workers/types';
 
-interface SharedPhotoThumbnailProps {
+export interface SharedPhotoThumbnailProps {
   /** Photo metadata */
   photo: PhotoMeta;
   /** Tier key for decryption */
-  tierKey?: Uint8Array;
+  tierKey?: Uint8Array | undefined;
   /** Access tier for this share link */
   accessTier: AccessTierType;
   /** Click handler */

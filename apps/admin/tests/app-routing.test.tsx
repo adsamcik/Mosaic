@@ -8,14 +8,17 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock session
-const mockSession = {
-  isLoggedIn: false,
-  subscribe: vi.fn(() => () => {}),
-};
+// Use vi.hoisted for mocks to avoid hoisting issues
+const mocks = vi.hoisted(() => ({
+  session: {
+    isLoggedIn: false,
+    subscribe: vi.fn(() => () => {}),
+  },
+}));
 
+// Mock session
 vi.mock('../src/lib/session', () => ({
-  session: mockSession,
+  session: mocks.session,
 }));
 
 // Mock components
@@ -49,7 +52,7 @@ describe('App routing', () => {
     originalLocation = window.location;
     
     // Reset session state
-    mockSession.isLoggedIn = false;
+    mocks.session.isLoggedIn = false;
     vi.clearAllMocks();
   });
 
@@ -63,9 +66,11 @@ describe('App routing', () => {
     Object.defineProperty(window, 'location', {
       value: originalLocation,
       writable: true,
+      configurable: true,
     });
     
     vi.restoreAllMocks();
+    document.body.innerHTML = '';
   });
 
   describe('share link route detection', () => {
@@ -76,6 +81,7 @@ describe('App routing', () => {
           hash: '#k=secret123',
         },
         writable: true,
+        configurable: true,
       });
 
       await act(async () => {
@@ -94,6 +100,7 @@ describe('App routing', () => {
           hash: '#k=secret',
         },
         writable: true,
+        configurable: true,
       });
 
       await act(async () => {
@@ -111,9 +118,10 @@ describe('App routing', () => {
           hash: '',
         },
         writable: true,
+        configurable: true,
       });
 
-      mockSession.isLoggedIn = false;
+      mocks.session.isLoggedIn = false;
 
       await act(async () => {
         root.render(createElement(App));
@@ -130,9 +138,10 @@ describe('App routing', () => {
           hash: '#k=secret',
         },
         writable: true,
+        configurable: true,
       });
 
-      mockSession.isLoggedIn = false;
+      mocks.session.isLoggedIn = false;
 
       await act(async () => {
         root.render(createElement(App));
@@ -148,9 +157,10 @@ describe('App routing', () => {
           hash: '#k=secret',
         },
         writable: true,
+        configurable: true,
       });
 
-      mockSession.isLoggedIn = false;
+      mocks.session.isLoggedIn = false;
 
       await act(async () => {
         root.render(createElement(App));
@@ -168,11 +178,12 @@ describe('App routing', () => {
           hash: '',
         },
         writable: true,
+        configurable: true,
       });
     });
 
     it('should render LoginForm when not logged in', async () => {
-      mockSession.isLoggedIn = false;
+      mocks.session.isLoggedIn = false;
 
       await act(async () => {
         root.render(createElement(App));
@@ -183,7 +194,7 @@ describe('App routing', () => {
     });
 
     it('should render AppShell when logged in', async () => {
-      mockSession.isLoggedIn = true;
+      mocks.session.isLoggedIn = true;
 
       await act(async () => {
         root.render(createElement(App));
@@ -198,7 +209,7 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      expect(mockSession.subscribe).toHaveBeenCalled();
+      expect(mocks.session.subscribe).toHaveBeenCalled();
     });
   });
 
@@ -210,9 +221,10 @@ describe('App routing', () => {
           hash: '#k=secret',
         },
         writable: true,
+        configurable: true,
       });
 
-      mockSession.isLoggedIn = false;
+      mocks.session.isLoggedIn = false;
 
       await act(async () => {
         root.render(createElement(App));
@@ -229,9 +241,10 @@ describe('App routing', () => {
           hash: '#k=secret',
         },
         writable: true,
+        configurable: true,
       });
 
-      mockSession.isLoggedIn = true;
+      mocks.session.isLoggedIn = true;
 
       await act(async () => {
         root.render(createElement(App));
@@ -250,6 +263,7 @@ describe('App routing', () => {
           hash: '#k=secret',
         },
         writable: true,
+        configurable: true,
       });
 
       await act(async () => {
@@ -266,9 +280,10 @@ describe('App routing', () => {
           hash: '#k=secret',
         },
         writable: true,
+        configurable: true,
       });
 
-      mockSession.isLoggedIn = false;
+      mocks.session.isLoggedIn = false;
 
       await act(async () => {
         root.render(createElement(App));

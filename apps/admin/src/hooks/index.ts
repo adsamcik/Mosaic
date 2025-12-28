@@ -6,6 +6,8 @@ export { useLightbox } from './useLightbox';
 export type { LightboxControls, LightboxState, UseLightboxResult } from './useLightbox';
 export { useLinkKeys, parseLinkFragment, clearLinkKeys } from './useLinkKeys';
 export type { TierKey, LinkKeyState, UseLinkKeysResult } from './useLinkKeys';
+export { useShareLinks } from './useShareLinks';
+export type {
   CreateShareLinkOptions,
   CreateShareLinkResult,
   ShareLinkInfo,
