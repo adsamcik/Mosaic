@@ -164,4 +164,66 @@ public class TestDataBuilder
         await _db.SaveChangesAsync();
         return manifest;
     }
+
+    /// <summary>
+    /// Creates a share link for an album
+    /// </summary>
+    public async Task<ShareLink> CreateShareLinkAsync(
+        Album album,
+        int accessTier = 3,
+        byte[]? linkId = null,
+        DateTimeOffset? expiresAt = null,
+        int? maxUses = null,
+        bool isRevoked = false,
+        int useCount = 0)
+    {
+        var shareLink = new ShareLink
+        {
+            Id = Guid.NewGuid(),
+            LinkId = linkId ?? GenerateRandomBytes(16),
+            AlbumId = album.Id,
+            AccessTier = accessTier,
+            ExpiresAt = expiresAt,
+            MaxUses = maxUses,
+            UseCount = useCount,
+            IsRevoked = isRevoked
+        };
+        _db.ShareLinks.Add(shareLink);
+        await _db.SaveChangesAsync();
+        return shareLink;
+    }
+
+    /// <summary>
+    /// Creates a link epoch key for a share link
+    /// </summary>
+    public async Task<LinkEpochKey> CreateLinkEpochKeyAsync(
+        ShareLink shareLink,
+        int epochId,
+        int tier,
+        byte[]? wrappedNonce = null,
+        byte[]? wrappedKey = null)
+    {
+        var linkEpochKey = new LinkEpochKey
+        {
+            Id = Guid.NewGuid(),
+            ShareLinkId = shareLink.Id,
+            EpochId = epochId,
+            Tier = tier,
+            WrappedNonce = wrappedNonce ?? GenerateRandomBytes(24),
+            WrappedKey = wrappedKey ?? GenerateRandomBytes(48)
+        };
+        _db.LinkEpochKeys.Add(linkEpochKey);
+        await _db.SaveChangesAsync();
+        return linkEpochKey;
+    }
+
+    /// <summary>
+    /// Generates random bytes for testing
+    /// </summary>
+    public static byte[] GenerateRandomBytes(int length)
+    {
+        var bytes = new byte[length];
+        Random.Shared.NextBytes(bytes);
+        return bytes;
+    }
 }

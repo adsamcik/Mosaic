@@ -1,0 +1,1049 @@
+using Microsoft.AspNetCore.Mvc;
+using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Tests.Helpers;
+using Xunit;
+
+namespace Mosaic.Backend.Tests.Controllers;
+
+public class ShareLinksControllerTests
+{
+    private const string OwnerAuthSub = "owner-user-123";
+    private const string OtherAuthSub = "other-user-456";
+
+    #region Helper Methods
+
+    private static string ToBase64Url(byte[] bytes)
+    {
+        return Convert.ToBase64String(bytes)
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+    }
+
+    private static CreateShareLinkRequest CreateValidRequest(byte[]? linkId = null)
+    {
+        return new CreateShareLinkRequest
+        {
+            AccessTier = 3,
+            LinkId = linkId ?? TestDataBuilder.GenerateRandomBytes(16),
+            WrappedKeys = new List<WrappedKeyRequest>
+            {
+                new WrappedKeyRequest
+                {
+                    EpochId = 1,
+                    Tier = 3,
+                    Nonce = TestDataBuilder.GenerateRandomBytes(24),
+                    EncryptedKey = TestDataBuilder.GenerateRandomBytes(48)
+                }
+            }
+        };
+    }
+
+    #endregion
+
+    #region POST /api/albums/{albumId}/share-links
+
+    [Fact]
+    public async Task Create_ReturnsCreated_WhenOwnerCreatesValidLink()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = CreateValidRequest();
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        var createdResult = Assert.IsType<CreatedResult>(result);
+        var response = Assert.IsType<ShareLinkResponse>(createdResult.Value);
+        Assert.Equal(3, response.AccessTier);
+        Assert.False(response.IsRevoked);
+        Assert.Equal(0, response.UseCount);
+        Assert.Null(response.ExpiresAt);
+        Assert.Null(response.MaxUses);
+
+        // Verify database state
+        Assert.Single(db.ShareLinks);
+        Assert.Single(db.LinkEpochKeys);
+    }
+
+    [Fact]
+    public async Task Create_CreatesMultipleEpochKeys_WhenMultipleProvided()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner, currentEpochId: 2);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new CreateShareLinkRequest
+        {
+            AccessTier = 2,
+            LinkId = TestDataBuilder.GenerateRandomBytes(16),
+            WrappedKeys = new List<WrappedKeyRequest>
+            {
+                new() { EpochId = 1, Tier = 2, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) },
+                new() { EpochId = 1, Tier = 1, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) },
+                new() { EpochId = 2, Tier = 2, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) },
+                new() { EpochId = 2, Tier = 1, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) }
+            }
+        };
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        Assert.IsType<CreatedResult>(result);
+        Assert.Equal(4, db.LinkEpochKeys.Count());
+    }
+
+    [Fact]
+    public async Task Create_SetsExpirationAndMaxUses_WhenProvided()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var expiresAt = DateTimeOffset.UtcNow.AddDays(7);
+        var request = CreateValidRequest();
+        request.ExpiresAt = expiresAt;
+        request.MaxUses = 10;
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        var createdResult = Assert.IsType<CreatedResult>(result);
+        var response = Assert.IsType<ShareLinkResponse>(createdResult.Value);
+        Assert.NotNull(response.ExpiresAt);
+        Assert.Equal(10, response.MaxUses);
+    }
+
+    [Fact]
+    public async Task Create_ReturnsNotFound_WhenAlbumDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        await builder.CreateUserAsync(OwnerAuthSub);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = CreateValidRequest();
+
+        // Act
+        var result = await controller.Create(Guid.NewGuid(), request);
+
+        // Assert
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Create_ReturnsForbid_WhenUserIsNotOwner()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var other = await builder.CreateUserAsync(OtherAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.AddMemberAsync(album, other, "viewer", owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OtherAuthSub)
+            }
+        };
+
+        var request = CreateValidRequest();
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task Create_ReturnsBadRequest_WhenAccessTierInvalid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = CreateValidRequest();
+        request.AccessTier = 5;
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("accessTier", badRequest.Value?.ToString());
+    }
+
+    [Fact]
+    public async Task Create_ReturnsBadRequest_WhenLinkIdWrongLength()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = CreateValidRequest(linkId: new byte[8]); // Wrong length
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("linkId", badRequest.Value?.ToString());
+    }
+
+    [Fact]
+    public async Task Create_ReturnsBadRequest_WhenNonceWrongLength()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new CreateShareLinkRequest
+        {
+            AccessTier = 3,
+            LinkId = TestDataBuilder.GenerateRandomBytes(16),
+            WrappedKeys = new List<WrappedKeyRequest>
+            {
+                new WrappedKeyRequest
+                {
+                    EpochId = 1,
+                    Tier = 3,
+                    Nonce = new byte[12], // Wrong length, should be 24
+                    EncryptedKey = TestDataBuilder.GenerateRandomBytes(48)
+                }
+            }
+        };
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("nonce", badRequest.Value?.ToString());
+    }
+
+    [Fact]
+    public async Task Create_ReturnsBadRequest_WhenExpiresAtInPast()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = CreateValidRequest();
+        request.ExpiresAt = DateTimeOffset.UtcNow.AddDays(-1);
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("expiresAt", badRequest.Value?.ToString());
+    }
+
+    [Fact]
+    public async Task Create_ReturnsBadRequest_WhenMaxUsesNotPositive()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = CreateValidRequest();
+        request.MaxUses = 0;
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("maxUses", badRequest.Value?.ToString());
+    }
+
+    [Fact]
+    public async Task Create_ReturnsConflict_WhenLinkIdAlreadyExists()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var existingLinkId = TestDataBuilder.GenerateRandomBytes(16);
+        await builder.CreateShareLinkAsync(album, linkId: existingLinkId);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = CreateValidRequest(linkId: existingLinkId);
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    #endregion
+
+    #region GET /api/albums/{albumId}/share-links
+
+    [Fact]
+    public async Task List_ReturnsEmptyList_WhenNoLinksExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.List(album.Id);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var links = Assert.IsAssignableFrom<List<ShareLinkResponse>>(okResult.Value);
+        Assert.Empty(links);
+    }
+
+    [Fact]
+    public async Task List_ReturnsAllLinks_WhenLinksExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.CreateShareLinkAsync(album, accessTier: 1);
+        await builder.CreateShareLinkAsync(album, accessTier: 2);
+        await builder.CreateShareLinkAsync(album, accessTier: 3);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.List(album.Id);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var links = Assert.IsAssignableFrom<List<ShareLinkResponse>>(okResult.Value);
+        Assert.Equal(3, links.Count);
+    }
+
+    [Fact]
+    public async Task List_ReturnsNotFound_WhenAlbumDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        await builder.CreateUserAsync(OwnerAuthSub);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.List(Guid.NewGuid());
+
+        // Assert
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task List_ReturnsForbid_WhenUserIsNotOwner()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var other = await builder.CreateUserAsync(OtherAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.AddMemberAsync(album, other, "editor", owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OtherAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.List(album.Id);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    #endregion
+
+    #region DELETE /api/share-links/{id}
+
+    [Fact]
+    public async Task Revoke_ReturnsNoContent_WhenOwnerRevokesLink()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.Revoke(shareLink.Id);
+
+        // Assert
+        Assert.IsType<NoContentResult>(result);
+
+        // Verify link is revoked
+        var updatedLink = db.ShareLinks.First(sl => sl.Id == shareLink.Id);
+        Assert.True(updatedLink.IsRevoked);
+    }
+
+    [Fact]
+    public async Task Revoke_ReturnsNotFound_WhenLinkDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        await builder.CreateUserAsync(OwnerAuthSub);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.Revoke(Guid.NewGuid());
+
+        // Assert
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Revoke_ReturnsForbid_WhenUserIsNotOwner()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var other = await builder.CreateUserAsync(OtherAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OtherAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.Revoke(shareLink.Id);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    #endregion
+
+    #region GET /api/s/{linkId}
+
+    [Fact]
+    public async Task Access_ReturnsOk_WhenLinkIsValid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 2);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 2);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 1);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.Access(linkIdBase64);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<LinkAccessResponse>(okResult.Value);
+        Assert.Equal(album.Id, response.AlbumId);
+        Assert.Equal(2, response.AccessTier);
+        Assert.Equal(1, response.EpochCount); // Two keys but same epoch
+    }
+
+    [Fact]
+    public async Task Access_IncrementsUseCount()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, useCount: 5);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        await controller.Access(linkIdBase64);
+
+        // Assert
+        var updatedLink = db.ShareLinks.First(sl => sl.Id == shareLink.Id);
+        Assert.Equal(6, updatedLink.UseCount);
+    }
+
+    [Fact]
+    public async Task Access_ReturnsNotFound_WhenLinkDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(TestDataBuilder.GenerateRandomBytes(16));
+
+        // Act
+        var result = await controller.Access(linkIdBase64);
+
+        // Assert
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Access_ReturnsBadRequest_WhenLinkIdInvalidFormat()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        // Act
+        var result = await controller.Access("invalid!!!base64");
+
+        // Assert
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Access_ReturnsGone_WhenLinkIsRevoked()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, isRevoked: true);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.Access(linkIdBase64);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task Access_ReturnsGone_WhenLinkIsExpired()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-1));
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.Access(linkIdBase64);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task Access_ReturnsGone_WhenMaxUsesReached()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5, useCount: 5);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.Access(linkIdBase64);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    #endregion
+
+    #region GET /api/s/{linkId}/keys
+
+    [Fact]
+    public async Task GetKeys_ReturnsAllKeys_WhenLinkIsValid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner, currentEpochId: 2);
+        await builder.CreateEpochKeyAsync(album, owner, epochId: 1);
+        await builder.CreateEpochKeyAsync(album, owner, epochId: 2);
+        
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 2);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 2, 3);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 2, 2);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.GetKeys(linkIdBase64);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var keys = Assert.IsAssignableFrom<List<LinkEpochKeyResponse>>(okResult.Value);
+        Assert.Equal(4, keys.Count);
+        Assert.All(keys, k => Assert.NotNull(k.Nonce));
+        Assert.All(keys, k => Assert.NotNull(k.EncryptedKey));
+    }
+
+    [Fact]
+    public async Task GetKeys_ReturnsNotFound_WhenLinkDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(TestDataBuilder.GenerateRandomBytes(16));
+
+        // Act
+        var result = await controller.GetKeys(linkIdBase64);
+
+        // Assert
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetKeys_ReturnsGone_WhenLinkIsRevoked()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, isRevoked: true);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.GetKeys(linkIdBase64);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    #endregion
+
+    #region GET /api/s/{linkId}/photos
+
+    [Fact]
+    public async Task GetPhotos_ReturnsPhotos_WhenLinkIsValid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        var shard1 = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        var shard2 = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard1 });
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard2 });
+
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.GetPhotos(linkIdBase64);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        Assert.Equal(2, photos.Count);
+        Assert.All(photos, p => Assert.Single(p.ShardIds));
+    }
+
+    [Fact]
+    public async Task GetPhotos_ExcludesDeletedPhotos()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        var shard1 = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        var shard2 = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard1 });
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard2 }, isDeleted: true);
+
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.GetPhotos(linkIdBase64);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        Assert.Single(photos);
+    }
+
+    [Fact]
+    public async Task GetPhotos_ReturnsNotFound_WhenLinkDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(TestDataBuilder.GenerateRandomBytes(16));
+
+        // Act
+        var result = await controller.GetPhotos(linkIdBase64);
+
+        // Assert
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetPhotos_ReturnsGone_WhenLinkIsExpired()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-1));
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.GetPhotos(linkIdBase64);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    #endregion
+}
