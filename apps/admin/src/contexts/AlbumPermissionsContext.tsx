@@ -127,7 +127,7 @@ function derivePermissions(
         canSelect: false,
         // Anonymous users can download only if they have full access tier
         canDownload: accessTier === 3,
-        accessTier,
+        ...(accessTier !== undefined && { accessTier }),
       };
   }
 }

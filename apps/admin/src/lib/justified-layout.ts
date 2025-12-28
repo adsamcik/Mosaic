@@ -11,7 +11,7 @@
  * 4. Photos in the last row may not fill the width (partial row)
  */
 
-import type { PhotoMeta } from '../../workers/types';
+import type { PhotoMeta } from '../workers/types';
 
 /** Photo with computed display dimensions */
 export interface JustifiedPhoto {

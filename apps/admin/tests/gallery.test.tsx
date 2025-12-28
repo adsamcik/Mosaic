@@ -93,8 +93,24 @@ vi.mock('../src/hooks/useEpochKeys', () => ({
   })),
 }));
 
-// Track isOwner for testing
-let mockIsOwner = true;
+// Track isOwner and currentUserRole for testing - use an object so the mock can access updated values
+const mockState = {
+  isOwner: true,
+  currentUserRole: 'owner' as 'owner' | 'editor' | 'viewer',
+};
+
+// Mock useAlbumMembers hook (used by Gallery)
+vi.mock('../src/hooks/useAlbumMembers', () => ({
+  useAlbumMembers: vi.fn(() => ({
+    members: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+    isOwner: mockState.isOwner,
+    canEdit: mockState.isOwner || ['owner', 'editor'].includes(mockState.currentUserRole),
+    currentUserRole: mockState.currentUserRole,
+  })),
+}));
 
 vi.mock('../src/hooks/useMemberManagement', () => ({
   useAlbumMembers: vi.fn(() => ({
@@ -102,7 +118,7 @@ vi.mock('../src/hooks/useMemberManagement', () => ({
     isLoading: false,
     error: null,
     refetch: vi.fn(),
-    isOwner: mockIsOwner,
+    isOwner: mockState.isOwner,
   })),
   useMemberManagement: vi.fn(() => ({
     members: [],
@@ -118,7 +134,7 @@ vi.mock('../src/hooks/useMemberManagement', () => ({
     removalStep: null,
     lookupUser: vi.fn(),
     isLookingUp: false,
-    isOwner: mockIsOwner,
+    isOwner: mockState.isOwner,
   })),
 }));
 
@@ -240,8 +256,9 @@ describe('Gallery', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset isOwner to true for most tests
-    mockIsOwner = true;
+    // Reset mock state to owner for most tests
+    mockState.isOwner = true;
+    mockState.currentUserRole = 'owner';
   });
 
   afterEach(() => {
@@ -261,11 +278,11 @@ describe('Gallery', () => {
       cleanup();
     });
 
-    it('defaults to grid view', () => {
+    it('defaults to justified view', () => {
       const { getByTestId, cleanup } = renderGallery({ albumId });
 
-      const gridToggle = getByTestId('view-toggle-grid');
-      expect(gridToggle?.className).toContain('view-toggle-btn--active');
+      const justifiedToggle = getByTestId('view-toggle-justified');
+      expect(justifiedToggle?.className).toContain('view-toggle-btn--active');
 
       cleanup();
     });
@@ -324,17 +341,19 @@ describe('Gallery', () => {
     it('sets aria-pressed attribute correctly', () => {
       const { getByTestId, cleanup } = renderGallery({ albumId });
 
+      const justifiedToggle = getByTestId('view-toggle-justified');
       const gridToggle = getByTestId('view-toggle-grid');
       const mapToggle = getByTestId('view-toggle-map');
 
-      expect(gridToggle?.getAttribute('aria-pressed')).toBe('true');
+      expect(justifiedToggle?.getAttribute('aria-pressed')).toBe('true');
+      expect(gridToggle?.getAttribute('aria-pressed')).toBe('false');
       expect(mapToggle?.getAttribute('aria-pressed')).toBe('false');
 
       act(() => {
         mapToggle?.click();
       });
 
-      expect(gridToggle?.getAttribute('aria-pressed')).toBe('false');
+      expect(justifiedToggle?.getAttribute('aria-pressed')).toBe('false');
       expect(mapToggle?.getAttribute('aria-pressed')).toBe('true');
 
       cleanup();
@@ -361,10 +380,11 @@ describe('Gallery', () => {
     });
 
     it('renders upload button', () => {
-      const { getByText, cleanup } = renderGallery({ albumId });
+      const { getByTestId, cleanup } = renderGallery({ albumId });
 
-      const uploadButton = getByText('Upload');
+      const uploadButton = getByTestId('upload-button');
       expect(uploadButton).not.toBeNull();
+      expect(uploadButton?.textContent).toContain('Upload');
 
       cleanup();
     });
@@ -490,7 +510,8 @@ describe('Share Links Integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsOwner = true;
+    mockState.isOwner = true;
+    mockState.currentUserRole = 'owner';
   });
 
   afterEach(() => {
@@ -508,7 +529,8 @@ describe('Share Links Integration', () => {
   });
 
   it('hides share links button for non-owners', () => {
-    mockIsOwner = false;
+    mockState.isOwner = false;
+    mockState.currentUserRole = 'viewer';
     const { queryByTestId, cleanup } = renderGallery({ albumId });
 
     const shareLinksButton = queryByTestId('share-links-button');

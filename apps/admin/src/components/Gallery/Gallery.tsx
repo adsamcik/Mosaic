@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlbumPermissionsProvider } from '../../contexts/AlbumPermissionsContext';
 import { UploadProvider } from '../../contexts/UploadContext';
 import { useAutoSync } from '../../contexts/SyncContext';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
-import { useAlbumMembers } from '../../hooks/useMemberManagement';
+import { useAlbumMembers } from '../../hooks/useAlbumMembers';
 import { usePhotos } from '../../hooks/usePhotos';
 import { useSync } from '../../hooks/useSync';
 import { createLogger } from '../../lib/logger';
@@ -11,17 +12,17 @@ import type { GeoFeature, PhotoMeta } from '../../workers/types';
 import { MemberList } from '../Members/MemberList';
 import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
 import { DropZone } from '../Upload/DropZone';
-import { UploadButton } from '../Upload/UploadButton';
 import { UploadErrorToast } from '../Upload/UploadErrorToast';
+import { GalleryHeader } from './GalleryHeader';
+import { JustifiedPhotoGrid } from './JustifiedPhotoGrid';
 import { MapView } from './MapView';
 import { PhotoGrid } from './PhotoGrid';
 import { PhotoLightbox } from './PhotoLightbox';
-import { SearchInput } from './SearchInput';
 
 const log = createLogger('Gallery');
 
 /** View mode for the gallery */
-export type GalleryViewMode = 'grid' | 'map';
+export type GalleryViewMode = 'grid' | 'justified' | 'map';
 
 interface GalleryProps {
   albumId: string;
@@ -52,12 +53,12 @@ function photosToGeoFeatures(photos: PhotoMeta[]): GeoFeature[] {
 export function Gallery({ albumId }: GalleryProps) {
   const [showMembers, setShowMembers] = useState(false);
   const [showShareLinks, setShowShareLinks] = useState(false);
-  const [viewMode, setViewMode] = useState<GalleryViewMode>('grid');
+  const [viewMode, setViewMode] = useState<GalleryViewMode>('justified');
   const [searchQuery, setSearchQuery] = useState('');
 
   const { photos, isLoading, error, refetch: reloadPhotos } = usePhotos(albumId, searchQuery);
   const { epochKeys, isLoading: epochKeysLoading } = useAlbumEpochKeys(albumId);
-  const { isOwner } = useAlbumMembers(albumId);
+  const { currentUserRole, isOwner, canEdit } = useAlbumMembers(albumId);
   const lightbox = useLightbox(photos);
   const { syncAlbum } = useSync();
   
@@ -176,74 +177,25 @@ export function Gallery({ albumId }: GalleryProps) {
   }
 
   return (
+    <AlbumPermissionsProvider role={currentUserRole ?? 'viewer'}>
     <UploadProvider>
       <div className="gallery" data-testid="gallery">
-        <div className="gallery-header">
-          <h2 className="gallery-title">Photos</h2>
-        
-          {/* Search Input */}
-          <SearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search photos by filename..."
-            className="gallery-search"
-          />
-        
-          <div className="gallery-actions">
-            {/* View Mode Toggle */}
-            <div className="view-toggle" role="group" aria-label="View mode">
-              <button
-              className={`view-toggle-btn ${viewMode === 'grid' ? 'view-toggle-btn--active' : ''}`}
-              onClick={() => setViewMode('grid')}
-              aria-pressed={viewMode === 'grid'}
-              title="Grid view"
-              data-testid="view-toggle-grid"
-            >
-              <span className="view-toggle-icon">▦</span>
-              <span className="view-toggle-label">Grid</span>
-            </button>
-            <button
-              className={`view-toggle-btn ${viewMode === 'map' ? 'view-toggle-btn--active' : ''}`}
-              onClick={() => setViewMode('map')}
-              aria-pressed={viewMode === 'map'}
-              title={`Map view (${geotaggedCount} geotagged)`}
-              data-testid="view-toggle-map"
-            >
-              <span className="view-toggle-icon">🗺️</span>
-              <span className="view-toggle-label">Map</span>
-              {geotaggedCount > 0 && (
-                <span className="view-toggle-badge">{geotaggedCount}</span>
-              )}
-            </button>
-          </div>
-
-          <button
-            className="button-secondary share-button"
-            onClick={() => setShowMembers(true)}
-            aria-label="Manage album members"
-            data-testid="share-button"
-          >
-            <span className="share-icon">👥</span>
-            Share
-          </button>
-          {isOwner && (
-            <button
-              className="button-secondary share-links-button"
-              onClick={() => setShowShareLinks(true)}
-              aria-label="Manage share links"
-              data-testid="share-links-button"
-            >
-              <span className="share-links-icon">🔗</span>
-              Links
-            </button>
-          )}
-          <UploadButton albumId={albumId} />
-        </div>
-      </div>
+        <GalleryHeader
+          albumId={albumId}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          geotaggedCount={geotaggedCount}
+          onShowMembers={() => setShowMembers(true)}
+          onShowShareLinks={() => setShowShareLinks(true)}
+        />
 
       {/* Gallery Content - Wrapped in DropZone for drag-and-drop upload */}
-      <DropZone albumId={albumId} className="gallery-content">
-        {viewMode === 'grid' ? (
+      <DropZone albumId={albumId} className="gallery-content" disabled={!canEdit}>
+        {viewMode === 'justified' ? (
+          <JustifiedPhotoGrid albumId={albumId} />
+        ) : viewMode === 'grid' ? (
           <PhotoGrid albumId={albumId} />
         ) : (
           <MapView
@@ -291,5 +243,6 @@ export function Gallery({ albumId }: GalleryProps) {
       <UploadErrorToast />
       </div>
     </UploadProvider>
+    </AlbumPermissionsProvider>
   );
 }

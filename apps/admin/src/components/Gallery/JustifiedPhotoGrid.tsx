@@ -99,7 +99,7 @@ export function JustifiedPhotoGrid({ albumId, onPhotosDeleted }: JustifiedPhotoG
   const viewportHeight = containerRef.current?.clientHeight ?? 800;
 
   // Compute visible rows for virtualization
-  const { startIndex, endIndex, offsetY } = useMemo(
+  const { startIndex, endIndex } = useMemo(
     () => getVisibleRows(rows, scrollTop, viewportHeight, PHOTO_GAP, 2),
     [rows, scrollTop, viewportHeight]
   );
@@ -371,7 +371,7 @@ export function JustifiedPhotoGrid({ albumId, onPhotosDeleted }: JustifiedPhotoG
                       selectionMode={selectionMode}
                       showDelete={permissions.canDelete}
                       onClick={() => handlePhotoClick(photo)}
-                      onSelectionChange={(selected) =>
+                      onSelectionChange={(selected: boolean) =>
                         handleSelectionChange(photo.id, selected)
                       }
                       onDelete={() => handleDeletePhoto(photo)}
@@ -395,7 +395,7 @@ export function JustifiedPhotoGrid({ albumId, onPhotosDeleted }: JustifiedPhotoG
           hasNext={lightbox.hasNext}
           hasPrevious={lightbox.hasPrevious}
           preloadQueue={preloadQueue}
-          onDelete={permissions.canDelete ? handleDeleteFromLightbox : undefined}
+          {...(permissions.canDelete && { onDelete: handleDeleteFromLightbox })}
         />
       )}
 

@@ -8,6 +8,8 @@ interface DropZoneProps {
   albumId: string;
   children: React.ReactNode;
   className?: string;
+  /** Whether drop is disabled (e.g., user doesn't have upload permission) */
+  disabled?: boolean;
 }
 
 /**
@@ -15,7 +17,7 @@ interface DropZoneProps {
  * Wraps content and provides drag-and-drop file upload functionality.
  * Shows visual feedback when files are dragged over.
  */
-export function DropZone({ albumId, children, className = '' }: DropZoneProps) {
+export function DropZone({ albumId, children, className = '', disabled = false }: DropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef(0);
   const { upload, isUploading, progress } = useUploadContext();
@@ -24,13 +26,15 @@ export function DropZone({ albumId, children, className = '' }: DropZoneProps) {
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (disabled) return;
+    
     dragCounterRef.current += 1;
     
     // Check if dragged items contain files
     if (e.dataTransfer.types.includes('Files')) {
       setIsDragging(true);
     }
-  }, []);
+  }, [disabled]);
 
   // Handle drag leave
   const handleDragLeave = useCallback((e: React.DragEvent) => {
@@ -55,6 +59,8 @@ export function DropZone({ albumId, children, className = '' }: DropZoneProps) {
       e.stopPropagation();
       setIsDragging(false);
       dragCounterRef.current = 0;
+      
+      if (disabled) return;
 
       const files = e.dataTransfer.files;
       if (!files || files.length === 0) return;
