@@ -17,10 +17,9 @@ namespace Mosaic.Backend.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
+                .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn)
                 .HasAnnotation("ProductVersion", "10.0.1")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
-
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.Album", b =>
                 {
@@ -71,7 +70,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasIndex("OwnerId")
                         .HasDatabaseName("i_x_albums_owner_id");
 
-                    b.ToTable("albums");
+                    b.ToTable("albums", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.AlbumLimits", b =>
@@ -103,7 +102,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasKey("AlbumId")
                         .HasName("p_k_album_limits");
 
-                    b.ToTable("album_limits");
+                    b.ToTable("album_limits", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.AlbumMember", b =>
@@ -146,7 +145,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasIndex("UserId")
                         .HasDatabaseName("i_x_album_members_user_id");
 
-                    b.ToTable("album_members");
+                    b.ToTable("album_members", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.AuthChallenge", b =>
@@ -191,7 +190,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasIndex("Username")
                         .HasDatabaseName("i_x_auth_challenges_username");
 
-                    b.ToTable("auth_challenges");
+                    b.ToTable("auth_challenges", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.EpochKey", b =>
@@ -247,7 +246,7 @@ namespace Mosaic.Backend.Migrations
                         .IsUnique()
                         .HasDatabaseName("i_x_epoch_keys_album_id_recipient_id_epoch_id");
 
-                    b.ToTable("epoch_keys");
+                    b.ToTable("epoch_keys", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.LinkEpochKey", b =>
@@ -285,7 +284,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasIndex("ShareLinkId", "EpochId", "Tier")
                         .HasDatabaseName("i_x_link_epoch_keys_share_link_id_epoch_id_tier");
 
-                    b.ToTable("link_epoch_keys");
+                    b.ToTable("link_epoch_keys", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.Manifest", b =>
@@ -336,7 +335,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasIndex("AlbumId", "VersionCreated")
                         .HasDatabaseName("i_x_manifests_album_id_version_created");
 
-                    b.ToTable("manifests");
+                    b.ToTable("manifests", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.ManifestShard", b =>
@@ -359,7 +358,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasIndex("ShardId")
                         .HasDatabaseName("i_x_manifest_shards_shard_id");
 
-                    b.ToTable("manifest_shards");
+                    b.ToTable("manifest_shards", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.Session", b =>
@@ -418,7 +417,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasIndex("UserId")
                         .HasDatabaseName("i_x_sessions_user_id");
 
-                    b.ToTable("sessions");
+                    b.ToTable("sessions", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.Shard", b =>
@@ -464,7 +463,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasIndex("UploaderId")
                         .HasDatabaseName("i_x_shards_uploader_id");
 
-                    b.ToTable("shards");
+                    b.ToTable("shards", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.ShareLink", b =>
@@ -521,7 +520,7 @@ namespace Mosaic.Backend.Migrations
                         .IsUnique()
                         .HasDatabaseName("i_x_share_links_link_id");
 
-                    b.ToTable("share_links");
+                    b.ToTable("share_links", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.SystemSetting", b =>
@@ -549,7 +548,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasIndex("UpdatedBy")
                         .HasDatabaseName("i_x_system_settings_updated_by");
 
-                    b.ToTable("system_settings");
+                    b.ToTable("system_settings", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.User", b =>
@@ -612,7 +611,7 @@ namespace Mosaic.Backend.Migrations
                         .IsUnique()
                         .HasDatabaseName("i_x_users_auth_sub");
 
-                    b.ToTable("users");
+                    b.ToTable("users", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.UserQuota", b =>
@@ -644,7 +643,7 @@ namespace Mosaic.Backend.Migrations
                     b.HasKey("UserId")
                         .HasName("p_k_user_quotas");
 
-                    b.ToTable("user_quotas");
+                    b.ToTable("user_quotas", (string)null);
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.Album", b =>

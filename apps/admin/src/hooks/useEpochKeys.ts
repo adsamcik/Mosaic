@@ -133,7 +133,9 @@ export function useAlbumEpochKeys(albumId: string) {
           keysMap.set(ek.epochId, key);
           syncEngine.setEpochKey(albumId, ek.epochId, key);
         } catch (unwrapError) {
-          log.warn(`Failed to unwrap epoch key ${ek.epochId}:`, unwrapError);
+          log.warn(`Failed to unwrap epoch key ${ek.epochId}:`, {
+            error: unwrapError instanceof Error ? unwrapError.message : String(unwrapError),
+          });
         }
       }
 

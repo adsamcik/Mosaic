@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Logging;
 
 namespace Mosaic.Backend.Services;
 
@@ -31,21 +32,30 @@ public class GarbageCollectionService : BackgroundService
         {
             try
             {
-                await CleanExpiredPendingShards();
-                await CleanTrashedShards();
-                await CleanExpiredAlbums();
-                await CleanExpiredShareLinks();
+                _logger.GarbageCollectionStarted();
+                
+                var orphanedBlobs = 0;
+                var expiredSessions = 0;
+                var expiredLinks = 0;
+                var expiredAlbums = 0;
+                
+                orphanedBlobs = await CleanExpiredPendingShards();
+                orphanedBlobs += await CleanTrashedShards();
+                expiredAlbums = await CleanExpiredAlbums();
+                expiredLinks = await CleanExpiredShareLinks();
+                
+                _logger.GarbageCollectionCompleted(orphanedBlobs, expiredSessions, expiredLinks, expiredAlbums);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "GC cycle failed");
+                _logger.GarbageCollectionFailed(ex);
             }
 
             await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
         }
     }
 
-    private async Task CleanExpiredPendingShards()
+    private async Task<int> CleanExpiredPendingShards()
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
@@ -61,11 +71,13 @@ public class GarbageCollectionService : BackgroundService
 
         if (count > 0)
         {
-            _logger.LogInformation("Marked {Count} expired PENDING shards as TRASHED", count);
+            _logger.OrphanedBlobsCleaned(count);
         }
+        
+        return count;
     }
 
-    private async Task CleanTrashedShards()
+    private async Task<int> CleanTrashedShards()
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
@@ -98,19 +110,16 @@ public class GarbageCollectionService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to delete shard {ShardId}", shard.Id);
+                _logger.StorageError(ex, $"delete shard {shard.Id}");
             }
         }
 
         await db.SaveChangesAsync();
 
-        if (toDelete.Count > 0)
-        {
-            _logger.LogInformation("Deleted {Count} TRASHED shards", toDelete.Count);
-        }
+        return toDelete.Count;
     }
 
-    private async Task CleanExpiredAlbums()
+    private async Task<int> CleanExpiredAlbums()
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
@@ -118,6 +127,8 @@ public class GarbageCollectionService : BackgroundService
 
         var now = DateTimeOffset.UtcNow;
 
+        var deletedCount = 0;
+        
         // Process expired albums in batches of 10
         while (true)
         {
@@ -149,7 +160,7 @@ public class GarbageCollectionService : BackgroundService
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning(ex, "Failed to delete shard {StorageKey} for expired album {AlbumId}", storageKey, album.Id);
+                            _logger.StorageError(ex, $"delete shard {storageKey} for expired album {album.Id}");
                         }
                     }
 
@@ -157,22 +168,26 @@ public class GarbageCollectionService : BackgroundService
                     db.Albums.Remove(album);
                     await db.SaveChangesAsync();
 
-                    _logger.LogInformation("Deleted expired album {AlbumId}", album.Id);
+                    _logger.ExpiredAlbumsCleaned(1);
+                    deletedCount++;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to delete expired album {AlbumId}", album.Id);
+                    _logger.DatabaseError(ex, $"delete expired album {album.Id}");
                 }
             }
         }
+        
+        return deletedCount;
     }
 
-    private async Task CleanExpiredShareLinks()
+    private async Task<int> CleanExpiredShareLinks()
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
 
         var thirtyDaysAgo = DateTimeOffset.UtcNow.AddDays(-30);
+        var totalDeleted = 0;
 
         // Delete share links that expired 30+ days ago in batches
         while (true)
@@ -188,7 +203,10 @@ public class GarbageCollectionService : BackgroundService
             db.ShareLinks.RemoveRange(longExpiredLinks);
             await db.SaveChangesAsync();
 
-            _logger.LogInformation("Deleted {Count} long-expired share links", longExpiredLinks.Count);
+            totalDeleted += longExpiredLinks.Count;
+            _logger.ExpiredLinksCleaned(longExpiredLinks.Count);
         }
+        
+        return totalDeleted;
     }
 }

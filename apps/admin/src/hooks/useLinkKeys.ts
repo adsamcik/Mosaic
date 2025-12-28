@@ -345,7 +345,7 @@ export function useLinkKeys(
             signPubkey: wrapped.signPubkey ? fromBase64(wrapped.signPubkey) : undefined,
           });
         } catch (err) {
-          log.warn(`Failed to unwrap key for epoch ${wrapped.epochId} tier ${wrapped.tier}:`, err);
+          log.error(`Failed to unwrap key for epoch ${wrapped.epochId} tier ${wrapped.tier}`, err);
         }
       }
 

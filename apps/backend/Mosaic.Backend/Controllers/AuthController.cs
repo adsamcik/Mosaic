@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Logging;
 using NSec.Cryptography;
 
 namespace Mosaic.Backend.Controllers;
@@ -12,6 +13,7 @@ namespace Mosaic.Backend.Controllers;
 /// <summary>
 /// Handles local authentication using Ed25519 challenge-response protocol.
 /// This controller is only active when Auth:Mode is "LocalAuth".
+/// Returns 404 for all endpoints when in ProxyAuth mode.
 /// </summary>
 [ApiController]
 [Route("api/auth")]
@@ -20,6 +22,7 @@ public partial class AuthController : ControllerBase
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
     private readonly ILogger<AuthController> _logger;
+    private readonly bool _isLocalAuthMode;
 
     // Challenge expires after 60 seconds
     private static readonly TimeSpan ChallengeExpiry = TimeSpan.FromSeconds(60);
@@ -48,6 +51,10 @@ public partial class AuthController : ControllerBase
         _config = config;
         _logger = logger;
         _env = env;
+        
+        // Check if LocalAuth mode is enabled
+        var authMode = config["Auth:Mode"] ?? "ProxyAuth";
+        _isLocalAuthMode = authMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -57,6 +64,12 @@ public partial class AuthController : ControllerBase
     [HttpPost("init")]
     public async Task<IActionResult> InitAuth([FromBody] AuthInitRequest request)
     {
+        // Return 404 when not in LocalAuth mode
+        if (!_isLocalAuthMode)
+        {
+            return NotFound();
+        }
+        
         if (string.IsNullOrWhiteSpace(request.Username))
         {
             return BadRequest(new { error = "Username is required" });
@@ -80,7 +93,7 @@ public partial class AuthController : ControllerBase
 
             if (recentChallenges >= 10)
             {
-                _logger.LogWarning("Rate limit exceeded for IP {IP}", ipAddress);
+                _logger.AuthRateLimited(request.Username);
                 return StatusCode(429, new { error = "Too many requests. Please wait." });
             }
         }
@@ -134,6 +147,12 @@ public partial class AuthController : ControllerBase
     [HttpPost("verify")]
     public async Task<IActionResult> VerifyAuth([FromBody] AuthVerifyRequest request)
     {
+        // Return 404 when not in LocalAuth mode
+        if (!_isLocalAuthMode)
+        {
+            return NotFound();
+        }
+        
         if (string.IsNullOrWhiteSpace(request.Username) ||
             string.IsNullOrWhiteSpace(request.Signature) ||
             request.ChallengeId == Guid.Empty)
@@ -173,7 +192,7 @@ public partial class AuthController : ControllerBase
         {
             // User doesn't exist or doesn't have local auth set up
             // Return same error to prevent enumeration
-            _logger.LogInformation("Auth failed: user not found or no local auth: {Username}", request.Username);
+            _logger.AuthChallengeFailed(request.Username, "user not found or no local auth");
             return Unauthorized(new { error = "Invalid credentials" });
         }
 
@@ -190,7 +209,7 @@ public partial class AuthController : ControllerBase
 
             if (!isValid)
             {
-                _logger.LogInformation("Auth failed: invalid signature for {Username}", request.Username);
+                _logger.AuthChallengeFailed(request.Username, "invalid signature");
                 return Unauthorized(new { error = "Invalid credentials" });
             }
         }
@@ -246,6 +265,12 @@ public partial class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] AuthRegisterRequest request)
     {
+        // Return 404 when not in LocalAuth mode
+        if (!_isLocalAuthMode)
+        {
+            return NotFound();
+        }
+        
         if (string.IsNullOrWhiteSpace(request.Username) ||
             string.IsNullOrWhiteSpace(request.AuthPubkey) ||
             string.IsNullOrWhiteSpace(request.IdentityPubkey) ||
@@ -315,7 +340,7 @@ public partial class AuthController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("New user registered: {Username} (admin: {IsAdmin})", request.Username, isFirstUser);
+        _logger.UserRegistered(request.Username);
 
         return Created($"/api/users/{user.Id}", new { id = user.Id, username = user.AuthSub, isAdmin = isFirstUser });
     }
@@ -326,6 +351,12 @@ public partial class AuthController : ControllerBase
     [HttpPost("logout")]
     public async Task<IActionResult> Logout()
     {
+        // Return 404 when not in LocalAuth mode
+        if (!_isLocalAuthMode)
+        {
+            return NotFound();
+        }
+        
         var sessionToken = GetSessionToken();
         if (sessionToken == null)
         {
@@ -358,6 +389,12 @@ public partial class AuthController : ControllerBase
     [HttpGet("sessions")]
     public async Task<IActionResult> ListSessions()
     {
+        // Return 404 when not in LocalAuth mode
+        if (!_isLocalAuthMode)
+        {
+            return NotFound();
+        }
+        
         var userId = await GetCurrentUserId();
         if (userId == null)
         {
@@ -387,6 +424,12 @@ public partial class AuthController : ControllerBase
     [HttpDelete("sessions/{sessionId}")]
     public async Task<IActionResult> RevokeSession(Guid sessionId)
     {
+        // Return 404 when not in LocalAuth mode
+        if (!_isLocalAuthMode)
+        {
+            return NotFound();
+        }
+        
         var userId = await GetCurrentUserId();
         if (userId == null)
         {
@@ -411,6 +454,12 @@ public partial class AuthController : ControllerBase
     [HttpPost("sessions/revoke-others")]
     public async Task<IActionResult> RevokeOtherSessions()
     {
+        // Return 404 when not in LocalAuth mode
+        if (!_isLocalAuthMode)
+        {
+            return NotFound();
+        }
+        
         var userId = await GetCurrentUserId();
         if (userId == null)
         {

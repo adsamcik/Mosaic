@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Logging;
 
 namespace Mosaic.Backend.Middleware;
 
@@ -30,7 +31,7 @@ public class AdminAuthMiddleware
         var authSub = context.Items["AuthSub"] as string;
         if (string.IsNullOrEmpty(authSub))
         {
-            _logger.LogWarning("Admin access denied: no authentication");
+            _logger.AdminAccessDenied(Guid.Empty, context.Request.Path.Value ?? "/api/admin");
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { error = "Authentication required" });
             return;
@@ -39,7 +40,7 @@ public class AdminAuthMiddleware
         var user = await db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
         {
-            _logger.LogWarning("Admin access denied: user not found for {AuthSub}", authSub);
+            _logger.AdminAccessDenied(Guid.Empty, context.Request.Path.Value ?? "/api/admin");
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { error = "User not found" });
             return;
@@ -47,7 +48,7 @@ public class AdminAuthMiddleware
 
         if (!user.IsAdmin)
         {
-            _logger.LogWarning("Admin access denied: user {UserId} is not an admin", user.Id);
+            _logger.AdminAccessDenied(user.Id, context.Request.Path.Value ?? "/api/admin");
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             await context.Response.WriteAsJsonAsync(new { error = "Admin privileges required" });
             return;

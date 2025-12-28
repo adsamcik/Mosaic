@@ -8,6 +8,10 @@ import type {
     GeoPoint,
     PhotoMeta,
 } from './types';
+import { createLogger } from '../lib/logger';
+
+// Create scoped logger for database worker
+const log = createLogger('DbWorker');
 
 // sql.js types - the actual module is loaded dynamically from public folder
 type SqlJsStatic = Awaited<ReturnType<typeof import('sql.js').default>>;
@@ -24,6 +28,8 @@ let cachedSqlJs: SqlJsStatic | null = null;
 async function loadSqlJs(): Promise<SqlJsStatic> {
   if (cachedSqlJs) return cachedSqlJs;
   
+  const timer = log.startTimer('sql.js WASM initialization');
+  
   // Fetch and evaluate sql.js from public folder
   const response = await fetch('/sql-wasm.js');
   const scriptText = await response.text();
@@ -36,6 +42,9 @@ async function loadSqlJs(): Promise<SqlJsStatic> {
   cachedSqlJs = await initSqlJs({
     locateFile: () => '/sql-wasm.wasm',
   });
+  
+  timer.end();
+  log.info('sql.js loaded successfully');
   
   return cachedSqlJs!;
 }
@@ -60,12 +69,15 @@ class DbWorker implements DbWorkerApi {
    */
   private async ensureSodiumReady(): Promise<void> {
     if (!this.sodiumReady) {
+      const timer = log.startTimer('libsodium initialization');
       await sodium.ready;
       this.sodiumReady = true;
+      timer.end();
     }
   }
 
   async init(sessionKey: Uint8Array): Promise<void> {
+    const initTimer = log.startTimer('database initialization');
     this.sessionKey = sessionKey;
 
     // Initialize libsodium and SQL.js WASM in parallel
@@ -79,21 +91,27 @@ class DbWorker implements DbWorkerApi {
     // Try to load existing DB from OPFS
     const existingData = await this.loadFromOPFS();
     if (existingData) {
+      log.debug('Found existing database in OPFS', { size: existingData.byteLength });
       try {
         // Decrypt existing database with XChaCha20-Poly1305
+        const decryptTimer = log.startTimer('database decryption');
         const decrypted = await this.decryptBlob(existingData);
+        decryptTimer.end({ decryptedSize: decrypted.byteLength });
         this.db = new this.sql.Database(decrypted);
+        log.info('Loaded existing database from OPFS');
       } catch (error) {
         // Decryption failed - could be wrong password or corrupted data
         // Start fresh with a new database
-        console.warn('Failed to decrypt existing database, starting fresh:', error);
+        log.error('Failed to decrypt existing database, starting fresh', error);
         this.db = new this.sql.Database();
       }
     } else {
+      log.debug('No existing database found, creating new one');
       this.db = new this.sql.Database();
     }
 
     await this.runMigrations();
+    initTimer.end();
   }
 
   async close(): Promise<void> {
@@ -218,22 +236,24 @@ class DbWorker implements DbWorkerApi {
       if (m.isDeleted) {
         this.db.run('DELETE FROM photos WHERE id = ?', [m.id]);
       } else {
+        // Ensure all values are either defined or null - SQLite cannot bind undefined
+        // Use m.meta.shardIds and m.meta.epochId (from decrypted metadata) for storage
         stmt.run([
           m.id,
-          m.meta.assetId,
-          m.albumId,
-          m.meta.filename,
-          m.meta.mimeType,
-          m.meta.width,
-          m.meta.height,
+          m.meta.assetId ?? null,
+          m.albumId ?? null,
+          m.meta.filename ?? null,
+          m.meta.mimeType ?? null,
+          m.meta.width ?? 0,
+          m.meta.height ?? 0,
           m.meta.takenAt ?? null,
           m.meta.lat ?? null,
           m.meta.lng ?? null,
-          JSON.stringify(m.meta.tags),
-          m.meta.createdAt,
-          m.meta.updatedAt,
-          JSON.stringify(m.shardIds),
-          m.versionCreated,
+          JSON.stringify(m.meta.tags ?? []),
+          m.meta.createdAt ?? null,
+          m.meta.updatedAt ?? null,
+          JSON.stringify(m.meta.shardIds ?? []),
+          m.meta.epochId ?? 0,
         ]);
       }
     }

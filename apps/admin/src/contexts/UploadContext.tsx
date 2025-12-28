@@ -174,7 +174,9 @@ export function UploadProvider({ children }: UploadProviderProps) {
             log.info(`Post-upload sync complete for album ${task.albumId}`);
           } catch (syncErr) {
             // Non-fatal: photo was uploaded, sync will happen later
-            log.warn('Post-upload sync failed (photo still uploaded):', syncErr);
+            log.warn('Post-upload sync failed (photo still uploaded):', {
+              error: syncErr instanceof Error ? syncErr.message : String(syncErr),
+            });
           }
           
           setIsUploading(false);

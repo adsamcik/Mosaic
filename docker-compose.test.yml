@@ -30,8 +30,11 @@ services:
       ASPNETCORE_ENVIRONMENT: Testing
       ConnectionStrings__Default: "Host=postgres;Database=mosaic_test;Username=mosaic;Password=test"
       Storage__Path: /app/data/blobs
-      Auth__TrustedProxies__0: "0.0.0.0/0"  # Trust all for testing
+      Auth__Mode: "ProxyAuth"
+      Auth__TrustedProxies__0: "0.0.0.0/0"  # Trust all IPv4 for testing
+      Auth__TrustedProxies__1: "::/0"       # Trust all IPv6 for testing
       Quota__DefaultMaxBytes: "10737418240"
+      RUN_MIGRATIONS: "true"                # Run database migrations on startup
     volumes:
       - test_blobs:/app/data/blobs
     networks:
@@ -40,7 +43,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -52,13 +55,15 @@ services:
       context: .
       dockerfile: apps/admin/Dockerfile
     container_name: mosaic-test-frontend
+    ports:
+      - "8080:8080"
     networks:
       - mosaic-test
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health"]
       interval: 5s
       timeout: 5s
       retries: 10

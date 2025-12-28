@@ -2,6 +2,7 @@
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
 import type { CryptoWorkerApi, EncryptedShard, ExportedKeys, PhotoMeta } from './types';
+import { createLogger } from '../lib/logger';
 
 // Import real crypto functions from @mosaic/crypto
 import {
@@ -25,6 +26,9 @@ import {
     verifyAndOpenBundle,
     type IdentityKeypair,
 } from '@mosaic/crypto';
+
+// Create scoped logger for crypto worker
+const log = createLogger('CryptoWorker');
 
 /**
  * Crypto Worker Implementation
@@ -53,8 +57,10 @@ class CryptoWorker implements CryptoWorkerApi {
    */
   private async ensureSodiumReady(): Promise<void> {
     if (!this.sodiumReady) {
+      const timer = log.startTimer('libsodium initialization');
       await sodium.ready;
       this.sodiumReady = true;
+      timer.end();
     }
   }
 
@@ -334,13 +340,13 @@ class CryptoWorker implements CryptoWorkerApi {
 
     // Parse the bundle format: signature (64) || sealed box
     if (bundle.length < 64) {
-      console.error('[crypto.worker] Bundle too short:', bundle.length);
+      log.error('Bundle too short', { bundleLength: bundle.length });
       throw new Error('Bundle too short');
     }
     const signature = bundle.slice(0, 64);
     const sealedBox = bundle.slice(64);
     
-    console.debug('[crypto.worker] openEpochKeyBundle:', {
+    log.debug('Opening epoch key bundle', {
       bundleLength: bundle.length,
       signaturePrefix: Array.from(signature.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
       sealedBoxLength: sealedBox.length,
@@ -358,6 +364,7 @@ class CryptoWorker implements CryptoWorkerApi {
 
     // Verify and open the bundle
     try {
+      const timer = log.startTimer('verifyAndOpenBundle');
       const opened = verifyAndOpenBundle(
         sealedBox,
         signature,
@@ -365,8 +372,9 @@ class CryptoWorker implements CryptoWorkerApi {
         this.identityKeypair,
         context
       );
+      timer.end();
       
-      console.debug('[crypto.worker] Successfully opened epoch key bundle');
+      log.debug('Successfully opened epoch key bundle');
 
       return {
         epochSeed: opened.epochSeed,
@@ -374,7 +382,7 @@ class CryptoWorker implements CryptoWorkerApi {
         signSecretKey: opened.signKeypair.secretKey,
       };
     } catch (err) {
-      console.error('[crypto.worker] Failed to open epoch key bundle:', err);
+      log.error('Failed to open epoch key bundle', err);
       throw err;
     }
   }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Logging;
 using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
 
@@ -193,7 +194,7 @@ public class AlbumsController : ControllerBase
 
         if (currentAlbumCount >= maxAlbums)
         {
-            _logger.LogWarning("User {UserId} exceeded album limit: {Current}/{Max}", user.Id, currentAlbumCount, maxAlbums);
+            _logger.AlbumCountLimitExceeded(user.Id, currentAlbumCount, maxAlbums);
             return BadRequest(new { error = "ALBUM_LIMIT_EXCEEDED", message = $"Maximum album limit ({maxAlbums}) reached" });
         }
 
@@ -252,11 +253,7 @@ public class AlbumsController : ControllerBase
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            _logger.LogInformation(
-                "Album created. AlbumId: {AlbumId}, OwnerId: {OwnerId}, CorrelationId: {CorrelationId}",
-                album.Id,
-                user.Id,
-                HttpContext.GetCorrelationId());
+            _logger.AlbumCreated(album.Id, user.Id);
 
             return Created($"/api/albums/{album.Id}", new
             {
@@ -378,6 +375,7 @@ public class AlbumsController : ControllerBase
             .Select(m => new
             {
                 m.Id,
+                m.AlbumId,
                 m.VersionCreated,
                 m.IsDeleted,
                 m.EncryptedMeta,
@@ -416,11 +414,7 @@ public class AlbumsController : ControllerBase
         _db.Albums.Remove(album);
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation(
-            "Album deleted. AlbumId: {AlbumId}, DeletedBy: {UserId}, CorrelationId: {CorrelationId}",
-            albumId,
-            user.Id,
-            HttpContext.GetCorrelationId());
+        _logger.AlbumDeleted(albumId, user.Id);
 
         return NoContent();
     }

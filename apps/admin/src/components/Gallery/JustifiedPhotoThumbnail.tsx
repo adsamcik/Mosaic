@@ -15,8 +15,8 @@ interface JustifiedPhotoThumbnailProps {
   width: number;
   /** Display height in pixels */
   height: number;
-  /** Epoch read key for decryption */
-  epochReadKey?: Uint8Array;
+  /** Epoch read key for decryption (undefined if key not yet loaded) */
+  epochReadKey: Uint8Array | undefined;
   /** Callback when thumbnail is clicked */
   onClick?: () => void;
   /** Whether this photo is selected */

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Logging;
 using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
@@ -139,9 +140,7 @@ public class AdminUsersController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation(
-            "Admin {AdminId} updated quota for user {UserId}: MaxStorage={MaxStorage}, MaxAlbums={MaxAlbums}",
-            admin.Id, userId, request.MaxStorageBytes, request.MaxAlbums);
+        _logger.AdminQuotaUpdated(userId, admin.Id);
 
         return Ok(new UserQuotaResponse(
             user.Quota.MaxStorageBytes,
@@ -171,7 +170,7 @@ public class AdminUsersController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Admin {AdminId} reset quota for user {UserId} to defaults", admin.Id, userId);
+        _logger.AdminQuotaUpdated(userId, admin.Id);
 
         return NoContent();
     }
@@ -193,7 +192,7 @@ public class AdminUsersController : ControllerBase
         user.IsAdmin = true;
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Admin {AdminId} promoted user {UserId} to admin", admin.Id, userId);
+        _logger.AdminUserPromoted(userId, admin.Id);
 
         return NoContent();
     }
@@ -220,7 +219,7 @@ public class AdminUsersController : ControllerBase
         user.IsAdmin = false;
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Admin {AdminId} demoted user {UserId} from admin", admin.Id, userId);
+        _logger.AdminUserDemoted(userId, admin.Id);
 
         return NoContent();
     }

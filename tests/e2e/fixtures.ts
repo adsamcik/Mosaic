@@ -5,9 +5,131 @@
  * - Fixed soft assertions
  * - Added proper wait utilities
  * - Created core fixtures for P0 tests
+ * 
+ * Phase 2:
+ * - Added log capture infrastructure (browser console, network, backend)
+ * - Added CreateAlbumDialog page object for browser-based album creation
  */
 
-import { test as base, expect, type Page } from '@playwright/test';
+import { test as base, expect, type Page, type ConsoleMessage, type Request, type Response } from '@playwright/test';
+import { execSync } from 'child_process';
+
+/**
+ * Log capture types
+ */
+export interface CapturedLog {
+  timestamp: number;
+  type: 'console' | 'network-request' | 'network-response' | 'backend';
+  level?: string;
+  message: string;
+  data?: unknown;
+}
+
+/**
+ * Log collector that attaches to a page and collects logs
+ */
+export class LogCollector {
+  private logs: CapturedLog[] = [];
+  private page: Page;
+
+  constructor(page: Page) {
+    this.page = page;
+    this.attachListeners();
+  }
+
+  private attachListeners() {
+    // Capture console logs
+    this.page.on('console', (msg: ConsoleMessage) => {
+      this.logs.push({
+        timestamp: Date.now(),
+        type: 'console',
+        level: msg.type(),
+        message: msg.text(),
+        data: msg.args().map(arg => arg.toString()),
+      });
+    });
+
+    // Capture network requests
+    this.page.on('request', (request: Request) => {
+      if (request.url().includes('/api/')) {
+        this.logs.push({
+          timestamp: Date.now(),
+          type: 'network-request',
+          message: `${request.method()} ${request.url()}`,
+          data: {
+            headers: request.headers(),
+            postData: request.postData(),
+          },
+        });
+      }
+    });
+
+    // Capture network responses
+    this.page.on('response', (response: Response) => {
+      if (response.url().includes('/api/')) {
+        this.logs.push({
+          timestamp: Date.now(),
+          type: 'network-response',
+          level: response.status() >= 400 ? 'error' : 'info',
+          message: `${response.status()} ${response.url()}`,
+        });
+      }
+    });
+
+    // Capture page errors
+    this.page.on('pageerror', (error: Error) => {
+      this.logs.push({
+        timestamp: Date.now(),
+        type: 'console',
+        level: 'error',
+        message: `Page error: ${error.message}`,
+        data: error.stack,
+      });
+    });
+  }
+
+  /**
+   * Get all captured logs
+   */
+  getLogs(): CapturedLog[] {
+    return [...this.logs];
+  }
+
+  /**
+   * Get logs as formatted string for test output
+   */
+  getFormattedLogs(): string {
+    return this.logs
+      .map(log => {
+        const time = new Date(log.timestamp).toISOString();
+        const level = log.level ? `[${log.level.toUpperCase()}]` : '';
+        return `${time} ${log.type} ${level}: ${log.message}`;
+      })
+      .join('\n');
+  }
+
+  /**
+   * Clear all logs
+   */
+  clear() {
+    this.logs = [];
+  }
+
+  /**
+   * Fetch backend container logs (for Docker environments)
+   */
+  static fetchBackendLogs(containerName = 'mosaic-test-backend', tail = 100): string {
+    try {
+      const result = execSync(`docker logs --tail ${tail} ${containerName} 2>&1`, {
+        encoding: 'utf-8',
+        timeout: 5000,
+      });
+      return result;
+    } catch (error) {
+      return `Failed to fetch backend logs: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+}
 
 /**
  * API URL for backend requests
@@ -252,6 +374,60 @@ export class AppShell {
 }
 
 /**
+ * Page Object Model for Create Album Dialog
+ */
+export class CreateAlbumDialogPage {
+  constructor(private page: Page) {}
+
+  get dialog() {
+    return this.page.getByTestId('create-album-dialog');
+  }
+
+  get nameInput() {
+    return this.page.getByTestId('album-name-input');
+  }
+
+  get createButton() {
+    return this.page.getByTestId('create-button');
+  }
+
+  get cancelButton() {
+    return this.page.getByTestId('cancel-button');
+  }
+
+  get errorMessage() {
+    return this.page.getByTestId('create-album-error');
+  }
+
+  async waitForDialog() {
+    await expect(this.dialog).toBeVisible({ timeout: 10000 });
+  }
+
+  async fillName(name: string) {
+    await this.nameInput.fill(name);
+  }
+
+  async submit() {
+    await this.createButton.click();
+  }
+
+  async cancel() {
+    await this.cancelButton.click();
+  }
+
+  /**
+   * Create an album with the given name
+   */
+  async createAlbum(name: string) {
+    await this.waitForDialog();
+    await this.fillName(name);
+    await this.submit();
+    // Wait for dialog to close
+    await expect(this.dialog).toBeHidden({ timeout: 30000 });
+  }
+}
+
+/**
  * Page Object Model for Gallery view
  */
 export class GalleryPage {
@@ -278,7 +454,7 @@ export class GalleryPage {
   }
 
   get fileInput() {
-    return this.page.locator('input[type="file"]');
+    return this.page.getByTestId('upload-input');
   }
 
   get emptyState() {
@@ -286,11 +462,33 @@ export class GalleryPage {
   }
 
   async uploadPhoto(imageBuffer: Buffer, filename = 'test.png') {
-    await this.fileInput.setInputFiles({
+    // Use the testid to find the hidden file input
+    const fileInput = this.page.getByTestId('upload-input');
+    
+    // Wait for file input to be attached to DOM
+    await expect(fileInput).toBeAttached({ timeout: 10000 });
+    console.log('[GalleryPage] File input found, setting files...');
+    
+    // Set files on the hidden input - Playwright handles this even when display:none
+    await fileInput.setInputFiles({
       name: filename,
       mimeType: 'image/png',
       buffer: imageBuffer,
     });
+    console.log('[GalleryPage] Files set successfully, waiting for upload to complete...');
+    
+    // Wait for upload button to show progress or complete
+    // The button text changes during upload: "📷 Upload" -> "Uploading... X%"
+    await this.page.waitForFunction(() => {
+      const btn = document.querySelector('[data-testid="upload-button"]');
+      // Wait until it's no longer showing "Uploading" (upload complete)
+      // or a photo appears in the gallery
+      const hasPhoto = document.querySelector('[data-testid="photo-thumbnail"]');
+      const isUploading = btn?.textContent?.includes('Uploading');
+      return hasPhoto || (btn && !isUploading);
+    }, { timeout: 60000 });
+    
+    console.log('[GalleryPage] Upload appears complete');
   }
 
   async expectPhotoCount(count: number) {
@@ -320,12 +518,24 @@ export class ApiHelper {
   constructor(private baseUrl: string = API_URL) {}
 
   async createAlbum(user: string): Promise<{ id: string }> {
+    // Generate dummy crypto data - backend stores but doesn't validate crypto content
+    const dummyBytes32 = Buffer.alloc(32).toString('base64');
+    const dummyBytes64 = Buffer.alloc(64).toString('base64');
+
     const response = await fetch(`${this.baseUrl}/api/albums`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Remote-User': user,
       },
+      body: JSON.stringify({
+        initialEpochKey: {
+          encryptedKeyBundle: dummyBytes32,
+          ownerSignature: dummyBytes64,
+          sharerPubkey: dummyBytes32,
+          signPubkey: dummyBytes32,
+        },
+      }),
     });
 
     if (!response.ok) {

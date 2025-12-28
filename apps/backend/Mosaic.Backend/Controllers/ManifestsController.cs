@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Logging;
 using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
@@ -39,7 +40,7 @@ public class ManifestsController : ControllerBase
         byte[] EncryptedMeta,
         string Signature,
         string SignerPubkey,
-        List<Guid> ShardIds
+        List<string> ShardIds
     );
 
     /// <summary>
@@ -48,6 +49,21 @@ public class ManifestsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateManifestRequest request)
     {
+        // Parse shard IDs from strings (TUS returns IDs as hex strings without hyphens)
+        var shardGuids = new List<Guid>();
+        foreach (var shardIdStr in request.ShardIds)
+        {
+            if (!Guid.TryParse(shardIdStr, out var shardGuid))
+            {
+                _logger.LogWarning("Invalid shard ID format: {ShardId}", shardIdStr);
+                return BadRequest($"Invalid shard ID format: {shardIdStr}");
+            }
+            shardGuids.Add(shardGuid);
+        }
+
+        _logger.LogInformation("Creating manifest for album {AlbumId}, shardIds count: {Count}, shardIds: {ShardIds}",
+            request.AlbumId, shardGuids.Count, string.Join(",", shardGuids));
+
         var user = await GetUser();
         if (user == null) return Unauthorized();
 
@@ -73,17 +89,31 @@ public class ManifestsController : ControllerBase
 
             // 3. Validate shards
             var shards = await _db.Shards
-                .Where(s => request.ShardIds.Contains(s.Id))
+                .Where(s => shardGuids.Contains(s.Id))
                 .ToListAsync();
 
-            if (shards.Count != request.ShardIds.Count)
+            if (shards.Count != shardGuids.Count)
+            {
+                _logger.LogWarning("Shards not found: requested {Requested}, found {Found}. Missing: {Missing}",
+                    shardGuids.Count, shards.Count,
+                    string.Join(",", shardGuids.Except(shards.Select(s => s.Id))));
                 return BadRequest("Some shards not found");
+            }
 
             if (shards.Any(s => s.UploaderId != user.Id))
+            {
+                _logger.LogWarning("Shard ownership mismatch: user {UserId}, shards belong to {UploaderIds}",
+                    user.Id, string.Join(",", shards.Select(s => s.UploaderId)));
                 return Forbid();
+            }
 
             if (shards.Any(s => s.Status != ShardStatus.PENDING))
+            {
+                var nonPending = shards.Where(s => s.Status != ShardStatus.PENDING);
+                _logger.LogWarning("Shards already linked: {Shards}",
+                    string.Join(",", nonPending.Select(s => $"{s.Id}={s.Status}")));
                 return BadRequest("Some shards already linked to a manifest");
+            }
 
             // 4. Check album limits
             var albumLimits = await _db.AlbumLimits.FindAsync(album.Id);
@@ -96,13 +126,13 @@ public class ManifestsController : ControllerBase
 
             if (currentPhotoCount >= maxPhotos)
             {
-                _logger.LogWarning("Album {AlbumId} photo limit exceeded: {Current}/{Max}", album.Id, currentPhotoCount, maxPhotos);
+                _logger.PhotoCountLimitExceeded(album.Id, currentPhotoCount, maxPhotos);
                 return BadRequest(new { error = "ALBUM_PHOTOS_EXCEEDED", message = $"Album photo limit ({maxPhotos}) reached" });
             }
 
             if (currentSizeBytes + shardsTotalSize > maxSize)
             {
-                _logger.LogWarning("Album {AlbumId} size limit exceeded: {Current}+{New}/{Max}", album.Id, currentSizeBytes, shardsTotalSize, maxSize);
+                _logger.PhotoSizeLimitExceeded(album.Id, currentSizeBytes + shardsTotalSize, maxSize);
                 return BadRequest(new { error = "ALBUM_SIZE_EXCEEDED", message = "Album size limit exceeded" });
             }
 
@@ -122,9 +152,9 @@ public class ManifestsController : ControllerBase
             _db.Manifests.Add(manifest);
 
             // 6. Link shards and mark ACTIVE
-            for (int i = 0; i < request.ShardIds.Count; i++)
+            for (int i = 0; i < shardGuids.Count; i++)
             {
-                var shard = shards.First(s => s.Id == request.ShardIds[i]);
+                var shard = shards.First(s => s.Id == shardGuids[i]);
                 shard.Status = ShardStatus.ACTIVE;
                 shard.StatusUpdatedAt = DateTime.UtcNow;
                 shard.PendingExpiresAt = null;

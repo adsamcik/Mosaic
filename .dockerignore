@@ -46,8 +46,10 @@ Thumbs.db
 
 # Test files
 **/tests/
+!tests/e2e/
 **/*.test.ts
 **/*.spec.ts
+!tests/e2e/**/*.spec.ts
 **/vitest.config.ts
 
 # Logs

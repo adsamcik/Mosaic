@@ -334,7 +334,7 @@ public class SecurityTests
             EncryptedMeta: new byte[100],
             Signature: Convert.ToBase64String(new byte[64]),
             SignerPubkey: Convert.ToBase64String(new byte[32]),
-            ShardIds: new List<Guid>()
+            ShardIds: new List<string>()
         );
 
         // Act
@@ -370,7 +370,7 @@ public class SecurityTests
             EncryptedMeta: new byte[100],
             Signature: Convert.ToBase64String(new byte[64]),
             SignerPubkey: Convert.ToBase64String(new byte[32]),
-            ShardIds: new List<Guid>()
+            ShardIds: new List<string>()
         );
 
         // Act
@@ -410,7 +410,7 @@ public class SecurityTests
             EncryptedMeta: new byte[100],
             Signature: Convert.ToBase64String(new byte[64]),
             SignerPubkey: Convert.ToBase64String(new byte[32]),
-            ShardIds: new List<Guid>()
+            ShardIds: new List<string>()
         );
 
         // Act

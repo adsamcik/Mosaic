@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Logging;
 using Mosaic.Backend.Middleware;
 
 namespace Mosaic.Backend.Controllers;
@@ -173,13 +174,7 @@ public class MembersController : ControllerBase
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            _logger.LogInformation(
-                "Member invited. AlbumId: {AlbumId}, RecipientId: {RecipientId}, Role: {Role}, InvitedBy: {InvitedBy}, CorrelationId: {CorrelationId}",
-                albumId,
-                request.RecipientId,
-                request.Role,
-                user.Id,
-                HttpContext.GetCorrelationId());
+            _logger.MemberAdded(request.RecipientId, albumId, request.Role, user.Id);
 
             return Created($"/api/albums/{albumId}/members/{request.RecipientId}", new
             {
@@ -225,12 +220,7 @@ public class MembersController : ControllerBase
         membership.RevokedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation(
-            "Member removed. AlbumId: {AlbumId}, RemovedUserId: {RemovedUserId}, RemovedBy: {RemovedBy}, CorrelationId: {CorrelationId}",
-            albumId,
-            userId,
-            user.Id,
-            HttpContext.GetCorrelationId());
+        _logger.MemberRemoved(userId, albumId, user.Id);
 
         return NoContent();
     }

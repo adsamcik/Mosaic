@@ -1,11 +1,13 @@
 using System.Net;
 using System.Text.Json;
+using Mosaic.Backend.Logging;
 
 namespace Mosaic.Backend.Middleware;
 
 /// <summary>
 /// Global exception handler that catches unhandled exceptions,
 /// logs them securely, and returns a generic error response.
+/// Never exposes exception details to clients.
 /// </summary>
 public class GlobalExceptionMiddleware
 {
@@ -32,16 +34,12 @@ public class GlobalExceptionMiddleware
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
-        // Get correlation ID for log tracing
-        var correlationId = context.Items["CorrelationId"]?.ToString() ?? Guid.NewGuid().ToString();
+        // Get correlation ID for log tracing (already in scope from LogScopeMiddleware)
+        var correlationId = context.GetCorrelationId() ?? Guid.NewGuid().ToString();
+        var path = context.Request.Path.Value ?? "/";
 
-        // Log the full exception server-side only
-        _logger.LogError(
-            exception,
-            "Unhandled exception occurred. CorrelationId: {CorrelationId}, Path: {Path}, Method: {Method}",
-            correlationId,
-            context.Request.Path,
-            context.Request.Method);
+        // Log using high-performance source-generated logger
+        _logger.UnhandledException(exception, exception.GetType().Name, path);
 
         // Return generic error to client - never expose exception details
         context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;

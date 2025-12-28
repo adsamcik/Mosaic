@@ -38,7 +38,7 @@ async function getEpochReadKey(
     const bundle = await getOrFetchEpochKey(albumId, epochId);
     return bundle.epochSeed;
   } catch (err) {
-    log.warn(`Failed to get epoch key ${epochId} for album ${albumId}:`, err);
+    log.error(`Failed to get epoch key ${epochId} for album ${albumId}`, err);
     return null;
   }
 }
@@ -217,7 +217,7 @@ class SyncEngine extends EventTarget {
     try {
       await fetchAndUnwrapEpochKeys(albumId);
     } catch (err) {
-      log.warn(`Failed to load epoch keys for album ${albumId}:`, err);
+      log.error(`Failed to load epoch keys for album ${albumId}`, err);
     }
   }
 

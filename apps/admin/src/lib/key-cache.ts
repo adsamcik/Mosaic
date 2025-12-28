@@ -100,7 +100,7 @@ async function getCacheEncryptionKey(): Promise<CryptoKey> {
       log.debug('Restored cache encryption key from sessionStorage');
       return cacheEncryptionKey;
     } catch (error) {
-      log.warn('Failed to restore cache encryption key, generating new one:', error);
+      log.error('Failed to restore cache encryption key, generating new one', error);
       sessionStorage.removeItem(CACHE_KEY_STORAGE_KEY);
     }
   }
@@ -118,7 +118,7 @@ async function getCacheEncryptionKey(): Promise<CryptoKey> {
     sessionStorage.setItem(CACHE_KEY_STORAGE_KEY, toBase64(new Uint8Array(keyBytes)));
     log.debug('Generated and persisted new cache encryption key');
   } catch (error) {
-    log.warn('Failed to persist cache encryption key:', error);
+    log.error('Failed to persist cache encryption key', error);
   }
 
   return cacheEncryptionKey;
@@ -168,9 +168,13 @@ export async function cacheKeys(keys: CachedKeys): Promise<void> {
     };
 
     sessionStorage.setItem(KEY_CACHE_STORAGE_KEY, JSON.stringify(envelope));
-    log.debug('Keys cached successfully, expires:', expiresAt === 0 ? 'on tab close' : new Date(expiresAt).toISOString());
+    log.debug('Keys cached successfully, expires:', {
+      expiresAt: expiresAt === 0 ? 'on tab close' : new Date(expiresAt).toISOString(),
+    });
   } catch (error) {
-    log.error('Failed to cache keys:', error);
+    log.error('Failed to cache keys:', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Non-fatal - keys just won't be cached
   }
 }

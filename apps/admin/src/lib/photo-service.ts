@@ -316,7 +316,7 @@ export async function preloadPhotos(
       releasePhoto(photo.id); // Release since preload doesn't hold reference
     } catch (error) {
       // Ignore errors during preload
-      log.warn(`Preload failed for photo ${photo.id}:`, error);
+      log.error(`Preload failed for photo ${photo.id}`, error);
     }
   });
 

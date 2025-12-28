@@ -240,7 +240,7 @@ class UploadQueue {
           });
         } catch (thumbError) {
           // Log but don't fail upload if thumbnail generation fails
-          log.warn('Thumbnail generation failed:', thumbError);
+          log.error('Thumbnail generation failed', thumbError);
         }
       }
 

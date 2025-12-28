@@ -37,6 +37,28 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
     });
+
+// Configure model validation to log errors (helpful for debugging)
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
+{
+    var builtInFactory = options.InvalidModelStateResponseFactory;
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var errors = context.ModelState
+            .Where(x => x.Value?.Errors.Count > 0)
+            .ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value!.Errors.Select(e => e.ErrorMessage).ToArray()
+            );
+        
+        var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("ModelValidation");
+        logger.LogWarning("Model validation failed for {Path}: {@Errors}", context.HttpContext.Request.Path, errors);
+        
+        return builtInFactory(context);
+    };
+});
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -45,9 +67,15 @@ var app = builder.Build();
 var authMode = builder.Configuration["Auth:Mode"] ?? "ProxyAuth";
 var isLocalAuth = authMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
 
-// Middleware order matters - exception handler must be first to catch all errors
+// Middleware order matters:
+// 1. GlobalExceptionMiddleware - catch all errors first
+// 2. CorrelationIdMiddleware - generate/extract correlation ID
+// 3. LogScopeMiddleware - create logging scope with request context
+// 4. RequestTimingMiddleware - log request timing
+// 5. Auth middleware - authenticate user
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseLogScope();
 app.UseMiddleware<RequestTimingMiddleware>();
 
 // Use appropriate auth middleware based on configuration
