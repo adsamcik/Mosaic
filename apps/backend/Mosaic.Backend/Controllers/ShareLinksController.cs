@@ -107,6 +107,11 @@ public class AddEpochKeysRequest
 }
 
 /// <summary>
+/// Request to update share link expiration settings
+/// </summary>
+public record UpdateLinkExpirationRequest(DateTimeOffset? ExpiresAt, int? MaxUses);
+
+/// <summary>
 /// Epoch key data for adding to a share link
 /// </summary>
 public class EpochKeyDto
@@ -419,6 +424,71 @@ public class ShareLinksController : ControllerBase
         await _db.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Update expiration settings for a share link (owner only)
+    /// </summary>
+    [HttpPatch("api/albums/{albumId:guid}/share-links/{linkId}/expiration")]
+    public async Task<IActionResult> UpdateLinkExpiration(Guid albumId, string linkId, [FromBody] UpdateLinkExpirationRequest request)
+    {
+        var user = await GetOrCreateUser();
+
+        // Verify album exists and user is owner
+        var album = await _db.Albums.FindAsync(albumId);
+        if (album == null) return NotFound(new { error = "Album not found" });
+        if (album.OwnerId != user.Id) return Forbid();
+
+        // Decode linkId from base64url
+        var linkIdBytes = FromBase64Url(linkId);
+        if (linkIdBytes == null)
+        {
+            return BadRequest(new { error = "Invalid linkId format" });
+        }
+
+        // Find the share link
+        var shareLink = await _db.ShareLinks
+            .FirstOrDefaultAsync(sl => sl.AlbumId == albumId && sl.LinkId == linkIdBytes);
+
+        if (shareLink == null)
+        {
+            return NotFound(new { error = "Share link not found" });
+        }
+
+        if (shareLink.IsRevoked)
+        {
+            return BadRequest(new { error = "Cannot update a revoked link" });
+        }
+
+        // Validate ExpiresAt if provided and not null
+        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return BadRequest(new { error = "expiresAt must be in the future" });
+        }
+
+        // Validate MaxUses if provided
+        if (request.MaxUses.HasValue && request.MaxUses.Value <= 0)
+        {
+            return BadRequest(new { error = "maxUses must be positive" });
+        }
+
+        // Update expiration settings
+        shareLink.ExpiresAt = request.ExpiresAt;
+        shareLink.MaxUses = request.MaxUses;
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new ShareLinkResponse
+        {
+            Id = shareLink.Id,
+            LinkId = ToBase64Url(shareLink.LinkId),
+            AccessTier = shareLink.AccessTier,
+            ExpiresAt = shareLink.ExpiresAt,
+            MaxUses = shareLink.MaxUses,
+            UseCount = shareLink.UseCount,
+            IsRevoked = shareLink.IsRevoked,
+            CreatedAt = shareLink.CreatedAt
+        });
     }
 
     /// <summary>

@@ -1869,4 +1869,337 @@ public class ShareLinksControllerTests
     }
 
     #endregion
+
+    #region PATCH /api/albums/{albumId}/share-links/{linkId}/expiration
+
+    [Fact]
+    public async Task UpdateLinkExpiration_ReturnsOk_WhenOwnerUpdatesExpiration()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var newExpiresAt = DateTimeOffset.UtcNow.AddDays(30);
+        var request = new UpdateLinkExpirationRequest(newExpiresAt, 50);
+
+        // Act
+        var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<ShareLinkResponse>(okResult.Value);
+        Assert.NotNull(response.ExpiresAt);
+        Assert.True(Math.Abs((newExpiresAt - response.ExpiresAt.Value).TotalSeconds) < 1);
+        Assert.Equal(50, response.MaxUses);
+
+        // Verify database state
+        var updated = db.ShareLinks.First(sl => sl.Id == shareLink.Id);
+        Assert.Equal(50, updated.MaxUses);
+    }
+
+    [Fact]
+    public async Task UpdateLinkExpiration_RemovesExpiration_WhenExpiresAtIsNull()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+        shareLink.ExpiresAt = DateTimeOffset.UtcNow.AddDays(7);
+        shareLink.MaxUses = 10;
+        await db.SaveChangesAsync();
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new UpdateLinkExpirationRequest(null, null);
+
+        // Act
+        var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<ShareLinkResponse>(okResult.Value);
+        Assert.Null(response.ExpiresAt);
+        Assert.Null(response.MaxUses);
+    }
+
+    [Fact]
+    public async Task UpdateLinkExpiration_ReturnsNotFound_WhenAlbumDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        await builder.CreateUserAsync(OwnerAuthSub);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new UpdateLinkExpirationRequest(DateTimeOffset.UtcNow.AddDays(30), null);
+
+        // Act
+        var result = await controller.UpdateLinkExpiration(Guid.NewGuid(), "validBase64Url", request);
+
+        // Assert
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(notFound.Value);
+        Assert.Contains("Album not found", json);
+    }
+
+    [Fact]
+    public async Task UpdateLinkExpiration_ReturnsForbid_WhenUserIsNotOwner()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        await builder.CreateUserAsync(OtherAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OtherAuthSub)
+            }
+        };
+
+        var request = new UpdateLinkExpirationRequest(DateTimeOffset.UtcNow.AddDays(30), null);
+
+        // Act
+        var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task UpdateLinkExpiration_ReturnsNotFound_WhenLinkDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var fakeLinkId = ToBase64Url(TestDataBuilder.GenerateRandomBytes(16));
+
+        var controller = new ShareLinksController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new UpdateLinkExpirationRequest(DateTimeOffset.UtcNow.AddDays(30), null);
+
+        // Act
+        var result = await controller.UpdateLinkExpiration(album.Id, fakeLinkId, request);
+
+        // Assert
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(notFound.Value);
+        Assert.Contains("Share link not found", json);
+    }
+
+    [Fact]
+    public async Task UpdateLinkExpiration_ReturnsBadRequest_WhenLinkIsRevoked()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+        shareLink.IsRevoked = true;
+        await db.SaveChangesAsync();
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new UpdateLinkExpirationRequest(DateTimeOffset.UtcNow.AddDays(30), null);
+
+        // Act
+        var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
+
+        // Assert
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
+        Assert.Contains("Cannot update a revoked link", json);
+    }
+
+    [Fact]
+    public async Task UpdateLinkExpiration_ReturnsBadRequest_WhenExpiresAtIsInPast()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new UpdateLinkExpirationRequest(DateTimeOffset.UtcNow.AddDays(-1), null);
+
+        // Act
+        var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
+
+        // Assert
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
+        Assert.Contains("expiresAt must be in the future", json);
+    }
+
+    [Fact]
+    public async Task UpdateLinkExpiration_ReturnsBadRequest_WhenMaxUsesIsNotPositive()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new UpdateLinkExpirationRequest(null, 0);
+
+        // Act
+        var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
+
+        // Assert
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
+        Assert.Contains("maxUses must be positive", json);
+    }
+
+    [Fact]
+    public async Task UpdateLinkExpiration_ReturnsBadRequest_WhenLinkIdIsInvalidFormat()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new UpdateLinkExpirationRequest(DateTimeOffset.UtcNow.AddDays(30), null);
+
+        // Act
+        var result = await controller.UpdateLinkExpiration(album.Id, "!!!invalid!!!", request);
+
+        // Assert
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
+        Assert.Contains("Invalid linkId format", json);
+    }
+
+    [Fact]
+    public async Task UpdateLinkExpiration_ReturnsNotFound_WhenLinkBelongsToDifferentAlbum()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album1 = await builder.CreateAlbumAsync(owner);
+        var album2 = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album1, accessTier: 3);
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new UpdateLinkExpirationRequest(DateTimeOffset.UtcNow.AddDays(30), null);
+
+        // Act - try to update with album2's ID but link belongs to album1
+        var result = await controller.UpdateLinkExpiration(album2.Id, linkIdBase64, request);
+
+        // Assert
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(notFound.Value);
+        Assert.Contains("Share link not found", json);
+    }
+
+    #endregion
 }
