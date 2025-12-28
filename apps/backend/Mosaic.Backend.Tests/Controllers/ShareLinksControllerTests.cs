@@ -611,6 +611,299 @@ public class ShareLinksControllerTests
 
     #endregion
 
+    #region POST /api/share-links/{id}/keys
+
+    [Fact]
+    public async Task AddEpochKeys_ReturnsOk_WhenOwnerAddsKeys()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new AddEpochKeysRequest
+        {
+            EpochKeys = new List<EpochKeyDto>
+            {
+                new EpochKeyDto { EpochId = 2, Tier = 3, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) },
+                new EpochKeyDto { EpochId = 2, Tier = 2, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) },
+                new EpochKeyDto { EpochId = 2, Tier = 1, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) }
+            }
+        };
+
+        // Act
+        var result = await controller.AddEpochKeys(shareLink.Id, request);
+
+        // Assert
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(3, db.LinkEpochKeys.Count(k => k.ShareLinkId == shareLink.Id && k.EpochId == 2));
+    }
+
+    [Fact]
+    public async Task AddEpochKeys_UpdatesExistingKeys_WhenSameEpochAndTier()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var newNonce = TestDataBuilder.GenerateRandomBytes(24);
+        var newEncryptedKey = TestDataBuilder.GenerateRandomBytes(48);
+        var request = new AddEpochKeysRequest
+        {
+            EpochKeys = new List<EpochKeyDto>
+            {
+                new EpochKeyDto { EpochId = 1, Tier = 3, Nonce = newNonce, EncryptedKey = newEncryptedKey }
+            }
+        };
+
+        // Act
+        var result = await controller.AddEpochKeys(shareLink.Id, request);
+
+        // Assert
+        Assert.IsType<OkObjectResult>(result);
+        var updatedKey = db.LinkEpochKeys.First(k => k.ShareLinkId == shareLink.Id && k.EpochId == 1 && k.Tier == 3);
+        Assert.Equal(newNonce, updatedKey.WrappedNonce);
+        Assert.Equal(newEncryptedKey, updatedKey.WrappedKey);
+    }
+
+    [Fact]
+    public async Task AddEpochKeys_ReturnsNotFound_WhenLinkDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        await builder.CreateUserAsync(OwnerAuthSub);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new AddEpochKeysRequest
+        {
+            EpochKeys = new List<EpochKeyDto>
+            {
+                new EpochKeyDto { EpochId = 1, Tier = 3, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) }
+            }
+        };
+
+        // Act
+        var result = await controller.AddEpochKeys(Guid.NewGuid(), request);
+
+        // Assert
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task AddEpochKeys_ReturnsForbid_WhenUserIsNotOwner()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var other = await builder.CreateUserAsync(OtherAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OtherAuthSub)
+            }
+        };
+
+        var request = new AddEpochKeysRequest
+        {
+            EpochKeys = new List<EpochKeyDto>
+            {
+                new EpochKeyDto { EpochId = 1, Tier = 3, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) }
+            }
+        };
+
+        // Act
+        var result = await controller.AddEpochKeys(shareLink.Id, request);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task AddEpochKeys_ReturnsBadRequest_WhenLinkIsRevoked()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, isRevoked: true);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new AddEpochKeysRequest
+        {
+            EpochKeys = new List<EpochKeyDto>
+            {
+                new EpochKeyDto { EpochId = 1, Tier = 3, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) }
+            }
+        };
+
+        // Act
+        var result = await controller.AddEpochKeys(shareLink.Id, request);
+
+        // Assert
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("revoked", badRequestResult.Value?.ToString()?.ToLower());
+    }
+
+    [Fact]
+    public async Task AddEpochKeys_ReturnsBadRequest_WhenNonceInvalid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new AddEpochKeysRequest
+        {
+            EpochKeys = new List<EpochKeyDto>
+            {
+                new EpochKeyDto { EpochId = 1, Tier = 3, Nonce = TestDataBuilder.GenerateRandomBytes(16), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) }  // Invalid: 16 bytes instead of 24
+            }
+        };
+
+        // Act
+        var result = await controller.AddEpochKeys(shareLink.Id, request);
+
+        // Assert
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("24 bytes", badRequestResult.Value?.ToString()?.ToLower());
+    }
+
+    [Fact]
+    public async Task AddEpochKeys_ReturnsBadRequest_WhenTierInvalid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new AddEpochKeysRequest
+        {
+            EpochKeys = new List<EpochKeyDto>
+            {
+                new EpochKeyDto { EpochId = 1, Tier = 5, Nonce = TestDataBuilder.GenerateRandomBytes(24), EncryptedKey = TestDataBuilder.GenerateRandomBytes(48) }  // Invalid: tier must be 1-3
+            }
+        };
+
+        // Act
+        var result = await controller.AddEpochKeys(shareLink.Id, request);
+
+        // Assert
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("tier", badRequestResult.Value?.ToString()?.ToLower());
+    }
+
+    [Fact]
+    public async Task AddEpochKeys_ReturnsBadRequest_WhenEpochKeysEmpty()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new AddEpochKeysRequest
+        {
+            EpochKeys = new List<EpochKeyDto>()  // Empty list
+        };
+
+        // Act
+        var result = await controller.AddEpochKeys(shareLink.Id, request);
+
+        // Assert
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("required", badRequestResult.Value?.ToString()?.ToLower());
+    }
+
+    #endregion
+
     #region GET /api/s/{linkId}
 
     [Fact]

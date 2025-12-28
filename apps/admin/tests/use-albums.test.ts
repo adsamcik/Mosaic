@@ -163,7 +163,7 @@ describe('useAlbums', () => {
     it('caches epoch key after creation', () => {
       setEpochKey('album-123', {
         epochId: 1,
-        readKey: new Uint8Array(32).fill(1),
+        epochSeed: new Uint8Array(32).fill(1),
         signKeypair: {
           publicKey: new Uint8Array(32).fill(2),
           secretKey: new Uint8Array(64).fill(3),

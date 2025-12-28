@@ -107,7 +107,7 @@ describe('useShareLinks', () => {
     mockGetCachedEpochIds.mockReturnValue([1]);
     mockGetEpochKey.mockReturnValue({
       epochId: 1,
-      readKey: new Uint8Array(32).fill(1),
+      epochSeed: new Uint8Array(32).fill(1),
       signKeypair: {
         publicKey: new Uint8Array(32).fill(2),
         secretKey: new Uint8Array(64).fill(3),
@@ -329,7 +329,7 @@ describe('useShareLinks', () => {
 
       expect(key).toBeDefined();
       expect(key.epochId).toBe(1);
-      expect(key.readKey).toBeDefined();
+      expect(key.epochSeed).toBeDefined();
     });
   });
 
@@ -449,7 +449,7 @@ describe('useShareLinks', () => {
       mockGetCachedEpochIds.mockReturnValue([1, 2, 3]);
       mockGetEpochKey.mockImplementation((albumId: string, epochId: number) => ({
         epochId,
-        readKey: new Uint8Array(32).fill(epochId),
+        epochSeed: new Uint8Array(32).fill(epochId),
         signKeypair: {
           publicKey: new Uint8Array(32),
           secretKey: new Uint8Array(64),

@@ -25,7 +25,7 @@ describe('Epoch Key Store', () => {
     it('stores and retrieves an epoch key', () => {
       const bundle: EpochKeyBundle = {
         epochId: 1,
-        readKey: new Uint8Array([1, 2, 3, 4, 5]),
+        epochSeed: new Uint8Array([1, 2, 3, 4, 5]),
         signKeypair: {
           publicKey: new Uint8Array([10, 11, 12]),
           secretKey: new Uint8Array([20, 21, 22]),
@@ -37,7 +37,7 @@ describe('Epoch Key Store', () => {
 
       expect(retrieved).not.toBeNull();
       expect(retrieved?.epochId).toBe(1);
-      expect(retrieved?.readKey).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
+      expect(retrieved?.epochSeed).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
     });
 
     it('returns null for non-existent album', () => {
@@ -48,7 +48,7 @@ describe('Epoch Key Store', () => {
     it('returns null for non-existent epoch', () => {
       const bundle: EpochKeyBundle = {
         epochId: 1,
-        readKey: new Uint8Array(32),
+        epochSeed: new Uint8Array(32),
         signKeypair: {
           publicKey: new Uint8Array(32),
           secretKey: new Uint8Array(64),
@@ -63,7 +63,7 @@ describe('Epoch Key Store', () => {
     it('overwrites existing epoch key', () => {
       const bundle1: EpochKeyBundle = {
         epochId: 1,
-        readKey: new Uint8Array([1, 1, 1]),
+        epochSeed: new Uint8Array([1, 1, 1]),
         signKeypair: {
           publicKey: new Uint8Array(32),
           secretKey: new Uint8Array(64),
@@ -72,7 +72,7 @@ describe('Epoch Key Store', () => {
 
       const bundle2: EpochKeyBundle = {
         epochId: 1,
-        readKey: new Uint8Array([2, 2, 2]),
+        epochSeed: new Uint8Array([2, 2, 2]),
         signKeypair: {
           publicKey: new Uint8Array(32),
           secretKey: new Uint8Array(64),
@@ -83,7 +83,7 @@ describe('Epoch Key Store', () => {
       setEpochKey('album-1', bundle2);
 
       const retrieved = getEpochKey('album-1', 1);
-      expect(retrieved?.readKey).toEqual(new Uint8Array([2, 2, 2]));
+      expect(retrieved?.epochSeed).toEqual(new Uint8Array([2, 2, 2]));
     });
   });
 
@@ -96,7 +96,7 @@ describe('Epoch Key Store', () => {
     it('returns the only epoch key', () => {
       const bundle: EpochKeyBundle = {
         epochId: 5,
-        readKey: new Uint8Array([5, 5, 5]),
+        epochSeed: new Uint8Array([5, 5, 5]),
         signKeypair: {
           publicKey: new Uint8Array(32),
           secretKey: new Uint8Array(64),
@@ -114,17 +114,17 @@ describe('Epoch Key Store', () => {
       const bundles: EpochKeyBundle[] = [
         {
           epochId: 1,
-          readKey: new Uint8Array([1]),
+          epochSeed: new Uint8Array([1]),
           signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
         },
         {
           epochId: 5,
-          readKey: new Uint8Array([5]),
+          epochSeed: new Uint8Array([5]),
           signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
         },
         {
           epochId: 3,
-          readKey: new Uint8Array([3]),
+          epochSeed: new Uint8Array([3]),
           signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
         },
       ];
@@ -133,7 +133,7 @@ describe('Epoch Key Store', () => {
       const result = getCurrentEpochKey('album-1');
 
       expect(result?.epochId).toBe(5);
-      expect(result?.readKey).toEqual(new Uint8Array([5]));
+      expect(result?.epochSeed).toEqual(new Uint8Array([5]));
     });
   });
 
@@ -145,7 +145,7 @@ describe('Epoch Key Store', () => {
     it('returns false for non-existent epoch', () => {
       setEpochKey('album-1', {
         epochId: 1,
-        readKey: new Uint8Array(32),
+        epochSeed: new Uint8Array(32),
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
 
@@ -155,7 +155,7 @@ describe('Epoch Key Store', () => {
     it('returns true for existing epoch', () => {
       setEpochKey('album-1', {
         epochId: 1,
-        readKey: new Uint8Array(32),
+        epochSeed: new Uint8Array(32),
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
 
@@ -173,7 +173,7 @@ describe('Epoch Key Store', () => {
       epochs.forEach((epochId) => {
         setEpochKey('album-1', {
           epochId,
-          readKey: new Uint8Array(32),
+          epochSeed: new Uint8Array(32),
           signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
         });
       });
@@ -187,12 +187,12 @@ describe('Epoch Key Store', () => {
     it('clears keys for a specific album', () => {
       setEpochKey('album-1', {
         epochId: 1,
-        readKey: new Uint8Array(32),
+        epochSeed: new Uint8Array(32),
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
       setEpochKey('album-2', {
         epochId: 1,
-        readKey: new Uint8Array(32),
+        epochSeed: new Uint8Array(32),
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
 
@@ -203,19 +203,19 @@ describe('Epoch Key Store', () => {
     });
 
     it('wipes key material before clearing', () => {
-      const readKey = new Uint8Array([1, 2, 3, 4, 5]);
+      const epochSeed = new Uint8Array([1, 2, 3, 4, 5]);
       const secretKey = new Uint8Array([10, 11, 12]);
 
       setEpochKey('album-1', {
         epochId: 1,
-        readKey,
+        epochSeed,
         signKeypair: { publicKey: new Uint8Array(32), secretKey },
       });
 
       clearAlbumKeys('album-1');
 
       // Key material should be zeroed
-      expect(readKey).toEqual(new Uint8Array(5));
+      expect(epochSeed).toEqual(new Uint8Array(5));
       expect(secretKey).toEqual(new Uint8Array(3));
     });
 
@@ -228,12 +228,12 @@ describe('Epoch Key Store', () => {
     it('clears all albums', () => {
       setEpochKey('album-1', {
         epochId: 1,
-        readKey: new Uint8Array(32),
+        epochSeed: new Uint8Array(32),
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
       setEpochKey('album-2', {
         epochId: 2,
-        readKey: new Uint8Array(32),
+        epochSeed: new Uint8Array(32),
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
 
@@ -245,24 +245,24 @@ describe('Epoch Key Store', () => {
     });
 
     it('wipes all key material before clearing', () => {
-      const readKey1 = new Uint8Array([1, 2, 3]);
-      const readKey2 = new Uint8Array([4, 5, 6]);
+      const epochSeed1 = new Uint8Array([1, 2, 3]);
+      const epochSeed2 = new Uint8Array([4, 5, 6]);
 
       setEpochKey('album-1', {
         epochId: 1,
-        readKey: readKey1,
+        epochSeed: epochSeed1,
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
       setEpochKey('album-2', {
         epochId: 1,
-        readKey: readKey2,
+        epochSeed: epochSeed2,
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
 
       clearAllEpochKeys();
 
-      expect(readKey1).toEqual(new Uint8Array(3));
-      expect(readKey2).toEqual(new Uint8Array(3));
+      expect(epochSeed1).toEqual(new Uint8Array(3));
+      expect(epochSeed2).toEqual(new Uint8Array(3));
     });
   });
 
@@ -274,17 +274,17 @@ describe('Epoch Key Store', () => {
     it('counts all keys across albums', () => {
       setEpochKey('album-1', {
         epochId: 1,
-        readKey: new Uint8Array(32),
+        epochSeed: new Uint8Array(32),
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
       setEpochKey('album-1', {
         epochId: 2,
-        readKey: new Uint8Array(32),
+        epochSeed: new Uint8Array(32),
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
       setEpochKey('album-2', {
         epochId: 1,
-        readKey: new Uint8Array(32),
+        epochSeed: new Uint8Array(32),
         signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
       });
 

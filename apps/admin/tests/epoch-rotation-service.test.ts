@@ -87,7 +87,7 @@ describe('epoch-rotation-service', () => {
   ];
 
   const mockNewEpochKey = {
-    readKey: new Uint8Array(32).fill(42),
+    epochSeed: new Uint8Array(32).fill(42),
     signPublicKey: new Uint8Array(32).fill(1),
     signSecretKey: new Uint8Array(64).fill(2),
   };
@@ -209,7 +209,7 @@ describe('epoch-rotation-service', () => {
         albumId,
         expect.objectContaining({
           epochId: newEpochId,
-          readKey: mockNewEpochKey.readKey,
+          epochSeed: mockNewEpochKey.epochSeed,
           signKeypair: expect.objectContaining({
             publicKey: mockNewEpochKey.signPublicKey,
             secretKey: mockNewEpochKey.signSecretKey,

@@ -97,6 +97,25 @@ public class ShareLinkPhotoResponse
     public required List<Guid> ShardIds { get; set; }
 }
 
+/// <summary>
+/// Request to add epoch keys to an existing share link
+/// </summary>
+public class AddEpochKeysRequest
+{
+    public required List<EpochKeyDto> EpochKeys { get; set; }
+}
+
+/// <summary>
+/// Epoch key data for adding to a share link
+/// </summary>
+public class EpochKeyDto
+{
+    public int EpochId { get; set; }
+    public int Tier { get; set; }
+    public required byte[] Nonce { get; set; }
+    public required byte[] EncryptedKey { get; set; }
+}
+
 #endregion
 
 /// <summary>
@@ -397,6 +416,95 @@ public class ShareLinksController : ControllerBase
         await _db.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Add epoch keys to an existing share link (owner only, for epoch rotation)
+    /// </summary>
+    [HttpPost("api/share-links/{id}/keys")]
+    public async Task<IActionResult> AddEpochKeys(Guid id, [FromBody] AddEpochKeysRequest request)
+    {
+        var user = await GetOrCreateUser();
+
+        var shareLink = await _db.ShareLinks
+            .Include(sl => sl.Album)
+            .Include(sl => sl.LinkEpochKeys)
+            .FirstOrDefaultAsync(sl => sl.Id == id);
+
+        if (shareLink == null)
+        {
+            return NotFound(new { error = "Share link not found" });
+        }
+        if (shareLink.Album.OwnerId != user.Id)
+        {
+            return Forbid();
+        }
+        if (shareLink.IsRevoked)
+        {
+            return BadRequest(new { error = "Cannot add keys to a revoked link" });
+        }
+
+        // Validate request
+        if (request.EpochKeys == null || request.EpochKeys.Count == 0)
+        {
+            return BadRequest(new { error = "epochKeys is required" });
+        }
+
+        foreach (var key in request.EpochKeys)
+        {
+            if (key.Nonce == null || key.Nonce.Length != 24)
+            {
+                return BadRequest(new { error = "Each epoch key must have a 24-byte nonce" });
+            }
+            if (key.EncryptedKey == null || key.EncryptedKey.Length == 0)
+            {
+                return BadRequest(new { error = "Each epoch key must have an encryptedKey" });
+            }
+            if (key.Tier < 1 || key.Tier > 3)
+            {
+                return BadRequest(new { error = "Each epoch key tier must be 1, 2, or 3" });
+            }
+        }
+
+        // Check for existing epoch/tier combinations
+        var existingKeys = shareLink.LinkEpochKeys
+            .Select(k => (k.EpochId, k.Tier))
+            .ToHashSet();
+
+        var keysToAdd = new List<LinkEpochKey>();
+        foreach (var key in request.EpochKeys)
+        {
+            if (existingKeys.Contains((key.EpochId, key.Tier)))
+            {
+                // Update existing key
+                var existing = shareLink.LinkEpochKeys
+                    .First(k => k.EpochId == key.EpochId && k.Tier == key.Tier);
+                existing.WrappedNonce = key.Nonce;
+                existing.WrappedKey = key.EncryptedKey;
+            }
+            else
+            {
+                // Add new key
+                keysToAdd.Add(new LinkEpochKey
+                {
+                    Id = Guid.NewGuid(),
+                    ShareLinkId = shareLink.Id,
+                    EpochId = key.EpochId,
+                    Tier = key.Tier,
+                    WrappedNonce = key.Nonce,
+                    WrappedKey = key.EncryptedKey
+                });
+            }
+        }
+
+        if (keysToAdd.Count > 0)
+        {
+            _db.LinkEpochKeys.AddRange(keysToAdd);
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new { added = keysToAdd.Count, updated = request.EpochKeys.Count - keysToAdd.Count });
     }
 
     #endregion
