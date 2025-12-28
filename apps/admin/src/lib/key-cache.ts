@@ -20,7 +20,10 @@ const log = createLogger('key-cache');
 /** Storage key for cached keys */
 const KEY_CACHE_STORAGE_KEY = 'mosaic:keyCache';
 
-/** In-memory encryption key for the cache (never persisted) */
+/** Storage key for the cache encryption key (persisted in sessionStorage) */
+const CACHE_KEY_STORAGE_KEY = 'mosaic:cacheKey';
+
+/** In-memory encryption key for the cache (lazy-loaded from sessionStorage) */
 let cacheEncryptionKey: CryptoKey | null = null;
 
 /** Cached keys structure */
@@ -74,19 +77,49 @@ function fromBase64(base64: string): Uint8Array {
 
 /**
  * Get or create the in-memory encryption key.
- * This key is generated once per tab session and never persisted.
+ * The key is persisted in sessionStorage (as exportable raw bytes) so it
+ * survives page reloads but is cleared when the tab closes.
  */
 async function getCacheEncryptionKey(): Promise<CryptoKey> {
   if (cacheEncryptionKey) {
     return cacheEncryptionKey;
   }
 
+  // Try to restore from sessionStorage first
+  const storedKey = sessionStorage.getItem(CACHE_KEY_STORAGE_KEY);
+  if (storedKey) {
+    try {
+      const keyBytes = fromBase64(storedKey);
+      cacheEncryptionKey = await crypto.subtle.importKey(
+        'raw',
+        keyBytes as Uint8Array<ArrayBuffer>,
+        { name: 'AES-GCM', length: 256 },
+        true, // Extractable so we can persist it
+        ['encrypt', 'decrypt']
+      );
+      log.debug('Restored cache encryption key from sessionStorage');
+      return cacheEncryptionKey;
+    } catch (error) {
+      log.warn('Failed to restore cache encryption key, generating new one:', error);
+      sessionStorage.removeItem(CACHE_KEY_STORAGE_KEY);
+    }
+  }
+
   // Generate a random AES-256 key
   cacheEncryptionKey = await crypto.subtle.generateKey(
     { name: 'AES-GCM', length: 256 },
-    false, // Not extractable - extra protection
+    true, // Extractable so we can persist it
     ['encrypt', 'decrypt']
   );
+
+  // Persist to sessionStorage for page reloads
+  try {
+    const keyBytes = await crypto.subtle.exportKey('raw', cacheEncryptionKey);
+    sessionStorage.setItem(CACHE_KEY_STORAGE_KEY, toBase64(new Uint8Array(keyBytes)));
+    log.debug('Generated and persisted new cache encryption key');
+  } catch (error) {
+    log.warn('Failed to persist cache encryption key:', error);
+  }
 
   return cacheEncryptionKey;
 }
@@ -152,13 +185,6 @@ export async function getCachedKeys(): Promise<CachedKeys | null> {
     return null;
   }
 
-  // Check if we have the encryption key in memory
-  // If not, we can't decrypt even if cache exists
-  if (!cacheEncryptionKey) {
-    log.debug('No cache encryption key in memory');
-    return null;
-  }
-
   try {
     const stored = sessionStorage.getItem(KEY_CACHE_STORAGE_KEY);
     if (!stored) {
@@ -175,13 +201,16 @@ export async function getCachedKeys(): Promise<CachedKeys | null> {
       return null;
     }
 
+    // Get or restore the encryption key
+    const encKey = await getCacheEncryptionKey();
+
     // Decrypt
     const ciphertext = fromBase64(envelope.ciphertext);
     const nonce = fromBase64(envelope.nonce);
 
     const plaintext = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
-      cacheEncryptionKey,
+      encKey,
       ciphertext as Uint8Array<ArrayBuffer>
     );
 
@@ -209,6 +238,7 @@ export function clearCachedKeys(): void {
  */
 export function clearCacheEncryptionKey(): void {
   cacheEncryptionKey = null;
+  sessionStorage.removeItem(CACHE_KEY_STORAGE_KEY);
   clearCachedKeys();
   log.debug('Cleared cache encryption key');
 }
@@ -218,7 +248,8 @@ export function clearCacheEncryptionKey(): void {
  * Used to determine if we can skip password entry.
  */
 export function hasCachedKeys(): boolean {
-  if (!cacheEncryptionKey) {
+  // Check if we have the encryption key (in memory or sessionStorage)
+  if (!cacheEncryptionKey && !sessionStorage.getItem(CACHE_KEY_STORAGE_KEY)) {
     return false;
   }
 

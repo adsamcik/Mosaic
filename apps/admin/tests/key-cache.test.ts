@@ -261,4 +261,50 @@ describe('key-cache', () => {
       expect(stored1.nonce).not.toBe(stored2.nonce);
     });
   });
+
+  describe('session restore (page reload simulation)', () => {
+    // Helper to simulate clearing in-memory state without clearing sessionStorage
+    const simulatePageReload = async () => {
+      // Access the module and reset its internal state
+      // We need to re-import to get a fresh module instance
+      vi.resetModules();
+      vi.mock('../src/lib/settings-service', () => ({
+        getKeyCacheDurationMs: vi.fn().mockReturnValue(30 * 60 * 1000),
+      }));
+      const freshModule = await import('../src/lib/key-cache');
+      return freshModule;
+    };
+
+    it('restores keys after simulated page reload (encryption key persisted in sessionStorage)', async () => {
+      // First, cache keys (this persists both the keys and the encryption key)
+      await cacheKeys(mockKeys);
+
+      // Verify cache exists
+      expect(sessionStorage.getItem('mosaic:keyCache')).not.toBeNull();
+      expect(sessionStorage.getItem('mosaic:cacheKey')).not.toBeNull();
+
+      // Simulate page reload by getting fresh module (clears in-memory cacheEncryptionKey)
+      const freshModule = await simulatePageReload();
+
+      // hasCachedKeys should still return true (encryption key is in sessionStorage)
+      expect(freshModule.hasCachedKeys()).toBe(true);
+
+      // getCachedKeys should restore the keys from sessionStorage
+      const retrieved = await freshModule.getCachedKeys();
+      expect(retrieved).not.toBeNull();
+      expect(retrieved!.accountKey).toBe(mockKeys.accountKey);
+      expect(retrieved!.sessionKey).toBe(mockKeys.sessionKey);
+    });
+
+    it('hasCachedKeys returns true when encryption key is only in sessionStorage', async () => {
+      // Cache keys first
+      await cacheKeys(mockKeys);
+
+      // Simulate page reload
+      const freshModule = await simulatePageReload();
+
+      // Even though in-memory key is null, sessionStorage has it
+      expect(freshModule.hasCachedKeys()).toBe(true);
+    });
+  });
 });
