@@ -4,6 +4,7 @@ import { type EpochKeyBundle } from '../lib/epoch-key-store';
 import { uploadQueue, type UploadTask } from '../lib/upload-queue';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getApi, toBase64 } from '../lib/api';
+import { syncEngine } from '../lib/sync-engine';
 import type { PhotoMeta } from '../workers/types';
 import { createLogger } from '../lib/logger';
 
@@ -158,6 +159,17 @@ export function UploadProvider({ children }: UploadProviderProps) {
       uploadQueue.onComplete = async (task, shardIds) => {
         try {
           await createManifestForUpload(task, shardIds, epochKey);
+          
+          // Sync to pull the newly created manifest into local DB
+          log.info(`Upload complete, syncing album ${task.albumId}`);
+          try {
+            await syncEngine.sync(task.albumId, epochKey.epochSeed);
+            log.info(`Post-upload sync complete for album ${task.albumId}`);
+          } catch (syncErr) {
+            // Non-fatal: photo was uploaded, sync will happen later
+            log.warn('Post-upload sync failed (photo still uploaded):', syncErr);
+          }
+          
           setIsUploading(false);
           setProgress(100);
         } catch (manifestErr) {

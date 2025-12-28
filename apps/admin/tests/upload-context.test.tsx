@@ -38,6 +38,17 @@ vi.mock('../src/lib/api', () => ({
   toBase64: vi.fn((data: Uint8Array) => 'base64data'),
 }));
 
+// Mock sync engine for post-upload sync
+vi.mock('../src/lib/sync-engine', () => ({
+  syncEngine: {
+    sync: vi.fn().mockResolvedValue(undefined),
+    isSyncing: false,
+    cancel: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  },
+}));
+
 // Consumer component to test context
 function TestConsumer({
   onContext,

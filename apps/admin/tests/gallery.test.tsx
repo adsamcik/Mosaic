@@ -151,6 +151,30 @@ vi.mock('../src/hooks/useLightbox', () => ({
   })),
 }));
 
+// Mock useSync hook
+vi.mock('../src/hooks/useSync', () => ({
+  useSync: vi.fn(() => ({
+    status: 'idle',
+    progress: { albumId: null, count: 0 },
+    error: null,
+    syncAlbum: vi.fn().mockResolvedValue(undefined),
+    syncAll: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
+// Mock SyncContext (useAutoSync does nothing in tests)
+vi.mock('../src/contexts/SyncContext', () => ({
+  useAutoSync: vi.fn(),
+  useSyncContext: vi.fn(() => ({
+    autoSyncEnabled: false,
+    syncingAlbums: new Set(),
+    lastSyncTime: new Map(),
+    triggerSync: vi.fn(),
+    registerAlbum: vi.fn(),
+    unregisterAlbum: vi.fn(),
+  })),
+}));
+
 // Mock geo client
 vi.mock('../src/lib/geo-client', () => ({
   getGeoClient: vi.fn(() => Promise.resolve({

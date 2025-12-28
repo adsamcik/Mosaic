@@ -1,9 +1,12 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UploadProvider } from '../../contexts/UploadContext';
+import { useAutoSync } from '../../contexts/SyncContext';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { useAlbumMembers } from '../../hooks/useMemberManagement';
 import { usePhotos } from '../../hooks/usePhotos';
+import { useSync } from '../../hooks/useSync';
+import { createLogger } from '../../lib/logger';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
 import { MemberList } from '../Members/MemberList';
 import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
@@ -14,6 +17,8 @@ import { MapView } from './MapView';
 import { PhotoGrid } from './PhotoGrid';
 import { PhotoLightbox } from './PhotoLightbox';
 import { SearchInput } from './SearchInput';
+
+const log = createLogger('Gallery');
 
 /** View mode for the gallery */
 export type GalleryViewMode = 'grid' | 'map';
@@ -50,10 +55,49 @@ export function Gallery({ albumId }: GalleryProps) {
   const [viewMode, setViewMode] = useState<GalleryViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { photos, isLoading, error } = usePhotos(albumId, searchQuery);
-  const { epochKeys } = useAlbumEpochKeys(albumId);
+  const { photos, isLoading, error, refetch: reloadPhotos } = usePhotos(albumId, searchQuery);
+  const { epochKeys, isLoading: epochKeysLoading } = useAlbumEpochKeys(albumId);
   const { isOwner } = useAlbumMembers(albumId);
   const lightbox = useLightbox(photos);
+  const { syncAlbum } = useSync();
+  
+  // Register this album for background auto-sync
+  useAutoSync(albumId);
+  
+  // Track if initial sync has been attempted
+  const initialSyncDone = useRef(false);
+
+  // Perform initial sync when epoch keys become available
+  useEffect(() => {
+    // Only sync once per mount and when we have epoch keys
+    if (initialSyncDone.current || epochKeysLoading || epochKeys.size === 0) {
+      return;
+    }
+
+    // Get the first (most recent) epoch key for initial sync
+    const entries = Array.from(epochKeys.entries());
+    if (entries.length === 0) {
+      return;
+    }
+
+    // Use the most recent epoch (highest epochId)
+    const [epochId, readKey] = entries.reduce((max, curr) => 
+      curr[0] > max[0] ? curr : max
+    );
+
+    initialSyncDone.current = true;
+    log.info(`Initial sync for album ${albumId} with epoch ${epochId}`);
+    
+    syncAlbum(albumId, readKey)
+      .then(() => {
+        log.info(`Initial sync complete for album ${albumId}`);
+        // Reload photos after sync completes
+        reloadPhotos();
+      })
+      .catch((err) => {
+        log.error(`Initial sync failed for album ${albumId}:`, err);
+      });
+  }, [albumId, epochKeys, epochKeysLoading, syncAlbum, reloadPhotos]);
 
   // Convert photos to GeoFeatures for map view
   const geoFeatures = useMemo(() => photosToGeoFeatures(photos), [photos]);

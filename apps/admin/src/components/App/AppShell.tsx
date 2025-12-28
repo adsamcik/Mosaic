@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SyncProvider } from '../../contexts/SyncContext';
 import { AlbumList } from '../Albums/AlbumList';
 import { AdminPage } from '../Admin';
 import { LogoutButton } from '../Auth/LogoutButton';
@@ -62,22 +63,23 @@ export function AppShell() {
   };
 
   return (
-    <div className="app-shell" data-testid="app-shell">
-      <header className="app-header">
-        <div className="header-left">
-          <h1 className="app-title">🖼️ Mosaic</h1>
-          {currentView === 'gallery' && selectedAlbumId && (
-            <button onClick={handleBackToAlbums} className="back-button">
-              ← Albums
-            </button>
-          )}
-          {currentView === 'settings' && (
-            <button onClick={handleBackFromSettings} className="back-button">
-              ← Back
-            </button>
-          )}
-          {currentView === 'admin' && (
-            <button onClick={handleBackFromAdmin} className="back-button">
+    <SyncProvider>
+      <div className="app-shell" data-testid="app-shell">
+        <header className="app-header">
+          <div className="header-left">
+            <h1 className="app-title">🖼️ Mosaic</h1>
+            {currentView === 'gallery' && selectedAlbumId && (
+              <button onClick={handleBackToAlbums} className="back-button">
+                ← Albums
+              </button>
+            )}
+            {currentView === 'settings' && (
+              <button onClick={handleBackFromSettings} className="back-button">
+                ← Back
+              </button>
+            )}
+            {currentView === 'admin' && (
+              <button onClick={handleBackFromAdmin} className="back-button">
               ← Back
             </button>
           )}
@@ -117,6 +119,7 @@ export function AppShell() {
         {currentView === 'settings' && <SettingsPage />}
         {currentView === 'admin' && <AdminPage onBack={handleBackFromAdmin} />}
       </main>
-    </div>
+      </div>
+    </SyncProvider>
   );
 }

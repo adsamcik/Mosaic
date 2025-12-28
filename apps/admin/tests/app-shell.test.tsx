@@ -33,6 +33,20 @@ vi.mock('../src/components/Settings/SettingsPage', () => ({
   SettingsPage: () => createElement('div', { 'data-testid': 'settings-page' }, 'Settings'),
 }));
 
+// Mock SyncContext/SyncProvider - it wraps the entire app
+vi.mock('../src/contexts/SyncContext', () => ({
+  SyncProvider: ({ children }: { children: React.ReactNode }) => children,
+  useSyncContext: vi.fn(() => ({
+    autoSyncEnabled: false,
+    syncingAlbums: new Set(),
+    lastSyncTime: new Map(),
+    triggerSync: vi.fn(),
+    registerAlbum: vi.fn(),
+    unregisterAlbum: vi.fn(),
+  })),
+  useAutoSync: vi.fn(),
+}));
+
 describe('AppShell', () => {
   let container: HTMLElement;
   let root: ReturnType<typeof createRoot>;
