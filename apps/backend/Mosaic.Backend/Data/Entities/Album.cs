@@ -9,6 +9,12 @@ public class Album
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Base64-encoded encrypted album name (encrypted with epoch read key).
+    /// Client-side encrypted, server stores opaque blob.
+    /// </summary>
+    public string? EncryptedName { get; set; }
+
     // Navigation
     public User Owner { get; set; } = null!;
     public ICollection<AlbumMember> Members { get; set; } = [];

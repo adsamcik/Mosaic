@@ -58,6 +58,8 @@ export function useAlbums() {
         createdAt: album.createdAt,
         isDecrypting: true, // Mark as decrypting initially
         decryptionFailed: false,
+        // Preserve encrypted name from server for decryption
+        encryptedName: album.encryptedName ?? null,
       }));
 
       // Set initial state with placeholder names
@@ -80,9 +82,9 @@ export function useAlbums() {
     // Process each album's name decryption
     const decryptionPromises = albumsToDecrypt.map(async (album) => {
       try {
-        // Try to get encrypted name from localStorage
-        // (This is where we store it during album creation until server support)
-        const encryptedName = getStoredEncryptedName(album.id);
+        // Try to get encrypted name from server response first,
+        // then fallback to localStorage (for backwards compatibility)
+        const encryptedName = album.encryptedName ?? getStoredEncryptedName(album.id);
 
         if (!encryptedName) {
           // No encrypted name available - keep placeholder
@@ -211,7 +213,7 @@ export function useAlbums() {
           identityPubkey // Seal to self
         );
 
-        // Create album with initial epoch key
+        // Create album with initial epoch key and encrypted name
         const newAlbum: ApiAlbum = await api.createAlbum({
           initialEpochKey: {
             recipientId: currentUser.id,
@@ -223,9 +225,10 @@ export function useAlbums() {
             sharerPubkey: toBase64(identityPubkey),
             signPubkey: toBase64(epochKey.signPublicKey),
           },
+          encryptedName, // Send encrypted name to server
         });
 
-        // Update the localStorage key with the actual album ID
+        // Also store in localStorage as a fallback for older server versions
         // Use the service function for consistency
         setStoredEncryptedName(newAlbum.id, encryptedName);
 

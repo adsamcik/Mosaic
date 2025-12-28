@@ -410,4 +410,178 @@ public class AlbumsControllerTests
         // Assert
         Assert.IsType<NotFoundResult>(result);
     }
+
+    [Fact]
+    public async Task Create_StoresEncryptedName_WhenProvided()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        const string encryptedName = "base64-encrypted-album-name";
+        var request = new CreateAlbumRequest
+        {
+            InitialEpochKey = new InitialEpochKeyRequest
+            {
+                EncryptedKeyBundle = new byte[32],
+                OwnerSignature = new byte[64],
+                SharerPubkey = new byte[32],
+                SignPubkey = new byte[32]
+            },
+            EncryptedName = encryptedName
+        };
+
+        // Act
+        var result = await controller.Create(request);
+
+        // Assert
+        var createdResult = Assert.IsType<CreatedResult>(result);
+        Assert.NotNull(createdResult.Value);
+
+        // Verify encrypted name was stored
+        var album = db.Albums.Single();
+        Assert.Equal(encryptedName, album.EncryptedName);
+    }
+
+    [Fact]
+    public async Task Create_ReturnsEncryptedName_InResponse()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        const string encryptedName = "base64-encrypted-album-name";
+        var request = new CreateAlbumRequest
+        {
+            InitialEpochKey = new InitialEpochKeyRequest
+            {
+                EncryptedKeyBundle = new byte[32],
+                OwnerSignature = new byte[64],
+                SharerPubkey = new byte[32],
+                SignPubkey = new byte[32]
+            },
+            EncryptedName = encryptedName
+        };
+
+        // Act
+        var result = await controller.Create(request);
+
+        // Assert
+        var createdResult = Assert.IsType<CreatedResult>(result);
+        var responseJson = System.Text.Json.JsonSerializer.Serialize(createdResult.Value);
+        Assert.Contains("EncryptedName", responseJson);
+        Assert.Contains(encryptedName, responseJson);
+    }
+
+    [Fact]
+    public async Task List_ReturnsEncryptedName_WhenAvailable()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        const string encryptedName = "encrypted-album-name-1";
+        await builder.CreateAlbumAsync(user, encryptedName: encryptedName);
+
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.List();
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var responseJson = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
+        Assert.Contains("EncryptedName", responseJson);
+        Assert.Contains(encryptedName, responseJson);
+    }
+
+    [Fact]
+    public async Task Get_ReturnsEncryptedName_WhenAvailable()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        const string encryptedName = "encrypted-album-name-test";
+        var album = await builder.CreateAlbumAsync(user, encryptedName: encryptedName);
+
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.Get(album.Id);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var responseJson = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
+        Assert.Contains("EncryptedName", responseJson);
+        Assert.Contains(encryptedName, responseJson);
+    }
+
+    [Fact]
+    public async Task Create_AllowsNullEncryptedName()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var controller = new AlbumsController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new CreateAlbumRequest
+        {
+            InitialEpochKey = new InitialEpochKeyRequest
+            {
+                EncryptedKeyBundle = new byte[32],
+                OwnerSignature = new byte[64],
+                SharerPubkey = new byte[32],
+                SignPubkey = new byte[32]
+            }
+            // EncryptedName not provided (null)
+        };
+
+        // Act
+        var result = await controller.Create(request);
+
+        // Assert
+        var createdResult = Assert.IsType<CreatedResult>(result);
+        Assert.NotNull(createdResult.Value);
+
+        // Verify album was created with null encrypted name
+        var album = db.Albums.Single();
+        Assert.Null(album.EncryptedName);
+    }
 }

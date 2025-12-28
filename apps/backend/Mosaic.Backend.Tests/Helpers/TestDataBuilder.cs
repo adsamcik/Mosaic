@@ -39,14 +39,15 @@ public class TestDataBuilder
     /// <summary>
     /// Creates an album owned by the given user
     /// </summary>
-    public async Task<Album> CreateAlbumAsync(User owner, int currentEpochId = 1, long currentVersion = 1)
+    public async Task<Album> CreateAlbumAsync(User owner, int currentEpochId = 1, long currentVersion = 1, string? encryptedName = null)
     {
         var album = new Album
         {
             Id = Guid.NewGuid(),
             OwnerId = owner.Id,
             CurrentEpochId = currentEpochId,
-            CurrentVersion = currentVersion
+            CurrentVersion = currentVersion,
+            EncryptedName = encryptedName
         };
         _db.Albums.Add(album);
 

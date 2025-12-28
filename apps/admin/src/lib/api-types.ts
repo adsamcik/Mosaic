@@ -61,10 +61,14 @@ export interface Album {
   currentEpochId: number;
   createdAt: string;
   updatedAt?: string;
+  /** Base64-encoded encrypted album name (client-side encrypted with epoch read key) */
+  encryptedName?: string | null;
 }
 
 export interface CreateAlbumRequest {
   initialEpochKey: CreateEpochKeyRequest;
+  /** Base64-encoded encrypted album name (optional) */
+  encryptedName?: string;
 }
 
 // =============================================================================

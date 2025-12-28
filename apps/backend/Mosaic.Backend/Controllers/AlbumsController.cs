@@ -14,6 +14,12 @@ public class CreateAlbumRequest
     /// Initial epoch key bundle for the owner
     /// </summary>
     public required InitialEpochKeyRequest InitialEpochKey { get; set; }
+
+    /// <summary>
+    /// Base64-encoded encrypted album name (encrypted with epoch read key).
+    /// Optional - if not provided, album name will not be stored.
+    /// </summary>
+    public string? EncryptedName { get; set; }
 }
 
 /// <summary>
@@ -100,6 +106,7 @@ public class AlbumsController : ControllerBase
                 am.Album.CurrentEpochId,
                 am.Album.CurrentVersion,
                 am.Album.CreatedAt,
+                am.Album.EncryptedName,
                 am.Role
             })
             .ToListAsync();
@@ -150,7 +157,8 @@ public class AlbumsController : ControllerBase
                 Id = Guid.NewGuid(),
                 OwnerId = user.Id,
                 CurrentEpochId = 1,
-                CurrentVersion = 1
+                CurrentVersion = 1,
+                EncryptedName = request.EncryptedName
             };
             _db.Albums.Add(album);
 
@@ -184,7 +192,8 @@ public class AlbumsController : ControllerBase
                 album.OwnerId,
                 album.CurrentEpochId,
                 album.CurrentVersion,
-                album.CreatedAt
+                album.CreatedAt,
+                album.EncryptedName
             });
         }
         catch
@@ -218,6 +227,7 @@ public class AlbumsController : ControllerBase
             album.CurrentEpochId,
             album.CurrentVersion,
             album.CreatedAt,
+            album.EncryptedName,
             membership.Role
         });
     }
