@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -11,11 +12,19 @@ public class ManifestsController : ControllerBase
 {
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
+    private readonly IQuotaSettingsService _quotaService;
+    private readonly ILogger<ManifestsController> _logger;
 
-    public ManifestsController(MosaicDbContext db, IConfiguration config)
+    public ManifestsController(
+        MosaicDbContext db,
+        IConfiguration config,
+        IQuotaSettingsService quotaService,
+        ILogger<ManifestsController> logger)
     {
         _db = db;
         _config = config;
+        _quotaService = quotaService;
+        _logger = logger;
     }
 
     private async Task<User?> GetUser()
@@ -76,7 +85,28 @@ public class ManifestsController : ControllerBase
             if (shards.Any(s => s.Status != ShardStatus.PENDING))
                 return BadRequest("Some shards already linked to a manifest");
 
-            // 4. Create manifest
+            // 4. Check album limits
+            var albumLimits = await _db.AlbumLimits.FindAsync(album.Id);
+            var maxPhotos = await _quotaService.GetEffectiveMaxPhotosAsync(album.Id);
+            var maxSize = await _quotaService.GetEffectiveMaxAlbumSizeAsync(album.Id);
+            var shardsTotalSize = shards.Sum(s => s.SizeBytes);
+
+            var currentPhotoCount = albumLimits?.CurrentPhotoCount ?? 0;
+            var currentSizeBytes = albumLimits?.CurrentSizeBytes ?? 0;
+
+            if (currentPhotoCount >= maxPhotos)
+            {
+                _logger.LogWarning("Album {AlbumId} photo limit exceeded: {Current}/{Max}", album.Id, currentPhotoCount, maxPhotos);
+                return BadRequest(new { error = "ALBUM_PHOTOS_EXCEEDED", message = $"Album photo limit ({maxPhotos}) reached" });
+            }
+
+            if (currentSizeBytes + shardsTotalSize > maxSize)
+            {
+                _logger.LogWarning("Album {AlbumId} size limit exceeded: {Current}+{New}/{Max}", album.Id, currentSizeBytes, shardsTotalSize, maxSize);
+                return BadRequest(new { error = "ALBUM_SIZE_EXCEEDED", message = "Album size limit exceeded" });
+            }
+
+            // 5. Create manifest
             album.CurrentVersion++;
             album.UpdatedAt = DateTime.UtcNow;
 
@@ -91,7 +121,7 @@ public class ManifestsController : ControllerBase
             };
             _db.Manifests.Add(manifest);
 
-            // 5. Link shards and mark ACTIVE
+            // 6. Link shards and mark ACTIVE
             for (int i = 0; i < request.ShardIds.Count; i++)
             {
                 var shard = shards.First(s => s.Id == request.ShardIds[i]);
@@ -104,6 +134,23 @@ public class ManifestsController : ControllerBase
                     ManifestId = manifest.Id,
                     ShardId = shard.Id,
                     ChunkIndex = i
+                });
+            }
+
+            // 7. Update album limits tracking
+            if (albumLimits != null)
+            {
+                albumLimits.CurrentPhotoCount++;
+                albumLimits.CurrentSizeBytes += shardsTotalSize;
+                albumLimits.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                _db.AlbumLimits.Add(new AlbumLimits
+                {
+                    AlbumId = album.Id,
+                    CurrentPhotoCount = 1,
+                    CurrentSizeBytes = shardsTotalSize
                 });
             }
 

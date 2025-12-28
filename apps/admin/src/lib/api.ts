@@ -31,6 +31,17 @@ import type {
   LinkAccessResponse,
   LinkEpochKeyResponse,
   ShareLinkPhotoResponse,
+  UpdateExpirationRequest,
+  UpdateLinkExpirationRequest,
+  QuotaDefaults,
+  AdminUserResponse,
+  AdminUserQuota,
+  UpdateUserQuotaRequest,
+  AdminAlbumResponse,
+  AdminAlbumLimits,
+  UpdateAlbumLimitsRequest,
+  AdminStatsResponse,
+  NearLimitsResponse,
 } from './api-types';
 
 // =============================================================================
@@ -165,6 +176,16 @@ export function createApiClient(): MosaicApi {
       });
     },
 
+    async updateAlbumExpiration(
+      albumId: string,
+      request: UpdateExpirationRequest
+    ): Promise<Album> {
+      return apiRequest(`/albums/${albumId}/expiration`, {
+        method: 'PUT',
+        body: request,
+      });
+    },
+
     async syncAlbum(albumId: string, since: number, limit?: number): Promise<SyncResponse> {
       const params = new URLSearchParams({
         since: String(since),
@@ -294,6 +315,17 @@ export function createApiClient(): MosaicApi {
       });
     },
 
+    async updateShareLinkExpiration(
+      albumId: string,
+      linkId: string,
+      request: UpdateLinkExpirationRequest
+    ): Promise<ShareLinkResponse> {
+      return apiRequest(`/albums/${albumId}/share-links/${linkId}/expiration`, {
+        method: 'PUT',
+        body: request,
+      });
+    },
+
     // =========================================================================
     // Anonymous Share Link Access (no auth required)
     // =========================================================================
@@ -318,6 +350,94 @@ export function createApiClient(): MosaicApi {
         throw new Error(`API error ${response.status}: ${text}`);
       }
       return response.arrayBuffer();
+    },
+
+    // =========================================================================
+    // Admin - Settings
+    // =========================================================================
+    async getQuotaDefaults(): Promise<QuotaDefaults> {
+      return apiRequest('/admin/settings/quota');
+    },
+
+    async updateQuotaDefaults(request: QuotaDefaults): Promise<QuotaDefaults> {
+      return apiRequest('/admin/settings/quota', {
+        method: 'PUT',
+        body: request,
+      });
+    },
+
+    // =========================================================================
+    // Admin - Users
+    // =========================================================================
+    async listUsers(): Promise<AdminUserResponse[]> {
+      return apiRequest('/admin/users');
+    },
+
+    async getUserQuota(userId: string): Promise<AdminUserQuota> {
+      return apiRequest(`/admin/users/${userId}/quota`);
+    },
+
+    async updateUserQuota(userId: string, request: UpdateUserQuotaRequest): Promise<AdminUserQuota> {
+      return apiRequest(`/admin/users/${userId}/quota`, {
+        method: 'PUT',
+        body: request,
+      });
+    },
+
+    async resetUserQuota(userId: string): Promise<AdminUserQuota> {
+      return apiRequest(`/admin/users/${userId}/quota`, {
+        method: 'DELETE',
+      });
+    },
+
+    async promoteToAdmin(userId: string): Promise<void> {
+      return apiRequest(`/admin/users/${userId}/promote`, {
+        method: 'POST',
+      });
+    },
+
+    async demoteFromAdmin(userId: string): Promise<void> {
+      return apiRequest(`/admin/users/${userId}/demote`, {
+        method: 'POST',
+      });
+    },
+
+    // =========================================================================
+    // Admin - Albums
+    // =========================================================================
+    async listAllAlbums(): Promise<AdminAlbumResponse[]> {
+      return apiRequest('/admin/albums');
+    },
+
+    async getAlbumLimits(albumId: string): Promise<AdminAlbumLimits> {
+      return apiRequest(`/admin/albums/${albumId}/limits`);
+    },
+
+    async updateAlbumLimits(
+      albumId: string,
+      request: UpdateAlbumLimitsRequest
+    ): Promise<AdminAlbumLimits> {
+      return apiRequest(`/admin/albums/${albumId}/limits`, {
+        method: 'PUT',
+        body: request,
+      });
+    },
+
+    async resetAlbumLimits(albumId: string): Promise<AdminAlbumLimits> {
+      return apiRequest(`/admin/albums/${albumId}/limits`, {
+        method: 'DELETE',
+      });
+    },
+
+    // =========================================================================
+    // Admin - Stats
+    // =========================================================================
+    async getStats(): Promise<AdminStatsResponse> {
+      return apiRequest('/admin/stats');
+    },
+
+    async getNearLimits(): Promise<NearLimitsResponse> {
+      return apiRequest('/admin/stats/near-limits');
     },
   };
 }

@@ -8,6 +8,12 @@ public class User
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>
+    /// Whether this user has admin privileges.
+    /// Admins can manage quotas and view all users/albums.
+    /// </summary>
+    public bool IsAdmin { get; set; }
+
+    /// <summary>
     /// Client-side encrypted user salt for multi-device key derivation.
     /// Encrypted with a key derived from password+username (no salt needed).
     /// Server never sees the plaintext salt.

@@ -19,6 +19,8 @@ public class MosaicDbContext : DbContext
     public DbSet<LinkEpochKey> LinkEpochKeys => Set<LinkEpochKey>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<AuthChallenge> AuthChallenges => Set<AuthChallenge>();
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<AlbumLimits> AlbumLimits => Set<AlbumLimits>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -135,6 +137,26 @@ public class MosaicDbContext : DbContext
             e.HasOne(q => q.User)
                 .WithOne(u => u.Quota)
                 .HasForeignKey<UserQuota>(q => q.UserId);
+        });
+
+        // SystemSetting
+        modelBuilder.Entity<SystemSetting>(e =>
+        {
+            e.HasKey(s => s.Key);
+            e.HasOne(s => s.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(s => s.UpdatedBy)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // AlbumLimits
+        modelBuilder.Entity<AlbumLimits>(e =>
+        {
+            e.HasKey(al => al.AlbumId);
+            e.HasOne(al => al.Album)
+                .WithOne(a => a.Limits)
+                .HasForeignKey<AlbumLimits>(al => al.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ShareLink

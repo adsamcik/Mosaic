@@ -122,15 +122,10 @@ export async function fetchAndUnwrapEpochKeys(
 
     try {
       // Decode base64 values from server
-      const encryptedBundle = fromBase64(record.encryptedKeyBundle);
-      const ownerSignature = fromBase64(record.ownerSignature);
+      // Note: encryptedKeyBundle is stored as signature (64 bytes) || sealed box
+      // so we use it directly - no need to prepend ownerSignature again
+      const fullBundle = fromBase64(record.encryptedKeyBundle);
       const sharerPubkey = fromBase64(record.sharerPubkey);
-
-      // The bundle format is: signature (64 bytes) || sealed box
-      // But the server stores signature separately, so we need to combine them
-      const fullBundle = new Uint8Array(ownerSignature.length + encryptedBundle.length);
-      fullBundle.set(ownerSignature, 0);
-      fullBundle.set(encryptedBundle, ownerSignature.length);
 
       // Open the epoch key bundle via crypto worker
       const opened = await crypto.openEpochKeyBundle(

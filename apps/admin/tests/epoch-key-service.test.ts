@@ -404,4 +404,44 @@ describe('Epoch Key Service', () => {
       expect(result).toBe(false);
     });
   });
+
+  describe('bundle format handling', () => {
+    it('passes encryptedKeyBundle directly without prepending signature (regression test for duplicated signature bug)', async () => {
+      // Create a record where encryptedKeyBundle already contains signature || sealed
+      // This matches the format sent by useAlbums.ts when creating albums
+      const signature = new Uint8Array(64).fill(0xAA);
+      const sealedBox = new Uint8Array(50).fill(0xBB);
+      const fullBundle = new Uint8Array([...signature, ...sealedBox]);
+
+      const record: EpochKeyRecord = {
+        id: 'key-1',
+        albumId: 'album-regression',
+        epochId: 1,
+        encryptedKeyBundle: toBase64(fullBundle), // signature || sealed already combined
+        ownerSignature: toBase64(signature), // signature stored separately too
+        sharerPubkey: toBase64(new Uint8Array(32).fill(0xCC)),
+        signPubkey: toBase64(new Uint8Array(32)),
+        createdAt: new Date().toISOString(),
+      };
+
+      mockApi.getEpochKeys.mockResolvedValue([record]);
+
+      await fetchAndUnwrapEpochKeys('album-regression');
+
+      // Verify openEpochKeyBundle was called with the encryptedKeyBundle directly
+      // NOT with signature prepended again (which would be 64 + 114 = 178 bytes)
+      expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenCalledTimes(1);
+      const calledBundle = mockCryptoClient.openEpochKeyBundle.mock.calls[0][0] as Uint8Array;
+
+      // The bundle should be exactly what was in encryptedKeyBundle (114 bytes = 64 + 50)
+      // NOT 178 bytes (signature prepended again)
+      expect(calledBundle.length).toBe(fullBundle.length);
+      expect(calledBundle).toEqual(fullBundle);
+
+      // Verify the first 64 bytes are the signature
+      expect(calledBundle.slice(0, 64)).toEqual(signature);
+      // Verify the remaining bytes are the sealed box
+      expect(calledBundle.slice(64)).toEqual(sealedBox);
+    });
+  });
 });

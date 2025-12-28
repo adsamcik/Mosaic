@@ -321,7 +321,7 @@ public class SecurityTests
         await builder.CreateUserAsync(UserB);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new ManifestsController(db, config)
+        var controller = new ManifestsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<ManifestsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -357,7 +357,7 @@ public class SecurityTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, viewer, "viewer", owner);
 
-        var controller = new ManifestsController(db, config)
+        var controller = new ManifestsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<ManifestsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -397,7 +397,7 @@ public class SecurityTests
         membership.RevokedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var controller = new ManifestsController(db, config)
+        var controller = new ManifestsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<ManifestsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -433,7 +433,7 @@ public class SecurityTests
         var album = await builder.CreateAlbumAsync(owner);
         var manifest = await builder.CreateManifestAsync(album, new List<Mosaic.Backend.Data.Entities.Shard>());
 
-        var controller = new ManifestsController(db, config)
+        var controller = new ManifestsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<ManifestsController>())
         {
             ControllerContext = new ControllerContext
             {

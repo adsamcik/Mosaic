@@ -33,6 +33,17 @@ import type {
   LinkAccessResponse,
   LinkEpochKeyResponse,
   ShareLinkPhotoResponse,
+  UpdateExpirationRequest,
+  UpdateLinkExpirationRequest,
+  QuotaDefaults,
+  AdminUserResponse,
+  AdminUserQuota,
+  UpdateUserQuotaRequest,
+  AdminAlbumResponse,
+  AdminAlbumLimits,
+  UpdateAlbumLimitsRequest,
+  AdminStatsResponse,
+  NearLimitsResponse,
 } from './api-types';
 
 // =============================================================================
@@ -565,6 +576,51 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       return { added: request.epochKeys.length, updated: 0 };
     },
 
+    async updateAlbumExpiration(
+      albumId: string,
+      request: UpdateExpirationRequest
+    ): Promise<Album> {
+      await delay();
+      const album = store.albums.get(albumId);
+      if (!album) {
+        throw new Error(`Album not found: ${albumId}`);
+      }
+      const updated: Album = {
+        ...album,
+        expirationWarningDays: request.expirationWarningDays ?? 7,
+        updatedAt: new Date().toISOString(),
+      };
+      // Only set expiresAt if explicitly provided
+      if (request.expiresAt !== undefined) {
+        updated.expiresAt = request.expiresAt;
+      }
+      return updated;
+    },
+
+    async updateShareLinkExpiration(
+      _albumId: string,
+      linkId: string,
+      request: UpdateLinkExpirationRequest
+    ): Promise<ShareLinkResponse> {
+      await delay();
+      const response: ShareLinkResponse = {
+        id: linkId,
+        linkId: 'AAAAAAAAAAAAAAAAAAAAAA==',
+        accessTier: 3,
+        useCount: 0,
+        isRevoked: false,
+        createdAt: new Date().toISOString(),
+      };
+      // Only set optional fields if explicitly provided (not undefined)
+      if (request.expiresAt !== undefined && request.expiresAt !== null) {
+        response.expiresAt = request.expiresAt;
+      }
+      if (request.maxUses !== undefined && request.maxUses !== null) {
+        response.maxUses = request.maxUses;
+      }
+      return response;
+    },
+
     async getShareLinkInfo(_linkIdBase64: string): Promise<LinkAccessResponse> {
       await delay();
       return {
@@ -596,6 +652,166 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       await delay();
       // Return empty encrypted shard mock
       return new ArrayBuffer(64);
+    },
+
+    // =========================================================================
+    // Admin - Settings (Mock)
+    // =========================================================================
+    async getQuotaDefaults(): Promise<QuotaDefaults> {
+      await delay();
+      return {
+        maxStorageBytes: 10737418240, // 10 GB
+        maxAlbums: 50,
+        maxPhotosPerAlbum: 1000,
+        maxAlbumSizeBytes: 5368709120, // 5 GB
+      };
+    },
+
+    async updateQuotaDefaults(request: QuotaDefaults): Promise<QuotaDefaults> {
+      await delay();
+      return request;
+    },
+
+    // =========================================================================
+    // Admin - Users (Mock)
+    // =========================================================================
+    async listUsers(): Promise<AdminUserResponse[]> {
+      await delay();
+      const userList = Array.from(store.users.values());
+      return userList.map((u, i) => {
+        const response: AdminUserResponse = {
+          id: u.id,
+          authSub: u.authSub,
+          isAdmin: i === 0, // First user is admin
+          createdAt: u.createdAt,
+          albumCount: Math.floor(Math.random() * 5),
+          totalStorageBytes: Math.floor(Math.random() * 1073741824),
+          quota: {
+            currentStorageBytes: Math.floor(Math.random() * 1073741824),
+            currentAlbumCount: Math.floor(Math.random() * 5),
+          },
+        };
+        if (u.identityPubkey) {
+          response.identityPubkey = u.identityPubkey;
+        }
+        return response;
+      });
+    },
+
+    async getUserQuota(_userId: string): Promise<AdminUserQuota> {
+      await delay();
+      return {
+        currentStorageBytes: Math.floor(Math.random() * 1073741824),
+        currentAlbumCount: Math.floor(Math.random() * 5),
+      };
+    },
+
+    async updateUserQuota(_userId: string, request: UpdateUserQuotaRequest): Promise<AdminUserQuota> {
+      await delay();
+      const result: AdminUserQuota = {
+        currentStorageBytes: Math.floor(Math.random() * 1073741824),
+        currentAlbumCount: Math.floor(Math.random() * 5),
+      };
+      if (request.maxStorageBytes !== null && request.maxStorageBytes !== undefined) {
+        result.maxStorageBytes = request.maxStorageBytes;
+      }
+      if (request.maxAlbums !== null && request.maxAlbums !== undefined) {
+        result.maxAlbums = request.maxAlbums;
+      }
+      return result;
+    },
+
+    async resetUserQuota(_userId: string): Promise<AdminUserQuota> {
+      await delay();
+      return {
+        currentStorageBytes: Math.floor(Math.random() * 1073741824),
+        currentAlbumCount: Math.floor(Math.random() * 5),
+      };
+    },
+
+    async promoteToAdmin(_userId: string): Promise<void> {
+      await delay();
+    },
+
+    async demoteFromAdmin(_userId: string): Promise<void> {
+      await delay();
+    },
+
+    // =========================================================================
+    // Admin - Albums (Mock)
+    // =========================================================================
+    async listAllAlbums(): Promise<AdminAlbumResponse[]> {
+      await delay();
+      const albumList = Array.from(store.albums.values());
+      return albumList.map((a) => ({
+        id: a.id,
+        ownerId: a.ownerId,
+        ownerAuthSub: 'user@example.com',
+        createdAt: a.createdAt,
+        photoCount: Math.floor(Math.random() * 100),
+        totalSizeBytes: Math.floor(Math.random() * 536870912),
+        limits: {
+          currentPhotoCount: Math.floor(Math.random() * 100),
+          currentSizeBytes: Math.floor(Math.random() * 536870912),
+        },
+      }));
+    },
+
+    async getAlbumLimits(_albumId: string): Promise<AdminAlbumLimits> {
+      await delay();
+      return {
+        currentPhotoCount: Math.floor(Math.random() * 100),
+        currentSizeBytes: Math.floor(Math.random() * 536870912),
+      };
+    },
+
+    async updateAlbumLimits(
+      _albumId: string,
+      request: UpdateAlbumLimitsRequest
+    ): Promise<AdminAlbumLimits> {
+      await delay();
+      const result: AdminAlbumLimits = {
+        currentPhotoCount: Math.floor(Math.random() * 100),
+        currentSizeBytes: Math.floor(Math.random() * 536870912),
+      };
+      if (request.maxPhotos !== null && request.maxPhotos !== undefined) {
+        result.maxPhotos = request.maxPhotos;
+      }
+      if (request.maxSizeBytes !== null && request.maxSizeBytes !== undefined) {
+        result.maxSizeBytes = request.maxSizeBytes;
+      }
+      return result;
+    },
+
+    async resetAlbumLimits(_albumId: string): Promise<AdminAlbumLimits> {
+      await delay();
+      return {
+        currentPhotoCount: Math.floor(Math.random() * 100),
+        currentSizeBytes: Math.floor(Math.random() * 536870912),
+      };
+    },
+
+    // =========================================================================
+    // Admin - Stats (Mock)
+    // =========================================================================
+    async getStats(): Promise<AdminStatsResponse> {
+      await delay();
+      return {
+        totalUsers: store.users.size,
+        totalAlbums: store.albums.size,
+        totalPhotos: store.manifests.size,
+        totalStorageBytes: store.shards.size * 1024 * 1024,
+      };
+    },
+
+    async getNearLimits(): Promise<NearLimitsResponse> {
+      await delay();
+      return {
+        usersNearStorageLimit: [],
+        usersNearAlbumLimit: [],
+        albumsNearPhotoLimit: [],
+        albumsNearSizeLimit: [],
+      };
     },
   };
 }

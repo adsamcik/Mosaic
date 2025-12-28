@@ -61,6 +61,7 @@ public class UsersController : ControllerBase
             user.AuthSub,
             user.IdentityPubkey,
             user.CreatedAt,
+            user.IsAdmin,
             EncryptedSalt = user.EncryptedSalt != null ? Convert.ToBase64String(user.EncryptedSalt) : null,
             SaltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null,
             Quota = quota != null ? new

@@ -31,6 +31,8 @@ export interface User {
   authSub: string;
   identityPubkey?: string;
   createdAt: string;
+  /** Whether the user is an admin */
+  isAdmin?: boolean;
   /** Base64-encoded encrypted user salt for multi-device sync */
   encryptedSalt?: string;
   /** Base64-encoded nonce used for salt encryption (12 bytes for AES-GCM) */
@@ -63,12 +65,36 @@ export interface Album {
   updatedAt?: string;
   /** Base64-encoded encrypted album name (client-side encrypted with epoch read key) */
   encryptedName?: string | null;
+  /** ISO 8601 date when album expires and will be deleted */
+  expiresAt?: string | null;
+  /** Days before expiration to show warning (default: 7) */
+  expirationWarningDays?: number;
 }
 
 export interface CreateAlbumRequest {
   initialEpochKey: CreateEpochKeyRequest;
   /** Base64-encoded encrypted album name (optional) */
   encryptedName?: string;
+  /** ISO 8601 date when album should expire */
+  expiresAt?: string;
+  /** Days before expiration to show warning (default: 7) */
+  expirationWarningDays?: number;
+}
+
+/** Request to update album expiration settings */
+export interface UpdateExpirationRequest {
+  /** ISO 8601 date when album expires, or null to remove expiration */
+  expiresAt?: string | null;
+  /** Days before expiration to show warning */
+  expirationWarningDays?: number;
+}
+
+/** Request to update share link expiration settings */
+export interface UpdateLinkExpirationRequest {
+  /** ISO 8601 date when link expires, or null to remove expiration */
+  expiresAt?: string | null;
+  /** Maximum number of uses, or null to remove limit */
+  maxUses?: number | null;
 }
 
 // =============================================================================
@@ -220,6 +246,85 @@ export interface ShareLinkEpochKeyRequest {
 }
 
 // =============================================================================
+// Admin Types
+// =============================================================================
+
+/** Quota defaults that can be configured site-wide */
+export interface QuotaDefaults {
+  maxStorageBytes: number;
+  maxAlbums: number;
+  maxPhotosPerAlbum: number;
+  maxAlbumSizeBytes: number;
+}
+
+/** User with quota information for admin view */
+export interface AdminUserResponse {
+  id: string;
+  authSub: string;
+  identityPubkey?: string;
+  isAdmin: boolean;
+  createdAt: string;
+  albumCount: number;
+  totalStorageBytes: number;
+  quota: AdminUserQuota;
+}
+
+/** User quota with both limits and current usage */
+export interface AdminUserQuota {
+  maxStorageBytes?: number;
+  currentStorageBytes: number;
+  maxAlbums?: number;
+  currentAlbumCount: number;
+}
+
+/** Request to update user quota */
+export interface UpdateUserQuotaRequest {
+  maxStorageBytes?: number | null;
+  maxAlbums?: number | null;
+}
+
+/** Album with limits for admin view */
+export interface AdminAlbumResponse {
+  id: string;
+  ownerId: string;
+  ownerAuthSub: string;
+  createdAt: string;
+  photoCount: number;
+  totalSizeBytes: number;
+  limits?: AdminAlbumLimits;
+}
+
+/** Album limits with both max and current values */
+export interface AdminAlbumLimits {
+  maxPhotos?: number;
+  currentPhotoCount: number;
+  maxSizeBytes?: number;
+  currentSizeBytes: number;
+}
+
+/** Request to update album limits */
+export interface UpdateAlbumLimitsRequest {
+  maxPhotos?: number | null;
+  maxSizeBytes?: number | null;
+}
+
+/** System-wide statistics for admin dashboard */
+export interface AdminStatsResponse {
+  totalUsers: number;
+  totalAlbums: number;
+  totalPhotos: number;
+  totalStorageBytes: number;
+}
+
+/** Users/albums near their limits */
+export interface NearLimitsResponse {
+  usersNearStorageLimit: AdminUserResponse[];
+  usersNearAlbumLimit: AdminUserResponse[];
+  albumsNearPhotoLimit: AdminAlbumResponse[];
+  albumsNearSizeLimit: AdminAlbumResponse[];
+}
+
+// =============================================================================
 // Sync Types
 // =============================================================================
 
@@ -315,6 +420,9 @@ export interface MosaicApi {
   downloadShard(shardId: string): Promise<Uint8Array>;
   createShardUpload(request: CreateShardRequest): Promise<ShardCreated>;
 
+  // Album Expiration
+  updateAlbumExpiration(albumId: string, request: UpdateExpirationRequest): Promise<Album>;
+
   // Share Links
   listShareLinks(albumId: string): Promise<ShareLinkResponse[]>;
   listShareLinksWithSecrets(albumId: string): Promise<ShareLinkWithSecretResponse[]>;
@@ -324,10 +432,37 @@ export interface MosaicApi {
     linkId: string,
     request: AddShareLinkEpochKeysRequest
   ): Promise<{ added: number; updated: number }>;
+  updateShareLinkExpiration(
+    albumId: string,
+    linkId: string,
+    request: UpdateLinkExpirationRequest
+  ): Promise<ShareLinkResponse>;
 
   // Anonymous Share Link Access (no auth required)
   getShareLinkInfo(linkIdBase64: string): Promise<LinkAccessResponse>;
   getShareLinkKeys(linkIdBase64: string): Promise<LinkEpochKeyResponse[]>;
   getShareLinkPhotos(linkIdBase64: string): Promise<ShareLinkPhotoResponse[]>;
   getShareLinkShard(linkIdBase64: string, shardId: string): Promise<ArrayBuffer>;
+
+  // Admin - Settings
+  getQuotaDefaults(): Promise<QuotaDefaults>;
+  updateQuotaDefaults(request: QuotaDefaults): Promise<QuotaDefaults>;
+
+  // Admin - Users
+  listUsers(): Promise<AdminUserResponse[]>;
+  getUserQuota(userId: string): Promise<AdminUserQuota>;
+  updateUserQuota(userId: string, request: UpdateUserQuotaRequest): Promise<AdminUserQuota>;
+  resetUserQuota(userId: string): Promise<AdminUserQuota>;
+  promoteToAdmin(userId: string): Promise<void>;
+  demoteFromAdmin(userId: string): Promise<void>;
+
+  // Admin - Albums
+  listAllAlbums(): Promise<AdminAlbumResponse[]>;
+  getAlbumLimits(albumId: string): Promise<AdminAlbumLimits>;
+  updateAlbumLimits(albumId: string, request: UpdateAlbumLimitsRequest): Promise<AdminAlbumLimits>;
+  resetAlbumLimits(albumId: string): Promise<AdminAlbumLimits>;
+
+  // Admin - Stats
+  getStats(): Promise<AdminStatsResponse>;
+  getNearLimits(): Promise<NearLimitsResponse>;
 }

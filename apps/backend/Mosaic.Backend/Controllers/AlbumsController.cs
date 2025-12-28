@@ -234,6 +234,21 @@ public class AlbumsController : ControllerBase
                 SignPubkey = request.InitialEpochKey.SignPubkey
             });
 
+            // Create album limits tracking
+            _db.AlbumLimits.Add(new AlbumLimits
+            {
+                AlbumId = album.Id,
+                CurrentPhotoCount = 0,
+                CurrentSizeBytes = 0
+            });
+
+            // Update user's album count
+            if (quota != null)
+            {
+                quota.CurrentAlbumCount++;
+                quota.UpdatedAt = DateTime.UtcNow;
+            }
+
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 

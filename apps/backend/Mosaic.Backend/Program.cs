@@ -25,6 +25,8 @@ builder.Services.AddDbContext<MosaicDbContext>(options =>
 
 // Services
 builder.Services.AddScoped<IStorageService, LocalStorageService>();
+builder.Services.AddScoped<IQuotaSettingsService, QuotaSettingsService>();
+builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
 
 // Controllers
@@ -53,6 +55,9 @@ else
     app.Logger.LogInformation("Using ProxyAuth mode - trusting Remote-User header from proxy");
     app.UseMiddleware<TrustedProxyMiddleware>();
 }
+
+// Admin auth must come after regular auth
+app.UseAdminAuth();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
