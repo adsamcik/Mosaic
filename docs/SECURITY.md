@@ -202,6 +202,170 @@ Multi-device scenarios use Last-Writer-Wins:
 - **No persistent sessions:** Password required on each login
 - **Persistent storage:** OPFS with encrypted SQLite database
 
+## Share Link Security
+
+Share links enable album owners to grant anonymous access to album content without requiring recipients to have accounts. The cryptographic model ensures zero-knowledge properties are maintained.
+
+### Link Secret Generation
+
+When creating a share link, the client generates a **32-byte random secret**:
+
+```typescript
+const linkSecret = sodium.randombytes_buf(32);
+```
+
+- Generated entirely client-side using CSPRNG
+- Never sent to or stored on server in plaintext
+- Forms the root of all link-specific key derivation
+
+### Key Derivation
+
+Link-specific keys are derived using BLAKE2b with domain separation (HKDF-style):
+
+```
+linkSecret (32 bytes)
+    │
+    ├── linkId (16 bytes)
+    │   └─ BLAKE2b(linkSecret, context="mosaic:link:id:v1", outlen=16)
+    │   └─ Sent to server for lookup
+    │
+    └── wrappingKey (32 bytes)
+        └─ BLAKE2b(linkSecret, context="mosaic:link:wrap:v1", outlen=32)
+        └─ Never leaves client, used to wrap tier keys
+```
+
+**Domain separation** ensures that even with the same `linkSecret`, the derived keys are cryptographically independent. An attacker who obtains `linkId` cannot reverse-engineer `linkSecret` or derive `wrappingKey`.
+
+### URL Structure
+
+Share links use URL fragments to keep secrets out of server logs:
+
+```
+https://app/s/{base64url(linkId)}#k={base64url(linkSecret)}
+         │                        │
+         └─ Sent to server        └─ NEVER sent to server
+```
+
+- **Path component**: Contains only the derived `linkId`
+- **Fragment (`#k=...`)**: Contains the full `linkSecret`
+- Browsers do not transmit fragments to servers (RFC 3986)
+- Server only ever sees the `linkId`, never the `linkSecret`
+
+### Tier Key Wrapping
+
+Album epoch keys are organized into three access tiers:
+
+| Tier | Access Level | Keys Wrapped |
+|------|--------------|--------------|
+| 1 | Thumbnail only | thumbKey |
+| 2 | Preview | thumbKey + previewKey |
+| 3 | Full resolution | thumbKey + previewKey + originalKey |
+
+When creating a share link:
+
+1. Owner determines which tier keys to include based on `accessTier`
+2. Each tier key is encrypted with `wrappingKey` using XChaCha20-Poly1305
+3. Wrapped keys are stored on server alongside the `linkId`
+
+```typescript
+// Owner wraps tier keys for the share link
+const wrappedThumbKey = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+  thumbKey,
+  null, // no AAD
+  freshNonce,
+  wrappingKey
+);
+```
+
+Only someone with the original `linkSecret` can derive `wrappingKey` and unwrap the tier keys.
+
+### Owner Secret Storage
+
+To support epoch rotation, owners must be able to recover `linkSecret` for active links:
+
+```
+ownerEncryptedSecret = XChaCha20-Poly1305(accountKey, linkSecret)
+```
+
+- Stored on server alongside the share link
+- Encrypted with owner's L2 account key
+- Only the album owner can decrypt it
+- Used during epoch rotation to re-wrap new epoch keys
+
+### Epoch Rotation for Share Links
+
+When an album's epoch rotates (e.g., member removal), share links must be updated:
+
+```
+Owner                                    Server
+  │                                        │
+  │  1. Fetch active share links           │
+  │◀───────────────────────────────────────│
+  │                                        │
+  │  2. For each link:                     │
+  │     a. Decrypt ownerEncryptedSecret    │
+  │        with accountKey                 │
+  │     b. Derive wrappingKey from secret  │
+  │     c. Wrap NEW epoch tier keys        │
+  │                                        │
+  │  3. Upload new wrapped keys            │
+  │───────────────────────────────────────▶│
+```
+
+This ensures:
+- Share links continue to work after epoch rotation
+- New epoch keys are protected with the same `wrappingKey`
+- Anonymous users experience no disruption
+
+### Link Revocation
+
+Share links can be revoked by the album owner:
+
+- **Server-side enforcement**: `isRevoked` flag set on the link record
+- **Immediate effect**: Server rejects all requests for revoked links
+- **No key distribution**: Wrapped keys remain stored but inaccessible
+- **Audit trail**: Revocation timestamp preserved for compliance
+
+```typescript
+// Server rejects access to revoked links
+if (shareLink.isRevoked) {
+  return Forbid("Share link has been revoked");
+}
+```
+
+### Access Controls
+
+Multiple server-enforced controls limit share link access:
+
+| Control | Enforcement | Description |
+|---------|-------------|-------------|
+| `maxUses` | Server counter | Rejects after N successful accesses |
+| `expiresAt` | Server timestamp | Rejects after expiry date/time |
+| `accessTier` | Cryptographic | Only tier-appropriate keys are wrapped |
+| `isRevoked` | Server flag | Immediate access termination |
+
+**Cryptographic enforcement of `accessTier`**: The owner only wraps keys up to the specified tier. Even if an attacker bypassed server checks, they couldn't decrypt higher-tier content because those keys were never wrapped.
+
+### Security Properties
+
+| Property | Guarantee |
+|----------|-----------|
+| **Zero-knowledge** | Server never sees `linkSecret` or plaintext tier keys |
+| **Forward secrecy per link** | Each link has unique `wrappingKey`; compromise of one link doesn't affect others |
+| **Revocation** | Server-side enforcement; no need to contact or revoke keys from anonymous users |
+| **Tier isolation** | Access tier cryptographically enforced; higher-tier keys not available at lower tiers |
+| **Epoch independence** | Links survive epoch rotation via owner re-wrapping |
+
+### Threat Analysis
+
+| Threat | Mitigation |
+|--------|------------|
+| Server database breach | Attacker gets `linkId` and wrapped keys; cannot derive `wrappingKey` without `linkSecret` |
+| Link URL leaked | Revoke link immediately; server blocks further access |
+| Brute force `linkId` | 16 bytes = 2^128 possibilities; infeasible |
+| Man-in-the-middle | HTTPS required; fragment never transmitted |
+| Replay attack | `maxUses` counter prevents reuse beyond limit |
+
 ## Audit Checklist
 
 Before deployment, verify:
