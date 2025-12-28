@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { UploadProvider } from '../../contexts/UploadContext';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { useAlbumMembers } from '../../hooks/useMemberManagement';
@@ -8,6 +9,7 @@ import { MemberList } from '../Members/MemberList';
 import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
 import { DropZone } from '../Upload/DropZone';
 import { UploadButton } from '../Upload/UploadButton';
+import { UploadErrorToast } from '../Upload/UploadErrorToast';
 import { MapView } from './MapView';
 import { PhotoGrid } from './PhotoGrid';
 import { PhotoLightbox } from './PhotoLightbox';
@@ -130,22 +132,23 @@ export function Gallery({ albumId }: GalleryProps) {
   }
 
   return (
-    <div className="gallery" data-testid="gallery">
-      <div className="gallery-header">
-        <h2 className="gallery-title">Photos</h2>
+    <UploadProvider>
+      <div className="gallery" data-testid="gallery">
+        <div className="gallery-header">
+          <h2 className="gallery-title">Photos</h2>
         
-        {/* Search Input */}
-        <SearchInput
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder="Search photos by filename..."
-          className="gallery-search"
-        />
+          {/* Search Input */}
+          <SearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search photos by filename..."
+            className="gallery-search"
+          />
         
-        <div className="gallery-actions">
-          {/* View Mode Toggle */}
-          <div className="view-toggle" role="group" aria-label="View mode">
-            <button
+          <div className="gallery-actions">
+            {/* View Mode Toggle */}
+            <div className="view-toggle" role="group" aria-label="View mode">
+              <button
               className={`view-toggle-btn ${viewMode === 'grid' ? 'view-toggle-btn--active' : ''}`}
               onClick={() => setViewMode('grid')}
               aria-pressed={viewMode === 'grid'}
@@ -239,6 +242,10 @@ export function Gallery({ albumId }: GalleryProps) {
           preloadQueue={preloadQueue}
         />
       )}
-    </div>
+
+      {/* Upload Error Toast */}
+      <UploadErrorToast />
+      </div>
+    </UploadProvider>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { useUpload } from '../../hooks/useUpload';
+import { useUploadContext } from '../../contexts/UploadContext';
 
 interface DropZoneProps {
   albumId: string;
@@ -15,7 +15,7 @@ interface DropZoneProps {
 export function DropZone({ albumId, children, className = '' }: DropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef(0);
-  const { upload, isUploading, progress } = useUpload();
+  const { upload, isUploading, progress } = useUploadContext();
 
   // Handle drag enter
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -96,8 +96,8 @@ export function DropZone({ albumId, children, className = '' }: DropZoneProps) {
       )}
 
       {/* Upload progress indicator */}
-      {isUploading && progress > 0 && (
-        <div className="drop-zone-progress" data-testid="upload-progress">
+      {isUploading && (
+        <div className="drop-zone-progress" data-testid="upload-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
           <div className="drop-zone-progress-bar">
             <div
               className="drop-zone-progress-fill"
@@ -105,7 +105,7 @@ export function DropZone({ albumId, children, className = '' }: DropZoneProps) {
             />
           </div>
           <span className="drop-zone-progress-text">
-            Uploading... {Math.round(progress)}%
+            Uploading... {progress}%
           </span>
         </div>
       )}

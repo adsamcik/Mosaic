@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useUpload } from '../../hooks/useUpload';
+import { useUploadContext } from '../../contexts/UploadContext';
 
 interface UploadButtonProps {
   albumId: string;
@@ -11,7 +11,7 @@ interface UploadButtonProps {
  */
 export function UploadButton({ albumId }: UploadButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { upload, isUploading } = useUpload();
+  const { upload, isUploading, progress } = useUploadContext();
 
   const handleClick = () => {
     inputRef.current?.click();
@@ -41,14 +41,16 @@ export function UploadButton({ albumId }: UploadButtonProps) {
         multiple
         onChange={handleChange}
         style={{ display: 'none' }}
+        data-testid="upload-input"
       />
       <button
         onClick={handleClick}
         disabled={isUploading}
         className="upload-button"
         data-testid="upload-button"
+        aria-busy={isUploading}
       >
-        {isUploading ? 'Uploading...' : '📷 Upload'}
+        {isUploading ? `Uploading... ${progress}%` : '📷 Upload'}
       </button>
     </>
   );

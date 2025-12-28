@@ -6,13 +6,14 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DropZone } from '../src/components/Upload/DropZone';
 
-// Mock the useUpload hook
-vi.mock('../src/hooks/useUpload', () => ({
-  useUpload: () => ({
+// Mock the UploadContext
+vi.mock('../src/contexts/UploadContext', () => ({
+  useUploadContext: () => ({
     upload: vi.fn().mockResolvedValue(undefined),
     isUploading: false,
     progress: 0,
     error: null,
+    clearError: vi.fn(),
   }),
 }));
 
