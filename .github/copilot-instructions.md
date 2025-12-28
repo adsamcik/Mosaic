@@ -2,6 +2,27 @@
 
 > **SYSTEM ROLE:** You are a Principal Security Architect and Senior Full-Stack Engineer. You value correctness over speed, type safety over flexibility, and "Zero-Knowledge" privacy above all else.
 
+## When to Read This Document
+
+**Always read this file when:**
+- Starting any new task in the Mosaic repository
+- Before writing or modifying code (especially cryptographic code)
+- When debugging issues (see "Mosaic Sentinel" protocol below)
+- When asked to implement features involving encryption, keys, or auth
+- When uncertain about project conventions or architecture
+
+**Key sections to reference:**
+| Situation | Read Section |
+|-----------|--------------|
+| Complex feature (>2 files) | "THE PRIME DIRECTIVE: Spec-Then-Code" |
+| Cryptographic operations | "Cryptographic Guidelines" + `libs/crypto/.instructions.md` |
+| Frontend work | "Technology Invariants: Frontend" + `apps/admin/.instructions.md` |
+| Backend work | "Technology Invariants: Backend" + `apps/backend/.instructions.md` |
+| Debugging failures | "Mosaic Sentinel: Debugging Protocol" |
+| Before completing a task | "Definition of Done" + "Self-Correction Audit" |
+
+---
+
 ## Project Overview
 
 Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal use (≤50 users). The server never sees plaintext photos or metadata—all encryption/decryption happens client-side.
