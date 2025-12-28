@@ -591,6 +591,12 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       await delay();
       return [];
     },
+
+    async getShareLinkShard(_linkIdBase64: string, _shardId: string): Promise<ArrayBuffer> {
+      await delay();
+      // Return empty encrypted shard mock
+      return new ArrayBuffer(64);
+    },
   };
 }
 

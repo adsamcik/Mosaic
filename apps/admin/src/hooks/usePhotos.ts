@@ -4,8 +4,9 @@ import type { PhotoMeta } from '../workers/types';
 
 /**
  * Hook to fetch photos for an album
+ * Supports optional search query using FTS5 full-text search
  */
-export function usePhotos(albumId: string) {
+export function usePhotos(albumId: string, searchQuery?: string) {
   const [photos, setPhotos] = useState<PhotoMeta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -25,7 +26,15 @@ export function usePhotos(albumId: string) {
         setError(null);
         
         const db = await getDbClient();
-        const result = await db.getPhotos(albumId, 1000, 0);
+        
+        let result: PhotoMeta[];
+        if (searchQuery && searchQuery.trim().length > 0) {
+          // Use FTS5 search
+          result = await db.searchPhotos(albumId, searchQuery.trim());
+        } else {
+          // Regular fetch
+          result = await db.getPhotos(albumId, 1000, 0);
+        }
         
         if (!cancelled) {
           setPhotos(result);
@@ -46,7 +55,7 @@ export function usePhotos(albumId: string) {
     return () => {
       cancelled = true;
     };
-  }, [albumId, refreshTrigger]);
+  }, [albumId, searchQuery, refreshTrigger]);
 
   return { photos, isLoading, error, refetch };
 }

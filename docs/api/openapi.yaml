@@ -757,6 +757,44 @@ paths:
         '410':
           description: Link expired or revoked
 
+  /s/{linkIdBase64}/shards/{shardId}:
+    get:
+      operationId: getShareLinkShard
+      summary: Download encrypted shard via share link (anonymous)
+      description: |
+        Downloads an encrypted shard blob via share link without authentication.
+        The shard must belong to a manifest in the linked album.
+      tags: [Anonymous Access]
+      security: []
+      parameters:
+        - name: linkIdBase64
+          in: path
+          required: true
+          schema:
+            type: string
+          description: URL-safe base64 encoded link ID
+        - name: shardId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Shard UUID
+      responses:
+        '200':
+          description: Encrypted shard blob
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Link expired or revoked
+
 components:
   # ===========================================================================
   # Security Schemes

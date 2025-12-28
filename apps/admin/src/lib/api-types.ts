@@ -325,4 +325,5 @@ export interface MosaicApi {
   getShareLinkInfo(linkIdBase64: string): Promise<LinkAccessResponse>;
   getShareLinkKeys(linkIdBase64: string): Promise<LinkEpochKeyResponse[]>;
   getShareLinkPhotos(linkIdBase64: string): Promise<ShareLinkPhotoResponse[]>;
+  getShareLinkShard(linkIdBase64: string, shardId: string): Promise<ArrayBuffer>;
 }

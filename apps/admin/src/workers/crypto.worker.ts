@@ -337,6 +337,31 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   /**
+   * Encrypt manifest metadata for upload.
+   * Uses the same envelope format as shards with epoch and shard index 0.
+   */
+  async encryptManifest(
+    meta: PhotoMeta,
+    readKey: Uint8Array,
+    epochId: number
+  ): Promise<{ ciphertext: Uint8Array; sha256: string }> {
+    await this.ensureSodiumReady();
+
+    // Serialize metadata to JSON bytes
+    const encoder = new TextEncoder();
+    const plaintext = encoder.encode(JSON.stringify(meta));
+
+    // Encrypt using shard envelope format (epoch 0 and shard 0 are manifest convention)
+    // Note: We use the actual epochId but shardIndex 0 for manifest metadata
+    const encrypted = await cryptoEncryptShard(plaintext, readKey, epochId, 0);
+
+    return {
+      ciphertext: encrypted.ciphertext,
+      sha256: encrypted.sha256,
+    };
+  }
+
+  /**
    * Sign manifest data for upload.
    */
   async signManifest(

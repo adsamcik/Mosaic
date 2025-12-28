@@ -308,6 +308,17 @@ export function createApiClient(): MosaicApi {
     async getShareLinkPhotos(linkIdBase64: string): Promise<ShareLinkPhotoResponse[]> {
       return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}/photos`);
     },
+
+    async getShareLinkShard(linkIdBase64: string, shardId: string): Promise<ArrayBuffer> {
+      const response = await fetch(
+        `${API_BASE}/s/${encodeURIComponent(linkIdBase64)}/shards/${encodeURIComponent(shardId)}`
+      );
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`API error ${response.status}: ${text}`);
+      }
+      return response.arrayBuffer();
+    },
   };
 }
 

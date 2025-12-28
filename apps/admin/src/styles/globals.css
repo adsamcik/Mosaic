@@ -320,10 +320,76 @@ body {
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--spacing-md);
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
 }
 
 .gallery-title {
   font-size: 1.5rem;
+}
+
+/* Search Input */
+.gallery-search {
+  flex: 1;
+  max-width: 300px;
+  min-width: 150px;
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input-wrapper .search-icon {
+  position: absolute;
+  left: var(--spacing-sm);
+  pointer-events: none;
+  opacity: 0.6;
+  font-size: 0.875rem;
+}
+
+.search-input {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  padding-left: calc(var(--spacing-sm) + 1.5em);
+  padding-right: calc(var(--spacing-sm) + 1.5em);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.search-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: var(--spacing-sm);
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+}
+
+.search-clear-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+/* Webkit browsers - remove default clear button */
+.search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
 }
 
 .upload-button {
@@ -343,6 +409,85 @@ body {
 .upload-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Drop Zone */
+.drop-zone {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.drop-zone--active {
+  outline: 2px dashed var(--color-primary);
+  outline-offset: -2px;
+}
+
+.drop-zone-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 15, 15, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.drop-zone-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xl);
+  border: 2px dashed var(--color-primary);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.drop-zone-icon {
+  font-size: 3rem;
+}
+
+.drop-zone-text {
+  font-size: 1.25rem;
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.drop-zone-progress {
+  position: fixed;
+  bottom: var(--spacing-lg);
+  right: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  min-width: 200px;
+  z-index: 1000;
+}
+
+.drop-zone-progress-bar {
+  height: 4px;
+  background: var(--color-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.drop-zone-progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+}
+
+.drop-zone-progress-text {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
 }
 
 /* Photo Grid */

@@ -605,7 +605,7 @@ public class SecurityTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, member, "viewer", owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -650,7 +650,7 @@ public class SecurityTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album, isRevoked: true);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -684,7 +684,7 @@ public class SecurityTests
             album, 
             expiresAt: DateTimeOffset.UtcNow.AddDays(-1)); // Expired
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -718,7 +718,7 @@ public class SecurityTests
             maxUses: 5,
             useCount: 5); // Already at max
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {

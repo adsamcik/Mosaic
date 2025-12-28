@@ -321,6 +321,8 @@ export enum CryptoErrorCode {
   CONTEXT_MISMATCH = 'CONTEXT_MISMATCH',
   /** Ed25519 to X25519 conversion failed */
   KEY_CONVERSION_FAILED = 'KEY_CONVERSION_FAILED',
+  /** Invalid input (wrong size or format) */
+  INVALID_INPUT = 'INVALID_INPUT',
 }
 
 // =============================================================================

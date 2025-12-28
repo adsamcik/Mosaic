@@ -6,10 +6,12 @@ import { usePhotos } from '../../hooks/usePhotos';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
 import { MemberList } from '../Members/MemberList';
 import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
+import { DropZone } from '../Upload/DropZone';
 import { UploadButton } from '../Upload/UploadButton';
 import { MapView } from './MapView';
 import { PhotoGrid } from './PhotoGrid';
 import { PhotoLightbox } from './PhotoLightbox';
+import { SearchInput } from './SearchInput';
 
 /** View mode for the gallery */
 export type GalleryViewMode = 'grid' | 'map';
@@ -44,8 +46,9 @@ export function Gallery({ albumId }: GalleryProps) {
   const [showMembers, setShowMembers] = useState(false);
   const [showShareLinks, setShowShareLinks] = useState(false);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('grid');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const { photos, isLoading, error } = usePhotos(albumId);
+  const { photos, isLoading, error } = usePhotos(albumId, searchQuery);
   const { epochKeys } = useAlbumEpochKeys(albumId);
   const { isOwner } = useAlbumMembers(albumId);
   const lightbox = useLightbox(photos);
@@ -130,6 +133,15 @@ export function Gallery({ albumId }: GalleryProps) {
     <div className="gallery" data-testid="gallery">
       <div className="gallery-header">
         <h2 className="gallery-title">Photos</h2>
+        
+        {/* Search Input */}
+        <SearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search photos by filename..."
+          className="gallery-search"
+        />
+        
         <div className="gallery-actions">
           {/* View Mode Toggle */}
           <div className="view-toggle" role="group" aria-label="View mode">
@@ -182,8 +194,8 @@ export function Gallery({ albumId }: GalleryProps) {
         </div>
       </div>
 
-      {/* Gallery Content */}
-      <div className="gallery-content">
+      {/* Gallery Content - Wrapped in DropZone for drag-and-drop upload */}
+      <DropZone albumId={albumId} className="gallery-content">
         {viewMode === 'grid' ? (
           <PhotoGrid albumId={albumId} />
         ) : (
@@ -195,7 +207,7 @@ export function Gallery({ albumId }: GalleryProps) {
             onClusterClick={handleMapClusterClick}
           />
         )}
-      </div>
+      </DropZone>
 
       {/* Member List Modal */}
       <MemberList

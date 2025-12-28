@@ -55,7 +55,7 @@ public class ShareLinksControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -93,7 +93,7 @@ public class ShareLinksControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner, currentEpochId: 2);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -133,7 +133,7 @@ public class ShareLinksControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -166,7 +166,7 @@ public class ShareLinksControllerTests
 
         await builder.CreateUserAsync(OwnerAuthSub);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -196,7 +196,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, other, "viewer", owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -224,7 +224,7 @@ public class ShareLinksControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -254,7 +254,7 @@ public class ShareLinksControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -283,7 +283,7 @@ public class ShareLinksControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -326,7 +326,7 @@ public class ShareLinksControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -356,7 +356,7 @@ public class ShareLinksControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -388,7 +388,7 @@ public class ShareLinksControllerTests
         var existingLinkId = TestDataBuilder.GenerateRandomBytes(16);
         await builder.CreateShareLinkAsync(album, linkId: existingLinkId);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -420,7 +420,7 @@ public class ShareLinksControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -451,7 +451,7 @@ public class ShareLinksControllerTests
         await builder.CreateShareLinkAsync(album, accessTier: 2);
         await builder.CreateShareLinkAsync(album, accessTier: 3);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -478,7 +478,7 @@ public class ShareLinksControllerTests
 
         await builder.CreateUserAsync(OwnerAuthSub);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -506,7 +506,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, other, "editor", owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -540,7 +540,7 @@ public class ShareLinksControllerTests
         var ownerSecret = TestDataBuilder.GenerateRandomBytes(40); // nonce + ciphertext
         var shareLink = await builder.CreateShareLinkAsync(album, ownerEncryptedSecret: ownerSecret);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -573,7 +573,7 @@ public class ShareLinksControllerTests
         var ownerSecret = TestDataBuilder.GenerateRandomBytes(40);
         await builder.CreateShareLinkAsync(album, isRevoked: true, ownerEncryptedSecret: ownerSecret);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -604,7 +604,7 @@ public class ShareLinksControllerTests
         var ownerSecret = TestDataBuilder.GenerateRandomBytes(40);
         await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-1), ownerEncryptedSecret: ownerSecret);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -635,7 +635,7 @@ public class ShareLinksControllerTests
         // Create a link without owner-encrypted secret
         await builder.CreateShareLinkAsync(album);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -662,7 +662,7 @@ public class ShareLinksControllerTests
 
         await builder.CreateUserAsync(OwnerAuthSub);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -689,7 +689,7 @@ public class ShareLinksControllerTests
         var other = await builder.CreateUserAsync(OtherAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -720,7 +720,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -749,7 +749,7 @@ public class ShareLinksControllerTests
 
         await builder.CreateUserAsync(OwnerAuthSub);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -777,7 +777,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -808,7 +808,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -847,7 +847,7 @@ public class ShareLinksControllerTests
         var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
         await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -885,7 +885,7 @@ public class ShareLinksControllerTests
 
         await builder.CreateUserAsync(OwnerAuthSub);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -921,7 +921,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -956,7 +956,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album, isRevoked: true);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -992,7 +992,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1028,7 +1028,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1064,7 +1064,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1103,7 +1103,7 @@ public class ShareLinksControllerTests
         await builder.CreateLinkEpochKeyAsync(shareLink, 1, 2);
         await builder.CreateLinkEpochKeyAsync(shareLink, 1, 1);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1136,7 +1136,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album, useCount: 5);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1161,7 +1161,7 @@ public class ShareLinksControllerTests
         using var db = TestDbContextFactory.Create();
         var config = TestConfiguration.Create();
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1185,7 +1185,7 @@ public class ShareLinksControllerTests
         using var db = TestDbContextFactory.Create();
         var config = TestConfiguration.Create();
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1212,7 +1212,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album, isRevoked: true);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1242,7 +1242,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-1));
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1272,7 +1272,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5, useCount: 5);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1313,7 +1313,7 @@ public class ShareLinksControllerTests
         await builder.CreateLinkEpochKeyAsync(shareLink, 2, 3);
         await builder.CreateLinkEpochKeyAsync(shareLink, 2, 2);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1341,7 +1341,7 @@ public class ShareLinksControllerTests
         using var db = TestDbContextFactory.Create();
         var config = TestConfiguration.Create();
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1370,7 +1370,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album, isRevoked: true);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1410,7 +1410,7 @@ public class ShareLinksControllerTests
 
         var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1448,7 +1448,7 @@ public class ShareLinksControllerTests
 
         var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1474,7 +1474,7 @@ public class ShareLinksControllerTests
         using var db = TestDbContextFactory.Create();
         var config = TestConfiguration.Create();
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1503,7 +1503,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-1));
 
-        var controller = new ShareLinksController(db, config)
+        var controller = new ShareLinksController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -1519,6 +1519,353 @@ public class ShareLinksControllerTests
         // Assert
         var objectResult = Assert.IsType<ObjectResult>(result);
         Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    #endregion
+
+    #region GET /api/s/{linkId}/shards/{shardId}
+
+    [Fact]
+    public async Task DownloadShard_ReturnsShard_WhenLinkIsValidAndShardBelongsToAlbum()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        storage.AddFile(shard.StorageKey, new byte[] { 0xDE, 0xAD, 0xBE, 0xEF });
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
+
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+
+        var controller = new ShareLinksController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.DownloadShard(linkIdBase64, shard.Id);
+
+        // Assert
+        var fileResult = Assert.IsType<FileStreamResult>(result);
+        Assert.Equal("application/octet-stream", fileResult.ContentType);
+        
+        using var ms = new MemoryStream();
+        await fileResult.FileStream.CopyToAsync(ms);
+        var content = ms.ToArray();
+        Assert.Equal(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }, content);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsNotFound_WhenLinkDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+
+        var controller = new ShareLinksController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(TestDataBuilder.GenerateRandomBytes(16));
+
+        // Act
+        var result = await controller.DownloadShard(linkIdBase64, Guid.NewGuid());
+
+        // Assert
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsNotFound_WhenShardDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+
+        var controller = new ShareLinksController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.DownloadShard(linkIdBase64, Guid.NewGuid());
+
+        // Assert
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        Assert.NotNull(notFound.Value);
+        var json = System.Text.Json.JsonSerializer.Serialize(notFound.Value);
+        Assert.Contains("Shard not found", json);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsNotFound_WhenShardIsNotActive()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.TRASHED);
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
+
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+
+        var controller = new ShareLinksController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.DownloadShard(linkIdBase64, shard.Id);
+
+        // Assert
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        Assert.NotNull(notFound.Value);
+        var json = System.Text.Json.JsonSerializer.Serialize(notFound.Value);
+        Assert.Contains("Shard not available", json);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsForbidden_WhenShardNotInLinkedAlbum()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album1 = await builder.CreateAlbumAsync(owner);
+        var album2 = await builder.CreateAlbumAsync(owner);
+        
+        // Shard belongs to album2
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        storage.AddFile(shard.StorageKey);
+        await builder.CreateManifestAsync(album2, new List<Data.Entities.Shard> { shard });
+
+        // Share link is for album1
+        var shareLink = await builder.CreateShareLinkAsync(album1, accessTier: 3);
+
+        var controller = new ShareLinksController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.DownloadShard(linkIdBase64, shard.Id);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsGone_WhenLinkIsRevoked()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
+
+        var shareLink = await builder.CreateShareLinkAsync(album, isRevoked: true);
+
+        var controller = new ShareLinksController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.DownloadShard(linkIdBase64, shard.Id);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsGone_WhenLinkIsExpired()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
+
+        var shareLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-1));
+
+        var controller = new ShareLinksController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.DownloadShard(linkIdBase64, shard.Id);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsGone_WhenLinkExceedsMaxUses()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
+
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5, useCount: 5);
+
+        var controller = new ShareLinksController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.DownloadShard(linkIdBase64, shard.Id);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsForbidden_WhenShardInDeletedManifest()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        storage.AddFile(shard.StorageKey);
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard }, isDeleted: true);
+
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+
+        var controller = new ShareLinksController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.DownloadShard(linkIdBase64, shard.Id);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsBadRequest_WhenLinkIdInvalid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+
+        var controller = new ShareLinksController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        // Act
+        var result = await controller.DownloadShard("!!!invalid!!!", Guid.NewGuid());
+
+        // Assert
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.NotNull(badRequest.Value);
+        var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
+        Assert.Contains("Invalid link ID format", json);
     }
 
     #endregion

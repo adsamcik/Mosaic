@@ -1,6 +1,10 @@
 import { useCallback, useState } from 'react';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
-import { uploadQueue } from '../lib/upload-queue';
+import { type EpochKeyBundle } from '../lib/epoch-key-store';
+import { uploadQueue, type UploadTask } from '../lib/upload-queue';
+import { getCryptoClient } from '../lib/crypto-client';
+import { getApi, toBase64 } from '../lib/api';
+import type { PhotoMeta } from '../workers/types';
 
 /** Error thrown when upload fails */
 export class UploadError extends Error {
@@ -22,6 +26,70 @@ export enum UploadErrorCode {
   QUEUE_NOT_INITIALIZED = 'QUEUE_NOT_INITIALIZED',
   /** Generic upload error */
   UPLOAD_FAILED = 'UPLOAD_FAILED',
+  /** Failed to create manifest after upload */
+  MANIFEST_FAILED = 'MANIFEST_FAILED',
+}
+
+/**
+ * Create a manifest after all shards are uploaded.
+ * This ties the uploaded shards together and makes the photo visible.
+ */
+async function createManifestForUpload(
+  task: UploadTask,
+  shardIds: string[],
+  epochKey: EpochKeyBundle
+): Promise<void> {
+  const crypto = await getCryptoClient();
+  const api = getApi();
+
+  // Build photo metadata
+  const now = new Date().toISOString();
+  const photoMeta: PhotoMeta = {
+    id: globalThis.crypto.randomUUID(),
+    assetId: task.id,
+    albumId: task.albumId,
+    filename: task.file.name,
+    mimeType: task.file.type || 'application/octet-stream',
+    width: 0, // Will be updated when we have image dimensions
+    height: 0,
+    tags: [],
+    createdAt: now,
+    updatedAt: now,
+    shardIds: shardIds,
+    epochId: task.epochId,
+    // Only set optional fields if they have values
+    ...(task.thumbnailBase64 && { thumbnail: task.thumbnailBase64 }),
+    ...(task.thumbWidth && { thumbWidth: task.thumbWidth }),
+    ...(task.thumbHeight && { thumbHeight: task.thumbHeight }),
+  };
+
+  // Try to get image dimensions if we have them from thumbnail generation
+  // For now, we'll set defaults since dimensions aren't tracked in the task
+
+  // Encrypt the manifest metadata
+  const encrypted = await crypto.encryptManifest(
+    photoMeta,
+    epochKey.epochSeed,
+    task.epochId
+  );
+
+  // Sign the encrypted manifest with the epoch signing key
+  const signature = await crypto.signManifest(
+    encrypted.ciphertext,
+    epochKey.signKeypair.secretKey
+  );
+
+  // Get signer public key
+  const signerPubkey = epochKey.signKeypair.publicKey;
+
+  // Create manifest via API
+  await api.createManifest({
+    albumId: task.albumId,
+    encryptedMeta: toBase64(encrypted.ciphertext),
+    signature: toBase64(signature),
+    signerPubkey: toBase64(signerPubkey),
+    shardIds: shardIds,
+  });
 }
 
 /**
@@ -42,7 +110,7 @@ export function useUpload() {
       await uploadQueue.init();
 
       // Get the current epoch key for this album
-      let epochKey;
+      let epochKey: EpochKeyBundle;
       try {
         epochKey = await getCurrentOrFetchEpochKey(albumId);
       } catch (err) {
@@ -61,9 +129,23 @@ export function useUpload() {
         setProgress(task.progress);
       };
 
-      uploadQueue.onComplete = () => {
-        setIsUploading(false);
-        setProgress(1);
+      // Create manifest when upload completes
+      uploadQueue.onComplete = async (task, shardIds) => {
+        try {
+          await createManifestForUpload(task, shardIds, epochKey);
+          setIsUploading(false);
+          setProgress(1);
+        } catch (manifestErr) {
+          console.error('Failed to create manifest:', manifestErr);
+          setError(
+            new UploadError(
+              `Upload succeeded but manifest creation failed: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`,
+              UploadErrorCode.MANIFEST_FAILED,
+              manifestErr instanceof Error ? manifestErr : undefined
+            )
+          );
+          setIsUploading(false);
+        }
       };
 
       uploadQueue.onError = (_, uploadErr) => {

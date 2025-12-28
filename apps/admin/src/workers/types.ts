@@ -222,6 +222,19 @@ export interface CryptoWorkerApi {
   ): Promise<{ epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }>;
 
   /**
+   * Encrypt manifest metadata for upload
+   * @param meta - Photo metadata to encrypt
+   * @param readKey - Epoch read key (32 bytes)
+   * @param epochId - Epoch ID for the manifest
+   * @returns Encrypted manifest metadata (envelope format)
+   */
+  encryptManifest(
+    meta: PhotoMeta,
+    readKey: Uint8Array,
+    epochId: number
+  ): Promise<{ ciphertext: Uint8Array; sha256: string }>;
+
+  /**
    * Sign manifest data for upload
    * @param manifestData - Manifest bytes to sign
    * @param signSecretKey - Epoch sign secret key (64 bytes)

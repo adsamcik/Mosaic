@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -126,11 +127,13 @@ public class ShareLinksController : ControllerBase
 {
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
+    private readonly IStorageService _storage;
 
-    public ShareLinksController(MosaicDbContext db, IConfiguration config)
+    public ShareLinksController(MosaicDbContext db, IConfiguration config, IStorageService storage)
     {
         _db = db;
         _config = config;
+        _storage = storage;
     }
 
     private async Task<User> GetOrCreateUser()
@@ -655,6 +658,58 @@ public class ShareLinksController : ControllerBase
             .ToListAsync();
 
         return Ok(manifests);
+    }
+
+    /// <summary>
+    /// Download a shard via share link (anonymous)
+    /// </summary>
+    [HttpGet("api/s/{linkId}/shards/{shardId}")]
+    public async Task<IActionResult> DownloadShard(string linkId, Guid shardId)
+    {
+        var linkIdBytes = FromBase64Url(linkId);
+        if (linkIdBytes == null)
+        {
+            return BadRequest(new { error = "Invalid link ID format" });
+        }
+
+        var shareLink = await _db.ShareLinks
+            .FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
+
+        if (shareLink == null)
+        {
+            return NotFound(new { error = "Link not found" });
+        }
+
+        // Validate link is still valid (but don't increment use count for shard download)
+        var validationResult = ValidateShareLink(shareLink);
+        if (validationResult != null)
+        {
+            return validationResult;
+        }
+
+        // Get the shard
+        var shard = await _db.Shards.FindAsync(shardId);
+        if (shard == null)
+        {
+            return NotFound(new { error = "Shard not found" });
+        }
+        if (shard.Status != ShardStatus.ACTIVE)
+        {
+            return NotFound(new { error = "Shard not available" });
+        }
+
+        // Verify the shard belongs to the linked album
+        var shardBelongsToAlbum = await _db.ManifestShards
+            .Where(ms => ms.ShardId == shardId)
+            .AnyAsync(ms => ms.Manifest.AlbumId == shareLink.AlbumId && !ms.Manifest.IsDeleted);
+
+        if (!shardBelongsToAlbum)
+        {
+            return Forbid();
+        }
+
+        var stream = await _storage.OpenReadAsync(shard.StorageKey);
+        return File(stream, "application/octet-stream");
     }
 
     /// <summary>
