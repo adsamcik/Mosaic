@@ -38,6 +38,8 @@ tags:
     description: Shareable album links (authenticated)
   - name: Anonymous Access
     description: Anonymous access via share links (no auth required)
+  - name: Admin
+    description: Administrative endpoints (requires admin privileges)
 
 paths:
   # ===========================================================================
@@ -795,6 +797,254 @@ paths:
         '410':
           description: Link expired or revoked
 
+  # ===========================================================================
+  # Admin - Settings
+  # ===========================================================================
+  /admin/settings/quota:
+    get:
+      operationId: getQuotaDefaults
+      summary: Get system-wide quota defaults
+      tags: [Admin]
+      responses:
+        '200':
+          description: Current quota defaults
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotaDefaults'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    put:
+      operationId: setQuotaDefaults
+      summary: Update system-wide quota defaults
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuotaDefaults'
+      responses:
+        '200':
+          description: Quota defaults updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotaDefaults'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ===========================================================================
+  # Admin - Users
+  # ===========================================================================
+  /admin/users:
+    get:
+      operationId: adminListUsers
+      summary: List all users with quota info
+      tags: [Admin]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserWithQuota'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/users/{userId}/quota:
+    get:
+      operationId: adminGetUserQuota
+      summary: Get user quota details
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: User quota details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserQuotaDetails'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      operationId: adminSetUserQuota
+      summary: Set custom quota for a user
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserQuotaRequest'
+      responses:
+        '200':
+          description: User quota updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserQuotaDetails'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: adminResetUserQuota
+      summary: Reset user quota to system defaults
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: User quota reset to defaults
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/users/{userId}/promote:
+    post:
+      operationId: adminPromoteUser
+      summary: Promote user to admin
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: User promoted to admin
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/users/{userId}/demote:
+    post:
+      operationId: adminDemoteUser
+      summary: Demote admin to regular user
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: User demoted
+        '400':
+          description: Cannot demote last admin
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Admin - Albums
+  # ===========================================================================
+  /admin/albums:
+    get:
+      operationId: adminListAlbums
+      summary: List all albums with limit info
+      tags: [Admin]
+      responses:
+        '200':
+          description: List of albums
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  albums:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AlbumWithLimits'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/albums/{albumId}/limits:
+    get:
+      operationId: adminGetAlbumLimits
+      summary: Get album limit details
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      responses:
+        '200':
+          description: Album limit details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumLimitsDetails'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      operationId: adminSetAlbumLimits
+      summary: Set custom limits for an album
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAlbumLimitsRequest'
+      responses:
+        '200':
+          description: Album limits updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumLimitsDetails'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: adminResetAlbumLimits
+      summary: Reset album limits to system defaults
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      responses:
+        '204':
+          description: Album limits reset to defaults
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Admin - Statistics
+  # ===========================================================================
+  /admin/stats:
+    get:
+      operationId: adminGetStats
+      summary: Get system-wide usage statistics
+      tags: [Admin]
+      responses:
+        '200':
+          description: System statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStats'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
 components:
   # ===========================================================================
   # Security Schemes
@@ -982,6 +1232,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+        encryptedName:
+          type: string
+          nullable: true
+          description: Base64-encoded encrypted album name (client-side encrypted with epoch read key)
 
     CreateAlbumRequest:
       type: object
@@ -991,6 +1245,9 @@ components:
         initialEpochKey:
           $ref: '#/components/schemas/CreateEpochKeyRequest'
           description: Epoch key bundle for the owner
+        encryptedName:
+          type: string
+          description: Base64-encoded encrypted album name (optional)
 
     # -------------------------------------------------------------------------
     # Members
@@ -1493,3 +1750,209 @@ components:
           items:
             type: string
             format: uuid
+    # -------------------------------------------------------------------------
+    # Admin - Quota Settings
+    # -------------------------------------------------------------------------
+    QuotaDefaults:
+      type: object
+      required:
+        - maxStorageBytesPerUser
+        - maxAlbumsPerUser
+        - maxPhotosPerAlbum
+        - maxBytesPerAlbum
+      properties:
+        maxStorageBytesPerUser:
+          type: integer
+          format: int64
+          description: Default max storage bytes per user (e.g., 10737418240 = 10GB)
+        maxAlbumsPerUser:
+          type: integer
+          description: Default max albums a user can own
+        maxPhotosPerAlbum:
+          type: integer
+          description: Default max photos per album
+        maxBytesPerAlbum:
+          type: integer
+          format: int64
+          description: Default max size per album in bytes
+
+    UserWithQuota:
+      type: object
+      required:
+        - id
+        - authSub
+        - isAdmin
+        - createdAt
+        - quota
+      properties:
+        id:
+          type: string
+          format: uuid
+        authSub:
+          type: string
+        isAdmin:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        quota:
+          $ref: '#/components/schemas/UserQuotaDetails'
+
+    UserQuotaDetails:
+      type: object
+      required:
+        - maxStorageBytes
+        - usedStorageBytes
+        - maxAlbums
+        - currentAlbumCount
+        - isCustom
+      properties:
+        maxStorageBytes:
+          type: integer
+          format: int64
+        usedStorageBytes:
+          type: integer
+          format: int64
+        maxAlbums:
+          type: integer
+        currentAlbumCount:
+          type: integer
+        isCustom:
+          type: boolean
+          description: True if user has custom limits (not using system defaults)
+
+    UpdateUserQuotaRequest:
+      type: object
+      properties:
+        maxStorageBytes:
+          type: integer
+          format: int64
+          nullable: true
+          description: Custom max storage (null = use system default)
+        maxAlbums:
+          type: integer
+          nullable: true
+          description: Custom max albums (null = use system default)
+
+    AlbumWithLimits:
+      type: object
+      required:
+        - id
+        - ownerId
+        - ownerAuthSub
+        - createdAt
+        - limits
+      properties:
+        id:
+          type: string
+          format: uuid
+        ownerId:
+          type: string
+          format: uuid
+        ownerAuthSub:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        limits:
+          $ref: '#/components/schemas/AlbumLimitsDetails'
+
+    AlbumLimitsDetails:
+      type: object
+      required:
+        - maxPhotos
+        - currentPhotoCount
+        - maxSizeBytes
+        - currentSizeBytes
+        - isCustom
+      properties:
+        maxPhotos:
+          type: integer
+        currentPhotoCount:
+          type: integer
+        maxSizeBytes:
+          type: integer
+          format: int64
+        currentSizeBytes:
+          type: integer
+          format: int64
+        isCustom:
+          type: boolean
+          description: True if album has custom limits (not using system defaults)
+
+    UpdateAlbumLimitsRequest:
+      type: object
+      properties:
+        maxPhotos:
+          type: integer
+          nullable: true
+          description: Custom max photos (null = use system default)
+        maxSizeBytes:
+          type: integer
+          format: int64
+          nullable: true
+          description: Custom max size (null = use system default)
+
+    SystemStats:
+      type: object
+      required:
+        - totalUsers
+        - totalAlbums
+        - totalPhotos
+        - totalStorageBytes
+        - usersNearQuota
+        - albumsNearLimit
+      properties:
+        totalUsers:
+          type: integer
+        totalAlbums:
+          type: integer
+        totalPhotos:
+          type: integer
+        totalStorageBytes:
+          type: integer
+          format: int64
+        usersNearQuota:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserQuotaWarning'
+        albumsNearLimit:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlbumLimitWarning'
+
+    UserQuotaWarning:
+      type: object
+      required:
+        - userId
+        - authSub
+        - usagePercent
+      properties:
+        userId:
+          type: string
+          format: uuid
+        authSub:
+          type: string
+        usagePercent:
+          type: integer
+          description: Storage usage percentage (0-100)
+
+    AlbumLimitWarning:
+      type: object
+      required:
+        - albumId
+        - ownerAuthSub
+        - photoUsagePercent
+        - sizeUsagePercent
+      properties:
+        albumId:
+          type: string
+          format: uuid
+        ownerAuthSub:
+          type: string
+        photoUsagePercent:
+          type: integer
+          description: Photo count usage percentage (0-100)
+        sizeUsagePercent:
+          type: integer
+          description: Size usage percentage (0-100)
