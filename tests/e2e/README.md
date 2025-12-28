@@ -149,6 +149,62 @@ test('sharing', async ({ twoUserContext }) => {
 });
 ```
 
+## Parallel-Safe Test Framework (NEW)
+
+The E2E test suite now includes a parallel-safe framework for running tests reliably on a single backend instance.
+
+### Framework Features
+
+- **Complete Test Isolation**: Each test gets unique users and resources
+- **Automatic Cleanup**: Resources are cleaned up after each test
+- **Collision-Free IDs**: Test IDs include worker index, timestamp, and random suffix
+- **Enhanced Page Objects**: Full coverage of all UI components
+- **Wait Utilities**: Reliable, condition-based waits
+
+### New Fixtures
+
+#### `testContext`
+
+Parallel-safe test context with automatic cleanup:
+
+```typescript
+test('example', async ({ testContext }) => {
+  const user = await testContext.createAuthenticatedUser('alice');
+  const albumName = testContext.generateAlbumName('My Album');
+  
+  await loginUser(user, TEST_PASSWORD);
+  // ... test code
+  
+  // cleanup() is called automatically after test
+});
+```
+
+#### `collaboration`
+
+Two-user context for sharing tests:
+
+```typescript
+test('sharing', async ({ collaboration }) => {
+  const { alice, bob, trackAlbum, generateAlbumName } = collaboration;
+  
+  await loginUser(alice, TEST_PASSWORD);
+  await loginUser(bob, TEST_PASSWORD);
+  
+  // Both users have isolated contexts
+});
+```
+
+### Enhanced Helpers
+
+```typescript
+import {
+  loginUser,           // Full login flow
+  createAlbumViaUI,    // Create album through UI
+  uploadPhoto,         // Upload photo to current album
+  navigateToAlbum,     // Navigate to album by name or index
+} from '../fixtures-enhanced';
+```
+
 ## Page Objects
 
 ### `LoginPage`
