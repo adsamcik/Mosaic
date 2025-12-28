@@ -59,12 +59,50 @@ function Write-Step { param([string]$msg) Write-Host "  ▶ $msg" -ForegroundCol
 function Write-Done { param([string]$msg) Write-Host "  ✅ $msg" -ForegroundColor Green }
 function Write-Err { param([string]$msg) Write-Host "  ❌ $msg" -ForegroundColor Red }
 function Write-Info { param([string]$msg) Write-Host "  ℹ $msg" -ForegroundColor Gray }
+function Write-Warn { param([string]$msg) Write-Host "  ⚠️ $msg" -ForegroundColor Yellow }
 
 # Configuration
 $DbConnectionString = "Host=localhost;Database=mosaic;Username=mosaic;Password=dev"
 $BackendPort = 5000
 $FrontendPort = 5173
 $DbPort = 5432
+
+# Check if Docker is available and running
+function Test-DockerAvailable {
+    try {
+        $null = docker info 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            return $false
+        }
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# Commands that require Docker
+$DockerCommands = @("up", "down", "db", "build", "rebuild", "logs", "status", "reset")
+
+# Ensure Docker is running for Docker-dependent commands
+if ($Command -in $DockerCommands) {
+    if (-not (Test-DockerAvailable)) {
+        Write-Host ""
+        Write-Err "Docker is not running!"
+        Write-Host ""
+        Write-Host "Please start Docker Desktop:" -ForegroundColor White
+        Write-Host "  1. Open Docker Desktop from Start Menu" -ForegroundColor Gray
+        Write-Host "  2. Wait for it to fully start (whale icon stops animating)" -ForegroundColor Gray
+        Write-Host "  3. Run this command again" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "If Docker Desktop is not installed:" -ForegroundColor White
+        Write-Host "  Download from: https://www.docker.com/products/docker-desktop/" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "Alternatively, run backend/frontend without Docker:" -ForegroundColor White
+        Write-Host "  You'll need a local PostgreSQL instance." -ForegroundColor Gray
+        Write-Host ""
+        exit 1
+    }
+}
 
 Push-Location $ProjectRoot
 

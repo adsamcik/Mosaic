@@ -35,6 +35,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
 GRAY='\033[0;90m'
+WHITE='\033[1;37m'
 NC='\033[0m' # No Color
 
 title() { echo -e "\n${CYAN}$1${NC}"; }
@@ -42,6 +43,33 @@ step() { echo -e "  ${YELLOW}▶${NC} $1"; }
 done_msg() { echo -e "  ${GREEN}✅${NC} $1"; }
 err() { echo -e "  ${RED}❌${NC} $1"; }
 info() { echo -e "  ${GRAY}ℹ${NC} $1"; }
+warn() { echo -e "  ${YELLOW}⚠️${NC} $1"; }
+
+# Check if Docker is available and running
+check_docker() {
+    if ! docker info > /dev/null 2>&1; then
+        echo ""
+        err "Docker is not running!"
+        echo ""
+        echo -e "${WHITE}Please start Docker:${NC}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo -e "  ${GRAY}1. Open Docker Desktop from Applications${NC}"
+            echo -e "  ${GRAY}2. Wait for it to fully start (whale icon stops animating)${NC}"
+        else
+            echo -e "  ${GRAY}1. Run: sudo systemctl start docker${NC}"
+            echo -e "  ${GRAY}2. Or start Docker Desktop if installed${NC}"
+        fi
+        echo -e "  ${GRAY}3. Run this command again${NC}"
+        echo ""
+        echo -e "${WHITE}If Docker is not installed:${NC}"
+        echo -e "  ${GRAY}https://docs.docker.com/get-docker/${NC}"
+        echo ""
+        exit 1
+    fi
+}
+
+# Commands that require Docker
+DOCKER_COMMANDS="up down db build rebuild logs status reset"
 
 cd "$PROJECT_ROOT"
 
@@ -211,6 +239,13 @@ EOF
 # Parse command
 COMMAND="${1:-help}"
 shift || true
+
+# Check Docker for commands that need it
+case "$COMMAND" in
+    up|down|db|build|rebuild|logs|status|reset)
+        check_docker
+        ;;
+esac
 
 case "$COMMAND" in
     up)

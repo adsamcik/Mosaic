@@ -46,8 +46,36 @@ print_step() { echo -e "  ${YELLOW}▶ $1${NC}"; }
 print_done() { echo -e "  ${GREEN}✅ $1${NC}"; }
 print_err() { echo -e "  ${RED}❌ $1${NC}"; }
 
+# Check if Docker is available and running
+check_docker() {
+    if ! docker info > /dev/null 2>&1; then
+        echo ""
+        print_err "Docker is not running!"
+        echo ""
+        echo -e "${WHITE}Please start Docker:${NC}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo -e "  ${GRAY}1. Open Docker Desktop from Applications${NC}"
+            echo -e "  ${GRAY}2. Wait for it to fully start (whale icon stops animating)${NC}"
+        else
+            echo -e "  ${GRAY}1. Run: sudo systemctl start docker${NC}"
+            echo -e "  ${GRAY}2. Or start Docker Desktop if installed${NC}"
+        fi
+        echo -e "  ${GRAY}3. Run this command again${NC}"
+        echo ""
+        echo -e "${WHITE}If Docker is not installed:${NC}"
+        echo -e "  ${GRAY}https://docs.docker.com/get-docker/${NC}"
+        echo ""
+        exit 1
+    fi
+}
+
 COMMAND="${1:-help}"
 shift || true
+
+# Check Docker for all commands except help
+if [ "$COMMAND" != "help" ]; then
+    check_docker
+fi
 
 case "$COMMAND" in
     start)
