@@ -134,29 +134,65 @@ docker compose -f docker-compose.dev.yml --profile tools up -d
 
 - Node.js 20+
 - .NET 10 SDK
-- PostgreSQL 16+ (or use Docker)
-- pnpm (recommended)
+- PostgreSQL 16+ (or use Docker, or use SQLite in development)
 
-### Getting Started
+### VS Code (Recommended)
+
+1. Open the workspace in VS Code
+2. Press **F5** or select a launch configuration:
+   - **Backend + Frontend** - Start both, opens http://localhost:5173
+   - **Full Stack (Debug Both)** - Debug both simultaneously
+   - **Backend (.NET)** - Just the API with Swagger
+3. SQLite database auto-created in `./data/mosaic.db`
+
+No Docker required for development!
+
+### Visual Studio 2022/2026
+
+1. Open `Mosaic.slnx` in Visual Studio
+2. Set **Mosaic.Backend** as startup project
+3. Press **F5** to run (Swagger opens automatically)
+4. For frontend: Open terminal, run:
+   ```bash
+   cd apps/admin
+   npm install
+   npm run dev
+   ```
+
+Backend runs on http://localhost:5000, frontend on http://localhost:5173.
+
+### Command Line
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/mosaic.git
-cd mosaic
-
-# Start PostgreSQL (optional - use Docker)
+# Start PostgreSQL (optional - SQLite used by default in dev)
 docker compose -f docker-compose.dev.yml up -d
 
 # Install frontend dependencies
 cd apps/admin
-pnpm install
+npm install
 
 # Run frontend dev server
-pnpm dev
+npm run dev
 
 # In another terminal, run backend
-cd apps/backend
+cd apps/backend/Mosaic.Backend
 dotnet run
+```
+
+### Helper Scripts
+
+Use `dev.ps1` / `dev.sh` for Docker-based development:
+
+```bash
+# Windows
+.\scripts\dev.ps1 up         # Start PostgreSQL
+.\scripts\dev.ps1 backend    # Run backend with hot-reload
+.\scripts\dev.ps1 frontend   # Run Vite dev server
+
+# Linux/macOS
+./scripts/dev.sh up
+./scripts/dev.sh backend
+./scripts/dev.sh frontend
 ```
 
 ## Security Model

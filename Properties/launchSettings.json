@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "Backend Only": {
+      "commandName": "SolutionLaunch",
+      "launchProfiles": {
+        "Mosaic.Backend": "Mosaic.Backend"
+      }
+    },
+    "Backend + Frontend (npm)": {
+      "commandName": "SolutionLaunch",
+      "launchProfiles": {
+        "Mosaic.Backend": "Mosaic.Backend"
+      },
+      "preLaunchActions": [
+        {
+          "actionType": "StartProcess",
+          "fileName": "cmd.exe",
+          "arguments": "/c cd apps\\admin && npm run dev",
+          "workingDirectory": "$(SolutionDir)"
+        }
+      ]
+    }
+  }
+}
