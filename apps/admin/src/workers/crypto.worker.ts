@@ -6,6 +6,7 @@ import type { CryptoWorkerApi, PhotoMeta, EncryptedShard, ExportedKeys } from '.
 // Import real crypto functions from @mosaic/crypto
 import {
   deriveKeys,
+  unwrapAccountKey,
   deriveIdentityKeypair,
   encryptShard as cryptoEncryptShard,
   decryptShard as cryptoDecryptShard,
@@ -37,6 +38,9 @@ class CryptoWorker implements CryptoWorkerApi {
 
   /** Account key (L2) for key hierarchy operations */
   private accountKey: Uint8Array | null = null;
+
+  /** Wrapped account key (encrypted L2) for server storage */
+  private accountKeyWrapped: Uint8Array | null = null;
 
   /** User identity keypair (Ed25519 + X25519) */
   private identityKeypair: IdentityKeypair | null = null;

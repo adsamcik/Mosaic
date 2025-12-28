@@ -1,0 +1,151 @@
+# Mosaic - Copilot Content Exclusion
+# ===================================
+# This file excludes files from Copilot's context window for:
+# 1. Security - Prevent sensitive data exposure
+# 2. Context Hygiene - Avoid wasting tokens on low-value content
+# 3. Performance - Reduce context window bloat
+#
+# Syntax: fnmatch patterns (like .gitignore)
+# Note: Changes may take up to 30 minutes to propagate
+
+# ===================
+# SECURITY EXCLUSIONS
+# ===================
+
+# Environment and secrets
+**/.env
+**/.env.*
+**/appsettings.*.json
+!**/appsettings.Development.json
+**/secrets/
+**/*.pem
+**/*.key
+**/*.crt
+**/*.pfx
+
+# Database files
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+
+# ===================
+# BUILD ARTIFACTS
+# ===================
+
+# Node.js
+**/node_modules/
+**/package-lock.json
+**/yarn.lock
+**/pnpm-lock.yaml
+**/.pnpm-store/
+
+# .NET
+**/bin/
+**/obj/
+**/*.dll
+**/*.pdb
+**/*.exe
+
+# Frontend build output
+**/dist/
+**/dist-node/
+**/.next/
+**/build/
+
+# ===================
+# GENERATED CODE
+# ===================
+
+# EF Core migrations (auto-generated)
+**/Migrations/*.Designer.cs
+
+# TypeScript declaration maps
+**/*.d.ts.map
+
+# Source maps
+**/*.js.map
+**/*.css.map
+
+# ===================
+# LARGE/BINARY FILES
+# ===================
+
+# Minified files (low context value)
+**/*.min.js
+**/*.min.css
+
+# Vendor bundles
+**/vendor/
+**/vendors/
+
+# Media files
+**/*.jpg
+**/*.jpeg
+**/*.png
+**/*.gif
+**/*.webp
+**/*.mp4
+**/*.webm
+**/*.ico
+**/*.svg
+
+# Fonts
+**/*.woff
+**/*.woff2
+**/*.ttf
+**/*.eot
+
+# Archives
+**/*.zip
+**/*.tar
+**/*.gz
+**/*.rar
+
+# ===================
+# TEST ARTIFACTS
+# ===================
+
+# Coverage reports
+**/coverage/
+**/htmlcov/
+**/.nyc_output/
+**/lcov.info
+
+# Test results
+**/test-results/
+**/playwright-report/
+**/mutation-report/
+
+# ===================
+# IDE & TOOLS
+# ===================
+
+# VS Code
+**/.vscode/settings.json
+**/.vscode/launch.json
+
+# JetBrains
+**/.idea/
+
+# Docker volumes
+**/data/blobs/
+
+# Log files
+**/*.log
+**/logs/
+
+# ===================
+# DOCUMENTATION BUILD
+# ===================
+
+# Generated docs
+**/docs/_build/
+**/docs/api/generated/
+
+# ===================
+# WASM BINARIES
+# ===================
+
+# Pre-built WASM (use source instead)
+**/*.wasm
+!**/public/sql-wasm.wasm

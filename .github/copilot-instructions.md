@@ -15,6 +15,16 @@ Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal 
 3. **Simplicity** - Prefer readable code over clever optimizations
 4. **Performance** - Optimize only when necessary
 
+## Related Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `.github/agents.md` | Specialized agent personas (@security-agent, @test-agent, etc.) |
+| `.github/.copilotignore` | Files excluded from Copilot context for security and hygiene |
+| `apps/backend/.instructions.md` | Backend-specific (.NET 10) scoped instructions |
+| `apps/admin/.instructions.md` | Frontend-specific (React 19) scoped instructions |
+| `libs/crypto/.instructions.md` | Crypto library scoped instructions |
+
 ---
 
 ## THE PRIME DIRECTIVE: "Spec-Then-Code"
@@ -417,6 +427,80 @@ file paths and line numbers for each occurrence."
 - **Thoroughness** - Agents systematically explore without missing edge cases
 - **Parallelism** - Multiple investigations can inform a cohesive solution
 - **Context gathering** - Build comprehensive understanding before coding
+
+---
+
+## Advanced Prompt Engineering
+
+### The RIPER Framework
+
+For complex architectural tasks, use this structured "System 2" thinking pattern:
+
+| Phase | Action | Example Prompt |
+|-------|--------|----------------|
+| **R**esearch | Gather context | "Use @workspace to find all usages of the EpochKey type" |
+| **I**nnovate | Propose solutions | "Propose 3 patterns to implement key rotation. List pros/cons" |
+| **P**lan | Create checklist | "Create a step-by-step checklist for implementing Option 2" |
+| **E**xecute | Implement | "Implement step 1 from the plan" |
+| **R**eview | Validate | "Review the code against .copilot-instructions.md. List violations" |
+
+This iterative cycle prevents the common failure mode of attempting complex features in a single pass.
+
+### Chain-of-Thought Prompting
+
+Force deliberate reasoning before code generation:
+
+```
+# ❌ Bad: Zero-shot prompt
+"Write a function to parse CSV and calculate median"
+
+# ✅ Good: Chain-of-Thought prompt
+"First, analyze edge cases in CSV parsing (missing values, malformed headers).
+Second, outline the median algorithm considering memory for large files.
+Third, implement the function based on this analysis."
+```
+
+### Reflection Technique
+
+Ask the model to critique its own output to catch errors:
+
+```
+"Generate the payment gateway code.
+Then, reflect on the generated code: identify any race conditions
+or error handling gaps, and rewrite the code to fix them."
+```
+
+### Role-Based Prompting
+
+Assign specific personas to shift the model's response distribution:
+
+- **Architect:** "Act as a Senior Systems Architect. Review this schema for normalization issues."
+- **Security:** "Act as a Red Team Engineer. Find injection vulnerabilities in this endpoint."
+- **Reviewer:** "Act as a Code Reviewer. Check this PR for style violations and edge cases."
+
+---
+
+## IDE-Specific Guidance
+
+### VS Code (Primary)
+
+VS Code has full feature support. Use these context variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `#selection` | Focus only on highlighted code |
+| `#file` | Reference a file not currently open |
+| `#terminal` | Include last terminal output (errors) |
+| `@workspace` | Search entire project context |
+
+### JetBrains IDEs
+
+JetBrains has a feature parity gap. Apply these workarounds:
+
+1. **Manual Context Priming**: Open relevant files before asking complex questions
+2. **Keyboard Conflicts**: Remap Copilot shortcuts to avoid IDE conflicts
+3. **Verify Plugin Version**: Ensure latest plugin for instruction file support
+4. **Reference Open Files**: Explicitly mention open tabs in your prompts
 
 ---
 
