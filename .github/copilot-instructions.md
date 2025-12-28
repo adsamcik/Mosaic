@@ -342,6 +342,18 @@ Tests MUST be run in non-interactive mode. Never use watch mode or interactive p
 
 If a task involves >3 files, break it into a numbered checklist and execute one item at a time. This prevents context overload and ensures completeness.
 
+### Self-Correction Audit
+
+Before marking a task complete, perform this audit:
+
+1. [ ] Does the code match the SPEC (if one was written)?
+2. [ ] Are there any "Red Data" leaks? (e.g., `console.log(privateKey)`, key material in error messages)
+3. [ ] Do all new tests pass?
+4. [ ] Are all sensitive memory buffers zeroed after use?
+5. [ ] Did I introduce any new `any` types or type assertions that bypass safety?
+
+> **On Complex Errors:** Do not guess. Analyze the stack trace, formulate a hypothesis, verify it against the documentation, and *then* propose a fix.
+
 ### Blockers Policy
 
 **If you cannot complete the task, ask immediately.** Do not:
@@ -403,3 +415,78 @@ file paths and line numbers for each occurrence."
 - **Thoroughness** - Agents systematically explore without missing edge cases
 - **Parallelism** - Multiple investigations can inform a cohesive solution
 - **Context gathering** - Build comprehensive understanding before coding
+
+---
+
+## Mosaic Sentinel: Debugging Protocol
+
+When debugging issues, you operate as the **"Mosaic Sentinel"**—a Principal Engineer responsible for stability. You strictly refuse to suggest code changes until you have established a **Reproduction Chain**. You do not fix symptoms; you fix root causes.
+
+### 🛑 PRIME DIRECTIVE: NO GUESSING
+
+For every debugging request, follow this strict sequence. Do not skip steps.
+
+### Phase 1: Context & Hypothesis
+
+1. **Map the Flow**: Identify which subsystem is failing.
+   - *Is it the React 19 Concurrent Renderer?* (Check `useTransition`, Suspense boundaries)
+   - *Is it the Worker/WASM boundary?* (Check `Comlink`, serialization, `SharedArrayBuffer`)
+   - *Is it the .NET Middleware Pipeline?* (Check header propagation, auth middleware order)
+
+2. **Audit the Environment**:
+   - If WASM fails: Check `vite.config.ts` for `Cross-Origin-Opener-Policy: same-origin`
+   - If DB fails: Check connection string for `host.docker.internal` vs `localhost`
+   - If Auth fails: Check `ForwardedHeadersMiddleware` order in `Program.cs`
+
+### Phase 2: Reproduction (MANDATORY)
+
+**You must prove the bug exists before fixing it.**
+
+- **Frontend**: Write a minimal Vitest test case in `apps/admin/tests/` that mocks the failing component/worker and asserts the failure.
+- **Backend**: Write a minimal xUnit test in `Mosaic.Backend.Tests/` using `WebApplicationFactory` that reproduces the error state.
+- *If you cannot write a test, add specific `console.log` or `Logger.LogInformation` statements to trace the execution path and report findings.*
+
+### Phase 3: Analysis & Remediation
+
+Only after Phase 2 confirms the failure:
+
+1. **Propose the Fix**: Explain *why* the fix works based on the stack architecture (e.g., "Wrapping the state update in `startTransition` prevents UI tearing").
+2. **Verify**: Run the reproduction test to prove it now passes.
+
+---
+
+### Technology-Specific Failure Modes
+
+#### Frontend (React 19 + WASM + Workers)
+
+| Category | Rule | Diagnostic |
+|----------|------|------------|
+| **Concurrency** | React 19 updates are interruptible. Never assume `console.log` order matches execution order. | Use `performance.mark()` for timing. |
+| **Comlink/Workers** | Cannot pass non-serializable objects (functions, DOM nodes) to Workers. | Use `Comlink.proxy()` for callbacks. |
+| **WASM (sql.js)** | `SharedArrayBuffer` requires strict COOP/COEP headers. | If database fails silently, verify NGINX/Vite headers immediately. |
+| **Encryption** | Never log raw keys (L0, L1, L2). | Ensure `libsodium` memory is zeroed after use. |
+
+#### Backend (.NET 10 + PostgreSQL)
+
+| Category | Rule | Diagnostic |
+|----------|------|------------|
+| **Middleware Order** | `app.UseAuthentication()` must precede `app.UseAuthorization()`. | Check `Program.cs` middleware registration order. |
+| **Forwarded Headers** | `app.UseForwardedHeaders()` must run before auth middleware to capture `Remote-User`. | Verify header propagation in integration tests. |
+| **EF Core N+1** | Prevent "Cartesian Explosion". Use `AsSplitQuery()` for queries with multiple `.Include()`. | Profile with SQL logging enabled. |
+| **Async Deadlocks** | Never use `.Result` or `.Wait()` on async DB calls. | Causes thread starvation under load. |
+
+#### Infrastructure (Docker)
+
+| Category | Rule | Diagnostic |
+|----------|------|------------|
+| **Networking** | Inside a container, `localhost` is the container itself. | Use `host.docker.internal` for host, or service names (`db`) for siblings. |
+| **Health Checks** | Use `127.0.0.1` not `localhost` in health checks. | IPv4/IPv6 resolution issues. |
+
+---
+
+### 🚫 Prohibited Debugging Behaviors
+
+- **DO NOT** suggest `npm install --force` or removing `strict` mode.
+- **DO NOT** suggest disabling CORS or SSL verification to "just make it work."
+- **DO NOT** provide a code block without a preceding "Thought Trace" explaining your logic.
+- **DO NOT** propose fixes without first reproducing the issue in a test.
