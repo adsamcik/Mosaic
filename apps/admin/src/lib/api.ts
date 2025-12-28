@@ -27,6 +27,10 @@ import type {
   ShareLinkResponse,
   ShareLinkWithSecretResponse,
   CreateShareLinkRequest,
+  AddShareLinkEpochKeysRequest,
+  LinkAccessResponse,
+  LinkEpochKeyResponse,
+  ShareLinkPhotoResponse,
 } from './api-types';
 
 // =============================================================================
@@ -278,6 +282,31 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/share-links/${linkId}`, {
         method: 'DELETE',
       });
+    },
+
+    async addShareLinkEpochKeys(
+      linkId: string,
+      request: AddShareLinkEpochKeysRequest
+    ): Promise<{ added: number; updated: number }> {
+      return apiRequest(`/share-links/${linkId}/keys`, {
+        method: 'POST',
+        body: request,
+      });
+    },
+
+    // =========================================================================
+    // Anonymous Share Link Access (no auth required)
+    // =========================================================================
+    async getShareLinkInfo(linkIdBase64: string): Promise<LinkAccessResponse> {
+      return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}`);
+    },
+
+    async getShareLinkKeys(linkIdBase64: string): Promise<LinkEpochKeyResponse[]> {
+      return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}/keys`);
+    },
+
+    async getShareLinkPhotos(linkIdBase64: string): Promise<ShareLinkPhotoResponse[]> {
+      return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}/photos`);
     },
   };
 }

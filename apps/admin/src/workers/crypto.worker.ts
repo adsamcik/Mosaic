@@ -16,6 +16,11 @@ import {
   verifyAndOpenBundle,
   memzero,
   getArgon2Params,
+  deriveLinkKeys as cryptoDeriveLinkKeys,
+  wrapTierKeyForLink as cryptoWrapTierKeyForLink,
+  unwrapTierKeyFromLink as cryptoUnwrapTierKeyFromLink,
+  generateLinkSecret as cryptoGenerateLinkSecret,
+  AccessTier,
   type IdentityKeypair,
 } from '@mosaic/crypto';
 
@@ -401,6 +406,61 @@ class CryptoWorker implements CryptoWorkerApi {
     );
 
     return plaintext;
+  }
+
+  // =========================================================================
+  // Link Sharing Operations
+  // =========================================================================
+
+  /**
+   * Derive link ID and wrapping key from a link secret.
+   */
+  async deriveLinkKeys(linkSecret: Uint8Array): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }> {
+    await this.ensureSodiumReady();
+    return cryptoDeriveLinkKeys(linkSecret);
+  }
+
+  /**
+   * Wrap a tier key for share link storage.
+   */
+  async wrapTierKeyForLink(
+    tierKey: Uint8Array,
+    tier: number,
+    wrappingKey: Uint8Array
+  ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }> {
+    await this.ensureSodiumReady();
+    const wrapped = cryptoWrapTierKeyForLink(tierKey, tier as AccessTier, wrappingKey);
+    return {
+      tier: wrapped.tier,
+      nonce: wrapped.nonce,
+      encryptedKey: wrapped.encryptedKey,
+    };
+  }
+
+  /**
+   * Unwrap a tier key from share link storage.
+   */
+  async unwrapTierKeyFromLink(
+    nonce: Uint8Array,
+    encryptedKey: Uint8Array,
+    tier: number,
+    wrappingKey: Uint8Array
+  ): Promise<Uint8Array> {
+    await this.ensureSodiumReady();
+    const wrapped = {
+      tier: tier as AccessTier,
+      nonce,
+      encryptedKey,
+    };
+    return cryptoUnwrapTierKeyFromLink(wrapped, tier as AccessTier, wrappingKey);
+  }
+
+  /**
+   * Generate a new random link secret (32 bytes).
+   */
+  async generateLinkSecret(): Promise<Uint8Array> {
+    await this.ensureSodiumReady();
+    return cryptoGenerateLinkSecret();
   }
 }
 

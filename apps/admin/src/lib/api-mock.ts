@@ -29,6 +29,10 @@ import type {
   ShareLinkResponse,
   ShareLinkWithSecretResponse,
   CreateShareLinkRequest,
+  AddShareLinkEpochKeysRequest,
+  LinkAccessResponse,
+  LinkEpochKeyResponse,
+  ShareLinkPhotoResponse,
 } from './api-types';
 
 // =============================================================================
@@ -551,6 +555,41 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
 
     async revokeShareLink(_linkId: string): Promise<void> {
       await delay();
+    },
+
+    async addShareLinkEpochKeys(
+      _linkId: string,
+      request: AddShareLinkEpochKeysRequest
+    ): Promise<{ added: number; updated: number }> {
+      await delay();
+      return { added: request.epochKeys.length, updated: 0 };
+    },
+
+    async getShareLinkInfo(_linkIdBase64: string): Promise<LinkAccessResponse> {
+      await delay();
+      return {
+        albumId: 'album-00000000-0000-0000-0000-000000000001',
+        accessTier: 3,
+        epochCount: 1,
+      };
+    },
+
+    async getShareLinkKeys(_linkIdBase64: string): Promise<LinkEpochKeyResponse[]> {
+      await delay();
+      return [
+        {
+          epochId: 1,
+          tier: 3,
+          nonce: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+          encryptedKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+          signPubkey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+        },
+      ];
+    },
+
+    async getShareLinkPhotos(_linkIdBase64: string): Promise<ShareLinkPhotoResponse[]> {
+      await delay();
+      return [];
     },
   };
 }

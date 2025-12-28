@@ -523,6 +523,189 @@ public class ShareLinksControllerTests
 
     #endregion
 
+    #region GET /api/albums/{albumId}/share-links/with-secrets
+
+    [Fact]
+    public async Task ListWithSecrets_ReturnsActiveLinksWithSecrets()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        // Create a link with owner-encrypted secret
+        var ownerSecret = TestDataBuilder.GenerateRandomBytes(40); // nonce + ciphertext
+        var shareLink = await builder.CreateShareLinkAsync(album, ownerEncryptedSecret: ownerSecret);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.ListWithSecrets(album.Id);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var links = Assert.IsAssignableFrom<List<ShareLinkWithSecretResponse>>(okResult.Value);
+        Assert.Single(links);
+        Assert.Equal(shareLink.Id, links[0].Id);
+        Assert.NotNull(links[0].OwnerEncryptedSecret);
+    }
+
+    [Fact]
+    public async Task ListWithSecrets_ExcludesRevokedLinks()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        var ownerSecret = TestDataBuilder.GenerateRandomBytes(40);
+        await builder.CreateShareLinkAsync(album, isRevoked: true, ownerEncryptedSecret: ownerSecret);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.ListWithSecrets(album.Id);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var links = Assert.IsAssignableFrom<List<ShareLinkWithSecretResponse>>(okResult.Value);
+        Assert.Empty(links);
+    }
+
+    [Fact]
+    public async Task ListWithSecrets_ExcludesExpiredLinks()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        var ownerSecret = TestDataBuilder.GenerateRandomBytes(40);
+        await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-1), ownerEncryptedSecret: ownerSecret);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.ListWithSecrets(album.Id);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var links = Assert.IsAssignableFrom<List<ShareLinkWithSecretResponse>>(okResult.Value);
+        Assert.Empty(links);
+    }
+
+    [Fact]
+    public async Task ListWithSecrets_ExcludesLinksWithoutSecret()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        
+        // Create a link without owner-encrypted secret
+        await builder.CreateShareLinkAsync(album);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.ListWithSecrets(album.Id);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var links = Assert.IsAssignableFrom<List<ShareLinkWithSecretResponse>>(okResult.Value);
+        Assert.Empty(links);
+    }
+
+    [Fact]
+    public async Task ListWithSecrets_ReturnsNotFound_WhenAlbumDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        await builder.CreateUserAsync(OwnerAuthSub);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.ListWithSecrets(Guid.NewGuid());
+
+        // Assert
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task ListWithSecrets_ReturnsForbid_WhenUserIsNotOwner()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var other = await builder.CreateUserAsync(OtherAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, config)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OtherAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.ListWithSecrets(album.Id);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    #endregion
+
     #region DELETE /api/share-links/{id}
 
     [Fact]
@@ -830,7 +1013,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("24 bytes", badRequestResult.Value?.ToString()?.ToLower());
+        Assert.Contains("24-byte", badRequestResult.Value?.ToString()?.ToLower());
     }
 
     [Fact]

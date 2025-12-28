@@ -34,6 +34,10 @@ tags:
     description: Photo manifest operations
   - name: Shards
     description: Encrypted blob storage
+  - name: Share Links
+    description: Shareable album links (authenticated)
+  - name: Anonymous Access
+    description: Anonymous access via share links (no auth required)
 
 paths:
   # ===========================================================================
@@ -519,6 +523,240 @@ paths:
         '413':
           description: Shard too large (max 6MB)
 
+  # ===========================================================================
+  # Share Links (Authenticated)
+  # ===========================================================================
+  /albums/{albumId}/share-links:
+    get:
+      operationId: listShareLinks
+      summary: List share links for an album
+      description: Returns all share links created for the album. Owner only.
+      tags: [Share Links]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      responses:
+        '200':
+          description: List of share links
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ShareLinkResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      operationId: createShareLink
+      summary: Create a new share link
+      description: Creates a shareable link for anonymous album access. Owner only.
+      tags: [Share Links]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateShareLinkRequest'
+      responses:
+        '201':
+          description: Share link created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLinkResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /albums/{albumId}/share-links/with-secrets:
+    get:
+      operationId: listShareLinksWithSecrets
+      summary: List share links with owner-encrypted secrets
+      description: |
+        Returns share links with their owner-encrypted secrets for epoch rotation.
+        The secrets are encrypted with the owner's account key and can be used
+        to derive wrapping keys for re-wrapping tier keys during rotation.
+      tags: [Share Links]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      responses:
+        '200':
+          description: List of share links with encrypted secrets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ShareLinkWithSecretResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /share-links/{linkId}:
+    delete:
+      operationId: revokeShareLink
+      summary: Revoke a share link
+      description: Permanently disables the share link. Owner only.
+      tags: [Share Links]
+      parameters:
+        - name: linkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Internal share link ID (not the public linkId)
+      responses:
+        '204':
+          description: Share link revoked
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /share-links/{linkId}/keys:
+    post:
+      operationId: addShareLinkEpochKeys
+      summary: Add epoch keys to a share link
+      description: |
+        Adds wrapped tier keys for new epochs during epoch rotation.
+        Owner only. Cannot add keys to revoked links.
+      tags: [Share Links]
+      parameters:
+        - name: linkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Internal share link ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddShareLinkEpochKeysRequest'
+      responses:
+        '200':
+          description: Keys added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added:
+                    type: integer
+                    description: Number of new keys added
+                  updated:
+                    type: integer
+                    description: Number of existing keys updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Anonymous Share Link Access (No Auth Required)
+  # ===========================================================================
+  /s/{linkIdBase64}:
+    get:
+      operationId: getShareLinkInfo
+      summary: Get share link info (anonymous)
+      description: |
+        Returns basic info about a share link without authentication.
+        The linkIdBase64 is derived from the link secret (first 16 bytes
+        of BLAKE2b hash), URL-safe base64 encoded.
+      tags: [Anonymous Access]
+      security: []
+      parameters:
+        - name: linkIdBase64
+          in: path
+          required: true
+          schema:
+            type: string
+          description: URL-safe base64 encoded link ID
+      responses:
+        '200':
+          description: Link info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkAccessResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Link expired or revoked
+
+  /s/{linkIdBase64}/keys:
+    get:
+      operationId: getShareLinkKeys
+      summary: Get wrapped tier keys for share link (anonymous)
+      description: |
+        Returns wrapped tier keys for all epochs accessible via this link.
+        Keys are encrypted with the link's wrapping key (derived from secret).
+      tags: [Anonymous Access]
+      security: []
+      parameters:
+        - name: linkIdBase64
+          in: path
+          required: true
+          schema:
+            type: string
+          description: URL-safe base64 encoded link ID
+      responses:
+        '200':
+          description: Wrapped epoch keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LinkEpochKeyResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Link expired or revoked
+
+  /s/{linkIdBase64}/photos:
+    get:
+      operationId: getShareLinkPhotos
+      summary: Get photo manifests via share link (anonymous)
+      description: |
+        Returns encrypted photo manifests accessible via this link.
+        Photos are filtered by tier and deletion status.
+      tags: [Anonymous Access]
+      security: []
+      parameters:
+        - name: linkIdBase64
+          in: path
+          required: true
+          schema:
+            type: string
+          description: URL-safe base64 encoded link ID
+      responses:
+        '200':
+          description: List of photo manifests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ShareLinkPhotoResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Link expired or revoked
+
 components:
   # ===========================================================================
   # Security Schemes
@@ -990,3 +1228,230 @@ components:
         uploadUrl:
           type: string
           description: Tus upload endpoint URL
+
+    # -------------------------------------------------------------------------
+    # Share Links
+    # -------------------------------------------------------------------------
+    ShareLinkResponse:
+      type: object
+      required:
+        - id
+        - linkId
+        - accessTier
+        - useCount
+        - isRevoked
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Internal share link ID
+        linkId:
+          type: string
+          description: Base64-encoded public link ID (derived from secret)
+        accessTier:
+          type: integer
+          enum: [1, 2, 3]
+          description: Access tier (1=thumb, 2=preview, 3=full)
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional expiration timestamp
+        maxUses:
+          type: integer
+          description: Optional maximum uses limit
+        useCount:
+          type: integer
+          description: Current number of accesses
+        isRevoked:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    ShareLinkWithSecretResponse:
+      type: object
+      required:
+        - id
+        - linkId
+        - accessTier
+        - isRevoked
+      properties:
+        id:
+          type: string
+          format: uuid
+        linkId:
+          type: string
+        accessTier:
+          type: integer
+          enum: [1, 2, 3]
+        isRevoked:
+          type: boolean
+        ownerEncryptedSecret:
+          type: string
+          format: byte
+          description: Base64-encoded owner-encrypted link secret
+
+    CreateShareLinkRequest:
+      type: object
+      required:
+        - accessTier
+        - linkId
+        - wrappedKeys
+      properties:
+        accessTier:
+          type: integer
+          enum: [1, 2, 3]
+          description: Maximum access tier to grant
+        linkId:
+          type: string
+          format: byte
+          description: Base64-encoded link ID (16 bytes)
+        ownerEncryptedSecret:
+          type: string
+          format: byte
+          description: Base64-encoded owner-encrypted link secret
+        expiresAt:
+          type: string
+          format: date-time
+        maxUses:
+          type: integer
+          minimum: 1
+        wrappedKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/WrappedKeyRequest'
+
+    WrappedKeyRequest:
+      type: object
+      required:
+        - epochId
+        - tier
+        - nonce
+        - encryptedKey
+      properties:
+        epochId:
+          type: integer
+        tier:
+          type: integer
+          enum: [1, 2, 3]
+        nonce:
+          type: string
+          format: byte
+          description: Base64-encoded 24-byte nonce
+        encryptedKey:
+          type: string
+          format: byte
+          description: Base64-encoded encrypted tier key
+
+    AddShareLinkEpochKeysRequest:
+      type: object
+      required:
+        - epochKeys
+      properties:
+        epochKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShareLinkEpochKeyRequest'
+
+    ShareLinkEpochKeyRequest:
+      type: object
+      required:
+        - epochId
+        - tier
+        - nonce
+        - encryptedKey
+      properties:
+        epochId:
+          type: integer
+        tier:
+          type: integer
+          enum: [1, 2, 3]
+        nonce:
+          type: string
+          format: byte
+          description: Base64-encoded 24-byte nonce
+        encryptedKey:
+          type: string
+          format: byte
+          description: Base64-encoded encrypted tier key
+
+    # -------------------------------------------------------------------------
+    # Anonymous Access Responses
+    # -------------------------------------------------------------------------
+    LinkAccessResponse:
+      type: object
+      required:
+        - albumId
+        - accessTier
+        - epochCount
+      properties:
+        albumId:
+          type: string
+          format: uuid
+        accessTier:
+          type: integer
+          enum: [1, 2, 3]
+        epochCount:
+          type: integer
+          description: Number of epochs with keys for this link
+
+    LinkEpochKeyResponse:
+      type: object
+      required:
+        - epochId
+        - tier
+        - nonce
+        - encryptedKey
+      properties:
+        epochId:
+          type: integer
+        tier:
+          type: integer
+          enum: [1, 2, 3]
+        nonce:
+          type: string
+          format: byte
+          description: Base64-encoded 24-byte nonce
+        encryptedKey:
+          type: string
+          format: byte
+          description: Base64-encoded encrypted tier key
+        signPubkey:
+          type: string
+          description: Base64-encoded epoch signing public key
+
+    ShareLinkPhotoResponse:
+      type: object
+      required:
+        - id
+        - versionCreated
+        - isDeleted
+        - encryptedMeta
+        - signature
+        - signerPubkey
+        - shardIds
+      properties:
+        id:
+          type: string
+          format: uuid
+        versionCreated:
+          type: integer
+          format: int64
+        isDeleted:
+          type: boolean
+        encryptedMeta:
+          type: string
+          format: byte
+          description: Base64-encoded encrypted photo metadata
+        signature:
+          type: string
+          description: Base64-encoded Ed25519 signature
+        signerPubkey:
+          type: string
+          description: Base64-encoded epoch signing public key
+        shardIds:
+          type: array
+          items:
+            type: string
+            format: uuid

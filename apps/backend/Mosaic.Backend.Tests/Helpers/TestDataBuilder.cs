@@ -175,7 +175,8 @@ public class TestDataBuilder
         DateTimeOffset? expiresAt = null,
         int? maxUses = null,
         bool isRevoked = false,
-        int useCount = 0)
+        int useCount = 0,
+        byte[]? ownerEncryptedSecret = null)
     {
         var shareLink = new ShareLink
         {
@@ -186,7 +187,8 @@ public class TestDataBuilder
             ExpiresAt = expiresAt,
             MaxUses = maxUses,
             UseCount = useCount,
-            IsRevoked = isRevoked
+            IsRevoked = isRevoked,
+            OwnerEncryptedSecret = ownerEncryptedSecret
         };
         _db.ShareLinks.Add(shareLink);
         await _db.SaveChangesAsync();

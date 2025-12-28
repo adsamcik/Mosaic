@@ -243,6 +243,51 @@ export interface CryptoWorkerApi {
    * @returns Unwrapped data
    */
   unwrapWithAccountKey(wrapped: Uint8Array): Promise<Uint8Array>;
+
+  // =========================================================================
+  // Link Sharing Operations
+  // =========================================================================
+
+  /**
+   * Derive link ID and wrapping key from a link secret
+   * @param linkSecret - 32-byte secret from URL fragment
+   * @returns Object with linkId (16 bytes) and wrappingKey (32 bytes)
+   */
+  deriveLinkKeys(linkSecret: Uint8Array): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }>;
+
+  /**
+   * Wrap a tier key for share link storage
+   * @param tierKey - 32-byte tier key to wrap
+   * @param tier - Access tier (1=thumb, 2=preview, 3=full)
+   * @param wrappingKey - 32-byte key derived from link secret
+   * @returns Wrapped key with nonce and encryptedKey
+   */
+  wrapTierKeyForLink(
+    tierKey: Uint8Array,
+    tier: number,
+    wrappingKey: Uint8Array
+  ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
+
+  /**
+   * Unwrap a tier key from share link storage
+   * @param nonce - 24-byte nonce
+   * @param encryptedKey - Encrypted tier key
+   * @param tier - Access tier of the key
+   * @param wrappingKey - 32-byte key derived from link secret
+   * @returns Unwrapped 32-byte tier key
+   */
+  unwrapTierKeyFromLink(
+    nonce: Uint8Array,
+    encryptedKey: Uint8Array,
+    tier: number,
+    wrappingKey: Uint8Array
+  ): Promise<Uint8Array>;
+
+  /**
+   * Generate a new random link secret (32 bytes)
+   * @returns Random link secret
+   */
+  generateLinkSecret(): Promise<Uint8Array>;
 }
 
 /** GeoJSON Feature for map clustering */

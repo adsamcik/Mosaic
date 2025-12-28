@@ -162,6 +162,33 @@ export interface ShareLinkWithSecretResponse {
   ownerEncryptedSecret?: string; // Base64
 }
 
+/** Response for anonymous link access */
+export interface LinkAccessResponse {
+  albumId: string;
+  accessTier: AccessTier;
+  epochCount: number;
+}
+
+/** Response for link epoch key */
+export interface LinkEpochKeyResponse {
+  epochId: number;
+  tier: AccessTier;
+  nonce: string; // Base64
+  encryptedKey: string; // Base64
+  signPubkey?: string;
+}
+
+/** Response for photo metadata accessed via share link */
+export interface ShareLinkPhotoResponse {
+  id: string;
+  versionCreated: number;
+  isDeleted: boolean;
+  encryptedMeta: string; // Base64
+  signature: string;
+  signerPubkey: string;
+  shardIds: string[];
+}
+
 /** Wrapped key for share link tier during rotation */
 export interface ShareLinkWrappedKeyRequest {
   tier: AccessTier;
@@ -173,6 +200,19 @@ export interface ShareLinkWrappedKeyRequest {
 export interface ShareLinkKeyUpdateRequest {
   shareLinkId: string;
   wrappedKeys: ShareLinkWrappedKeyRequest[];
+}
+
+/** Request to add epoch keys to a share link */
+export interface AddShareLinkEpochKeysRequest {
+  epochKeys: ShareLinkEpochKeyRequest[];
+}
+
+/** Individual epoch key for share link */
+export interface ShareLinkEpochKeyRequest {
+  epochId: number;
+  tier: AccessTier;
+  nonce: string; // Base64, 24 bytes
+  encryptedKey: string; // Base64
 }
 
 // =============================================================================
@@ -276,4 +316,13 @@ export interface MosaicApi {
   listShareLinksWithSecrets(albumId: string): Promise<ShareLinkWithSecretResponse[]>;
   createShareLink(albumId: string, request: CreateShareLinkRequest): Promise<ShareLinkResponse>;
   revokeShareLink(linkId: string): Promise<void>;
+  addShareLinkEpochKeys(
+    linkId: string,
+    request: AddShareLinkEpochKeysRequest
+  ): Promise<{ added: number; updated: number }>;
+
+  // Anonymous Share Link Access (no auth required)
+  getShareLinkInfo(linkIdBase64: string): Promise<LinkAccessResponse>;
+  getShareLinkKeys(linkIdBase64: string): Promise<LinkEpochKeyResponse[]>;
+  getShareLinkPhotos(linkIdBase64: string): Promise<ShareLinkPhotoResponse[]>;
 }

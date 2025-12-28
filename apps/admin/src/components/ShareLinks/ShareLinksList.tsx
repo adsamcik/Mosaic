@@ -47,14 +47,10 @@ export function ShareLinksList({
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const handleCopyLink = async (link: ShareLinkInfo) => {
-    // Build the share URL from linkId
-    // Note: We can't fully reconstruct the URL without the secret,
-    // so we just copy the link ID for reference
-    const baseUrl = window.location.origin;
-    const url = `${baseUrl}/s/${link.linkId}`;
-
+    // Only copy the link ID - the secret is not available after creation
+    // This allows users to identify/reference the link but not share it
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(link.linkId);
       setCopiedId(link.id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch {
@@ -132,72 +128,80 @@ export function ShareLinksList({
       ) : (
         <>
           {activeLinks.length > 0 && (
-            <ul className="share-links-items" data-testid="active-share-links">
-              {activeLinks.map((link) => (
-                <li
-                  key={link.id}
-                  className={`share-link-item ${link.isExpired ? 'expired' : ''}`}
-                  data-testid="share-link-item"
-                >
-                  <div className="share-link-info">
-                    <div className="share-link-tier">
-                      <span
-                        className={`tier-badge tier-${link.accessTier}`}
-                        data-testid="tier-badge"
-                      >
-                        {link.accessTierDisplay}
-                      </span>
-                      {link.isExpired && (
-                        <span className="expired-badge" data-testid="expired-badge">
-                          Expired
+            <>
+              <ul className="share-links-items" data-testid="active-share-links">
+                {activeLinks.map((link) => (
+                  <li
+                    key={link.id}
+                    className={`share-link-item ${link.isExpired ? 'expired' : ''}`}
+                    data-testid="share-link-item"
+                  >
+                    <div className="share-link-info">
+                      <div className="share-link-tier">
+                        <span
+                          className={`tier-badge tier-${link.accessTier}`}
+                          data-testid="tier-badge"
+                        >
+                          {link.accessTierDisplay}
                         </span>
-                      )}
-                    </div>
-                    <div className="share-link-stats">
-                      <span className="stat" data-testid="use-count">
-                        {link.useCount} uses
-                        {link.maxUses !== undefined && ` / ${link.maxUses} max`}
-                      </span>
-                      {link.expiryDisplay && (
-                        <span className="stat" data-testid="expiry-date">
-                          Expires: {link.expiryDisplay}
+                        {link.isExpired && (
+                          <span className="expired-badge" data-testid="expired-badge">
+                            Expired
+                          </span>
+                        )}
+                      </div>
+                      <div className="share-link-stats">
+                        <span className="stat" data-testid="use-count">
+                          {link.useCount} uses
+                          {link.maxUses !== undefined && ` / ${link.maxUses} max`}
                         </span>
-                      )}
-                      <span className="stat" data-testid="created-date">
-                        Created:{' '}
-                        {new Date(link.createdAt).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </span>
+                        {link.expiryDisplay && (
+                          <span className="stat" data-testid="expiry-date">
+                            Expires: {link.expiryDisplay}
+                          </span>
+                        )}
+                        <span className="stat" data-testid="created-date">
+                          Created:{' '}
+                          {new Date(link.createdAt).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="share-link-actions">
-                    <button
-                      type="button"
-                      className="button-secondary button-small"
-                      onClick={() => handleCopyLink(link)}
-                      title="Copy link ID (note: does not include secret)"
-                      data-testid="copy-link-button"
-                    >
-                      {copiedId === link.id ? '✓ Copied' : 'Copy ID'}
-                    </button>
-                    {isOwner && (
+                    <div className="share-link-actions">
                       <button
                         type="button"
-                        className="button-danger button-small"
-                        onClick={() => handleRevokeClick(link.id)}
-                        disabled={isRevoking}
-                        data-testid="revoke-link-button"
+                        className="button-secondary button-small"
+                        onClick={() => handleCopyLink(link)}
+                        title="Copy link ID for reference (shareable URL only shown at creation)"
+                        data-testid="copy-link-button"
                       >
-                        Revoke
+                        {copiedId === link.id ? '✓ Copied' : 'Copy ID'}
                       </button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+                      {isOwner && (
+                        <button
+                          type="button"
+                          className="button-danger button-small"
+                          onClick={() => handleRevokeClick(link.id)}
+                          disabled={isRevoking}
+                          data-testid="revoke-link-button"
+                        >
+                          Revoke
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="share-links-note" data-testid="share-links-note">
+                <small>
+                  💡 The full shareable URL is only displayed when creating a new link.
+                  Copy it immediately after creation.
+                </small>
+              </p>
+            </>
           )}
 
           {revokedLinks.length > 0 && (
