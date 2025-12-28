@@ -15,6 +15,9 @@ export type IdleTimeoutMinutes = 15 | 30 | 60;
 /** Theme options */
 export type Theme = 'dark' | 'light' | 'system';
 
+/** Key cache duration options (0 = disabled, -1 = until tab close, positive = minutes) */
+export type KeyCacheDuration = 0 | 15 | 30 | 60 | 240 | -1;
+
 /** Thumbnail quality options */
 export type ThumbnailQuality = 'low' | 'medium' | 'high';
 
@@ -28,6 +31,8 @@ export interface UserSettings {
   thumbnailQuality: ThumbnailQuality;
   /** Automatically sync in background */
   autoSync: boolean;
+  /** Key cache duration: 0=off, -1=until tab close, positive=minutes */
+  keyCacheDuration: KeyCacheDuration;
 }
 
 // =============================================================================
@@ -43,10 +48,14 @@ const DEFAULT_SETTINGS: UserSettings = {
   theme: 'dark',
   thumbnailQuality: 'medium',
   autoSync: true,
+  keyCacheDuration: 30, // 30 minutes by default
 };
 
 /** Valid idle timeout values */
 const VALID_IDLE_TIMEOUTS: IdleTimeoutMinutes[] = [15, 30, 60];
+
+/** Valid key cache duration values */
+const VALID_KEY_CACHE_DURATIONS: KeyCacheDuration[] = [0, 15, 30, 60, 240, -1];
 
 /** Valid theme values */
 const VALID_THEMES: Theme[] = ['dark', 'light', 'system'];
@@ -104,6 +113,9 @@ function validateSettings(settings: unknown): UserSettings {
       ? (s.thumbnailQuality as ThumbnailQuality)
       : DEFAULT_SETTINGS.thumbnailQuality,
     autoSync: typeof s.autoSync === 'boolean' ? s.autoSync : DEFAULT_SETTINGS.autoSync,
+    keyCacheDuration: VALID_KEY_CACHE_DURATIONS.includes(s.keyCacheDuration as KeyCacheDuration)
+      ? (s.keyCacheDuration as KeyCacheDuration)
+      : DEFAULT_SETTINGS.keyCacheDuration,
   };
 }
 
@@ -184,6 +196,17 @@ export function getDefaultSettings(): UserSettings {
  */
 export function getIdleTimeoutMs(): number {
   return getSettings().idleTimeout * 60 * 1000;
+}
+
+/**
+ * Get key cache duration in milliseconds.
+ * Returns 0 for disabled, Infinity for until-tab-close.
+ */
+export function getKeyCacheDurationMs(): number {
+  const duration = getSettings().keyCacheDuration;
+  if (duration === 0) return 0; // Disabled
+  if (duration === -1) return Infinity; // Until tab close
+  return duration * 60 * 1000; // Convert minutes to ms
 }
 
 /**

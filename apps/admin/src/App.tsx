@@ -52,14 +52,32 @@ export function App() {
 
     // Check if we have a session state marker (page was reloaded while logged in)
     if (!session.isLoggedIn && session.needsSessionRestore) {
-      // Check if the backend session is still valid
-      session.checkSession().then((user) => {
-        if (user) {
-          // Session cookie is valid - user needs to enter password to restore
-          setPendingSessionUser(user);
-        }
-        setIsCheckingSession(false);
-      });
+      // First, try to restore from cache (no password needed)
+      if (session.canRestoreFromCache) {
+        session.restoreFromCache().then((success) => {
+          if (success) {
+            // Session restored from cache, no password needed!
+            setIsCheckingSession(false);
+          } else {
+            // Cache restore failed, fall back to password restore
+            session.checkSession().then((user) => {
+              if (user) {
+                setPendingSessionUser(user);
+              }
+              setIsCheckingSession(false);
+            });
+          }
+        });
+      } else {
+        // No cache available, check if backend session is still valid
+        session.checkSession().then((user) => {
+          if (user) {
+            // Session cookie is valid - user needs to enter password to restore
+            setPendingSessionUser(user);
+          }
+          setIsCheckingSession(false);
+        });
+      }
     } else {
       setIsCheckingSession(false);
     }

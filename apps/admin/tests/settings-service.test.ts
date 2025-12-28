@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     getDefaultSettings,
     getIdleTimeoutMs,
+    getKeyCacheDurationMs,
     getSetting,
     getSettings,
     getThumbnailQualityValue,
@@ -47,6 +48,7 @@ describe('settings-service', () => {
         theme: 'dark',
         thumbnailQuality: 'medium',
         autoSync: true,
+        keyCacheDuration: 30,
       });
     });
 
@@ -56,6 +58,7 @@ describe('settings-service', () => {
         theme: 'light',
         thumbnailQuality: 'high',
         autoSync: false,
+        keyCacheDuration: 60,
       });
 
       const settings = getSettings();
@@ -65,6 +68,7 @@ describe('settings-service', () => {
         theme: 'light',
         thumbnailQuality: 'high',
         autoSync: false,
+        keyCacheDuration: 60,
       });
     });
 
@@ -74,6 +78,7 @@ describe('settings-service', () => {
         theme: 'invalid', // Invalid
         thumbnailQuality: 'ultra', // Invalid
         autoSync: 'yes', // Invalid (not boolean)
+        keyCacheDuration: 999, // Invalid
       });
 
       const settings = getSettings();
@@ -83,6 +88,7 @@ describe('settings-service', () => {
         theme: 'dark',
         thumbnailQuality: 'medium',
         autoSync: true,
+        keyCacheDuration: 30,
       });
     });
 
@@ -96,6 +102,7 @@ describe('settings-service', () => {
         theme: 'dark',
         thumbnailQuality: 'medium',
         autoSync: true,
+        keyCacheDuration: 30,
       });
     });
 
@@ -131,6 +138,7 @@ describe('settings-service', () => {
         theme: 'light',
         thumbnailQuality: 'high',
         autoSync: false,
+        keyCacheDuration: 60,
       };
 
       saveSettings(settings);
@@ -144,6 +152,7 @@ describe('settings-service', () => {
         theme: 'invalid',
         thumbnailQuality: 'ultra',
         autoSync: 'yes',
+        keyCacheDuration: 999,
       } as unknown as UserSettings;
 
       saveSettings(invalidSettings);
@@ -153,6 +162,7 @@ describe('settings-service', () => {
       expect(saved.theme).toBe('dark');
       expect(saved.thumbnailQuality).toBe('medium');
       expect(saved.autoSync).toBe(true);
+      expect(saved.keyCacheDuration).toBe(30);
     });
 
     it('notifies subscribers when settings are saved', () => {
@@ -164,6 +174,7 @@ describe('settings-service', () => {
         theme: 'light',
         thumbnailQuality: 'high',
         autoSync: true,
+        keyCacheDuration: 240,
       });
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -172,6 +183,7 @@ describe('settings-service', () => {
         theme: 'light',
         thumbnailQuality: 'high',
         autoSync: true,
+        keyCacheDuration: 240,
       });
 
       unsubscribe();
@@ -185,6 +197,7 @@ describe('settings-service', () => {
         theme: 'dark',
         thumbnailQuality: 'medium',
         autoSync: true,
+        keyCacheDuration: 30,
       });
 
       updateSettings({ idleTimeout: 60 });
@@ -194,6 +207,7 @@ describe('settings-service', () => {
       expect(settings.theme).toBe('dark');
       expect(settings.thumbnailQuality).toBe('medium');
       expect(settings.autoSync).toBe(true);
+      expect(settings.keyCacheDuration).toBe(30);
     });
 
     it('can update multiple settings at once', () => {
@@ -215,12 +229,14 @@ describe('settings-service', () => {
         theme: 'light',
         thumbnailQuality: 'high',
         autoSync: false,
+        keyCacheDuration: -1,
       });
 
       expect(getSetting('idleTimeout')).toBe(60);
       expect(getSetting('theme')).toBe('light');
       expect(getSetting('thumbnailQuality')).toBe('high');
       expect(getSetting('autoSync')).toBe(false);
+      expect(getSetting('keyCacheDuration')).toBe(-1);
     });
   });
 
@@ -241,6 +257,7 @@ describe('settings-service', () => {
         theme: 'light',
         thumbnailQuality: 'high',
         autoSync: false,
+        keyCacheDuration: 60,
       });
 
       resetSettings();
@@ -269,6 +286,7 @@ describe('settings-service', () => {
         theme: 'dark',
         thumbnailQuality: 'medium',
         autoSync: true,
+        keyCacheDuration: 30,
       });
     });
 
@@ -288,6 +306,7 @@ describe('settings-service', () => {
         theme: 'dark',
         thumbnailQuality: 'medium',
         autoSync: true,
+        keyCacheDuration: 30,
       });
 
       expect(getIdleTimeoutMs()).toBe(15 * 60 * 1000);
@@ -308,6 +327,7 @@ describe('settings-service', () => {
         theme: 'light',
         thumbnailQuality: 'high',
         autoSync: true,
+        keyCacheDuration: 30,
       });
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -326,6 +346,7 @@ describe('settings-service', () => {
         theme: 'light',
         thumbnailQuality: 'high',
         autoSync: true,
+        keyCacheDuration: 30,
       });
 
       expect(callback).not.toHaveBeenCalled();
@@ -342,6 +363,7 @@ describe('settings-service', () => {
         theme: 'light',
         thumbnailQuality: 'high',
         autoSync: true,
+        keyCacheDuration: 30,
       });
 
       expect(callback1).toHaveBeenCalledTimes(1);
@@ -422,6 +444,42 @@ describe('settings-service', () => {
     it('returns 0.8 (medium) by default', () => {
       // No settings stored, uses default
       expect(getThumbnailQualityValue()).toBe(0.8);
+    });
+  });
+
+  describe('getKeyCacheDurationMs', () => {
+    it('returns 0 when disabled', () => {
+      setSetting('keyCacheDuration', 0);
+      expect(getKeyCacheDurationMs()).toBe(0);
+    });
+
+    it('returns Infinity when set to until-tab-close', () => {
+      setSetting('keyCacheDuration', -1);
+      expect(getKeyCacheDurationMs()).toBe(Infinity);
+    });
+
+    it('converts 15 minutes to milliseconds', () => {
+      setSetting('keyCacheDuration', 15);
+      expect(getKeyCacheDurationMs()).toBe(15 * 60 * 1000);
+    });
+
+    it('converts 30 minutes to milliseconds', () => {
+      setSetting('keyCacheDuration', 30);
+      expect(getKeyCacheDurationMs()).toBe(30 * 60 * 1000);
+    });
+
+    it('converts 60 minutes to milliseconds', () => {
+      setSetting('keyCacheDuration', 60);
+      expect(getKeyCacheDurationMs()).toBe(60 * 60 * 1000);
+    });
+
+    it('converts 240 minutes (4 hours) to milliseconds', () => {
+      setSetting('keyCacheDuration', 240);
+      expect(getKeyCacheDurationMs()).toBe(240 * 60 * 1000);
+    });
+
+    it('returns default (30 min) when no settings stored', () => {
+      expect(getKeyCacheDurationMs()).toBe(30 * 60 * 1000);
     });
   });
 });

@@ -311,6 +311,33 @@ export interface CryptoWorkerApi {
    * @returns Random link secret
    */
   generateLinkSecret(): Promise<Uint8Array>;
+
+  // =========================================================================
+  // Key Export/Import for Session Caching
+  // =========================================================================
+
+  /**
+   * Export all keys for caching (base64 encoded).
+   * Used to persist keys across page reloads.
+   * @returns Exported keys or null if not initialized
+   */
+  exportKeys(): Promise<ExportedKeys | null>;
+
+  /**
+   * Import previously exported keys to restore session.
+   * @param keys - Keys previously exported via exportKeys()
+   */
+  importKeys(keys: ExportedKeys): Promise<void>;
+}
+
+/** Exported keys structure for session caching */
+export interface ExportedKeys {
+  accountKey: string; // base64
+  sessionKey: string; // base64
+  identitySecretKey: string; // base64 (Ed25519 64-byte secret)
+  identityPublicKey: string; // base64 (Ed25519 32-byte public)
+  identityX25519SecretKey: string; // base64
+  identityX25519PublicKey: string; // base64
 }
 
 /** GeoJSON Feature for map clustering */

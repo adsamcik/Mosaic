@@ -22,6 +22,7 @@ import {
     getSettings,
     saveSettings,
     type IdleTimeoutMinutes,
+    type KeyCacheDuration,
     type Theme,
     type ThumbnailQuality,
     type UserSettings,
@@ -371,6 +372,33 @@ export function SettingsPage() {
                 />
                 <span className="toggle-slider" />
               </label>
+            </div>
+
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Remember Session</span>
+                <span className="setting-description">
+                  Keep encryption keys cached to avoid password entry on page reload
+                </span>
+              </div>
+              <select
+                className="setting-select"
+                value={settings.keyCacheDuration}
+                onChange={(e) =>
+                  handleSettingsChange(
+                    'keyCacheDuration',
+                    parseInt(e.target.value, 10) as KeyCacheDuration
+                  )
+                }
+                data-testid="key-cache-duration-select"
+              >
+                <option value={0}>Off (always ask for password)</option>
+                <option value={15}>15 minutes</option>
+                <option value={30}>30 minutes</option>
+                <option value={60}>1 hour</option>
+                <option value={240}>4 hours</option>
+                <option value={-1}>Until tab is closed</option>
+              </select>
             </div>
 
             <div className="settings-actions">

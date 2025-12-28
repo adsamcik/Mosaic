@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
-import type { CryptoWorkerApi, PhotoMeta, EncryptedShard } from './types';
+import type { CryptoWorkerApi, PhotoMeta, EncryptedShard, ExportedKeys } from './types';
 
 // Import real crypto functions from @mosaic/crypto
 import {
@@ -499,6 +499,55 @@ class CryptoWorker implements CryptoWorkerApi {
   async generateLinkSecret(): Promise<Uint8Array> {
     await this.ensureSodiumReady();
     return cryptoGenerateLinkSecret();
+  }
+
+  // =========================================================================
+  // Key Export/Import for Session Caching
+  // =========================================================================
+
+  /**
+   * Export all keys for caching.
+   * Returns base64-encoded keys for secure storage.
+   */
+  async exportKeys(): Promise<ExportedKeys | null> {
+    if (!this.sessionKey || !this.accountKey || !this.identityKeypair) {
+      return null;
+    }
+
+    return {
+      accountKey: sodium.to_base64(this.accountKey, sodium.base64_variants.ORIGINAL),
+      sessionKey: sodium.to_base64(this.sessionKey, sodium.base64_variants.ORIGINAL),
+      identitySecretKey: sodium.to_base64(this.identityKeypair.ed25519.secretKey, sodium.base64_variants.ORIGINAL),
+      identityPublicKey: sodium.to_base64(this.identityKeypair.ed25519.publicKey, sodium.base64_variants.ORIGINAL),
+      identityX25519SecretKey: sodium.to_base64(this.identityKeypair.x25519.secretKey, sodium.base64_variants.ORIGINAL),
+      identityX25519PublicKey: sodium.to_base64(this.identityKeypair.x25519.publicKey, sodium.base64_variants.ORIGINAL),
+    };
+  }
+
+  /**
+   * Import previously exported keys to restore session.
+   */
+  async importKeys(keys: ExportedKeys): Promise<void> {
+    await this.ensureSodiumReady();
+
+    // Clear any existing keys first
+    await this.clear();
+
+    // Restore keys from base64
+    this.accountKey = sodium.from_base64(keys.accountKey, sodium.base64_variants.ORIGINAL);
+    this.sessionKey = sodium.from_base64(keys.sessionKey, sodium.base64_variants.ORIGINAL);
+
+    // Restore identity keypair
+    this.identityKeypair = {
+      ed25519: {
+        publicKey: sodium.from_base64(keys.identityPublicKey, sodium.base64_variants.ORIGINAL),
+        secretKey: sodium.from_base64(keys.identitySecretKey, sodium.base64_variants.ORIGINAL),
+      },
+      x25519: {
+        publicKey: sodium.from_base64(keys.identityX25519PublicKey, sodium.base64_variants.ORIGINAL),
+        secretKey: sodium.from_base64(keys.identityX25519SecretKey, sodium.base64_variants.ORIGINAL),
+      },
+    };
   }
 }
 

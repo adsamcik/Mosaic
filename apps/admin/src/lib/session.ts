@@ -6,6 +6,13 @@ import { closeCryptoClient, getCryptoClient } from './crypto-client';
 import { closeDbClient, getDbClient } from './db-client';
 import { clearAllEpochKeys } from './epoch-key-store';
 import { closeGeoClient } from './geo-client';
+import {
+  cacheKeys,
+  clearCacheEncryptionKey,
+  getCachedKeys,
+  hasCachedKeys,
+  type CachedKeys,
+} from './key-cache';
 import { devLogin as devAuthLogin } from './local-auth';
 import { createLogger } from './logger';
 import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
@@ -190,10 +197,113 @@ class SessionManager {
   }
 
   /**
+   * Check if we can restore session from cached keys (no password needed).
+   */
+  get canRestoreFromCache(): boolean {
+    return this.needsSessionRestore && hasCachedKeys();
+  }
+
+  /**
+   * Restore session from cached keys (no password required).
+   * Returns true if successful, false if cache is unavailable or expired.
+   */
+  async restoreFromCache(): Promise<boolean> {
+    const cachedKeys = await getCachedKeys();
+    if (!cachedKeys) {
+      log.debug('No cached keys available for restore');
+      return false;
+    }
+
+    try {
+      // Request persistent storage for OPFS
+      if (navigator.storage?.persist) {
+        const granted = await navigator.storage.persist();
+        if (!granted) {
+          log.warn('Persistent storage not granted - data may be evicted');
+        }
+      }
+
+      // Get current user from backend (authenticated via session cookie)
+      const api = getApi();
+      this._currentUser = await api.getCurrentUser();
+
+      // Import cached keys into crypto worker
+      const cryptoClient = await getCryptoClient();
+      await cryptoClient.importKeys({
+        accountKey: cachedKeys.accountKey,
+        sessionKey: cachedKeys.sessionKey,
+        identitySecretKey: cachedKeys.identitySecretKey,
+        identityPublicKey: cachedKeys.identityPublicKey,
+        identityX25519SecretKey: cachedKeys.identityX25519SecretKey,
+        identityX25519PublicKey: cachedKeys.identityX25519PublicKey,
+      });
+
+      // Initialize database worker with session key
+      const db = await getDbClient();
+      const sessionKey = await cryptoClient.getSessionKey();
+      await db.init(sessionKey);
+
+      this._isLoggedIn = true;
+      this.markSessionActive();
+      this.notify();
+
+      // Re-cache keys to extend expiration
+      const userSalt = fromBase64(cachedKeys.userSalt);
+      const accountSalt = fromBase64(cachedKeys.accountSalt);
+      await this.cacheSessionKeys(userSalt, accountSalt);
+
+      // Subscribe to settings changes to update idle timeout
+      this.settingsUnsubscribe = subscribeToSettings(() => {
+        if (this._isLoggedIn) {
+          this.resetIdleTimer();
+        }
+      });
+
+      // Start idle timeout tracking
+      this.resetIdleTimer();
+      this.attachIdleListeners();
+
+      log.info('Session restored from cache (no password required)');
+      return true;
+    } catch (error) {
+      log.error('Failed to restore session from cache:', error);
+      // Clear invalid cache
+      clearCacheEncryptionKey();
+      return false;
+    }
+  }
+
+  /**
    * Mark session state as active (called after successful login)
    */
   private markSessionActive(): void {
     sessionStorage.setItem(SESSION_STATE_KEY, 'active');
+  }
+
+  /**
+   * Cache keys for session restoration after page reload.
+   * Only caches if key caching is enabled in settings.
+   */
+  private async cacheSessionKeys(userSalt: Uint8Array, accountSalt: Uint8Array): Promise<void> {
+    try {
+      const cryptoClient = await getCryptoClient();
+      const exportedKeys = await cryptoClient.exportKeys();
+      if (!exportedKeys) {
+        log.warn('Failed to export keys for caching - worker not initialized');
+        return;
+      }
+
+      const cachedKeys: CachedKeys = {
+        ...exportedKeys,
+        userSalt: toBase64(userSalt),
+        accountSalt: toBase64(accountSalt),
+      };
+
+      await cacheKeys(cachedKeys);
+    } catch (error) {
+      log.error('Failed to cache session keys:', error);
+      // Non-fatal - session will require password on reload
+    }
   }
 
   /**
@@ -262,6 +372,9 @@ class SessionManager {
     this._isLoggedIn = true;
     this.markSessionActive();
     this.notify();
+
+    // Cache keys for automatic restore on next reload
+    await this.cacheSessionKeys(userSalt, paddedAccountSalt);
 
     // Subscribe to settings changes to update idle timeout
     this.settingsUnsubscribe = subscribeToSettings(() => {
@@ -354,6 +467,9 @@ class SessionManager {
     this.markSessionActive();
     this.notify();
 
+    // Cache keys for automatic restore on next reload
+    await this.cacheSessionKeys(userSalt, paddedAccountSalt);
+
     // Subscribe to settings changes to update idle timeout
     this.settingsUnsubscribe = subscribeToSettings(() => {
       if (this._isLoggedIn) {
@@ -410,6 +526,9 @@ class SessionManager {
     this.markSessionActive();
     this.notify();
 
+    // Cache keys for automatic restore on next reload
+    await this.cacheSessionKeys(userSalt, accountSalt);
+
     // Subscribe to settings changes
     this.settingsUnsubscribe = subscribeToSettings(() => {
       if (this._isLoggedIn) {
@@ -451,6 +570,9 @@ class SessionManager {
 
     // Clear epoch keys from memory
     clearAllEpochKeys();
+
+    // Clear key cache encryption key
+    clearCacheEncryptionKey();
 
     // Close all workers and clear keys
     await closeDbClient();
