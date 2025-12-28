@@ -1,5 +1,11 @@
 import { useAlbumCover } from '../../hooks/useAlbumCover';
 
+/** Badge type for expiration status */
+interface ExpirationBadge {
+  text: string;
+  variant: 'warning' | 'danger' | 'info';
+}
+
 /** Album data with optional encrypted name fields */
 interface Album {
   id: string;
@@ -17,6 +23,8 @@ interface Album {
   isDecrypting?: boolean;
   /** Whether decryption failed */
   decryptionFailed?: boolean;
+  /** ISO 8601 date when album expires */
+  expiresAt?: string | null;
 }
 
 interface AlbumCardProps {
@@ -33,6 +41,30 @@ function getDisplayName(album: Album): string {
     return album.decryptedName;
   }
   return album.name;
+}
+
+/**
+ * Calculate expiration badge based on days remaining.
+ * Returns null if no expiration is set.
+ */
+export function formatExpirationBadge(
+  expiresAt: string | null | undefined
+): ExpirationBadge | null {
+  if (!expiresAt) return null;
+
+  const days = Math.ceil(
+    (new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (days <= 0) return { text: 'Expired', variant: 'danger' };
+  if (days === 1) return { text: 'Expires tomorrow', variant: 'warning' };
+  if (days <= 7) return { text: `Expires in ${days} days`, variant: 'warning' };
+  if (days <= 30)
+    return { text: `Expires in ${Math.ceil(days / 7)} weeks`, variant: 'info' };
+  return {
+    text: `Expires ${new Date(expiresAt).toLocaleDateString()}`,
+    variant: 'info',
+  };
 }
 
 /**
@@ -103,9 +135,20 @@ export function AlbumCard({ album, onClick }: AlbumCardProps) {
         <span className="album-count">
           {album.photoCount} {album.photoCount === 1 ? 'photo' : 'photos'}
         </span>
+        {(() => {
+          const badge = formatExpirationBadge(album.expiresAt);
+          return badge ? (
+            <span
+              className={`expiration-badge expiration-badge--${badge.variant}`}
+              data-testid="expiration-badge"
+            >
+              {badge.text}
+            </span>
+          ) : null;
+        })()}
       </div>
     </button>
   );
 }
 
-export type { Album };
+export type { Album, ExpirationBadge };
