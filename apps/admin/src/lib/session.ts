@@ -6,6 +6,7 @@ import { closeCryptoClient, getCryptoClient } from './crypto-client';
 import { closeDbClient, getDbClient } from './db-client';
 import { clearAllEpochKeys } from './epoch-key-store';
 import { closeGeoClient } from './geo-client';
+import { devLogin as devAuthLogin } from './local-auth';
 import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
 
 /** Events that reset the idle timer */
@@ -247,6 +248,63 @@ class SessionManager {
     // Start idle timeout tracking
     this.resetIdleTimer();
     this.attachIdleListeners();
+  }
+
+  /**
+   * Development-only login.
+   * Uses simplified dev-auth endpoint - no password verification.
+   * Creates user if doesn't exist.
+   * Only works when backend is in Development environment.
+   *
+   * @param username - The username to login as
+   * @param password - A password to use for local crypto initialization
+   */
+  async devLogin(username: string, password: string): Promise<void> {
+    // Request persistent storage for OPFS
+    if (navigator.storage?.persist) {
+      const granted = await navigator.storage.persist();
+      if (!granted) {
+        console.warn('Persistent storage not granted - data may be evicted');
+      }
+    }
+
+    // Dev login - creates session cookie and returns salts
+    const { userId, userSalt, accountSalt } = await devAuthLogin(username);
+
+    // Now fetch the current user (we have a session cookie)
+    const api = getApi();
+    this._currentUser = await api.getCurrentUser();
+
+    // Store salt locally
+    localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+
+    // Initialize crypto worker with password and salts
+    const cryptoClient = await getCryptoClient();
+    await cryptoClient.init(password, userSalt, accountSalt);
+
+    // Derive identity keypair for epoch key operations
+    await cryptoClient.deriveIdentity();
+
+    // Initialize database worker with session key
+    const db = await getDbClient();
+    const sessionKey = await cryptoClient.getSessionKey();
+    await db.init(sessionKey);
+
+    this._isLoggedIn = true;
+    this.notify();
+
+    // Subscribe to settings changes
+    this.settingsUnsubscribe = subscribeToSettings(() => {
+      if (this._isLoggedIn) {
+        this.resetIdleTimer();
+      }
+    });
+
+    // Start idle timeout tracking
+    this.resetIdleTimer();
+    this.attachIdleListeners();
+
+    console.info(`Dev login successful: ${username} (${userId})`);
   }
 
   /**

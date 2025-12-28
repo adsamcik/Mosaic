@@ -89,6 +89,7 @@ body {
   display: block;
   margin-bottom: var(--spacing-xs);
   font-weight: 500;
+  color: var(--color-text-muted);
 }
 
 .form-input {
@@ -142,6 +143,17 @@ body {
   margin-top: var(--spacing-lg);
   font-size: 0.75rem;
   color: var(--color-text-muted);
+}
+
+.dev-mode-badge {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fb923c;
+  border: 1px solid rgba(251, 146, 60, 0.4);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-bottom: var(--spacing-md);
 }
 
 /* App Shell */
@@ -588,6 +600,10 @@ body {
 }
 
 .dialog {
+  /* Override native dialog positioning to work with flexbox backdrop */
+  position: relative;
+  inset: unset;
+  margin: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -595,6 +611,7 @@ body {
   max-width: 400px;
   width: 100%;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  color: var(--color-text);
 }
 
 .dialog::backdrop {
@@ -607,7 +624,9 @@ body {
 
 .dialog-title {
   font-size: 1.25rem;
+  font-weight: 600;
   margin-bottom: var(--spacing-sm);
+  color: var(--color-text);
 }
 
 .dialog-description {

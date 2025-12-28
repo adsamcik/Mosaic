@@ -21,10 +21,14 @@ public class LocalAuthMiddleware
     private static readonly string[] PublicPaths =
     [
         "/health",
+        "/api/health",
         "/api/auth/init",
         "/api/auth/verify",
         "/api/auth/register",
-        "/api/s/"  // Anonymous share link access
+        "/api/dev-auth/",  // Development-only quick login
+        "/api/s/",  // Anonymous share link access
+        "/swagger",
+        "/openapi"
     ];
 
     public LocalAuthMiddleware(
