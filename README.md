@@ -67,16 +67,37 @@ cd mosaic
 
 # Configure environment
 cp .env.example .env
-# Edit .env and set POSTGRES_PASSWORD
+# Edit .env and set POSTGRES_PASSWORD (generate with: openssl rand -base64 32)
 
 # Build and start all services
 docker compose up -d
+
+# Check status
+docker compose ps
 
 # View logs
 docker compose logs -f
 ```
 
 The application will be available at `http://localhost:8080`.
+
+### Using the Helper Script
+
+For convenience, use the helper script for common operations:
+
+```bash
+# Windows (PowerShell)
+.\scripts\mosaic.ps1 start     # Start services
+.\scripts\mosaic.ps1 status    # Check health
+.\scripts\mosaic.ps1 logs      # View logs
+.\scripts\mosaic.ps1 backup    # Create backup
+
+# Linux/macOS
+./scripts/mosaic.sh start
+./scripts/mosaic.sh status
+./scripts/mosaic.sh logs
+./scripts/mosaic.sh backup
+```
 
 ### Production Deployment
 
@@ -85,6 +106,14 @@ For production, you should:
 1. Set a strong `POSTGRES_PASSWORD` in `.env`
 2. Put a reverse proxy (Caddy, Traefik, nginx) in front for TLS termination
 3. Configure your reverse proxy to pass the `Remote-User` header for authentication
+
+See [docs/DOCKER.md](docs/DOCKER.md) for complete deployment guide including:
+
+- Building and pushing to registries
+- Reverse proxy configuration (Caddy, Traefik, nginx)
+- Backup and restore procedures
+- Multi-architecture builds
+- Troubleshooting
 
 ### Development with Docker
 
@@ -97,6 +126,7 @@ docker compose -f docker-compose.dev.yml up -d
 # Optionally include pgAdmin for DB management
 docker compose -f docker-compose.dev.yml --profile tools up -d
 ```
+
 
 ## Development
 
