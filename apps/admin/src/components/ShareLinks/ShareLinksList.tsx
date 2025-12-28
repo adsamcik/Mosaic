@@ -1,12 +1,13 @@
 /**
  * ShareLinksList Component
  *
- * Displays existing share links for an album with options to copy or revoke.
+ * Displays existing share links for an album with options to copy, edit, or revoke.
  */
 
 import { useState } from 'react';
 import type { ShareLinkInfo } from '../../hooks/useShareLinks';
 import { createLogger } from '../../lib/logger';
+import { EditLinkExpirationDialog } from './EditLinkExpirationDialog';
 
 const log = createLogger('ShareLinksList');
 
@@ -25,6 +26,20 @@ interface ShareLinksListProps {
   onCreateClick: () => void;
   /** Whether current user is owner */
   isOwner: boolean;
+  /** Album ID for the links */
+  albumId: string;
+  /** Called to update a link's expiration */
+  onUpdateExpiration: (
+    linkId: string,
+    expiresAt: Date | null,
+    maxUses: number | null
+  ) => Promise<void>;
+  /** Whether update is in progress */
+  isUpdating: boolean;
+  /** Error during update */
+  updateError: string | null;
+  /** Called after successful update to refresh list */
+  onRefresh: () => void;
 }
 
 /**
@@ -35,6 +50,7 @@ interface ShareLinksListProps {
  * - Use count / max uses
  * - Expiry date
  * - Copy link button
+ * - Edit button to modify expiration
  * - Revoke button with confirmation
  */
 export function ShareLinksList({
@@ -45,9 +61,15 @@ export function ShareLinksList({
   isRevoking,
   onCreateClick,
   isOwner,
+  albumId,
+  onUpdateExpiration,
+  isUpdating,
+  updateError,
+  onRefresh,
 }: ShareLinksListProps) {
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editingLink, setEditingLink] = useState<ShareLinkInfo | null>(null);
 
   const handleCopyLink = async (link: ShareLinkInfo) => {
     // Only copy the link ID - the secret is not available after creation
@@ -184,15 +206,26 @@ export function ShareLinksList({
                         {copiedId === link.id ? '✓ Copied' : 'Copy ID'}
                       </button>
                       {isOwner && (
-                        <button
-                          type="button"
-                          className="button-danger button-small"
-                          onClick={() => handleRevokeClick(link.id)}
-                          disabled={isRevoking}
-                          data-testid="revoke-link-button"
-                        >
-                          Revoke
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="button-secondary button-small"
+                            onClick={() => setEditingLink(link)}
+                            disabled={isRevoking || isUpdating}
+                            data-testid="edit-link-button"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="button-danger button-small"
+                            onClick={() => handleRevokeClick(link.id)}
+                            disabled={isRevoking || isUpdating}
+                            data-testid="revoke-link-button"
+                          >
+                            Revoke
+                          </button>
+                        </>
                       )}
                     </div>
                   </li>
@@ -293,6 +326,22 @@ export function ShareLinksList({
             </div>
           </dialog>
         </div>
+      )}
+
+      {/* Edit Link Expiration Dialog */}
+      {editingLink && (
+        <EditLinkExpirationDialog
+          link={editingLink}
+          albumId={albumId}
+          onSave={() => {
+            setEditingLink(null);
+            onRefresh();
+          }}
+          onClose={() => setEditingLink(null)}
+          onUpdate={onUpdateExpiration}
+          isUpdating={isUpdating}
+          error={updateError}
+        />
       )}
     </div>
   );

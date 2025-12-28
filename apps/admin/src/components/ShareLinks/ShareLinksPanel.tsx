@@ -42,11 +42,15 @@ export function ShareLinksPanel({
     shareLinks,
     isLoading,
     error,
+    refetch,
     createShareLink,
     isCreating,
     createError,
     revokeShareLink,
     isRevoking,
+    updateExpiration,
+    isUpdating,
+    updateError,
   } = useShareLinks(albumId);
 
   if (!isOpen) {
@@ -88,6 +92,11 @@ export function ShareLinksPanel({
             isRevoking={isRevoking}
             onCreateClick={() => setShowCreateDialog(true)}
             isOwner={isOwner}
+            albumId={albumId}
+            onUpdateExpiration={updateExpiration}
+            isUpdating={isUpdating}
+            updateError={updateError}
+            onRefresh={refetch}
           />
         </div>
       </aside>

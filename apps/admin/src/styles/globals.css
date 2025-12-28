@@ -2652,3 +2652,82 @@ body {
 .expiration-save-button {
   margin-top: var(--spacing-sm);
 }
+
+/* ============================================================================
+ * EXPIRY PRESETS
+ * ============================================================================ */
+
+/* Container for expiry preset buttons */
+.expiry-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Individual preset button */
+.expiry-preset-button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.expiry-preset-button:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-hover);
+}
+
+.expiry-preset-button:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.expiry-preset-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Selected preset button */
+.expiry-preset-button.selected {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-text-on-primary);
+}
+
+.expiry-preset-button.selected:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+/* Edit link info display */
+.edit-link-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-md);
+  font-size: 0.875rem;
+}
+
+.edit-link-info .info-item {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.edit-link-info .info-label {
+  color: var(--color-text-muted);
+  min-width: 90px;
+}
+
+.edit-link-info .info-value {
+  color: var(--color-text);
+  font-weight: 500;
+}

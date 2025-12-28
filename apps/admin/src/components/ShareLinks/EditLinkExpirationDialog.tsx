@@ -1,0 +1,284 @@
+/**
+ * EditLinkExpirationDialog Component
+ *
+ * Modal dialog for editing expiration settings of an existing share link.
+ * Allows updating expiresAt and maxUses for a link.
+ */
+
+import { useEffect, useRef, useState } from 'react';
+import type { ShareLinkInfo } from '../../hooks/useShareLinks';
+import { EXPIRY_PRESETS, type ExpiryPreset } from './ShareLinkDialog';
+
+export interface EditLinkExpirationDialogProps {
+  /** The share link to edit */
+  link: ShareLinkInfo;
+  /** Album ID the link belongs to */
+  albumId: string;
+  /** Called when save is complete */
+  onSave: () => void;
+  /** Called when dialog should close */
+  onClose: () => void;
+  /** Called to update the link expiration */
+  onUpdate: (
+    linkId: string,
+    expiresAt: Date | null,
+    maxUses: number | null
+  ) => Promise<void>;
+  /** Whether update is in progress */
+  isUpdating: boolean;
+  /** Error message to display */
+  error: string | null;
+}
+
+/**
+ * Calculate initial preset index based on link's current expiration
+ */
+function getInitialPresetIndex(expiresAt: string | undefined | null): number {
+  if (!expiresAt) {
+    // "Never" preset
+    return EXPIRY_PRESETS.length - 1;
+  }
+  // Default to custom (no preset selected)
+  return -1;
+}
+
+/**
+ * Calculate remaining hours until expiration
+ */
+function getRemainingHours(expiresAt: string | undefined | null): number {
+  if (!expiresAt) {
+    return 0;
+  }
+  const expiresDate = new Date(expiresAt);
+  const now = new Date();
+  const diffMs = expiresDate.getTime() - now.getTime();
+  return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)));
+}
+
+/**
+ * EditLinkExpirationDialog Component
+ *
+ * Provides a modal for editing:
+ * - Expiration date (via presets)
+ * - Max uses limit
+ */
+export function EditLinkExpirationDialog({
+  link,
+  onSave,
+  onClose,
+  onUpdate,
+  isUpdating,
+  error,
+}: EditLinkExpirationDialogProps) {
+  const [expiryEnabled, setExpiryEnabled] = useState(!!link.expiresAt);
+  const [expiryHours, setExpiryHours] = useState(() => getRemainingHours(link.expiresAt));
+  const [selectedPresetIndex, setSelectedPresetIndex] = useState(() =>
+    getInitialPresetIndex(link.expiresAt)
+  );
+  const [maxUsesEnabled, setMaxUsesEnabled] = useState(link.maxUses !== undefined && link.maxUses !== null);
+  const [maxUses, setMaxUses] = useState(link.maxUses ?? 10);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  // Handle escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isUpdating) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isUpdating, onClose]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    setLocalError(null);
+
+    // Validate inputs
+    if (maxUsesEnabled && maxUses < 1) {
+      setLocalError('Max uses must be at least 1');
+      return;
+    }
+
+    try {
+      let expiresAt: Date | null = null;
+
+      if (expiryEnabled && expiryHours > 0) {
+        expiresAt = new Date();
+        expiresAt.setTime(expiresAt.getTime() + expiryHours * 60 * 60 * 1000);
+      }
+
+      const maxUsesValue = maxUsesEnabled ? maxUses : null;
+
+      await onUpdate(link.id, expiresAt, maxUsesValue);
+      onSave();
+    } catch {
+      // Error is handled via error prop
+    }
+  };
+
+  const handlePresetClick = (preset: ExpiryPreset, index: number) => {
+    setSelectedPresetIndex(index);
+    if (preset.hours === null) {
+      setExpiryEnabled(false);
+      setExpiryHours(0);
+    } else {
+      setExpiryEnabled(true);
+      setExpiryHours(preset.hours);
+    }
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && !isUpdating) {
+      onClose();
+    }
+  };
+
+  const displayError = localError || error;
+
+  return (
+    <div
+      className="dialog-backdrop"
+      onClick={handleBackdropClick}
+      role="presentation"
+      data-testid="edit-link-dialog-backdrop"
+    >
+      <dialog
+        ref={dialogRef}
+        className="dialog"
+        open
+        aria-labelledby="edit-link-title"
+        aria-modal="true"
+        data-testid="edit-link-dialog"
+      >
+        <form onSubmit={handleSubmit} className="dialog-form">
+          <h2 id="edit-link-title" className="dialog-title">
+            Edit Share Link
+          </h2>
+
+          <p className="dialog-description">
+            Update the expiration settings for this share link.
+          </p>
+
+          <div className="edit-link-info" data-testid="edit-link-info">
+            <div className="info-item">
+              <span className="info-label">Access:</span>
+              <span className="info-value">{link.accessTierDisplay}</span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Uses:</span>
+              <span className="info-value">
+                {link.useCount}
+                {link.maxUses !== undefined && ` / ${link.maxUses}`}
+              </span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Created:</span>
+              <span className="info-value">
+                {new Date(link.createdAt).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+              </span>
+            </div>
+            {link.expiryDisplay && (
+              <div className="info-item">
+                <span className="info-label">Current expiry:</span>
+                <span className="info-value">{link.expiryDisplay}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">New Expiration</label>
+            <div className="expiry-presets" data-testid="expiry-presets">
+              {EXPIRY_PRESETS.map((preset, index) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  className={`expiry-preset-button ${selectedPresetIndex === index ? 'selected' : ''}`}
+                  onClick={() => handlePresetClick(preset, index)}
+                  disabled={isUpdating}
+                  data-testid={`expiry-preset-${preset.label.toLowerCase().replace(/\s/g, '-')}`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            {!expiryEnabled && (
+              <div className="warning-banner" data-testid="never-expires-warning">
+                ⚠️ This link will never expire. Anyone with the link can access 
+                the album indefinitely. Consider setting an expiration date.
+              </div>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label checkbox-label">
+              <input
+                type="checkbox"
+                checked={maxUsesEnabled}
+                onChange={(e) => setMaxUsesEnabled(e.target.checked)}
+                disabled={isUpdating}
+                data-testid="max-uses-checkbox"
+              />
+              <span>Limit number of uses</span>
+            </label>
+            {maxUsesEnabled && (
+              <div className="max-uses-input" data-testid="max-uses-input-group">
+                <span>Maximum</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={maxUses}
+                  onChange={(e) => setMaxUses(parseInt(e.target.value, 10) || 1)}
+                  disabled={isUpdating}
+                  className="form-input number-input"
+                  data-testid="max-uses-input"
+                />
+                <span>uses</span>
+              </div>
+            )}
+          </div>
+
+          {displayError && (
+            <div
+              id="edit-link-error"
+              className="form-error"
+              role="alert"
+              data-testid="edit-link-error"
+            >
+              {displayError}
+            </div>
+          )}
+
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={onClose}
+              disabled={isUpdating}
+              data-testid="cancel-button"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="button-primary"
+              disabled={isUpdating}
+              data-testid="save-button"
+            >
+              {isUpdating ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </dialog>
+    </div>
+  );
+}

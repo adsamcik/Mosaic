@@ -100,10 +100,10 @@ describe('ShareLinkDialog', () => {
       cleanup();
     });
 
-    it('renders expiry checkbox', () => {
+    it('renders expiry presets', () => {
       const { getByTestId, cleanup } = renderShareLinkDialog();
 
-      expect(getByTestId('expiry-checkbox')).not.toBeNull();
+      expect(getByTestId('expiry-presets')).not.toBeNull();
       cleanup();
     });
 
@@ -159,58 +159,75 @@ describe('ShareLinkDialog', () => {
     });
   });
 
-  describe('expiry options', () => {
-    it('hides expiry input by default', () => {
-      const { queryByTestId, cleanup } = renderShareLinkDialog();
+  describe('expiry presets', () => {
+    it('renders expiry preset buttons', () => {
+      const { getByTestId, cleanup } = renderShareLinkDialog();
 
-      expect(queryByTestId('expiry-input-group')).toBeNull();
+      expect(getByTestId('expiry-presets')).not.toBeNull();
+      expect(getByTestId('expiry-preset-1-hour')).not.toBeNull();
+      expect(getByTestId('expiry-preset-24-hours')).not.toBeNull();
+      expect(getByTestId('expiry-preset-7-days')).not.toBeNull();
+      expect(getByTestId('expiry-preset-30-days')).not.toBeNull();
+      expect(getByTestId('expiry-preset-1-year')).not.toBeNull();
+      expect(getByTestId('expiry-preset-never')).not.toBeNull();
       cleanup();
     });
 
-    it('shows expiry input when checkbox is checked', () => {
+    it('defaults to 7 days preset', () => {
+      const { getByTestId, cleanup } = renderShareLinkDialog();
+
+      const sevenDaysPreset = getByTestId('expiry-preset-7-days');
+      expect(sevenDaysPreset?.classList.contains('selected')).toBe(true);
+      cleanup();
+    });
+
+    it('allows selecting different presets', () => {
+      const { getByTestId, cleanup } = renderShareLinkDialog();
+
+      const oneHourPreset = getByTestId('expiry-preset-1-hour') as HTMLButtonElement;
+
+      act(() => {
+        oneHourPreset.click();
+      });
+
+      expect(oneHourPreset.classList.contains('selected')).toBe(true);
+      cleanup();
+    });
+
+    it('shows warning when Never is selected', () => {
       const { getByTestId, queryByTestId, cleanup } = renderShareLinkDialog();
 
-      const checkbox = getByTestId('expiry-checkbox') as HTMLInputElement;
+      // Initially warning should be hidden (7 days is selected)
+      expect(queryByTestId('never-expires-warning')).toBeNull();
+
+      const neverPreset = getByTestId('expiry-preset-never') as HTMLButtonElement;
 
       act(() => {
-        checkbox.click();
+        neverPreset.click();
       });
 
-      expect(queryByTestId('expiry-input-group')).not.toBeNull();
+      expect(queryByTestId('never-expires-warning')).not.toBeNull();
       cleanup();
     });
 
-    it('defaults to 7 days expiry', () => {
-      const { getByTestId, cleanup } = renderShareLinkDialog();
+    it('hides warning when expiry preset is selected', () => {
+      const { getByTestId, queryByTestId, cleanup } = renderShareLinkDialog();
 
-      const checkbox = getByTestId('expiry-checkbox') as HTMLInputElement;
-
+      // Select Never first
+      const neverPreset = getByTestId('expiry-preset-never') as HTMLButtonElement;
       act(() => {
-        checkbox.click();
+        neverPreset.click();
       });
 
-      const daysInput = getByTestId('expiry-days-input') as HTMLInputElement;
-      expect(daysInput.value).toBe('7');
-      cleanup();
-    });
+      expect(queryByTestId('never-expires-warning')).not.toBeNull();
 
-    it('allows changing expiry days', () => {
-      const { getByTestId, cleanup } = renderShareLinkDialog();
-
-      const checkbox = getByTestId('expiry-checkbox') as HTMLInputElement;
-
+      // Select 7 days
+      const sevenDaysPreset = getByTestId('expiry-preset-7-days') as HTMLButtonElement;
       act(() => {
-        checkbox.click();
+        sevenDaysPreset.click();
       });
 
-      const daysInput = getByTestId('expiry-days-input') as HTMLInputElement;
-
-      act(() => {
-        daysInput.value = '30';
-        daysInput.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-
-      expect(daysInput.value).toBe('30');
+      expect(queryByTestId('never-expires-warning')).toBeNull();
       cleanup();
     });
   });
@@ -297,16 +314,11 @@ describe('ShareLinkDialog', () => {
       cleanup();
     });
 
-    it('passes expiresAt when expiry is enabled', async () => {
+    it('passes expiresAt when expiry preset is selected (default)', async () => {
       const onCreate = vi.fn().mockResolvedValue(createMockResult());
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
-      const expiryCheckbox = getByTestId('expiry-checkbox') as HTMLInputElement;
-
-      act(() => {
-        expiryCheckbox.click();
-      });
-
+      // Default is 7 days, so expiresAt should be set
       const generateButton = getByTestId('generate-button') as HTMLButtonElement;
 
       await act(async () => {
@@ -319,6 +331,28 @@ describe('ShareLinkDialog', () => {
           expiresAt: expect.any(Date),
         })
       );
+      cleanup();
+    });
+
+    it('does not pass expiresAt when Never is selected', async () => {
+      const onCreate = vi.fn().mockResolvedValue(createMockResult());
+      const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
+
+      const neverPreset = getByTestId('expiry-preset-never') as HTMLButtonElement;
+
+      act(() => {
+        neverPreset.click();
+      });
+
+      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+
+      await act(async () => {
+        generateButton.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const callArg = onCreate.mock.calls[0][0];
+      expect(callArg.expiresAt).toBeUndefined();
       cleanup();
     });
 
@@ -556,47 +590,6 @@ describe('ShareLinkDialog', () => {
   });
 
   describe('validation', () => {
-    it('shows error for invalid expiry days', async () => {
-      const onCreate = vi.fn().mockResolvedValue(createMockResult());
-      const { getByTestId, queryByTestId, cleanup } = renderShareLinkDialog({
-        onCreate,
-      });
-
-      const expiryCheckbox = getByTestId('expiry-checkbox') as HTMLInputElement;
-
-      act(() => {
-        expiryCheckbox.click();
-      });
-
-      const daysInput = getByTestId('expiry-days-input') as HTMLInputElement;
-
-      // Set to 0 (invalid) - simulate proper React change event
-      act(() => {
-        daysInput.focus();
-        // For number inputs with validation, test that the component handles edge case input
-        // The component uses parseInt with || 1 fallback, so setting 0 would result in 0
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-          window.HTMLInputElement.prototype,
-          'value'
-        )?.set;
-        nativeInputValueSetter?.call(daysInput, '0');
-        const event = new Event('input', { bubbles: true });
-        daysInput.dispatchEvent(event);
-      });
-
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
-
-      await act(async () => {
-        generateButton.click();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-
-      // The validation message may or may not show depending on how the component handles input
-      // If input value is coerced to 1, the submission would proceed
-      // This test verifies that validation works for edge cases
-      cleanup();
-    });
-
     it('shows error for invalid max uses', async () => {
       const onCreate = vi.fn().mockResolvedValue(createMockResult());
       const { getByTestId, cleanup } = renderShareLinkDialog({

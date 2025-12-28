@@ -99,6 +99,16 @@ export interface UseShareLinksResult {
   isRevoking: boolean;
   /** Error during revoke */
   revokeError: string | null;
+  /** Update share link expiration */
+  updateExpiration: (
+    linkId: string,
+    expiresAt: Date | null,
+    maxUses: number | null
+  ) => Promise<void>;
+  /** Whether update is in progress */
+  isUpdating: boolean;
+  /** Error during update */
+  updateError: string | null;
 }
 
 /**
@@ -155,6 +165,8 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
   const [createError, setCreateError] = useState<string | null>(null);
   const [isRevoking, setIsRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   /**
    * Fetch share links from API
@@ -357,6 +369,42 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
     []
   );
 
+  /**
+   * Update share link expiration
+   */
+  const updateExpiration = useCallback(
+    async (
+      linkId: string,
+      expiresAt: Date | null,
+      maxUses: number | null
+    ): Promise<void> => {
+      try {
+        setIsUpdating(true);
+        setUpdateError(null);
+
+        const api = getApi();
+        const response = await api.updateShareLinkExpiration(albumId, linkId, {
+          expiresAt: expiresAt ? expiresAt.toISOString() : null,
+          maxUses,
+        });
+
+        // Update the link in the list
+        const updatedLink = toShareLinkInfo(response);
+        setShareLinks((prev) =>
+          prev.map((link) => (link.id === linkId ? updatedLink : link))
+        );
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Failed to update share link';
+        setUpdateError(message);
+        throw err;
+      } finally {
+        setIsUpdating(false);
+      }
+    },
+    [albumId]
+  );
+
   return {
     shareLinks,
     isLoading,
@@ -368,5 +416,8 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
     revokeShareLink,
     isRevoking,
     revokeError,
+    updateExpiration,
+    isUpdating,
+    updateError,
   };
 }

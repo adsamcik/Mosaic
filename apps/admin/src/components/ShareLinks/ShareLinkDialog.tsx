@@ -29,6 +29,22 @@ interface TierOption {
   description: string;
 }
 
+/** Expiry preset option */
+export interface ExpiryPreset {
+  label: string;
+  hours: number | null;
+}
+
+/** Expiry presets for quick selection */
+export const EXPIRY_PRESETS: ExpiryPreset[] = [
+  { label: '1 hour', hours: 1 },
+  { label: '24 hours', hours: 24 },
+  { label: '7 days', hours: 24 * 7 },
+  { label: '30 days', hours: 24 * 30 },
+  { label: '1 year', hours: 24 * 365 },
+  { label: 'Never', hours: null },
+];
+
 const TIER_OPTIONS: TierOption[] = [
   {
     value: 1,
@@ -64,8 +80,9 @@ export function ShareLinkDialog({
   error,
 }: ShareLinkDialogProps) {
   const [accessTier, setAccessTier] = useState<AccessTier>(2);
-  const [expiryEnabled, setExpiryEnabled] = useState(false);
-  const [expiryDays, setExpiryDays] = useState(7);
+  const [expiryEnabled, setExpiryEnabled] = useState(true);
+  const [expiryHours, setExpiryHours] = useState(24 * 7); // Default to 7 days
+  const [selectedPresetIndex, setSelectedPresetIndex] = useState(2); // 7 days preset
   const [maxUsesEnabled, setMaxUsesEnabled] = useState(false);
   const [maxUses, setMaxUses] = useState(10);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -79,8 +96,9 @@ export function ShareLinkDialog({
   useEffect(() => {
     if (!isOpen) {
       setAccessTier(2);
-      setExpiryEnabled(false);
-      setExpiryDays(7);
+      setExpiryEnabled(true);
+      setExpiryHours(24 * 7);
+      setSelectedPresetIndex(2);
       setMaxUsesEnabled(false);
       setMaxUses(10);
       setLocalError(null);
@@ -113,11 +131,6 @@ export function ShareLinkDialog({
     setLocalError(null);
 
     // Validate inputs
-    if (expiryEnabled && expiryDays < 1) {
-      setLocalError('Expiry must be at least 1 day');
-      return;
-    }
-
     if (maxUsesEnabled && maxUses < 1) {
       setLocalError('Max uses must be at least 1');
       return;
@@ -128,9 +141,9 @@ export function ShareLinkDialog({
         accessTier,
       };
 
-      if (expiryEnabled) {
+      if (expiryEnabled && expiryHours !== null) {
         const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + expiryDays);
+        expiresAt.setTime(expiresAt.getTime() + expiryHours * 60 * 60 * 1000);
         options.expiresAt = expiresAt;
       }
 
@@ -142,6 +155,17 @@ export function ShareLinkDialog({
       setResult(linkResult);
     } catch {
       // Error is handled via error prop
+    }
+  };
+
+  const handlePresetClick = (preset: ExpiryPreset, index: number) => {
+    setSelectedPresetIndex(index);
+    if (preset.hours === null) {
+      setExpiryEnabled(false);
+      setExpiryHours(0);
+    } else {
+      setExpiryEnabled(true);
+      setExpiryHours(preset.hours);
     }
   };
 
@@ -306,30 +330,25 @@ export function ShareLinkDialog({
           </div>
 
           <div className="form-group">
-            <label className="form-label checkbox-label">
-              <input
-                type="checkbox"
-                checked={expiryEnabled}
-                onChange={(e) => setExpiryEnabled(e.target.checked)}
-                disabled={isCreating}
-                data-testid="expiry-checkbox"
-              />
-              <span>Set expiry date</span>
-            </label>
-            {expiryEnabled && (
-              <div className="expiry-input" data-testid="expiry-input-group">
-                <span>Expires in</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={expiryDays}
-                  onChange={(e) => setExpiryDays(parseInt(e.target.value, 10) || 1)}
+            <label className="form-label">Link Expiration</label>
+            <div className="expiry-presets" data-testid="expiry-presets">
+              {EXPIRY_PRESETS.map((preset, index) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  className={`expiry-preset-button ${selectedPresetIndex === index ? 'selected' : ''}`}
+                  onClick={() => handlePresetClick(preset, index)}
                   disabled={isCreating}
-                  className="form-input number-input"
-                  data-testid="expiry-days-input"
-                />
-                <span>days</span>
+                  data-testid={`expiry-preset-${preset.label.toLowerCase().replace(/\s/g, '-')}`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            {!expiryEnabled && (
+              <div className="warning-banner" data-testid="never-expires-warning">
+                ⚠️ This link will never expire. Anyone with the link can access 
+                the album indefinitely. Consider setting an expiration date.
               </div>
             )}
           </div>
