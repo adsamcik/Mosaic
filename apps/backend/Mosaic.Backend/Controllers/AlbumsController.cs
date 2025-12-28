@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Middleware;
+using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -21,7 +22,22 @@ public class CreateAlbumRequest
     /// Optional - if not provided, album name will not be stored.
     /// </summary>
     public string? EncryptedName { get; set; }
+
+    /// <summary>
+    /// Optional expiration date for the album. Must be in the future if provided.
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
+
+    /// <summary>
+    /// Number of days before expiration to warn members. Defaults to 7 if not provided.
+    /// </summary>
+    public int? ExpirationWarningDays { get; set; }
 }
+
+/// <summary>
+/// Request to update album expiration settings
+/// </summary>
+public record UpdateExpirationRequest(DateTimeOffset? ExpiresAt, int? ExpirationWarningDays);
 
 /// <summary>
 /// Initial epoch key data for album creation
@@ -55,12 +71,18 @@ public class AlbumsController : ControllerBase
 {
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
+    private readonly IQuotaSettingsService _quotaService;
     private readonly ILogger<AlbumsController> _logger;
 
-    public AlbumsController(MosaicDbContext db, IConfiguration config, ILogger<AlbumsController> logger)
+    public AlbumsController(
+        MosaicDbContext db,
+        IConfiguration config,
+        IQuotaSettingsService quotaService,
+        ILogger<AlbumsController> logger)
     {
         _db = db;
         _config = config;
+        _quotaService = quotaService;
         _logger = logger;
     }
 
@@ -110,6 +132,8 @@ public class AlbumsController : ControllerBase
                 am.Album.CurrentVersion,
                 am.Album.CreatedAt,
                 am.Album.EncryptedName,
+                am.Album.ExpiresAt,
+                am.Album.ExpirationWarningDays,
                 am.Role
             })
             .ToListAsync();
@@ -151,6 +175,28 @@ public class AlbumsController : ControllerBase
             return BadRequest(new { error = "signPubkey is required" });
         }
 
+        // Validate expiration if provided
+        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return BadRequest(new { error = "expiresAt must be in the future" });
+        }
+
+        if (request.ExpirationWarningDays.HasValue && request.ExpirationWarningDays.Value < 0)
+        {
+            return BadRequest(new { error = "expirationWarningDays must be non-negative" });
+        }
+
+        // Check album count limit
+        var quota = await _db.UserQuotas.FindAsync(user.Id);
+        var maxAlbums = await _quotaService.GetEffectiveMaxAlbumsAsync(user.Id);
+        var currentAlbumCount = quota?.CurrentAlbumCount ?? await _db.Albums.CountAsync(a => a.OwnerId == user.Id);
+
+        if (currentAlbumCount >= maxAlbums)
+        {
+            _logger.LogWarning("User {UserId} exceeded album limit: {Current}/{Max}", user.Id, currentAlbumCount, maxAlbums);
+            return BadRequest(new { error = "ALBUM_LIMIT_EXCEEDED", message = $"Maximum album limit ({maxAlbums}) reached" });
+        }
+
         // Create album, member, and epoch key in single transaction
         await using var transaction = await _db.Database.BeginTransactionAsync();
         try
@@ -161,7 +207,9 @@ public class AlbumsController : ControllerBase
                 OwnerId = user.Id,
                 CurrentEpochId = 1,
                 CurrentVersion = 1,
-                EncryptedName = request.EncryptedName
+                EncryptedName = request.EncryptedName,
+                ExpiresAt = request.ExpiresAt,
+                ExpirationWarningDays = request.ExpirationWarningDays ?? 7
             };
             _db.Albums.Add(album);
 
@@ -202,7 +250,9 @@ public class AlbumsController : ControllerBase
                 album.CurrentEpochId,
                 album.CurrentVersion,
                 album.CreatedAt,
-                album.EncryptedName
+                album.EncryptedName,
+                album.ExpiresAt,
+                album.ExpirationWarningDays
             });
         }
         catch
@@ -237,7 +287,58 @@ public class AlbumsController : ControllerBase
             album.CurrentVersion,
             album.CreatedAt,
             album.EncryptedName,
+            album.ExpiresAt,
+            album.ExpirationWarningDays,
             membership.Role
+        });
+    }
+
+    /// <summary>
+    /// Update album expiration settings (owner only)
+    /// </summary>
+    [HttpPatch("{albumId:guid}/expiration")]
+    public async Task<IActionResult> UpdateExpiration(Guid albumId, [FromBody] UpdateExpirationRequest request)
+    {
+        var user = await GetOrCreateUser();
+
+        var album = await _db.Albums.FindAsync(albumId);
+        if (album == null) return NotFound();
+
+        // Only owner can update expiration
+        if (album.OwnerId != user.Id) return Forbid();
+
+        // Validate expiresAt if provided (null is allowed to remove expiration)
+        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return BadRequest(new { error = "expiresAt must be in the future" });
+        }
+
+        if (request.ExpirationWarningDays.HasValue && request.ExpirationWarningDays.Value < 0)
+        {
+            return BadRequest(new { error = "expirationWarningDays must be non-negative" });
+        }
+
+        // Update expiration settings
+        album.ExpiresAt = request.ExpiresAt;
+        if (request.ExpirationWarningDays.HasValue)
+        {
+            album.ExpirationWarningDays = request.ExpirationWarningDays.Value;
+        }
+        album.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Album expiration updated. AlbumId: {AlbumId}, ExpiresAt: {ExpiresAt}, UpdatedBy: {UserId}, CorrelationId: {CorrelationId}",
+            albumId,
+            album.ExpiresAt,
+            user.Id,
+            HttpContext.GetCorrelationId());
+
+        return Ok(new
+        {
+            album.ExpiresAt,
+            album.ExpirationWarningDays
         });
     }
 

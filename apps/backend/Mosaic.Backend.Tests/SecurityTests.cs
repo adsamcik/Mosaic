@@ -35,7 +35,7 @@ public class SecurityTests
         await builder.CreateUserAsync(UserB);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new AlbumsController(db, config, NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -58,7 +58,7 @@ public class SecurityTests
         var config = TestConfiguration.Create();
         await new TestDataBuilder(db).CreateUserAsync(UserA);
 
-        var controller = new AlbumsController(db, config, NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -91,7 +91,7 @@ public class SecurityTests
         membership.RevokedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var controller = new AlbumsController(db, config, NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -119,7 +119,7 @@ public class SecurityTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, member, "viewer", owner);
 
-        var controller = new AlbumsController(db, config, NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -153,7 +153,7 @@ public class SecurityTests
         // UserB creates 1 album
         await builder.CreateAlbumAsync(userB);
 
-        var controller = new AlbumsController(db, config, NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -543,7 +543,7 @@ public class SecurityTests
         // Get albums for each user
         async Task<int> GetAlbumCount(string authSub)
         {
-            var controller = new AlbumsController(db, config, NullLoggerFactory.CreateNullLogger<AlbumsController>())
+            var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
             {
                 ControllerContext = new ControllerContext
                 {
@@ -573,7 +573,7 @@ public class SecurityTests
         await builder.CreateUserAsync(UserB);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new AlbumsController(db, config, NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -749,7 +749,7 @@ public class SecurityTests
         var config = TestConfiguration.Create();
         await new TestDataBuilder(db).CreateUserAsync(UserA);
 
-        var controller = new AlbumsController(db, config, NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -783,7 +783,7 @@ public class SecurityTests
         var config = TestConfiguration.Create();
         await new TestDataBuilder(db).CreateUserAsync(UserA);
 
-        var controller = new AlbumsController(db, config, NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -805,3 +805,4 @@ public class SecurityTests
 
     #endregion
 }
+
