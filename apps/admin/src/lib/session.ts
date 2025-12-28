@@ -15,6 +15,9 @@ const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart', 'scroll'] as cons
 /** Salt storage key in localStorage */
 const USER_SALT_KEY = 'mosaic:userSalt';
 
+/** Session state stored in sessionStorage for page reload detection */
+const SESSION_STATE_KEY = 'mosaic:sessionState';
+
 /** PBKDF2 iterations for salt encryption key derivation */
 const SALT_ENCRYPTION_ITERATIONS = 100000;
 
@@ -161,6 +164,115 @@ class SessionManager {
   }
 
   /**
+   * Check if there's a valid session that can be restored.
+   * Returns the user if session is valid, null if not authenticated.
+   * This allows showing a "session restore" UI instead of full login.
+   */
+  async checkSession(): Promise<User | null> {
+    try {
+      const api = getApi();
+      const user = await api.getCurrentUser();
+      return user;
+    } catch {
+      // Session invalid or expired
+      return null;
+    }
+  }
+
+  /**
+   * Check if session restoration is needed (has session state but not logged in)
+   */
+  get needsSessionRestore(): boolean {
+    return !this._isLoggedIn && sessionStorage.getItem(SESSION_STATE_KEY) === 'active';
+  }
+
+  /**
+   * Mark session state as active (called after successful login)
+   */
+  private markSessionActive(): void {
+    sessionStorage.setItem(SESSION_STATE_KEY, 'active');
+  }
+
+  /**
+   * Restore an existing session with password.
+   * Use this after page reload when the session cookie is still valid
+   * but crypto workers need to be reinitialized.
+   * 
+   * @param password - User's password to derive keys
+   * @param user - Optional user object from checkSession() to skip refetch
+   * @throws SaltDecryptionError if password is wrong
+   */
+  async restoreSession(password: string, user?: User): Promise<void> {
+    // Request persistent storage for OPFS
+    if (navigator.storage?.persist) {
+      const granted = await navigator.storage.persist();
+      if (!granted) {
+        console.warn('Persistent storage not granted - data may be evicted');
+      }
+    }
+
+    // Get current user from backend (authenticated via session cookie)
+    const api = getApi();
+    this._currentUser = user ?? await api.getCurrentUser();
+
+    // Get user salt - server should have it if user logged in before
+    let userSalt: Uint8Array;
+    const username = this._currentUser.authSub;
+
+    if (this._currentUser.encryptedSalt && this._currentUser.saltNonce) {
+      // Server has salt - decrypt it with password
+      // If decryption fails, password is wrong - throw error
+      userSalt = await decryptSalt(
+        this._currentUser.encryptedSalt,
+        this._currentUser.saltNonce,
+        password,
+        username
+      );
+      // Store locally for faster subsequent operations
+      localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+    } else {
+      // Server has no salt - use local storage
+      const storedSalt = localStorage.getItem(USER_SALT_KEY);
+      if (!storedSalt) {
+        throw new Error('No salt available - please log in again');
+      }
+      userSalt = fromBase64(storedSalt);
+    }
+
+    // Account salt is derived from user ID for deterministic derivation
+    const accountSalt = new TextEncoder().encode(this._currentUser.id).slice(0, 16);
+    const paddedAccountSalt = new Uint8Array(16);
+    paddedAccountSalt.set(accountSalt);
+
+    // Initialize crypto worker with password and salts
+    const cryptoClient = await getCryptoClient();
+    await cryptoClient.init(password, userSalt, paddedAccountSalt);
+
+    // Derive identity keypair for epoch key operations
+    await cryptoClient.deriveIdentity();
+
+    // Initialize database worker with session key
+    const db = await getDbClient();
+    const sessionKey = await cryptoClient.getSessionKey();
+    await db.init(sessionKey);
+
+    this._isLoggedIn = true;
+    this.markSessionActive();
+    this.notify();
+
+    // Subscribe to settings changes to update idle timeout
+    this.settingsUnsubscribe = subscribeToSettings(() => {
+      if (this._isLoggedIn) {
+        this.resetIdleTimer();
+      }
+    });
+
+    // Start idle timeout tracking
+    this.resetIdleTimer();
+    this.attachIdleListeners();
+  }
+
+  /**
    * Log in with password
    * Initializes crypto and database workers.
    * Syncs user salt with server for multi-device support.
@@ -236,6 +348,7 @@ class SessionManager {
     await db.init(sessionKey);
 
     this._isLoggedIn = true;
+    this.markSessionActive();
     this.notify();
 
     // Subscribe to settings changes to update idle timeout
@@ -291,6 +404,7 @@ class SessionManager {
     await db.init(sessionKey);
 
     this._isLoggedIn = true;
+    this.markSessionActive();
     this.notify();
 
     // Subscribe to settings changes
