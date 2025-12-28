@@ -13,6 +13,14 @@
   --color-error: #ef4444;
   --color-success: #22c55e;
 
+  /* Overlay colors for photo grid */
+  --color-overlay-light: rgba(0, 0, 0, 0.5);
+  --color-overlay-medium: rgba(0, 0, 0, 0.7);
+  --color-overlay-heavy: rgba(0, 0, 0, 0.8);
+  --color-overlay-text: rgba(255, 255, 255, 0.95);
+  --color-overlay-text-muted: rgba(255, 255, 255, 0.7);
+  --color-shadow: rgba(0, 0, 0, 0.3);
+
   /* Spacing */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
@@ -377,14 +385,7 @@ body {
   flex-direction: column;
 }
 
-.gallery-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--spacing-md);
-  gap: var(--spacing-md);
-  flex-wrap: wrap;
-}
+/* NOTE: .gallery-header styles are defined in the Justified Photo Grid section below */
 
 .gallery-title {
   font-size: 1.5rem;
@@ -3383,36 +3384,50 @@ body {
   height: 22px;
   cursor: pointer;
   accent-color: var(--color-primary);
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-overlay-light);
   border-radius: var(--radius-sm);
 }
 
-/* Delete button */
+/* Delete button - 44px minimum touch target for accessibility */
 .justified-photo-delete {
   position: absolute;
   top: var(--spacing-xs);
   right: var(--spacing-xs);
   z-index: 10;
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--color-overlay-medium);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 16px;
   opacity: 0;
   transition: opacity 0.2s, background 0.2s;
 }
 
-.justified-photo-thumbnail:hover .justified-photo-delete {
+.justified-photo-thumbnail:hover .justified-photo-delete,
+.justified-photo-thumbnail:focus-within .justified-photo-delete {
   opacity: 1;
+}
+
+/* Always show delete button on touch devices */
+@media (hover: none) {
+  .justified-photo-delete {
+    opacity: 0.8;
+  }
 }
 
 .justified-photo-delete:hover {
   background: var(--color-error);
+}
+
+.justified-photo-delete:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 /* Photo info overlay */
@@ -3422,7 +3437,7 @@ body {
   left: 0;
   right: 0;
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  background: linear-gradient(transparent, var(--color-overlay-heavy));
   display: flex;
   flex-direction: column;
   pointer-events: none;
@@ -3430,7 +3445,7 @@ body {
 
 .justified-photo-filename {
   font-size: 0.75rem;
-  color: white;
+  color: var(--color-overlay-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3438,7 +3453,7 @@ body {
 
 .justified-photo-date {
   font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--color-overlay-text-muted);
 }
 
 /* Gallery header enhancements */
@@ -3521,9 +3536,24 @@ body {
 
 .view-toggle-badge {
   font-size: 0.75rem;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--color-overlay-light);
   padding: 1px 6px;
   border-radius: 10px;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .justified-photo-thumbnail {
+    transition: none;
+  }
+  
+  .justified-photo-delete {
+    transition: none;
+  }
+  
+  .justified-photo-thumbnail:hover {
+    transform: none;
+  }
 }
 
 /* Responsive adjustments */

@@ -20,6 +20,8 @@ const PRELOAD_COUNT = 2;
 
 interface PhotoGridProps {
   albumId: string;
+  /** Search query to filter photos */
+  searchQuery?: string;
   /** Callback when photos are deleted (for refreshing) */
   onPhotosDeleted?: () => void;
 }
@@ -28,9 +30,9 @@ interface PhotoGridProps {
  * Virtualized Photo Grid Component
  * Uses TanStack Virtual for efficient rendering of large photo collections
  */
-export function PhotoGrid({ albumId, onPhotosDeleted }: PhotoGridProps) {
+export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted }: PhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const { photos, isLoading, error, refetch } = usePhotos(albumId);
+  const { photos, isLoading, error, refetch } = usePhotos(albumId, searchQuery);
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
   const lightbox = useLightbox(photos);
   const photoActions = usePhotoActions();

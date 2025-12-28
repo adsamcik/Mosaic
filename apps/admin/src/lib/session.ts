@@ -500,7 +500,7 @@ class SessionManager {
     }
 
     // Perform LocalAuth login (registers if user doesn't exist)
-    const { userId, userSalt, accountSalt, isNewUser } = await localAuthLogin(username, password);
+    const { userId, userSalt, accountSalt, isNewUser, wrappedAccountKey } = await localAuthLogin(username, password);
 
     // Now fetch the current user (we have a session cookie)
     const api = getApi();
@@ -509,10 +509,20 @@ class SessionManager {
     // Store salt locally
     localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
 
-    // Crypto is already initialized by localAuthLogin, but we need to reinit
-    // to ensure consistent state (localAuthLogin may have cleared keys on failure)
+    // Re-init crypto with the correct keys
+    // For returning users, we MUST use the wrapped account key to get the same identity
+    // that was used when the epoch keys were sealed
     const cryptoClient = await getCryptoClient();
-    await cryptoClient.init(password, userSalt, accountSalt);
+    if (wrappedAccountKey) {
+      // Returning user: unwrap their existing account key
+      await cryptoClient.initWithWrappedKey(password, userSalt, accountSalt, wrappedAccountKey);
+    } else if (!isNewUser) {
+      // Returning user but no wrapped key on server - this is a problem!
+      // Fall back to generating new key (will break epoch key decryption)
+      log.warn('Returning user without wrapped account key - identity will differ!');
+      await cryptoClient.init(password, userSalt, accountSalt);
+    }
+    // For new users, localAuthLogin already called init() with correct key
     await cryptoClient.deriveIdentity();
 
     // Initialize database worker with session key

@@ -10,6 +10,7 @@ import {
   useAlbumPermissions,
   useHasPermission,
 } from '../src/contexts/AlbumPermissionsContext';
+import { AccessTier } from '../src/lib/api-types';
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -143,12 +144,12 @@ describe('AlbumPermissionsContext', () => {
       expect(getTestId('access-tier')).toBe('undefined');
     });
 
-    it('should allow download with full access tier (3)', () => {
+    it('should allow download with full access tier (AccessTier.Full)', () => {
       act(() => {
         root.render(
           createElement(
             AlbumPermissionsProvider,
-            { role: 'anonymous', accessTier: 3, children: createElement(PermissionsDisplay) }
+            { role: 'anonymous', accessTier: AccessTier.Full, children: createElement(PermissionsDisplay) }
           )
         );
       });
@@ -157,12 +158,12 @@ describe('AlbumPermissionsContext', () => {
       expect(getTestId('access-tier')).toBe('3');
     });
 
-    it('should not allow download with preview access tier (2)', () => {
+    it('should not allow download with preview access tier (AccessTier.Preview)', () => {
       act(() => {
         root.render(
           createElement(
             AlbumPermissionsProvider,
-            { role: 'anonymous', accessTier: 2, children: createElement(PermissionsDisplay) }
+            { role: 'anonymous', accessTier: AccessTier.Preview, children: createElement(PermissionsDisplay) }
           )
         );
       });
@@ -171,12 +172,12 @@ describe('AlbumPermissionsContext', () => {
       expect(getTestId('access-tier')).toBe('2');
     });
 
-    it('should not allow download with thumbnail access tier (1)', () => {
+    it('should not allow download with thumbnail access tier (AccessTier.Thumbnail)', () => {
       act(() => {
         root.render(
           createElement(
             AlbumPermissionsProvider,
-            { role: 'anonymous', accessTier: 1, children: createElement(PermissionsDisplay) }
+            { role: 'anonymous', accessTier: AccessTier.Thumbnail, children: createElement(PermissionsDisplay) }
           )
         );
       });

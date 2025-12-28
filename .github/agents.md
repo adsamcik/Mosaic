@@ -122,8 +122,8 @@ Brief description of what the function does.
 
 ### Parameters
 
-| Name | Type | Description |
-|------|------|-------------|
+| Name   | Type     | Description |
+| ------ | -------- | ----------- |
 | param1 | `string` | Description |
 
 ### Returns

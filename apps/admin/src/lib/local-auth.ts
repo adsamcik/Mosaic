@@ -155,6 +155,7 @@ export async function localAuthLogin(
   userSalt: Uint8Array;
   accountSalt: Uint8Array;
   isNewUser: boolean;
+  wrappedAccountKey: Uint8Array | null;
 }> {
   // Step 1: Get challenge from server
   const { challengeId, challenge, userSalt, timestamp } = await initAuth(username);
@@ -166,6 +167,8 @@ export async function localAuthLogin(
   const accountSaltBytes = await deriveAccountSalt(userSaltBytes);
   
   // Initialize crypto to derive identity key
+  // For initial authentication, we must use init() to derive the auth key
+  // This works because the auth key derivation is deterministic from password+salts
   const cryptoClient = await getCryptoClient();
   await cryptoClient.init(password, userSaltBytes, accountSaltBytes);
   await cryptoClient.deriveIdentity();
@@ -179,15 +182,22 @@ export async function localAuthLogin(
   try {
     const verifyResult = await verifyAuth(username, challengeId, signatureBase64, timestamp);
     
-    // If server has different account salt, use that
+    // If server has a wrapped account key, we need to re-init with it
+    // to get the correct identity for epoch key operations
     const serverAccountSalt = verifyResult.accountSalt 
       ? fromBase64(verifyResult.accountSalt) 
       : accountSaltBytes;
+    
+    // Return wrapped key so caller can re-init if needed
+    const wrappedAccountKey = verifyResult.wrappedAccountKey
+      ? fromBase64(verifyResult.wrappedAccountKey)
+      : null;
     
     return {
       userId: verifyResult.userId,
       userSalt: userSaltBytes,
       accountSalt: serverAccountSalt,
+      wrappedAccountKey,
       isNewUser: false,
     };
   } catch (error) {
@@ -220,11 +230,12 @@ async function registerNewUser(
   userSalt: Uint8Array;
   accountSalt: Uint8Array;
   isNewUser: boolean;
+  wrappedAccountKey: Uint8Array | null;
 }> {
   // Generate account salt
   const accountSalt = await deriveAccountSalt(userSalt);
   
-  // Initialize crypto
+  // Initialize crypto (generates new random account key)
   const cryptoClient = await getCryptoClient();
   await cryptoClient.init(password, userSalt, accountSalt);
   await cryptoClient.deriveIdentity();
@@ -237,13 +248,20 @@ async function registerNewUser(
     throw new Error('Failed to derive identity keys');
   }
   
-  // Register with server
+  // Get wrapped account key for server storage (CRITICAL for identity persistence)
+  const wrappedAccountKey = await cryptoClient.getWrappedAccountKey();
+  if (!wrappedAccountKey) {
+    throw new Error('Failed to get wrapped account key');
+  }
+  
+  // Register with server (include wrapped account key for future logins)
   await registerUser({
     username,
     authPubkey: toBase64(authPubkey),
     identityPubkey: toBase64(identityPubkey),
     userSalt: toBase64(userSalt),
     accountSalt: toBase64(accountSalt),
+    wrappedAccountKey: toBase64(wrappedAccountKey),
   });
   
   // Now login to get session cookie (user exists now)
@@ -262,6 +280,7 @@ async function registerNewUser(
     userSalt,
     accountSalt,
     isNewUser: true,
+    wrappedAccountKey: null, // New user already has correct keys loaded
   };
 }
 
@@ -271,9 +290,11 @@ async function registerNewUser(
  */
 async function deriveAccountSalt(userSalt: Uint8Array): Promise<Uint8Array> {
   // Use Web Crypto to derive account salt
+  // Create a copy to avoid SharedArrayBuffer issues
+  const saltBuffer = new Uint8Array(userSalt).buffer;
   const key = await crypto.subtle.importKey(
     'raw',
-    userSalt,
+    saltBuffer,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']

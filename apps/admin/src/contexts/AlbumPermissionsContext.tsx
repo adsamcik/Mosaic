@@ -6,7 +6,7 @@
  */
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import type { AlbumRole } from '../lib/api-types';
+import { AccessTier, type AlbumRole, type AccessTierValue } from '../lib/api-types';
 
 /**
  * Permission capabilities derived from user's role
@@ -30,8 +30,8 @@ export interface AlbumPermissions {
   canSelect: boolean;
   /** Whether the user can download photos */
   canDownload: boolean;
-  /** Access tier for anonymous share link access (1=thumb, 2=preview, 3=full) */
-  accessTier?: 1 | 2 | 3;
+  /** Access tier for anonymous share link access */
+  accessTier?: AccessTierValue;
 }
 
 /**
@@ -42,7 +42,7 @@ export interface AlbumPermissionsProviderProps {
   /** User's role in this album */
   role: AlbumRole | 'anonymous';
   /** Access tier for share links (only for anonymous role) */
-  accessTier?: 1 | 2 | 3;
+  accessTier?: AccessTierValue;
 }
 
 /**
@@ -73,7 +73,7 @@ const AlbumPermissionsContext = createContext<AlbumPermissions>(defaultPermissio
  */
 function derivePermissions(
   role: AlbumRole | 'anonymous',
-  accessTier?: 1 | 2 | 3
+  accessTier?: AccessTierValue
 ): AlbumPermissions {
   switch (role) {
     case 'owner':
@@ -126,9 +126,15 @@ function derivePermissions(
         canEditAlbum: false,
         canSelect: false,
         // Anonymous users can download only if they have full access tier
-        canDownload: accessTier === 3,
+        canDownload: accessTier === AccessTier.Full,
         ...(accessTier !== undefined && { accessTier }),
       };
+
+    default: {
+      // TypeScript exhaustiveness check - ensures all roles are handled
+      const _exhaustiveCheck: never = role;
+      throw new Error(`Unknown album role: ${_exhaustiveCheck}`);
+    }
   }
 }
 

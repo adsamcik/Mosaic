@@ -6,6 +6,26 @@
  */
 
 // =============================================================================
+// Access Tier for Share Links
+// =============================================================================
+
+/**
+ * Access tier levels for anonymous share link access.
+ * Higher tiers include all capabilities of lower tiers.
+ */
+export const AccessTier = {
+  /** Thumbnail only (200x200), no metadata */
+  Thumbnail: 1,
+  /** Preview resolution (up to 1080p), no location data */
+  Preview: 2,
+  /** Full resolution with all metadata */
+  Full: 3,
+} as const;
+
+/** Type for access tier values */
+export type AccessTierValue = (typeof AccessTier)[keyof typeof AccessTier];
+
+// =============================================================================
 // Common Types
 // =============================================================================
 

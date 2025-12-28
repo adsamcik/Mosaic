@@ -12,10 +12,12 @@ global.fetch = mockFetch;
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() => ({
     init: vi.fn().mockResolvedValue(undefined),
+    initWithWrappedKey: vi.fn().mockResolvedValue(undefined),
     deriveIdentity: vi.fn().mockResolvedValue(undefined),
     signAuthChallenge: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
     getAuthPublicKey: vi.fn().mockResolvedValue(new Uint8Array(32)),
     getIdentityPublicKey: vi.fn().mockResolvedValue(new Uint8Array(32)),
+    getWrappedAccountKey: vi.fn().mockResolvedValue(new Uint8Array(72)), // 24 nonce + 48 ciphertext
   })),
 }));
 

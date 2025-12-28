@@ -194,9 +194,9 @@ export function Gallery({ albumId }: GalleryProps) {
       {/* Gallery Content - Wrapped in DropZone for drag-and-drop upload */}
       <DropZone albumId={albumId} className="gallery-content" disabled={!canEdit}>
         {viewMode === 'justified' ? (
-          <JustifiedPhotoGrid albumId={albumId} />
+          <JustifiedPhotoGrid albumId={albumId} searchQuery={searchQuery} />
         ) : viewMode === 'grid' ? (
-          <PhotoGrid albumId={albumId} />
+          <PhotoGrid albumId={albumId} searchQuery={searchQuery} />
         ) : (
           <MapView
             albumId={albumId}
@@ -225,8 +225,8 @@ export function Gallery({ albumId }: GalleryProps) {
         />
       )}
 
-      {/* Photo Lightbox */}
-      {lightbox.isOpen && lightbox.currentPhoto && currentEpochReadKey && (
+      {/* Photo Lightbox - Only used by MapView; justified/grid grids manage their own */}
+      {viewMode === 'map' && lightbox.isOpen && lightbox.currentPhoto && currentEpochReadKey && (
         <PhotoLightbox
           photo={lightbox.currentPhoto}
           epochReadKey={currentEpochReadKey}

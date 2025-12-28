@@ -34,6 +34,8 @@ const PRELOAD_COUNT = 2;
 
 interface JustifiedPhotoGridProps {
   albumId: string;
+  /** Search query to filter photos */
+  searchQuery?: string;
   /** Callback when photos are deleted (for refreshing) */
   onPhotosDeleted?: () => void;
 }
@@ -42,12 +44,12 @@ interface JustifiedPhotoGridProps {
  * Virtualized Justified Photo Grid Component
  * Uses a Google Photos-style layout with efficient rendering
  */
-export function JustifiedPhotoGrid({ albumId, onPhotosDeleted }: JustifiedPhotoGridProps) {
+export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: JustifiedPhotoGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
 
-  const { photos, isLoading, error, refetch } = usePhotos(albumId);
+  const { photos, isLoading, error, refetch } = usePhotos(albumId, searchQuery);
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
   const lightbox = useLightbox(photos);
   const photoActions = usePhotoActions();

@@ -119,13 +119,31 @@ export interface EncryptedShard {
 export interface CryptoWorkerApi {
   /**
    * Initialize crypto with user credentials
-   * Derives L0 → L1 keys and unwraps L2 account key
+   * Derives L0 → L1 → L2 key hierarchy and generates NEW random account key.
+   * Use initWithWrappedKey() for existing users who have a stored wrapped key.
    */
   init(
     password: string,
     userSalt: Uint8Array,
     accountSalt: Uint8Array
   ): Promise<void>;
+
+  /**
+   * Initialize crypto with an existing wrapped account key.
+   * Used for returning users who already have a stored wrapped key.
+   */
+  initWithWrappedKey(
+    password: string,
+    userSalt: Uint8Array,
+    accountSalt: Uint8Array,
+    wrappedAccountKey: Uint8Array
+  ): Promise<void>;
+
+  /**
+   * Get the wrapped account key for server storage.
+   * Only available after init() for new users.
+   */
+  getWrappedAccountKey(): Promise<Uint8Array | null>;
 
   /**
    * Clear all keys from memory

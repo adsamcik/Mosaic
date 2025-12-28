@@ -1,29 +1,29 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
-import type { CryptoWorkerApi, PhotoMeta, EncryptedShard, ExportedKeys } from './types';
+import type { CryptoWorkerApi, EncryptedShard, ExportedKeys, PhotoMeta } from './types';
 
 // Import real crypto functions from @mosaic/crypto
 import {
-  deriveKeys,
-  unwrapAccountKey,
-  deriveIdentityKeypair,
-  encryptShard as cryptoEncryptShard,
-  decryptShard as cryptoDecryptShard,
-  verifyShard as cryptoVerifyShard,
-  verifyManifest as cryptoVerifyManifest,
-  signManifest as cryptoSignManifest,
-  generateEpochKey as cryptoGenerateEpochKey,
-  sealAndSignBundle,
-  verifyAndOpenBundle,
-  memzero,
-  getArgon2Params,
-  deriveLinkKeys as cryptoDeriveLinkKeys,
-  wrapTierKeyForLink as cryptoWrapTierKeyForLink,
-  unwrapTierKeyFromLink as cryptoUnwrapTierKeyFromLink,
-  generateLinkSecret as cryptoGenerateLinkSecret,
-  AccessTier,
-  type IdentityKeypair,
+    AccessTier,
+    decryptShard as cryptoDecryptShard,
+    deriveLinkKeys as cryptoDeriveLinkKeys,
+    encryptShard as cryptoEncryptShard,
+    generateEpochKey as cryptoGenerateEpochKey,
+    generateLinkSecret as cryptoGenerateLinkSecret,
+    signManifest as cryptoSignManifest,
+    unwrapTierKeyFromLink as cryptoUnwrapTierKeyFromLink,
+    verifyManifest as cryptoVerifyManifest,
+    verifyShard as cryptoVerifyShard,
+    wrapTierKeyForLink as cryptoWrapTierKeyForLink,
+    deriveIdentityKeypair,
+    deriveKeys,
+    getArgon2Params,
+    memzero,
+    sealAndSignBundle,
+    unwrapAccountKey,
+    verifyAndOpenBundle,
+    type IdentityKeypair,
 } from '@mosaic/crypto';
 
 /**
@@ -61,6 +61,7 @@ class CryptoWorker implements CryptoWorkerApi {
   /**
    * Initialize crypto with user credentials.
    * Derives L0 → L1 → L2 key hierarchy using Argon2id + HKDF.
+   * Generates a NEW random account key - use initWithWrappedKey for existing users.
    *
    * @param password - User password
    * @param userSalt - 16-byte salt stored on server (per-user)
@@ -76,11 +77,14 @@ class CryptoWorker implements CryptoWorkerApi {
     // Get device-appropriate Argon2 parameters
     const params = getArgon2Params();
 
-    // Derive full key hierarchy
+    // Derive full key hierarchy (generates NEW random account key)
     const keys = await deriveKeys(password, userSalt, accountSalt, params);
 
     // Store account key for future operations
     this.accountKey = new Uint8Array(keys.accountKey);
+
+    // Store wrapped account key for server storage
+    this.accountKeyWrapped = new Uint8Array(keys.accountKeyWrapped);
 
     // Derive session key from account key using BLAKE2b
     // This provides a separate key for database encryption
@@ -94,6 +98,61 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   /**
+   * Initialize crypto with an existing wrapped account key.
+   * Used for returning users who already have a stored wrapped key.
+   *
+   * @param password - User password
+   * @param userSalt - 16-byte salt stored on server (per-user)
+   * @param accountSalt - 16-byte salt stored on server (unique per account)
+   * @param wrappedAccountKey - Previously stored wrapped account key
+   */
+  async initWithWrappedKey(
+    password: string,
+    userSalt: Uint8Array,
+    accountSalt: Uint8Array,
+    wrappedAccountKey: Uint8Array
+  ): Promise<void> {
+    await this.ensureSodiumReady();
+
+    // Get device-appropriate Argon2 parameters
+    const params = getArgon2Params();
+
+    // Unwrap the existing account key
+    const accountKey = await unwrapAccountKey(
+      password,
+      userSalt,
+      accountSalt,
+      wrappedAccountKey,
+      params
+    );
+
+    // Store account key for future operations
+    this.accountKey = new Uint8Array(accountKey);
+
+    // Store the wrapped key (already have it)
+    this.accountKeyWrapped = new Uint8Array(wrappedAccountKey);
+
+    // Derive session key from account key using BLAKE2b
+    this.sessionKey = sodium.crypto_generichash(32, accountKey);
+
+    // Wipe the returned account key (we have a copy)
+    memzero(accountKey);
+  }
+
+  /**
+   * Get the wrapped account key for server storage.
+   * Only available after init() for new users.
+   *
+   * @returns Wrapped account key or null if not available
+   */
+  async getWrappedAccountKey(): Promise<Uint8Array | null> {
+    if (!this.accountKeyWrapped) {
+      return null;
+    }
+    return new Uint8Array(this.accountKeyWrapped);
+  }
+
+  /**
    * Clear all keys from memory.
    */
   async clear(): Promise<void> {
@@ -104,6 +163,10 @@ class CryptoWorker implements CryptoWorkerApi {
     if (this.accountKey) {
       memzero(this.accountKey);
       this.accountKey = null;
+    }
+    if (this.accountKeyWrapped) {
+      memzero(this.accountKeyWrapped);
+      this.accountKeyWrapped = null;
     }
     if (this.identityKeypair) {
       memzero(this.identityKeypair.ed25519.secretKey);
