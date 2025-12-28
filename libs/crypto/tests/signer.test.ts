@@ -363,4 +363,149 @@ describe('signer', () => {
       }
     });
   });
+
+  describe('length validation guards (mutation testing)', () => {
+    // These tests verify that length checks happen BEFORE libsodium is called.
+    // This kills mutants that change `if (length !== X)` to `if (false)`.
+    // We use a spy to confirm crypto is never invoked for invalid lengths.
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    describe('verifyManifest length guards', () => {
+      it('rejects 63-byte signature without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig63 = new Uint8Array(63); // One byte short of SIGNATURE_LENGTH (64)
+        
+        const result = verifyManifest(manifest, sig63, keypair.publicKey);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('rejects 65-byte signature without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig65 = new Uint8Array(65); // One byte over SIGNATURE_LENGTH (64)
+        
+        const result = verifyManifest(manifest, sig65, keypair.publicKey);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('rejects 31-byte public key without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig = signManifest(manifest, keypair.privateKey);
+        const pubKey31 = new Uint8Array(31); // One byte short of PUBLIC_KEY_LENGTH (32)
+        
+        const result = verifyManifest(manifest, sig, pubKey31);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('rejects 33-byte public key without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig = signManifest(manifest, keypair.privateKey);
+        const pubKey33 = new Uint8Array(33); // One byte over PUBLIC_KEY_LENGTH (32)
+        
+        const result = verifyManifest(manifest, sig, pubKey33);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('verifyShard length guards', () => {
+      it('rejects 63-byte signature without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig63 = new Uint8Array(63);
+        
+        const result = verifyShard(header, ciphertext, sig63, keypair.publicKey);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('rejects 65-byte signature without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig65 = new Uint8Array(65);
+        
+        const result = verifyShard(header, ciphertext, sig65, keypair.publicKey);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('rejects 31-byte public key without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig = signShard(header, ciphertext, keypair.privateKey);
+        const pubKey31 = new Uint8Array(31);
+        
+        const result = verifyShard(header, ciphertext, sig, pubKey31);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('rejects 33-byte public key without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig = signShard(header, ciphertext, keypair.privateKey);
+        const pubKey33 = new Uint8Array(33);
+        
+        const result = verifyShard(header, ciphertext, sig, pubKey33);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('verifyWithContext length guards', () => {
+      const data = new Uint8Array([1, 2, 3]);
+      const ctx = 'test_context';
+
+      it('rejects 63-byte signature without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig63 = new Uint8Array(63);
+        
+        const result = verifyWithContext(data, sig63, ctx, keypair.publicKey);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('rejects 65-byte signature without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig65 = new Uint8Array(65);
+        
+        const result = verifyWithContext(data, sig65, ctx, keypair.publicKey);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('rejects 31-byte public key without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig = signWithContext(data, ctx, keypair.privateKey);
+        const pubKey31 = new Uint8Array(31);
+        
+        const result = verifyWithContext(data, sig, ctx, pubKey31);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('rejects 33-byte public key without calling libsodium', () => {
+        const spy = vi.spyOn(sodium, 'crypto_sign_verify_detached');
+        const sig = signWithContext(data, ctx, keypair.privateKey);
+        const pubKey33 = new Uint8Array(33);
+        
+        const result = verifyWithContext(data, sig, ctx, pubKey33);
+        
+        expect(result).toBe(false);
+        expect(spy).not.toHaveBeenCalled();
+      });
+    });
+  });
 });
