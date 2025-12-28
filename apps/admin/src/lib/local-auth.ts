@@ -201,6 +201,7 @@ export async function localAuthLogin(
 
 /**
  * Register a new user and return their credentials.
+ * After registration, performs login to establish session cookie.
  */
 async function registerNewUser(
   username: string,
@@ -229,7 +230,7 @@ async function registerNewUser(
   }
   
   // Register with server
-  const result = await registerUser({
+  await registerUser({
     username,
     authPubkey: toBase64(authPubkey),
     identityPubkey: toBase64(identityPubkey),
@@ -237,8 +238,19 @@ async function registerNewUser(
     accountSalt: toBase64(accountSalt),
   });
   
+  // Now login to get session cookie (user exists now)
+  const { challengeId, challenge, timestamp } = await initAuth(username);
+  
+  // Sign the new challenge
+  const challengeBytes = fromBase64(challenge);
+  const signature = await cryptoClient.signAuthChallenge(challengeBytes, username, timestamp);
+  const signatureBase64 = toBase64(signature);
+  
+  // Verify and get session
+  const verifyResult = await verifyAuth(username, challengeId, signatureBase64, timestamp);
+  
   return {
-    userId: result.id,
+    userId: verifyResult.userId,
     userSalt,
     accountSalt,
     isNewUser: true,

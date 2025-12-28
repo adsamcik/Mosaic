@@ -36,14 +36,18 @@ public partial class AuthController : ControllerBase
     [GeneratedRegex(@"^[a-zA-Z0-9_\-@.]+$", RegexOptions.Compiled)]
     private static partial Regex ValidUsernamePattern();
 
+    private readonly IWebHostEnvironment _env;
+
     public AuthController(
         MosaicDbContext db,
         IConfiguration config,
-        ILogger<AuthController> logger)
+        ILogger<AuthController> logger,
+        IWebHostEnvironment env)
     {
         _db = db;
         _config = config;
         _logger = logger;
+        _env = env;
     }
 
     /// <summary>
@@ -66,15 +70,19 @@ public partial class AuthController : ControllerBase
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
 
         // Check rate limiting (max 10 challenges per IP per minute)
-        var oneMinuteAgo = DateTime.UtcNow.AddMinutes(-1);
-        var recentChallenges = await _db.AuthChallenges
-            .Where(c => c.IpAddress == ipAddress && c.CreatedAt > oneMinuteAgo)
-            .CountAsync();
-
-        if (recentChallenges >= 10)
+        // Skip rate limiting in Development environment for easier testing
+        if (!_env.IsDevelopment())
         {
-            _logger.LogWarning("Rate limit exceeded for IP {IP}", ipAddress);
-            return StatusCode(429, new { error = "Too many requests. Please wait." });
+            var oneMinuteAgo = DateTime.UtcNow.AddMinutes(-1);
+            var recentChallenges = await _db.AuthChallenges
+                .Where(c => c.IpAddress == ipAddress && c.CreatedAt > oneMinuteAgo)
+                .CountAsync();
+
+            if (recentChallenges >= 10)
+            {
+                _logger.LogWarning("Rate limit exceeded for IP {IP}", ipAddress);
+                return StatusCode(429, new { error = "Too many requests. Please wait." });
+            }
         }
 
         // Look up user

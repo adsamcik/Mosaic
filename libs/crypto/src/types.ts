@@ -347,8 +347,15 @@ export const TAG_SIZE = 16;
 /** Key size for all symmetric keys */
 export const KEY_SIZE = 32;
 
-/** Maximum shard payload size (6MB) */
-export const MAX_SHARD_SIZE = 6 * 1024 * 1024;
+/**
+ * Maximum shard payload size (100 MB).
+ * 
+ * Note: The server cannot perform image optimization (resize, convert to WebP)
+ * because all content is end-to-end encrypted. Any image processing must happen
+ * client-side before encryption. Consider using the browser's Canvas API or
+ * a library like browser-image-compression to resize/convert images before upload.
+ */
+export const MAX_SHARD_SIZE = 100 * 1024 * 1024;
 
 /** Signing context for epoch bundles */
 export const BUNDLE_SIGN_CONTEXT = 'Mosaic_EpochBundle_v1';

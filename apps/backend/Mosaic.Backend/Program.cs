@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
+using Scalar.AspNetCore;
 using tusdotnet;
 using tusdotnet.Stores;
 
@@ -29,8 +30,13 @@ builder.Services.AddScoped<IQuotaSettingsService, QuotaSettingsService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
 
-// Controllers
-builder.Services.AddControllers();
+// Controllers with camelCase JSON to match JavaScript conventions
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    });
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -63,6 +69,12 @@ app.UseAdminAuth();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference(options =>
+    {
+        options.WithTitle("Mosaic API");
+        options.WithTheme(ScalarTheme.BluePlanet);
+        options.WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
+    });
 }
 
 // Tus endpoint for uploads
@@ -72,9 +84,10 @@ Directory.CreateDirectory(storagePath);
 app.MapTus("/api/files", async httpContext => new tusdotnet.Models.DefaultTusConfiguration
 {
     Store = new TusDiskStore(storagePath),
-    // Max shard payload is 6 MB, plus 64-byte envelope header + 16-byte auth tag = 6,291,536 bytes
-    // We use 7 MB to give margin for any additional overhead
-    MaxAllowedUploadSizeInBytes = 7 * 1024 * 1024,
+    // Max upload size: 100 MB per shard
+    // Note: Server cannot process images (resize, convert to WebP) because all content
+    // is end-to-end encrypted. Image optimization must happen client-side before encryption.
+    MaxAllowedUploadSizeInBytes = 100 * 1024 * 1024,
     Events = new()
     {
         OnBeforeCreateAsync = async ctx =>

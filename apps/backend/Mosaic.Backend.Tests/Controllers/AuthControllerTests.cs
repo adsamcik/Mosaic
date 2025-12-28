@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -29,15 +30,18 @@ public class AuthControllerTests
     private static AuthController CreateController(
         Data.MosaicDbContext db,
         IConfiguration? config = null,
-        string? remoteIp = "127.0.0.1")
+        string? remoteIp = "127.0.0.1",
+        bool isDevelopment = false)
     {
         config ??= CreateConfig();
         var logger = Mock.Of<ILogger<AuthController>>();
+        var env = Mock.Of<IWebHostEnvironment>(e =>
+            e.EnvironmentName == (isDevelopment ? "Development" : "Production"));
 
         var httpContext = new DefaultHttpContext();
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(remoteIp ?? "127.0.0.1");
 
-        return new AuthController(db, config, logger)
+        return new AuthController(db, config, logger, env)
         {
             ControllerContext = new ControllerContext
             {
