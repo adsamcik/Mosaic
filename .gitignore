@@ -73,6 +73,8 @@ TestResults/
 playwright-report/
 test-results/
 results/
+mutation-report/
+.stryker-tmp/
 
 # Database
 *.db
