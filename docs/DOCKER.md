@@ -13,6 +13,9 @@ This guide covers how to build, deploy, and run Mosaic using Docker containers.
 - [Persistent Storage](#persistent-storage)
 - [Monitoring & Logs](#monitoring--logs)
 - [Troubleshooting](#troubleshooting)
+- [Container Registry](#container-registry)
+- [GitHub Actions CI/CD](#github-actions-cicd)
+- [Security Considerations](#security-considerations)
 
 ---
 
@@ -571,6 +574,136 @@ docker login
 ```bash
 ./scripts/docker-build.sh -r registry.example.com:5000 -t v1.0.0
 ```
+
+---
+
+## GitHub Actions CI/CD
+
+Mosaic includes GitHub Actions workflows for automated testing, building, and publishing Docker images.
+
+### Workflows Overview
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `tests.yml` | Push, PR | Run all unit, integration, and E2E tests |
+| `build.yml` | PR | Validate Docker builds without pushing |
+| `publish.yml` | Tag `v*`, Manual | Build and publish images to GHCR |
+
+### Publishing Docker Images
+
+Images are automatically published to GitHub Container Registry when you push a version tag:
+
+```bash
+# Create and push a release tag
+git tag v1.0.0
+git push origin v1.0.0
+
+# This triggers:
+# 1. Full test suite runs
+# 2. Backend image: ghcr.io/OWNER/mosaic-backend:v1.0.0
+# 3. Frontend image: ghcr.io/OWNER/mosaic-frontend:v1.0.0
+# 4. GitHub Release created with release notes
+```
+
+### Image Tagging Strategy
+
+Each release produces multiple tags for flexible version pinning:
+
+| Push Tag | Generated Tags |
+|----------|----------------|
+| `v1.2.3` | `1.2.3`, `1.2`, `1`, `latest` |
+| `v2.0.0` | `2.0.0`, `2.0`, `2`, `latest` |
+| `v1.2.4` | `1.2.4`, `1.2`, `1` |
+
+**Recommendations:**
+- **Production:** Pin to specific version (`:1.2.3`)
+- **Staging:** Use minor version (`:1.2`)
+- **Development:** Use `:latest` with caution
+
+### Multi-Architecture Support
+
+Published images support multiple architectures:
+- `linux/amd64` (Intel/AMD)
+- `linux/arm64` (Apple Silicon, ARM servers, Raspberry Pi)
+
+Docker automatically pulls the correct architecture for your platform.
+
+### Manual Publishing
+
+Trigger publishing without a tag via GitHub UI:
+
+1. Go to **Actions** → **Publish Docker Images**
+2. Click **Run workflow**
+3. Enter a version (e.g., `1.0.0`)
+4. Click **Run workflow**
+
+### Pulling Published Images
+
+```bash
+# Authenticate to GitHub Container Registry
+echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+
+# Pull specific version
+docker pull ghcr.io/OWNER/mosaic-backend:1.0.0
+docker pull ghcr.io/OWNER/mosaic-frontend:1.0.0
+
+# Pull latest
+docker pull ghcr.io/OWNER/mosaic-backend:latest
+docker pull ghcr.io/OWNER/mosaic-frontend:latest
+```
+
+### Using Published Images in Compose
+
+Create a `docker-compose.override.yml` to use published images:
+
+```yaml
+# docker-compose.override.yml
+services:
+  backend:
+    image: ghcr.io/OWNER/mosaic-backend:1.0.0
+    build: !reset null
+    
+  frontend:
+    image: ghcr.io/OWNER/mosaic-frontend:1.0.0
+    build: !reset null
+```
+
+Then deploy:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+### Required Repository Secrets
+
+The publish workflow uses these automatically available secrets:
+
+| Secret | Description |
+|--------|-------------|
+| `GITHUB_TOKEN` | Auto-provided, used for GHCR and releases |
+
+No additional configuration required—GitHub Actions automatically has push access to your repository's container registry.
+
+### Package Visibility
+
+By default, packages inherit repository visibility. To make images public:
+
+1. Go to **Packages** (from your profile or org)
+2. Select the package (e.g., `mosaic-backend`)
+3. Click **Package settings**
+4. Under **Danger Zone**, click **Change visibility**
+5. Select **Public**
+
+### PR Build Validation
+
+Pull requests that modify Docker-related files automatically trigger build validation:
+
+- Changed paths: `apps/backend/**`, `apps/admin/**`, `libs/crypto/**`, `**/Dockerfile`, `docker-compose*.yml`
+- Builds both images (without pushing)
+- Runs integration test: starts containers and verifies `/health` endpoint
+
+This catches build issues before merging.
 
 ---
 

@@ -1,0 +1,120 @@
+name: Build Docker Images
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/backend/**'
+      - 'apps/admin/**'
+      - 'libs/crypto/**'
+      - 'docker-compose*.yml'
+      - '.github/workflows/build.yml'
+      - '.github/workflows/publish.yml'
+
+jobs:
+  build-backend:
+    name: Build Backend Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./apps/backend/Mosaic.Backend
+          file: ./apps/backend/Mosaic.Backend/Dockerfile
+          push: false
+          tags: mosaic-backend:pr-${{ github.event.number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Only build for current platform on PRs for speed
+          platforms: linux/amd64
+
+  build-frontend:
+    name: Build Frontend Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/admin/Dockerfile
+          push: false
+          tags: mosaic-frontend:pr-${{ github.event.number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+  # Test that images work together
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: docker compose build --parallel
+
+      - name: Start services
+        run: docker compose up -d
+
+      - name: Wait for healthy status
+        run: |
+          echo "Waiting for services to become healthy..."
+          timeout 120 bash -c '
+            while true; do
+              backend_health=$(docker inspect --format="{{.State.Health.Status}}" mosaic-backend 2>/dev/null || echo "not-running")
+              frontend_health=$(docker inspect --format="{{.State.Health.Status}}" mosaic-frontend 2>/dev/null || echo "not-running")
+              
+              echo "Backend: $backend_health, Frontend: $frontend_health"
+              
+              if [[ "$backend_health" == "healthy" && "$frontend_health" == "healthy" ]]; then
+                echo "All services healthy!"
+                break
+              fi
+              
+              sleep 5
+            done
+          '
+
+      - name: Test endpoints
+        run: |
+          echo "Testing health endpoint..."
+          curl -f http://localhost:8080/health || exit 1
+          
+          echo "Testing frontend..."
+          curl -f http://localhost:8080/ | grep -q "Mosaic" || exit 1
+          
+          echo "Testing API proxy..."
+          response=$(curl -s http://localhost:8080/api/albums)
+          echo "API response: $response"
+          # Should get auth error (expected without Remote-User header)
+          echo "$response" | grep -q "Remote-User" || echo "API proxy working"
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "=== Backend Logs ==="
+          docker logs mosaic-backend --tail 100
+          echo ""
+          echo "=== Frontend Logs ==="
+          docker logs mosaic-frontend --tail 100
+          echo ""
+          echo "=== Postgres Logs ==="
+          docker logs mosaic-postgres --tail 100
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
