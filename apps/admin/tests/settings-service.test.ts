@@ -7,6 +7,7 @@ import {
     getIdleTimeoutMs,
     getSetting,
     getSettings,
+    getThumbnailQualityValue,
     resetSettings,
     saveSettings,
     setSetting,
@@ -399,6 +400,28 @@ describe('settings-service', () => {
     it('accepts high quality', () => {
       setSetting('thumbnailQuality', 'high');
       expect(getSetting('thumbnailQuality')).toBe('high');
+    });
+  });
+
+  describe('getThumbnailQualityValue', () => {
+    it('returns 0.6 for low quality', () => {
+      setSetting('thumbnailQuality', 'low');
+      expect(getThumbnailQualityValue()).toBe(0.6);
+    });
+
+    it('returns 0.8 for medium quality', () => {
+      setSetting('thumbnailQuality', 'medium');
+      expect(getThumbnailQualityValue()).toBe(0.8);
+    });
+
+    it('returns 0.92 for high quality', () => {
+      setSetting('thumbnailQuality', 'high');
+      expect(getThumbnailQualityValue()).toBe(0.92);
+    });
+
+    it('returns 0.8 (medium) by default', () => {
+      // No settings stored, uses default
+      expect(getThumbnailQualityValue()).toBe(0.8);
     });
   });
 });

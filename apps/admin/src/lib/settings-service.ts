@@ -185,3 +185,21 @@ export function getDefaultSettings(): UserSettings {
 export function getIdleTimeoutMs(): number {
   return getSettings().idleTimeout * 60 * 1000;
 }
+
+/**
+ * Get thumbnail quality as a numeric value (0-1).
+ * Maps user-friendly settings to JPEG quality values.
+ */
+export function getThumbnailQualityValue(): number {
+  const quality = getSettings().thumbnailQuality;
+  switch (quality) {
+    case 'low':
+      return 0.6;
+    case 'medium':
+      return 0.8;
+    case 'high':
+      return 0.92;
+    default:
+      return 0.8; // Default to medium
+  }
+}

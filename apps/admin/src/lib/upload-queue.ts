@@ -3,6 +3,7 @@ import * as tus from 'tus-js-client';
 import { TUS_ENDPOINT } from './api';
 import { getCryptoClient } from './crypto-client';
 import { createLogger } from './logger';
+import { getThumbnailQualityValue } from './settings-service';
 import {
     generateThumbnail,
     isSupportedImageType,
@@ -221,7 +222,8 @@ class UploadQueue {
       // Generate thumbnail if not already done (resume support)
       if (!task.thumbnailBase64 && isSupportedImageType(task.file.type)) {
         try {
-          const thumbResult = await generateThumbnail(task.file);
+          const quality = getThumbnailQualityValue();
+          const thumbResult = await generateThumbnail(task.file, { quality });
           const thumbnailBase64 = uint8ArrayToBase64(thumbResult.data);
           const thumbWidth = thumbResult.width;
           const thumbHeight = thumbResult.height;
