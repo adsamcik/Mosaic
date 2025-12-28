@@ -138,8 +138,15 @@ export function UploadProvider({ children }: UploadProviderProps) {
       // Get the current epoch key for this album
       let epochKey: EpochKeyBundle;
       try {
+        log.debug(`Fetching epoch key for album ${albumId}`);
         epochKey = await getCurrentOrFetchEpochKey(albumId);
+        log.debug(`Got epoch key for album ${albumId}, epochId=${epochKey.epochId}`);
       } catch (err) {
+        log.error(`Failed to get epoch key for album ${albumId}:`, {
+          error: err instanceof Error ? err.message : String(err),
+          errorName: err instanceof Error ? err.name : 'unknown',
+          cause: err instanceof Error && err.cause ? String(err.cause) : undefined,
+        });
         const uploadError = new UploadError(
           `Failed to get epoch key for album: ${err instanceof Error ? err.message : String(err)}`,
           UploadErrorCode.EPOCH_KEY_FAILED,

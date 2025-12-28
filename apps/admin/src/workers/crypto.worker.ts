@@ -334,10 +334,21 @@ class CryptoWorker implements CryptoWorkerApi {
 
     // Parse the bundle format: signature (64) || sealed box
     if (bundle.length < 64) {
+      console.error('[crypto.worker] Bundle too short:', bundle.length);
       throw new Error('Bundle too short');
     }
     const signature = bundle.slice(0, 64);
     const sealedBox = bundle.slice(64);
+    
+    console.debug('[crypto.worker] openEpochKeyBundle:', {
+      bundleLength: bundle.length,
+      signaturePrefix: Array.from(signature.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
+      sealedBoxLength: sealedBox.length,
+      senderPubkeyPrefix: Array.from(senderPubkey.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
+      myPubkeyPrefix: Array.from(this.identityKeypair.ed25519.publicKey.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
+      albumId,
+      minEpochId,
+    });
 
     // Build validation context
     const context = {
@@ -346,19 +357,26 @@ class CryptoWorker implements CryptoWorkerApi {
     };
 
     // Verify and open the bundle
-    const opened = verifyAndOpenBundle(
-      sealedBox,
-      signature,
-      senderPubkey,
-      this.identityKeypair,
-      context
-    );
+    try {
+      const opened = verifyAndOpenBundle(
+        sealedBox,
+        signature,
+        senderPubkey,
+        this.identityKeypair,
+        context
+      );
+      
+      console.debug('[crypto.worker] Successfully opened epoch key bundle');
 
-    return {
-      epochSeed: opened.epochSeed,
-      signPublicKey: opened.signKeypair.publicKey,
-      signSecretKey: opened.signKeypair.secretKey,
-    };
+      return {
+        epochSeed: opened.epochSeed,
+        signPublicKey: opened.signKeypair.publicKey,
+        signSecretKey: opened.signKeypair.secretKey,
+      };
+    } catch (err) {
+      console.error('[crypto.worker] Failed to open epoch key bundle:', err);
+      throw err;
+    }
   }
 
   /**
