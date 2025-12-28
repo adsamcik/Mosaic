@@ -24,7 +24,7 @@ public class LocalAuthMiddleware
         "/api/auth/init",
         "/api/auth/verify",
         "/api/auth/register",
-        "/api/share/"  // Share links are authenticated differently
+        "/api/s/"  // Anonymous share link access
     ];
 
     public LocalAuthMiddleware(

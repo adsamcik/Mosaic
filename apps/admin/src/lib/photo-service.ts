@@ -137,6 +137,19 @@ function cachePhoto(photoId: string, blob: Blob, blobUrl: string): CacheEntry {
 const pendingLoads = new Map<string, Promise<PhotoLoadResult>>();
 
 /**
+ * Error thrown when shard integrity verification fails
+ */
+export class ShardIntegrityError extends Error {
+  constructor(
+    public readonly shardId: string,
+    public readonly expectedHash: string
+  ) {
+    super(`Shard integrity check failed for ${shardId}: hash mismatch`);
+    this.name = 'ShardIntegrityError';
+  }
+}
+
+/**
  * Load and decrypt a photo from its encrypted shards
  *
  * @param photoId - Unique photo identifier
@@ -144,15 +157,18 @@ const pendingLoads = new Map<string, Promise<PhotoLoadResult>>();
  * @param epochReadKey - The epoch read key for decryption
  * @param mimeType - The photo's MIME type (e.g., 'image/jpeg')
  * @param options - Loading options
+ * @param shardHashes - Optional array of expected SHA256 hashes for integrity verification
  * @returns Photo load result with blob URL
  * @throws PhotoAssemblyError if loading fails
+ * @throws ShardIntegrityError if hash verification fails
  */
 export async function loadPhoto(
   photoId: string,
   shardIds: string[],
   epochReadKey: Uint8Array,
   mimeType: string,
-  options: PhotoLoadOptions = {}
+  options: PhotoLoadOptions = {},
+  shardHashes?: string[]
 ): Promise<PhotoLoadResult> {
   const { onProgress, skipCache = false } = options;
 
@@ -185,9 +201,20 @@ export async function loadPhoto(
       // Get crypto client
       const crypto = await getCryptoClient();
 
-      // Decrypt each shard
+      // Verify and decrypt each shard
       const decryptedChunks: Uint8Array[] = [];
-      for (const shard of encryptedShards) {
+      for (let i = 0; i < encryptedShards.length; i++) {
+        const shard = encryptedShards[i]!;
+        const expectedHash = shardHashes?.[i];
+
+        // Verify integrity if hash is available
+        if (expectedHash) {
+          const isValid = await crypto.verifyShard(shard, expectedHash);
+          if (!isValid) {
+            throw new ShardIntegrityError(shardIds[i]!, expectedHash);
+          }
+        }
+
         const plaintext = await crypto.decryptShard(shard, epochReadKey);
         decryptedChunks.push(plaintext);
       }

@@ -42,6 +42,10 @@ async function createManifestForUpload(
   const crypto = await getCryptoClient();
   const api = getApi();
 
+  // Build shard hashes array (in order of shard index)
+  const sortedShards = [...task.completedShards].sort((a, b) => a.index - b.index);
+  const shardHashes = sortedShards.map((s) => s.sha256);
+
   // Build photo metadata
   const now = new Date().toISOString();
   const photoMeta: PhotoMeta = {
@@ -56,6 +60,7 @@ async function createManifestForUpload(
     createdAt: now,
     updatedAt: now,
     shardIds: shardIds,
+    shardHashes: shardHashes, // For integrity verification during download
     epochId: task.epochId,
     // Only set optional fields if they have values
     ...(task.thumbnailBase64 && { thumbnail: task.thumbnailBase64 }),

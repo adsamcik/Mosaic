@@ -25,6 +25,13 @@ const CHUNK_SIZE = 6 * 1024 * 1024;
 /** Upload task status */
 export type UploadStatus = 'queued' | 'uploading' | 'complete' | 'error';
 
+/** Completed shard with ID and hash for integrity verification */
+export interface CompletedShard {
+  index: number;
+  shardId: string;
+  sha256: string; // Base64url hash for verification
+}
+
 /** In-memory upload task */
 export interface UploadTask {
   id: string;
@@ -34,7 +41,7 @@ export interface UploadTask {
   readKey: Uint8Array;
   status: UploadStatus;
   progress: number;
-  completedShards: Array<{ index: number; shardId: string }>;
+  completedShards: CompletedShard[];
   error?: string;
   /** Generated thumbnail base64 (set during upload) */
   thumbnailBase64?: string;
@@ -52,7 +59,7 @@ interface PersistedTask {
   fileSize: number;
   epochId: number;
   totalChunks: number;
-  completedShards: Array<{ index: number; shardId: string }>;
+  completedShards: CompletedShard[];
   status: string;
   /** Base64-encoded thumbnail (generated once, persisted for resume) */
   thumbnailBase64?: string;
@@ -265,8 +272,8 @@ class UploadQueue {
         );
         shardIds[i] = shardId;
 
-        // Persist progress for resume
-        task.completedShards.push({ index: i, shardId });
+        // Persist progress for resume (including hash for integrity verification)
+        task.completedShards.push({ index: i, shardId, sha256: encrypted.sha256 });
         await this.updatePersistedTask(task.id, {
           completedShards: task.completedShards,
         });

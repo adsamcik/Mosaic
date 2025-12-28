@@ -9,6 +9,7 @@ import {
   deriveIdentityKeypair,
   encryptShard as cryptoEncryptShard,
   decryptShard as cryptoDecryptShard,
+  verifyShard as cryptoVerifyShard,
   verifyManifest as cryptoVerifyManifest,
   signManifest as cryptoSignManifest,
   generateEpochKey as cryptoGenerateEpochKey,
@@ -160,6 +161,18 @@ class CryptoWorker implements CryptoWorkerApi {
   ): Promise<Uint8Array> {
     await this.ensureSodiumReady();
     return cryptoDecryptShard(envelope, readKey);
+  }
+
+  /**
+   * Verify shard integrity against expected hash.
+   * Should be called before decryption to ensure shard wasn't tampered with.
+   */
+  async verifyShard(
+    envelope: Uint8Array,
+    expectedSha256: string
+  ): Promise<boolean> {
+    await this.ensureSodiumReady();
+    return cryptoVerifyShard(envelope, expectedSha256);
   }
 
   /**

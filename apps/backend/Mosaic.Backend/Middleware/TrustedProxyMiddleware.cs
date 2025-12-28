@@ -26,8 +26,9 @@ public partial class TrustedProxyMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // Health endpoint is always public
-        if (context.Request.Path.StartsWithSegments("/health"))
+        // Public endpoints that don't require authentication
+        if (context.Request.Path.StartsWithSegments("/health") ||
+            context.Request.Path.StartsWithSegments("/api/s"))
         {
             await _next(context);
             return;

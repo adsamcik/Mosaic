@@ -19,6 +19,8 @@ export interface PhotoMeta {
   updatedAt: string;
   /** Shard IDs for this photo's encrypted data */
   shardIds: string[];
+  /** SHA256 hashes of encrypted shards (base64url, for integrity verification) */
+  shardHashes?: string[];
   /** Epoch ID for key lookup */
   epochId: number;
   /** Base64-encoded JPEG thumbnail (embedded in manifest for fast loading) */
@@ -149,6 +151,14 @@ export interface CryptoWorkerApi {
    * Decrypt a photo shard
    */
   decryptShard(envelope: Uint8Array, readKey: Uint8Array): Promise<Uint8Array>;
+
+  /**
+   * Verify shard integrity against expected hash
+   * @param envelope - Downloaded shard envelope
+   * @param expectedSha256 - Expected SHA256 hash from manifest (base64url)
+   * @returns true if hash matches
+   */
+  verifyShard(envelope: Uint8Array, expectedSha256: string): Promise<boolean>;
 
   /**
    * Decrypt manifest metadata
