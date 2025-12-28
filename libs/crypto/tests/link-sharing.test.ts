@@ -8,6 +8,8 @@ import {
   wrapAllTierKeysForLink,
   encodeLinkSecret,
   decodeLinkSecret,
+  encodeLinkId,
+  decodeLinkId,
   createShareLinkUrl,
   parseShareLinkUrl,
 } from '../src/link-sharing';
@@ -442,6 +444,529 @@ describe('link-sharing', () => {
       } finally {
         (sodium as Record<string, unknown>).memcmp = originalMemcmp;
       }
+    });
+  });
+
+  describe('mutation testing - killing surviving mutants', () => {
+    describe('wrapTierKeyForLink wrapping key validation', () => {
+      it('rejects wrapping key of 31 bytes (one below threshold)', () => {
+        const epoch = generateEpochKey(1);
+        const shortKey = new Uint8Array(31);
+        
+        expect(() => wrapTierKeyForLink(epoch.thumbKey, AccessTier.THUMB, shortKey))
+          .toThrow('32 bytes');
+      });
+
+      it('rejects wrapping key of 33 bytes (one above threshold)', () => {
+        const epoch = generateEpochKey(1);
+        const longKey = new Uint8Array(33);
+        
+        expect(() => wrapTierKeyForLink(epoch.thumbKey, AccessTier.THUMB, longKey))
+          .toThrow('32 bytes');
+      });
+
+      it('error message includes actual key length received', () => {
+        const epoch = generateEpochKey(1);
+        const badKey = new Uint8Array(17);
+        
+        expect(() => wrapTierKeyForLink(epoch.thumbKey, AccessTier.THUMB, badKey))
+          .toThrow('got 17');
+      });
+
+      it('accepts exactly 32-byte wrapping key (boundary)', () => {
+        const epoch = generateEpochKey(1);
+        const secret = generateLinkSecret();
+        const { wrappingKey } = deriveLinkKeys(secret);
+        
+        // Should not throw - 32 bytes is valid
+        expect(wrappingKey.length).toBe(32);
+        const wrapped = wrapTierKeyForLink(epoch.thumbKey, AccessTier.THUMB, wrappingKey);
+        expect(wrapped.tier).toBe(AccessTier.THUMB);
+      });
+    });
+
+    describe('decodeLinkId validation', () => {
+      it('rejects decoded linkId of 15 bytes (one below threshold)', () => {
+        const shortId = sodium.to_base64(new Uint8Array(15), sodium.base64_variants.URLSAFE_NO_PADDING);
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${shortId}#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('rejects decoded linkId of 17 bytes (one above threshold)', () => {
+        const longId = sodium.to_base64(new Uint8Array(17), sodium.base64_variants.URLSAFE_NO_PADDING);
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${longId}#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('error message in decodeLinkId includes expected and actual length', () => {
+        // Direct test of decodeLinkId function to verify error message
+        const wrongLengthId = sodium.to_base64(new Uint8Array(10), sodium.base64_variants.URLSAFE_NO_PADDING);
+        
+        expect(() => decodeLinkId(wrongLengthId)).toThrow('expected 16');
+        expect(() => decodeLinkId(wrongLengthId)).toThrow('got 10');
+      });
+    });
+
+    describe('createShareLinkUrl trailing slash normalization', () => {
+      it('removes trailing slash from base URL', () => {
+        const secret = generateLinkSecret();
+        const urlWithSlash = createShareLinkUrl('https://photos.example.com/', secret);
+        const urlWithoutSlash = createShareLinkUrl('https://photos.example.com', secret);
+        
+        // Both should produce identical URLs (no double slashes)
+        expect(urlWithSlash).toBe(urlWithoutSlash);
+        expect(urlWithSlash).not.toContain('//s/');
+      });
+
+      it('resulting URL does not have consecutive slashes before /s/', () => {
+        const secret = generateLinkSecret();
+        const url = createShareLinkUrl('https://photos.example.com/', secret);
+        
+        // Check the path starts correctly
+        expect(url).toMatch(/\.com\/s\//);
+        expect(url).not.toMatch(/\.com\/\/s\//);
+      });
+    });
+
+    describe('parseShareLinkUrl regex anchoring', () => {
+      it('rejects URL with /s/ in middle of path (not at end)', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = sodium.to_base64(linkId, sodium.base64_variants.URLSAFE_NO_PADDING);
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // URL has /s/{linkId} but with extra path segments after
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}/extra#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('rejects URL with /s/ not followed by proper base64url linkId', () => {
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // The linkId contains characters not in the regex character class
+        const result = parseShareLinkUrl(`https://photos.example.com/s/link.id.with.dots#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('rejects URL with fragment containing extra content before #k=', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = sodium.to_base64(linkId, sodium.base64_variants.URLSAFE_NO_PADDING);
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // Fragment has content before #k=
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#prefix&k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('rejects URL with fragment containing extra content after secret', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = sodium.to_base64(linkId, sodium.base64_variants.URLSAFE_NO_PADDING);
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // Fragment has content after the secret
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#k=${encodedSecret}&extra=data`);
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('parseShareLinkUrl conditional guards', () => {
+      it('returns null when pathname does not contain /s/', () => {
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // Path without /s/
+        const result = parseShareLinkUrl(`https://photos.example.com/album/123#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null when pathname has /s/ but no linkId', () => {
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // Path with /s/ but nothing after
+        const result = parseShareLinkUrl(`https://photos.example.com/s/#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null when fragment is empty', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = sodium.to_base64(linkId, sodium.base64_variants.URLSAFE_NO_PADDING);
+        
+        // No fragment at all
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null when fragment has #k= but no value', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = sodium.to_base64(linkId, sodium.base64_variants.URLSAFE_NO_PADDING);
+        
+        // Fragment with #k= but empty value
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#k=`);
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('deriveLinkKeys context strings', () => {
+      it('produces different linkId and wrappingKey (verifies different contexts)', () => {
+        const secret = generateLinkSecret();
+        const { linkId, wrappingKey } = deriveLinkKeys(secret);
+        
+        // If contexts were the same (or empty), these would be related
+        // linkId is 16 bytes, wrappingKey is 32 bytes, so they can't be equal
+        // But we verify they're derived differently by checking the first 16 bytes
+        const wrappingKeyPrefix = wrappingKey.subarray(0, 16);
+        expect(linkId).not.toEqual(wrappingKeyPrefix);
+      });
+
+      it('produces consistent results across multiple derivations', () => {
+        const secret = generateLinkSecret();
+        
+        const result1 = deriveLinkKeys(secret);
+        const result2 = deriveLinkKeys(secret);
+        
+        // Same secret should produce identical results
+        expect(result1.linkId).toEqual(result2.linkId);
+        expect(result1.wrappingKey).toEqual(result2.wrappingKey);
+      });
+
+      it('different secrets produce completely different linkIds', () => {
+        const secret1 = generateLinkSecret();
+        const secret2 = generateLinkSecret();
+        
+        const keys1 = deriveLinkKeys(secret1);
+        const keys2 = deriveLinkKeys(secret2);
+        
+        // Verify no overlap (kills mutation that makes context empty)
+        expect(keys1.linkId).not.toEqual(keys2.linkId);
+        expect(keys1.wrappingKey).not.toEqual(keys2.wrappingKey);
+      });
+
+      it('linkId derivation uses proper context (verifiable via known input)', () => {
+        // Using a fixed secret to verify context string is being used
+        const fixedSecret = new Uint8Array(32);
+        for (let i = 0; i < 32; i++) {
+          fixedSecret[i] = i;
+        }
+        
+        const { linkId, wrappingKey } = deriveLinkKeys(fixedSecret);
+        
+        // With empty context, BLAKE2b would produce deterministic but different output
+        // We verify the output is non-zero and has expected structure
+        expect(linkId.length).toBe(16);
+        expect(wrappingKey.length).toBe(32);
+        
+        // Verify they're not all zeros (which could happen with bad implementation)
+        const linkIdSum = linkId.reduce((a, b) => a + b, 0);
+        const wrappingKeySum = wrappingKey.reduce((a, b) => a + b, 0);
+        expect(linkIdSum).toBeGreaterThan(0);
+        expect(wrappingKeySum).toBeGreaterThan(0);
+      });
+
+      it('LINK_ID_CONTEXT affects linkId derivation (kills empty string mutation)', () => {
+        // Using a known fixed secret to verify context affects output
+        const fixedSecret = new Uint8Array(32).fill(0xAB);
+        const { linkId } = deriveLinkKeys(fixedSecret);
+        
+        // Manually compute what BLAKE2b would produce with empty context
+        // If context is "", this would be: crypto_generichash(16, "", fixedSecret)
+        // We compute directly using sodium to compare
+        const emptyContextHash = sodium.crypto_generichash(16, new Uint8Array(0), fixedSecret);
+        
+        // The actual linkId should differ because it uses non-empty context
+        expect(linkId).not.toEqual(emptyContextHash);
+      });
+
+      it('LINK_WRAP_CONTEXT affects wrappingKey derivation (kills empty string mutation)', () => {
+        // Using a known fixed secret to verify context affects output
+        const fixedSecret = new Uint8Array(32).fill(0xCD);
+        const { wrappingKey } = deriveLinkKeys(fixedSecret);
+        
+        // Manually compute what BLAKE2b would produce with empty context
+        const emptyContextHash = sodium.crypto_generichash(32, new Uint8Array(0), fixedSecret);
+        
+        // The actual wrappingKey should differ because it uses non-empty context
+        expect(wrappingKey).not.toEqual(emptyContextHash);
+      });
+    });
+
+    describe('wrapTierKeyForLink validation edge cases (spy-based)', () => {
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('throws before calling wrapKey when wrapping key is invalid length', () => {
+        const epoch = generateEpochKey(1);
+        const invalidKey = new Uint8Array(31);
+        
+        // Spy on secretbox - it should NOT be called if validation works
+        const spy = vi.spyOn(sodium, 'crypto_secretbox_easy');
+        
+        expect(() => wrapTierKeyForLink(epoch.thumbKey, AccessTier.THUMB, invalidKey))
+          .toThrow('Wrapping key must be 32 bytes');
+        
+        // The validation should have rejected before calling crypto
+        expect(spy).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('parseShareLinkUrl path guard edge cases', () => {
+      it('returns null when path matches /s/ but regex capture group is empty', () => {
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // The regex /\/s\/([A-Za-z0-9_-]+)$/ should not match when there's nothing after /s/
+        // This tests the !pathMatch[1] branch specifically
+        const result = parseShareLinkUrl(`https://photos.example.com/s/#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null when no /s/ pattern exists at all (tests !pathMatch)', () => {
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // No /s/ in path - pathMatch will be null
+        const result = parseShareLinkUrl(`https://photos.example.com/album#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null for path ending with just /s (no trailing slash or id)', () => {
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // Path ends with /s but no / after it and no id
+        const result = parseShareLinkUrl(`https://photos.example.com/s#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null (not throws) for invalid path - verifies early return', () => {
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // This should return null, not throw an error
+        // If the BlockStatement is removed, it would continue and crash on decodeLinkId
+        const result = parseShareLinkUrl(`https://photos.example.com/notshare/path#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('gracefully returns null for path with /s/ in wrong position', () => {
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // /s/ exists but not at the end followed by linkId
+        const result = parseShareLinkUrl(`https://photos.example.com/s/abc/def#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('parseShareLinkUrl fragment guard edge cases', () => {
+      it('returns null when fragment has content before k= parameter', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // Fragment has #other&k=... - the ^ anchor should reject this
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#other&k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null when fragment exists but has no k= at all', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        
+        // Fragment without k= - secretMatch will be null
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#something`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null when fragment is just hash with no content', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        
+        // Just # with nothing after - secretMatch is null
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null for fragment with k= but missing value (tests !secretMatch[1])', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        
+        // #k= with nothing after - the capture group is empty
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#k=`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null (not throws) when fragment is missing - verifies early return', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        
+        // No fragment at all - should return null, not throw
+        // If the BlockStatement is removed, it would continue and crash on decodeLinkSecret
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}`);
+        expect(result).toBeNull();
+      });
+
+      it('returns null for fragment with wrong key name', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // Uses 's=' instead of 'k='
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#s=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+
+      it('rejects fragment with leading content before #k= (kills ^ anchor removal)', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // Fragment has leading content: #prefix#k=...
+        // Without ^ anchor, the regex would match k= anywhere
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#prefix#k=${encodedSecret}`);
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('parseShareLinkUrl mutation-killing assertions', () => {
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('path guard at L244 prevents decodeLinkId call - from_base64 NOT called', () => {
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        // Spy on sodium.from_base64 which is called by decodeLinkId
+        const spy = vi.spyOn(sodium, 'from_base64');
+        
+        // URL with no /s/ pattern - pathMatch is null
+        // If L244 check works, we return null BEFORE calling decodeLinkId
+        // If L244 check is mutated to false, code tries decodeLinkId(undefined) which calls from_base64
+        const result = parseShareLinkUrl(`https://photos.example.com/album#k=${encodedSecret}`);
+        
+        expect(result).toBeNull();
+        // CRITICAL: from_base64 should NOT have been called
+        // If it was called, the L244 early return did not happen
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('fragment guard at L252 prevents decodeLinkSecret call - from_base64 called once', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        
+        // Spy on sodium.from_base64
+        const spy = vi.spyOn(sodium, 'from_base64');
+        
+        // Valid path but invalid fragment (no k= pattern)
+        // from_base64 should be called once for linkId, but NOT for secret
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#something`);
+        
+        expect(result).toBeNull();
+        // from_base64 called exactly once (for linkId only)
+        // If L252 check is mutated to false, it would try decodeLinkSecret(undefined) = 2 calls
+        expect(spy).toHaveBeenCalledTimes(1);
+      });
+
+      it('valid URL calls from_base64 exactly twice (linkId + secret)', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        const spy = vi.spyOn(sodium, 'from_base64');
+        
+        // Valid URL - should call from_base64 twice
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#k=${encodedSecret}`);
+        
+        expect(result).not.toBeNull();
+        expect(spy).toHaveBeenCalledTimes(2);
+      });
+
+      it('|| to && mutation at L244 would crash on null access', () => {
+        // This test verifies the short-circuit behavior of ||
+        // When pathMatch is null, !pathMatch is true, || short-circuits, returns null
+        // With &&, it would try to access pathMatch[1] on null = crash
+        // But the crash is caught by try-catch, so we test via spy
+        
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        const spy = vi.spyOn(sodium, 'from_base64');
+        
+        // No /s/ in path - pathMatch will be null
+        const result = parseShareLinkUrl(`https://photos.example.com/noshare#k=${encodedSecret}`);
+        
+        expect(result).toBeNull();
+        // With correct || logic, from_base64 is never called
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('|| to && mutation at L252 would crash on null access', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        
+        const spy = vi.spyOn(sodium, 'from_base64');
+        
+        // Valid path but no k= in fragment - secretMatch will be null
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#nok`);
+        
+        expect(result).toBeNull();
+        // With correct || logic, from_base64 called once for linkId only
+        expect(spy).toHaveBeenCalledTimes(1);
+      });
+
+      it('BlockStatement removal at L244 would call from_base64', () => {
+        const secret = generateLinkSecret();
+        const encodedSecret = encodeLinkSecret(secret);
+        
+        const spy = vi.spyOn(sodium, 'from_base64');
+        
+        // Path without valid /s/{id} pattern
+        const result = parseShareLinkUrl(`https://photos.example.com/share#k=${encodedSecret}`);
+        
+        expect(result).toBeNull();
+        // If BlockStatement is removed, code continues to decodeLinkId which calls from_base64
+        // With proper code, we return null and from_base64 is never called
+        expect(spy).not.toHaveBeenCalled();
+      });
+
+      it('BlockStatement removal at L252 would call from_base64 twice', () => {
+        const secret = generateLinkSecret();
+        const { linkId } = deriveLinkKeys(secret);
+        const encodedLinkId = encodeLinkId(linkId);
+        
+        const spy = vi.spyOn(sodium, 'from_base64');
+        
+        // Valid path but fragment without k=
+        const result = parseShareLinkUrl(`https://photos.example.com/s/${encodedLinkId}#nomatch`);
+        
+        expect(result).toBeNull();
+        // If BlockStatement is removed, code continues to decodeLinkSecret which calls from_base64
+        // With proper code, from_base64 is called once (for linkId only)
+        expect(spy).toHaveBeenCalledTimes(1);
+      });
     });
   });
 });

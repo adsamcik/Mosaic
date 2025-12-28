@@ -1,18 +1,33 @@
 /**
  * Thumbnail Generator Unit Tests
  *
- * Tests for the thumbnail generation service.
+ * Tests for the thumbnail generation service including three-tier image generation.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import sodium from 'libsodium-wrappers-sumo';
 import {
     base64ToUint8Array,
     calculateDimensions,
     generateThumbnail,
     generateThumbnailBase64,
+    generateTieredImages,
+    generateTieredShards,
     isSupportedImageType,
     ThumbnailError,
+    type TieredImageResult,
+    type TieredShardResult,
 } from '../src/lib/thumbnail-generator';
+import {
+    ShardTier,
+    generateEpochKey,
+    decryptShard,
+    type EpochKey,
+} from '../../../libs/crypto/src';
+
+beforeAll(async () => {
+  await sodium.ready;
+});
 
 // =============================================================================
 // Helper Functions Tests
@@ -488,5 +503,430 @@ describe('generateThumbnailBase64', () => {
     });
 
     expect(typeof result).toBe('string');
+  });
+});
+
+// =============================================================================
+// generateTieredImages Tests
+// =============================================================================
+
+/**
+ * Helper to create a File from Uint8Array (works around TypeScript type issues)
+ */
+function createTestFile(data: Uint8Array, name: string, type: string): File {
+  // Use ArrayBuffer.prototype.slice to create a new ArrayBuffer that TypeScript accepts
+  const buffer = new ArrayBuffer(data.length);
+  new Uint8Array(buffer).set(data);
+  return new File([buffer], name, { type });
+}
+
+describe('generateTieredImages', () => {
+  const originalCreateImageBitmap = globalThis.createImageBitmap;
+  const originalCreateElement = document.createElement.bind(document);
+
+  let mockCanvas: HTMLCanvasElement;
+  let mockContext: CanvasRenderingContext2D;
+  let mockBitmapWidth = 2000;
+  let mockBitmapHeight = 1500;
+  let mockFileData: Uint8Array;
+
+  function createMockBitmap(): ImageBitmap {
+    return {
+      width: mockBitmapWidth,
+      height: mockBitmapHeight,
+      close: vi.fn(),
+    } as unknown as ImageBitmap;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockBitmapWidth = 2000;
+    mockBitmapHeight = 1500;
+    mockFileData = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+    globalThis.createImageBitmap = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockBitmap())
+    );
+
+    // Mock canvas context
+    mockContext = {
+      drawImage: vi.fn(),
+      transform: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
+
+    // Mock canvas
+    mockCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn().mockReturnValue(mockContext),
+      toBlob: vi.fn((callback: BlobCallback) => {
+        const mockBlob = new Blob(['mock-jpeg-data'], { type: 'image/jpeg' });
+        callback(mockBlob);
+      }),
+    } as unknown as HTMLCanvasElement;
+
+    // Mock document.createElement
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'canvas') {
+        return mockCanvas;
+      }
+      return originalCreateElement(tag);
+    });
+  });
+
+  afterEach(() => {
+    globalThis.createImageBitmap = originalCreateImageBitmap;
+    vi.restoreAllMocks();
+  });
+
+  it('generates three tiers from JPEG file', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredImages(file);
+
+    expect(result.thumbnail).toBeDefined();
+    expect(result.preview).toBeDefined();
+    expect(result.original).toBeDefined();
+    expect(result.originalWidth).toBe(2000);
+    expect(result.originalHeight).toBe(1500);
+  });
+
+  it('thumbnail tier has correct tier value', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredImages(file);
+
+    expect(result.thumbnail.tier).toBe(ShardTier.THUMB);
+    expect(result.preview.tier).toBe(ShardTier.PREVIEW);
+    expect(result.original.tier).toBe(ShardTier.ORIGINAL);
+  });
+
+  it('thumbnail is scaled to 300px max dimension', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredImages(file);
+
+    // 2000x1500 scaled to 300px max -> 300x225
+    expect(result.thumbnail.width).toBe(300);
+    expect(result.thumbnail.height).toBe(225);
+  });
+
+  it('preview is scaled to 1200px max dimension', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredImages(file);
+
+    // 2000x1500 scaled to 1200px max -> 1200x900
+    expect(result.preview.width).toBe(1200);
+    expect(result.preview.height).toBe(900);
+  });
+
+  it('original preserves full dimensions', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredImages(file);
+
+    expect(result.original.width).toBe(2000);
+    expect(result.original.height).toBe(1500);
+  });
+
+  it('original contains the unmodified file data', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredImages(file);
+
+    expect(result.original.data).toEqual(mockFileData);
+  });
+
+  it('handles portrait images correctly', async () => {
+    mockBitmapWidth = 1500;
+    mockBitmapHeight = 2000;
+
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredImages(file);
+
+    // Portrait: 1500x2000 scaled to 300px max -> 225x300
+    expect(result.thumbnail.width).toBe(225);
+    expect(result.thumbnail.height).toBe(300);
+
+    // Portrait: 1500x2000 scaled to 1200px max -> 900x1200
+    expect(result.preview.width).toBe(900);
+    expect(result.preview.height).toBe(1200);
+  });
+
+  it('handles small images without upscaling', async () => {
+    mockBitmapWidth = 200;
+    mockBitmapHeight = 150;
+
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredImages(file);
+
+    // Small images should not be upscaled
+    expect(result.thumbnail.width).toBe(200);
+    expect(result.thumbnail.height).toBe(150);
+    expect(result.preview.width).toBe(200);
+    expect(result.preview.height).toBe(150);
+    expect(result.original.width).toBe(200);
+    expect(result.original.height).toBe(150);
+  });
+
+  it('throws ThumbnailError for unsupported file type', async () => {
+    const file = createTestFile(mockFileData, 'test.gif', 'image/gif');
+
+    await expect(generateTieredImages(file)).rejects.toThrow(ThumbnailError);
+    await expect(generateTieredImages(file)).rejects.toThrow(
+      'Unsupported image type: image/gif'
+    );
+  });
+
+  it('throws ThumbnailError when createImageBitmap fails', async () => {
+    globalThis.createImageBitmap = vi
+      .fn()
+      .mockRejectedValue(new Error('Decode error'));
+
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    await expect(generateTieredImages(file)).rejects.toThrow(ThumbnailError);
+    await expect(generateTieredImages(file)).rejects.toThrow(
+      'Failed to decode image'
+    );
+  });
+
+  it('throws ThumbnailError when canvas context is null', async () => {
+    mockCanvas.getContext = vi.fn().mockReturnValue(null);
+
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    await expect(generateTieredImages(file)).rejects.toThrow(ThumbnailError);
+    await expect(generateTieredImages(file)).rejects.toThrow(
+      'Failed to get canvas 2D context'
+    );
+  });
+
+  it('closes the bitmap after processing', async () => {
+    const mockBitmap = createMockBitmap();
+    globalThis.createImageBitmap = vi.fn().mockResolvedValue(mockBitmap);
+
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    await generateTieredImages(file);
+
+    expect(mockBitmap.close).toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// generateTieredShards Tests
+// =============================================================================
+
+describe('generateTieredShards', () => {
+  const originalCreateImageBitmap = globalThis.createImageBitmap;
+  const originalCreateElement = document.createElement.bind(document);
+
+  let mockCanvas: HTMLCanvasElement;
+  let mockContext: CanvasRenderingContext2D;
+  let epochKey: EpochKey;
+  let mockFileData: Uint8Array;
+
+  function createMockBitmap(): ImageBitmap {
+    return {
+      width: 800,
+      height: 600,
+      close: vi.fn(),
+    } as unknown as ImageBitmap;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFileData = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+
+    globalThis.createImageBitmap = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockBitmap())
+    );
+
+    // Generate a real epoch key for encryption tests
+    epochKey = generateEpochKey(1);
+
+    // Mock canvas context
+    mockContext = {
+      drawImage: vi.fn(),
+      transform: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
+
+    // Mock canvas
+    mockCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn().mockReturnValue(mockContext),
+      toBlob: vi.fn((callback: BlobCallback) => {
+        const mockBlob = new Blob(['mock-jpeg-data'], { type: 'image/jpeg' });
+        callback(mockBlob);
+      }),
+    } as unknown as HTMLCanvasElement;
+
+    // Mock document.createElement
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'canvas') {
+        return mockCanvas;
+      }
+      return originalCreateElement(tag);
+    });
+  });
+
+  afterEach(() => {
+    globalThis.createImageBitmap = originalCreateImageBitmap;
+    vi.restoreAllMocks();
+  });
+
+  it('generates three encrypted shards', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey);
+
+    expect(result.thumbnail).toBeDefined();
+    expect(result.preview).toBeDefined();
+    expect(result.original).toBeDefined();
+  });
+
+  it('each shard has encrypted data and sha256 hash', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey);
+
+    // SHA256 is base64url without padding (43 chars for 256 bits)
+    const base64urlPattern = /^[A-Za-z0-9_-]{43}$/;
+
+    // Thumbnail
+    expect(result.thumbnail.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+    expect(result.thumbnail.encrypted.sha256).toMatch(base64urlPattern);
+
+    // Preview
+    expect(result.preview.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+    expect(result.preview.encrypted.sha256).toMatch(base64urlPattern);
+
+    // Original
+    expect(result.original.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+    expect(result.original.encrypted.sha256).toMatch(base64urlPattern);
+  });
+
+  it('each shard has correct tier value', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey);
+
+    expect(result.thumbnail.tier).toBe(ShardTier.THUMB);
+    expect(result.preview.tier).toBe(ShardTier.PREVIEW);
+    expect(result.original.tier).toBe(ShardTier.ORIGINAL);
+  });
+
+  it('shards preserve dimension metadata', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey);
+
+    // 800x600 scaled to 300px max -> 300x225
+    expect(result.thumbnail.width).toBe(300);
+    expect(result.thumbnail.height).toBe(225);
+
+    // 800x600 scaled to 1200px max (smaller, no upscale) -> 800x600
+    expect(result.preview.width).toBe(800);
+    expect(result.preview.height).toBe(600);
+
+    expect(result.original.width).toBe(800);
+    expect(result.original.height).toBe(600);
+  });
+
+  it('thumbnail shard can be decrypted with thumbKey', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey);
+
+    // Decrypt with thumbKey
+    const decrypted = await decryptShard(
+      result.thumbnail.encrypted.ciphertext,
+      epochKey.thumbKey
+    );
+
+    expect(decrypted).toBeInstanceOf(Uint8Array);
+    expect(decrypted.length).toBeGreaterThan(0);
+  });
+
+  it('preview shard can be decrypted with previewKey', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey);
+
+    // Decrypt with previewKey
+    const decrypted = await decryptShard(
+      result.preview.encrypted.ciphertext,
+      epochKey.previewKey
+    );
+
+    expect(decrypted).toBeInstanceOf(Uint8Array);
+    expect(decrypted.length).toBeGreaterThan(0);
+  });
+
+  it('original shard can be decrypted with fullKey', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey);
+
+    // Decrypt with fullKey
+    const decrypted = await decryptShard(
+      result.original.encrypted.ciphertext,
+      epochKey.fullKey
+    );
+
+    expect(decrypted).toBeInstanceOf(Uint8Array);
+    // Original data should match
+    expect(decrypted).toEqual(mockFileData);
+  });
+
+  it('thumbnail shard cannot be decrypted with wrong key', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey);
+
+    // Try to decrypt thumbnail with fullKey (wrong key)
+    await expect(
+      decryptShard(result.thumbnail.encrypted.ciphertext, epochKey.fullKey)
+    ).rejects.toThrow();
+  });
+
+  it('uses custom shard index', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey, 42);
+
+    // Result should be valid
+    expect(result.thumbnail.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+  });
+
+  it('uses default shard index of 0', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey);
+
+    // Should work with default index
+    expect(result.thumbnail.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+  });
+
+  it('throws ThumbnailError for unsupported file type', async () => {
+    const file = createTestFile(mockFileData, 'test.gif', 'image/gif');
+
+    await expect(generateTieredShards(file, epochKey)).rejects.toThrow(
+      ThumbnailError
+    );
+  });
+
+  it('reports original dimensions', async () => {
+    const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
+
+    const result = await generateTieredShards(file, epochKey);
+
+    expect(result.originalWidth).toBe(800);
+    expect(result.originalHeight).toBe(600);
   });
 });

@@ -1,3 +1,4 @@
+import { resolve } from 'path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -22,7 +23,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@mosaic/crypto': '../../libs/crypto/src',
+      '@mosaic/crypto': resolve(__dirname, '../../libs/crypto/src'),
     },
   },
 });

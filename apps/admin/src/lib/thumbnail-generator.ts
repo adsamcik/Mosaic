@@ -1,19 +1,35 @@
 /**
  * Thumbnail Generator Service
  *
- * Generates thumbnail images from photos using the Canvas API.
+ * Generates three-tier images from photos using the Canvas API:
+ * - Thumbnail: 300px max dimension, ~80% quality JPEG
+ * - Preview: 1200px max dimension, ~85% quality JPEG
+ * - Original: unchanged source file
+ *
+ * Each tier is encrypted with its corresponding key (thumbKey, previewKey, fullKey).
  * Handles EXIF orientation, maintains aspect ratio, and outputs
  * compressed JPEG for efficient storage.
  */
 
-/** Default max dimension for thumbnails */
-const DEFAULT_MAX_SIZE = 300;
+import { encryptShard, ShardTier, type EncryptedShard, type EpochKey } from '@mosaic/crypto';
 
-/** Default JPEG quality (0-1) */
-const DEFAULT_QUALITY = 0.8;
+/** Default max dimension for thumbnails (300px) */
+const THUMB_MAX_SIZE = 300;
+
+/** Default max dimension for previews (1200px) */
+const PREVIEW_MAX_SIZE = 1200;
+
+/** Default JPEG quality for thumbnails (0-1) */
+const THUMB_QUALITY = 0.8;
+
+/** Default JPEG quality for previews (0-1) */
+const PREVIEW_QUALITY = 0.85;
 
 /** Maximum thumbnail size in bytes (50KB) */
 const MAX_THUMBNAIL_BYTES = 50 * 1024;
+
+/** Maximum preview size in bytes (500KB) */
+const MAX_PREVIEW_BYTES = 500 * 1024;
 
 /** Supported image MIME types */
 const SUPPORTED_TYPES = [
@@ -25,7 +41,7 @@ const SUPPORTED_TYPES = [
 ];
 
 /**
- * Options for thumbnail generation
+ * Options for thumbnail generation (legacy single-tier)
  */
 export interface ThumbnailOptions {
   /** Maximum dimension (width or height) in pixels */
@@ -35,7 +51,7 @@ export interface ThumbnailOptions {
 }
 
 /**
- * Result of thumbnail generation
+ * Result of thumbnail generation (single tier)
  */
 export interface ThumbnailResult {
   /** Thumbnail image data as JPEG */
@@ -47,6 +63,66 @@ export interface ThumbnailResult {
   /** Original image width */
   originalWidth: number;
   /** Original image height */
+  originalHeight: number;
+}
+
+/**
+ * Single tier image with dimensions
+ */
+export interface TierImageData {
+  /** Image data (JPEG for resized, original format for full) */
+  data: Uint8Array;
+  /** Width in pixels */
+  width: number;
+  /** Height in pixels */
+  height: number;
+  /** Shard tier (THUMB, PREVIEW, ORIGINAL) */
+  tier: ShardTier;
+}
+
+/**
+ * Encrypted shard with metadata for a single tier
+ */
+export interface TierShard {
+  /** Encrypted shard data (envelope format) */
+  encrypted: EncryptedShard;
+  /** Width in pixels */
+  width: number;
+  /** Height in pixels */
+  height: number;
+  /** Shard tier (THUMB, PREVIEW, ORIGINAL) */
+  tier: ShardTier;
+}
+
+/**
+ * Result of three-tier image generation
+ */
+export interface TieredImageResult {
+  /** Thumbnail: 300px max dimension, ~80% quality JPEG */
+  thumbnail: TierImageData;
+  /** Preview: 1200px max dimension, ~85% quality JPEG */
+  preview: TierImageData;
+  /** Original: unchanged source file */
+  original: TierImageData;
+  /** Original image width (before any resizing) */
+  originalWidth: number;
+  /** Original image height (before any resizing) */
+  originalHeight: number;
+}
+
+/**
+ * Result of three-tier encrypted shard generation
+ */
+export interface TieredShardResult {
+  /** Encrypted thumbnail shard */
+  thumbnail: TierShard;
+  /** Encrypted preview shard */
+  preview: TierShard;
+  /** Encrypted original shard */
+  original: TierShard;
+  /** Original image width (before any resizing) */
+  originalWidth: number;
+  /** Original image height (before any resizing) */
   originalHeight: number;
 }
 
@@ -228,7 +304,7 @@ function orientationSwapsDimensions(orientation: number): boolean {
 }
 
 /**
- * Generate a thumbnail from an image file
+ * Generate a thumbnail from an image file (legacy single-tier)
  *
  * Uses createImageBitmap for efficient image decoding and Canvas API
  * for resizing. Handles EXIF orientation for rotated photos.
@@ -242,7 +318,7 @@ export async function generateThumbnail(
   file: File,
   options: ThumbnailOptions = {}
 ): Promise<ThumbnailResult> {
-  const { maxSize = DEFAULT_MAX_SIZE, quality = DEFAULT_QUALITY } = options;
+  const { maxSize = THUMB_MAX_SIZE, quality = THUMB_QUALITY } = options;
 
   // Validate file type
   if (!isSupportedImageType(file.type)) {
@@ -387,4 +463,245 @@ export function base64ToUint8Array(base64: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i)!;
   }
   return bytes;
+}
+
+/**
+ * Resize an image to a maximum dimension using Canvas API.
+ *
+ * @param bitmap - Source image bitmap
+ * @param maxSize - Maximum dimension (width or height)
+ * @param quality - JPEG quality (0-1)
+ * @param maxBytes - Maximum output size in bytes
+ * @param orientation - EXIF orientation value (1-8)
+ * @returns Resized image data and dimensions
+ */
+async function resizeImage(
+  bitmap: ImageBitmap,
+  maxSize: number,
+  quality: number,
+  maxBytes: number,
+  orientation: number
+): Promise<{ data: Uint8Array; width: number; height: number }> {
+  // Swap dimensions if orientation requires it
+  const swapDims = orientationSwapsDimensions(orientation);
+  const logicalWidth = swapDims ? bitmap.height : bitmap.width;
+  const logicalHeight = swapDims ? bitmap.width : bitmap.height;
+
+  // Calculate target dimensions
+  const dims = calculateDimensions(logicalWidth, logicalHeight, maxSize);
+
+  // Create canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = dims.width;
+  canvas.height = dims.height;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new ThumbnailError('Failed to get canvas 2D context');
+  }
+
+  // Apply orientation transform
+  applyOrientationTransform(ctx, dims.width, dims.height, orientation);
+
+  // Draw and resize image
+  if (swapDims) {
+    ctx.drawImage(bitmap, 0, 0, dims.height, dims.width);
+  } else {
+    ctx.drawImage(bitmap, 0, 0, dims.width, dims.height);
+  }
+
+  // Convert to JPEG blob
+  let blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, 'image/jpeg', quality)
+  );
+
+  if (!blob) {
+    throw new ThumbnailError('Failed to encode image as JPEG');
+  }
+
+  // If image is too large, reduce quality
+  let currentQuality = quality;
+  while (blob.size > maxBytes && currentQuality > 0.3) {
+    currentQuality -= 0.1;
+    blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', currentQuality)
+    );
+    if (!blob) {
+      throw new ThumbnailError('Failed to encode image as JPEG');
+    }
+  }
+
+  // Convert blob to Uint8Array
+  const arrayBuffer = await blob.arrayBuffer();
+  const data = new Uint8Array(arrayBuffer);
+
+  return {
+    data,
+    width: dims.width,
+    height: dims.height,
+  };
+}
+
+/**
+ * Generate three-tier images from a photo file.
+ *
+ * Creates thumbnail (300px), preview (1200px), and keeps original.
+ * Each tier is prepared for encryption with its corresponding key.
+ *
+ * @param file - Image file to process
+ * @returns Three-tier image data with dimensions
+ * @throws ThumbnailError if generation fails
+ */
+export async function generateTieredImages(file: File): Promise<TieredImageResult> {
+  // Validate file type
+  if (!isSupportedImageType(file.type)) {
+    throw new ThumbnailError(`Unsupported image type: ${file.type}`);
+  }
+
+  try {
+    // Get EXIF orientation before creating bitmap
+    const orientation = await getExifOrientation(file);
+
+    // Create bitmap for efficient decoding
+    let bitmap: ImageBitmap;
+    try {
+      bitmap = await createImageBitmap(file);
+    } catch (error) {
+      throw new ThumbnailError('Failed to decode image', error);
+    }
+
+    // Calculate logical dimensions (after EXIF rotation)
+    const swapDims = orientationSwapsDimensions(orientation);
+    const logicalWidth = swapDims ? bitmap.height : bitmap.width;
+    const logicalHeight = swapDims ? bitmap.width : bitmap.height;
+
+    // Generate thumbnail (300px max)
+    const thumbData = await resizeImage(
+      bitmap,
+      THUMB_MAX_SIZE,
+      THUMB_QUALITY,
+      MAX_THUMBNAIL_BYTES,
+      orientation
+    );
+
+    // Generate preview (1200px max)
+    const previewData = await resizeImage(
+      bitmap,
+      PREVIEW_MAX_SIZE,
+      PREVIEW_QUALITY,
+      MAX_PREVIEW_BYTES,
+      orientation
+    );
+
+    // Clean up bitmap
+    bitmap.close();
+
+    // Get original file data
+    const originalArrayBuffer = await file.arrayBuffer();
+    const originalData = new Uint8Array(originalArrayBuffer);
+
+    return {
+      thumbnail: {
+        data: thumbData.data,
+        width: thumbData.width,
+        height: thumbData.height,
+        tier: ShardTier.THUMB,
+      },
+      preview: {
+        data: previewData.data,
+        width: previewData.width,
+        height: previewData.height,
+        tier: ShardTier.PREVIEW,
+      },
+      original: {
+        data: originalData,
+        width: logicalWidth,
+        height: logicalHeight,
+        tier: ShardTier.ORIGINAL,
+      },
+      originalWidth: logicalWidth,
+      originalHeight: logicalHeight,
+    };
+  } catch (error) {
+    if (error instanceof ThumbnailError) {
+      throw error;
+    }
+    throw new ThumbnailError('Tiered image generation failed', error);
+  }
+}
+
+/**
+ * Generate three-tier encrypted shards from a photo file.
+ *
+ * Creates and encrypts thumbnail (300px), preview (1200px), and original.
+ * Each tier is encrypted with its corresponding key from the EpochKey.
+ *
+ * @param file - Image file to process
+ * @param epochKey - Epoch key with thumbKey, previewKey, fullKey
+ * @param shardIndex - Shard index within photo (typically 0 for single-shard photos)
+ * @returns Three-tier encrypted shards with metadata
+ * @throws ThumbnailError if generation or encryption fails
+ */
+export async function generateTieredShards(
+  file: File,
+  epochKey: EpochKey,
+  shardIndex: number = 0
+): Promise<TieredShardResult> {
+  // Generate the three tiers
+  const tieredImages = await generateTieredImages(file);
+
+  try {
+    // Encrypt each tier with its corresponding key
+    const [thumbEncrypted, previewEncrypted, originalEncrypted] = await Promise.all([
+      encryptShard(
+        tieredImages.thumbnail.data,
+        epochKey.thumbKey,
+        epochKey.epochId,
+        shardIndex,
+        ShardTier.THUMB
+      ),
+      encryptShard(
+        tieredImages.preview.data,
+        epochKey.previewKey,
+        epochKey.epochId,
+        shardIndex,
+        ShardTier.PREVIEW
+      ),
+      encryptShard(
+        tieredImages.original.data,
+        epochKey.fullKey,
+        epochKey.epochId,
+        shardIndex,
+        ShardTier.ORIGINAL
+      ),
+    ]);
+
+    return {
+      thumbnail: {
+        encrypted: thumbEncrypted,
+        width: tieredImages.thumbnail.width,
+        height: tieredImages.thumbnail.height,
+        tier: ShardTier.THUMB,
+      },
+      preview: {
+        encrypted: previewEncrypted,
+        width: tieredImages.preview.width,
+        height: tieredImages.preview.height,
+        tier: ShardTier.PREVIEW,
+      },
+      original: {
+        encrypted: originalEncrypted,
+        width: tieredImages.original.width,
+        height: tieredImages.original.height,
+        tier: ShardTier.ORIGINAL,
+      },
+      originalWidth: tieredImages.originalWidth,
+      originalHeight: tieredImages.originalHeight,
+    };
+  } catch (error) {
+    if (error instanceof ThumbnailError) {
+      throw error;
+    }
+    throw new ThumbnailError('Failed to encrypt tiered shards', error);
+  }
 }

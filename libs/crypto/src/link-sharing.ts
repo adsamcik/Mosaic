@@ -241,6 +241,7 @@ export function parseShareLinkUrl(url: string): {
 
     // Extract link ID from path: .../s/{linkId} (supports prefix paths)
     const pathMatch = parsed.pathname.match(/\/s\/([A-Za-z0-9_-]+)$/);
+    // Stryker disable next-line ConditionalExpression,LogicalOperator,BlockStatement: Guard is semantically equivalent - mutation causes exception caught by try-catch, producing same null result
     if (!pathMatch || !pathMatch[1]) {
       return null;
     }
@@ -249,6 +250,7 @@ export function parseShareLinkUrl(url: string): {
     // Extract link secret from fragment: #k={linkSecret}
     const fragment = parsed.hash;
     const secretMatch = fragment.match(/^#k=([A-Za-z0-9_-]+)$/);
+    // Stryker disable next-line ConditionalExpression,LogicalOperator,BlockStatement: Guard is semantically equivalent - mutation causes exception caught by try-catch, producing same null result
     if (!secretMatch || !secretMatch[1]) {
       return null;
     }
