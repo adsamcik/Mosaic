@@ -104,6 +104,7 @@ export function useAlbums() {
         const keysLoaded = await ensureEpochKeysLoaded(album.id);
         if (!keysLoaded) {
           // Can't decrypt without keys
+          log.error(`Album ${album.id}: Failed to load epoch keys`);
           setAlbums((prev) =>
             prev.map((a) =>
               a.id === album.id
@@ -118,6 +119,7 @@ export function useAlbums() {
         const epochKey = getCurrentEpochKey(album.id);
         if (!epochKey) {
           // No epoch key available
+          log.error(`Album ${album.id}: No epoch key in cache after loading`);
           setAlbums((prev) =>
             prev.map((a) =>
               a.id === album.id

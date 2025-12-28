@@ -66,7 +66,7 @@ describe('sharing', () => {
     )).toThrow();
   });
 
-  it('rejects albumId mismatch', () => {
+  it('rejects albumId mismatch when bundle has non-empty albumId', () => {
     const sealed = sealAndSignBundle(bundle, recipientIdentity.ed25519.publicKey, ownerIdentity);
     
     expect(() => verifyAndOpenBundle(
@@ -76,6 +76,31 @@ describe('sharing', () => {
       recipientIdentity,
       { albumId: 'wrong-album', minEpochId: 0 }
     )).toThrow('albumId');
+  });
+
+  it('accepts empty albumId in bundle (created at album creation time)', () => {
+    // Create a bundle with empty albumId (like when creating a new album)
+    const bundleWithEmptyAlbumId = createEpochKeyBundle(
+      '', // Empty albumId - not known at creation time
+      epoch.epochId,
+      epoch.epochSeed,
+      epoch.signKeypair,
+      recipientIdentity.ed25519.publicKey
+    );
+    
+    const sealed = sealAndSignBundle(bundleWithEmptyAlbumId, recipientIdentity.ed25519.publicKey, ownerIdentity);
+    
+    // Should accept when verifying with actual album ID
+    const opened = verifyAndOpenBundle(
+      sealed.sealed,
+      sealed.signature,
+      ownerIdentity.ed25519.publicKey,
+      recipientIdentity,
+      { albumId: 'actual-album-id-from-server', minEpochId: 0 }
+    );
+    
+    expect(opened.epochId).toBe(epoch.epochId);
+    expect(opened.epochSeed).toEqual(epoch.epochSeed);
   });
 
   it('rejects old epochId', () => {

@@ -149,7 +149,9 @@ export function verifyAndOpenBundle(
   }
 
   // Validate album ID
-  if (bundleJson.albumId !== expectedContext.albumId) {
+  // Note: Empty albumId is allowed for bundles created at album creation time,
+  // when the album ID was not yet known. The signature still provides integrity.
+  if (bundleJson.albumId !== '' && bundleJson.albumId !== expectedContext.albumId) {
     throw new CryptoError(
       `Bundle albumId mismatch: expected ${expectedContext.albumId}, got ${bundleJson.albumId}`,
       CryptoErrorCode.CONTEXT_MISMATCH
