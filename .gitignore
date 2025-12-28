@@ -35,9 +35,8 @@ artifacts/
 !.env.example
 *.pem
 *.key
-appsettings.*.json
-!appsettings.json
-!appsettings.Development.json.example
+**/appsettings.*.json
+!**/appsettings.Development.json
 
 # IDE
 .idea/
@@ -85,6 +84,8 @@ mutation-report/
 
 # Blob storage (development)
 apps/backend/Mosaic.Backend/Data/blobs/
+apps/backend/Mosaic.Backend/data/
+data/
 
 # Docker
 docker-compose.override.yml

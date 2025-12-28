@@ -1,0 +1,119 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-backend",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/apps/backend/Mosaic.Backend/Mosaic.Backend.csproj",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary;ForceNoAlign"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "watch-backend",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "watch",
+        "run",
+        "--project",
+        "${workspaceFolder}/apps/backend/Mosaic.Backend/Mosaic.Backend.csproj"
+      ],
+      "options": {
+        "env": {
+          "ASPNETCORE_ENVIRONMENT": "Development",
+          "ASPNETCORE_URLS": "http://localhost:5000"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\s*Building\\.\\.\\.",
+          "endsPattern": "^\\s*Now listening on:"
+        }
+      }
+    },
+    {
+      "label": "build-crypto",
+      "type": "npm",
+      "script": "build",
+      "path": "libs/crypto",
+      "problemMatcher": []
+    },
+    {
+      "label": "install-frontend",
+      "type": "npm",
+      "script": "install",
+      "path": "apps/admin",
+      "problemMatcher": []
+    },
+    {
+      "label": "dev-frontend",
+      "type": "npm",
+      "script": "dev",
+      "path": "apps/admin",
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\s*VITE",
+          "endsPattern": "Local:\\s+http://localhost:\\d+"
+        }
+      }
+    },
+    {
+      "label": "start-all",
+      "dependsOn": ["build-crypto", "watch-backend", "dev-frontend"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "test-backend",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "test",
+        "${workspaceFolder}/apps/backend/Mosaic.Backend.Tests/Mosaic.Backend.Tests.csproj"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": "test"
+    },
+    {
+      "label": "test-frontend",
+      "type": "npm",
+      "script": "test:run",
+      "path": "apps/admin",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "test-crypto",
+      "type": "npm",
+      "script": "test",
+      "path": "libs/crypto",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "test-all",
+      "dependsOn": ["test-crypto", "test-frontend", "test-backend"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    }
+  ]
+}

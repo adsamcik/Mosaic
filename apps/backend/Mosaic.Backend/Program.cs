@@ -7,9 +7,21 @@ using tusdotnet.Stores;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Database
+// Database - use SQLite for development, PostgreSQL for production
+var connectionString = builder.Configuration.GetConnectionString("Default");
+var useSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ?? false;
+
 builder.Services.AddDbContext<MosaicDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+{
+    if (useSqlite)
+    {
+        options.UseSqlite(connectionString);
+    }
+    else
+    {
+        options.UseNpgsql(connectionString);
+    }
+});
 
 // Services
 builder.Services.AddScoped<IStorageService, LocalStorageService>();
@@ -77,7 +89,18 @@ if (runMigrations)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
-    await db.Database.MigrateAsync();
+    
+    // SQLite uses EnsureCreated (simpler for dev), PostgreSQL uses migrations
+    if (useSqlite)
+    {
+        await db.Database.EnsureCreatedAsync();
+        app.Logger.LogInformation("SQLite database initialized");
+    }
+    else
+    {
+        await db.Database.MigrateAsync();
+        app.Logger.LogInformation("PostgreSQL migrations applied");
+    }
 }
 
 app.Run();

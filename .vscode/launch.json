@@ -1,0 +1,58 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend (.NET)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-backend",
+      "program": "${workspaceFolder}/apps/backend/Mosaic.Backend/bin/Debug/net10.0/Mosaic.Backend.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/apps/backend/Mosaic.Backend",
+      "stopAtEntry": false,
+      "serverReadyAction": {
+        "action": "debugWithChrome",
+        "pattern": "\\bNow listening on:\\s+https?://\\S+:(\\d+)",
+        "uriFormat": "http://localhost:%s/swagger"
+      },
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5000"
+      }
+    },
+    {
+      "name": "Frontend (Vite)",
+      "type": "chrome",
+      "request": "launch",
+      "preLaunchTask": "npm: dev - apps/admin",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/apps/admin/src"
+    },
+    {
+      "name": "Backend + Frontend",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "start-all",
+      "program": "${workspaceFolder}/apps/backend/Mosaic.Backend/bin/Debug/net10.0/Mosaic.Backend.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/apps/backend/Mosaic.Backend",
+      "stopAtEntry": false,
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+https?://\\S+:(\\d+)",
+        "uriFormat": "http://localhost:5173"
+      },
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5000"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack (Debug Both)",
+      "configurations": ["Backend (.NET)", "Frontend (Vite)"],
+      "stopAll": true
+    }
+  ]
+}
