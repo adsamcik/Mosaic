@@ -205,6 +205,10 @@ Cross-Origin-Embedder-Policy: require-corp
 
 ## Workflow Requirements
 
+### Tool Restrictions
+
+- **Never use Simple Browser** - Do not use `open_simple_browser` to preview the app. The app requires COOP/COEP headers for SharedArrayBuffer which Simple Browser doesn't support.
+
 ### Execution Rules
 
 **Complete every task fully in this session.** You are an autonomous agent—execute immediately, do not defer.
