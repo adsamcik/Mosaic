@@ -2,10 +2,13 @@ import { openDB, type IDBPDatabase } from 'idb';
 import * as tus from 'tus-js-client';
 import { TUS_ENDPOINT } from './api';
 import { getCryptoClient } from './crypto-client';
+import { createLogger } from './logger';
 import {
     generateThumbnail,
     isSupportedImageType,
 } from './thumbnail-generator';
+
+const log = createLogger('upload-queue');
 
 /**
  * Convert Uint8Array to base64 string
@@ -197,7 +200,7 @@ class UploadQueue {
       this.activeCount++;
       this.processTask(task)
         .catch((err) => {
-          console.error('Upload task failed:', err);
+          log.error('Upload task failed:', err);
         })
         .finally(() => {
           this.activeCount--;
@@ -235,7 +238,7 @@ class UploadQueue {
           });
         } catch (thumbError) {
           // Log but don't fail upload if thumbnail generation fails
-          console.warn('Thumbnail generation failed:', thumbError);
+          log.warn('Thumbnail generation failed:', thumbError);
         }
       }
 

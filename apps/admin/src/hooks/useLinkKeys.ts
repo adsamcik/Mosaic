@@ -10,6 +10,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../lib/api-types';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('useLinkKeys');
 
 /** Unwrapped tier key */
 export interface TierKey {
@@ -342,7 +345,7 @@ export function useLinkKeys(
             signPubkey: wrapped.signPubkey ? fromBase64(wrapped.signPubkey) : undefined,
           });
         } catch (err) {
-          console.warn(`Failed to unwrap key for epoch ${wrapped.epochId} tier ${wrapped.tier}:`, err);
+          log.warn(`Failed to unwrap key for epoch ${wrapped.epochId} tier ${wrapped.tier}:`, err);
         }
       }
 

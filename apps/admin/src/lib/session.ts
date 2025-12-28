@@ -7,7 +7,10 @@ import { closeDbClient, getDbClient } from './db-client';
 import { clearAllEpochKeys } from './epoch-key-store';
 import { closeGeoClient } from './geo-client';
 import { devLogin as devAuthLogin } from './local-auth';
+import { createLogger } from './logger';
 import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
+
+const log = createLogger('session');
 
 /** Events that reset the idle timer */
 const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart', 'scroll'] as const;
@@ -207,7 +210,7 @@ class SessionManager {
     if (navigator.storage?.persist) {
       const granted = await navigator.storage.persist();
       if (!granted) {
-        console.warn('Persistent storage not granted - data may be evicted');
+        log.warn('Persistent storage not granted - data may be evicted');
       }
     }
 
@@ -283,7 +286,7 @@ class SessionManager {
     if (navigator.storage?.persist) {
       const granted = await navigator.storage.persist();
       if (!granted) {
-        console.warn('Persistent storage not granted - data may be evicted');
+        log.warn('Persistent storage not granted - data may be evicted');
       }
     }
 
@@ -377,7 +380,7 @@ class SessionManager {
     if (navigator.storage?.persist) {
       const granted = await navigator.storage.persist();
       if (!granted) {
-        console.warn('Persistent storage not granted - data may be evicted');
+        log.warn('Persistent storage not granted - data may be evicted');
       }
     }
 
@@ -418,7 +421,7 @@ class SessionManager {
     this.resetIdleTimer();
     this.attachIdleListeners();
 
-    console.info(`Dev login successful: ${username} (${userId})`);
+    log.info(`Dev login successful: ${username} (${userId})`);
   }
 
   /**
@@ -468,7 +471,7 @@ class SessionManager {
     }
     
     this.idleTimer = window.setTimeout(() => {
-      console.log('Session idle timeout - logging out');
+      log.info('Session idle timeout - logging out');
       void this.logout();
     }, getIdleTimeoutMs());
   }

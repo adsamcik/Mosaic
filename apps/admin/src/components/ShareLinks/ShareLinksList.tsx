@@ -6,6 +6,9 @@
 
 import { useState } from 'react';
 import type { ShareLinkInfo } from '../../hooks/useShareLinks';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('ShareLinksList');
 
 interface ShareLinksListProps {
   /** List of share links */
@@ -55,7 +58,7 @@ export function ShareLinksList({
       setTimeout(() => setCopiedId(null), 2000);
     } catch {
       // Clipboard access might be denied
-      console.error('Failed to copy to clipboard');
+      log.error('Failed to copy to clipboard');
     }
   };
 

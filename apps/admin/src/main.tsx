@@ -1,6 +1,26 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { logger } from './lib/logger';
+
+// Global error handler for uncaught errors
+window.addEventListener('error', (event) => {
+  logger.error('Uncaught error', {
+    message: event.message,
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno,
+    error: event.error,
+  });
+});
+
+// Global handler for unhandled promise rejections
+window.addEventListener('unhandledrejection', (event) => {
+  logger.error('Unhandled promise rejection', {
+    reason: event.reason,
+  });
+});
 
 const container = document.getElementById('root');
 if (!container) {
@@ -9,6 +29,8 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>
 );

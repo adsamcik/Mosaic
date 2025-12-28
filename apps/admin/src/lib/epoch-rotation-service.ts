@@ -20,6 +20,9 @@ import type {
 import { getCryptoClient } from './crypto-client';
 import { fetchAndUnwrapEpochKeys } from './epoch-key-service';
 import { clearAlbumKeys, setEpochKey, type EpochKeyBundle } from './epoch-key-store';
+import { createLogger } from './logger';
+
+const log = createLogger('epoch-rotation-service');
 
 /** Error thrown when epoch rotation fails */
 export class EpochRotationError extends Error {
@@ -368,7 +371,7 @@ async function wrapKeysForShareLinks(
       });
     } catch (err) {
       // Log but don't fail rotation for individual share link failures
-      console.error(`Failed to wrap keys for share link ${link.id}:`, err);
+      log.error(`Failed to wrap keys for share link ${link.id}:`, err);
       // Continue with other links
     }
   }

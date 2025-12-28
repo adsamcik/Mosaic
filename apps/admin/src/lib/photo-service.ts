@@ -14,6 +14,9 @@
 import { getCryptoClient } from './crypto-client';
 import { downloadShards, type ProgressCallback } from './shard-service';
 import { base64ToUint8Array } from './thumbnail-generator';
+import { createLogger } from './logger';
+
+const log = createLogger('photo-service');
 
 /**
  * Cached photo entry with blob URL and reference count
@@ -313,7 +316,7 @@ export async function preloadPhotos(
       releasePhoto(photo.id); // Release since preload doesn't hold reference
     } catch (error) {
       // Ignore errors during preload
-      console.warn(`Preload failed for photo ${photo.id}:`, error);
+      log.warn(`Preload failed for photo ${photo.id}:`, error);
     }
   });
 

@@ -10,6 +10,9 @@ import type { Album as ApiAlbum } from '../lib/api-types';
 import { getCryptoClient } from '../lib/crypto-client';
 import { ensureEpochKeysLoaded } from '../lib/epoch-key-service';
 import { getCurrentEpochKey, setEpochKey } from '../lib/epoch-key-store';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('useAlbums');
 
 /**
  * Encrypt album name using XChaCha20-Poly1305 with the epoch seed.
@@ -147,7 +150,7 @@ export function useAlbums() {
           )
         );
       } catch (err) {
-        console.error(`Failed to decrypt album name for ${album.id}:`, err);
+        log.error(`Failed to decrypt album name for ${album.id}:`, err);
         // Mark as failed but keep placeholder name
         setAlbums((prev) =>
           prev.map((a) =>

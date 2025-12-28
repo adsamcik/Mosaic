@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { fromBase64, getApi } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
 import { syncEngine } from '../lib/sync-engine';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('useEpochKeys');
 
 /**
  * Hook to get epoch read key for decryption
@@ -130,7 +133,7 @@ export function useAlbumEpochKeys(albumId: string) {
           keysMap.set(ek.epochId, key);
           syncEngine.setEpochKey(albumId, ek.epochId, key);
         } catch (unwrapError) {
-          console.warn(`Failed to unwrap epoch key ${ek.epochId}:`, unwrapError);
+          log.warn(`Failed to unwrap epoch key ${ek.epochId}:`, unwrapError);
         }
       }
 

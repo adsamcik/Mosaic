@@ -12,6 +12,9 @@ import {
     type AlbumCover,
 } from '../lib/album-cover-service';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('useAlbumCover');
 
 /**
  * Album cover loading state
@@ -116,7 +119,7 @@ export function useAlbumCover(
       } catch (err) {
         if (cancelled) return;
 
-        console.error(`Failed to load cover for album ${albumId}:`, err);
+        log.error(`Failed to load cover for album ${albumId}:`, err);
         setError(err instanceof Error ? err : new Error(String(err)));
         setCoverUrl(null);
         setPhotoId(null);

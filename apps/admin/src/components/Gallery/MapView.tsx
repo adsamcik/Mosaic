@@ -10,6 +10,9 @@ import 'leaflet/dist/leaflet.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getGeoClient } from '../../lib/geo-client';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('MapView');
 
 // Fix for default marker icons in Vite/Webpack bundlers
 // Leaflet's default icons use a path that doesn't work with module bundlers
@@ -254,7 +257,7 @@ export function MapView({
           setClusters(result);
         }
       } catch (err) {
-        console.error('Failed to load points into geo worker:', err);
+        log.error('Failed to load points into geo worker:', err);
         setError(err instanceof Error ? err : new Error(String(err)));
       }
     };
@@ -277,7 +280,7 @@ export function MapView({
         const result = await geo.getClusters(currentBounds, Math.floor(currentZoom));
         setClusters(result);
       } catch (err) {
-        console.error('Failed to get clusters:', err);
+        log.error('Failed to get clusters:', err);
         setError(err instanceof Error ? err : new Error(String(err)));
       } finally {
         setIsLoading(false);
@@ -309,7 +312,7 @@ export function MapView({
           mapRef.current.setView([lat, lng], Math.min(currentZoom + 3, MAX_ZOOM));
         }
       } catch (err) {
-        console.error('Failed to handle cluster click:', err);
+        log.error('Failed to handle cluster click:', err);
       }
     },
     [currentZoom, onClusterClick]

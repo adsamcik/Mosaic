@@ -11,6 +11,9 @@ import {
     getEpochKey,
     setEpochKey as storeEpochKey,
 } from './epoch-key-store';
+import { createLogger } from './logger';
+
+const log = createLogger('sync-engine');
 
 /**
  * Get epoch read key for an album/epoch.
@@ -35,7 +38,7 @@ async function getEpochReadKey(
     const bundle = await getOrFetchEpochKey(albumId, epochId);
     return bundle.epochSeed;
   } catch (err) {
-    console.warn(`Failed to get epoch key ${epochId} for album ${albumId}:`, err);
+    log.warn(`Failed to get epoch key ${epochId} for album ${albumId}:`, err);
     return null;
   }
 }
@@ -69,7 +72,7 @@ class SyncEngine extends EventTarget {
    */
   async sync(albumId: string, readKey?: Uint8Array): Promise<void> {
     if (this.syncing) {
-      console.warn('Sync already in progress');
+      log.warn('Sync already in progress');
       return;
     }
 
@@ -97,7 +100,7 @@ class SyncEngine extends EventTarget {
         if (!epochReadKey) {
           const cachedKey = await getEpochReadKey(albumId, m.versionCreated);
           if (!cachedKey) {
-            console.warn(`No epoch key available for manifest ${m.id}`);
+            log.warn(`No epoch key available for manifest ${m.id}`);
             continue;
           }
           epochReadKey = cachedKey;
@@ -116,7 +119,7 @@ class SyncEngine extends EventTarget {
         );
 
         if (!isValid) {
-          console.warn(`Invalid signature for manifest ${m.id}`);
+          log.warn(`Invalid signature for manifest ${m.id}`);
           continue;
         }
 
@@ -214,7 +217,7 @@ class SyncEngine extends EventTarget {
     try {
       await fetchAndUnwrapEpochKeys(albumId);
     } catch (err) {
-      console.warn(`Failed to load epoch keys for album ${albumId}:`, err);
+      log.warn(`Failed to load epoch keys for album ${albumId}:`, err);
     }
   }
 

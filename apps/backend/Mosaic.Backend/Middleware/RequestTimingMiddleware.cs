@@ -25,13 +25,15 @@ public class RequestTimingMiddleware
         {
             stopwatch.Stop();
             var elapsed = stopwatch.ElapsedMilliseconds;
+            var correlationId = context.GetCorrelationId();
 
             _logger.LogInformation(
-                "{Method} {Path} responded {StatusCode} in {Elapsed}ms",
+                "{Method} {Path} responded {StatusCode} in {Elapsed}ms [CorrelationId: {CorrelationId}]",
                 context.Request.Method,
                 context.Request.Path,
                 context.Response.StatusCode,
-                elapsed);
+                elapsed,
+                correlationId);
         }
     }
 }

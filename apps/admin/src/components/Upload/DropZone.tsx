@@ -1,5 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { useUploadContext } from '../../contexts/UploadContext';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('DropZone');
 
 interface DropZoneProps {
   albumId: string;
@@ -62,7 +65,7 @@ export function DropZone({ albumId, children, className = '' }: DropZoneProps) {
       );
 
       if (imageFiles.length === 0) {
-        console.warn('No image files found in drop');
+        log.warn('No image files found in drop');
         return;
       }
 

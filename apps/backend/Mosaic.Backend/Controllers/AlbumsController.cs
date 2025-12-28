@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Middleware;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -54,11 +55,13 @@ public class AlbumsController : ControllerBase
 {
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
+    private readonly ILogger<AlbumsController> _logger;
 
-    public AlbumsController(MosaicDbContext db, IConfiguration config)
+    public AlbumsController(MosaicDbContext db, IConfiguration config, ILogger<AlbumsController> logger)
     {
         _db = db;
         _config = config;
+        _logger = logger;
     }
 
     private async Task<User> GetOrCreateUser()
@@ -186,6 +189,12 @@ public class AlbumsController : ControllerBase
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
+            _logger.LogInformation(
+                "Album created. AlbumId: {AlbumId}, OwnerId: {OwnerId}, CorrelationId: {CorrelationId}",
+                album.Id,
+                user.Id,
+                HttpContext.GetCorrelationId());
+
             return Created($"/api/albums/{album.Id}", new
             {
                 album.Id,
@@ -290,6 +299,12 @@ public class AlbumsController : ControllerBase
 
         _db.Albums.Remove(album);
         await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Album deleted. AlbumId: {AlbumId}, DeletedBy: {UserId}, CorrelationId: {CorrelationId}",
+            albumId,
+            user.Id,
+            HttpContext.GetCorrelationId());
 
         return NoContent();
     }

@@ -37,7 +37,9 @@ var app = builder.Build();
 var authMode = builder.Configuration["Auth:Mode"] ?? "ProxyAuth";
 var isLocalAuth = authMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
 
-// Middleware order matters
+// Middleware order matters - exception handler must be first to catch all errors
+app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<RequestTimingMiddleware>();
 
 // Use appropriate auth middleware based on configuration

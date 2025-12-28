@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { syncEngine } from '../lib/sync-engine';
 import type { SyncEventDetail } from '../lib/sync-engine';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('useSync');
 
 /** Sync status states */
 export type SyncStatus = 'idle' | 'syncing' | 'error';
@@ -90,7 +93,7 @@ export function useSync(): UseSyncResult {
         await syncEngine.sync(albumId, readKey);
       } catch (err) {
         // Error is already set via event listener
-        console.error('Sync failed:', err);
+        log.error('Sync failed:', err);
       }
     },
     []
@@ -108,7 +111,7 @@ export function useSync(): UseSyncResult {
           await syncEngine.sync(album.id, album.readKey);
         } catch (err) {
           // Continue with next album on error
-          console.error(`Sync failed for album ${album.id}:`, err);
+          log.error(`Sync failed for album ${album.id}:`, err);
         }
       }
     },

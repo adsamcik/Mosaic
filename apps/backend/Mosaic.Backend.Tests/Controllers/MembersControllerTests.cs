@@ -23,7 +23,7 @@ public class MembersControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, member, "viewer", owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -52,7 +52,7 @@ public class MembersControllerTests
         await builder.CreateUserAsync(MemberAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -79,7 +79,7 @@ public class MembersControllerTests
         var invitee = await builder.CreateUserAsync(MemberAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -125,7 +125,7 @@ public class MembersControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, editor, "editor", owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -168,7 +168,7 @@ public class MembersControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, viewer, "viewer", owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -209,7 +209,7 @@ public class MembersControllerTests
         var invitee = await builder.CreateUserAsync(MemberAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -250,7 +250,7 @@ public class MembersControllerTests
         var invitee = await builder.CreateUserAsync(MemberAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -282,7 +282,7 @@ public class MembersControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -324,7 +324,7 @@ public class MembersControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, member, "viewer", owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -368,7 +368,7 @@ public class MembersControllerTests
         membership.RevokedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -412,7 +412,7 @@ public class MembersControllerTests
         var invitee = await builder.CreateUserAsync(MemberAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -454,7 +454,7 @@ public class MembersControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, member, "viewer", owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -486,7 +486,7 @@ public class MembersControllerTests
         await builder.AddMemberAsync(album, editor, "editor", owner);
         await builder.AddMemberAsync(album, member, "viewer", owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -512,7 +512,7 @@ public class MembersControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -538,7 +538,7 @@ public class MembersControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
@@ -562,7 +562,7 @@ public class MembersControllerTests
         var builder = new TestDataBuilder(db);
         await builder.CreateUserAsync(OwnerAuthSub);
 
-        var controller = new MembersController(db, config)
+        var controller = new MembersController(db, config, NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {

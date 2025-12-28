@@ -5,6 +5,9 @@ import { uploadQueue, type UploadTask } from '../lib/upload-queue';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getApi, toBase64 } from '../lib/api';
 import type { PhotoMeta } from '../workers/types';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('useUpload');
 
 /** Error thrown when upload fails */
 export class UploadError extends Error {
@@ -141,7 +144,7 @@ export function useUpload() {
           setIsUploading(false);
           setProgress(1);
         } catch (manifestErr) {
-          console.error('Failed to create manifest:', manifestErr);
+          log.error('Failed to create manifest:', manifestErr);
           setError(
             new UploadError(
               `Upload succeeded but manifest creation failed: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`,
@@ -154,7 +157,7 @@ export function useUpload() {
       };
 
       uploadQueue.onError = (_, uploadErr) => {
-        console.error('Upload failed:', uploadErr);
+        log.error('Upload failed:', uploadErr);
         setError(
           new UploadError(
             uploadErr.message,
@@ -175,7 +178,7 @@ export function useUpload() {
     } catch (err) {
       // Only handle errors not already handled above
       if (!(err instanceof UploadError)) {
-        console.error('Upload error:', err);
+        log.error('Upload error:', err);
         const uploadError = new UploadError(
           err instanceof Error ? err.message : String(err),
           UploadErrorCode.UPLOAD_FAILED,

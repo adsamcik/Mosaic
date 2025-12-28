@@ -1,5 +1,8 @@
 import * as Comlink from 'comlink';
 import type { DbWorkerApi } from '../workers/types';
+import { createLogger } from './logger';
+
+const log = createLogger('db-client');
 
 // Import worker constructor via Vite's ?worker suffix
 // This ensures Vite properly bundles and transforms the worker
@@ -42,13 +45,13 @@ export async function getDbClient(): Promise<Comlink.Remote<DbWorkerApi>> {
 
   if (useSharedWorker) {
     const sharedWorker = new DbSharedWorkerConstructor({ name: 'mosaic-db-worker' });
-    sharedWorker.onerror = (e) => console.error('[db-client] SharedWorker error:', e);
+    sharedWorker.onerror = (e) => log.error('SharedWorker error:', e);
     worker = sharedWorker;
     api = Comlink.wrap<DbWorkerApi>(sharedWorker.port);
   } else {
     // Fall back to regular Worker for test environments
     const regularWorker = new DbWorkerConstructor({ name: 'mosaic-db-worker' });
-    regularWorker.onerror = (e) => console.error('[db-client] Worker error:', e);
+    regularWorker.onerror = (e) => log.error('Worker error:', e);
     worker = regularWorker;
     api = Comlink.wrap<DbWorkerApi>(regularWorker);
   }

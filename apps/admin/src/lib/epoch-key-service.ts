@@ -15,6 +15,9 @@ import {
     setEpochKey,
     type EpochKeyBundle,
 } from './epoch-key-store';
+import { createLogger } from './logger';
+
+const log = createLogger('epoch-key-service');
 
 /** Error thrown when epoch key operations fail */
 export class EpochKeyError extends Error {
@@ -269,7 +272,7 @@ export async function ensureEpochKeysLoaded(albumId: string): Promise<boolean> {
     await fetchAndUnwrapEpochKeys(albumId);
     return true;
   } catch (err) {
-    console.error(`Failed to load epoch keys for album ${albumId}:`, err);
+    log.error(`Failed to load epoch keys for album ${albumId}:`, err);
     return false;
   }
 }
