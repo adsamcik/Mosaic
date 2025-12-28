@@ -122,29 +122,42 @@ describe('sharing', () => {
   });
 
   it('rejects invalid recipient public key length', () => {
-    expect(() => sealAndSignBundle(
-      bundle,
-      new Uint8Array(16), // Wrong length - too short
-      ownerIdentity
-    )).toThrow('32 bytes');
+    // Verify both that it throws AND that it's the right error message
+    // This kills mutations that bypass validation (error would come from ed25519PubToX25519 instead)
+    // sealAndSignBundle says "Recipient Ed25519 public key..."
+    // ed25519PubToX25519 says "Ed25519 public key..." (no "Recipient")
+    try {
+      sealAndSignBundle(bundle, new Uint8Array(16), ownerIdentity);
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toContain('Recipient'); // Must say "Recipient"
+      expect((err as Error).message).toContain('32 bytes');
+      expect((err as { code?: string }).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+    }
   });
 
   it('rejects empty recipient public key', () => {
     // Kills mutant: if (recipientEd25519Pub.length !== 32) → if (false)
-    expect(() => sealAndSignBundle(
-      bundle,
-      new Uint8Array(0), // Empty array
-      ownerIdentity
-    )).toThrow('32 bytes');
+    try {
+      sealAndSignBundle(bundle, new Uint8Array(0), ownerIdentity);
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toContain('Recipient'); // Must say "Recipient"
+      expect((err as Error).message).toContain('32 bytes');
+      expect((err as { code?: string }).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+    }
   });
 
   it('rejects overly long recipient public key', () => {
     // Kills mutant: if (recipientEd25519Pub.length !== 32) → if (false)
-    expect(() => sealAndSignBundle(
-      bundle,
-      new Uint8Array(64), // Too long
-      ownerIdentity
-    )).toThrow('32 bytes');
+    try {
+      sealAndSignBundle(bundle, new Uint8Array(64), ownerIdentity);
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toContain('Recipient'); // Must say "Recipient"
+      expect((err as Error).message).toContain('32 bytes');
+      expect((err as { code?: string }).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+    }
   });
 
   it('validates recipient key length error includes actual length', () => {
@@ -153,9 +166,120 @@ describe('sharing', () => {
       sealAndSignBundle(bundle, new Uint8Array(31), ownerIdentity);
       expect.fail('Should have thrown');
     } catch (err) {
+      expect((err as Error).message).toContain('Recipient'); // Must say "Recipient"
       expect((err as Error).message).toContain('31');
       expect((err as Error).message).toContain('32 bytes');
     }
+  });
+
+  // ====================================================================
+  // Mutation testing: L46 validation bypass mutants
+  // These spy-based tests verify that no crypto operations occur when
+  // recipient key length is invalid.
+  // ====================================================================
+  describe('sealAndSignBundle validation prevents crypto', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('does NOT call crypto_box_seal for wrong-length recipient key (spy verification)', () => {
+      // Kills mutant: if (recipientEd25519Pub.length !== 32) → if (false)
+      // Kills mutant: BlockStatement removed (length check block removed)
+      const originalSealFn = sodium.crypto_box_seal;
+      const sealSpy = vi.fn(originalSealFn);
+      (sodium as unknown as Record<string, unknown>).crypto_box_seal = sealSpy;
+
+      const originalConvertFn = sodium.crypto_sign_ed25519_pk_to_curve25519;
+      const convertSpy = vi.fn(originalConvertFn);
+      (sodium as unknown as Record<string, unknown>).crypto_sign_ed25519_pk_to_curve25519 = convertSpy;
+
+      try {
+        // 16-byte key (too short)
+        expect(() => sealAndSignBundle(bundle, new Uint8Array(16), ownerIdentity)).toThrow('32 bytes');
+        expect(sealSpy).not.toHaveBeenCalled();
+        expect(convertSpy).not.toHaveBeenCalled();
+
+        // 64-byte key (too long)
+        expect(() => sealAndSignBundle(bundle, new Uint8Array(64), ownerIdentity)).toThrow('32 bytes');
+        expect(sealSpy).not.toHaveBeenCalled();
+        expect(convertSpy).not.toHaveBeenCalled();
+
+        // Empty key
+        expect(() => sealAndSignBundle(bundle, new Uint8Array(0), ownerIdentity)).toThrow('32 bytes');
+        expect(sealSpy).not.toHaveBeenCalled();
+        expect(convertSpy).not.toHaveBeenCalled();
+      } finally {
+        sodium.crypto_box_seal = originalSealFn;
+        sodium.crypto_sign_ed25519_pk_to_curve25519 = originalConvertFn;
+      }
+    });
+
+    it('DOES call crypto_box_seal for correct-length recipient key', () => {
+      // Complementary test: correct length SHOULD call crypto operations
+      const originalSealFn = sodium.crypto_box_seal;
+      const sealSpy = vi.fn(originalSealFn);
+      (sodium as unknown as Record<string, unknown>).crypto_box_seal = sealSpy;
+
+      try {
+        const result = sealAndSignBundle(bundle, recipientIdentity.ed25519.publicKey, ownerIdentity);
+        expect(result.sealed).toBeDefined();
+        expect(sealSpy).toHaveBeenCalledOnce();
+      } finally {
+        sodium.crypto_box_seal = originalSealFn;
+      }
+    });
+  });
+
+  // ====================================================================
+  // Mutation testing: L170 recipient binding validation mutant
+  // Test that verifies the length check is executed before memcmp
+  // ====================================================================
+  describe('verifyAndOpenBundle recipient binding validation', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('recipient binding check uses both length and memcmp (kills L170 false|| mutant)', () => {
+      // Kills mutant: recipientPubkey.length !== myIdentity.ed25519.publicKey.length || ... → false || ...
+      // If length check is bypassed (mutated to false), memcmp still runs but with mismatched lengths
+
+      // Create a bundle with a different-length recipient (normally 32 bytes)
+      // We need to trick the system into having a length mismatch inside the bundle
+      // This requires mocking the crypto_box_seal_open to return crafted JSON
+      const sealed = sealAndSignBundle(bundle, recipientIdentity.ed25519.publicKey, ownerIdentity);
+
+      const originalFn = sodium.crypto_box_seal_open;
+      (sodium as Record<string, unknown>).crypto_box_seal_open = vi.fn(() => {
+        // Use URL-safe base64 WITHOUT padding (library uses base64_variants.URLSAFE_NO_PADDING)
+        // 16 zero bytes in URL-safe base64 no padding: AAAAAAAAAAAAAAAAAAAAAA
+        // 32 zero bytes in URL-safe base64 no padding: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        // 64 zero bytes in URL-safe base64 no padding: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        const fakeBundle = {
+          version: 1,
+          albumId: albumId,
+          epochId: epoch.epochId,
+          recipientPubkey: 'AAAAAAAAAAAAAAAAAAAAAA', // 16 bytes - wrong length!
+          epochSeed: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', // 32 bytes
+          signKeypair: {
+            publicKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', // 32 bytes
+            secretKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', // 64 bytes
+          },
+        };
+        return new TextEncoder().encode(JSON.stringify(fakeBundle));
+      });
+
+      try {
+        expect(() => verifyAndOpenBundle(
+          sealed.sealed,
+          sealed.signature,
+          ownerIdentity.ed25519.publicKey,
+          recipientIdentity,
+          { albumId, minEpochId: 0 }
+        )).toThrow('recipient');
+      } finally {
+        sodium.crypto_box_seal_open = originalFn;
+      }
+    });
   });
 
   it('rejects recipient binding mismatch', () => {

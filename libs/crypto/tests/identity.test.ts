@@ -170,6 +170,56 @@ describe('identity', () => {
       lowOrderPoint[0] = 1;
       expect(isValidEd25519PublicKey(lowOrderPoint)).toBe(false);
     });
+
+    // ====================================================================
+    // Mutation testing: L158 validation bypass mutants
+    // These tests verify that when length check is mutated to `if (false)`,
+    // the behavior changes detectably via spy.
+    // ====================================================================
+    it('does NOT call libsodium for wrong-length key (spy verification)', () => {
+      // Kills mutant: if (publicKey.length !== 32) → if (false)
+      // Kills mutant: BlockStatement removed (length check block removed)
+      // If length check is bypassed, libsodium function would be called
+      const originalFn = sodium.crypto_sign_ed25519_pk_to_curve25519;
+      const spy = vi.fn(originalFn);
+      (sodium as unknown as Record<string, unknown>).crypto_sign_ed25519_pk_to_curve25519 = spy;
+
+      try {
+        // Too short key
+        const result16 = isValidEd25519PublicKey(new Uint8Array(16));
+        expect(result16).toBe(false);
+        expect(spy).not.toHaveBeenCalled(); // Must NOT reach libsodium
+
+        // Too long key
+        const result48 = isValidEd25519PublicKey(new Uint8Array(48));
+        expect(result48).toBe(false);
+        expect(spy).not.toHaveBeenCalled(); // Must NOT reach libsodium
+
+        // Empty key
+        const result0 = isValidEd25519PublicKey(new Uint8Array(0));
+        expect(result0).toBe(false);
+        expect(spy).not.toHaveBeenCalled(); // Must NOT reach libsodium
+      } finally {
+        sodium.crypto_sign_ed25519_pk_to_curve25519 = originalFn;
+      }
+    });
+
+    it('DOES call libsodium for correct-length key', () => {
+      // Complementary test: correct length SHOULD call libsodium
+      const originalFn = sodium.crypto_sign_ed25519_pk_to_curve25519;
+      const spy = vi.fn(originalFn);
+      (sodium as unknown as Record<string, unknown>).crypto_sign_ed25519_pk_to_curve25519 = spy;
+
+      try {
+        const seed = generateIdentitySeed();
+        const kp = deriveIdentityKeypair(seed);
+        const result = isValidEd25519PublicKey(kp.ed25519.publicKey);
+        expect(result).toBe(true);
+        expect(spy).toHaveBeenCalled(); // Must call libsodium at least once
+      } finally {
+        sodium.crypto_sign_ed25519_pk_to_curve25519 = originalFn;
+      }
+    });
   });
 
   describe('generateEd25519Keypair', () => {

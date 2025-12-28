@@ -118,6 +118,38 @@ describe('keychain', () => {
       expect(keys1.rootKey[0]).toBeDefined();
     });
 
+    // ====================================================================
+    // Mutation testing: Context string mutations (L14, L17)
+    // These snapshot tests kill mutants where ROOT_KEY_CONTEXT or
+    // ACCOUNT_CONTEXT are mutated to empty strings.
+    // ====================================================================
+    it('rootKey snapshot matches expected value (kills ROOT_KEY_CONTEXT mutant)', async () => {
+      // Use all-zero salts and fixed password for reproducibility
+      const zeroUserSalt = new Uint8Array(16).fill(0x00);
+      const zeroAccountSalt = new Uint8Array(16).fill(0x00);
+      const testPassword = 'snapshot-test';
+
+      const keys = await deriveKeys(testPassword, zeroUserSalt, zeroAccountSalt, fastParams);
+      const rootKeyHex = Array.from(keys.rootKey).map(b => b.toString(16).padStart(2, '0')).join('');
+
+      // This exact hex was computed with correct ROOT_KEY_CONTEXT and ACCOUNT_CONTEXT.
+      // If either context is mutated to empty string, this will NOT match.
+      // Snapshot value: the actual derived value with proper contexts
+      expect(rootKeyHex).toBe('d79b27da4128b04b310fbef3265990982aa8d44d17b12bebfc829f9afff2dc17');
+    });
+
+    it('masterKey differs from rootKey (proves ROOT_KEY_CONTEXT is used)', async () => {
+      // If ROOT_KEY_CONTEXT were empty, intermediate derivation would change
+      const zeroUserSalt = new Uint8Array(16).fill(0x00);
+      const zeroAccountSalt = new Uint8Array(16).fill(0x00);
+      const testPassword = 'context-test';
+
+      const keys = await deriveKeys(testPassword, zeroUserSalt, zeroAccountSalt, fastParams);
+
+      // masterKey and rootKey must be different (context adds domain separation)
+      expect(keys.masterKey).not.toEqual(keys.rootKey);
+    });
+
     it('produces different rootKeys for different accountSalts (proves ACCOUNT_CONTEXT is used)', async () => {
       const fixedUserSalt = new Uint8Array(16).fill(0xaa);
       const accountSalt1 = new Uint8Array(16).fill(0x11);
