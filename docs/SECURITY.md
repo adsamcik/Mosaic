@@ -114,7 +114,29 @@ Offset  Size  Field
 
 - **AAD:** Entire 64-byte header
 - **Encryption:** XChaCha20-Poly1305
-- **Payload:** Up to 6MB chunk + 16B auth tag
+- **Payload:** Up to 100MB chunk + 16B auth tag
+
+## Image Processing Constraints
+
+Due to the zero-knowledge architecture, the **server cannot perform any image processing**:
+
+| Processing | Server-Side | Client-Side | Reason |
+|------------|-------------|-------------|--------|
+| Resize images | ❌ Impossible | ✅ Required | Content is encrypted |
+| Convert to WebP | ❌ Impossible | ✅ Required | Server sees only ciphertext |
+| Generate thumbnails | ❌ Impossible | ✅ Required | No access to plaintext |
+| Strip EXIF metadata | ❌ Impossible | ✅ Required | Privacy-preserving |
+
+### Recommended Client-Side Processing
+
+Before encryption and upload, the frontend should:
+
+1. **Resize large images** - Use Canvas API or `browser-image-compression` to limit dimensions (e.g., max 4096px)
+2. **Convert to WebP** - Use Canvas API with `toBlob('image/webp', quality)` for better compression
+3. **Strip EXIF metadata** - Remove GPS coordinates and other sensitive metadata
+4. **Generate thumbnails** - Create 200px and 800px variants for fast gallery loading
+
+This ensures optimal storage usage while maintaining end-to-end encryption.
 
 ## Critical Invariants
 
