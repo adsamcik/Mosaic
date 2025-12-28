@@ -241,7 +241,7 @@ class CryptoWorker implements CryptoWorkerApi {
     senderPubkey: Uint8Array,
     albumId: string,
     minEpochId: number
-  ): Promise<{ readKey: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }> {
+  ): Promise<{ epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }> {
     if (!this.identityKeypair) {
       throw new Error('Identity not derived - call deriveIdentity() first');
     }
@@ -270,7 +270,7 @@ class CryptoWorker implements CryptoWorkerApi {
     );
 
     return {
-      readKey: opened.readKey,
+      epochSeed: opened.epochSeed,
       signPublicKey: opened.signKeypair.publicKey,
       signSecretKey: opened.signKeypair.secretKey,
     };
@@ -282,7 +282,7 @@ class CryptoWorker implements CryptoWorkerApi {
   async createEpochKeyBundle(
     albumId: string,
     epochId: number,
-    readKey: Uint8Array,
+    epochSeed: Uint8Array,
     signPublicKey: Uint8Array,
     signSecretKey: Uint8Array,
     recipientPubkey: Uint8Array
@@ -298,7 +298,7 @@ class CryptoWorker implements CryptoWorkerApi {
       albumId,
       epochId,
       recipientPubkey,
-      readKey,
+      epochSeed,
       signKeypair: {
         publicKey: signPublicKey,
         secretKey: signSecretKey,
@@ -319,13 +319,13 @@ class CryptoWorker implements CryptoWorkerApi {
    */
   async generateEpochKey(
     epochId: number
-  ): Promise<{ readKey: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }> {
+  ): Promise<{ epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }> {
     await this.ensureSodiumReady();
 
     const epochKey = cryptoGenerateEpochKey(epochId);
 
     return {
-      readKey: epochKey.readKey,
+      epochSeed: epochKey.epochSeed,
       signPublicKey: epochKey.signKeypair.publicKey,
       signSecretKey: epochKey.signKeypair.secretKey,
     };

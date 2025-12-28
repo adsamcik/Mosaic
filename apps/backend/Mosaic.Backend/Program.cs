@@ -21,9 +21,24 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+// Determine auth mode from configuration
+var authMode = builder.Configuration["Auth:Mode"] ?? "ProxyAuth";
+var isLocalAuth = authMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
+
 // Middleware order matters
 app.UseMiddleware<RequestTimingMiddleware>();
-app.UseMiddleware<TrustedProxyMiddleware>();
+
+// Use appropriate auth middleware based on configuration
+if (isLocalAuth)
+{
+    app.Logger.LogInformation("Using LocalAuth mode - session-based authentication");
+    app.UseMiddleware<LocalAuthMiddleware>();
+}
+else
+{
+    app.Logger.LogInformation("Using ProxyAuth mode - trusting Remote-User header from proxy");
+    app.UseMiddleware<TrustedProxyMiddleware>();
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -54,8 +69,11 @@ app.MapTus("/api/files", async httpContext => new tusdotnet.Models.DefaultTusCon
 
 app.MapControllers();
 
-// Apply migrations on startup (dev only)
-if (app.Environment.IsDevelopment())
+// Apply migrations on startup (dev mode or RUN_MIGRATIONS=true)
+var runMigrations = app.Environment.IsDevelopment() ||
+    string.Equals(builder.Configuration["RUN_MIGRATIONS"], "true", StringComparison.OrdinalIgnoreCase);
+
+if (runMigrations)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();

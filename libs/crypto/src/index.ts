@@ -144,6 +144,17 @@ export {
   parseShareLinkUrl,
 } from './link-sharing';
 
+// Re-export authentication
+export {
+  CHALLENGE_SIZE,
+  generateAuthChallenge,
+  signAuthChallenge,
+  verifyAuthChallenge,
+  deriveAuthKeypair,
+  generateFakeUserSalt,
+  generateFakeChallenge,
+} from './auth';
+
 import type {
   DerivedKeys,
   EpochKey,

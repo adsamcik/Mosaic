@@ -1,9 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
+import { useAlbumMembers } from '../../hooks/useMemberManagement';
 import { usePhotos } from '../../hooks/usePhotos';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
 import { MemberList } from '../Members/MemberList';
+import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
 import { UploadButton } from '../Upload/UploadButton';
 import { MapView } from './MapView';
 import { PhotoGrid } from './PhotoGrid';
@@ -40,10 +42,12 @@ function photosToGeoFeatures(photos: PhotoMeta[]): GeoFeature[] {
  */
 export function Gallery({ albumId }: GalleryProps) {
   const [showMembers, setShowMembers] = useState(false);
+  const [showShareLinks, setShowShareLinks] = useState(false);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('grid');
 
   const { photos, isLoading, error } = usePhotos(albumId);
   const { epochKeys } = useAlbumEpochKeys(albumId);
+  const { isOwner } = useAlbumMembers(albumId);
   const lightbox = useLightbox(photos);
 
   // Convert photos to GeoFeatures for map view
@@ -163,6 +167,17 @@ export function Gallery({ albumId }: GalleryProps) {
             <span className="share-icon">👥</span>
             Share
           </button>
+          {isOwner && (
+            <button
+              className="button-secondary share-links-button"
+              onClick={() => setShowShareLinks(true)}
+              aria-label="Manage share links"
+              data-testid="share-links-button"
+            >
+              <span className="share-links-icon">🔗</span>
+              Links
+            </button>
+          )}
           <UploadButton albumId={albumId} />
         </div>
       </div>
@@ -188,6 +203,16 @@ export function Gallery({ albumId }: GalleryProps) {
         isOpen={showMembers}
         onClose={() => setShowMembers(false)}
       />
+
+      {/* Share Links Panel (owners only) */}
+      {isOwner && (
+        <ShareLinksPanel
+          albumId={albumId}
+          isOpen={showShareLinks}
+          onClose={() => setShowShareLinks(false)}
+          isOwner={isOwner}
+        />
+      )}
 
       {/* Photo Lightbox */}
       {lightbox.isOpen && lightbox.currentPhoto && currentEpochReadKey && (

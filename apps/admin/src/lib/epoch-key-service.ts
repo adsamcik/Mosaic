@@ -139,7 +139,7 @@ export async function fetchAndUnwrapEpochKeys(
 
       const bundle: EpochKeyBundle = {
         epochId: record.epochId,
-        readKey: opened.readKey,
+        epochSeed: opened.epochSeed,
         signKeypair: {
           publicKey: opened.signPublicKey,
           secretKey: opened.signSecretKey,

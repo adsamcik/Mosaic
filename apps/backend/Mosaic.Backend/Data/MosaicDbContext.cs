@@ -17,6 +17,8 @@ public class MosaicDbContext : DbContext
     public DbSet<UserQuota> UserQuotas => Set<UserQuota>();
     public DbSet<ShareLink> ShareLinks => Set<ShareLink>();
     public DbSet<LinkEpochKey> LinkEpochKeys => Set<LinkEpochKey>();
+    public DbSet<Session> Sessions => Set<Session>();
+    public DbSet<AuthChallenge> AuthChallenges => Set<AuthChallenge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -152,6 +154,26 @@ public class MosaicDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(lek => new { lek.ShareLinkId, lek.EpochId, lek.Tier });
+        });
+
+        // Session
+        modelBuilder.Entity<Session>(e =>
+        {
+            e.HasOne(s => s.User)
+                .WithMany(u => u.Sessions)
+                .HasForeignKey(s => s.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(s => s.TokenHash);
+            e.HasIndex(s => s.UserId);
+            e.HasIndex(s => s.ExpiresAt);
+        });
+
+        // AuthChallenge
+        modelBuilder.Entity<AuthChallenge>(e =>
+        {
+            e.HasIndex(ac => ac.Username);
+            e.HasIndex(ac => ac.ExpiresAt);
         });
 
         // Use snake_case for PostgreSQL

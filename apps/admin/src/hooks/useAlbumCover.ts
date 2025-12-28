@@ -101,7 +101,7 @@ export function useAlbumCover(
         if (cancelled) return;
 
         // Get album cover
-        const cover = await getAlbumCover(albumId, epochKey.readKey);
+        const cover = await getAlbumCover(albumId, epochKey.epochSeed);
 
         if (cancelled) return;
 

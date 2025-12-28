@@ -20,9 +20,43 @@ public class User
     /// </summary>
     public byte[]? SaltNonce { get; set; }
 
+    // ===== Local Auth Fields =====
+
+    /// <summary>
+    /// User salt for Argon2 key derivation (16 bytes, plaintext).
+    /// Only used in LocalAuth mode.
+    /// </summary>
+    public byte[]? UserSalt { get; set; }
+
+    /// <summary>
+    /// Account salt for HKDF derivation (16 bytes, plaintext).
+    /// Only used in LocalAuth mode.
+    /// </summary>
+    public byte[]? AccountSalt { get; set; }
+
+    /// <summary>
+    /// Wrapped account key (encrypted L2 key, ~48 bytes).
+    /// Client uses this to unwrap their encryption keys after authentication.
+    /// </summary>
+    public byte[]? WrappedAccountKey { get; set; }
+
+    /// <summary>
+    /// Wrapped identity seed (encrypted seed for Ed25519 keypair, ~48 bytes).
+    /// Used for album sharing signatures.
+    /// </summary>
+    public byte[]? WrappedIdentitySeed { get; set; }
+
+    /// <summary>
+    /// Auth public key for challenge-response verification (32 bytes, Base64).
+    /// Separate from IdentityPubkey for security isolation.
+    /// Derived from: Argon2id(password, userSalt) → BLAKE2b("Mosaic_AuthKey_v1")
+    /// </summary>
+    public string? AuthPubkey { get; set; }
+
     // Navigation
     public ICollection<Album> OwnedAlbums { get; set; } = [];
     public ICollection<AlbumMember> Memberships { get; set; } = [];
     public ICollection<EpochKey> EpochKeys { get; set; } = [];
+    public ICollection<Session> Sessions { get; set; } = [];
     public UserQuota? Quota { get; set; }
 }

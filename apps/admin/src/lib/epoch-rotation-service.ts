@@ -134,7 +134,7 @@ export async function rotateEpoch(
   // SECURITY: This MUST be completely random, never derived from previous keys
   onProgress?.(RotationStep.GENERATING_KEY);
   const newEpochId = currentEpochId + 1;
-  let newEpochKey: { readKey: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array };
+  let newEpochKey: { epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array };
   try {
     newEpochKey = await crypto.generateEpochKey(newEpochId);
   } catch (err) {
@@ -206,7 +206,7 @@ export async function rotateEpoch(
       const sealed = await crypto.createEpochKeyBundle(
         albumId,
         newEpochId,
-        newEpochKey.readKey,
+        newEpochKey.epochSeed,
         newEpochKey.signPublicKey,
         newEpochKey.signSecretKey,
         recipientPubkeyBytes
@@ -246,7 +246,7 @@ export async function rotateEpoch(
   onProgress?.(RotationStep.WRAPPING_SHARE_LINK_KEYS);
   const shareLinkKeys = await wrapKeysForShareLinks(
     shareLinks,
-    newEpochKey.readKey
+    newEpochKey.epochSeed
   );
 
   // Step 8: Call rotate API with member keys and share link keys
@@ -274,7 +274,7 @@ export async function rotateEpoch(
   // Cache the new epoch key for current user
   const newBundle: EpochKeyBundle = {
     epochId: newEpochId,
-    readKey: newEpochKey.readKey,
+    epochSeed: newEpochKey.epochSeed,
     signKeypair: {
       publicKey: newEpochKey.signPublicKey,
       secretKey: newEpochKey.signSecretKey,
@@ -297,16 +297,16 @@ export async function rotateEpoch(
  * For each share link with a stored owner-encrypted secret:
  * 1. Decrypt the owner-encrypted secret to get the link secret
  * 2. Derive the wrapping key from the link secret
- * 3. Derive tier keys from the new epoch's read key
+ * 3. Derive tier keys from the new epoch's seed
  * 4. Wrap each tier key (up to the link's access tier) with the wrapping key
  *
  * @param shareLinks - Active share links with owner-encrypted secrets
- * @param epochReadKey - The new epoch's read key (32 bytes)
+ * @param epochSeed - The new epoch's seed (32 bytes)
  * @returns Array of share link key updates for the rotation request
  */
 async function wrapKeysForShareLinks(
   shareLinks: ShareLinkWithSecretResponse[],
-  epochReadKey: Uint8Array
+  epochSeed: Uint8Array
 ): Promise<ShareLinkKeyUpdateRequest[]> {
   // Import crypto functions dynamically to avoid circular deps
   const { deriveTierKeys, deriveLinkKeys, wrapTierKeyForLink, AccessTier } = await import('@mosaic/crypto');
@@ -314,8 +314,8 @@ async function wrapKeysForShareLinks(
   const crypto = await getCryptoClient();
   const results: ShareLinkKeyUpdateRequest[] = [];
 
-  // Derive tier keys from the new epoch's read key
-  const tierKeys = deriveTierKeys(epochReadKey);
+  // Derive tier keys from the new epoch's seed
+  const tierKeys = deriveTierKeys(epochSeed);
 
   for (const link of shareLinks) {
     // Skip links without owner-encrypted secrets

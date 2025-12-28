@@ -277,7 +277,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
             const sealed = await crypto.createEpochKeyBundle(
               albumId,
               bundle.epochId,
-              bundle.readKey,
+              bundle.epochSeed,
               bundle.signKeypair.publicKey,
               bundle.signKeypair.secretKey,
               recipientPubkey

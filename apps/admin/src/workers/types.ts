@@ -185,20 +185,20 @@ export interface CryptoWorkerApi {
    * @param senderPubkey - Ed25519 public key of the sender (for signature verification)
    * @param albumId - Album ID for context validation
    * @param minEpochId - Minimum acceptable epoch ID (prevents replay)
-   * @returns Decrypted epoch key (readKey + signKeypair)
+   * @returns Decrypted epoch key (epochSeed + signKeypair)
    */
   openEpochKeyBundle(
     bundle: Uint8Array,
     senderPubkey: Uint8Array,
     albumId: string,
     minEpochId: number
-  ): Promise<{ readKey: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }>;
+  ): Promise<{ epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }>;
 
   /**
    * Create an epoch key bundle for sharing with another user
    * @param albumId - Album ID
    * @param epochId - Epoch ID
-   * @param readKey - Epoch read key (32 bytes)
+   * @param epochSeed - Epoch seed key (32 bytes)
    * @param signKeypair - Epoch signing keypair
    * @param recipientPubkey - Recipient's Ed25519 identity public key
    * @returns Sealed and signed bundle ready for transmission
@@ -206,7 +206,7 @@ export interface CryptoWorkerApi {
   createEpochKeyBundle(
     albumId: string,
     epochId: number,
-    readKey: Uint8Array,
+    epochSeed: Uint8Array,
     signPublicKey: Uint8Array,
     signSecretKey: Uint8Array,
     recipientPubkey: Uint8Array
@@ -215,11 +215,11 @@ export interface CryptoWorkerApi {
   /**
    * Generate a new epoch key for album creation or rotation
    * @param epochId - Epoch ID
-   * @returns New epoch key with readKey and signKeypair
+   * @returns New epoch key with epochSeed and signKeypair
    */
   generateEpochKey(
     epochId: number
-  ): Promise<{ readKey: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }>;
+  ): Promise<{ epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }>;
 
   /**
    * Sign manifest data for upload

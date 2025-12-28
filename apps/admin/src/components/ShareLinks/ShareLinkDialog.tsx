@@ -6,8 +6,8 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import type { AccessTier } from '../lib/api-types';
-import type { CreateShareLinkOptions, CreateShareLinkResult } from '../hooks/useShareLinks';
+import type { AccessTier } from '../../lib/api-types';
+import type { CreateShareLinkOptions, CreateShareLinkResult } from '../../hooks/useShareLinks';
 
 interface ShareLinkDialogProps {
   /** Whether the dialog is open */

@@ -14,10 +14,10 @@ import type {
   ShareLinkResponse,
   WrappedKeyRequest,
 } from '../lib/api-types';
-import { fromBase64, getApi, toBase64 } from '../lib/api';
+import { getApi, toBase64 } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
-import { type EpochKeyBundle, getCachedEpochIds, getEpochKey } from '../lib/epoch-key-store';
+import { getCachedEpochIds, getEpochKey } from '../lib/epoch-key-store';
 
 /** Error thrown by share link operations */
 export class ShareLinkError extends Error {
@@ -125,17 +125,19 @@ function toShareLinkInfo(link: ShareLinkResponse): ShareLinkInfo {
   const expiresAt = link.expiresAt ? new Date(link.expiresAt) : undefined;
   const isExpired = expiresAt ? expiresAt < now : false;
 
+  const expiryDisplay = expiresAt
+    ? expiresAt.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    : undefined;
+
   return {
     ...link,
     isExpired,
-    expiryDisplay: expiresAt
-      ? expiresAt.toLocaleDateString(undefined, {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-        })
-      : undefined,
     accessTierDisplay: getAccessTierDisplay(link.accessTier),
+    ...(expiryDisplay !== undefined && { expiryDisplay }),
   };
 }
 
@@ -234,8 +236,8 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           const epochBundle = getEpochKey(albumId, epochId);
           if (!epochBundle) continue;
 
-          // Derive tier keys from epoch read key
-          const tierKeys = deriveTierKeys(epochBundle.readKey);
+          // Derive tier keys from epoch seed
+          const tierKeys = deriveTierKeys(epochBundle.epochSeed);
 
           // Wrap keys based on access tier
           // Always wrap thumb key

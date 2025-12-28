@@ -27,13 +27,13 @@ async function getEpochReadKey(
   // Check cache first via epoch-key-store
   const cached = getEpochKey(albumId, epochId);
   if (cached) {
-    return cached.readKey;
+    return cached.epochSeed;
   }
 
   // Fetch and unwrap epoch keys from server
   try {
     const bundle = await getOrFetchEpochKey(albumId, epochId);
-    return bundle.readKey;
+    return bundle.epochSeed;
   } catch (err) {
     console.warn(`Failed to get epoch key ${epochId} for album ${albumId}:`, err);
     return null;
@@ -185,20 +185,20 @@ class SyncEngine extends EventTarget {
    */
   getEpochKey(albumId: string, epochId: number): Uint8Array | null {
     const bundle = getEpochKey(albumId, epochId);
-    return bundle?.readKey ?? null;
+    return bundle?.epochSeed ?? null;
   }
 
   /**
-   * Store an epoch read key in the cache
+   * Store an epoch seed in the cache
    * Used when unwrapping keys after sync
    */
-  setEpochKey(albumId: string, epochId: number, readKey: Uint8Array): void {
-    // Create a minimal bundle with just the read key
+  setEpochKey(albumId: string, epochId: number, epochSeed: Uint8Array): void {
+    // Create a minimal bundle with just the epoch seed
     // Full bundle would include signKeypair, but for legacy compatibility
-    // we support storing just the read key
+    // we support storing just the epoch seed
     storeEpochKey(albumId, {
       epochId,
-      readKey,
+      epochSeed,
       signKeypair: {
         publicKey: new Uint8Array(32),
         secretKey: new Uint8Array(64),

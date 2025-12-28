@@ -82,6 +82,7 @@ vi.mock('../src/hooks/usePhotos', () => ({
     photos: mockPhotos,
     isLoading: false,
     error: null,
+    refetch: vi.fn(),
   })),
 }));
 
@@ -89,6 +90,50 @@ vi.mock('../src/hooks/useEpochKeys', () => ({
   useAlbumEpochKeys: vi.fn(() => ({
     epochKeys: new Map([[1, new Uint8Array(32)]]),
     isLoading: false,
+  })),
+}));
+
+// Track isOwner for testing
+let mockIsOwner = true;
+
+vi.mock('../src/hooks/useMemberManagement', () => ({
+  useAlbumMembers: vi.fn(() => ({
+    members: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+    isOwner: mockIsOwner,
+  })),
+  useMemberManagement: vi.fn(() => ({
+    members: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+    inviteMember: vi.fn(),
+    isInviting: false,
+    inviteError: null,
+    removeMember: vi.fn(),
+    removeMemberWithRotation: vi.fn(),
+    isRemoving: false,
+    removalStep: null,
+    lookupUser: vi.fn(),
+    isLookingUp: false,
+    isOwner: mockIsOwner,
+  })),
+}));
+
+vi.mock('../src/hooks/useShareLinks', () => ({
+  useShareLinks: vi.fn(() => ({
+    shareLinks: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+    createShareLink: vi.fn(),
+    isCreating: false,
+    createError: null,
+    revokeShareLink: vi.fn(),
+    isRevoking: false,
+    revokeError: null,
   })),
 }));
 
@@ -171,6 +216,8 @@ describe('Gallery', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset isOwner to true for most tests
+    mockIsOwner = true;
   });
 
   afterEach(() => {
@@ -306,6 +353,7 @@ describe('Gallery', () => {
         photos: [],
         isLoading: true,
         error: null,
+        refetch: vi.fn(),
       });
 
       const { getByText, cleanup } = renderGallery({ albumId });
@@ -323,6 +371,7 @@ describe('Gallery', () => {
         photos: [],
         isLoading: false,
         error: new Error('Network error'),
+        refetch: vi.fn(),
       });
 
       const { container, cleanup } = renderGallery({ albumId });
@@ -337,6 +386,7 @@ describe('Gallery', () => {
         photos: mockPhotos,
         isLoading: false,
         error: null,
+        refetch: vi.fn(),
       });
     });
   });
@@ -406,6 +456,118 @@ describe('photosToGeoFeatures', () => {
     const mapView = getByTestId('map-view');
     // mockPhotos has 2 photos but only 1 with coordinates
     expect(mapView?.getAttribute('data-point-count')).toBe('1');
+
+    cleanup();
+  });
+});
+
+describe('Share Links Integration', () => {
+  const albumId = 'test-album-123';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsOwner = true;
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('shows share links button for album owners', () => {
+    const { getByTestId, cleanup } = renderGallery({ albumId });
+
+    const shareLinksButton = getByTestId('share-links-button');
+    expect(shareLinksButton).not.toBeNull();
+    expect(shareLinksButton?.textContent).toContain('Links');
+
+    cleanup();
+  });
+
+  it('hides share links button for non-owners', () => {
+    mockIsOwner = false;
+    const { queryByTestId, cleanup } = renderGallery({ albumId });
+
+    const shareLinksButton = queryByTestId('share-links-button');
+    expect(shareLinksButton).toBeNull();
+
+    cleanup();
+  });
+
+  it('opens share links panel when button is clicked', () => {
+    const { getByTestId, cleanup } = renderGallery({ albumId });
+
+    const shareLinksButton = getByTestId('share-links-button');
+    act(() => {
+      shareLinksButton?.click();
+    });
+
+    // Share links panel should be visible
+    const shareLinksPanel = getByTestId('share-links-panel');
+    expect(shareLinksPanel).not.toBeNull();
+
+    cleanup();
+  });
+
+  it('closes share links panel when close button is clicked', () => {
+    const { getByTestId, queryByTestId, cleanup } = renderGallery({ albumId });
+
+    // Open the panel
+    const shareLinksButton = getByTestId('share-links-button');
+    act(() => {
+      shareLinksButton?.click();
+    });
+
+    // Panel should be open
+    expect(getByTestId('share-links-panel')).not.toBeNull();
+
+    // Click close button
+    const closeButton = getByTestId('close-share-links-button');
+    act(() => {
+      closeButton?.click();
+    });
+
+    // Panel should be closed
+    expect(queryByTestId('share-links-panel')).toBeNull();
+
+    cleanup();
+  });
+
+  it('closes share links panel when backdrop is clicked', () => {
+    const { getByTestId, queryByTestId, cleanup } = renderGallery({ albumId });
+
+    // Open the panel
+    const shareLinksButton = getByTestId('share-links-button');
+    act(() => {
+      shareLinksButton?.click();
+    });
+
+    // Panel should be open
+    expect(getByTestId('share-links-panel')).not.toBeNull();
+
+    // Click backdrop
+    const backdrop = getByTestId('share-links-panel-backdrop');
+    act(() => {
+      backdrop?.click();
+    });
+
+    // Panel should be closed
+    expect(queryByTestId('share-links-panel')).toBeNull();
+
+    cleanup();
+  });
+
+  it('shows share links list inside the panel', () => {
+    const { getByTestId, cleanup } = renderGallery({ albumId });
+
+    // Open the panel
+    const shareLinksButton = getByTestId('share-links-button');
+    act(() => {
+      shareLinksButton?.click();
+    });
+
+    // Share links list should be visible
+    const shareLinksListEl = getByTestId('share-links-list');
+    expect(shareLinksListEl).not.toBeNull();
 
     cleanup();
   });

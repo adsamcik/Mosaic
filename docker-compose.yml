@@ -31,6 +31,7 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      RUN_MIGRATIONS: "true"
       ConnectionStrings__Default: "Host=postgres;Database=mosaic;Username=mosaic;Password=${POSTGRES_PASSWORD:-changeme}"
       Storage__Path: /app/data/blobs
       Auth__TrustedProxies__0: "172.16.0.0/12"
@@ -45,7 +46,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3

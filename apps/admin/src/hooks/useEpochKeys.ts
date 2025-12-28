@@ -54,7 +54,7 @@ export function useEpochKey(albumId: string, epochId: number) {
         0 // minEpochId - accept any epoch for now
       );
 
-      key = unwrapped.readKey;
+      key = unwrapped.epochSeed;
 
       // Cache the key
       syncEngine.setEpochKey(albumId, epochId, key);
@@ -126,7 +126,7 @@ export function useAlbumEpochKeys(albumId: string) {
             0
           );
 
-          key = unwrapped.readKey;
+          key = unwrapped.epochSeed;
           keysMap.set(ek.epochId, key);
           syncEngine.setEpochKey(albumId, ek.epochId, key);
         } catch (unwrapError) {

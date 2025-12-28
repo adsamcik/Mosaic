@@ -12,19 +12,19 @@ import { ensureEpochKeysLoaded } from '../lib/epoch-key-service';
 import { getCurrentEpochKey, setEpochKey } from '../lib/epoch-key-store';
 
 /**
- * Encrypt album name using XChaCha20-Poly1305 with the epoch read key.
+ * Encrypt album name using XChaCha20-Poly1305 with the epoch seed.
  * Uses the envelope format via crypto worker's encryptShard.
  *
  * @param name - Album name to encrypt
- * @param readKey - Epoch read key (32 bytes)
+ * @param epochSeed - Epoch seed key (32 bytes)
  * @returns Base64-encoded encrypted name
  */
-async function encryptAlbumName(name: string, readKey: Uint8Array): Promise<string> {
+async function encryptAlbumName(name: string, epochSeed: Uint8Array): Promise<string> {
   const crypto = await getCryptoClient();
   const nameBytes = new TextEncoder().encode(name);
 
   // Use epoch 0, shard 0 for album metadata (reserved)
-  const encrypted = await crypto.encryptShard(nameBytes, readKey, 0, 0);
+  const encrypted = await crypto.encryptShard(nameBytes, epochSeed, 0, 0);
 
   return toBase64(encrypted.ciphertext);
 }
@@ -127,7 +127,7 @@ export function useAlbums() {
         const decryptedName = await getDecryptedAlbumName(
           album.id,
           encryptedName,
-          epochKey.readKey
+          epochKey.epochSeed
         );
 
         // Update state with decrypted name
@@ -165,7 +165,7 @@ export function useAlbums() {
    * Create a new album with encrypted name and initial epoch key.
    *
    * This function:
-   * 1. Generates a new epoch key (ReadKey + SignKeypair)
+   * 1. Generates a new epoch key (EpochSeed + SignKeypair)
    * 2. Encrypts the album name with the epoch key
    * 3. Creates the album via API
    * 4. Creates a sealed epoch key bundle for the owner
@@ -199,13 +199,13 @@ export function useAlbums() {
         // Encrypt the album name for local storage
         // Note: The encrypted name is stored locally. When we add album metadata
         // support to the API, this can be uploaded as part of the album manifest.
-        const encryptedName = await encryptAlbumName(name, epochKey.readKey);
+        const encryptedName = await encryptAlbumName(name, epochKey.epochSeed);
 
         // Create sealed bundle for owner (self-seal)
         const bundle = await crypto.createEpochKeyBundle(
           '', // Album ID not known yet - will be set by server
           epochId,
-          epochKey.readKey,
+          epochKey.epochSeed,
           epochKey.signPublicKey,
           epochKey.signSecretKey,
           identityPubkey // Seal to self
@@ -232,7 +232,7 @@ export function useAlbums() {
         // Cache the epoch key locally for immediate use
         setEpochKey(newAlbum.id, {
           epochId,
-          readKey: epochKey.readKey,
+          epochSeed: epochKey.epochSeed,
           signKeypair: {
             publicKey: epochKey.signPublicKey,
             secretKey: epochKey.signSecretKey,

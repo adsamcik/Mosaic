@@ -5,10 +5,11 @@
  * Keys are cleared on logout for security.
  */
 
-/** Unwrapped epoch key bundle containing read and sign keys */
+/** Unwrapped epoch key bundle containing seed and sign keys */
 export interface EpochKeyBundle {
   epochId: number;
-  readKey: Uint8Array;
+  /** 32-byte epoch seed for deriving tier keys */
+  epochSeed: Uint8Array;
   signKeypair: {
     publicKey: Uint8Array;
     secretKey: Uint8Array;
@@ -107,7 +108,7 @@ export function clearAlbumKeys(albumId: string): void {
   if (albumKeys) {
     // Wipe key material before clearing
     for (const bundle of albumKeys.values()) {
-      bundle.readKey.fill(0);
+      bundle.epochSeed.fill(0);
       bundle.signKeypair.secretKey.fill(0);
     }
     albumKeys.clear();
@@ -123,7 +124,7 @@ export function clearAllEpochKeys(): void {
   // Wipe all key material before clearing
   for (const albumKeys of epochKeyCache.values()) {
     for (const bundle of albumKeys.values()) {
-      bundle.readKey.fill(0);
+      bundle.epochSeed.fill(0);
       bundle.signKeypair.secretKey.fill(0);
     }
     albumKeys.clear();

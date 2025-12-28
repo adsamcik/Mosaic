@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react';
-import type { ShareLinkInfo } from '../hooks/useShareLinks';
+import type { ShareLinkInfo } from '../../hooks/useShareLinks';
 
 interface ShareLinksListProps {
   /** List of share links */

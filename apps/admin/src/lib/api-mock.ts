@@ -26,6 +26,9 @@ import type {
   ManifestCreated,
   CreateShardRequest,
   ShardCreated,
+  ShareLinkResponse,
+  ShareLinkWithSecretResponse,
+  CreateShareLinkRequest,
 } from './api-types';
 
 // =============================================================================
@@ -516,6 +519,38 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
         id,
         uploadUrl: `/api/shards/${id}/upload`,
       };
+    },
+
+    // =========================================================================
+    // Share Links
+    // =========================================================================
+    async listShareLinks(_albumId: string): Promise<ShareLinkResponse[]> {
+      await delay();
+      return [];
+    },
+
+    async listShareLinksWithSecrets(_albumId: string): Promise<ShareLinkWithSecretResponse[]> {
+      await delay();
+      return [];
+    },
+
+    async createShareLink(_albumId: string, request: CreateShareLinkRequest): Promise<ShareLinkResponse> {
+      await delay();
+      const id = generateUuid();
+      return {
+        id,
+        linkId: `link-${generateUuid().slice(0, 8)}`,
+        accessTier: request.accessTier,
+        ...(request.expiresAt !== undefined && { expiresAt: request.expiresAt }),
+        ...(request.maxUses !== undefined && { maxUses: request.maxUses }),
+        useCount: 0,
+        isRevoked: false,
+        createdAt: new Date().toISOString(),
+      };
+    },
+
+    async revokeShareLink(_linkId: string): Promise<void> {
+      await delay();
     },
   };
 }

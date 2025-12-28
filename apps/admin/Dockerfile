@@ -22,10 +22,12 @@ RUN npm run build
 # Setup admin frontend
 WORKDIR /app/apps/admin
 COPY apps/admin/package*.json ./
-RUN npm ci
 
-# Copy admin source
+# Copy admin source first (needed for postinstall to have public/ folder)
 COPY apps/admin/ ./
+
+# Install dependencies (postinstall copies sql.js files to public/)
+RUN npm ci
 
 # Build frontend
 RUN npm run build
