@@ -43,7 +43,8 @@ vi.mock('../src/lib/geo-client', () => ({
 }));
 
 vi.mock('../src/lib/local-auth', () => ({
-  devLogin: vi.fn(),
+  localAuthLogin: vi.fn(),
+  isLocalAuthMode: vi.fn(() => Promise.resolve(false)),
 }));
 
 vi.mock('../src/lib/settings-service', () => ({

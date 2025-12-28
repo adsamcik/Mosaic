@@ -1,65 +1,46 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Mosaic Local Development Script
-    Quick deployment and hosting of local builds
+    Mosaic Development Environment Manager
 
 .DESCRIPTION
-    This script provides commands for local development workflows:
-    - Start/stop PostgreSQL database
-    - Run backend and frontend with hot-reload
-    - Build and run production-like containers locally
-    - Quick iteration and testing
-
-.PARAMETER Command
-    The operation to perform
+    Manages local development services (database, backend, frontend) as background processes.
+    All services run in the background by default. Use 'logs' to view output.
 
 .EXAMPLE
-    .\dev.ps1 up
-    Start database and run backend + frontend with hot-reload
-
-.EXAMPLE
-    .\dev.ps1 db
-    Start only the PostgreSQL database
-
-.EXAMPLE
-    .\dev.ps1 backend
-    Run backend with dotnet watch (hot-reload)
-
-.EXAMPLE
-    .\dev.ps1 frontend
-    Run frontend with Vite dev server (HMR)
-
-.EXAMPLE
-    .\dev.ps1 build
-    Build and run production containers locally
+    .\dev.ps1 start          # Start all services (db, backend, frontend)
+    .\dev.ps1 stop           # Stop all services
+    .\dev.ps1 restart        # Restart all services
+    .\dev.ps1 status         # Show status of all services
+    .\dev.ps1 logs backend   # View backend logs
+    .\dev.ps1 logs frontend  # View frontend logs
 #>
 
 param(
     [Parameter(Position=0)]
     [ValidateSet(
-        "up", "down", "db", "backend", "frontend",
-        "build", "rebuild", "logs", "status",
-        "reset", "help"
+        "start", "stop", "restart", "status", "logs",
+        "build", "rebuild", "reset", "help"
     )]
     [string]$Command = "help",
     
-    [Parameter(Position=1, ValueFromRemainingArguments=$true)]
-    [string[]]$Args,
+    [Parameter(Position=1)]
+    [ValidateSet("all", "db", "backend", "frontend", "")]
+    [string]$Service = "",
     
-    [switch]$NoBrowser
+    [Parameter(Position=2, ValueFromRemainingArguments=$true)]
+    [string[]]$ExtraArgs
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
-# Colors
-function Write-Title { param([string]$msg) Write-Host "`n$msg" -ForegroundColor Cyan }
-function Write-Step { param([string]$msg) Write-Host "  ▶ $msg" -ForegroundColor Yellow }
-function Write-Done { param([string]$msg) Write-Host "  ✅ $msg" -ForegroundColor Green }
-function Write-Err { param([string]$msg) Write-Host "  ❌ $msg" -ForegroundColor Red }
-function Write-Info { param([string]$msg) Write-Host "  ℹ $msg" -ForegroundColor Gray }
-function Write-Warn { param([string]$msg) Write-Host "  ⚠️ $msg" -ForegroundColor Yellow }
+# PID file locations (stored in .mosaic directory)
+$PidDir = Join-Path $ProjectRoot ".mosaic"
+$BackendPidFile = Join-Path $PidDir "backend.pid"
+$FrontendPidFile = Join-Path $PidDir "frontend.pid"
+$BackendLogFile = Join-Path $PidDir "backend.log"
+$FrontendLogFile = Join-Path $PidDir "frontend.log"
 
 # Configuration
 $DbConnectionString = "Host=localhost;Database=mosaic;Username=mosaic;Password=dev"
@@ -67,341 +48,487 @@ $BackendPort = 5000
 $FrontendPort = 5173
 $DbPort = 5432
 
-# Check if Docker is available and running
+# Ensure .mosaic directory exists
+if (-not (Test-Path $PidDir)) {
+    New-Item -ItemType Directory -Force -Path $PidDir | Out-Null
+}
+
+# Add to .gitignore if not already there
+$gitignore = Join-Path $ProjectRoot ".gitignore"
+if (Test-Path $gitignore) {
+    $content = Get-Content $gitignore -Raw
+    if ($content -notmatch "\.mosaic/") {
+        Add-Content -Path $gitignore -Value "`n# Local dev environment state`n.mosaic/"
+    }
+}
+
+# Colors
+function Write-Title { param([string]$msg) Write-Host "`n$msg" -ForegroundColor Cyan }
+function Write-Step { param([string]$msg) Write-Host "  ▶ $msg" -ForegroundColor Yellow }
+function Write-Done { param([string]$msg) Write-Host "  ✅ $msg" -ForegroundColor Green }
+function Write-Err { param([string]$msg) Write-Host "  ❌ $msg" -ForegroundColor Red }
+function Write-Info { param([string]$msg) Write-Host "  ℹ $msg" -ForegroundColor Gray }
+
 function Test-DockerAvailable {
     try {
         $null = docker info 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            return $false
-        }
-        return $true
+        return $LASTEXITCODE -eq 0
     } catch {
         return $false
     }
 }
 
-# Commands that require Docker
-$DockerCommands = @("up", "down", "db", "build", "rebuild", "logs", "status", "reset")
+function Test-ProcessRunning {
+    param([string]$PidFile)
+    if (-not (Test-Path $PidFile)) { return $false }
+    $procId = Get-Content $PidFile -ErrorAction SilentlyContinue
+    if (-not $procId) { return $false }
+    $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+    return $null -ne $proc
+}
 
-# Ensure Docker is running for Docker-dependent commands
-if ($Command -in $DockerCommands) {
+function Stop-ServiceByPidFile {
+    param([string]$PidFile, [string]$ServiceName)
+    if (Test-Path $PidFile) {
+        $procId = Get-Content $PidFile -ErrorAction SilentlyContinue
+        if ($procId) {
+            try {
+                $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+                if ($proc) {
+                    # Stop the process tree (including child processes)
+                    Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+                    # Also kill any child processes
+                    Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $procId } | ForEach-Object {
+                        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+                    }
+                    Write-Done "$ServiceName stopped (PID: $procId)"
+                }
+            } catch {
+                # Process already gone
+            }
+        }
+        Remove-Item $PidFile -ErrorAction SilentlyContinue
+    }
+}
+
+function Wait-ForDatabase {
+    $maxAttempts = 30
+    for ($i = 0; $i -lt $maxAttempts; $i++) {
+        $result = docker exec mosaic-postgres-dev pg_isready -U mosaic -d mosaic 2>$null
+        if ($LASTEXITCODE -eq 0) { return $true }
+        Start-Sleep -Seconds 1
+    }
+    return $false
+}
+
+function Start-DatabaseService {
+    $dbRunning = docker ps --filter "name=mosaic-postgres-dev" --format "{{.Names}}" 2>$null
+    if ($dbRunning) {
+        Write-Info "Database already running"
+        return $true
+    }
+    
+    Write-Step "Starting PostgreSQL..."
+    Push-Location $ProjectRoot
+    docker compose -f docker-compose.dev.yml up -d postgres 2>&1 | Out-Null
+    Pop-Location
+    
+    Write-Step "Waiting for PostgreSQL..."
+    if (Wait-ForDatabase) {
+        Write-Done "PostgreSQL ready on port $DbPort"
+        return $true
+    } else {
+        Write-Err "PostgreSQL failed to start"
+        return $false
+    }
+}
+
+function Stop-DatabaseService {
+    Write-Step "Stopping PostgreSQL..."
+    Push-Location $ProjectRoot
+    docker compose -f docker-compose.dev.yml down 2>&1 | Out-Null
+    Pop-Location
+    Write-Done "PostgreSQL stopped"
+}
+
+function Start-BackendService {
+    if (Test-ProcessRunning $BackendPidFile) {
+        Write-Info "Backend already running"
+        return
+    }
+    
+    # Stop any orphaned process
+    Stop-ServiceByPidFile $BackendPidFile "Backend"
+    
+    Write-Step "Starting Backend..."
+    
+    # Ensure storage directory exists
+    $storagePath = Join-Path $ProjectRoot "data/blobs"
+    New-Item -ItemType Directory -Force -Path $storagePath | Out-Null
+    
+    # Build the command
+    $backendPath = Join-Path $ProjectRoot "apps/backend/Mosaic.Backend"
+    
+    # Create a wrapper script to run the backend
+    $wrapperScript = @"
+`$env:ASPNETCORE_ENVIRONMENT = 'Development'
+`$env:ASPNETCORE_URLS = 'http://localhost:$BackendPort'
+`$env:ConnectionStrings__Default = '$DbConnectionString'
+`$env:Storage__Path = '$storagePath'
+`$env:Auth__TrustedProxies__0 = '127.0.0.0/8'
+`$env:RUN_MIGRATIONS = 'true'
+Set-Location '$backendPath'
+dotnet watch run --no-hot-reload 2>&1
+"@
+    
+    $wrapperFile = Join-Path $PidDir "run-backend.ps1"
+    $wrapperScript | Out-File -FilePath $wrapperFile -Encoding UTF8
+    
+    # Start as background job and capture PID
+    $proc = Start-Process pwsh -ArgumentList "-NoProfile", "-File", $wrapperFile `
+        -WindowStyle Hidden `
+        -PassThru `
+        -RedirectStandardOutput $BackendLogFile `
+        -RedirectStandardError (Join-Path $PidDir "backend-error.log")
+    
+    $proc.Id | Out-File -FilePath $BackendPidFile -Encoding UTF8
+    
+    # Wait a moment and check if it started
+    Start-Sleep -Seconds 3
+    if (Test-ProcessRunning $BackendPidFile) {
+        Write-Done "Backend started (PID: $($proc.Id)) - http://localhost:$BackendPort"
+    } else {
+        Write-Err "Backend failed to start. Check logs with: .\dev.ps1 logs backend"
+    }
+}
+
+function Stop-BackendService {
+    Stop-ServiceByPidFile $BackendPidFile "Backend"
+    
+    # Also kill any dotnet processes for this project
+    Get-Process -Name "dotnet" -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -and $_.CommandLine -like "*Mosaic.Backend*"
+    } | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+function Start-FrontendService {
+    if (Test-ProcessRunning $FrontendPidFile) {
+        Write-Info "Frontend already running"
+        return
+    }
+    
+    # Stop any orphaned process
+    Stop-ServiceByPidFile $FrontendPidFile "Frontend"
+    
+    Write-Step "Starting Frontend..."
+    
+    # Check if crypto lib is built
+    $cryptoDistPath = Join-Path $ProjectRoot "libs/crypto/dist"
+    if (-not (Test-Path $cryptoDistPath)) {
+        Write-Step "Building crypto library..."
+        Push-Location (Join-Path $ProjectRoot "libs/crypto")
+        npm install 2>&1 | Out-Null
+        npm run build 2>&1 | Out-Null
+        Pop-Location
+    }
+    
+    # Check if frontend dependencies are installed
+    $frontendPath = Join-Path $ProjectRoot "apps/admin"
+    $nodeModulesPath = Join-Path $frontendPath "node_modules"
+    if (-not (Test-Path $nodeModulesPath)) {
+        Write-Step "Installing frontend dependencies..."
+        Push-Location $frontendPath
+        npm install 2>&1 | Out-Null
+        Pop-Location
+    }
+    
+    # Create a wrapper script
+    $wrapperScript = @"
+Set-Location '$frontendPath'
+npm run dev 2>&1
+"@
+    
+    $wrapperFile = Join-Path $PidDir "run-frontend.ps1"
+    $wrapperScript | Out-File -FilePath $wrapperFile -Encoding UTF8
+    
+    # Start as background process
+    $proc = Start-Process pwsh -ArgumentList "-NoProfile", "-File", $wrapperFile `
+        -WindowStyle Hidden `
+        -PassThru `
+        -RedirectStandardOutput $FrontendLogFile `
+        -RedirectStandardError (Join-Path $PidDir "frontend-error.log")
+    
+    $proc.Id | Out-File -FilePath $FrontendPidFile -Encoding UTF8
+    
+    # Wait a moment and check if it started
+    Start-Sleep -Seconds 3
+    if (Test-ProcessRunning $FrontendPidFile) {
+        Write-Done "Frontend started (PID: $($proc.Id)) - http://localhost:$FrontendPort"
+    } else {
+        Write-Err "Frontend failed to start. Check logs with: .\dev.ps1 logs frontend"
+    }
+}
+
+function Stop-FrontendService {
+    Stop-ServiceByPidFile $FrontendPidFile "Frontend"
+    
+    # Also kill any node processes for vite on this port
+    Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            $connections = Get-NetTCPConnection -OwningProcess $_.Id -ErrorAction SilentlyContinue
+            $connections | Where-Object { $_.LocalPort -eq $FrontendPort }
+        } catch { $false }
+    } | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+function Show-Status {
+    Write-Title "Mosaic Development Environment Status"
+    Write-Host ""
+    
+    # Database status
+    Write-Host "  Database:  " -NoNewline
+    $dbRunning = docker ps --filter "name=mosaic-postgres-dev" --format "{{.Status}}" 2>$null
+    if ($dbRunning) {
+        Write-Host "Running" -ForegroundColor Green -NoNewline
+        Write-Host " (port $DbPort)"
+    } else {
+        Write-Host "Stopped" -ForegroundColor Gray
+    }
+    
+    # Backend status
+    Write-Host "  Backend:   " -NoNewline
+    if (Test-ProcessRunning $BackendPidFile) {
+        $backendProcId = Get-Content $BackendPidFile
+        Write-Host "Running" -ForegroundColor Green -NoNewline
+        Write-Host " (PID: $backendProcId, port $BackendPort)"
+    } else {
+        Write-Host "Stopped" -ForegroundColor Gray
+    }
+    
+    # Frontend status
+    Write-Host "  Frontend:  " -NoNewline
+    if (Test-ProcessRunning $FrontendPidFile) {
+        $frontendProcId = Get-Content $FrontendPidFile
+        Write-Host "Running" -ForegroundColor Green -NoNewline
+        Write-Host " (PID: $frontendProcId, port $FrontendPort)"
+    } else {
+        Write-Host "Stopped" -ForegroundColor Gray
+    }
+    
+    Write-Host ""
+    Write-Host "  URLs:" -ForegroundColor White
+    Write-Host "    Frontend: http://localhost:$FrontendPort"
+    Write-Host "    Backend:  http://localhost:$BackendPort"
+    Write-Host "    Swagger:  http://localhost:$BackendPort/openapi/v1.json"
+    Write-Host ""
+}
+
+function Show-Logs {
+    param([string]$ServiceName)
+    
+    switch ($ServiceName) {
+        "backend" {
+            if (Test-Path $BackendLogFile) {
+                Write-Title "Backend Logs (Ctrl+C to exit)"
+                Get-Content $BackendLogFile -Tail 50 -Wait
+            } else {
+                Write-Err "No backend log file found. Is backend running?"
+            }
+        }
+        "frontend" {
+            if (Test-Path $FrontendLogFile) {
+                Write-Title "Frontend Logs (Ctrl+C to exit)"
+                Get-Content $FrontendLogFile -Tail 50 -Wait
+            } else {
+                Write-Err "No frontend log file found. Is frontend running?"
+            }
+        }
+        "db" {
+            Write-Title "Database Logs (Ctrl+C to exit)"
+            docker logs -f mosaic-postgres-dev 2>&1
+        }
+        default {
+            Write-Err "Specify a service: backend, frontend, or db"
+            Write-Info "Example: .\dev.ps1 logs backend"
+        }
+    }
+}
+
+# Check Docker for commands that need it
+$DockerCommands = @("start", "stop", "restart", "status", "build", "rebuild", "reset")
+if ($Command -in $DockerCommands -and ($Service -eq "" -or $Service -eq "all" -or $Service -eq "db")) {
     if (-not (Test-DockerAvailable)) {
-        Write-Host ""
-        Write-Err "Docker is not running!"
-        Write-Host ""
-        Write-Host "Please start Docker Desktop:" -ForegroundColor White
-        Write-Host "  1. Open Docker Desktop from Start Menu" -ForegroundColor Gray
-        Write-Host "  2. Wait for it to fully start (whale icon stops animating)" -ForegroundColor Gray
-        Write-Host "  3. Run this command again" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "If Docker Desktop is not installed:" -ForegroundColor White
-        Write-Host "  Download from: https://www.docker.com/products/docker-desktop/" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "Alternatively, run backend/frontend without Docker:" -ForegroundColor White
-        Write-Host "  You'll need a local PostgreSQL instance." -ForegroundColor Gray
-        Write-Host ""
+        Write-Err "Docker is not running! Please start Docker Desktop."
         exit 1
     }
 }
 
 Push-Location $ProjectRoot
 
-function Test-CommandExists {
-    param([string]$cmd)
-    return $null -ne (Get-Command $cmd -ErrorAction SilentlyContinue)
-}
-
-function Wait-ForDatabase {
-    Write-Step "Waiting for PostgreSQL to be ready..."
-    $maxAttempts = 30
-    $attempt = 0
-    
-    while ($attempt -lt $maxAttempts) {
-        try {
-            $result = docker exec mosaic-postgres-dev pg_isready -U mosaic -d mosaic 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Done "PostgreSQL is ready"
-                return $true
-            }
-        } catch {}
-        
-        $attempt++
-        Start-Sleep -Seconds 1
-    }
-    
-    Write-Err "PostgreSQL failed to start within 30 seconds"
-    return $false
-}
-
-function Start-Database {
-    Write-Step "Starting PostgreSQL..."
-    docker compose -f docker-compose.dev.yml up -d postgres
-    
-    if (-not (Wait-ForDatabase)) {
-        throw "Database failed to start"
-    }
-}
-
-function Stop-Database {
-    Write-Step "Stopping PostgreSQL..."
-    docker compose -f docker-compose.dev.yml down
-    Write-Done "Database stopped"
-}
-
-function Start-Backend {
-    Write-Title "Starting Backend (hot-reload)..."
-    
-    Push-Location "$ProjectRoot/apps/backend/Mosaic.Backend"
-    try {
-        $env:ASPNETCORE_ENVIRONMENT = "Development"
-        $env:ASPNETCORE_URLS = "http://localhost:$BackendPort"
-        $env:ConnectionStrings__Default = $DbConnectionString
-        $env:Storage__Path = "$ProjectRoot/data/blobs"
-        $env:Auth__TrustedProxies__0 = "127.0.0.0/8"
-        $env:RUN_MIGRATIONS = "true"
-        
-        # Ensure storage directory exists
-        New-Item -ItemType Directory -Force -Path "$ProjectRoot/data/blobs" | Out-Null
-        
-        Write-Info "Backend URL: http://localhost:$BackendPort"
-        Write-Info "API Docs: http://localhost:$BackendPort/swagger"
-        Write-Host ""
-        
-        dotnet watch run
-    } finally {
-        Pop-Location
-    }
-}
-
-function Start-Frontend {
-    Write-Title "Starting Frontend (Vite HMR)..."
-    
-    # Check if crypto lib is built
-    if (-not (Test-Path "$ProjectRoot/libs/crypto/dist")) {
-        Write-Step "Building crypto library..."
-        Push-Location "$ProjectRoot/libs/crypto"
-        npm install
-        npm run build
-        Pop-Location
-    }
-    
-    Push-Location "$ProjectRoot/apps/admin"
-    try {
-        # Install dependencies if needed
-        if (-not (Test-Path "node_modules")) {
-            Write-Step "Installing frontend dependencies..."
-            npm install
-        }
-        
-        Write-Info "Frontend URL: http://localhost:$FrontendPort"
-        Write-Info "Backend proxy: http://localhost:$BackendPort"
-        Write-Host ""
-        
-        npm run dev
-    } finally {
-        Pop-Location
-    }
-}
-
-function Build-AndRun {
-    param([switch]$NoCache)
-    
-    Write-Title "Building production containers..."
-    
-    $buildArgs = @()
-    if ($NoCache) {
-        $buildArgs += "--no-cache"
-    }
-    
-    docker compose build @buildArgs
-    
-    Write-Title "Starting production containers..."
-    docker compose up -d
-    
-    Write-Done "Mosaic is running at http://localhost:8080"
-    Write-Info "Run '.\scripts\dev.ps1 logs' to view container logs"
-}
-
 try {
     switch ($Command) {
-        "up" {
+        "start" {
+            $target = if ($Service -eq "") { "all" } else { $Service }
+            
             Write-Title "🚀 Starting Mosaic Development Environment"
-            Write-Host ""
-            Write-Info "This will start:"
-            Write-Info "  • PostgreSQL database (Docker)"
-            Write-Info "  • Backend API with hot-reload (dotnet watch)"
-            Write-Info "  • Frontend with HMR (Vite)"
-            Write-Host ""
             
-            # Start database
-            Start-Database
-            
-            Write-Host ""
-            Write-Done "Database is ready on port $DbPort"
-            Write-Host ""
-            Write-Host "Now start backend and frontend in separate terminals:" -ForegroundColor White
-            Write-Host ""
-            Write-Host "  Terminal 1: .\scripts\dev.ps1 backend" -ForegroundColor Yellow
-            Write-Host "  Terminal 2: .\scripts\dev.ps1 frontend" -ForegroundColor Yellow
-            Write-Host ""
-            Write-Host "Or use the concurrent runner:" -ForegroundColor White
-            Write-Host ""
-            Write-Host "  .\scripts\dev.ps1 backend  # In background (new window)" -ForegroundColor Yellow
-            Write-Host ""
-            
-            if (-not $NoBrowser) {
-                Write-Info "Frontend will be at: http://localhost:$FrontendPort"
-                Write-Info "Backend API at: http://localhost:$BackendPort"
+            switch ($target) {
+                "all" {
+                    Start-DatabaseService
+                    Start-BackendService
+                    Start-FrontendService
+                    Write-Host ""
+                    Show-Status
+                }
+                "db" { Start-DatabaseService }
+                "backend" { 
+                    # Ensure DB is running first
+                    Start-DatabaseService
+                    Start-BackendService 
+                }
+                "frontend" { Start-FrontendService }
             }
         }
         
-        "down" {
-            Write-Title "Stopping development environment..."
-            Stop-Database
-            Write-Done "Development environment stopped"
-        }
-        
-        "db" {
-            Write-Title "Starting PostgreSQL database..."
-            Start-Database
-            Write-Done "PostgreSQL is running on port $DbPort"
-            Write-Info "Connection string: $DbConnectionString"
+        "stop" {
+            $target = if ($Service -eq "") { "all" } else { $Service }
             
-            # Optionally start pgAdmin
-            if ($Args -contains "--admin" -or $Args -contains "-a") {
-                Write-Step "Starting pgAdmin..."
-                docker compose -f docker-compose.dev.yml --profile tools up -d pgadmin
-                Write-Done "pgAdmin is running at http://localhost:5050"
-                Write-Info "Login: admin@mosaic.local / admin"
+            Write-Title "Stopping services..."
+            
+            switch ($target) {
+                "all" {
+                    Stop-FrontendService
+                    Stop-BackendService
+                    Stop-DatabaseService
+                    Write-Done "All services stopped"
+                }
+                "db" { Stop-DatabaseService }
+                "backend" { Stop-BackendService }
+                "frontend" { Stop-FrontendService }
             }
         }
         
-        "backend" {
-            # Ensure database is running
-            $dbRunning = docker ps --filter "name=mosaic-postgres-dev" --format "{{.Names}}" 2>$null
-            if (-not $dbRunning) {
-                Start-Database
-            }
+        "restart" {
+            $target = if ($Service -eq "") { "all" } else { $Service }
             
-            Start-Backend
-        }
-        
-        "frontend" {
-            Start-Frontend
-        }
-        
-        "build" {
-            Build-AndRun
-        }
-        
-        "rebuild" {
-            Build-AndRun -NoCache
-        }
-        
-        "logs" {
-            $service = if ($Args.Count -gt 0) { $Args[0] } else { "" }
-            if ($service) {
-                docker compose logs -f $service
-            } else {
-                docker compose logs -f
+            Write-Title "Restarting services..."
+            
+            switch ($target) {
+                "all" {
+                    Stop-FrontendService
+                    Stop-BackendService
+                    Stop-DatabaseService
+                    Start-Sleep -Seconds 1
+                    Start-DatabaseService
+                    Start-BackendService
+                    Start-FrontendService
+                    Show-Status
+                }
+                "db" {
+                    Stop-DatabaseService
+                    Start-Sleep -Seconds 1
+                    Start-DatabaseService
+                }
+                "backend" {
+                    Stop-BackendService
+                    Start-Sleep -Seconds 1
+                    Start-BackendService
+                }
+                "frontend" {
+                    Stop-FrontendService
+                    Start-Sleep -Seconds 1
+                    Start-FrontendService
+                }
             }
         }
         
         "status" {
-            Write-Title "Development Environment Status"
-            Write-Host ""
-            
-            # Check Docker containers
-            Write-Host "Docker Containers:" -ForegroundColor White
-            $devDb = docker ps --filter "name=mosaic-postgres-dev" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>$null
-            if ($devDb) {
-                Write-Host $devDb
-            } else {
-                Write-Info "No development containers running"
-            }
-            Write-Host ""
-            
-            # Check if backend is running
-            Write-Host "Local Processes:" -ForegroundColor White
-            try {
-                $backend = Invoke-WebRequest -Uri "http://localhost:$BackendPort/health" -Method GET -TimeoutSec 2 -ErrorAction SilentlyContinue
-                if ($backend.StatusCode -eq 200) {
-                    Write-Host "  Backend:  " -NoNewline
-                    Write-Host "Running" -ForegroundColor Green -NoNewline
-                    Write-Host " (http://localhost:$BackendPort)"
-                }
-            } catch {
-                Write-Host "  Backend:  " -NoNewline
-                Write-Host "Not running" -ForegroundColor Gray
-            }
-            
-            try {
-                $frontend = Invoke-WebRequest -Uri "http://localhost:$FrontendPort" -Method GET -TimeoutSec 2 -ErrorAction SilentlyContinue
-                if ($frontend.StatusCode -eq 200) {
-                    Write-Host "  Frontend: " -NoNewline
-                    Write-Host "Running" -ForegroundColor Green -NoNewline
-                    Write-Host " (http://localhost:$FrontendPort)"
-                }
-            } catch {
-                Write-Host "  Frontend: " -NoNewline
-                Write-Host "Not running" -ForegroundColor Gray
-            }
+            Show-Status
+        }
+        
+        "logs" {
+            Show-Logs $Service
+        }
+        
+        "build" {
+            Write-Title "Building production containers..."
+            docker compose build
+            Write-Done "Build complete"
+            Write-Info "Run 'docker compose up -d' to start production containers"
+        }
+        
+        "rebuild" {
+            Write-Title "Rebuilding production containers (no cache)..."
+            docker compose build --no-cache
+            Write-Done "Rebuild complete"
         }
         
         "reset" {
             Write-Title "Resetting development environment..."
             
-            Write-Step "Stopping containers..."
-            docker compose -f docker-compose.dev.yml down -v
-            docker compose down -v 2>$null
+            # Stop all services
+            Stop-FrontendService
+            Stop-BackendService
+            Stop-DatabaseService
             
+            # Remove PID files and logs
+            Write-Step "Cleaning state files..."
+            Remove-Item -Path $PidDir -Recurse -Force -ErrorAction SilentlyContinue
+            
+            # Remove data directory
             Write-Step "Removing local data..."
-            Remove-Item -Recurse -Force "$ProjectRoot/data" -ErrorAction SilentlyContinue
+            Remove-Item -Path (Join-Path $ProjectRoot "data") -Recurse -Force -ErrorAction SilentlyContinue
             
-            Write-Step "Cleaning node_modules (optional)..."
-            if ($Args -contains "--full" -or $Args -contains "-f") {
-                Remove-Item -Recurse -Force "$ProjectRoot/apps/admin/node_modules" -ErrorAction SilentlyContinue
-                Remove-Item -Recurse -Force "$ProjectRoot/libs/crypto/node_modules" -ErrorAction SilentlyContinue
-                Write-Done "Full reset complete"
-            } else {
-                Write-Done "Reset complete (use --full to also remove node_modules)"
+            # Remove Docker volumes
+            Write-Step "Removing Docker volumes..."
+            docker compose -f docker-compose.dev.yml down -v 2>&1 | Out-Null
+            
+            if ($ExtraArgs -contains "--full" -or $ExtraArgs -contains "-f") {
+                Write-Step "Removing node_modules..."
+                Remove-Item -Path (Join-Path $ProjectRoot "apps/admin/node_modules") -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path (Join-Path $ProjectRoot "libs/crypto/node_modules") -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path (Join-Path $ProjectRoot "libs/crypto/dist") -Recurse -Force -ErrorAction SilentlyContinue
             }
+            
+            Write-Done "Reset complete"
         }
         
         "help" {
             Write-Host @"
 
-Mosaic Development Helper
-=========================
+Mosaic Development Environment Manager
+======================================
 
-Usage: .\scripts\dev.ps1 <command> [options]
+Usage: .\scripts\dev.ps1 <command> [service] [options]
 
 Commands:
-  up          Start PostgreSQL and show instructions for backend/frontend
-  down        Stop PostgreSQL and clean up
-  db          Start only PostgreSQL (add --admin for pgAdmin)
-  backend     Run backend with hot-reload (dotnet watch)
-  frontend    Run frontend with HMR (Vite dev server)
-  build       Build and run production containers locally
-  rebuild     Build without cache and run
-  logs        View container logs (optionally specify service)
-  status      Show status of development environment
-  reset       Reset development environment (--full to remove node_modules)
-  help        Show this help message
+  start [service]     Start services (default: all)
+  stop [service]      Stop services (default: all)
+  restart [service]   Restart services (default: all)
+  status              Show status of all services
+  logs <service>      View logs for a service (backend, frontend, db)
+  build               Build production Docker containers
+  rebuild             Build with --no-cache
+  reset               Reset environment (add --full to remove node_modules)
+  help                Show this help
 
-Quick Start:
-  1. .\scripts\dev.ps1 up              # Start database
-  2. .\scripts\dev.ps1 backend         # Terminal 1: Start backend
-  3. .\scripts\dev.ps1 frontend        # Terminal 2: Start frontend
+Services:
+  all        All services (default)
+  db         PostgreSQL database only
+  backend    .NET backend API only
+  frontend   Vite frontend only
 
-Production-like Build:
-  .\scripts\dev.ps1 build              # Build and run Docker containers
+Examples:
+  .\dev.ps1 start              # Start all services in background
+  .\dev.ps1 status             # Check what's running
+  .\dev.ps1 logs backend       # View backend logs (live tail)
+  .\dev.ps1 restart backend    # Restart just the backend
+  .\dev.ps1 stop               # Stop everything
 
-URLs:
-  Frontend (dev):  http://localhost:$FrontendPort
-  Backend (dev):   http://localhost:$BackendPort
-  Swagger:         http://localhost:$BackendPort/swagger
-  Production:      http://localhost:8080
+URLs (when running):
+  Frontend:  http://localhost:$FrontendPort
+  Backend:   http://localhost:$BackendPort
+  Swagger:   http://localhost:$BackendPort/openapi/v1.json
 
 "@
         }

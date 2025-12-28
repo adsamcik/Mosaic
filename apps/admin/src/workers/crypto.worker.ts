@@ -549,6 +549,78 @@ class CryptoWorker implements CryptoWorkerApi {
       },
     };
   }
+
+  // =========================================================================
+  // LocalAuth Authentication Methods
+  // =========================================================================
+
+  /** Auth context for domain separation (must match backend) */
+  private static readonly AUTH_CHALLENGE_CONTEXT = 'Mosaic_Auth_Challenge_v1';
+
+  /**
+   * Sign an authentication challenge for LocalAuth login.
+   * Uses the identity Ed25519 key to prove ownership.
+   * 
+   * Message format: context || username_len(4 BE) || username || [timestamp(8 BE)] || challenge
+   */
+  async signAuthChallenge(
+    challenge: Uint8Array,
+    username: string,
+    timestamp?: number
+  ): Promise<Uint8Array> {
+    if (!this.identityKeypair) {
+      throw new Error('Identity not derived - call deriveIdentity() first');
+    }
+    await this.ensureSodiumReady();
+
+    // Build message exactly as backend expects
+    const contextBytes = new TextEncoder().encode(CryptoWorker.AUTH_CHALLENGE_CONTEXT);
+    const usernameBytes = new TextEncoder().encode(username);
+    
+    // Username length as 4 bytes big-endian
+    const usernameLenBytes = new Uint8Array(4);
+    new DataView(usernameLenBytes.buffer).setUint32(0, usernameBytes.length, false); // false = big-endian
+    
+    // Build message parts
+    const parts: Uint8Array[] = [contextBytes, usernameLenBytes, usernameBytes];
+    
+    // Add timestamp if provided (8 bytes big-endian)
+    if (timestamp !== undefined) {
+      const timestampBytes = new Uint8Array(8);
+      const view = new DataView(timestampBytes.buffer);
+      // JavaScript numbers are 64-bit floats, but we need uint64
+      // For timestamps in the valid range, this works correctly
+      view.setBigUint64(0, BigInt(timestamp), false); // false = big-endian
+      parts.push(timestampBytes);
+    }
+    
+    // Add challenge
+    parts.push(challenge);
+    
+    // Concatenate all parts
+    const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
+    const message = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const part of parts) {
+      message.set(part, offset);
+      offset += part.length;
+    }
+    
+    // Sign with Ed25519
+    return sodium.crypto_sign_detached(message, this.identityKeypair.ed25519.secretKey);
+  }
+
+  /**
+   * Get the Ed25519 public key for authentication.
+   * This is the "auth pubkey" stored on server for challenge verification.
+   */
+  async getAuthPublicKey(): Promise<Uint8Array | null> {
+    if (!this.identityKeypair) {
+      return null;
+    }
+    // Return a copy to prevent external modification
+    return new Uint8Array(this.identityKeypair.ed25519.publicKey);
+  }
 }
 
 // Create worker instance and expose via Comlink

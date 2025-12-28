@@ -31,9 +31,9 @@ public static class TusEventHandlers
             return;
         }
 
-        // Check quota
+        // Check quota (if no quota record exists, allow unlimited uploads)
         var quota = await db.UserQuotas.FindAsync(user.Id);
-        if (quota == null || quota.UsedStorageBytes + context.UploadLength > quota.MaxStorageBytes)
+        if (quota != null && quota.UsedStorageBytes + context.UploadLength > quota.MaxStorageBytes)
         {
             context.FailRequest("Storage quota exceeded");
             return;

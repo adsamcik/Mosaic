@@ -101,3 +101,6 @@ docker-compose.override.yml
 tmp/
 temp/
 *.tmp
+
+# Local dev environment state
+.mosaic/

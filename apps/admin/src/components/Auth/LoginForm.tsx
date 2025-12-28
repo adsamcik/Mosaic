@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { session } from '../../lib/session';
-import { isDevAuthAvailable } from '../../lib/local-auth';
+import { isLocalAuthMode } from '../../lib/local-auth';
 import type { User } from '../../lib/api-types';
 
 interface LoginFormProps {
@@ -19,19 +19,19 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [isDevMode, setIsDevMode] = useState(false);
-  const [checkingDevMode, setCheckingDevMode] = useState(true);
+  const [isLocalAuth, setIsLocalAuth] = useState(false);
+  const [checkingAuthMode, setCheckingAuthMode] = useState(true);
 
   // Whether we're restoring an existing session (page reload case)
   const isSessionRestore = !!pendingSessionUser;
 
-  // Check if dev-auth is available on mount
+  // Check if LocalAuth mode is available on mount
   useEffect(() => {
-    isDevAuthAvailable().then((available) => {
-      setIsDevMode(available);
-      setCheckingDevMode(false);
-      if (available) {
-        // Default username for dev mode
+    isLocalAuthMode().then((localAuth) => {
+      setIsLocalAuth(localAuth);
+      setCheckingAuthMode(false);
+      if (localAuth) {
+        // Default username for local auth
         setUsername('dev');
       }
     });
@@ -46,8 +46,8 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
         setError('Please enter your password');
         return;
       }
-    } else if (isDevMode) {
-      // Dev mode: username required, password used for local crypto
+    } else if (isLocalAuth) {
+      // LocalAuth mode: username required, password used for local crypto
       if (!username.trim()) {
         setError('Please enter a username');
         return;
@@ -57,7 +57,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
         return;
       }
     } else {
-      // Production mode: only password required
+      // ProxyAuth mode: only password required
       if (!password.trim()) {
         setError('Please enter a password');
         return;
@@ -71,8 +71,8 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
       if (isSessionRestore) {
         // Restore session with password (page reload case)
         await session.restoreSession(password, pendingSessionUser);
-      } else if (isDevMode) {
-        await session.devLogin(username, password);
+      } else if (isLocalAuth) {
+        await session.localLogin(username, password);
       } else {
         await session.login(password);
       }
@@ -83,7 +83,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
     }
   };
 
-  if (checkingDevMode) {
+  if (checkingAuthMode) {
     return (
       <div className="login-container" data-testid="login-form">
         <div className="login-card">
@@ -110,14 +110,14 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           </div>
         )}
 
-        {isDevMode && !isSessionRestore && (
-          <div className="dev-mode-badge">
-            🔧 Development Mode
+        {isLocalAuth && !isSessionRestore && (
+          <div className="dev-mode-badge" data-testid="local-auth-badge">
+            🔐 Local Authentication
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="login-form">
-          {isDevMode && !isSessionRestore && (
+          {isLocalAuth && !isSessionRestore && (
             <div className="form-group">
               <label htmlFor="username" className="form-label">
                 Username
@@ -169,8 +169,8 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
         <p className="login-note">
           {isSessionRestore
             ? 'Your session is still active. Enter your password to unlock encryption.'
-            : isDevMode
-              ? 'Development mode: User will be created if it does not exist.'
+            : isLocalAuth
+              ? 'Local authentication mode. User will be created if it does not exist.'
               : 'Your photos are encrypted locally. The server never sees your data.'}
         </p>
       </div>

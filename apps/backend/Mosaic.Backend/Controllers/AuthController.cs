@@ -278,6 +278,9 @@ public partial class AuthController : ControllerBase
             return BadRequest(new { error = "Invalid base64 encoding" });
         }
 
+        // Check if this is the first user (make them admin)
+        var isFirstUser = !await _db.Users.AnyAsync();
+
         var user = new User
         {
             Id = Guid.CreateVersion7(),
@@ -287,15 +290,26 @@ public partial class AuthController : ControllerBase
             UserSalt = userSalt,
             AccountSalt = accountSalt,
             WrappedAccountKey = wrappedAccountKey.Length > 0 ? wrappedAccountKey : null,
-            WrappedIdentitySeed = wrappedIdentitySeed.Length > 0 ? wrappedIdentitySeed : null
+            WrappedIdentitySeed = wrappedIdentitySeed.Length > 0 ? wrappedIdentitySeed : null,
+            IsAdmin = isFirstUser  // First user is admin
         };
 
         _db.Users.Add(user);
+
+        // Create quota for the new user
+        var quota = new UserQuota
+        {
+            UserId = user.Id,
+            MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes", 10737418240L), // 10 GB default
+            MaxAlbums = _config.GetValue<int?>("Quota:DefaultMaxAlbums")
+        };
+        _db.UserQuotas.Add(quota);
+
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("New user registered: {Username}", request.Username);
+        _logger.LogInformation("New user registered: {Username} (admin: {IsAdmin})", request.Username, isFirstUser);
 
-        return Created($"/api/users/{user.Id}", new { id = user.Id, username = user.AuthSub });
+        return Created($"/api/users/{user.Id}", new { id = user.Id, username = user.AuthSub, isAdmin = isFirstUser });
     }
 
     /// <summary>

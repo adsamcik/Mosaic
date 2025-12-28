@@ -313,6 +313,34 @@ export interface CryptoWorkerApi {
   generateLinkSecret(): Promise<Uint8Array>;
 
   // =========================================================================
+  // LocalAuth Authentication Methods
+  // =========================================================================
+
+  /**
+   * Sign an authentication challenge for LocalAuth login.
+   * Uses the identity Ed25519 key to prove ownership.
+   * 
+   * Message format: context || username_len(4 BE) || username || [timestamp(8 BE)] || challenge
+   * 
+   * @param challenge - 32-byte challenge from server
+   * @param username - Username for binding
+   * @param timestamp - Optional timestamp for replay protection
+   * @returns Ed25519 signature (64 bytes)
+   */
+  signAuthChallenge(
+    challenge: Uint8Array,
+    username: string,
+    timestamp?: number
+  ): Promise<Uint8Array>;
+
+  /**
+   * Get the Ed25519 public key for authentication.
+   * This is the "auth pubkey" stored on server for challenge verification.
+   * @returns Ed25519 public key (32 bytes) or null if not initialized
+   */
+  getAuthPublicKey(): Promise<Uint8Array | null>;
+
+  // =========================================================================
   // Key Export/Import for Session Caching
   // =========================================================================
 

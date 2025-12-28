@@ -13,7 +13,7 @@ import {
   hasCachedKeys,
   type CachedKeys,
 } from './key-cache';
-import { devLogin as devAuthLogin } from './local-auth';
+import { localAuthLogin } from './local-auth';
 import { createLogger } from './logger';
 import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
 
@@ -483,15 +483,14 @@ class SessionManager {
   }
 
   /**
-   * Development-only login.
-   * Uses simplified dev-auth endpoint - no password verification.
-   * Creates user if doesn't exist.
-   * Only works when backend is in Development environment.
+   * LocalAuth login with Ed25519 challenge-response.
+   * Registers user if they don't exist.
+   * Use this for local authentication mode.
    *
    * @param username - The username to login as
-   * @param password - A password to use for local crypto initialization
+   * @param password - User's password for key derivation and authentication
    */
-  async devLogin(username: string, password: string): Promise<void> {
+  async localLogin(username: string, password: string): Promise<void> {
     // Request persistent storage for OPFS
     if (navigator.storage?.persist) {
       const granted = await navigator.storage.persist();
@@ -500,8 +499,8 @@ class SessionManager {
       }
     }
 
-    // Dev login - creates session cookie and returns salts
-    const { userId, userSalt, accountSalt } = await devAuthLogin(username);
+    // Perform LocalAuth login (registers if user doesn't exist)
+    const { userId, userSalt, accountSalt, isNewUser } = await localAuthLogin(username, password);
 
     // Now fetch the current user (we have a session cookie)
     const api = getApi();
@@ -510,11 +509,10 @@ class SessionManager {
     // Store salt locally
     localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
 
-    // Initialize crypto worker with password and salts
+    // Crypto is already initialized by localAuthLogin, but we need to reinit
+    // to ensure consistent state (localAuthLogin may have cleared keys on failure)
     const cryptoClient = await getCryptoClient();
     await cryptoClient.init(password, userSalt, accountSalt);
-
-    // Derive identity keypair for epoch key operations
     await cryptoClient.deriveIdentity();
 
     // Initialize database worker with session key
@@ -540,7 +538,7 @@ class SessionManager {
     this.resetIdleTimer();
     this.attachIdleListeners();
 
-    log.info(`Dev login successful: ${username} (${userId})`);
+    log.info(`LocalAuth login successful: ${username} (${userId})${isNewUser ? ' [new user]' : ''}`);
   }
 
   /**
