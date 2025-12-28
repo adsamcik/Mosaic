@@ -193,7 +193,15 @@ export async function localAuthLogin(
   } catch (error) {
     // If verification failed, user might not exist - try to register
     if (error instanceof Error && error.message.includes('Invalid credentials')) {
-      return registerNewUser(username, password, userSaltBytes);
+      try {
+        return await registerNewUser(username, password, userSaltBytes);
+      } catch (regError) {
+        // If registration fails because user already exists, the password was wrong
+        if (regError instanceof Error && regError.message.includes('Username already exists')) {
+          throw new Error('Invalid username or password');
+        }
+        throw regError;
+      }
     }
     throw error;
   }
