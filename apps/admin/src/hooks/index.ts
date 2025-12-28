@@ -3,6 +3,7 @@ export type { AlbumCover, UseAlbumCoverResult } from './useAlbumCover';
 export { useAlbums } from './useAlbums';
 export { useAlbumEpochKeys, useEpochKey } from './useEpochKeys';
 export { useLightbox } from './useLightbox';
+export { useTheme } from './useTheme';
 export type { LightboxControls, LightboxState, UseLightboxResult } from './useLightbox';
 export { useLinkKeys, parseLinkFragment, clearLinkKeys } from './useLinkKeys';
 export type { TierKey, LinkKeyState, UseLinkKeysResult } from './useLinkKeys';

@@ -3,6 +3,8 @@ import { session } from './lib/session';
 import { LoginForm } from './components/Auth/LoginForm';
 import { AppShell } from './components/App/AppShell';
 import { SharedAlbumViewer } from './components/Shared/SharedAlbumViewer';
+import { useTheme } from './hooks';
+import type { User } from './lib/api-types';
 import './styles/globals.css';
 
 /**
@@ -33,11 +35,44 @@ export function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(session.isLoggedIn);
   const [isShareLink, setIsShareLink] = useState(isShareLinkRoute);
   const [shareLinkId, setShareLinkId] = useState<string | null>(getShareLinkId);
+  // Session restore state
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [pendingSessionUser, setPendingSessionUser] = useState<User | null>(null);
+
+  // Apply theme to document
+  useTheme();
+
+  // Check for existing session on mount (handles page reload)
+  useEffect(() => {
+    // Skip session check for share links
+    if (isShareLinkRoute()) {
+      setIsCheckingSession(false);
+      return;
+    }
+
+    // Check if we have a session state marker (page was reloaded while logged in)
+    if (!session.isLoggedIn && session.needsSessionRestore) {
+      // Check if the backend session is still valid
+      session.checkSession().then((user) => {
+        if (user) {
+          // Session cookie is valid - user needs to enter password to restore
+          setPendingSessionUser(user);
+        }
+        setIsCheckingSession(false);
+      });
+    } else {
+      setIsCheckingSession(false);
+    }
+  }, []);
 
   useEffect(() => {
     // Subscribe to session state changes
     return session.subscribe(() => {
       setIsLoggedIn(session.isLoggedIn);
+      // Clear pending session when logged in
+      if (session.isLoggedIn) {
+        setPendingSessionUser(null);
+      }
     });
   }, []);
 
@@ -57,9 +92,21 @@ export function App() {
     return <SharedAlbumViewer linkId={shareLinkId} />;
   }
 
+  // Show loading state while checking session
+  if (isCheckingSession) {
+    return (
+      <div className="login-container" data-testid="session-check">
+        <div className="login-card">
+          <h1 className="login-title">🖼️ Mosaic</h1>
+          <p className="login-subtitle">Checking session...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Standard authenticated routes
   if (!isLoggedIn) {
-    return <LoginForm />;
+    return <LoginForm pendingSessionUser={pendingSessionUser} />;
   }
 
   return <AppShell />;
