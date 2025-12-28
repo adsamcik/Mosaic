@@ -71,9 +71,8 @@ describe('Session Restore', () => {
     authSub: 'testuser@example.com',
     identityPubkey: 'mock-pubkey',
     createdAt: '2024-01-01T00:00:00Z',
-    encryptedSalt: null,
-    saltNonce: null,
-    quota: { maxStorageBytes: 1000000000, usedStorageBytes: 0 },
+    encryptedSalt: undefined,
+    saltNonce: undefined,
   };
 
   const mockUserWithSalt: User = {
@@ -84,8 +83,11 @@ describe('Session Restore', () => {
 
   const mockCryptoClient = {
     init: vi.fn(),
+    initWithWrappedKey: vi.fn(),
     deriveIdentity: vi.fn(),
     getSessionKey: vi.fn(() => new Uint8Array(32)),
+    getWrappedAccountKey: vi.fn(() => new Uint8Array(72)),
+    getIdentityPublicKey: vi.fn(() => new Uint8Array(32)),
     clear: vi.fn(),
   };
 
@@ -99,6 +101,9 @@ describe('Session Restore', () => {
     updateCurrentUser: vi.fn(),
   };
 
+  // Mock global fetch for the wrapped-key endpoint
+  const originalFetch = global.fetch;
+
   beforeEach(() => {
     vi.clearAllMocks();
     
@@ -106,6 +111,12 @@ describe('Session Restore', () => {
     (getApi as ReturnType<typeof vi.fn>).mockReturnValue(mockApi);
     (getCryptoClient as ReturnType<typeof vi.fn>).mockResolvedValue(mockCryptoClient);
     (getDbClient as ReturnType<typeof vi.fn>).mockResolvedValue(mockDbClient);
+    
+    // Mock fetch for wrapped-key endpoint
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ success: true }),
+    });
     
     // Clear storage
     localStorage.clear();
@@ -115,6 +126,7 @@ describe('Session Restore', () => {
   afterEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    global.fetch = originalFetch;
   });
 
   describe('checkSession', () => {
@@ -321,9 +333,8 @@ describe('Session Restore Integration', () => {
       authSub: 'reload-test@example.com',
       identityPubkey: 'mock-pubkey',
       createdAt: '2024-01-01T00:00:00Z',
-      encryptedSalt: null,
-      saltNonce: null,
-      quota: { maxStorageBytes: 1000000000, usedStorageBytes: 0 },
+      encryptedSalt: undefined,
+      saltNonce: undefined,
     };
     
     const mockApi = {
@@ -333,8 +344,11 @@ describe('Session Restore Integration', () => {
     
     const mockCryptoClient = {
       init: vi.fn(),
+      initWithWrappedKey: vi.fn(),
       deriveIdentity: vi.fn(),
       getSessionKey: vi.fn(() => new Uint8Array(32)),
+      getWrappedAccountKey: vi.fn(() => new Uint8Array(72)),
+      getIdentityPublicKey: vi.fn(() => new Uint8Array(32)),
       clear: vi.fn(),
     };
     
@@ -346,6 +360,12 @@ describe('Session Restore Integration', () => {
     (getApi as ReturnType<typeof vi.fn>).mockReturnValue(mockApi);
     (getCryptoClient as ReturnType<typeof vi.fn>).mockResolvedValue(mockCryptoClient);
     (getDbClient as ReturnType<typeof vi.fn>).mockResolvedValue(mockDbClient);
+    
+    // Mock fetch for wrapped-key endpoint
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ success: true }),
+    });
     
     // Initial login
     await session1.login('my-password');

@@ -358,8 +358,15 @@ class SessionManager {
     paddedAccountSalt.set(accountSalt);
 
     // Initialize crypto worker with password and salts
+    // Use wrapped account key if available to preserve identity
     const cryptoClient = await getCryptoClient();
-    await cryptoClient.init(password, userSalt, paddedAccountSalt);
+    if (this._currentUser.wrappedAccountKey) {
+      const wrappedKey = fromBase64(this._currentUser.wrappedAccountKey);
+      await cryptoClient.initWithWrappedKey(password, userSalt, paddedAccountSalt, wrappedKey);
+    } else {
+      log.warn('Session restore without wrapped account key - identity may differ!');
+      await cryptoClient.init(password, userSalt, paddedAccountSalt);
+    }
 
     // Derive identity keypair for epoch key operations
     await cryptoClient.deriveIdentity();
@@ -451,8 +458,36 @@ class SessionManager {
     paddedAccountSalt.set(accountSalt);
 
     // Initialize crypto worker with password and salts
+    // Use wrapped account key if available to preserve identity
     const cryptoClient = await getCryptoClient();
-    await cryptoClient.init(password, userSalt, paddedAccountSalt);
+    if (this._currentUser.wrappedAccountKey) {
+      const wrappedKey = fromBase64(this._currentUser.wrappedAccountKey);
+      await cryptoClient.initWithWrappedKey(password, userSalt, paddedAccountSalt, wrappedKey);
+    } else {
+      // First login - generate new key and store it
+      await cryptoClient.init(password, userSalt, paddedAccountSalt);
+      
+      // Derive identity to get public key
+      await cryptoClient.deriveIdentity();
+      
+      // Save wrapped key and identity pubkey to server for future logins
+      const wrappedAccountKey = await cryptoClient.getWrappedAccountKey();
+      const identityPubkey = await cryptoClient.getIdentityPublicKey();
+      if (wrappedAccountKey && identityPubkey) {
+        const api = getApi();
+        await api.updateCurrentUser({
+          identityPubkey: toBase64(identityPubkey),
+        });
+        // Store wrapped key via a new API call or extend updateCurrentUser
+        // For now, we'll update the user record with the wrapped key
+        await fetch('/api/users/me/wrapped-key', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ wrappedAccountKey: toBase64(wrappedAccountKey) }),
+        });
+      }
+    }
 
     // Derive identity keypair for epoch key operations
     // This is needed to open sealed epoch key bundles

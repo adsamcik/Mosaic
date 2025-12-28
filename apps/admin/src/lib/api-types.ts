@@ -57,6 +57,8 @@ export interface User {
   encryptedSalt?: string;
   /** Base64-encoded nonce used for salt encryption (12 bytes for AES-GCM) */
   saltNonce?: string;
+  /** Base64-encoded wrapped account key for identity persistence */
+  wrappedAccountKey?: string;
 }
 
 export interface UserPublic {

@@ -64,6 +64,7 @@ public class UsersController : ControllerBase
             user.IsAdmin,
             EncryptedSalt = user.EncryptedSalt != null ? Convert.ToBase64String(user.EncryptedSalt) : null,
             SaltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null,
+            WrappedAccountKey = user.WrappedAccountKey != null ? Convert.ToBase64String(user.WrappedAccountKey) : null,
             Quota = quota != null ? new
             {
                 quota.MaxStorageBytes,
@@ -141,6 +142,37 @@ public class UsersController : ControllerBase
             EncryptedSalt = user.EncryptedSalt != null ? Convert.ToBase64String(user.EncryptedSalt) : null,
             SaltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null
         });
+    }
+
+    public record UpdateWrappedKeyRequest(string WrappedAccountKey);
+
+    /// <summary>
+    /// Update user's wrapped account key (for identity persistence across sessions)
+    /// </summary>
+    [HttpPut("me/wrapped-key")]
+    public async Task<IActionResult> UpdateWrappedKey([FromBody] UpdateWrappedKeyRequest request)
+    {
+        var user = await GetOrCreateUser();
+
+        try
+        {
+            var wrappedKeyBytes = Convert.FromBase64String(request.WrappedAccountKey);
+
+            // Validate length: wrapped key should be 24 nonce + 32 key + 16 tag = 72 bytes
+            if (wrappedKeyBytes.Length < 48)
+            {
+                return BadRequest(new { error = "Invalid wrapped key length" });
+            }
+
+            user.WrappedAccountKey = wrappedKeyBytes;
+            await _db.SaveChangesAsync();
+
+            return Ok(new { success = true });
+        }
+        catch (FormatException)
+        {
+            return BadRequest(new { error = "Invalid base64 encoding for wrapped key" });
+        }
     }
 
     /// <summary>
