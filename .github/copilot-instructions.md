@@ -6,6 +6,8 @@
 
 Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal use (≤50 users). The server never sees plaintext photos or metadata—all encryption/decryption happens client-side.
 
+**Development Status:** This project is in active development. When database schema issues arise, it's acceptable to drop all migrations and reset the database rather than writing complex migration fixes.
+
 ## Philosophy (Priority Order)
 
 1. **Correctness** - Code must work as specified

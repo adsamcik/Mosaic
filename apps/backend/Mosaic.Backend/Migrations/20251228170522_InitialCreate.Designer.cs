@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mosaic.Backend.Migrations
 {
     [DbContext(typeof(MosaicDbContext))]
-    [Migration("20251227203252_AddUserSaltFields")]
-    partial class AddUserSaltFields
+    [Migration("20251228170522_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -44,6 +44,18 @@ namespace Mosaic.Backend.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("current_version");
 
+                    b.Property<string>("EncryptedName")
+                        .HasColumnType("text")
+                        .HasColumnName("encrypted_name");
+
+                    b.Property<int>("ExpirationWarningDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("expiration_warning_days");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid")
                         .HasColumnName("owner_id");
@@ -55,10 +67,46 @@ namespace Mosaic.Backend.Migrations
                     b.HasKey("Id")
                         .HasName("p_k_albums");
 
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("i_x_albums_expires_at")
+                        .HasFilter("expires_at IS NOT NULL");
+
                     b.HasIndex("OwnerId")
                         .HasDatabaseName("i_x_albums_owner_id");
 
                     b.ToTable("albums");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.AlbumLimits", b =>
+                {
+                    b.Property<Guid>("AlbumId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("album_id");
+
+                    b.Property<int>("CurrentPhotoCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("current_photo_count");
+
+                    b.Property<long>("CurrentSizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("current_size_bytes");
+
+                    b.Property<int?>("MaxPhotos")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_photos");
+
+                    b.Property<long?>("MaxSizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("max_size_bytes");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("AlbumId")
+                        .HasName("p_k_album_limits");
+
+                    b.ToTable("album_limits");
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.AlbumMember", b =>
@@ -102,6 +150,51 @@ namespace Mosaic.Backend.Migrations
                         .HasDatabaseName("i_x_album_members_user_id");
 
                     b.ToTable("album_members");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.AuthChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("Challenge")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("challenge");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("IpAddress")
+                        .HasColumnType("text")
+                        .HasColumnName("ip_address");
+
+                    b.Property<bool>("IsUsed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_used");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("username");
+
+                    b.HasKey("Id")
+                        .HasName("p_k_auth_challenges");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("i_x_auth_challenges_expires_at");
+
+                    b.HasIndex("Username")
+                        .HasDatabaseName("i_x_auth_challenges_username");
+
+                    b.ToTable("auth_challenges");
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.EpochKey", b =>
@@ -158,6 +251,44 @@ namespace Mosaic.Backend.Migrations
                         .HasDatabaseName("i_x_epoch_keys_album_id_recipient_id_epoch_id");
 
                     b.ToTable("epoch_keys");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.LinkEpochKey", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("EpochId")
+                        .HasColumnType("integer")
+                        .HasColumnName("epoch_id");
+
+                    b.Property<Guid>("ShareLinkId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("share_link_id");
+
+                    b.Property<int>("Tier")
+                        .HasColumnType("integer")
+                        .HasColumnName("tier");
+
+                    b.Property<byte[]>("WrappedKey")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("wrapped_key");
+
+                    b.Property<byte[]>("WrappedNonce")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("wrapped_nonce");
+
+                    b.HasKey("Id")
+                        .HasName("p_k_link_epoch_keys");
+
+                    b.HasIndex("ShareLinkId", "EpochId", "Tier")
+                        .HasDatabaseName("i_x_link_epoch_keys_share_link_id_epoch_id_tier");
+
+                    b.ToTable("link_epoch_keys");
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.Manifest", b =>
@@ -234,6 +365,65 @@ namespace Mosaic.Backend.Migrations
                     b.ToTable("manifest_shards");
                 });
 
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.Session", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DeviceName")
+                        .HasColumnType("text")
+                        .HasColumnName("device_name");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("IpAddress")
+                        .HasColumnType("text")
+                        .HasColumnName("ip_address");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("text")
+                        .HasColumnName("user_agent");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("p_k_sessions");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("i_x_sessions_expires_at");
+
+                    b.HasIndex("TokenHash")
+                        .HasDatabaseName("i_x_sessions_token_hash");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("i_x_sessions_user_id");
+
+                    b.ToTable("sessions");
+                });
+
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.Shard", b =>
                 {
                     b.Property<Guid>("Id")
@@ -280,12 +470,105 @@ namespace Mosaic.Backend.Migrations
                     b.ToTable("shards");
                 });
 
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.ShareLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AccessTier")
+                        .HasColumnType("integer")
+                        .HasColumnName("access_tier");
+
+                    b.Property<Guid>("AlbumId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("album_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<bool>("IsRevoked")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_revoked");
+
+                    b.Property<byte[]>("LinkId")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("link_id");
+
+                    b.Property<int?>("MaxUses")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_uses");
+
+                    b.Property<byte[]>("OwnerEncryptedSecret")
+                        .HasColumnType("bytea")
+                        .HasColumnName("owner_encrypted_secret");
+
+                    b.Property<int>("UseCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("use_count");
+
+                    b.HasKey("Id")
+                        .HasName("p_k_share_links");
+
+                    b.HasIndex("AlbumId")
+                        .HasDatabaseName("i_x_share_links_album_id");
+
+                    b.HasIndex("LinkId")
+                        .IsUnique()
+                        .HasDatabaseName("i_x_share_links_link_id");
+
+                    b.ToTable("share_links");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.SystemSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("text")
+                        .HasColumnName("key");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("value");
+
+                    b.HasKey("Key")
+                        .HasName("p_k_system_settings");
+
+                    b.HasIndex("UpdatedBy")
+                        .HasDatabaseName("i_x_system_settings_updated_by");
+
+                    b.ToTable("system_settings");
+                });
+
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
+
+                    b.Property<byte[]>("AccountSalt")
+                        .HasColumnType("bytea")
+                        .HasColumnName("account_salt");
+
+                    b.Property<string>("AuthPubkey")
+                        .HasColumnType("text")
+                        .HasColumnName("auth_pubkey");
 
                     b.Property<string>("AuthSub")
                         .IsRequired()
@@ -305,9 +588,25 @@ namespace Mosaic.Backend.Migrations
                         .HasColumnType("text")
                         .HasColumnName("identity_pubkey");
 
+                    b.Property<bool>("IsAdmin")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_admin");
+
                     b.Property<byte[]>("SaltNonce")
                         .HasColumnType("bytea")
                         .HasColumnName("salt_nonce");
+
+                    b.Property<byte[]>("UserSalt")
+                        .HasColumnType("bytea")
+                        .HasColumnName("user_salt");
+
+                    b.Property<byte[]>("WrappedAccountKey")
+                        .HasColumnType("bytea")
+                        .HasColumnName("wrapped_account_key");
+
+                    b.Property<byte[]>("WrappedIdentitySeed")
+                        .HasColumnType("bytea")
+                        .HasColumnName("wrapped_identity_seed");
 
                     b.HasKey("Id")
                         .HasName("p_k_users");
@@ -324,6 +623,14 @@ namespace Mosaic.Backend.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
+
+                    b.Property<int>("CurrentAlbumCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("current_album_count");
+
+                    b.Property<int?>("MaxAlbums")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_albums");
 
                     b.Property<long>("MaxStorageBytes")
                         .HasColumnType("bigint")
@@ -353,6 +660,18 @@ namespace Mosaic.Backend.Migrations
                         .HasConstraintName("f_k_albums__users_owner_id");
 
                     b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.AlbumLimits", b =>
+                {
+                    b.HasOne("Mosaic.Backend.Data.Entities.Album", "Album")
+                        .WithOne("Limits")
+                        .HasForeignKey("Mosaic.Backend.Data.Entities.AlbumLimits", "AlbumId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("f_k_album_limits_albums_album_id");
+
+                    b.Navigation("Album");
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.AlbumMember", b =>
@@ -405,6 +724,18 @@ namespace Mosaic.Backend.Migrations
                     b.Navigation("Recipient");
                 });
 
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.LinkEpochKey", b =>
+                {
+                    b.HasOne("Mosaic.Backend.Data.Entities.ShareLink", "ShareLink")
+                        .WithMany("LinkEpochKeys")
+                        .HasForeignKey("ShareLinkId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("f_k_link_epoch_keys__share_links_share_link_id");
+
+                    b.Navigation("ShareLink");
+                });
+
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.Manifest", b =>
                 {
                     b.HasOne("Mosaic.Backend.Data.Entities.Album", "Album")
@@ -438,6 +769,18 @@ namespace Mosaic.Backend.Migrations
                     b.Navigation("Shard");
                 });
 
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.Session", b =>
+                {
+                    b.HasOne("Mosaic.Backend.Data.Entities.User", "User")
+                        .WithMany("Sessions")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("f_k_sessions__users_user_id");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.Shard", b =>
                 {
                     b.HasOne("Mosaic.Backend.Data.Entities.User", "Uploader")
@@ -447,6 +790,29 @@ namespace Mosaic.Backend.Migrations
                         .HasConstraintName("f_k_shards__users_uploader_id");
 
                     b.Navigation("Uploader");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.ShareLink", b =>
+                {
+                    b.HasOne("Mosaic.Backend.Data.Entities.Album", "Album")
+                        .WithMany()
+                        .HasForeignKey("AlbumId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("f_k_share_links_albums_album_id");
+
+                    b.Navigation("Album");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.SystemSetting", b =>
+                {
+                    b.HasOne("Mosaic.Backend.Data.Entities.User", "UpdatedByUser")
+                        .WithMany()
+                        .HasForeignKey("UpdatedBy")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("f_k_system_settings__users_updated_by");
+
+                    b.Navigation("UpdatedByUser");
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.UserQuota", b =>
@@ -465,6 +831,8 @@ namespace Mosaic.Backend.Migrations
                 {
                     b.Navigation("EpochKeys");
 
+                    b.Navigation("Limits");
+
                     b.Navigation("Manifests");
 
                     b.Navigation("Members");
@@ -480,6 +848,11 @@ namespace Mosaic.Backend.Migrations
                     b.Navigation("ManifestShards");
                 });
 
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.ShareLink", b =>
+                {
+                    b.Navigation("LinkEpochKeys");
+                });
+
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.User", b =>
                 {
                     b.Navigation("EpochKeys");
@@ -489,6 +862,8 @@ namespace Mosaic.Backend.Migrations
                     b.Navigation("OwnedAlbums");
 
                     b.Navigation("Quota");
+
+                    b.Navigation("Sessions");
                 });
 #pragma warning restore 612, 618
         }
