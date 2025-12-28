@@ -97,11 +97,14 @@ function parseHeader(envelope: Uint8Array): ShardHeader {
     );
   }
 
+  // Stryker disable next-line MethodExpression: slice creates a copy for DataView; using envelope directly is semantically equivalent as we only access fixed offsets
   const header = envelope.slice(0, ENVELOPE_HEADER_SIZE);
   const view = new DataView(header.buffer, header.byteOffset);
 
   // Validate magic
+  // Stryker disable next-line MethodExpression,ArithmeticOperator: slice bounds mutations are equivalent since loop only accesses indices 0-3
   const magic = header.slice(OFFSET_MAGIC, OFFSET_MAGIC + 4);
+  // Stryker disable next-line EqualityOperator: loop running 5 times compares undefined !== undefined which is false (no throw), semantically equivalent
   for (let i = 0; i < 4; i++) {
     if (magic[i] !== MAGIC_BYTES[i]) {
       throw new CryptoError(

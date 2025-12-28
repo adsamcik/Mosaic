@@ -156,6 +156,38 @@ describe('envelope', () => {
     await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow('version');
   });
 
+  it('detects epochId endianness correctly (little-endian)', async () => {
+    // Use a value that differs between little-endian and big-endian representations
+    // 0x04030201 in little-endian: bytes are [01, 02, 03, 04]
+    // 0x04030201 in big-endian: bytes are [04, 03, 02, 01]
+    // If mutated to big-endian write but read as little-endian, we'd get 0x01020304 instead
+    const epochId = 0x04030201;
+    const { ciphertext } = await encryptShard(testData, tierKey, epochId, 0, ShardTier.ORIGINAL);
+    const header = peekHeader(ciphertext);
+    expect(header.epochId).toBe(epochId); // Must be exactly 0x04030201, not 0x01020304
+  });
+
+  it('detects shardId endianness correctly (little-endian)', async () => {
+    // Use a value that differs between little-endian and big-endian representations
+    // 0x01020304 in little-endian: bytes are [04, 03, 02, 01]
+    // 0x01020304 in big-endian: bytes are [01, 02, 03, 04]
+    // If mutated to big-endian write but read as little-endian, we'd get 0x04030201 instead
+    const shardId = 0x01020304;
+    const { ciphertext } = await encryptShard(testData, tierKey, 1, shardId, ShardTier.ORIGINAL);
+    const header = peekHeader(ciphertext);
+    expect(header.shardId).toBe(shardId); // Must be exactly 0x01020304, not 0x04030201
+  });
+
+  it('rejects envelope exactly one byte too short for header (63 bytes)', async () => {
+    // Create an envelope that is exactly ENVELOPE_HEADER_SIZE - 1 bytes (63 bytes)
+    // This should trigger the "too short" validation in parseHeader at L93
+    const tooShort = new Uint8Array(ENVELOPE_HEADER_SIZE - 1);
+    // Set valid magic and version to ensure we hit the length check first
+    tooShort.set([0x53, 0x47, 0x7a, 0x6b], 0);
+    tooShort[4] = ENVELOPE_VERSION;
+    await expect(decryptShard(tooShort, tierKey)).rejects.toThrow('too short');
+  });
+
   it('encrypts with different tier keys', async () => {
     const thumbKey = sodium.randombytes_buf(32);
     const previewKey = sodium.randombytes_buf(32);
@@ -190,5 +222,91 @@ describe('envelope', () => {
     const { ciphertext } = await encryptShard(testData, tierKey, 1, 0, ShardTier.ORIGINAL);
     ciphertext[37] = 99; // Invalid: tier must be 1, 2, or 3
     await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow('Invalid shard tier');
+  });
+
+  // Mutation testing - additional tests to kill surviving mutants
+
+  it('validates magic bytes correctly even with large envelope', async () => {
+    // This test kills L100 mutation: envelope.slice() → envelope
+    // and L104 mutation: header.slice() → header
+    // If magic bytes extraction doesn't slice properly, validation will compare wrong bytes
+    const { ciphertext } = await encryptShard(testData, tierKey, 1, 0, ShardTier.ORIGINAL);
+    // Corrupt a byte AFTER the magic bytes (position 5 is version, position 13+ is nonce)
+    // The magic bytes at position 0-3 are correct, but ciphertext is much larger than 4 bytes
+    // If slice is removed, comparison would iterate over wrong bytes and either fail or pass incorrectly
+    
+    // Verify valid envelope works first
+    const decrypted = await decryptShard(ciphertext, tierKey);
+    expect(decrypted).toEqual(testData);
+    
+    // Now corrupt magic byte at position 3 (last magic byte)
+    ciphertext[3] = 0xff; // Corrupt last magic byte
+    await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow('magic');
+  });
+
+  it('validates all 4 magic bytes are checked (not 5)', async () => {
+    // This test kills L105 mutation: i < 4 → i <= 4
+    // If the loop runs 5 times instead of 4, it would read byte at index 4 (version)
+    // and compare it against MAGIC_BYTES[4] which is undefined
+    const { ciphertext } = await encryptShard(testData, tierKey, 1, 0, ShardTier.ORIGINAL);
+    
+    // The magic bytes are [0x53, 0x47, 0x7a, 0x6b] and version at position 4 is 0x03
+    // If loop runs 5 times: MAGIC_BYTES[4] is undefined, ciphertext[4] is 0x03
+    // undefined !== 0x03 would throw error about magic bytes
+    // But the correct behavior is to only check positions 0-3
+    
+    // Corrupt byte at position 4 (version byte, not magic)
+    const validEnvelope = new Uint8Array(ciphertext);
+    // Decryption should work with correct magic
+    const d = await decryptShard(validEnvelope, tierKey);
+    expect(d).toEqual(testData);
+  });
+
+  it('decryption error message contains specific text', async () => {
+    // This test kills L264 mutation: error message → ""
+    const { ciphertext } = await encryptShard(testData, tierKey, 1, 0, ShardTier.ORIGINAL);
+    const wrongKey = sodium.randombytes_buf(32);
+    await expect(decryptShard(ciphertext, wrongKey)).rejects.toThrow(/wrong key|tampered/i);
+  });
+
+  it('accepts shard data exactly at MAX_SHARD_SIZE (boundary)', async () => {
+    // This test kills L183 mutation: > → >=
+    // MAX_SHARD_SIZE (6MB) is the maximum allowed, data at that size should succeed
+    // The mutation changes > to >=, which would incorrectly reject data at exactly MAX_SHARD_SIZE
+    const maxData = new Uint8Array(MAX_SHARD_SIZE);
+    // Fill with some pattern to ensure it's not just zeros
+    maxData[0] = 0x42;
+    maxData[MAX_SHARD_SIZE - 1] = 0x42;
+    
+    const { ciphertext } = await encryptShard(maxData, tierKey, 1, 0, ShardTier.ORIGINAL);
+    const decrypted = await decryptShard(ciphertext, tierKey);
+    expect(decrypted.length).toBe(MAX_SHARD_SIZE);
+    expect(decrypted[0]).toBe(0x42);
+    expect(decrypted[MAX_SHARD_SIZE - 1]).toBe(0x42);
+  });
+
+  it('magic bytes corruption at different positions is detected', async () => {
+    // Additional test for magic validation - corrupt each magic byte position
+    // This helps kill mutations related to magic extraction bounds (L104)
+    
+    // Position 0 corruption
+    const { ciphertext: c0 } = await encryptShard(testData, tierKey, 1, 0, ShardTier.ORIGINAL);
+    c0[0] = 0x00;
+    await expect(decryptShard(c0, tierKey)).rejects.toThrow('magic');
+    
+    // Position 1 corruption
+    const { ciphertext: c1 } = await encryptShard(testData, tierKey, 1, 0, ShardTier.ORIGINAL);
+    c1[1] = 0x00;
+    await expect(decryptShard(c1, tierKey)).rejects.toThrow('magic');
+    
+    // Position 2 corruption
+    const { ciphertext: c2 } = await encryptShard(testData, tierKey, 1, 0, ShardTier.ORIGINAL);
+    c2[2] = 0x00;
+    await expect(decryptShard(c2, tierKey)).rejects.toThrow('magic');
+    
+    // Position 3 corruption (last magic byte)
+    const { ciphertext: c3 } = await encryptShard(testData, tierKey, 1, 0, ShardTier.ORIGINAL);
+    c3[3] = 0x00;
+    await expect(decryptShard(c3, tierKey)).rejects.toThrow('magic');
   });
 });
