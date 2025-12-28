@@ -24,6 +24,9 @@ import type {
   ManifestCreated,
   CreateShardRequest,
   ShardCreated,
+  ShareLinkResponse,
+  ShareLinkWithSecretResponse,
+  CreateShareLinkRequest,
 } from './api-types';
 
 // =============================================================================
@@ -251,6 +254,30 @@ export function createApiClient(): MosaicApi {
         id: '', // Will be set by TUS server
         uploadUrl: `${API_BASE}/files`,
       };
+    },
+
+    // =========================================================================
+    // Share Links
+    // =========================================================================
+    async listShareLinks(albumId: string): Promise<ShareLinkResponse[]> {
+      return apiRequest(`/albums/${albumId}/share-links`);
+    },
+
+    async listShareLinksWithSecrets(albumId: string): Promise<ShareLinkWithSecretResponse[]> {
+      return apiRequest(`/albums/${albumId}/share-links/with-secrets`);
+    },
+
+    async createShareLink(albumId: string, request: CreateShareLinkRequest): Promise<ShareLinkResponse> {
+      return apiRequest(`/albums/${albumId}/share-links`, {
+        method: 'POST',
+        body: request,
+      });
+    },
+
+    async revokeShareLink(linkId: string): Promise<void> {
+      return apiRequest(`/share-links/${linkId}`, {
+        method: 'DELETE',
+      });
     },
   };
 }

@@ -113,6 +113,66 @@ export interface CreateEpochKeyRequest {
 
 export interface RotateEpochRequest {
   epochKeys: CreateEpochKeyRequest[];
+  shareLinkKeys?: ShareLinkKeyUpdateRequest[];
+}
+
+// =============================================================================
+// Share Link Types
+// =============================================================================
+
+/** Access tier for share links */
+export type AccessTier = 1 | 2 | 3; // 1=thumb, 2=preview, 3=full
+
+/** Wrapped tier key for a share link */
+export interface WrappedKeyRequest {
+  epochId: number;
+  tier: AccessTier;
+  nonce: string; // Base64
+  encryptedKey: string; // Base64
+}
+
+/** Share link creation request */
+export interface CreateShareLinkRequest {
+  accessTier: AccessTier;
+  expiresAt?: string;
+  maxUses?: number;
+  ownerEncryptedSecret?: string; // Base64
+  linkId: string; // Base64 (16 bytes)
+  wrappedKeys: WrappedKeyRequest[];
+}
+
+/** Share link response */
+export interface ShareLinkResponse {
+  id: string;
+  linkId: string;
+  accessTier: AccessTier;
+  expiresAt?: string;
+  maxUses?: number;
+  useCount: number;
+  isRevoked: boolean;
+  createdAt: string;
+}
+
+/** Share link with owner-encrypted secret (for epoch rotation) */
+export interface ShareLinkWithSecretResponse {
+  id: string;
+  linkId: string;
+  accessTier: AccessTier;
+  isRevoked: boolean;
+  ownerEncryptedSecret?: string; // Base64
+}
+
+/** Wrapped key for share link tier during rotation */
+export interface ShareLinkWrappedKeyRequest {
+  tier: AccessTier;
+  nonce: string; // Base64
+  encryptedKey: string; // Base64
+}
+
+/** Share link key update during epoch rotation */
+export interface ShareLinkKeyUpdateRequest {
+  shareLinkId: string;
+  wrappedKeys: ShareLinkWrappedKeyRequest[];
 }
 
 // =============================================================================
@@ -210,4 +270,10 @@ export interface MosaicApi {
   // Shards
   downloadShard(shardId: string): Promise<Uint8Array>;
   createShardUpload(request: CreateShardRequest): Promise<ShardCreated>;
+
+  // Share Links
+  listShareLinks(albumId: string): Promise<ShareLinkResponse[]>;
+  listShareLinksWithSecrets(albumId: string): Promise<ShareLinkWithSecretResponse[]>;
+  createShareLink(albumId: string, request: CreateShareLinkRequest): Promise<ShareLinkResponse>;
+  revokeShareLink(linkId: string): Promise<void>;
 }

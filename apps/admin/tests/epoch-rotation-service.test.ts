@@ -33,6 +33,25 @@ vi.mock('../src/lib/epoch-key-service', () => ({
   fetchAndUnwrapEpochKeys: vi.fn().mockResolvedValue([]),
 }));
 
+// Mock @mosaic/crypto for tier key derivation
+vi.mock('@mosaic/crypto', () => ({
+  deriveTierKeys: vi.fn(() => ({
+    thumbKey: new Uint8Array(32).fill(10),
+    previewKey: new Uint8Array(32).fill(11),
+    fullKey: new Uint8Array(32).fill(12),
+  })),
+  deriveLinkKeys: vi.fn(() => ({
+    linkId: new Uint8Array(16).fill(1),
+    wrappingKey: new Uint8Array(32).fill(20),
+  })),
+  wrapTierKeyForLink: vi.fn((tierKey, tier) => ({
+    tier,
+    nonce: new Uint8Array(24).fill(tier),
+    encryptedKey: new Uint8Array(48).fill(tier),
+  })),
+  AccessTier: { THUMB: 1, PREVIEW: 2, FULL: 3 },
+}));
+
 import { getApi } from '../src/lib/api';
 import { getCryptoClient } from '../src/lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../src/lib/epoch-key-service';
@@ -83,6 +102,7 @@ describe('epoch-rotation-service', () => {
   let mockApi: {
     getAlbum: ReturnType<typeof vi.fn>;
     listAlbumMembers: ReturnType<typeof vi.fn>;
+    listShareLinksWithSecrets: ReturnType<typeof vi.fn>;
     rotateEpoch: ReturnType<typeof vi.fn>;
   };
 
@@ -91,6 +111,7 @@ describe('epoch-rotation-service', () => {
     getIdentityPublicKey: ReturnType<typeof vi.fn>;
     deriveIdentity: ReturnType<typeof vi.fn>;
     createEpochKeyBundle: ReturnType<typeof vi.fn>;
+    unwrapWithAccountKey: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -99,6 +120,7 @@ describe('epoch-rotation-service', () => {
     mockApi = {
       getAlbum: vi.fn().mockResolvedValue(mockAlbum),
       listAlbumMembers: vi.fn().mockResolvedValue(mockMembers),
+      listShareLinksWithSecrets: vi.fn().mockResolvedValue([]),
       rotateEpoch: vi.fn().mockResolvedValue(undefined),
     };
 
@@ -107,6 +129,7 @@ describe('epoch-rotation-service', () => {
       getIdentityPublicKey: vi.fn().mockResolvedValue(mockIdentityPubkey),
       deriveIdentity: vi.fn().mockResolvedValue(undefined),
       createEpochKeyBundle: vi.fn().mockResolvedValue(mockSealedBundle),
+      unwrapWithAccountKey: vi.fn().mockResolvedValue(new Uint8Array(32).fill(50)),
     };
 
     vi.mocked(getApi).mockReturnValue(mockApi as any);
@@ -124,6 +147,7 @@ describe('epoch-rotation-service', () => {
       expect(result).toEqual({
         newEpochId,
         recipientCount: 2,
+        shareLinkCount: 0,
       });
     });
 
@@ -135,6 +159,12 @@ describe('epoch-rotation-service', () => {
       
       // Then generate new key
       expect(mockCrypto.generateEpochKey).toHaveBeenCalledWith(newEpochId);
+      
+      // Then fetch members
+      expect(mockApi.listAlbumMembers).toHaveBeenCalledWith(albumId);
+      
+      // Then fetch share links
+      expect(mockApi.listShareLinksWithSecrets).toHaveBeenCalledWith(albumId);
       
       // Then fetch members
       expect(mockApi.listAlbumMembers).toHaveBeenCalledWith(albumId);
@@ -164,6 +194,8 @@ describe('epoch-rotation-service', () => {
       expect(progressCallback).toHaveBeenCalledWith(RotationStep.GENERATING_KEY);
       expect(progressCallback).toHaveBeenCalledWith(RotationStep.FETCHING_MEMBERS);
       expect(progressCallback).toHaveBeenCalledWith(RotationStep.SEALING_KEYS);
+      expect(progressCallback).toHaveBeenCalledWith(RotationStep.FETCHING_SHARE_LINKS);
+      expect(progressCallback).toHaveBeenCalledWith(RotationStep.WRAPPING_SHARE_LINK_KEYS);
       expect(progressCallback).toHaveBeenCalledWith(RotationStep.CALLING_API);
       expect(progressCallback).toHaveBeenCalledWith(RotationStep.UPDATING_CACHE);
       expect(progressCallback).toHaveBeenCalledWith(RotationStep.COMPLETE);
@@ -313,6 +345,128 @@ describe('epoch-rotation-service', () => {
           expect(err).toBeInstanceOf(EpochRotationError);
           expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.IDENTITY_NOT_DERIVED);
         }
+      });
+
+      it('should throw SHARE_LINKS_FETCH_FAILED when share links fetch fails', async () => {
+        mockApi.listShareLinksWithSecrets.mockRejectedValue(new Error('Network error'));
+
+        try {
+          await rotateEpoch(albumId);
+          expect.fail('Should have thrown');
+        } catch (err) {
+          expect(err).toBeInstanceOf(EpochRotationError);
+          expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.SHARE_LINKS_FETCH_FAILED);
+        }
+      });
+    });
+
+    describe('share link handling', () => {
+      const mockShareLinks = [
+        {
+          id: 'link-1',
+          linkId: 'bGlua0lkMQ==', // base64 encoded
+          accessTier: 3, // FULL
+          isRevoked: false,
+          ownerEncryptedSecret: 'ZW5jcnlwdGVkU2VjcmV0', // base64 encoded
+        },
+        {
+          id: 'link-2',
+          linkId: 'bGlua0lkMg==',
+          accessTier: 2, // PREVIEW
+          isRevoked: false,
+          ownerEncryptedSecret: 'ZW5jcnlwdGVkU2VjcmV0Mg==',
+        },
+      ];
+
+      it('should wrap tier keys for active share links', async () => {
+        mockApi.listShareLinksWithSecrets.mockResolvedValue(mockShareLinks);
+
+        const result = await rotateEpoch(albumId);
+
+        expect(result.shareLinkCount).toBe(2);
+        expect(mockCrypto.unwrapWithAccountKey).toHaveBeenCalledTimes(2);
+      });
+
+      it('should include shareLinkKeys in rotate request', async () => {
+        mockApi.listShareLinksWithSecrets.mockResolvedValue(mockShareLinks);
+
+        await rotateEpoch(albumId);
+
+        expect(mockApi.rotateEpoch).toHaveBeenCalledWith(
+          albumId,
+          newEpochId,
+          expect.objectContaining({
+            epochKeys: expect.any(Array),
+            shareLinkKeys: expect.arrayContaining([
+              expect.objectContaining({ shareLinkId: 'link-1' }),
+              expect.objectContaining({ shareLinkId: 'link-2' }),
+            ]),
+          })
+        );
+      });
+
+      it('should skip revoked share links', async () => {
+        const linksWithRevoked = [
+          { ...mockShareLinks[0], isRevoked: true },
+          mockShareLinks[1],
+        ];
+        mockApi.listShareLinksWithSecrets.mockResolvedValue(linksWithRevoked);
+
+        const result = await rotateEpoch(albumId);
+
+        expect(result.shareLinkCount).toBe(1);
+        expect(mockCrypto.unwrapWithAccountKey).toHaveBeenCalledTimes(1);
+      });
+
+      it('should skip share links without ownerEncryptedSecret', async () => {
+        const linksWithoutSecret = [
+          { ...mockShareLinks[0], ownerEncryptedSecret: undefined },
+          mockShareLinks[1],
+        ];
+        mockApi.listShareLinksWithSecrets.mockResolvedValue(linksWithoutSecret);
+
+        const result = await rotateEpoch(albumId);
+
+        expect(result.shareLinkCount).toBe(1);
+      });
+
+      it('should wrap correct tier keys based on accessTier', async () => {
+        mockApi.listShareLinksWithSecrets.mockResolvedValue(mockShareLinks);
+
+        await rotateEpoch(albumId);
+
+        const rotateCall = mockApi.rotateEpoch.mock.calls[0];
+        const shareLinkKeys = rotateCall[2].shareLinkKeys;
+
+        // First link has accessTier 3 (FULL) - should have 3 wrapped keys
+        const link1Keys = shareLinkKeys.find((k: { shareLinkId: string }) => k.shareLinkId === 'link-1');
+        expect(link1Keys.wrappedKeys).toHaveLength(3);
+
+        // Second link has accessTier 2 (PREVIEW) - should have 2 wrapped keys
+        const link2Keys = shareLinkKeys.find((k: { shareLinkId: string }) => k.shareLinkId === 'link-2');
+        expect(link2Keys.wrappedKeys).toHaveLength(2);
+      });
+
+      it('should continue rotation if individual share link wrap fails', async () => {
+        mockApi.listShareLinksWithSecrets.mockResolvedValue(mockShareLinks);
+        mockCrypto.unwrapWithAccountKey
+          .mockResolvedValueOnce(new Uint8Array(32).fill(50)) // First succeeds
+          .mockRejectedValueOnce(new Error('Unwrap failed')); // Second fails
+
+        // Should not throw
+        const result = await rotateEpoch(albumId);
+
+        // Only one link should be processed successfully
+        expect(result.shareLinkCount).toBe(1);
+      });
+
+      it('should not include shareLinkKeys when no active links exist', async () => {
+        mockApi.listShareLinksWithSecrets.mockResolvedValue([]);
+
+        await rotateEpoch(albumId);
+
+        const rotateCall = mockApi.rotateEpoch.mock.calls[0];
+        expect(rotateCall[2].shareLinkKeys).toBeUndefined();
       });
     });
   });

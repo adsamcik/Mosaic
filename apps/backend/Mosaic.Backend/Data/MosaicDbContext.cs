@@ -15,6 +15,8 @@ public class MosaicDbContext : DbContext
     public DbSet<Shard> Shards => Set<Shard>();
     public DbSet<ManifestShard> ManifestShards => Set<ManifestShard>();
     public DbSet<UserQuota> UserQuotas => Set<UserQuota>();
+    public DbSet<ShareLink> ShareLinks => Set<ShareLink>();
+    public DbSet<LinkEpochKey> LinkEpochKeys => Set<LinkEpochKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -127,6 +129,29 @@ public class MosaicDbContext : DbContext
             e.HasOne(q => q.User)
                 .WithOne(u => u.Quota)
                 .HasForeignKey<UserQuota>(q => q.UserId);
+        });
+
+        // ShareLink
+        modelBuilder.Entity<ShareLink>(e =>
+        {
+            e.HasOne(sl => sl.Album)
+                .WithMany()
+                .HasForeignKey(sl => sl.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(sl => sl.LinkId).IsUnique();
+            e.HasIndex(sl => sl.AlbumId);
+        });
+
+        // LinkEpochKey
+        modelBuilder.Entity<LinkEpochKey>(e =>
+        {
+            e.HasOne(lek => lek.ShareLink)
+                .WithMany(sl => sl.LinkEpochKeys)
+                .HasForeignKey(lek => lek.ShareLinkId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(lek => new { lek.ShareLinkId, lek.EpochId, lek.Tier });
         });
 
         // Use snake_case for PostgreSQL

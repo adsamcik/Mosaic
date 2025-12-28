@@ -228,6 +228,21 @@ export interface CryptoWorkerApi {
    * @returns Ed25519 signature (64 bytes)
    */
   signManifest(manifestData: Uint8Array, signSecretKey: Uint8Array): Promise<Uint8Array>;
+
+  /**
+   * Wrap data with the account key (L2) for secure storage
+   * @param data - Data to wrap (32 bytes typical)
+   * @returns Wrapped data (nonce + ciphertext + tag)
+   */
+  wrapWithAccountKey(data: Uint8Array): Promise<Uint8Array>;
+
+  /**
+   * Unwrap data that was encrypted with the account key (L2)
+   * Used for owner-encrypted share link secrets during epoch rotation
+   * @param wrapped - Wrapped data from server (nonce + ciphertext + tag)
+   * @returns Unwrapped data
+   */
+  unwrapWithAccountKey(wrapped: Uint8Array): Promise<Uint8Array>;
 }
 
 /** GeoJSON Feature for map clustering */

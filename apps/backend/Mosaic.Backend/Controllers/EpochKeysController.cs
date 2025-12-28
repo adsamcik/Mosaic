@@ -170,8 +170,26 @@ public class EpochKeysController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Wrapped key for a share link at a specific tier
+    /// </summary>
+    public record ShareLinkWrappedKeyRequest(
+        int Tier,
+        byte[] Nonce,
+        byte[] EncryptedKey
+    );
+
+    /// <summary>
+    /// Updated wrapped keys for a single share link
+    /// </summary>
+    public record ShareLinkKeyUpdateRequest(
+        Guid ShareLinkId,
+        ShareLinkWrappedKeyRequest[] WrappedKeys
+    );
+
     public record RotateEpochRequest(
-        CreateEpochKeyRequest[] EpochKeys
+        CreateEpochKeyRequest[] EpochKeys,
+        ShareLinkKeyUpdateRequest[]? ShareLinkKeys = null
     );
 
     /// <summary>
@@ -245,6 +263,62 @@ public class EpochKeysController : ControllerBase
                 _db.EpochKeys.Add(epochKey);
             }
 
+            // Update share link wrapped keys if provided
+            var shareLinkKeysUpdated = 0;
+            if (request.ShareLinkKeys != null && request.ShareLinkKeys.Length > 0)
+            {
+                foreach (var linkUpdate in request.ShareLinkKeys)
+                {
+                    // Verify share link exists and belongs to this album
+                    var shareLink = await _db.ShareLinks
+                        .Include(sl => sl.LinkEpochKeys)
+                        .FirstOrDefaultAsync(sl => sl.Id == linkUpdate.ShareLinkId && sl.AlbumId == albumId);
+
+                    if (shareLink == null)
+                    {
+                        await tx.RollbackAsync();
+                        return BadRequest($"Share link {linkUpdate.ShareLinkId} not found or doesn't belong to this album");
+                    }
+
+                    // Verify link is not revoked
+                    if (shareLink.IsRevoked)
+                    {
+                        continue; // Skip revoked links
+                    }
+
+                    // Add new wrapped keys for the new epoch
+                    foreach (var wrappedKey in linkUpdate.WrappedKeys)
+                    {
+                        if (wrappedKey.Nonce == null || wrappedKey.Nonce.Length != 24)
+                        {
+                            await tx.RollbackAsync();
+                            return BadRequest("Each wrapped key must have a 24-byte nonce");
+                        }
+                        if (wrappedKey.EncryptedKey == null || wrappedKey.EncryptedKey.Length == 0)
+                        {
+                            await tx.RollbackAsync();
+                            return BadRequest("Each wrapped key must have an encryptedKey");
+                        }
+                        if (wrappedKey.Tier < 1 || wrappedKey.Tier > shareLink.AccessTier)
+                        {
+                            await tx.RollbackAsync();
+                            return BadRequest($"Wrapped key tier must be between 1 and {shareLink.AccessTier}");
+                        }
+
+                        _db.LinkEpochKeys.Add(new LinkEpochKey
+                        {
+                            Id = Guid.NewGuid(),
+                            ShareLinkId = shareLink.Id,
+                            EpochId = epochId,
+                            Tier = wrappedKey.Tier,
+                            WrappedNonce = wrappedKey.Nonce,
+                            WrappedKey = wrappedKey.EncryptedKey
+                        });
+                    }
+                    shareLinkKeysUpdated++;
+                }
+            }
+
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
 
@@ -252,7 +326,8 @@ public class EpochKeysController : ControllerBase
             {
                 AlbumId = albumId,
                 EpochId = epochId,
-                KeyCount = request.EpochKeys.Length
+                KeyCount = request.EpochKeys.Length,
+                ShareLinkKeysUpdated = shareLinkKeysUpdated
             });
         }
         catch

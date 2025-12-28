@@ -47,6 +47,21 @@ public class ShareLinkResponse
 }
 
 /// <summary>
+/// Response for share link with owner-encrypted secret (for epoch rotation)
+/// </summary>
+public class ShareLinkWithSecretResponse
+{
+    public Guid Id { get; set; }
+    public required string LinkId { get; set; }
+    public int AccessTier { get; set; }
+    public bool IsRevoked { get; set; }
+    /// <summary>
+    /// Owner-encrypted link secret (null if not stored)
+    /// </summary>
+    public byte[]? OwnerEncryptedSecret { get; set; }
+}
+
+/// <summary>
 /// Response for anonymous link access
 /// </summary>
 public class LinkAccessResponse
@@ -318,6 +333,46 @@ public class ShareLinksController : ControllerBase
     }
 
     /// <summary>
+    /// List active share links with owner-encrypted secrets (owner only, for epoch rotation)
+    /// </summary>
+    [HttpGet("api/albums/{albumId}/share-links/with-secrets")]
+    public async Task<IActionResult> ListWithSecrets(Guid albumId)
+    {
+        var user = await GetOrCreateUser();
+
+        // Verify album ownership
+        var album = await _db.Albums.FindAsync(albumId);
+        if (album == null)
+        {
+            return NotFound(new { error = "Album not found" });
+        }
+        if (album.OwnerId != user.Id)
+        {
+            return Forbid();
+        }
+
+        // Only return active (non-revoked, non-expired) links with stored secrets
+        var now = DateTimeOffset.UtcNow;
+        var links = await _db.ShareLinks
+            .Where(sl => sl.AlbumId == albumId &&
+                         !sl.IsRevoked &&
+                         sl.OwnerEncryptedSecret != null &&
+                         (!sl.ExpiresAt.HasValue || sl.ExpiresAt.Value > now) &&
+                         (!sl.MaxUses.HasValue || sl.UseCount < sl.MaxUses.Value))
+            .Select(sl => new ShareLinkWithSecretResponse
+            {
+                Id = sl.Id,
+                LinkId = ToBase64Url(sl.LinkId),
+                AccessTier = sl.AccessTier,
+                IsRevoked = sl.IsRevoked,
+                OwnerEncryptedSecret = sl.OwnerEncryptedSecret
+            })
+            .ToListAsync();
+
+        return Ok(links);
+    }
+
+    /// <summary>
     /// Revoke a share link (soft delete, owner only)
     /// </summary>
     [HttpDelete("api/share-links/{id}")]
@@ -329,8 +384,14 @@ public class ShareLinksController : ControllerBase
             .Include(sl => sl.Album)
             .FirstOrDefaultAsync(sl => sl.Id == id);
 
-        if (shareLink == null) return NotFound(new { error = "Share link not found" });
-        if (shareLink.Album.OwnerId != user.Id) return Forbid();
+        if (shareLink == null)
+        {
+            return NotFound(new { error = "Share link not found" });
+        }
+        if (shareLink.Album.OwnerId != user.Id)
+        {
+            return Forbid();
+        }
 
         shareLink.IsRevoked = true;
         await _db.SaveChangesAsync();

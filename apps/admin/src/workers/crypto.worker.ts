@@ -341,6 +341,67 @@ class CryptoWorker implements CryptoWorkerApi {
     await this.ensureSodiumReady();
     return cryptoSignManifest(manifestData, signSecretKey);
   }
+
+  /**
+   * Wrap data with the account key (L2) for secure storage.
+   * Used for encrypting share link secrets.
+   */
+  async wrapWithAccountKey(data: Uint8Array): Promise<Uint8Array> {
+    await this.ensureSodiumReady();
+
+    if (!this.accountKey) {
+      throw new Error('Account key not initialized - call init() first');
+    }
+
+    // Generate random nonce (24 bytes for XChaCha20-Poly1305)
+    const nonce = sodium.randombytes_buf(24);
+
+    // Encrypt with XChaCha20-Poly1305
+    const ciphertext = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+      data,
+      null, // no additional data
+      null, // secret nonce (not used)
+      nonce,
+      this.accountKey
+    );
+
+    // Return nonce || ciphertext
+    const result = new Uint8Array(nonce.length + ciphertext.length);
+    result.set(nonce, 0);
+    result.set(ciphertext, nonce.length);
+    return result;
+  }
+
+  /**
+   * Unwrap data that was encrypted with the account key (L2).
+   * Used for decrypting owner-encrypted share link secrets during epoch rotation.
+   */
+  async unwrapWithAccountKey(wrapped: Uint8Array): Promise<Uint8Array> {
+    await this.ensureSodiumReady();
+
+    if (!this.accountKey) {
+      throw new Error('Account key not initialized - call init() first');
+    }
+
+    if (wrapped.length < 24 + 16) {
+      throw new Error('Wrapped data too short (minimum 40 bytes for nonce + tag)');
+    }
+
+    // Extract nonce (first 24 bytes) and ciphertext (rest)
+    const nonce = wrapped.subarray(0, 24);
+    const ciphertext = wrapped.subarray(24);
+
+    // Decrypt with XChaCha20-Poly1305
+    const plaintext = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
+      null, // secret nonce (not used)
+      ciphertext,
+      null, // no additional data
+      nonce,
+      this.accountKey
+    );
+
+    return plaintext;
+  }
 }
 
 // Create worker instance and expose via Comlink
