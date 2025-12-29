@@ -51,7 +51,7 @@ async function detectAuthMode(): Promise<'LocalAuth' | 'ProxyAuth'> {
   }
 }
 
-test.describe('Authentication Modes', () => {
+test.describe('Authentication Modes @p1 @auth', () => {
   test.describe('Mode Detection', () => {
     test('frontend detects auth mode from backend', async ({ page }) => {
       // The frontend should detect the auth mode by calling /api/auth/init
@@ -183,6 +183,8 @@ test.describe('Authentication Modes', () => {
           page.locator('[data-testid="app-shell"]').or(page.getByRole('alert'))
         ).toBeVisible({ timeout: 60000 });
       } finally {
+        // Clean up routes before closing to avoid "route in flight" errors
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
         await context.close();
       }
     });
@@ -250,6 +252,8 @@ test.describe('Authentication Modes', () => {
           console.log('[TEST] Session persisted after reload');
         }
       } finally {
+        // Clean up routes before closing to avoid "route in flight" errors
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
         await context.close();
       }
     });
@@ -286,6 +290,8 @@ test.describe('Authentication Modes', () => {
         await page.reload();
         await loginPage.expectLoginFormVisible();
       } finally {
+        // Clean up routes before closing to avoid "route in flight" errors
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
         await context.close();
       }
     });
@@ -334,6 +340,8 @@ test.describe('Authentication Modes', () => {
         // Should show error
         await loginPage.expectErrorMessage();
       } finally {
+        // Clean up routes before closing to avoid "route in flight" errors
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
         await context.close();
       }
     });
@@ -437,6 +445,8 @@ test.describe('Authentication Modes', () => {
         }
       }
 
+      // Clean up routes before closing to avoid "route in flight" errors
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
       await context.close();
     });
 
@@ -482,6 +492,9 @@ test.describe('Authentication Modes', () => {
         await loginPage1.expectLoginSuccess();
         await loginPage2.expectLoginSuccess();
       } finally {
+        // Clean up routes before closing to avoid "route in flight" errors
+        await page1.unrouteAll({ behavior: 'ignoreErrors' });
+        await page2.unrouteAll({ behavior: 'ignoreErrors' });
         await context1.close();
         await context2.close();
       }
@@ -533,6 +546,8 @@ test.describe('Authentication Modes', () => {
 
         console.log(`[TEST] Successfully authenticated as Authelia user: ${autheliaUser}`);
       } finally {
+        // Clean up routes before closing to avoid "route in flight" errors
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
         await context.close();
       }
     });

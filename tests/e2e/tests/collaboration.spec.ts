@@ -20,7 +20,7 @@ import {
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
 
-test.describe('Collaboration', () => {
+test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
   test.describe('Album Sharing', () => {
     test('P1-COLLAB-1: owner can open members panel', async ({ collaboration }) => {
       const { alice, trackAlbum } = collaboration;

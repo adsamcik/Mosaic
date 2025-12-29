@@ -24,7 +24,7 @@ import {
   TEST_CONSTANTS,
 } from '../fixtures';
 
-test.describe('Identity Persistence: Epoch Key Decryption After Reload', () => {
+test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth @crypto @slow', () => {
   test('P0-IDENTITY-1: photo remains accessible after page reload and re-login', async ({
     browser,
     testUser,

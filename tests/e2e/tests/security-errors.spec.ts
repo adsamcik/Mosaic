@@ -23,7 +23,7 @@ import {
   TEST_CONSTANTS,
 } from '../fixtures';
 
-test.describe('Security: Authentication', () => {
+test.describe('Security: Authentication @p1 @security @auth', () => {
   test('empty password rejected with error message', async ({ page }) => {
     await page.goto('/');
 
@@ -95,7 +95,7 @@ test.describe('Security: Authentication', () => {
   });
 });
 
-test.describe('Security: Session Management', () => {
+test.describe('Security: Session Management @p1 @security @auth', () => {
   test('logout clears authentication state', async ({
     authenticatedPage,
     testUser,
@@ -191,7 +191,7 @@ test.describe('Security: Session Management', () => {
   });
 });
 
-test.describe('Security: Authorization', () => {
+test.describe('Security: Authorization @p1 @security', () => {
   const apiHelper = new ApiHelper();
 
   test('unauthorized API access returns 401', async ({
@@ -234,7 +234,7 @@ test.describe('Security: Authorization', () => {
   });
 });
 
-test.describe('Error Handling: Network Failures', () => {
+test.describe('Error Handling: Network Failures @p2 @security', () => {
   const apiHelper = new ApiHelper();
 
   test('shows error when API unreachable', async ({
@@ -348,7 +348,7 @@ test.describe('Error Handling: Network Failures', () => {
   });
 });
 
-test.describe('Error Handling: Validation', () => {
+test.describe('Error Handling: Validation @p2 @security', () => {
   const apiHelper = new ApiHelper();
 
   test('album name validation', async ({
@@ -399,7 +399,7 @@ test.describe('Error Handling: Validation', () => {
   });
 });
 
-test.describe('Error Handling: Crypto Failures', () => {
+test.describe('Error Handling: Crypto Failures @p2 @security @crypto', () => {
   const apiHelper = new ApiHelper();
 
   test('corrupted data shows error, not garbage', async ({
@@ -456,7 +456,7 @@ test.describe('Error Handling: Crypto Failures', () => {
   });
 });
 
-test.describe('Error Handling: Quota & Limits', () => {
+test.describe('Error Handling: Quota & Limits @p2 @security', () => {
   const apiHelper = new ApiHelper();
 
   test('handles upload quota exceeded', async ({
@@ -514,7 +514,7 @@ test.describe('Error Handling: Quota & Limits', () => {
   });
 });
 
-test.describe('Error Handling: UI Resilience', () => {
+test.describe('Error Handling: UI Resilience @p2 @security @ui', () => {
   const apiHelper = new ApiHelper();
 
   test('app recovers from JavaScript errors', async ({

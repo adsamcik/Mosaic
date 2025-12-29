@@ -22,7 +22,7 @@ import {
   TEST_CONSTANTS,
 } from '../fixtures';
 
-test.describe('Sync: Multi-Session', () => {
+test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
   const apiHelper = new ApiHelper();
 
   test('photos sync between browser sessions', async ({
@@ -219,7 +219,7 @@ test.describe('Sync: Multi-Session', () => {
   });
 });
 
-test.describe('Sync: Offline Resilience', () => {
+test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
   const apiHelper = new ApiHelper();
 
   test('app handles going offline gracefully', async ({
@@ -345,7 +345,7 @@ test.describe('Sync: Offline Resilience', () => {
   });
 });
 
-test.describe('Sync: Incremental Updates', () => {
+test.describe('Sync: Incremental Updates @p1 @sync', () => {
   const apiHelper = new ApiHelper();
 
   test('new uploads appear without full refresh', async ({
@@ -439,7 +439,7 @@ test.describe('Sync: Incremental Updates', () => {
   });
 });
 
-test.describe('Sync: Version Tracking', () => {
+test.describe('Sync: Version Tracking @p2 @sync', () => {
   const apiHelper = new ApiHelper();
 
   test('album remembers last sync version', async ({
@@ -527,7 +527,7 @@ test.describe('Sync: Version Tracking', () => {
   });
 });
 
-test.describe('Sync: Conflict Handling', () => {
+test.describe('Sync: Conflict Handling @p2 @sync', () => {
   const apiHelper = new ApiHelper();
 
   test('concurrent uploads from same user handled correctly', async ({

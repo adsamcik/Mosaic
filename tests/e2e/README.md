@@ -18,6 +18,90 @@ npm test
 npm run test:ui
 ```
 
+## Test Categories
+
+Tests are organized with tags for selective execution. Use `--grep` to run specific categories.
+
+### Priority Tags
+
+| Tag | Description | When to Use |
+|-----|-------------|-------------|
+| `@p0` | Critical path | Must pass before any release |
+| `@p1` | Core features | Should pass for stable release |
+| `@p2` | Extended coverage | Nice to have passing |
+
+### Feature Tags
+
+| Tag | Description | Test Files |
+|-----|-------------|------------|
+| `@auth` | Authentication (login, logout, session) | auth.spec.ts, registration.spec.ts |
+| `@album` | Album operations (create, rename, delete) | album-management.spec.ts, albums.spec.ts |
+| `@photo` | Photo operations (upload, view, download) | upload.spec.ts, photo-workflow.spec.ts |
+| `@sharing` | Share links and collaboration | share-links.spec.ts, sharing-workflow.spec.ts |
+| `@sync` | Data synchronization | sync-workflow.spec.ts |
+| `@gallery` | Gallery view and navigation | gallery.spec.ts, photo-workflow.spec.ts |
+| `@security` | Security and error handling | security-errors.spec.ts |
+| `@a11y` | Accessibility compliance | accessibility.spec.ts |
+| `@ui` | UI interactions | ui-interactions.spec.ts, settings.spec.ts |
+
+### Speed Tags
+
+| Tag | Description | Use Case |
+|-----|-------------|----------|
+| `@fast` | Quick tests (<10s) | Rapid feedback during development |
+| `@slow` | Slow tests (>30s) | Full regression, CI pipelines |
+
+### Special Tags
+
+| Tag | Description |
+|-----|-------------|
+| `@smoke` | Minimal verification set - run before every commit |
+| `@critical` | End-to-end user journeys |
+| `@multi-user` | Tests requiring multiple browser contexts |
+| `@crypto` | Tests involving encryption/decryption |
+
+### Running by Category
+
+```bash
+# Run smoke tests (fastest verification)
+npx playwright test --grep @smoke
+
+# Run all P0 critical tests
+npx playwright test --grep @p0
+
+# Run authentication tests
+npx playwright test --grep @auth
+
+# Run multiple categories (OR logic)
+npx playwright test --grep "@p0|@p1"
+
+# Run photo and album tests
+npx playwright test --grep "@photo|@album"
+
+# Exclude slow tests for quick feedback
+npx playwright test --grep-invert @slow
+
+# Combine category with browser
+npx playwright test --grep @smoke --project=chromium
+
+# Run fast tests only
+npx playwright test --grep @fast
+
+# Run all sharing-related tests
+npx playwright test --grep @sharing
+```
+
+### Recommended Presets
+
+| Scenario | Command |
+|----------|---------|
+| Pre-commit check | `npx playwright test --grep @smoke --project=chromium` |
+| Quick local feedback | `npx playwright test --grep @fast` |
+| CI pipeline | `npx playwright test --grep "@p0\|@p1"` |
+| Full regression | `npx playwright test` |
+| Security audit | `npx playwright test --grep @security` |
+| New feature testing | `npx playwright test --grep "@p1\|@p2"` |
+
 ## Browser Configuration
 
 Tests run on **3 browser configurations** defined in `playwright.config.ts`:

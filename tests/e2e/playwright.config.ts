@@ -4,6 +4,56 @@ import { defineConfig, devices } from '@playwright/test';
  * Playwright configuration for Mosaic E2E tests.
  *
  * Designed for parallel-safe execution on a single backend instance.
+ *
+ * ## Test Categories
+ *
+ * Tests are organized with tags for selective execution:
+ *
+ * ### Priority Tags
+ * - @p0: Critical path (must pass before release)
+ * - @p1: Core features (should pass for stable release)
+ * - @p2: Extended coverage (nice to have)
+ *
+ * ### Feature Tags
+ * - @auth: Authentication (login, logout, session)
+ * - @album: Album operations (create, rename, delete)
+ * - @photo: Photo operations (upload, view, download)
+ * - @sharing: Share links and collaboration
+ * - @sync: Data synchronization
+ * - @gallery: Gallery view and navigation
+ * - @security: Security and error handling
+ * - @a11y: Accessibility compliance
+ * - @ui: UI interactions
+ *
+ * ### Speed Tags
+ * - @fast: Quick tests (<10s)
+ * - @slow: Slow tests (>30s)
+ *
+ * ### Special Tags
+ * - @smoke: Minimal verification set
+ * - @critical: End-to-end user journeys
+ * - @multi-user: Requires multiple browser contexts
+ * - @crypto: Involves encryption/decryption
+ *
+ * ## Running by Category
+ *
+ * ```bash
+ * # Single category
+ * npx playwright test --grep @smoke
+ * npx playwright test --grep @auth
+ *
+ * # Multiple categories (OR)
+ * npx playwright test --grep "@p0|@p1"
+ *
+ * # Exclude category
+ * npx playwright test --grep-invert @slow
+ *
+ * # Combine with browser
+ * npx playwright test --grep @smoke --project=chromium
+ * ```
+ *
+ * @see README.md for full documentation
+ * @see test-categories.ts for category definitions
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
@@ -80,6 +130,22 @@ export default defineConfig({
 
   // Configure projects for major browsers
   projects: [
+    // Fast smoke tests - runs only smoke.spec.ts with minimal overhead
+    {
+      name: 'smoke',
+      testMatch: /smoke\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          args: ['--enable-features=SharedArrayBuffer'],
+        },
+        // Faster settings for smoke tests
+        trace: 'off',
+        screenshot: 'off',
+        video: 'off',
+      },
+      retries: 0, // No retries for smoke - fail fast
+    },
     {
       name: 'chromium',
       use: {

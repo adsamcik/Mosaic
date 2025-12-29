@@ -8,6 +8,18 @@
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
     "test:debug": "playwright test --debug",
+    "test:smoke": "playwright test --grep @smoke --project=chromium",
+    "test:p0": "playwright test --grep @p0",
+    "test:p1": "playwright test --grep @p1",
+    "test:fast": "playwright test --grep @fast",
+    "test:auth": "playwright test --grep @auth",
+    "test:album": "playwright test --grep @album",
+    "test:photo": "playwright test --grep @photo",
+    "test:sharing": "playwright test --grep @sharing",
+    "test:sync": "playwright test --grep @sync",
+    "test:security": "playwright test --grep @security",
+    "test:a11y": "playwright test --grep @a11y",
+    "test:ci": "playwright test --grep \"@p0|@p1\"",
     "report": "playwright show-report"
   },
   "devDependencies": {

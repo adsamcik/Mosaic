@@ -7,7 +7,7 @@
 
 import { ApiHelper, GalleryPage, LoginPage, TEST_CONSTANTS, expect, generateTestImage, test } from '../fixtures';
 
-test.describe('Photo Upload', () => {
+test.describe('Photo Upload @p1 @photo', () => {
   const apiHelper = new ApiHelper();
 
   test.describe('File Input', () => {

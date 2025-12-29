@@ -18,7 +18,7 @@ import {
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
 
-test.describe('Album Management', () => {
+test.describe('Album Management @p1 @album', () => {
   test.describe('Album Creation', () => {
     test('P1-ALBUM-1: create album via UI with valid name', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('creator');

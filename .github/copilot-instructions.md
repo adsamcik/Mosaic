@@ -51,6 +51,7 @@ Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal 
 | `apps/admin/src/hooks/.instructions.md` | Custom React hook patterns |
 | `apps/admin/src/workers/.instructions.md` | Web Worker patterns (crypto, db, geo) |
 | `libs/crypto/.instructions.md` | Crypto library scoped instructions |
+| `tests/e2e/.instructions.md` | E2E test categories and patterns |
 
 ---
 
@@ -63,7 +64,8 @@ Level 1: .github/copilot-instructions.md    ← You are here (always read)
          │
 Level 2: ├── apps/backend/.instructions.md  ← Backend tasks
          ├── apps/admin/.instructions.md    ← Frontend tasks
-         └── libs/crypto/.instructions.md   ← Crypto tasks
+         ├── libs/crypto/.instructions.md   ← Crypto tasks
+         └── tests/e2e/.instructions.md     ← E2E test tasks
                    │
 Level 3:           ├── src/components/.instructions.md  ← Component work
                    ├── src/hooks/.instructions.md       ← Hook development

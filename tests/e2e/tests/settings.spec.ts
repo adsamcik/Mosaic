@@ -11,7 +11,7 @@ import { test, expect } from '../fixtures';
 import { LoginPage, AppShell, SettingsPage } from '../page-objects';
 import { TEST_CONSTANTS } from '../fixtures';
 
-test.describe('Settings Page', () => {
+test.describe('Settings Page @p2 @ui', () => {
   let loginPage: LoginPage;
   let appShell: AppShell;
   let settingsPage: SettingsPage;
