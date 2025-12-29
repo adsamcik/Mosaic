@@ -104,6 +104,7 @@ export function CreateAlbumDialog({
       </button>
       <button
         type="submit"
+        form="create-album-form"
         disabled={isCreating || !name.trim()}
         className="button-primary"
         data-testid="create-button"
@@ -120,7 +121,7 @@ export function CreateAlbumDialog({
       title="Create Album"
       description="Album names are encrypted - only you and invited members can see them."
       footer={footer}
-      testId="create-album"
+      testId="create-album-dialog"
       closeOnBackdropClick={!isCreating}
     >
       <form onSubmit={handleSubmit} className="dialog-form" id="create-album-form">
