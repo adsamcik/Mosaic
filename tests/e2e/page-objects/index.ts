@@ -213,21 +213,29 @@ export class GalleryPage {
   readonly page: Page;
   readonly gallery: Locator;
   readonly photoGrid: Locator;
+  readonly justifiedGrid: Locator;
   readonly uploadButton: Locator;
   readonly uploadInput: Locator;
   readonly emptyState: Locator;
-  readonly viewToggle: Locator;
+  readonly viewJustifiedButton: Locator;
+  readonly viewGridButton: Locator;
+  readonly viewMapButton: Locator;
   readonly membersButton: Locator;
+  readonly shareButton: Locator;
 
   constructor(page: Page) {
     this.page = page;
-    this.gallery = page.getByTestId('gallery');
+    this.gallery = page.locator('.gallery, .photo-gallery, [data-testid*="gallery"]');
     this.photoGrid = page.getByTestId('photo-grid');
+    this.justifiedGrid = page.getByTestId('justified-grid');
     this.uploadButton = page.getByTestId('upload-button');
     this.uploadInput = page.getByTestId('upload-input');
-    this.emptyState = page.getByText(/no photos|upload|empty/i);
-    this.viewToggle = page.getByTestId('view-toggle');
-    this.membersButton = page.getByRole('button', { name: /members|share|manage/i });
+    this.emptyState = page.locator('[data-testid="justified-grid-empty"], [data-testid="photo-grid-empty"]');
+    this.viewJustifiedButton = page.getByTestId('view-toggle-justified');
+    this.viewGridButton = page.getByTestId('view-toggle-grid');
+    this.viewMapButton = page.getByTestId('view-toggle-map');
+    this.membersButton = page.getByTestId('share-button');
+    this.shareButton = page.getByTestId('share-links-button');
   }
 
   async waitForLoad(timeout = 30000): Promise<void> {
@@ -302,8 +310,22 @@ export class GalleryPage {
     await this.membersButton.first().click();
   }
 
-  async toggleView(): Promise<void> {
-    await this.viewToggle.click();
+  async setViewMode(mode: 'justified' | 'grid' | 'map'): Promise<void> {
+    switch (mode) {
+      case 'justified':
+        await this.viewJustifiedButton.click();
+        break;
+      case 'grid':
+        await this.viewGridButton.click();
+        break;
+      case 'map':
+        await this.viewMapButton.click();
+        break;
+    }
+  }
+
+  async openShareLinks(): Promise<void> {
+    await this.shareButton.click();
   }
 }
 
@@ -402,10 +424,10 @@ export class MembersPanel {
 
   constructor(page: Page) {
     this.page = page;
-    this.panel = page.getByTestId('members-panel');
+    this.panel = page.getByTestId('member-panel');
     this.memberList = page.getByTestId('member-list');
     this.inviteButton = page.getByRole('button', { name: /invite|add member/i });
-    this.closeButton = page.getByTestId('close-members-panel');
+    this.closeButton = page.getByTestId('close-members-button');
   }
 
   async waitForOpen(timeout = 10000): Promise<void> {
@@ -422,7 +444,7 @@ export class MembersPanel {
   }
 
   async getMemberRows(): Promise<Locator[]> {
-    return this.page.getByTestId('member-row').all();
+    return this.page.getByTestId('member-item').all();
   }
 
   async getMemberCount(): Promise<number> {
@@ -434,20 +456,20 @@ export class MembersPanel {
   }
 
   async removeMember(userId: string): Promise<void> {
-    const memberRow = this.page.getByTestId('member-row').filter({ hasText: userId });
+    const memberRow = this.page.getByTestId('member-item').filter({ hasText: userId });
     const removeBtn = memberRow.getByRole('button', { name: /remove|delete/i });
     await removeBtn.click();
   }
 
   async expectMemberVisible(userId: string): Promise<void> {
     await expect(
-      this.page.getByTestId('member-row').filter({ hasText: userId })
+      this.page.getByTestId('member-item').filter({ hasText: userId })
     ).toBeVisible({ timeout: 5000 });
   }
 
   async expectMemberNotVisible(userId: string): Promise<void> {
     await expect(
-      this.page.getByTestId('member-row').filter({ hasText: userId })
+      this.page.getByTestId('member-item').filter({ hasText: userId })
     ).toBeHidden({ timeout: 5000 });
   }
 }

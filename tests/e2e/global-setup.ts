@@ -76,6 +76,42 @@ async function cleanupStaleData(): Promise<void> {
 }
 
 /**
+ * Verify COOP/COEP headers are set correctly for SharedArrayBuffer support
+ * These headers are required for the crypto/WASM workers to function
+ */
+async function verifyCOOPCOEPHeaders(): Promise<void> {
+  const FRONTEND_URL = process.env.BASE_URL || 'http://localhost:5173';
+  console.log(`[Global Setup] Verifying COOP/COEP headers at ${FRONTEND_URL}...`);
+
+  try {
+    const response = await fetch(FRONTEND_URL);
+    const coop = response.headers.get('cross-origin-opener-policy');
+    const coep = response.headers.get('cross-origin-embedder-policy');
+
+    if (coop !== 'same-origin') {
+      console.warn(
+        `[Global Setup] WARNING: Cross-Origin-Opener-Policy is '${coop}', expected 'same-origin'.`
+      );
+      console.warn('[Global Setup] SharedArrayBuffer may not work. Crypto operations may fail.');
+    } else {
+      console.log('[Global Setup] COOP: same-origin ✓');
+    }
+
+    if (coep !== 'require-corp' && coep !== 'credentialless') {
+      console.warn(
+        `[Global Setup] WARNING: Cross-Origin-Embedder-Policy is '${coep}', expected 'require-corp' or 'credentialless'.`
+      );
+      console.warn('[Global Setup] SharedArrayBuffer may not work. Crypto operations may fail.');
+    } else {
+      console.log(`[Global Setup] COEP: ${coep} ✓`);
+    }
+  } catch (error) {
+    console.warn(`[Global Setup] Could not verify headers: ${error}`);
+    // Don't fail - Vite dev server might not be running yet
+  }
+}
+
+/**
  * Global setup function
  */
 async function globalSetup(): Promise<void> {
@@ -85,6 +121,7 @@ async function globalSetup(): Promise<void> {
 
   await waitForBackend();
   await verifyEndpoints();
+  await verifyCOOPCOEPHeaders();
   await cleanupStaleData();
 
   console.log('[Global Setup] Complete!');

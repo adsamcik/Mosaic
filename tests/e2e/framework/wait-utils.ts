@@ -116,12 +116,19 @@ export async function waitForNetworkIdle(
 
   const responseHandler = (response: { url: () => string }) => {
     if (!urlPattern || response.url().match(urlPattern)) {
-      pendingRequests--;
+      pendingRequests = Math.max(0, pendingRequests - 1);
+    }
+  };
+
+  const requestFailedHandler = (request: { url: () => string }) => {
+    if (!urlPattern || request.url().match(urlPattern)) {
+      pendingRequests = Math.max(0, pendingRequests - 1);
     }
   };
 
   page.on('request', requestHandler);
   page.on('response', responseHandler);
+  page.on('requestfailed', requestFailedHandler);
 
   try {
     await waitForCondition(
@@ -131,6 +138,7 @@ export async function waitForNetworkIdle(
   } finally {
     page.removeListener('request', requestHandler);
     page.removeListener('response', responseHandler);
+    page.removeListener('requestfailed', requestFailedHandler);
   }
 }
 

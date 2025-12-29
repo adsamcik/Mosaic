@@ -9,11 +9,13 @@ import { type Page, type BrowserContext, type Browser } from '@playwright/test';
 
 /**
  * Unique test identifier for complete isolation
+ * Uses crypto.randomUUID() for collision-proof IDs even in parallel execution
  */
 export function generateTestId(workerIndex: number): string {
   const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).slice(2, 8);
-  return `w${workerIndex}-${timestamp}-${random}`;
+  // Use crypto.randomUUID for strong uniqueness (available in Node 14.17+)
+  const uuid = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+  return `w${workerIndex}-${timestamp}-${uuid}`;
 }
 
 /**
@@ -177,19 +179,33 @@ export class TestContext {
   }
 
   /**
-   * Delete an album via API
+   * Delete an album via API with timeout to prevent fixture teardown hangs
    */
   private async deleteAlbumViaAPI(albumId: string, userEmail: string): Promise<void> {
-    const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}`, {
-      method: 'DELETE',
-      headers: {
-        'Remote-User': userEmail,
-      },
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    // 404 is OK - album might already be deleted
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`Failed to delete album ${albumId}: ${response.status}`);
+    try {
+      const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}`, {
+        method: 'DELETE',
+        headers: {
+          'Remote-User': userEmail,
+        },
+        signal: controller.signal,
+      });
+
+      // 404 is OK - album might already be deleted
+      if (!response.ok && response.status !== 404) {
+        throw new Error(`Failed to delete album ${albumId}: ${response.status}`);
+      }
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        console.warn(`[TestContext] Cleanup timeout for album ${albumId}`);
+      } else {
+        throw error;
+      }
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 }

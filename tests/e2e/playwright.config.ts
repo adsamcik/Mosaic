@@ -23,6 +23,9 @@ export default defineConfig({
   // CI: 2 workers for stability
   workers: process.env.CI ? 2 : 4,
 
+  // Fail fast in CI - stop after N failures to save resources
+  maxFailures: process.env.CI ? 5 : undefined,
+
   // Reporter configuration
   reporter: [
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
@@ -30,6 +33,8 @@ export default defineConfig({
     ['list'],
     // Add JSON reporter for programmatic access
     ['json', { outputFile: 'results/results.json' }],
+    // GitHub Actions annotations for PR integration
+    ...(process.env.CI ? [['github'] as const] : []),
   ],
 
   // Output directories

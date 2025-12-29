@@ -14,5 +14,6 @@ COPY tests/e2e/ ./
 # Install Playwright browsers
 RUN npx playwright install --with-deps chromium firefox
 
-# Run tests
-CMD ["npx", "playwright", "test", "--reporter=list,junit,html"]
+# Use the config's reporter settings instead of CLI override
+# This ensures JSON reporter runs for programmatic access
+CMD ["npx", "playwright", "test"]
