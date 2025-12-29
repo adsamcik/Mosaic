@@ -1,3 +1,4 @@
+import { type TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useAlbumCover } from '../../hooks/useAlbumCover';
 
@@ -54,7 +55,7 @@ function getDisplayName(album: Album): string {
  */
 export function formatExpirationBadge(
   expiresAt: string | null | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string
+  t: TFunction
 ): ExpirationBadge | null {
   if (!expiresAt) return null;
 
