@@ -183,7 +183,7 @@ export function SharedPhotoLightbox({
 
   return (
     <div
-      className="lightbox-overlay"
+      className="lightbox-backdrop"
       data-testid="shared-photo-lightbox"
       onClick={handleBackdropClick}
       role="dialog"

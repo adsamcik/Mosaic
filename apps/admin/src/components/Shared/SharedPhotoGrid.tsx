@@ -9,11 +9,10 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import type { PhotoMeta } from '../../workers/types';
-import { SharedPhotoThumbnail } from './SharedPhotoThumbnail';
 import { SharedPhotoLightbox } from './SharedPhotoLightbox';
+import { SharedPhotoThumbnail } from './SharedPhotoThumbnail';
 
-/** Number of columns in the grid */
-const COLUMNS = 4;
+
 
 /** Estimated row height for virtualization */
 const ROW_HEIGHT = 200;
@@ -52,12 +51,53 @@ export function SharedPhotoGrid({
   // Lightbox state
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  const rowCount = Math.ceil(photos.length / COLUMNS);
+  // Track container width for responsive layout
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // Callback ref for resize observer
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    parentRef.current = node;
+    
+    if (node) {
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+           // Use contentRect for accurate inner width
+          setContainerWidth(entry.contentRect.width);
+        }
+      });
+      
+      observer.observe(node);
+      
+      // Set initial width
+      setContainerWidth(node.clientWidth || node.getBoundingClientRect().width);
+      
+      return () => observer.disconnect();
+    }
+  }, []);
+
+  // Calculate responsive columns based on container width
+  const columns = useMemo(() => {
+    if (containerWidth <= 0) return 4; // Default/SSR
+    if (containerWidth < 600) return 2; // Mobile
+    if (containerWidth < 900) return 3; // Tablet
+    if (containerWidth < 1500) return 4; // Desktop
+    return 5; // Large screens
+  }, [containerWidth]);
+
+  const rowCount = Math.ceil(photos.length / columns);
+
+  // Calculate row height based on column width to ensure squares
+  // Subtracting gap from width to get accurate cell size
+  const gap = 8;
+  const cellWidth = containerWidth > 0 
+    ? (containerWidth - (columns - 1) * gap) / columns 
+    : ROW_HEIGHT;
+  const rowHeight = cellWidth; 
 
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 5,
   });
 
@@ -129,7 +169,7 @@ export function SharedPhotoGrid({
   return (
     <>
       <div
-        ref={parentRef}
+        ref={containerRef}
         className="photo-grid"
         data-testid="shared-photo-grid"
         style={{ height: '100%', overflow: 'auto' }}
@@ -142,8 +182,8 @@ export function SharedPhotoGrid({
           }}
         >
           {virtualizer.getVirtualItems().map((virtualRow) => {
-            const rowStartIndex = virtualRow.index * COLUMNS;
-            const rowPhotos = photos.slice(rowStartIndex, rowStartIndex + COLUMNS);
+            const rowStartIndex = virtualRow.index * columns;
+            const rowPhotos = photos.slice(rowStartIndex, rowStartIndex + columns);
 
             return (
               <div
@@ -157,7 +197,7 @@ export function SharedPhotoGrid({
                   height: virtualRow.size,
                   transform: `translateY(${virtualRow.start}px)`,
                   display: 'grid',
-                  gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`,
+                  gridTemplateColumns: `repeat(${columns}, 1fr)`,
                   gap: '8px',
                   padding: '0 8px',
                 }}

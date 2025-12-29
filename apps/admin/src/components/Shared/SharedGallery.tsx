@@ -230,22 +230,28 @@ export function SharedGallery({
         </div>
         
         {/* View Toggle */}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+        <div className="view-toggle" role="group" aria-label="View mode">
           <button 
-            className={`button-icon ${viewMode === 'grid' ? 'active' : ''}`}
+            className={`view-toggle-btn ${viewMode === 'grid' ? 'view-toggle-btn--active' : ''}`}
             onClick={() => setViewMode('grid')}
             title="Grid View"
-            style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', opacity: viewMode === 'grid' ? 1 : 0.5 }}
+            aria-pressed={viewMode === 'grid'}
           >
-             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+             <span className="view-toggle-icon">
+               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+             </span>
+             <span className="view-toggle-label">Grid</span>
           </button>
           <button 
-            className={`button-icon ${viewMode === 'mosaic' ? 'active' : ''}`}
+            className={`view-toggle-btn ${viewMode === 'mosaic' ? 'view-toggle-btn--active' : ''}`}
             onClick={() => setViewMode('mosaic')}
             title="Mosaic View"
-            style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', opacity: viewMode === 'mosaic' ? 1 : 0.5 }}
+            aria-pressed={viewMode === 'mosaic'}
           >
-             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="18" height="7"/></svg>
+             <span className="view-toggle-icon">
+               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h8v8H4z"/><path d="M4 16h8v4H4z"/><path d="M16 4h4v4h-4z"/><path d="M16 12h4v8h-4z"/></svg>
+             </span>
+             <span className="view-toggle-label">Mosaic</span>
           </button>
         </div>
       </div>
