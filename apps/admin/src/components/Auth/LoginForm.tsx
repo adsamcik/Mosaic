@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { session } from '../../lib/session';
-import { isLocalAuthMode } from '../../lib/local-auth';
+import { useEffect, useState } from 'react';
 import type { User } from '../../lib/api-types';
+import { isLocalAuthMode } from '../../lib/local-auth';
+import { session } from '../../lib/session';
 
 interface LoginFormProps {
   /** User from a pending session that needs password to restore crypto state */
@@ -114,7 +114,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
     return (
       <div className="login-container" data-testid="login-form">
         <div className="login-card">
-          <h1 className="login-title">🖼️ Mosaic</h1>
+          <h1 className="login-title">Mosaic</h1>
           <p className="login-subtitle">Loading...</p>
         </div>
       </div>
@@ -124,7 +124,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
   return (
     <div className="login-container" data-testid="login-form">
       <div className="login-card">
-        <h1 className="login-title">🖼️ Mosaic</h1>
+        <h1 className="login-title">Mosaic</h1>
         {isSessionRestore ? (
           <p className="login-subtitle">Welcome back! Enter your password to continue.</p>
         ) : (
@@ -133,13 +133,15 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
 
         {isSessionRestore && (
           <div className="session-restore-badge" data-testid="session-restore-badge">
-            🔄 Session Restore
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Session Restore
           </div>
         )}
 
         {isLocalAuth && !isSessionRestore && (
           <div className="dev-mode-badge" data-testid="local-auth-badge">
-            🔐 {isRegisterMode ? 'Create Account' : 'Local Authentication'}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            {isRegisterMode ? 'Create Account' : 'Local Authentication'}
           </div>
         )}
 

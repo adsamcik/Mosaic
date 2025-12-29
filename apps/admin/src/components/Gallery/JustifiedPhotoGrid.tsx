@@ -6,24 +6,24 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
 import { usePhotos } from '../../hooks/usePhotos';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
 import {
-  computeJustifiedLayout,
-  getRowOffset,
-  getTotalHeight,
-  getVisibleRows,
-  type JustifiedRow,
+    computeJustifiedLayout,
+    getRowOffset,
+    getTotalHeight,
+    getVisibleRows,
+    type JustifiedRow,
 } from '../../lib/justified-layout';
 import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
 import type { PhotoMeta } from '../../workers/types';
-import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
-import { PhotoLightbox } from './PhotoLightbox';
 import { JustifiedPhotoThumbnail } from './JustifiedPhotoThumbnail';
+import { PhotoLightbox } from './PhotoLightbox';
 
 /** Gap between photos in pixels */
 const PHOTO_GAP = 4;
@@ -282,7 +282,9 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted, sele
         {/* Empty state - show inside container so ref is always attached */}
         {photos.length === 0 ? (
           <div className="justified-grid-empty" data-testid="justified-grid-empty">
-            <div className="empty-state-icon">📷</div>
+            <div className="empty-state-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+            </div>
             <h3>No photos yet</h3>
             {permissions.canUpload ? (
               <p>Upload some photos to get started</p>

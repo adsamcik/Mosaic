@@ -9,6 +9,7 @@ import {
     AccessTier,
     decryptShard as cryptoDecryptShard,
     deriveLinkKeys as cryptoDeriveLinkKeys,
+    deriveTierKeys,
     encryptShard as cryptoEncryptShard,
     generateEpochKey as cryptoGenerateEpochKey,
     generateLinkSecret as cryptoGenerateLinkSecret,
@@ -445,6 +446,10 @@ class CryptoWorker implements CryptoWorkerApi {
   /**
    * Encrypt manifest metadata for upload.
    * Uses the same envelope format as shards with epoch and shard index 0.
+   * 
+   * IMPORTANT: The readKey parameter is the epochSeed. We derive the thumbKey
+   * from it so that share link recipients (who only have tier keys, not the 
+   * epochSeed) can decrypt the manifest with their thumbKey (tier 1).
    */
   async encryptManifest(
     meta: PhotoMeta,
@@ -453,13 +458,20 @@ class CryptoWorker implements CryptoWorkerApi {
   ): Promise<{ ciphertext: Uint8Array; sha256: string }> {
     await this.ensureSodiumReady();
 
+    // Derive the thumbKey from epochSeed for manifest encryption.
+    // This ensures share link recipients with tier keys can decrypt manifests.
+    const { thumbKey } = deriveTierKeys(readKey);
+
     // Serialize metadata to JSON bytes
     const encoder = new TextEncoder();
     const plaintext = encoder.encode(JSON.stringify(meta));
 
     // Encrypt using shard envelope format (epoch 0 and shard 0 are manifest convention)
     // Note: We use the actual epochId but shardIndex 0 for manifest metadata
-    const encrypted = await cryptoEncryptShard(plaintext, readKey, epochId, 0);
+    const encrypted = await cryptoEncryptShard(plaintext, thumbKey, epochId, 0);
+
+    // Zero out the derived key after use
+    memzero(thumbKey);
 
     return {
       ciphertext: encrypted.ciphertext,

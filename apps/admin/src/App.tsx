@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { session } from './lib/session';
-import { LoginForm } from './components/Auth/LoginForm';
 import { AppShell } from './components/App/AppShell';
+import { LoginForm } from './components/Auth/LoginForm';
 import { SharedAlbumViewer } from './components/Shared/SharedAlbumViewer';
 import { useTheme } from './hooks';
 import type { User } from './lib/api-types';
+import { session } from './lib/session';
 import './styles/globals.css';
 
 /**
@@ -125,7 +125,7 @@ export function App() {
     return (
       <div className="login-container" data-testid="session-check">
         <div className="login-card">
-          <h1 className="login-title">🖼️ Mosaic</h1>
+          <h1 className="login-title">Mosaic</h1>
           <p className="login-subtitle">Checking session...</p>
         </div>
       </div>

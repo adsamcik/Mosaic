@@ -153,7 +153,8 @@ class DbWorker implements DbWorkerApi {
         created_at TEXT,
         updated_at TEXT,
         shard_ids TEXT,
-        epoch_id INTEGER
+        epoch_id INTEGER,
+        description TEXT
       );
       
       -- Indexes for common queries
@@ -166,7 +167,7 @@ class DbWorker implements DbWorkerApi {
     try {
       this.db.run(`
         CREATE VIRTUAL TABLE IF NOT EXISTS photos_fts USING fts5(
-          filename, tags,
+          filename, tags, description,
           content='photos',
           content_rowid='rowid'
         );
@@ -175,24 +176,24 @@ class DbWorker implements DbWorkerApi {
       // Triggers to keep FTS in sync
       this.db.run(`
         CREATE TRIGGER IF NOT EXISTS photos_ai AFTER INSERT ON photos BEGIN
-          INSERT INTO photos_fts(rowid, filename, tags)
-          VALUES (NEW.rowid, NEW.filename, NEW.tags);
+          INSERT INTO photos_fts(rowid, filename, tags, description)
+          VALUES (NEW.rowid, NEW.filename, NEW.tags, NEW.description);
         END;
       `);
 
       this.db.run(`
         CREATE TRIGGER IF NOT EXISTS photos_ad AFTER DELETE ON photos BEGIN
-          INSERT INTO photos_fts(photos_fts, rowid, filename, tags)
-          VALUES ('delete', OLD.rowid, OLD.filename, OLD.tags);
+          INSERT INTO photos_fts(photos_fts, rowid, filename, tags, description)
+          VALUES ('delete', OLD.rowid, OLD.filename, OLD.tags, OLD.description);
         END;
       `);
 
       this.db.run(`
         CREATE TRIGGER IF NOT EXISTS photos_au AFTER UPDATE ON photos BEGIN
-          INSERT INTO photos_fts(photos_fts, rowid, filename, tags)
-          VALUES ('delete', OLD.rowid, OLD.filename, OLD.tags);
-          INSERT INTO photos_fts(rowid, filename, tags)
-          VALUES (NEW.rowid, NEW.filename, NEW.tags);
+          INSERT INTO photos_fts(photos_fts, rowid, filename, tags, description)
+          VALUES ('delete', OLD.rowid, OLD.filename, OLD.tags, OLD.description);
+          INSERT INTO photos_fts(rowid, filename, tags, description)
+          VALUES (NEW.rowid, NEW.filename, NEW.tags, NEW.description);
         END;
       `);
     } catch {
@@ -228,8 +229,8 @@ class DbWorker implements DbWorkerApi {
 
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO photos 
-      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const m of manifests) {
@@ -254,6 +255,7 @@ class DbWorker implements DbWorkerApi {
           m.meta.updatedAt ?? null,
           JSON.stringify(m.meta.shardIds ?? []),
           m.meta.epochId ?? 0,
+          m.meta.description ?? null,
         ]);
       }
     }

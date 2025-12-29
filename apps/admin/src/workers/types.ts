@@ -29,6 +29,8 @@ export interface PhotoMeta {
   thumbWidth?: number;
   /** Thumbnail height in pixels */
   thumbHeight?: number;
+  /** User-provided description for the photo */
+  description?: string;
 }
 
 /** Encrypted manifest record from server */
