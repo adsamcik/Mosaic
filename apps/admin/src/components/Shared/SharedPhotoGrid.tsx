@@ -24,6 +24,8 @@ const PRELOAD_COUNT = 2;
 interface SharedPhotoGridProps {
   /** Photos to display */
   photos: PhotoMeta[];
+  /** Share link ID for shard downloads */
+  linkId: string;
   /** Maximum access tier for this share link */
   accessTier: AccessTierType;
   /** Get the tier key for an epoch */
@@ -40,6 +42,7 @@ interface SharedPhotoGridProps {
  */
 export function SharedPhotoGrid({
   photos,
+  linkId,
   accessTier,
   getTierKey,
   isLoadingKeys = false,
@@ -184,6 +187,7 @@ export function SharedPhotoGrid({
       {lightboxIndex !== null && currentPhoto && (
         <SharedPhotoLightbox
           photo={currentPhoto}
+          linkId={linkId}
           tierKey={getTierKey(currentPhoto.epochId, accessTier)}
           accessTier={accessTier}
           onClose={handleLightboxClose}

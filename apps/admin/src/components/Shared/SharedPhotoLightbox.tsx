@@ -8,12 +8,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import type { PhotoMeta } from '../../workers/types';
-import { downloadShard } from '../../lib/shard-service';
+import { downloadShardViaShareLink } from '../../lib/shard-service';
 import { getCryptoClient } from '../../lib/crypto-client';
 
 export interface SharedPhotoLightboxProps {
   /** Current photo to display */
   photo: PhotoMeta;
+  /** Share link ID for shard downloads */
+  linkId: string;
   /** Tier key for decryption */
   tierKey?: Uint8Array | undefined;
   /** Access tier for this share link */
@@ -46,6 +48,7 @@ type PhotoState =
  */
 export function SharedPhotoLightbox({
   photo,
+  linkId,
   tierKey,
   accessTier,
   onClose,
@@ -92,12 +95,12 @@ export function SharedPhotoLightbox({
       }
 
       try {
-        // Download and decrypt shards
+        // Download and decrypt shards via share link endpoint
         const crypto = await getCryptoClient();
         const decryptedChunks: Uint8Array[] = [];
 
         for (const shardId of photo.shardIds) {
-          const encryptedShard = await downloadShard(shardId);
+          const encryptedShard = await downloadShardViaShareLink(linkId, shardId);
           // Note: For tier-based access, we use the tier key directly
           // The tier key is derived from the epoch read key
           const plaintext = await crypto.decryptShard(encryptedShard, tierKey);
@@ -138,7 +141,7 @@ export function SharedPhotoLightbox({
         URL.revokeObjectURL(blobUrl);
       }
     };
-  }, [photo.id, photo.thumbnail, photo.shardIds, photo.mimeType, tierKey, accessTier]);
+  }, [photo.id, photo.thumbnail, photo.shardIds, photo.mimeType, tierKey, accessTier, linkId]);
 
   // Keyboard navigation
   useEffect(() => {

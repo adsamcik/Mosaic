@@ -155,3 +155,71 @@ export async function downloadShards(
 
   return results;
 }
+/**
+ * Download a single encrypted shard via share link (anonymous access)
+ *
+ * @param linkId - The share link ID
+ * @param shardId - The shard ID to download
+ * @param onProgress - Optional progress callback
+ * @returns The encrypted shard data as Uint8Array
+ * @throws ShardDownloadError if download fails
+ */
+export async function downloadShardViaShareLink(
+  linkId: string,
+  shardId: string,
+  onProgress?: ProgressCallback
+): Promise<Uint8Array> {
+  try {
+    const response = await fetch(`/api/s/${linkId}/shards/${shardId}`, {
+      credentials: 'same-origin',
+    });
+
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText);
+    }
+
+    // Get content length for progress
+    const contentLength = response.headers.get('content-length');
+    const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+    // If no body or streaming not supported, fall back to simple read
+    if (!response.body || !onProgress) {
+      const buffer = await response.arrayBuffer();
+      onProgress?.(buffer.byteLength, buffer.byteLength);
+      return new Uint8Array(buffer);
+    }
+
+    // Stream the response with progress updates
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let loaded = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      chunks.push(value);
+      loaded += value.length;
+      onProgress(loaded, total);
+    }
+
+    // Combine chunks into single array
+    const result = new Uint8Array(loaded);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    return result;
+  } catch (error) {
+    if (error instanceof ShardDownloadError) {
+      throw error;
+    }
+    throw new ShardDownloadError(
+      shardId,
+      error instanceof Error ? error : new Error(String(error))
+    );
+  }
+}
