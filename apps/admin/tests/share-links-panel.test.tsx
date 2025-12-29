@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment happy-dom
+ */
+/**
  * ShareLinksPanel Component Tests
  *
  * Tests the ShareLinksPanel component using vitest + happy-dom.
@@ -123,7 +126,7 @@ describe('ShareLinksPanel', () => {
 
       const closeButton = getByTestId('close-share-links-button');
       act(() => {
-        closeButton?.click();
+        (closeButton as HTMLElement).click();
       });
 
       expect(onClose).toHaveBeenCalledTimes(1);
@@ -136,28 +139,58 @@ describe('ShareLinksPanel', () => {
 
       const backdrop = getByTestId('share-links-panel-backdrop');
       act(() => {
-        backdrop?.click();
+        (backdrop as HTMLElement).click();
       });
 
       expect(onClose).toHaveBeenCalledTimes(1);
       cleanup();
     });
 
-    it('opens create dialog when create button is clicked', () => {
+    it('switching to create view when create button is clicked', () => {
       const { getByTestId, queryByTestId, cleanup } = renderShareLinksPanel();
 
-      // Initially no dialog
-      expect(queryByTestId('share-link-dialog')).toBeNull();
+      // Initially list view
+      expect(getByTestId('share-links-list')).not.toBeNull();
+      expect(queryByTestId('create-share-link-view')).toBeNull();
 
       // Click create button
       const createButton = getByTestId('create-share-link-button');
       act(() => {
-        createButton?.click();
+        (createButton as HTMLElement).click();
       });
 
-      // Dialog should be open
-      expect(getByTestId('share-link-dialog')).not.toBeNull();
+      // View should switch
+      expect(queryByTestId('share-links-list')).toBeNull();
+      expect(getByTestId('create-share-link-view')).not.toBeNull();
+      
+      // Check title update
+      const header = getByTestId('share-links-panel');
+      expect(header?.textContent).toContain('Create Share Link');
 
+      // Check back button
+      expect(getByTestId('panel-back-button')).not.toBeNull();
+
+      cleanup();
+    });
+
+    it('can navigate back from create view', () => {
+      const { getByTestId, queryByTestId, cleanup } = renderShareLinksPanel();
+
+      // Go to create view
+      const createButton = getByTestId('create-share-link-button');
+      act(() => {
+        (createButton as HTMLElement).click();
+      });
+
+      // Click back
+      const backButton = getByTestId('panel-back-button');
+      act(() => {
+        (backButton as HTMLElement).click();
+      });
+
+      // Should be back to list
+      expect(getByTestId('share-links-list')).not.toBeNull();
+      expect(queryByTestId('create-share-link-view')).toBeNull();
       cleanup();
     });
   });
