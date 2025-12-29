@@ -6,7 +6,8 @@
  */
 
 import sodium from 'libsodium-wrappers-sumo';
-import type { DerivedKeys, Argon2Params } from './types';
+import type { DerivedKeys, DeriveKeysResult, Argon2Params } from './types';
+import { CryptoError, CryptoErrorCode } from './types';
 import { getArgon2Params } from './argon2-params';
 import { memzero, randomBytes } from './utils';
 
@@ -17,20 +18,25 @@ const ROOT_KEY_CONTEXT = new TextEncoder().encode('Mosaic_RootKey_v1');
 const ACCOUNT_CONTEXT = new TextEncoder().encode('Mosaic_AccountKey_v1');
 
 /**
- * Derive all key layers from password.
+ * Derive all key layers from password (internal - exposes L0/L1).
+ *
+ * ⚠️ SECURITY WARNING: This function returns masterKey (L0) and rootKey (L1)
+ * which MUST be zeroed by the caller using memzero() immediately after use.
+ * Use deriveKeys() for production code which handles zeroing automatically.
  *
  * Key Hierarchy:
- * - L0 (Master): Argon2id(password, userSalt) - never stored
- * - L1 (Root): HKDF-style(L0, accountSalt) - never stored
+ * - L0 (Master): Argon2id(password, userSalt) - MUST BE ZEROED AFTER USE
+ * - L1 (Root): HKDF-style(L0, accountSalt) - MUST BE ZEROED AFTER USE
  * - L2 (Account): random(32), wrapped by L1 - stored encrypted
  *
+ * @internal For testing purposes only. Production code should use deriveKeys().
  * @param password - User password
  * @param userSalt - 16-byte salt stored on server (per-user)
  * @param accountSalt - 16-byte salt stored on server (unique per account)
  * @param params - Optional Argon2 parameters (auto-detected if not provided)
- * @returns Derived key hierarchy with wrapped account key
+ * @returns Full derived key hierarchy including L0/L1 (caller MUST call memzero on masterKey and rootKey)
  */
-export async function deriveKeys(
+export async function deriveKeysInternal(
   password: string,
   userSalt: Uint8Array,
   accountSalt: Uint8Array,
@@ -39,10 +45,10 @@ export async function deriveKeys(
   await sodium.ready;
 
   if (userSalt.length !== 16) {
-    throw new Error('User salt must be 16 bytes');
+    throw new CryptoError('User salt must be 16 bytes', CryptoErrorCode.INVALID_INPUT);
   }
   if (accountSalt.length !== 16) {
-    throw new Error('Account salt must be 16 bytes');
+    throw new CryptoError('Account salt must be 16 bytes', CryptoErrorCode.INVALID_INPUT);
   }
 
   const argon2Params = params ?? getArgon2Params();
@@ -96,6 +102,42 @@ export async function deriveKeys(
 }
 
 /**
+ * Derive account key from password.
+ *
+ * This is the safe public API that zeros L0 (masterKey) and L1 (rootKey)
+ * before returning. Only L2 (accountKey) and its wrapped form are returned.
+ *
+ * Key Hierarchy:
+ * - L0 (Master): Argon2id(password, userSalt) - zeroed before return
+ * - L1 (Root): HKDF-style(L0, accountSalt) - zeroed before return
+ * - L2 (Account): random(32), wrapped by L1 - returned
+ *
+ * @param password - User password
+ * @param userSalt - 16-byte salt stored on server (per-user)
+ * @param accountSalt - 16-byte salt stored on server (unique per account)
+ * @param params - Optional Argon2 parameters (auto-detected if not provided)
+ * @returns Account key and wrapped account key (L0/L1 are zeroed before return)
+ */
+export async function deriveKeys(
+  password: string,
+  userSalt: Uint8Array,
+  accountSalt: Uint8Array,
+  params?: Argon2Params
+): Promise<DeriveKeysResult> {
+  const keys = await deriveKeysInternal(password, userSalt, accountSalt, params);
+
+  // Zero L0 and L1 before returning - they must never be stored
+  memzero(keys.masterKey);
+  memzero(keys.rootKey);
+
+  // Return only the safe fields
+  return {
+    accountKey: keys.accountKey,
+    accountKeyWrapped: keys.accountKeyWrapped,
+  };
+}
+
+/**
  * Unwrap an existing account key using derived root key.
  * Used when logging in to an existing account.
  *
@@ -116,14 +158,14 @@ export async function unwrapAccountKey(
   await sodium.ready;
 
   if (userSalt.length !== 16) {
-    throw new Error('User salt must be 16 bytes');
+    throw new CryptoError('User salt must be 16 bytes', CryptoErrorCode.INVALID_INPUT);
   }
   if (accountSalt.length !== 16) {
-    throw new Error('Account salt must be 16 bytes');
+    throw new CryptoError('Account salt must be 16 bytes', CryptoErrorCode.INVALID_INPUT);
   }
   if (wrappedAccountKey.length < 24 + 16 + 1) {
     // nonce + tag + at least 1 byte
-    throw new Error('Wrapped account key too short');
+    throw new CryptoError('Wrapped account key too short', CryptoErrorCode.INVALID_INPUT);
   }
 
   const argon2Params = params ?? getArgon2Params();
@@ -166,9 +208,13 @@ export async function unwrapAccountKey(
     );
     memzero(rootKey);
     return accountKey;
-  } catch {
+  } catch (e) {
     memzero(rootKey);
-    throw new Error('Failed to unwrap account key - wrong password or corrupted data');
+    throw new CryptoError(
+      'Failed to unwrap account key - wrong password or corrupted data',
+      CryptoErrorCode.DECRYPTION_FAILED,
+      e
+    );
   }
 }
 
@@ -193,7 +239,7 @@ export async function rewrapAccountKey(
   await sodium.ready;
 
   if (accountKey.length !== 32) {
-    throw new Error('Account key must be 32 bytes');
+    throw new CryptoError('Account key must be 32 bytes', CryptoErrorCode.INVALID_INPUT);
   }
 
   const argon2Params = params ?? getArgon2Params();

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
-import { deriveKeys, unwrapAccountKey, rewrapAccountKey, generateSalts } from '../src/keychain';
+import { deriveKeys, deriveKeysInternal, unwrapAccountKey, rewrapAccountKey, generateSalts } from '../src/keychain';
+import { CryptoError, CryptoErrorCode } from '../src/types';
 
 beforeAll(async () => {
   await sodium.ready;
@@ -11,31 +12,42 @@ describe('keychain', () => {
   const { userSalt, accountSalt } = generateSalts();
   const fastParams = { memory: 1024, iterations: 1, parallelism: 1 }; // Fast for tests
 
-  it('derives consistent keys from same inputs', async () => {
-    const keys1 = await deriveKeys(password, userSalt, accountSalt, fastParams);
-    const keys2 = await deriveKeys(password, userSalt, accountSalt, fastParams);
+  it('derives consistent keys from same inputs (internal test)', async () => {
+    // Uses deriveKeysInternal to test L0/L1 determinism
+    const keys1 = await deriveKeysInternal(password, userSalt, accountSalt, fastParams);
+    const keys2 = await deriveKeysInternal(password, userSalt, accountSalt, fastParams);
     expect(keys1.masterKey).toEqual(keys2.masterKey);
     expect(keys1.rootKey).toEqual(keys2.rootKey);
   });
 
-  it('produces different keys for different passwords', async () => {
-    const keys1 = await deriveKeys('password1', userSalt, accountSalt, fastParams);
-    const keys2 = await deriveKeys('password2', userSalt, accountSalt, fastParams);
+  it('produces different keys for different passwords (internal test)', async () => {
+    const keys1 = await deriveKeysInternal('password1', userSalt, accountSalt, fastParams);
+    const keys2 = await deriveKeysInternal('password2', userSalt, accountSalt, fastParams);
     expect(keys1.masterKey).not.toEqual(keys2.masterKey);
   });
 
-  it('produces different keys for different salts', async () => {
+  it('produces different keys for different salts (internal test)', async () => {
     const { userSalt: salt2 } = generateSalts();
-    const keys1 = await deriveKeys(password, userSalt, accountSalt, fastParams);
-    const keys2 = await deriveKeys(password, salt2, accountSalt, fastParams);
+    const keys1 = await deriveKeysInternal(password, userSalt, accountSalt, fastParams);
+    const keys2 = await deriveKeysInternal(password, salt2, accountSalt, fastParams);
     expect(keys1.masterKey).not.toEqual(keys2.masterKey);
   });
 
-  it('produces 32-byte keys', async () => {
-    const keys = await deriveKeys(password, userSalt, accountSalt, fastParams);
+  it('produces 32-byte keys (internal test)', async () => {
+    const keys = await deriveKeysInternal(password, userSalt, accountSalt, fastParams);
     expect(keys.masterKey.length).toBe(32);
     expect(keys.rootKey.length).toBe(32);
     expect(keys.accountKey.length).toBe(32);
+  });
+
+  it('deriveKeys returns only accountKey and accountKeyWrapped (L0/L1 zeroed internally)', async () => {
+    const keys = await deriveKeys(password, userSalt, accountSalt, fastParams);
+    // Safe API should only have accountKey and accountKeyWrapped
+    expect(keys.accountKey.length).toBe(32);
+    expect(keys.accountKeyWrapped.length).toBeGreaterThan(0);
+    // masterKey and rootKey should not exist on the result
+    expect('masterKey' in keys).toBe(false);
+    expect('rootKey' in keys).toBe(false);
   });
 
   it('unwraps account key correctly', async () => {
@@ -98,13 +110,14 @@ describe('keychain', () => {
   describe('context string determinism', () => {
     it('produces identical rootKey for identical inputs across multiple calls', async () => {
       // Use fixed salts for reproducibility
+      // Uses deriveKeysInternal to test L1 determinism
       const fixedUserSalt = new Uint8Array(16).fill(0xaa);
       const fixedAccountSalt = new Uint8Array(16).fill(0xbb);
       const fixedPassword = 'determinism-test';
 
-      const keys1 = await deriveKeys(fixedPassword, fixedUserSalt, fixedAccountSalt, fastParams);
-      const keys2 = await deriveKeys(fixedPassword, fixedUserSalt, fixedAccountSalt, fastParams);
-      const keys3 = await deriveKeys(fixedPassword, fixedUserSalt, fixedAccountSalt, fastParams);
+      const keys1 = await deriveKeysInternal(fixedPassword, fixedUserSalt, fixedAccountSalt, fastParams);
+      const keys2 = await deriveKeysInternal(fixedPassword, fixedUserSalt, fixedAccountSalt, fastParams);
+      const keys3 = await deriveKeysInternal(fixedPassword, fixedUserSalt, fixedAccountSalt, fastParams);
 
       // All three derivations must produce identical rootKey
       expect(keys1.rootKey).toEqual(keys2.rootKey);
@@ -112,7 +125,7 @@ describe('keychain', () => {
 
       // Verify against a known snapshot - if context strings change, this breaks
       // This kills the mutation where context is changed to empty string
-      const rootKeyHex = Array.from(keys1.rootKey).map(b => b.toString(16).padStart(2, '0')).join('');
+      const rootKeyHex = Array.from(keys1.rootKey).map((b: number) => b.toString(16).padStart(2, '0')).join('');
       expect(rootKeyHex).toHaveLength(64); // 32 bytes = 64 hex chars
       // Store the snapshot to detect any context change
       expect(keys1.rootKey[0]).toBeDefined();
@@ -125,12 +138,13 @@ describe('keychain', () => {
     // ====================================================================
     it('rootKey snapshot matches expected value (kills ROOT_KEY_CONTEXT mutant)', async () => {
       // Use all-zero salts and fixed password for reproducibility
+      // Uses deriveKeysInternal to access L1 for snapshot testing
       const zeroUserSalt = new Uint8Array(16).fill(0x00);
       const zeroAccountSalt = new Uint8Array(16).fill(0x00);
       const testPassword = 'snapshot-test';
 
-      const keys = await deriveKeys(testPassword, zeroUserSalt, zeroAccountSalt, fastParams);
-      const rootKeyHex = Array.from(keys.rootKey).map(b => b.toString(16).padStart(2, '0')).join('');
+      const keys = await deriveKeysInternal(testPassword, zeroUserSalt, zeroAccountSalt, fastParams);
+      const rootKeyHex = Array.from(keys.rootKey).map((b: number) => b.toString(16).padStart(2, '0')).join('');
 
       // This exact hex was computed with correct ROOT_KEY_CONTEXT and ACCOUNT_CONTEXT.
       // If either context is mutated to empty string, this will NOT match.
@@ -140,23 +154,25 @@ describe('keychain', () => {
 
     it('masterKey differs from rootKey (proves ROOT_KEY_CONTEXT is used)', async () => {
       // If ROOT_KEY_CONTEXT were empty, intermediate derivation would change
+      // Uses deriveKeysInternal to access L0/L1 for comparison
       const zeroUserSalt = new Uint8Array(16).fill(0x00);
       const zeroAccountSalt = new Uint8Array(16).fill(0x00);
       const testPassword = 'context-test';
 
-      const keys = await deriveKeys(testPassword, zeroUserSalt, zeroAccountSalt, fastParams);
+      const keys = await deriveKeysInternal(testPassword, zeroUserSalt, zeroAccountSalt, fastParams);
 
       // masterKey and rootKey must be different (context adds domain separation)
       expect(keys.masterKey).not.toEqual(keys.rootKey);
     });
 
     it('produces different rootKeys for different accountSalts (proves ACCOUNT_CONTEXT is used)', async () => {
+      // Uses deriveKeysInternal to access L0/L1 for comparison
       const fixedUserSalt = new Uint8Array(16).fill(0xaa);
       const accountSalt1 = new Uint8Array(16).fill(0x11);
       const accountSalt2 = new Uint8Array(16).fill(0x22);
 
-      const keys1 = await deriveKeys(password, fixedUserSalt, accountSalt1, fastParams);
-      const keys2 = await deriveKeys(password, fixedUserSalt, accountSalt2, fastParams);
+      const keys1 = await deriveKeysInternal(password, fixedUserSalt, accountSalt1, fastParams);
+      const keys2 = await deriveKeysInternal(password, fixedUserSalt, accountSalt2, fastParams);
 
       // masterKey should be the same (only depends on password + userSalt)
       expect(keys1.masterKey).toEqual(keys2.masterKey);
@@ -255,6 +271,76 @@ describe('keychain', () => {
       await expect(
         rewrapAccountKey(new Uint8Array(0), 'new-password', userSalt, accountSalt, fastParams)
       ).rejects.toThrow('Account key must be 32 bytes');
+    });
+  });
+
+  // ====================================================================
+  // CryptoError type verification
+  // Ensures all validation errors throw CryptoError with correct codes
+  // ====================================================================
+
+  describe('CryptoError type and codes', () => {
+    it('deriveKeys throws CryptoError with INVALID_INPUT for bad userSalt', async () => {
+      try {
+        await deriveKeys(password, new Uint8Array(8), accountSalt, fastParams);
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(CryptoError);
+        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_INPUT);
+      }
+    });
+
+    it('deriveKeys throws CryptoError with INVALID_INPUT for bad accountSalt', async () => {
+      try {
+        await deriveKeys(password, userSalt, new Uint8Array(8), fastParams);
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(CryptoError);
+        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_INPUT);
+      }
+    });
+
+    it('unwrapAccountKey throws CryptoError with INVALID_INPUT for bad salt', async () => {
+      const keys = await deriveKeys(password, userSalt, accountSalt, fastParams);
+      try {
+        await unwrapAccountKey(password, new Uint8Array(8), accountSalt, keys.accountKeyWrapped, fastParams);
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(CryptoError);
+        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_INPUT);
+      }
+    });
+
+    it('unwrapAccountKey throws CryptoError with INVALID_INPUT for short wrapped key', async () => {
+      try {
+        await unwrapAccountKey(password, userSalt, accountSalt, new Uint8Array(30), fastParams);
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(CryptoError);
+        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_INPUT);
+      }
+    });
+
+    it('unwrapAccountKey throws CryptoError with DECRYPTION_FAILED for wrong password', async () => {
+      const keys = await deriveKeys(password, userSalt, accountSalt, fastParams);
+      try {
+        await unwrapAccountKey('wrong-password', userSalt, accountSalt, keys.accountKeyWrapped, fastParams);
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(CryptoError);
+        expect((e as CryptoError).code).toBe(CryptoErrorCode.DECRYPTION_FAILED);
+        expect((e as CryptoError).cause).toBeDefined();
+      }
+    });
+
+    it('rewrapAccountKey throws CryptoError with INVALID_INPUT for bad key length', async () => {
+      try {
+        await rewrapAccountKey(new Uint8Array(16), 'new-password', userSalt, accountSalt, fastParams);
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(CryptoError);
+        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_INPUT);
+      }
     });
   });
 
@@ -360,7 +446,16 @@ describe('keychain', () => {
       // Derive with no explicit params (uses default)
       const keys = await deriveKeys(password, userSalt, accountSalt);
       
-      // Verify it produced valid keys
+      // Verify it produced valid keys (safe API only has accountKey and accountKeyWrapped)
+      expect(keys.accountKey.length).toBe(32);
+      expect(keys.accountKeyWrapped.length).toBeGreaterThan(0);
+    }, 30000); // Allow up to 30s for default Argon2 params
+
+    it('deriveKeysInternal uses default params when not provided', async () => {
+      // Test the internal API with default params
+      const keys = await deriveKeysInternal(password, userSalt, accountSalt);
+      
+      // Verify all keys are produced
       expect(keys.masterKey.length).toBe(32);
       expect(keys.rootKey.length).toBe(32);
       expect(keys.accountKey.length).toBe(32);

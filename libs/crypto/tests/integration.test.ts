@@ -39,7 +39,7 @@ import {
   sha256,
   toBase64,
   fromBase64,
-  type DerivedKeys,
+  type DeriveKeysResult,
   type IdentityKeypair,
   type EpochKey,
   ShardTier,
@@ -56,6 +56,7 @@ describe('integration: user registration flow', () => {
     const params = getArgon2Params();
 
     // First derivation - generates random L2 account key
+    // (L0 and L1 are zeroed internally by deriveKeys)
     const keys1 = await deriveKeys(password, userSalt, accountSalt, params);
     const accountKeyWrapped = keys1.accountKeyWrapped;
 
@@ -74,9 +75,7 @@ describe('integration: user registration flow', () => {
     // Unwrapped key should match original
     expect(unwrappedKey).toEqual(originalAccountKey);
 
-    // Clean up
-    memzero(keys1.masterKey);
-    memzero(keys1.rootKey);
+    // Clean up account keys
     memzero(keys1.accountKey);
     memzero(unwrappedKey);
   });
@@ -90,11 +89,8 @@ describe('integration: user registration flow', () => {
 
     expect(keys1.accountKey).not.toEqual(keys2.accountKey);
 
-    memzero(keys1.masterKey);
-    memzero(keys1.rootKey);
+    // Clean up (L0/L1 already zeroed internally)
     memzero(keys1.accountKey);
-    memzero(keys2.masterKey);
-    memzero(keys2.rootKey);
     memzero(keys2.accountKey);
   });
 
@@ -116,8 +112,6 @@ describe('integration: user registration flow', () => {
     const identity2 = deriveIdentityKeypair(keys.accountKey);
     expect(identity2.ed25519.publicKey).toEqual(identity.ed25519.publicKey);
 
-    memzero(keys.masterKey);
-    memzero(keys.rootKey);
     memzero(keys.accountKey);
     memzero(identity.ed25519.secretKey);
     memzero(identity.x25519.secretKey);
@@ -135,10 +129,9 @@ describe('integration: album creation and photo upload', () => {
     // Simulate owner registration
     const { userSalt, accountSalt } = generateSalts();
     const params = getArgon2Params();
+    // L0/L1 are zeroed internally by deriveKeys
     const keys = await deriveKeys('owner-password', userSalt, accountSalt, params);
     ownerIdentity = deriveIdentityKeypair(keys.accountKey);
-    memzero(keys.masterKey);
-    memzero(keys.rootKey);
     memzero(keys.accountKey);
 
     // Create epoch key for new album
@@ -243,6 +236,7 @@ describe('integration: album sharing between users', () => {
 
     // Owner setup
     const ownerSalts = generateSalts();
+    // L0/L1 are zeroed internally by deriveKeys
     const ownerKeys = await deriveKeys(
       'owner-password',
       ownerSalts.userSalt,
@@ -250,8 +244,6 @@ describe('integration: album sharing between users', () => {
       params
     );
     ownerIdentity = deriveIdentityKeypair(ownerKeys.accountKey);
-    memzero(ownerKeys.masterKey);
-    memzero(ownerKeys.rootKey);
     memzero(ownerKeys.accountKey);
 
     // Recipient setup
@@ -263,8 +255,6 @@ describe('integration: album sharing between users', () => {
       params
     );
     recipientIdentity = deriveIdentityKeypair(recipientKeys.accountKey);
-    memzero(recipientKeys.masterKey);
-    memzero(recipientKeys.rootKey);
     memzero(recipientKeys.accountKey);
 
     // Create epoch key
@@ -418,10 +408,9 @@ describe('integration: epoch key rotation', () => {
     // Create three users
     for (const password of ['owner', 'member', 'removed-member']) {
       const salts = generateSalts();
+      // L0/L1 are zeroed internally by deriveKeys
       const keys = await deriveKeys(password, salts.userSalt, salts.accountSalt, params);
       const identity = deriveIdentityKeypair(keys.accountKey);
-      memzero(keys.masterKey);
-      memzero(keys.rootKey);
       memzero(keys.accountKey);
 
       if (password === 'owner') ownerIdentity = identity;
@@ -605,8 +594,6 @@ describe('integration: complete photo lifecycle', () => {
     expect(decryptedPhoto).toEqual(photoData);
 
     // Cleanup
-    memzero(keys.masterKey);
-    memzero(keys.rootKey);
     memzero(keys.accountKey);
     memzero(identity.ed25519.secretKey);
     memzero(identity.x25519.secretKey);

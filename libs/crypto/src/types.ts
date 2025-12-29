@@ -10,14 +10,28 @@
 // =============================================================================
 
 /**
- * Keys derived from user password via Argon2id + HKDF.
- * L0 (master) and L1 (root) are never persisted.
- * L2 (account) is wrapped and stored locally.
+ * Safe result from key derivation.
+ * Only contains L2 (account key) and its wrapped form.
+ * L0 (master) and L1 (root) are zeroed internally before return.
+ */
+export interface DeriveKeysResult {
+  /** L2: random(32) - the actual account key */
+  accountKey: Uint8Array;
+  /** L2 encrypted with L1 for storage */
+  accountKeyWrapped: Uint8Array;
+}
+
+/**
+ * Full key hierarchy from derivation (internal/testing only).
+ * L0 (master) and L1 (root) are NEVER persisted - callers MUST call memzero() after use.
+ * 
+ * @internal This type is exported for testing purposes only.
+ * Production code should use DeriveKeysResult from deriveKeys().
  */
 export interface DerivedKeys {
-  /** L0: Argon2id(password, salt) - never stored */
+  /** L0: Argon2id(password, salt) - NEVER stored, MUST be zeroed after use */
   masterKey: Uint8Array;
-  /** L1: HKDF(L0, account_salt) - never stored */
+  /** L1: HKDF(L0, account_salt) - NEVER stored, MUST be zeroed after use */
   rootKey: Uint8Array;
   /** L2: random(32) - stored wrapped by L1 */
   accountKey: Uint8Array;
