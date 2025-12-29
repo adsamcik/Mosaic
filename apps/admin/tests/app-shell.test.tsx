@@ -106,7 +106,7 @@ describe('AppShell', () => {
     });
 
     const title = container.querySelector('.app-title');
-    expect(title?.textContent).toContain('Mosaic');
+    expect(title?.textContent).toContain('common.appName');
   });
 
   it('shows album list by default', async () => {
@@ -167,7 +167,7 @@ describe('AppShell', () => {
 
     const backButton = container.querySelector('.back-button');
     expect(backButton).toBeTruthy();
-    expect(backButton?.textContent).toContain('Back');
+    expect(backButton?.textContent).toContain('common.back');
   });
 
   it('navigates back to albums from settings', async () => {
@@ -214,7 +214,7 @@ describe('AppShell', () => {
 
     const backButton = container.querySelector('.back-button');
     expect(backButton).toBeTruthy();
-    expect(backButton?.textContent).toContain('Albums');
+    expect(backButton?.textContent).toContain('navigation.albums');
   });
 
   it('navigates back to albums from gallery', async () => {

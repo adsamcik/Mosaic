@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { User } from '../../lib/api-types';
 import { checkServerStatus } from '../../lib/local-auth';
 import { session } from '../../lib/session';
@@ -15,6 +16,7 @@ interface LoginFormProps {
  * When pendingSessionUser is provided, shows session restore mode.
  */
 export function LoginForm({ pendingSessionUser }: LoginFormProps) {
+  const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -42,12 +44,12 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
       setIsProxyAuth(status.isProxyAuth);
       
       if (!status.isOnline) {
-        setError('Cannot reach the Mosaic server. Please ensure the server is running.');
+        setError(t('auth.error.serverUnreachable'));
         setIsServerUnreachable(true);
       } else if (status.statusCode && status.statusCode >= 500) {
         // Use the detailed error from the server if available, otherwise a friendly message
         const detail = status.error?.startsWith('Server error:') ? status.error : `System error (${status.statusCode})`;
-        setError(`The server is currently unavailable: ${detail}`);
+        setError(t('auth.error.serverUnavailable', { status: detail }));
         setIsServerUnreachable(true);
       } else {
         setIsServerUnreachable(false);
@@ -74,39 +76,39 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
     // Session restore mode: just need password
     if (isSessionRestore) {
       if (!password.trim()) {
-        setError('Please enter your password');
+        setError(t('auth.error.passwordRequired'));
         return;
       }
     } else if (isLocalAuth) {
       // LocalAuth mode: username required, password used for local crypto
       if (!username.trim()) {
-        setError('Please enter a username');
+        setError(t('auth.error.usernameRequired'));
         return;
       }
       if (!password.trim()) {
-        setError('Please enter a password');
+        setError(t('auth.error.passwordRequired'));
         return;
       }
       // Registration mode: require password confirmation
       if (isRegisterMode) {
         if (password.length < 8) {
-          setError('Password must be at least 8 characters');
+          setError(t('auth.error.passwordTooShort'));
           return;
         }
         if (password !== confirmPassword) {
-          setError('Passwords do not match');
+          setError(t('auth.error.passwordMismatch'));
           return;
         }
       }
     } else if (isProxyAuthOnly) {
       // ProxyAuth-only mode: only password required (username comes from proxy header)
       if (!password.trim()) {
-        setError('Please enter a password');
+        setError(t('auth.error.passwordRequired'));
         return;
       }
     } else {
       // No auth mode configured - this shouldn't happen
-      setError('No authentication method is configured. Please contact your administrator.');
+      setError(t('auth.error.noAuthMethod'));
       return;
     }
 
@@ -126,7 +128,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
       } else if (isProxyAuthOnly) {
         await session.login(password);
       } else {
-        setError('No authentication method available');
+        setError(t('auth.error.noAuthAvailable'));
         setLoading(false);
         return;
       }
@@ -134,9 +136,9 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
       const errorMessage = err instanceof Error ? err.message : 'Operation failed';
       // Provide helpful error messages
       if (errorMessage.includes('Invalid credentials')) {
-        setError('Invalid username or password. If you don\'t have an account, click "Create Account" below.');
+        setError(t('auth.error.invalidCredentials'));
       } else if (errorMessage.includes('Username already exists')) {
-        setError('This username is already taken. Please choose a different username or login to your existing account.');
+        setError(t('auth.error.usernameTaken'));
       } else {
         setError(errorMessage);
       }
@@ -155,8 +157,8 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
     return (
       <div className="login-container" data-testid="login-form">
         <div className="login-card">
-          <h1 className="login-title">Mosaic</h1>
-          <p className="login-subtitle">Loading...</p>
+          <h1 className="login-title">{t('common.appName')}</h1>
+          <p className="login-subtitle">{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -165,17 +167,17 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
   return (
     <div className="login-container" data-testid="login-form">
       <div className="login-card">
-        <h1 className="login-title">Mosaic</h1>
+        <h1 className="login-title">{t('common.appName')}</h1>
         {isSessionRestore ? (
-          <p className="login-subtitle">Welcome back! Enter your password to continue.</p>
+          <p className="login-subtitle">{t('auth.welcomeBack')}</p>
         ) : (
-          <p className="login-subtitle">Zero-knowledge encrypted photo gallery</p>
+          <p className="login-subtitle">{t('auth.tagline')}</p>
         )}
 
         {isSessionRestore && (
           <div className="session-restore-badge" data-testid="session-restore-badge">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            Session Restore
+            {t('auth.sessionRestore')}
           </div>
         )}
 
@@ -191,21 +193,21 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
             data-testid="clear-session-button"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-            Clear Session &amp; Start Fresh
+            {t('auth.clearSession')}
           </button>
         )}
 
         {isLocalAuth && !isSessionRestore && (
           <div className="dev-mode-badge" data-testid="local-auth-badge">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            {isRegisterMode ? 'Create Account' : 'Local Authentication'}
+            {isRegisterMode ? t('auth.createAccount') : t('auth.localAuthentication')}
           </div>
         )}
 
         {isProxyAuthOnly && !isSessionRestore && (
           <div className="dev-mode-badge" data-testid="proxy-auth-badge" style={{ backgroundColor: 'var(--color-info-bg, #e3f2fd)', color: 'var(--color-info, #1976d2)' }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Proxy Authentication
+            {t('auth.proxyAuthentication')}
           </div>
         )}
 
@@ -213,14 +215,14 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           {isLocalAuth && !isSessionRestore && (
             <div className="form-group">
               <label htmlFor="username" className="form-label">
-                Username
+                {t('auth.usernameLabel')}
               </label>
               <input
                 id="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter username"
+                placeholder={t('auth.usernamePlaceholder')}
                 disabled={loading || isServerUnreachable}
                 className="form-input"
                 autoComplete="username"
@@ -230,14 +232,14 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
 
           <div className="form-group">
             <label htmlFor="password" className="form-label">
-              Password
+              {t('auth.passwordLabel')}
             </label>
             <input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={isRegisterMode ? 'Create a password (8+ characters)' : 'Enter your password'}
+              placeholder={isRegisterMode ? t('auth.createPasswordPlaceholder') : t('auth.passwordPlaceholder')}
               disabled={loading || isServerUnreachable}
               className="form-input"
               autoFocus
@@ -247,14 +249,14 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           {isLocalAuth && isRegisterMode && !isSessionRestore && (
             <div className="form-group">
               <label htmlFor="confirmPassword" className="form-label">
-                Confirm Password
+                {t('auth.confirmPasswordLabel')}
               </label>
               <input
                 id="confirmPassword"
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm your password"
+                placeholder={t('auth.confirmPasswordPlaceholder')}
                 disabled={loading || isServerUnreachable}
                 className="form-input"
               />
@@ -276,8 +278,8 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
             className="login-button"
           >
             {loading 
-              ? (isServerUnreachable ? 'Checking Connection...' : (isRegisterMode ? 'Creating Account...' : 'Signing In...')) 
-              : (isServerUnreachable ? 'Retry Connection' : (isRegisterMode ? 'Create Account' : 'Sign In'))}
+              ? (isServerUnreachable ? t('auth.checkingConnection') : (isRegisterMode ? t('auth.creatingAccount') : t('auth.signingIn'))) 
+              : (isServerUnreachable ? t('auth.retryConnection') : (isRegisterMode ? t('auth.createAccountButton') : t('auth.signInButton')))}
           </button>
         </form>
 
@@ -289,21 +291,21 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
             disabled={loading || isServerUnreachable}
           >
             {isRegisterMode 
-              ? 'Already have an account? Sign In' 
-              : "Don't have an account? Create Account"}
+              ? t('auth.haveAccountSignIn') 
+              : t('auth.noAccountCreate')}
           </button>
         )}
 
         <p className="login-note">
           {isSessionRestore
-            ? 'Your session is still active. Enter your password to unlock encryption. If your session is corrupted, use "Clear Session" above.'
+            ? t('auth.sessionRestoreHelp')
             : isLocalAuth
               ? (isRegisterMode 
-                  ? 'Create a new account. Choose a strong password - it encrypts your data.'
-                  : 'Sign in to your existing account.')
+                  ? t('auth.registerHelp')
+                  : t('auth.loginHelp'))
               : isProxyAuthOnly
-                ? 'You are authenticated via your identity provider. Enter your encryption password.'
-                : 'Your photos are encrypted locally. The server never sees your data.'}
+                ? t('auth.proxyAuthHelp')
+                : t('auth.encryptionHelp')}
         </p>
       </div>
     </div>

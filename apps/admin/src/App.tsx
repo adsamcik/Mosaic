@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AppShell } from './components/App/AppShell';
 import { LoginForm } from './components/Auth/LoginForm';
 import { SharedAlbumViewer } from './components/Shared/SharedAlbumViewer';
@@ -32,6 +33,7 @@ function getShareLinkId(): string | null {
  * - /* -> LoginForm or AppShell (authenticated)
  */
 export function App() {
+  const { t } = useTranslation();
   const [isLoggedIn, setIsLoggedIn] = useState(session.isLoggedIn);
   const [isShareLink, setIsShareLink] = useState(isShareLinkRoute);
   const [shareLinkId, setShareLinkId] = useState<string | null>(getShareLinkId);
@@ -125,8 +127,8 @@ export function App() {
     return (
       <div className="login-container" data-testid="session-check">
         <div className="login-card">
-          <h1 className="login-title">Mosaic</h1>
-          <p className="login-subtitle">Checking session...</p>
+          <h1 className="login-title">{t('common.appName')}</h1>
+          <p className="login-subtitle">{t('auth.checkingSession')}</p>
         </div>
       </div>
     );

@@ -1,9 +1,52 @@
 import React, { Component, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { logger } from '@/lib/logger';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode | ((error: Error, reset: () => void) => ReactNode);
+}
+
+/**
+ * Default fallback UI component with i18n support
+ */
+function DefaultErrorFallback({ error, onReset }: { error: Error; onReset: () => void }) {
+  const { t } = useTranslation();
+  
+  return (
+    <div className="error-boundary-fallback" style={defaultStyles.container}>
+      <div style={defaultStyles.content}>
+        <h2 style={defaultStyles.heading}>{t('error.somethingWentWrong')}</h2>
+        <p style={defaultStyles.message}>
+          {t('error.unexpectedError')}
+        </p>
+        <div style={defaultStyles.actions}>
+          <button
+            onClick={onReset}
+            style={defaultStyles.button}
+          >
+            {t('common.tryAgain')}
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            style={defaultStyles.buttonSecondary}
+          >
+            {t('common.refreshPage')}
+          </button>
+        </div>
+        {import.meta.env.DEV && (
+          <details style={defaultStyles.details}>
+            <summary style={defaultStyles.summary}>{t('error.technicalDetails')}</summary>
+            <pre style={defaultStyles.pre}>
+              {error.name}: {error.message}
+              {'\n\n'}
+              {error.stack}
+            </pre>
+          </details>
+        )}
+      </div>
+    </div>
+  );
 }
 
 interface ErrorBoundaryState {
@@ -76,41 +119,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         return fallback;
       }
 
-      // Default fallback UI
-      return (
-        <div className="error-boundary-fallback" style={defaultStyles.container}>
-          <div style={defaultStyles.content}>
-            <h2 style={defaultStyles.heading}>Something went wrong</h2>
-            <p style={defaultStyles.message}>
-              An unexpected error occurred. Please try refreshing the page.
-            </p>
-            <div style={defaultStyles.actions}>
-              <button
-                onClick={this.handleReset}
-                style={defaultStyles.button}
-              >
-                Try Again
-              </button>
-              <button
-                onClick={() => window.location.reload()}
-                style={defaultStyles.buttonSecondary}
-              >
-                Refresh Page
-              </button>
-            </div>
-            {import.meta.env.DEV && (
-              <details style={defaultStyles.details}>
-                <summary style={defaultStyles.summary}>Error Details</summary>
-                <pre style={defaultStyles.pre}>
-                  {error.name}: {error.message}
-                  {'\n\n'}
-                  {error.stack}
-                </pre>
-              </details>
-            )}
-          </div>
-        </div>
-      );
+      // Default fallback UI with i18n support
+      return <DefaultErrorFallback error={error} onReset={this.handleReset} />;
     }
 
     return children;
