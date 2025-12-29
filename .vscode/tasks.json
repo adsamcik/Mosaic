@@ -88,7 +88,9 @@
           "ASPNETCORE_ENVIRONMENT": "Development",
           "ASPNETCORE_URLS": "http://localhost:5000",
           "Auth__LocalAuthEnabled": "false",
-          "Auth__ProxyAuthEnabled": "true"
+          "Auth__ProxyAuthEnabled": "true",
+          "Auth__TrustedProxies__0": "127.0.0.0/8",
+          "Auth__TrustedProxies__1": "::1/128"
         }
       },
       "isBackground": true,
