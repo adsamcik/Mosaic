@@ -124,7 +124,7 @@ export function GalleryHeader({
                 className={`view-toggle-btn ${viewMode === 'justified' ? 'view-toggle-btn--active' : ''}`}
                 onClick={() => onViewModeChange('justified')}
                 aria-pressed={viewMode === 'justified'}
-                title="Justified view (like Google Photos)"
+                title="Photos view"
                 data-testid="view-toggle-justified"
               >
                 <span className="view-toggle-icon">
@@ -144,21 +144,35 @@ export function GalleryHeader({
                 </span>
                 <span className="view-toggle-label">Grid</span>
               </button>
+
               <button
-                className={`view-toggle-btn ${viewMode === 'map' ? 'view-toggle-btn--active' : ''}`}
-                onClick={() => onViewModeChange('map')}
-                aria-pressed={viewMode === 'map'}
-                title={`Map view (${geotaggedCount} geotagged)`}
-                data-testid="view-toggle-map"
+                className={`view-toggle-btn ${viewMode === 'mosaic' ? 'view-toggle-btn--active' : ''}`}
+                onClick={() => onViewModeChange('mosaic')}
+                aria-pressed={viewMode === 'mosaic'}
+                title="Mosaic view"
+                data-testid="view-toggle-mosaic"
               >
                 <span className="view-toggle-icon">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h8v8H4z"/><path d="M4 16h8v4H4z"/><path d="M16 4h4v4h-4z"/><path d="M16 12h4v8h-4z"/></svg>
                 </span>
-                <span className="view-toggle-label">Map</span>
-                {geotaggedCount > 0 && (
-                  <span className="view-toggle-badge">{geotaggedCount}</span>
-                )}
+                <span className="view-toggle-label">Mosaic</span>
               </button>
+
+              {geotaggedCount > 0 && (
+                <button
+                  className={`view-toggle-btn ${viewMode === 'map' ? 'view-toggle-btn--active' : ''}`}
+                  onClick={() => onViewModeChange('map')}
+                  aria-pressed={viewMode === 'map'}
+                  title={`Map view (${geotaggedCount} geotagged)`}
+                  data-testid="view-toggle-map"
+                >
+                  <span className="view-toggle-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+                  </span>
+                  <span className="view-toggle-label">Map</span>
+                  <span className="view-toggle-badge">{geotaggedCount}</span>
+                </button>
+              )}
             </div>
 
             {/* Select button to enter selection mode */}

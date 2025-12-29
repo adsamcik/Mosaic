@@ -6,7 +6,7 @@
  * like delete and download.
  */
 
-import { useCallback, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 
 interface SelectionActionBarProps {
