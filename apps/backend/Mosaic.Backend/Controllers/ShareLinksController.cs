@@ -379,12 +379,29 @@ public class ShareLinksController : ControllerBase
         }
 
         // Only return active (non-revoked, non-expired) links with stored secrets
+        // Note: For SQLite compatibility, we load all links for this album and filter client-side
+        // since SQLite doesn't support DateTimeOffset comparisons in LINQ queries
         var now = DateTimeOffset.UtcNow;
-        var links = await _db.ShareLinks
+        var allLinks = await _db.ShareLinks
             .Where(sl => sl.AlbumId == albumId &&
                          !sl.IsRevoked &&
-                         sl.OwnerEncryptedSecret != null &&
-                         (!sl.ExpiresAt.HasValue || sl.ExpiresAt.Value > now) &&
+                         sl.OwnerEncryptedSecret != null)
+            .Select(sl => new
+            {
+                sl.Id,
+                sl.LinkId,
+                sl.AccessTier,
+                sl.IsRevoked,
+                sl.OwnerEncryptedSecret,
+                sl.ExpiresAt,
+                sl.MaxUses,
+                sl.UseCount
+            })
+            .ToListAsync();
+
+        // Filter for non-expired links client-side
+        var links = allLinks
+            .Where(sl => (!sl.ExpiresAt.HasValue || sl.ExpiresAt.Value > now) &&
                          (!sl.MaxUses.HasValue || sl.UseCount < sl.MaxUses.Value))
             .Select(sl => new ShareLinkWithSecretResponse
             {
@@ -394,7 +411,7 @@ public class ShareLinksController : ControllerBase
                 IsRevoked = sl.IsRevoked,
                 OwnerEncryptedSecret = sl.OwnerEncryptedSecret
             })
-            .ToListAsync();
+            .ToList();
 
         return Ok(links);
     }

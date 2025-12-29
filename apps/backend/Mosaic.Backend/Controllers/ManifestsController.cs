@@ -15,6 +15,7 @@ public class ManifestsController : ControllerBase
     private readonly IConfiguration _config;
     private readonly IQuotaSettingsService _quotaService;
     private readonly ILogger<ManifestsController> _logger;
+    private readonly bool _useSqlite;
 
     public ManifestsController(
         MosaicDbContext db,
@@ -26,6 +27,10 @@ public class ManifestsController : ControllerBase
         _config = config;
         _quotaService = quotaService;
         _logger = logger;
+        
+        // Detect if we're using SQLite (no row locking support)
+        var connectionString = config.GetConnectionString("Default");
+        _useSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ?? false;
     }
 
     private async Task<User?> GetUser()
@@ -70,10 +75,20 @@ public class ManifestsController : ControllerBase
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
-            // 1. Lock album row
-            var album = await _db.Albums
-                .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", request.AlbumId)
-                .FirstOrDefaultAsync();
+            // 1. Lock album row (FOR UPDATE is PostgreSQL-only; SQLite uses simpler locking)
+            Album? album;
+            if (_useSqlite)
+            {
+                // SQLite: Use standard query (transactions provide sufficient isolation)
+                album = await _db.Albums.FindAsync(request.AlbumId);
+            }
+            else
+            {
+                // PostgreSQL: Use row-level locking for concurrent safety
+                album = await _db.Albums
+                    .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", request.AlbumId)
+                    .FirstOrDefaultAsync();
+            }
 
             if (album == null) return NotFound("Album not found");
 
@@ -254,10 +269,18 @@ public class ManifestsController : ControllerBase
             var manifest = await _db.Manifests.FindAsync(manifestId);
             if (manifest == null) return NotFound();
 
-            // Lock album
-            var album = await _db.Albums
-                .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", manifest.AlbumId)
-                .FirstOrDefaultAsync();
+            // Lock album (FOR UPDATE is PostgreSQL-only; SQLite uses simpler locking)
+            Album? album;
+            if (_useSqlite)
+            {
+                album = await _db.Albums.FindAsync(manifest.AlbumId);
+            }
+            else
+            {
+                album = await _db.Albums
+                    .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", manifest.AlbumId)
+                    .FirstOrDefaultAsync();
+            }
 
             if (album == null) return NotFound();
 

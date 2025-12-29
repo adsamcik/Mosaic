@@ -20,6 +20,7 @@
 | Backend work | "Technology Invariants: Backend" + `apps/backend/.instructions.md` |
 | Debugging failures | "Mosaic Sentinel: Debugging Protocol" |
 | Before completing a task | "Definition of Done" + "Self-Correction Audit" |
+| Running terminal commands | "🚨 CRITICAL: Non-Interactive Terminal Commands" |
 
 ---
 
@@ -290,6 +291,7 @@ Cross-Origin-Embedder-Policy: require-corp
 ### Tool Restrictions
 
 - **Never use Simple Browser** - Do not use `open_simple_browser` to preview the app. The app requires COOP/COEP headers for SharedArrayBuffer which Simple Browser doesn't support.
+- **Non-Interactive Terminal Only** - ALL terminal commands must be non-interactive. See the dedicated "🚨 CRITICAL: Non-Interactive Terminal Commands" section below for the complete reference table.
 
 ### Execution Rules
 
@@ -351,13 +353,89 @@ cd apps/backend/Mosaic.Backend && dotnet test
 
 **You must run tests and report the output.** Do not say "tests should pass"—prove they passed.
 
-**CRITICAL: Non-Interactive Mode**
+---
 
-Tests MUST be run in non-interactive mode. Never use watch mode or interactive prompts:
-- Use `npm test` (not `npm test -- --watch`)
-- Use `vitest run` (not `vitest` which defaults to watch mode)
-- Redirect output if needed: `npm test 2>&1`
-- If a test command hangs waiting for input, kill it and use the correct non-interactive flag
+## 🚨 CRITICAL: Non-Interactive Terminal Commands
+
+**ALL terminal commands MUST be non-interactive.** Commands that wait for user input will hang indefinitely. This applies to tests, builds, servers, and any other terminal operation.
+
+### Golden Rule
+
+> If a command can enter watch mode, prompt for input, or wait for confirmation—**use the flag that prevents it**.
+
+### Common Interactive Traps (NEVER USE)
+
+| ❌ Interactive Command | ✅ Non-Interactive Alternative | Why |
+|------------------------|-------------------------------|-----|
+| `vitest` | `vitest run` | Vitest defaults to watch mode |
+| `npm test -- --watch` | `npm test` | Watch mode waits for changes |
+| `dotnet watch` | `dotnet run` or `dotnet build` | Watch mode is interactive |
+| `npx playwright test` | `npx playwright test --reporter=list` | Default reporter may be interactive |
+| `npm init` | `npm init -y` | Prompts for package details |
+| `git commit` | `git commit -m "message"` | Opens editor without `-m` |
+| `git rebase -i` | Avoid or use `git rebase --onto` | Interactive rebase opens editor |
+| `dotnet new` | `dotnet new <template> -n <name>` | May prompt for options |
+| `docker compose up` | `docker compose up -d` | Foreground mode blocks terminal |
+| `psql` | `psql -c "SELECT ..."` | Interactive shell without `-c` |
+| `python` | `python -c "..."` or `python script.py` | REPL without arguments |
+| `node` | `node -e "..."` or `node script.js` | REPL without arguments |
+| `ssh` | Avoid or use `ssh -o BatchMode=yes` | May prompt for password |
+| `sudo` | Avoid if possible | Prompts for password |
+
+### Test-Specific Commands
+
+```bash
+# ✅ Correct test commands
+npm test                           # Runs tests and exits
+vitest run                         # Explicit run mode
+vitest run --reporter=verbose      # With reporter
+dotnet test                        # Runs and exits
+npx playwright test --reporter=list
+
+# ❌ NEVER use these
+vitest                             # Enters watch mode
+npm test -- --watch               # Enters watch mode  
+jest --watch                      # Enters watch mode
+```
+
+### Build & Server Commands
+
+```bash
+# ✅ Correct build commands
+npm run build                      # Build and exit
+dotnet build                       # Build and exit
+dotnet publish                     # Publish and exit
+
+# ✅ Background servers (use isBackground=true in run_in_terminal)
+dotnet run                         # Only with isBackground=true
+npm run dev                        # Only with isBackground=true
+
+# ❌ NEVER use these for foreground
+dotnet watch run                   # Watch mode, never exits
+npm run dev                        # Without isBackground=true
+```
+
+### Detecting Hung Commands
+
+If you run a command and don't get output after 10+ seconds:
+1. **STOP** - The command is likely waiting for input
+2. **DO NOT** run more commands hoping it will resolve
+3. **KILL** the terminal/process
+4. **RETRY** with the correct non-interactive flag
+
+### PowerShell-Specific
+
+```powershell
+# ✅ Correct
+Read-Host -Prompt "Enter value"   # NEVER use - waits for input
+$result = "hardcoded-value"        # Use this instead
+
+# ✅ Suppress confirmation prompts
+Remove-Item -Force -ErrorAction SilentlyContinue
+Stop-Process -Force
+```
+
+---
 
 ### Anti-Patterns (Forbidden)
 

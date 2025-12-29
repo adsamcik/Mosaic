@@ -62,6 +62,7 @@ public static class TusEventHandlers
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+        var useSqlite = db.Database.ProviderName?.Contains("Sqlite") == true;
 
         await using var tx = await db.Database.BeginTransactionAsync();
 
@@ -78,10 +79,19 @@ public static class TusEventHandlers
             PendingExpiresAt = DateTime.UtcNow.AddHours(24)
         });
 
-        // Update quota
-        await db.Database.ExecuteSqlRawAsync(
-            "UPDATE user_quotas SET used_storage_bytes = used_storage_bytes + {0}, updated_at = NOW() WHERE user_id = {1}",
-            fileSize, user.Id);
+        // Update quota - use database-specific NOW() function
+        if (useSqlite)
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE user_quotas SET used_storage_bytes = used_storage_bytes + {0}, updated_at = datetime('now') WHERE user_id = {1}",
+                fileSize, user.Id);
+        }
+        else
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE user_quotas SET used_storage_bytes = used_storage_bytes + {0}, updated_at = NOW() WHERE user_id = {1}",
+                fileSize, user.Id);
+        }
 
         await db.SaveChangesAsync();
         await tx.CommitAsync();
