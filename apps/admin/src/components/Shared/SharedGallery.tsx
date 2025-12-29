@@ -7,10 +7,11 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import type { TierKey } from '../../hooks/useLinkKeys';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import type { PhotoMeta } from '../../workers/types';
+import { SharedMosaicPhotoGrid } from './SharedMosaicPhotoGrid';
 import { SharedPhotoGrid } from './SharedPhotoGrid';
-import type { TierKey } from '../../hooks/useLinkKeys';
 
 interface SharedGalleryProps {
   /** Link ID for fetching photos */
@@ -50,6 +51,20 @@ export function SharedGallery({
   const [photos, setPhotos] = useState<PhotoMeta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'mosaic'>('grid');
+
+  // Determine default layout based on metadata when photos load
+  useEffect(() => {
+    if (photos.length === 0) return;
+    
+    // Check if we have sufficient metadata for Mosaic
+    const hasDescriptions = photos.some(p => !!p.description && p.description.length > 20);
+    // You could also check for location variety, etc.
+    
+    if (hasDescriptions) {
+        setViewMode('mosaic');
+    }
+  }, [photos]);
 
   // Fetch photos from share link API
   useEffect(() => {
@@ -210,15 +225,46 @@ export function SharedGallery({
           {accessTier === 2 && <span className="tier-badge tier-preview">Preview</span>}
           {accessTier === 3 && <span className="tier-badge tier-full">Full Access</span>}
         </div>
+        
+        {/* View Toggle */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+          <button 
+            className={`button-icon ${viewMode === 'grid' ? 'active' : ''}`}
+            onClick={() => setViewMode('grid')}
+            title="Grid View"
+            style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', opacity: viewMode === 'grid' ? 1 : 0.5 }}
+          >
+             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          </button>
+          <button 
+            className={`button-icon ${viewMode === 'mosaic' ? 'active' : ''}`}
+            onClick={() => setViewMode('mosaic')}
+            title="Mosaic View"
+            style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', opacity: viewMode === 'mosaic' ? 1 : 0.5 }}
+          >
+             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="18" height="7"/></svg>
+          </button>
+        </div>
       </div>
 
       <div className="gallery-content">
-        <SharedPhotoGrid
-          photos={photos}
-          accessTier={accessTier}
-          getTierKey={getTierKey}
-          isLoadingKeys={isLoadingKeys}
-        />
+        {viewMode === 'mosaic' ? (
+             <SharedMosaicPhotoGrid
+               photos={photos}
+               linkId={linkId}
+               accessTier={accessTier}
+               getTierKey={getTierKey}
+               isLoadingKeys={isLoadingKeys}
+             />
+        ) : (
+             <SharedPhotoGrid
+               photos={photos}
+               linkId={linkId}
+               accessTier={accessTier}
+               getTierKey={getTierKey}
+               isLoadingKeys={isLoadingKeys}
+             />
+        )}
       </div>
     </div>
   );
