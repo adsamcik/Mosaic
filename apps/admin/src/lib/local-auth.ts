@@ -337,7 +337,7 @@ async function deriveAccountSalt(userSalt: Uint8Array): Promise<Uint8Array> {
 
 /**
  * Check if the backend is in LocalAuth mode.
- * Does this by checking if /api/auth/init responds (vs 404 in ProxyAuth mode).
+ * Does this by checking /api/auth/config endpoint.
  */
 export async function isLocalAuthMode(): Promise<boolean> {
   const status = await checkServerStatus();
@@ -347,16 +347,31 @@ export async function isLocalAuthMode(): Promise<boolean> {
 export interface ServerStatus {
   isOnline: boolean;
   isLocalAuth: boolean;
+  isProxyAuth: boolean;
   statusCode?: number;
   error?: string;
 }
 
 /**
  * Check server connectivity and authentication mode.
- * Returns detailed status about the server connection.
+ * Uses /api/auth/config endpoint which returns both auth mode flags.
  */
 export async function checkServerStatus(): Promise<ServerStatus> {
   try {
+    // First try the new /api/auth/config endpoint
+    const configResponse = await fetch('/api/auth/config');
+    
+    if (configResponse.ok) {
+      const config = await configResponse.json();
+      return {
+        isOnline: true,
+        isLocalAuth: config.localAuthEnabled === true,
+        isProxyAuth: config.proxyAuthEnabled === true,
+        statusCode: configResponse.status,
+      };
+    }
+    
+    // Fallback for older backends: probe /api/auth/init
     const response = await fetch('/api/auth/init', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -365,11 +380,10 @@ export async function checkServerStatus(): Promise<ServerStatus> {
 
     // 404 means the endpoint doesn't exist -> ProxyAuth mode (but server is online)
     if (response.status === 404) {
-      return { isOnline: true, isLocalAuth: false, statusCode: 404 };
+      return { isOnline: true, isLocalAuth: false, isProxyAuth: true, statusCode: 404 };
     }
 
-    // 5xx means server error, but we treat as isLocalAuth=true (legacy behavior was != 404)
-    // to ensure the UI doesn't collapse the username field unexpectedly.
+    // 5xx means server error
     if (response.status >= 500) {
       let errorDetail = `Server error: ${response.status}`;
       try {
@@ -379,7 +393,7 @@ export async function checkServerStatus(): Promise<ServerStatus> {
             const json = JSON.parse(text);
             errorDetail = json.error || json.message || errorDetail;
           } catch {
-            errorDetail = text.slice(0, 100); // Fallback to text, truncated
+            errorDetail = text.slice(0, 100);
           }
         }
       } catch {
@@ -389,18 +403,20 @@ export async function checkServerStatus(): Promise<ServerStatus> {
       return { 
         isOnline: true, 
         isLocalAuth: true, 
+        isProxyAuth: false,
         statusCode: response.status,
         error: errorDetail
       };
     }
 
-    // 200-499 (except 404) usually means the endpoint exists
-    return { isOnline: true, isLocalAuth: true, statusCode: response.status };
+    // 200-499 (except 404) usually means the endpoint exists -> LocalAuth mode
+    return { isOnline: true, isLocalAuth: true, isProxyAuth: false, statusCode: response.status };
   } catch (err) {
     // Network error (fetch failed completely)
     return { 
       isOnline: false, 
       isLocalAuth: false, 
+      isProxyAuth: false,
       error: err instanceof Error ? err.message : 'Connection failed' 
     };
   }

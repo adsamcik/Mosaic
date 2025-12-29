@@ -40,6 +40,7 @@ public partial class AuthController : ControllerBase
     private static partial Regex ValidUsernamePattern();
 
     private readonly IWebHostEnvironment _env;
+    private readonly bool _isProxyAuthMode;
 
     public AuthController(
         MosaicDbContext db,
@@ -57,15 +58,33 @@ public partial class AuthController : ControllerBase
         if (config.GetValue<bool?>("Auth:LocalAuthEnabled") != null)
         {
             _isLocalAuthMode = config.GetValue("Auth:LocalAuthEnabled", false);
+            _isProxyAuthMode = config.GetValue("Auth:ProxyAuthEnabled", false);
         }
         else if (!string.IsNullOrEmpty(legacyMode))
         {
             _isLocalAuthMode = legacyMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
+            _isProxyAuthMode = legacyMode.Equals("ProxyAuth", StringComparison.OrdinalIgnoreCase);
         }
         else
         {
             _isLocalAuthMode = false;
+            _isProxyAuthMode = true; // Default to ProxyAuth
         }
+    }
+
+    /// <summary>
+    /// Get authentication configuration.
+    /// Returns which auth methods are enabled so the frontend can show the appropriate UI.
+    /// This endpoint is always public (no authentication required).
+    /// </summary>
+    [HttpGet("config")]
+    public IActionResult GetAuthConfig()
+    {
+        return Ok(new
+        {
+            localAuthEnabled = _isLocalAuthMode,
+            proxyAuthEnabled = _isProxyAuthMode
+        });
     }
 
     /// <summary>
