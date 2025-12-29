@@ -159,18 +159,32 @@ export interface CryptoWorkerApi {
 
   /**
    * Encrypt a photo shard
+   * @param data - Plaintext data to encrypt
+   * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
+   * @param epochId - Current epoch ID
+   * @param shardIndex - Shard index within photo
    */
   encryptShard(
     data: Uint8Array,
-    readKey: Uint8Array,
+    epochSeed: Uint8Array,
     epochId: number,
     shardIndex: number
   ): Promise<EncryptedShard>;
 
   /**
-   * Decrypt a photo shard
+   * Decrypt a photo shard (for owner/member viewing)
+   * @param envelope - Complete envelope (header + ciphertext)
+   * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
    */
-  decryptShard(envelope: Uint8Array, readKey: Uint8Array): Promise<Uint8Array>;
+  decryptShard(envelope: Uint8Array, epochSeed: Uint8Array): Promise<Uint8Array>;
+
+  /**
+   * Decrypt a photo shard with a tier key directly (for share link viewing)
+   * Use this when you have the unwrapped tier key from a share link.
+   * @param envelope - Complete envelope (header + ciphertext)
+   * @param tierKey - Tier-specific decryption key (32 bytes, already derived)
+   */
+  decryptShardWithTierKey(envelope: Uint8Array, tierKey: Uint8Array): Promise<Uint8Array>;
 
   /**
    * Verify shard integrity against expected hash

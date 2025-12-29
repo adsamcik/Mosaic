@@ -207,39 +207,80 @@ class CryptoWorker implements CryptoWorkerApi {
    * Creates a 64-byte envelope header with fresh random nonce,
    * then encrypts data with header as AAD for tamper detection.
    *
+   * The epochSeed is used to derive the fullKey (tier 3) for encryption.
+   * This ensures compatibility with share links which only have derived tier keys.
+   *
    * @param data - Plaintext data to encrypt (max 6MB)
-   * @param readKey - Epoch read key (32 bytes)
+   * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
    * @param epochId - Current epoch ID
    * @param shardIndex - Shard index within photo
    * @returns Encrypted shard with SHA256 hash
    */
   async encryptShard(
     data: Uint8Array,
-    readKey: Uint8Array,
+    epochSeed: Uint8Array,
     epochId: number,
     shardIndex: number
   ): Promise<EncryptedShard> {
     await this.ensureSodiumReady();
-    return cryptoEncryptShard(data, readKey, epochId, shardIndex);
+    // Derive the fullKey (tier 3) from epochSeed for encryption
+    // This ensures share link recipients with tier keys can decrypt
+    const { fullKey } = deriveTierKeys(epochSeed);
+    return cryptoEncryptShard(data, fullKey, epochId, shardIndex);
   }
 
   /**
-   * Decrypt a photo shard.
+   * Decrypt a photo shard (for owner/member viewing).
    *
    * Validates envelope header, checks reserved bytes are zero,
    * then decrypts using XChaCha20-Poly1305 with header as AAD.
    *
+   * The epochSeed is used to derive the fullKey (tier 3) for decryption.
+   * For backwards compatibility with photos encrypted before tier key derivation
+   * was implemented, falls back to trying epochSeed directly if fullKey fails.
+   *
+   * For share link decryption where you have the tier key directly,
+   * use decryptShardWithTierKey instead.
+   *
    * @param envelope - Complete envelope (header + ciphertext)
-   * @param readKey - Epoch read key (32 bytes)
+   * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
    * @returns Decrypted plaintext
    * @throws Error if decryption fails or envelope is invalid
    */
   async decryptShard(
     envelope: Uint8Array,
-    readKey: Uint8Array
+    epochSeed: Uint8Array
   ): Promise<Uint8Array> {
     await this.ensureSodiumReady();
-    return cryptoDecryptShard(envelope, readKey);
+    
+    // First try with derived fullKey (new encryption method)
+    const { fullKey } = deriveTierKeys(epochSeed);
+    try {
+      return await cryptoDecryptShard(envelope, fullKey);
+    } catch {
+      // Fall back to epochSeed directly for backwards compatibility
+      // (photos encrypted before tier key derivation was implemented)
+      return await cryptoDecryptShard(envelope, epochSeed);
+    }
+  }
+
+  /**
+   * Decrypt a photo shard with a tier key directly (for share link viewing).
+   *
+   * Use this method when you have the unwrapped tier key from a share link,
+   * rather than the epochSeed.
+   *
+   * @param envelope - Complete envelope (header + ciphertext)
+   * @param tierKey - Tier-specific decryption key (32 bytes, already derived)
+   * @returns Decrypted plaintext
+   * @throws Error if decryption fails or envelope is invalid
+   */
+  async decryptShardWithTierKey(
+    envelope: Uint8Array,
+    tierKey: Uint8Array
+  ): Promise<Uint8Array> {
+    await this.ensureSodiumReady();
+    return cryptoDecryptShard(envelope, tierKey);
   }
 
   /**
