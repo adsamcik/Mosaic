@@ -16,6 +16,8 @@ interface PhotoThumbnailProps {
   onDelete?: (thumbnailUrl?: string) => void;
   /** Whether selection mode is active */
   selectionMode?: boolean;
+  /** Optional style overrides */
+  style?: React.CSSProperties;
 }
 
 /** Loading state for thumbnail */
@@ -37,6 +39,7 @@ export function PhotoThumbnail({
   onSelectionChange,
   onDelete,
   selectionMode = false,
+  style,
 }: PhotoThumbnailProps) {
   const [state, setState] = useState<ThumbnailState>({ status: 'idle' });
   const [isHovered, setIsHovered] = useState(false);
@@ -236,6 +239,7 @@ export function PhotoThumbnail({
       aria-selected={isSelected}
       data-photo-id={photo.id}
       data-thumbnail-url={thumbnailUrl}
+      style={style}
     >
       {/* Selection checkbox (shown in selection mode or on hover) */}
       {(selectionMode || (isHovered && onSelectionChange)) && (
