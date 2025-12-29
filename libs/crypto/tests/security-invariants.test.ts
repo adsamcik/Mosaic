@@ -21,7 +21,7 @@ import {
   ShardTier,
   memzero,
   constantTimeEqual,
-  deriveKeys,
+  deriveKeysInternal,
   generateSalts,
   getArgon2Params,
   generateEpochKey,
@@ -181,7 +181,8 @@ describe('Security Invariant: Key Wiping', () => {
     const { userSalt, accountSalt } = generateSalts();
     const fastParams = { memory: 1024, iterations: 1, parallelism: 1 };
 
-    const keys = await deriveKeys('password', userSalt, accountSalt, fastParams);
+    // Use deriveKeysInternal to test wiping of L0/L1 keys
+    const keys = await deriveKeysInternal('password', userSalt, accountSalt, fastParams);
 
     // Store copies to verify wiping works
     const masterKeyBefore = new Uint8Array(keys.masterKey);
@@ -194,14 +195,14 @@ describe('Security Invariant: Key Wiping', () => {
     memzero(keys.accountKey);
 
     // Verify they were non-zero before and zero after
-    expect(masterKeyBefore.some((b) => b !== 0)).toBe(true);
-    expect(keys.masterKey.every((b) => b === 0)).toBe(true);
+    expect(masterKeyBefore.some((b: number) => b !== 0)).toBe(true);
+    expect(keys.masterKey.every((b: number) => b === 0)).toBe(true);
 
-    expect(rootKeyBefore.some((b) => b !== 0)).toBe(true);
-    expect(keys.rootKey.every((b) => b === 0)).toBe(true);
+    expect(rootKeyBefore.some((b: number) => b !== 0)).toBe(true);
+    expect(keys.rootKey.every((b: number) => b === 0)).toBe(true);
 
-    expect(accountKeyBefore.some((b) => b !== 0)).toBe(true);
-    expect(keys.accountKey.every((b) => b === 0)).toBe(true);
+    expect(accountKeyBefore.some((b: number) => b !== 0)).toBe(true);
+    expect(keys.accountKey.every((b: number) => b === 0)).toBe(true);
   });
 });
 
@@ -319,8 +320,9 @@ describe('Security Invariant: Cryptographic Domain Separation', () => {
     const salts1 = generateSalts();
     const salts2 = generateSalts();
 
-    const keys1 = await deriveKeys(password, salts1.userSalt, salts1.accountSalt, fastParams);
-    const keys2 = await deriveKeys(password, salts2.userSalt, salts2.accountSalt, fastParams);
+    // Use deriveKeysInternal to access L0/L1 for domain separation testing
+    const keys1 = await deriveKeysInternal(password, salts1.userSalt, salts1.accountSalt, fastParams);
+    const keys2 = await deriveKeysInternal(password, salts2.userSalt, salts2.accountSalt, fastParams);
 
     expect(keys1.masterKey).not.toEqual(keys2.masterKey);
     expect(keys1.rootKey).not.toEqual(keys2.rootKey);
@@ -328,7 +330,8 @@ describe('Security Invariant: Cryptographic Domain Separation', () => {
 
   it('root key differs from master key (context separation)', async () => {
     const { userSalt, accountSalt } = generateSalts();
-    const keys = await deriveKeys('password', userSalt, accountSalt, fastParams);
+    // Use deriveKeysInternal to access L0/L1 for domain separation testing
+    const keys = await deriveKeysInternal('password', userSalt, accountSalt, fastParams);
 
     expect(keys.masterKey).not.toEqual(keys.rootKey);
   });

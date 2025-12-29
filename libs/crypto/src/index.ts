@@ -8,6 +8,7 @@
 // Re-export types
 export type {
   DerivedKeys,
+  DeriveKeysResult,
   EpochKey,
   IdentityKeypair,
   EpochKeyBundle,
@@ -66,6 +67,7 @@ export {
 // Re-export keychain
 export {
   deriveKeys,
+  deriveKeysInternal,
   unwrapAccountKey,
   rewrapAccountKey,
   generateSalts,
@@ -156,7 +158,7 @@ export {
 } from './auth';
 
 import type {
-  DerivedKeys,
+  DeriveKeysResult,
   EpochKey,
   IdentityKeypair,
   EpochKeyBundle,
@@ -194,18 +196,19 @@ export interface CryptoLib {
   // ===========================================================================
 
   /**
-   * Derive all key layers from password.
+   * Derive account key from password.
+   * L0 (masterKey) and L1 (rootKey) are zeroed before return.
    *
    * @param password - User password (will be cleared after use)
    * @param salt - 16-byte Argon2 salt
    * @param accountSalt - Additional salt for HKDF (unique per account)
-   * @returns Derived key hierarchy
+   * @returns Account key and wrapped account key (L0/L1 already zeroed)
    */
   deriveKeys(
     password: string,
     salt: Uint8Array,
     accountSalt: Uint8Array
-  ): Promise<DerivedKeys>;
+  ): Promise<DeriveKeysResult>;
 
   /**
    * Derive identity keypair from seed.
