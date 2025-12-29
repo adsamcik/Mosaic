@@ -19,6 +19,7 @@ interface GalleryHeaderProps {
   geotaggedCount: number;
   onShowMembers: () => void;
   onShowShareLinks: () => void;
+  onRenameAlbum?: (() => void) | undefined;
   onDeleteAlbum?: (() => void) | undefined;
 }
 
@@ -34,6 +35,7 @@ export function GalleryHeader({
   geotaggedCount,
   onShowMembers,
   onShowShareLinks,
+  onRenameAlbum,
   onDeleteAlbum,
 }: GalleryHeaderProps) {
   const permissions = useAlbumPermissions();
@@ -109,6 +111,19 @@ export function GalleryHeader({
           >
             <span className="share-links-icon">🔗</span>
             <span className="button-label">Links</span>
+          </button>
+        )}
+
+        {/* Rename button - owners and editors */}
+        {permissions.canUpload && onRenameAlbum && (
+          <button
+            className="button-secondary rename-album-button"
+            onClick={onRenameAlbum}
+            aria-label="Rename album"
+            data-testid="rename-album-button"
+          >
+            <span className="rename-icon">✏️</span>
+            <span className="button-label">Rename</span>
           </button>
         )}
 

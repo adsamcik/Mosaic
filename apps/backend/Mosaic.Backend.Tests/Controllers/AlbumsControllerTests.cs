@@ -980,5 +980,189 @@ public class AlbumsControllerTests
         Assert.Contains(props, p => p.Name == "ExpiresAt");
         Assert.Contains(props, p => p.Name == "ExpirationWarningDays");
     }
-}
 
+    // =========================================================================
+    // Rename Tests
+    // =========================================================================
+
+    [Fact]
+    public async Task Rename_UpdatesEncryptedName_WhenOwner()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user, encryptedName: "old-encrypted-name");
+
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new RenameAlbumRequest("new-encrypted-name");
+
+        // Act
+        var result = await controller.Rename(album.Id, request);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.NotNull(okResult.Value);
+
+        // Verify album was updated
+        var updatedAlbum = db.Albums.First();
+        Assert.Equal("new-encrypted-name", updatedAlbum.EncryptedName);
+    }
+
+    [Fact]
+    public async Task Rename_UpdatesEncryptedName_WhenEditor()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync("owner-user");
+        var editor = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(owner, encryptedName: "old-encrypted-name");
+        await builder.AddMemberAsync(album, editor, "editor", owner);
+
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new RenameAlbumRequest("new-encrypted-name");
+
+        // Act
+        var result = await controller.Rename(album.Id, request);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.NotNull(okResult.Value);
+
+        // Verify album was updated
+        var updatedAlbum = db.Albums.First();
+        Assert.Equal("new-encrypted-name", updatedAlbum.EncryptedName);
+    }
+
+    [Fact]
+    public async Task Rename_ReturnsForbid_WhenViewer()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync("owner-user");
+        var viewer = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.AddMemberAsync(album, viewer, "viewer", owner);
+
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new RenameAlbumRequest("new-encrypted-name");
+
+        // Act
+        var result = await controller.Rename(album.Id, request);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task Rename_ReturnsForbid_WhenNotMember()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync("owner-user");
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.CreateUserAsync(TestAuthSub); // Not a member
+
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new RenameAlbumRequest("new-encrypted-name");
+
+        // Act
+        var result = await controller.Rename(album.Id, request);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task Rename_ReturnsNotFound_WhenAlbumDoesNotExist()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        await new TestDataBuilder(db).CreateUserAsync(TestAuthSub);
+
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new RenameAlbumRequest("new-encrypted-name");
+
+        // Act
+        var result = await controller.Rename(Guid.NewGuid(), request);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task Rename_ReturnsBadRequest_WhenEncryptedNameEmpty()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new RenameAlbumRequest("");
+
+        // Act
+        var result = await controller.Rename(album.Id, request);
+
+        // Assert
+        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("encryptedName", badRequestResult.Value?.ToString()!);
+    }
+}

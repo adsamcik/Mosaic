@@ -3,4 +3,4 @@ export { AlbumExpirationSettings } from './AlbumExpirationSettings';
 export { AlbumList } from './AlbumList';
 export { CreateAlbumDialog } from './CreateAlbumDialog';
 export { DeleteAlbumDialog } from './DeleteAlbumDialog';
-
+export { RenameAlbumDialog } from './RenameAlbumDialog';

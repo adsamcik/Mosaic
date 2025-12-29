@@ -203,6 +203,70 @@ export function useAlbums() {
   );
 
   /**
+   * Rename an album with encrypted name.
+   *
+   * This function:
+   * 1. Loads epoch keys for the album
+   * 2. Encrypts the new name with the current epoch key
+   * 3. Calls the PATCH API endpoint
+   * 4. Updates local state with new name
+   *
+   * @param albumId - ID of the album to rename
+   * @param newName - New plain text album name
+   * @returns true if rename succeeded, false otherwise
+   */
+  const renameAlbum = useCallback(
+    async (albumId: string, newName: string): Promise<boolean> => {
+      try {
+        // Load epoch keys for this album
+        const keysLoaded = await ensureEpochKeysLoaded(albumId);
+        if (!keysLoaded) {
+          log.error(`Album ${albumId}: Failed to load epoch keys for rename`);
+          throw new Error('Failed to load encryption keys');
+        }
+
+        // Get the current epoch key
+        const epochKey = getCurrentEpochKey(albumId);
+        if (!epochKey) {
+          log.error(`Album ${albumId}: No epoch key in cache for rename`);
+          throw new Error('Encryption keys not available');
+        }
+
+        // Encrypt the new album name
+        const encryptedName = await encryptAlbumName(newName, epochKey.epochSeed);
+
+        // Call API to update the encrypted name
+        const api = getApi();
+        await api.renameAlbum(albumId, { encryptedName });
+
+        // Update localStorage with new encrypted name
+        setStoredEncryptedName(albumId, encryptedName);
+
+        // Update local state with new name
+        setAlbums((prev) =>
+          prev.map((a) =>
+            a.id === albumId
+              ? {
+                  ...a,
+                  name: newName,
+                  decryptedName: newName,
+                  encryptedName,
+                }
+              : a
+          )
+        );
+
+        log.info(`Album ${albumId} renamed successfully`);
+        return true;
+      } catch (err) {
+        log.error(`Failed to rename album ${albumId}:`, err);
+        throw err;
+      }
+    },
+    []
+  );
+
+  /**
    * Create a new album with encrypted name and initial epoch key.
    *
    * This function:
@@ -321,5 +385,6 @@ export function useAlbums() {
     isCreating,
     createError,
     deleteAlbum,
+    renameAlbum,
   };
 }

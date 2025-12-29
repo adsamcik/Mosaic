@@ -111,6 +111,19 @@ export interface UpdateExpirationRequest {
   expirationWarningDays?: number;
 }
 
+/** Request to rename an album (update encrypted name) */
+export interface RenameAlbumRequest {
+  /** Base64-encoded encrypted album name (encrypted with epoch read key) */
+  encryptedName: string;
+}
+
+/** Response from renaming an album */
+export interface RenameAlbumResponse {
+  id: string;
+  encryptedName: string;
+  updatedAt: string;
+}
+
 /** Request to update share link expiration settings */
 export interface UpdateLinkExpirationRequest {
   /** ISO 8601 date when link expires, or null to remove expiration */
@@ -422,6 +435,7 @@ export interface MosaicApi {
   createAlbum(request: CreateAlbumRequest): Promise<Album>;
   getAlbum(albumId: string): Promise<Album>;
   deleteAlbum(albumId: string): Promise<void>;
+  renameAlbum(albumId: string, request: RenameAlbumRequest): Promise<RenameAlbumResponse>;
   syncAlbum(albumId: string, since: number, limit?: number): Promise<SyncResponse>;
 
   // Members

@@ -19,8 +19,8 @@ export function AppShell() {
   const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   
-  // Get albums data for album name display and delete functionality
-  const { albums, deleteAlbum } = useAlbums();
+  // Get albums data for album name display and delete/rename functionality
+  const { albums, deleteAlbum, renameAlbum } = useAlbums();
 
   // Check if current user is admin on mount
   useEffect(() => {
@@ -122,6 +122,7 @@ export function AppShell() {
             albumId={selectedAlbumId}
             albumName={albums.find(a => a.id === selectedAlbumId)?.name}
             onDeleteAlbum={deleteAlbum}
+            onRenameAlbum={renameAlbum}
             onAlbumDeleted={handleBackToAlbums}
           />
         )}

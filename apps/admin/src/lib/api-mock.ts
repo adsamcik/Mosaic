@@ -15,6 +15,8 @@ import type {
   UpdateUserRequest,
   Album,
   CreateAlbumRequest,
+  RenameAlbumRequest,
+  RenameAlbumResponse,
   SyncResponse,
   AlbumMember,
   InviteRequest,
@@ -303,6 +305,29 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       store.albums.delete(albumId);
       store.members.delete(albumId);
       store.epochKeys.delete(albumId);
+    },
+
+    async renameAlbum(albumId: string, request: RenameAlbumRequest): Promise<RenameAlbumResponse> {
+      await delay();
+      const album = store.albums.get(albumId);
+      if (!album) {
+        throw new Error(`Album not found: ${albumId}`);
+      }
+      // Check if user is owner or editor
+      const members = store.members.get(albumId) ?? [];
+      const membership = members.find((m) => m.userId === store.currentUser.id);
+      if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
+        throw new Error('Forbidden: must be owner or editor to rename');
+      }
+      // Update album
+      album.encryptedName = request.encryptedName;
+      album.updatedAt = new Date().toISOString();
+      store.albums.set(albumId, album);
+      return {
+        id: album.id,
+        encryptedName: album.encryptedName,
+        updatedAt: album.updatedAt,
+      };
     },
 
     async syncAlbum(

@@ -10,7 +10,7 @@ import { useSync } from '../../hooks/useSync';
 import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
 import { createLogger } from '../../lib/logger';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
-import { DeleteAlbumDialog } from '../Albums/DeleteAlbumDialog';
+import { DeleteAlbumDialog, RenameAlbumDialog } from '../Albums';
 import { MemberList } from '../Members/MemberList';
 import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
 import { DropZone } from '../Upload/DropZone';
@@ -31,6 +31,7 @@ interface GalleryProps {
   albumName?: string | undefined;
   onAlbumDeleted?: () => void;
   onDeleteAlbum?: (albumId: string) => Promise<boolean>;
+  onRenameAlbum?: (albumId: string, newName: string) => Promise<boolean>;
 }
 
 /**
@@ -55,12 +56,15 @@ function photosToGeoFeatures(photos: PhotoMeta[]): GeoFeature[] {
  * Gallery View Component
  * Displays photos in a virtualized grid or map view with upload capability
  */
-export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum }: GalleryProps) {
+export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onRenameAlbum }: GalleryProps) {
   const [showMembers, setShowMembers] = useState(false);
   const [showShareLinks, setShowShareLinks] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('justified');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -188,6 +192,40 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum }: G
     }
   }, [isDeleting]);
 
+  // Handle album rename
+  const handleRenameAlbum = useCallback(() => {
+    setRenameError(null);
+    setShowRenameDialog(true);
+  }, []);
+
+  const handleConfirmRename = useCallback(async (newName: string) => {
+    if (!onRenameAlbum) return;
+
+    setIsRenaming(true);
+    setRenameError(null);
+
+    try {
+      const success = await onRenameAlbum(albumId, newName);
+      if (success) {
+        setShowRenameDialog(false);
+      } else {
+        setRenameError('Failed to rename album. Please try again.');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to rename album';
+      setRenameError(message);
+    } finally {
+      setIsRenaming(false);
+    }
+  }, [albumId, onRenameAlbum]);
+
+  const handleCancelRename = useCallback(() => {
+    if (!isRenaming) {
+      setShowRenameDialog(false);
+      setRenameError(null);
+    }
+  }, [isRenaming]);
+
   // Compute preload queue for lightbox
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
@@ -247,6 +285,7 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum }: G
           geotaggedCount={geotaggedCount}
           onShowMembers={() => setShowMembers(true)}
           onShowShareLinks={() => setShowShareLinks(true)}
+          onRenameAlbum={onRenameAlbum ? handleRenameAlbum : undefined}
           onDeleteAlbum={onDeleteAlbum ? handleDeleteAlbum : undefined}
         />
 
@@ -309,6 +348,16 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum }: G
           error={deleteError}
         />
       )}
+
+      {/* Rename Album Dialog */}
+      <RenameAlbumDialog
+        isOpen={showRenameDialog}
+        onClose={handleCancelRename}
+        onRename={handleConfirmRename}
+        isRenaming={isRenaming}
+        error={renameError}
+        currentName={albumName ?? `Album ${albumId.slice(0, 8)}`}
+      />
 
       {/* Upload Error Toast */}
       <UploadErrorToast />

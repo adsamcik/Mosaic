@@ -13,6 +13,8 @@ import type {
   UpdateUserRequest,
   Album,
   CreateAlbumRequest,
+  RenameAlbumRequest,
+  RenameAlbumResponse,
   SyncResponse,
   AlbumMember,
   InviteRequest,
@@ -70,7 +72,7 @@ export class ApiError extends Error {
 // =============================================================================
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   headers?: Record<string, string>;
 }
@@ -173,6 +175,13 @@ export function createApiClient(): MosaicApi {
     async deleteAlbum(albumId: string): Promise<void> {
       return apiRequest(`/albums/${albumId}`, {
         method: 'DELETE',
+      });
+    },
+
+    async renameAlbum(albumId: string, request: RenameAlbumRequest): Promise<RenameAlbumResponse> {
+      return apiRequest(`/albums/${albumId}/name`, {
+        method: 'PATCH',
+        body: request,
       });
     },
 

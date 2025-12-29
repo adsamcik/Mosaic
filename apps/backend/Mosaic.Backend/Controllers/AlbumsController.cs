@@ -41,6 +41,11 @@ public class CreateAlbumRequest
 public record UpdateExpirationRequest(DateTimeOffset? ExpiresAt, int? ExpirationWarningDays);
 
 /// <summary>
+/// Request to rename an album (update encrypted name)
+/// </summary>
+public record RenameAlbumRequest(string EncryptedName);
+
+/// <summary>
 /// Initial epoch key data for album creation
 /// </summary>
 public class InitialEpochKeyRequest
@@ -417,5 +422,61 @@ public class AlbumsController : ControllerBase
         _logger.AlbumDeleted(albumId, user.Id);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Rename an album (update encrypted name). Members with edit access can rename.
+    /// </summary>
+    [HttpPatch("{albumId:guid}/name")]
+    public async Task<IActionResult> Rename(Guid albumId, [FromBody] RenameAlbumRequest request)
+    {
+        var user = await GetOrCreateUser();
+
+        // Check membership - owner or editor can rename
+        var membership = await _db.AlbumMembers
+            .Where(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null)
+            .FirstOrDefaultAsync();
+
+        if (membership == null)
+        {
+            return Forbid();
+        }
+
+        // Only owner and editors can rename
+        if (membership.Role != "owner" && membership.Role != "editor")
+        {
+            return Forbid();
+        }
+
+        var album = await _db.Albums.FindAsync(albumId);
+        if (album == null)
+        {
+            return NotFound();
+        }
+
+        // Validate encrypted name
+        if (string.IsNullOrWhiteSpace(request.EncryptedName))
+        {
+            return BadRequest(new { error = "encryptedName is required" });
+        }
+
+        // Update encrypted name
+        album.EncryptedName = request.EncryptedName;
+        album.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Album renamed. AlbumId: {AlbumId}, RenamedBy: {UserId}, CorrelationId: {CorrelationId}",
+            albumId,
+            user.Id,
+            HttpContext.GetCorrelationId());
+
+        return Ok(new
+        {
+            album.Id,
+            album.EncryptedName,
+            album.UpdatedAt
+        });
     }
 }
