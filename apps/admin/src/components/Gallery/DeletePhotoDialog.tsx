@@ -5,8 +5,8 @@
  * Shows photo thumbnail and warning about permanent deletion.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
 import type { PhotoMeta } from '../../workers/types';
+import { Dialog } from '../Shared/Dialog';
 
 export interface DeletePhotoDialogProps {
   /** Photo(s) to delete. Single photo shows thumbnail, multiple shows count */
@@ -38,139 +38,100 @@ export function DeletePhotoDialog({
   onCancel,
   error,
 }: DeletePhotoDialogProps) {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const cancelButtonRef = useRef<HTMLButtonElement>(null);
-
   const isBulkDelete = photos.length > 1;
   const photoCount = photos.length;
   const singlePhoto = photos[0];
 
-  // Focus cancel button on mount for accessibility
-  useEffect(() => {
-    cancelButtonRef.current?.focus();
-  }, []);
-
-  // Handle escape key to close
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isDeleting) {
-        onCancel();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isDeleting, onCancel]);
-
-  // Handle backdrop click
-  const handleBackdropClick = useCallback(
-    (event: React.MouseEvent) => {
-      if (event.target === dialogRef.current && !isDeleting) {
-        onCancel();
-      }
-    },
-    [isDeleting, onCancel]
+  const footer = (
+    <>
+      <button
+        type="button"
+        className="button-secondary"
+        onClick={onCancel}
+        disabled={isDeleting}
+        data-testid="delete-cancel-button"
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form="delete-photo-form"
+        className="button-danger"
+        disabled={isDeleting}
+        data-testid="delete-confirm-button"
+      >
+        {isDeleting ? (
+          <>
+            <span className="button-spinner" />
+            Deleting...
+          </>
+        ) : (
+          'Delete'
+        )}
+      </button>
+    </>
   );
 
-  // Prevent form submission refresh
-  const handleSubmit = useCallback(
-    (event: React.FormEvent) => {
-      event.preventDefault();
-      if (!isDeleting) {
-        onConfirm();
-      }
-    },
-    [isDeleting, onConfirm]
-  );
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!isDeleting) {
+      onConfirm();
+    }
+  };
+
+  const title = isBulkDelete ? `Delete ${photoCount} photos?` : 'Delete photo?';
 
   return (
-    <div
-      ref={dialogRef}
-      className="dialog-backdrop"
-      onClick={handleBackdropClick}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="delete-dialog-title"
-      data-testid="delete-photo-dialog"
+    <Dialog
+      isOpen={true} // Controlled by parent
+      onClose={onCancel}
+      title={title}
+      footer={footer}
+      testId="delete-photo-dialog"
+      closeOnBackdropClick={!isDeleting}
     >
-      <div className="dialog delete-photo-dialog">
-        <form className="dialog-form" onSubmit={handleSubmit}>
-          <h2 id="delete-dialog-title" className="dialog-title">
-            {isBulkDelete
-              ? `Delete ${photoCount} photos?`
-              : 'Delete photo?'}
-          </h2>
+      <form id="delete-photo-form" className="dialog-form" onSubmit={handleSubmit}>
+        <p className="dialog-description delete-warning">
+          ⚠️ This action is permanent and cannot be undone.
+          {isBulkDelete
+            ? ` All ${photoCount} selected photos will be permanently deleted from the server.`
+            : ' This photo will be permanently deleted from the server.'}
+        </p>
 
-          <p className="dialog-description delete-warning">
-            ⚠️ This action is permanent and cannot be undone.
-            {isBulkDelete
-              ? ` All ${photoCount} selected photos will be permanently deleted from the server.`
-              : ' This photo will be permanently deleted from the server.'}
-          </p>
-
-          {/* Show thumbnail preview for single photo */}
-          {!isBulkDelete && singlePhoto && (
-            <div className="delete-photo-preview" data-testid="delete-preview">
-              {thumbnailUrl ? (
-                <img
-                  src={thumbnailUrl}
-                  alt={singlePhoto.filename}
-                  className="delete-preview-image"
-                />
-              ) : (
-                <div className="delete-preview-placeholder">
-                  <span className="photo-icon">🖼️</span>
-                </div>
-              )}
-              <div className="delete-preview-info">
-                <span className="delete-preview-filename">
-                  {singlePhoto.filename}
-                </span>
-                {singlePhoto.takenAt && (
-                  <span className="delete-preview-date">
-                    {new Date(singlePhoto.takenAt).toLocaleDateString()}
-                  </span>
-                )}
+        {/* Show thumbnail preview for single photo */}
+        {!isBulkDelete && singlePhoto && (
+          <div className="delete-photo-preview" data-testid="delete-preview">
+            {thumbnailUrl ? (
+              <img
+                src={thumbnailUrl}
+                alt={singlePhoto.filename}
+                className="delete-preview-image"
+              />
+            ) : (
+              <div className="delete-preview-placeholder">
+                <span className="photo-icon">🖼️</span>
               </div>
-            </div>
-          )}
-
-          {/* Show error message if deletion failed */}
-          {error && (
-            <p className="form-error delete-error" data-testid="delete-error">
-              {error}
-            </p>
-          )}
-
-          <div className="dialog-actions">
-            <button
-              ref={cancelButtonRef}
-              type="button"
-              className="button-secondary"
-              onClick={onCancel}
-              disabled={isDeleting}
-              data-testid="delete-cancel-button"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="button-danger"
-              disabled={isDeleting}
-              data-testid="delete-confirm-button"
-            >
-              {isDeleting ? (
-                <>
-                  <span className="button-spinner" />
-                  Deleting...
-                </>
-              ) : (
-                'Delete'
+            )}
+            <div className="delete-preview-info">
+              <span className="delete-preview-filename">
+                {singlePhoto.filename}
+              </span>
+              {singlePhoto.takenAt && (
+                <span className="delete-preview-date">
+                  {new Date(singlePhoto.takenAt).toLocaleDateString()}
+                </span>
               )}
-            </button>
+            </div>
           </div>
-        </form>
-      </div>
-    </div>
+        )}
+
+        {/* Show error message if deletion failed */}
+        {error && (
+          <p className="form-error delete-error" data-testid="delete-error">
+            {error}
+          </p>
+        )}
+      </form>
+    </Dialog>
   );
 }

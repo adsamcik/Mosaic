@@ -5,7 +5,7 @@
  * Shows album name and warning about permanent deletion.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { Dialog } from '../Shared/Dialog';
 
 export interface DeleteAlbumDialogProps {
   /** Album name to display */
@@ -36,112 +36,74 @@ export function DeleteAlbumDialog({
   onCancel,
   error,
 }: DeleteAlbumDialogProps) {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const cancelButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Focus cancel button on mount for accessibility
-  useEffect(() => {
-    cancelButtonRef.current?.focus();
-  }, []);
-
-  // Handle escape key to close
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isDeleting) {
-        onCancel();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isDeleting, onCancel]);
-
-  // Handle backdrop click
-  const handleBackdropClick = useCallback(
-    (event: React.MouseEvent) => {
-      if (event.target === dialogRef.current && !isDeleting) {
-        onCancel();
-      }
-    },
-    [isDeleting, onCancel]
+  
+  const footer = (
+    <>
+      <button
+        type="button"
+        className="button-secondary"
+        onClick={onCancel}
+        disabled={isDeleting}
+        data-testid="delete-album-cancel-button"
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form="delete-album-form"
+        className="button-danger"
+        disabled={isDeleting}
+        data-testid="delete-album-confirm-button"
+      >
+        {isDeleting ? (
+          <>
+            <span className="button-spinner" />
+            Deleting...
+          </>
+        ) : (
+          'Delete Album'
+        )}
+      </button>
+    </>
   );
 
-  // Prevent form submission refresh
-  const handleSubmit = useCallback(
-    (event: React.FormEvent) => {
-      event.preventDefault();
-      if (!isDeleting) {
-        onConfirm();
-      }
-    },
-    [isDeleting, onConfirm]
-  );
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!isDeleting) {
+      onConfirm();
+    }
+  };
 
   return (
-    <div
-      ref={dialogRef}
-      className="dialog-backdrop"
-      onClick={handleBackdropClick}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="delete-album-dialog-title"
-      data-testid="delete-album-dialog"
+    <Dialog
+      isOpen={true} // Controlled by parent rendering this component
+      onClose={onCancel}
+      title="Delete album?"
+      footer={footer}
+      testId="delete-album-dialog"
+      closeOnBackdropClick={!isDeleting}
     >
-      <div className="dialog delete-album-dialog">
-        <form className="dialog-form" onSubmit={handleSubmit}>
-          <h2 id="delete-album-dialog-title" className="dialog-title">
-            Delete album?
-          </h2>
+      <form id="delete-album-form" className="dialog-form" onSubmit={handleSubmit}>
+        <p className="dialog-description delete-warning">
+          ⚠️ This action is permanent and cannot be undone.
+        </p>
 
-          <p className="dialog-description delete-warning">
-            ⚠️ This action is permanent and cannot be undone.
+        <div className="delete-album-info" data-testid="delete-album-info">
+          <p className="album-name-display">
+            <strong>Album:</strong> {albumName}
           </p>
+          <p className="photo-count-display">
+            <strong>Photos:</strong> {photoCount} {photoCount === 1 ? 'photo' : 'photos'} will be permanently deleted.
+          </p>
+        </div>
 
-          <div className="delete-album-info" data-testid="delete-album-info">
-            <p className="album-name-display">
-              <strong>Album:</strong> {albumName}
-            </p>
-            <p className="photo-count-display">
-              <strong>Photos:</strong> {photoCount} {photoCount === 1 ? 'photo' : 'photos'} will be permanently deleted.
-            </p>
-          </div>
-
-          {/* Show error message if deletion failed */}
-          {error && (
-            <p className="form-error delete-error" data-testid="delete-album-error">
-              {error}
-            </p>
-          )}
-
-          <div className="dialog-actions">
-            <button
-              ref={cancelButtonRef}
-              type="button"
-              className="button-secondary"
-              onClick={onCancel}
-              disabled={isDeleting}
-              data-testid="delete-album-cancel-button"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="button-danger"
-              disabled={isDeleting}
-              data-testid="delete-album-confirm-button"
-            >
-              {isDeleting ? (
-                <>
-                  <span className="button-spinner" />
-                  Deleting...
-                </>
-              ) : (
-                'Delete Album'
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        {/* Show error message if deletion failed */}
+        {error && (
+          <p className="form-error delete-error" data-testid="delete-album-error">
+            {error}
+          </p>
+        )}
+      </form>
+    </Dialog>
   );
 }

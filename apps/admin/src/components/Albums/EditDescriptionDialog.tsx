@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Dialog } from '../Shared/Dialog';
 
 interface EditDescriptionDialogProps {
   /** Whether the dialog is open */
@@ -32,7 +33,6 @@ export function EditDescriptionDialog({
   const [description, setDescription] = useState(currentDescription ?? '');
   const [localError, setLocalError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const dialogRef = useRef<HTMLDialogElement>(null);
 
   // Reset form when dialog opens with current description
   useEffect(() => {
@@ -45,18 +45,6 @@ export function EditDescriptionDialog({
       }, 0);
     }
   }, [isOpen, currentDescription]);
-
-  // Handle escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && !isSaving) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isSaving, onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,80 +73,67 @@ export function EditDescriptionDialog({
     }
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    // Only close if clicking the backdrop itself, not the dialog content
-    if (e.target === e.currentTarget && !isSaving) {
-      onClose();
-    }
-  };
-
-  if (!isOpen) {
-    return null;
-  }
-
   const displayError = localError || error;
 
-  return (
-    <div
-      className="dialog-backdrop"
-      onClick={handleBackdropClick}
-      data-testid="edit-description-dialog-backdrop"
-    >
-      <dialog
-        ref={dialogRef}
-        className="dialog"
-        open
-        aria-labelledby="edit-description-title"
-        data-testid="edit-description-dialog"
+  const footer = (
+    <>
+      <button
+        type="button"
+        className="button-secondary"
+        onClick={onClose}
+        disabled={isSaving}
+        data-testid="edit-description-cancel"
       >
-        <form onSubmit={handleSubmit}>
-          <h2 id="edit-description-title">Edit Album Description</h2>
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form="edit-description-form"
+        className="button-primary"
+        disabled={isSaving}
+        data-testid="edit-description-save"
+      >
+        {isSaving ? 'Saving...' : 'Save'}
+      </button>
+    </>
+  );
 
-          <div className="form-field">
-            <label htmlFor="album-description">Description</label>
-            <textarea
-              ref={textareaRef}
-              id="album-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={isSaving}
-              placeholder="Add a description for this album..."
-              rows={4}
-              maxLength={1000}
-              data-testid="edit-description-input"
-            />
-            <div className="form-field-hint">
-              {description.length}/1000 characters
-            </div>
+  return (
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit Album Description"
+      footer={footer}
+      testId="edit-description-dialog"
+      closeOnBackdropClick={!isSaving}
+    >
+      <form onSubmit={handleSubmit} id="edit-description-form">
+        <div className="form-field">
+          <label htmlFor="album-description" className="form-label">Description</label>
+          <textarea
+            ref={textareaRef}
+            id="album-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={isSaving}
+            placeholder="Add a description for this album..."
+            rows={4}
+            maxLength={1000}
+            className="form-input"
+            data-testid="edit-description-input"
+            style={{ resize: 'vertical', minHeight: '100px' }}
+          />
+          <div className="form-field-hint" style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>
+            {description.length}/1000 characters
           </div>
+        </div>
 
-          {displayError && (
-            <div className="form-error" role="alert" data-testid="edit-description-error">
-              {displayError}
-            </div>
-          )}
-
-          <div className="dialog-actions">
-            <button
-              type="button"
-              className="button-secondary"
-              onClick={onClose}
-              disabled={isSaving}
-              data-testid="edit-description-cancel"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="button-primary"
-              disabled={isSaving}
-              data-testid="edit-description-save"
-            >
-              {isSaving ? 'Saving...' : 'Save'}
-            </button>
+        {displayError && (
+          <div className="form-error" role="alert" data-testid="edit-description-error">
+            {displayError}
           </div>
-        </form>
-      </dialog>
-    </div>
+        )}
+      </form>
+    </Dialog>
   );
 }

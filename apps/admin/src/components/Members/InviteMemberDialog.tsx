@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { UserPublic } from '../../lib/api-types';
+import { Dialog } from '../Shared/Dialog';
 
 interface InviteMemberDialogProps {
   /** Whether the dialog is open */
@@ -49,7 +50,6 @@ export function InviteMemberDialog({
   const [lookupError, setLookupError] = useState<string | null>(null);
   
   const inputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLDialogElement>(null);
 
   // Focus input when dialog opens
   useEffect(() => {
@@ -70,18 +70,6 @@ export function InviteMemberDialog({
       setLookupError(null);
     }
   }, [isOpen]);
-
-  // Handle escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && !isInviting) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isInviting, onClose]);
 
   const handleLookup = async () => {
     const trimmedQuery = query.trim();
@@ -121,154 +109,132 @@ export function InviteMemberDialog({
     }
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget && !isInviting) {
-      onClose();
-    }
-  };
-
-  if (!isOpen) {
-    return null;
-  }
-
   const displayError = localError || lookupError || error;
   const isProcessing = isInviting || isLookingUp;
 
-  return (
-    <div
-      className="dialog-backdrop"
-      onClick={handleBackdropClick}
-      role="presentation"
-      data-testid="invite-dialog-backdrop"
-    >
-      <dialog
-        ref={dialogRef}
-        className="dialog"
-        open
-        aria-labelledby="invite-member-title"
-        aria-modal="true"
-        data-testid="invite-member-dialog"
+  const footer = (
+    <>
+      <button
+        type="button"
+        className="button-secondary"
+        onClick={onClose}
+        disabled={isInviting}
+        data-testid="cancel-invite-button"
       >
-        <form onSubmit={handleSubmit} className="dialog-form">
-          <h2 id="invite-member-title" className="dialog-title">
-            Invite Member
-          </h2>
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form="invite-member-form"
+        className="button-primary"
+        disabled={isProcessing || !foundUser}
+        data-testid="submit-invite-button"
+      >
+        {isInviting ? 'Inviting...' : 'Invite'}
+      </button>
+    </>
+  );
 
-          <p className="dialog-description">
-            Enter a user ID or identity public key to invite someone to this album.
-            They will receive access to all epoch keys.
-          </p>
-
-          <div className="form-group">
-            <label htmlFor="user-query" className="form-label">
-              User ID or Public Key
-            </label>
-            <div className="input-with-button">
-              <input
-                ref={inputRef}
-                id="user-query"
-                type="text"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setFoundUser(null);
-                  setLookupError(null);
-                }}
-                placeholder="Enter user ID or paste identity pubkey"
-                disabled={isProcessing}
-                className="form-input"
-                autoComplete="off"
-                aria-describedby={displayError ? 'invite-error' : undefined}
-                data-testid="user-query-input"
-              />
-              <button
-                type="button"
-                className="button-secondary lookup-button"
-                onClick={handleLookup}
-                disabled={isProcessing || !query.trim()}
-                data-testid="lookup-button"
-              >
-                {isLookingUp ? 'Looking...' : 'Look Up'}
-              </button>
-            </div>
-          </div>
-
-          {foundUser && (
-            <div className="found-user" data-testid="found-user">
-              <span className="found-user-icon">✓</span>
-              <div className="found-user-details">
-                <span className="found-user-label">User found:</span>
-                <span className="found-user-id">{foundUser.id.slice(0, 16)}...</span>
-              </div>
-            </div>
-          )}
-
-          <div className="form-group">
-            <label className="form-label">Role</label>
-            <div className="role-selector" data-testid="role-selector">
-              <label className="role-option">
-                <input
-                  type="radio"
-                  name="role"
-                  value="viewer"
-                  checked={role === 'viewer'}
-                  onChange={() => setRole('viewer')}
-                  disabled={isProcessing}
-                />
-                <span className="role-option-label">
-                  <strong>Viewer</strong>
-                  <span className="role-option-description">Can view photos</span>
-                </span>
-              </label>
-              <label className="role-option">
-                <input
-                  type="radio"
-                  name="role"
-                  value="editor"
-                  checked={role === 'editor'}
-                  onChange={() => setRole('editor')}
-                  disabled={isProcessing}
-                />
-                <span className="role-option-label">
-                  <strong>Editor</strong>
-                  <span className="role-option-description">Can view and upload photos</span>
-                </span>
-              </label>
-            </div>
-          </div>
-
-          {displayError && (
-            <div
-              id="invite-error"
-              className="form-error"
-              role="alert"
-              data-testid="invite-error"
-            >
-              {displayError}
-            </div>
-          )}
-
-          <div className="dialog-actions">
+  return (
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Invite Member"
+      description="Enter a user ID or identity public key to invite someone to this album. They will receive access to all epoch keys."
+      footer={footer}
+      testId="invite-member-dialog"
+      closeOnBackdropClick={!isInviting}
+    >
+      <form id="invite-member-form" onSubmit={handleSubmit} className="dialog-form">
+        <div className="form-group">
+          <label htmlFor="user-query" className="form-label">
+            User ID or Public Key
+          </label>
+          <div className="input-with-button">
+            <input
+              ref={inputRef}
+              id="user-query"
+              type="text"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setFoundUser(null);
+                setLookupError(null);
+              }}
+              placeholder="Enter user ID or paste identity pubkey"
+              disabled={isProcessing}
+              className="form-input"
+              autoComplete="off"
+              aria-describedby={displayError ? 'invite-error' : undefined}
+              data-testid="user-query-input"
+            />
             <button
               type="button"
-              className="button-secondary"
-              onClick={onClose}
-              disabled={isInviting}
-              data-testid="cancel-invite-button"
+              className="button-secondary lookup-button"
+              onClick={handleLookup}
+              disabled={isProcessing || !query.trim()}
+              data-testid="lookup-button"
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="button-primary"
-              disabled={isProcessing || !foundUser}
-              data-testid="submit-invite-button"
-            >
-              {isInviting ? 'Inviting...' : 'Invite'}
+              {isLookingUp ? 'Looking...' : 'Look Up'}
             </button>
           </div>
-        </form>
-      </dialog>
-    </div>
+        </div>
+
+        {foundUser && (
+          <div className="found-user" data-testid="found-user">
+            <span className="found-user-icon">✓</span>
+            <div className="found-user-details">
+              <span className="found-user-label">User found:</span>
+              <span className="found-user-id">{foundUser.id.slice(0, 16)}...</span>
+            </div>
+          </div>
+        )}
+
+        <div className="form-group">
+          <label className="form-label">Role</label>
+          <div className="role-selector" data-testid="role-selector">
+            <label className="role-option">
+              <input
+                type="radio"
+                name="role"
+                value="viewer"
+                checked={role === 'viewer'}
+                onChange={() => setRole('viewer')}
+                disabled={isProcessing}
+              />
+              <span className="role-option-label">
+                <strong>Viewer</strong>
+                <span className="role-option-description">Can view photos</span>
+              </span>
+            </label>
+            <label className="role-option">
+              <input
+                type="radio"
+                name="role"
+                value="editor"
+                checked={role === 'editor'}
+                onChange={() => setRole('editor')}
+                disabled={isProcessing}
+              />
+              <span className="role-option-label">
+                <strong>Editor</strong>
+                <span className="role-option-description">Can view and upload photos</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {displayError && (
+          <div
+            id="invite-error"
+            className="form-error"
+            role="alert"
+            data-testid="invite-error"
+          >
+            {displayError}
+          </div>
+        )}
+      </form>
+    </Dialog>
   );
 }

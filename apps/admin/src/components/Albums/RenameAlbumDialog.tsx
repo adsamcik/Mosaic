@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Dialog } from '../Shared/Dialog';
 
 interface RenameAlbumDialogProps {
   /** Whether the dialog is open */
@@ -32,7 +33,6 @@ export function RenameAlbumDialog({
   const [name, setName] = useState(currentName);
   const [localError, setLocalError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLDialogElement>(null);
 
   // Reset form when dialog opens with current name
   useEffect(() => {
@@ -46,18 +46,6 @@ export function RenameAlbumDialog({
       }, 0);
     }
   }, [isOpen, currentName]);
-
-  // Handle escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && !isRenaming) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isRenaming, onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,96 +77,74 @@ export function RenameAlbumDialog({
     }
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    // Only close if clicking the backdrop itself, not the dialog content
-    if (e.target === e.currentTarget && !isRenaming) {
-      onClose();
-    }
-  };
-
-  if (!isOpen) {
-    return null;
-  }
-
   const displayError = localError || error;
   const hasChanged = name.trim() !== currentName;
 
-  return (
-    <div
-      className="dialog-backdrop"
-      onClick={handleBackdropClick}
-      role="presentation"
-      data-testid="rename-album-backdrop"
-    >
-      <dialog
-        ref={dialogRef}
-        className="dialog"
-        open
-        aria-labelledby="rename-album-title"
-        aria-modal="true"
-        data-testid="rename-album-dialog"
+  const footer = (
+    <>
+      <button
+        type="button"
+        onClick={onClose}
+        disabled={isRenaming}
+        className="button-secondary"
+        data-testid="rename-album-cancel-button"
       >
-        <form onSubmit={handleSubmit} className="dialog-form">
-          <h2 id="rename-album-title" className="dialog-title">
-            Rename Album
-          </h2>
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form="rename-album-form"
+        disabled={isRenaming || !name.trim() || !hasChanged}
+        className="button-primary"
+        data-testid="rename-album-save-button"
+      >
+        {isRenaming ? 'Saving...' : 'Save'}
+      </button>
+    </>
+  );
 
-          <p className="dialog-description">
-            Album names are encrypted - only you and invited members can see them.
-          </p>
+  return (
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Rename Album"
+      description="Album names are encrypted - only you and invited members can see them."
+      footer={footer}
+      testId="rename-album-dialog"
+      closeOnBackdropClick={!isRenaming}
+    >
+      <form onSubmit={handleSubmit} className="dialog-form" id="rename-album-form">
+        <div className="form-group">
+          <label htmlFor="rename-album-name" className="form-label">
+            Album Name
+          </label>
+          <input
+            ref={inputRef}
+            id="rename-album-name"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My Photos"
+            disabled={isRenaming}
+            className="form-input"
+            autoComplete="off"
+            maxLength={100}
+            aria-describedby={displayError ? 'rename-album-error' : undefined}
+            data-testid="rename-album-name-input"
+          />
+        </div>
 
-          <div className="form-group">
-            <label htmlFor="rename-album-name" className="form-label">
-              Album Name
-            </label>
-            <input
-              ref={inputRef}
-              id="rename-album-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My Photos"
-              disabled={isRenaming}
-              className="form-input"
-              autoComplete="off"
-              maxLength={100}
-              aria-describedby={displayError ? 'rename-album-error' : undefined}
-              data-testid="rename-album-name-input"
-            />
+        {displayError && (
+          <div
+            id="rename-album-error"
+            className="form-error"
+            role="alert"
+            data-testid="rename-album-error"
+          >
+            {displayError}
           </div>
-
-          {displayError && (
-            <div
-              id="rename-album-error"
-              className="form-error"
-              role="alert"
-              data-testid="rename-album-error"
-            >
-              {displayError}
-            </div>
-          )}
-
-          <div className="dialog-actions">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isRenaming}
-              className="button-secondary"
-              data-testid="rename-album-cancel-button"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isRenaming || !name.trim() || !hasChanged}
-              className="button-primary"
-              data-testid="rename-album-save-button"
-            >
-              {isRenaming ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </form>
-      </dialog>
-    </div>
+        )}
+      </form>
+    </Dialog>
   );
 }
