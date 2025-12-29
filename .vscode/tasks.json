@@ -43,6 +43,35 @@
       }
     },
     {
+      "label": "watch-backend-proxyauth",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "watch",
+        "run",
+        "--project",
+        "${workspaceFolder}/apps/backend/Mosaic.Backend/Mosaic.Backend.csproj"
+      ],
+      "options": {
+        "env": {
+          "ASPNETCORE_ENVIRONMENT": "Development",
+          "ASPNETCORE_URLS": "http://localhost:5000",
+          "Auth__Mode": "ProxyAuth"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\s*Building\\.\\.\\.",
+          "endsPattern": "^\\s*Now listening on:"
+        }
+      }
+    },
+    {
       "label": "build-crypto",
       "type": "npm",
       "script": "build",
