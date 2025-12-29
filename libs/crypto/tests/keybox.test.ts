@@ -6,13 +6,15 @@ import { CryptoError, CryptoErrorCode, NONCE_SIZE, TAG_SIZE, KEY_SIZE } from '..
 // MIN_WRAPPED_LENGTH = NONCE_SIZE + TAG_SIZE + 1 = 24 + 16 + 1 = 41
 const MIN_WRAPPED_LENGTH = NONCE_SIZE + TAG_SIZE + 1;
 
-beforeAll(async () => {
-  await sodium.ready;
-});
-
 describe('keybox', () => {
-  const wrapper = sodium.randombytes_buf(32);
-  const key = sodium.randombytes_buf(32);
+  let wrapper: Uint8Array;
+  let key: Uint8Array;
+
+  beforeAll(async () => {
+    await sodium.ready;
+    wrapper = sodium.randombytes_buf(32);
+    key = sodium.randombytes_buf(32);
+  });
 
   it('round-trips wrap/unwrap', () => {
     const wrapped = wrapKey(key, wrapper);
