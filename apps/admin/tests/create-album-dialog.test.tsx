@@ -67,14 +67,14 @@ describe('CreateAlbumDialog', () => {
     it('renders nothing when closed', () => {
       const { queryByTestId, cleanup } = renderDialog({ isOpen: false });
 
-      expect(queryByTestId('create-album')).toBeNull();
+      expect(queryByTestId('create-album-dialog')).toBeNull();
       cleanup();
     });
 
     it('renders dialog when open', () => {
       const { getByTestId, getByText, cleanup } = renderDialog();
 
-      expect(getByTestId('create-album')).not.toBeNull();
+      expect(getByTestId('create-album-dialog')).not.toBeNull();
       expect(getByText('Create Album')).not.toBeNull();
       cleanup();
     });
@@ -169,7 +169,7 @@ describe('CreateAlbumDialog', () => {
       const onClose = vi.fn();
       const { getByTestId, cleanup } = renderDialog({ onClose });
 
-      const backdrop = getByTestId('create-album-backdrop') as HTMLElement;
+      const backdrop = getByTestId('create-album-dialog-backdrop') as HTMLElement;
       act(() => {
         backdrop.click();
       });
@@ -182,7 +182,7 @@ describe('CreateAlbumDialog', () => {
       const onClose = vi.fn();
       const { getByTestId, cleanup } = renderDialog({ onClose, isCreating: true });
 
-      const backdrop = getByTestId('create-album-backdrop') as HTMLElement;
+      const backdrop = getByTestId('create-album-dialog-backdrop') as HTMLElement;
       act(() => {
         backdrop.click();
       });
@@ -205,15 +205,15 @@ describe('CreateAlbumDialog', () => {
     it('has aria-labelledby pointing to title', () => {
       const { getByTestId, cleanup } = renderDialog();
 
-      const dialog = getByTestId('create-album') as HTMLElement;
-      expect(dialog.getAttribute('aria-labelledby')).toBe('create-album-title');
+      const dialog = getByTestId('create-album-dialog') as HTMLElement;
+      expect(dialog.getAttribute('aria-labelledby')).toBe('create-album-dialog-title');
       cleanup();
     });
 
     it('has aria-modal attribute', () => {
       const { getByTestId, cleanup } = renderDialog();
 
-      const dialog = getByTestId('create-album') as HTMLElement;
+      const dialog = getByTestId('create-album-dialog') as HTMLElement;
       expect(dialog.getAttribute('aria-modal')).toBe('true');
       cleanup();
     });
