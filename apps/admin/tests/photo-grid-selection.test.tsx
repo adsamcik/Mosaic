@@ -68,14 +68,7 @@ const mockPhotoActions = {
 };
 
 // Mock hooks
-vi.mock('../src/hooks/usePhotos', () => ({
-  usePhotos: vi.fn(() => ({
-    photos: mockPhotos,
-    isLoading: false,
-    error: null,
-    refetch: vi.fn(),
-  })),
-}));
+// Note: usePhotos mock removed - PhotoGrid now receives photos as props
 
 vi.mock('../src/hooks/useEpochKeys', () => ({
   useAlbumEpochKeys: vi.fn(() => ({
@@ -170,7 +163,14 @@ describe('PhotoGrid Selection and Delete', () => {
   const render = (albumId = 'album-1', selection?: UseSelectionReturn) => {
     act(() => {
       root = createRoot(container);
-      root.render(createElement(PhotoGrid, { albumId, selection }));
+      root.render(createElement(PhotoGrid, { 
+        albumId, 
+        photos: mockPhotos,
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+        selection 
+      }));
     });
 
     return {
