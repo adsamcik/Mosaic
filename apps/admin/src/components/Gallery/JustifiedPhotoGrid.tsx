@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
+import { useUploadContext } from '../../contexts/UploadContext';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
@@ -20,9 +21,11 @@ import {
     type JustifiedRow,
 } from '../../lib/justified-layout';
 import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
+import '../../styles/upload.css';
 import type { PhotoMeta } from '../../workers/types';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
 import { JustifiedPhotoThumbnail } from './JustifiedPhotoThumbnail';
+import { PendingPhotoThumbnail } from './PendingPhotoThumbnail';
 import { PhotoLightbox } from './PhotoLightbox';
 
 /** Gap between photos in pixels */
@@ -90,6 +93,31 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted, sele
   const lightbox = useLightbox(photos);
   const photoActions = usePhotoActions();
   const permissions = useAlbumPermissions();
+  const { activeTasks } = useUploadContext();
+
+  // Combine real photos with pending uploads
+  const displayPhotos = useMemo(() => {
+    const pendingPhotos = activeTasks
+      .filter(t => t.albumId === albumId)
+      .map(t => ({
+        id: t.id,
+        assetId: t.id,
+        albumId: t.albumId,
+        filename: t.file.name,
+        mimeType: t.file.type,
+        width: t.originalWidth || t.thumbWidth || 800,
+        height: t.originalHeight || t.thumbHeight || 600,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tags: [],
+        shardIds: [],
+        epochId: t.epochId,
+        isPending: true, // Marker for pending state
+        task: t // Reference to the full task
+      } as PhotoMeta & { isPending?: boolean; task?: any }));
+
+    return [...pendingPhotos, ...photos];
+  }, [activeTasks, photos, albumId]);
 
   // Use selection from props if provided (lifted state), otherwise internal state
   // This allows the header to control selection when present
@@ -117,9 +145,9 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted, sele
 
   // Compute justified layout
   const rows = useMemo((): JustifiedRow[] => {
-    if (containerWidth <= 0 || photos.length === 0) return [];
+    if (containerWidth <= 0 || displayPhotos.length === 0) return [];
 
-    return computeJustifiedLayout(photos, {
+    return computeJustifiedLayout(displayPhotos, {
       containerWidth,
       targetRowHeight: TARGET_ROW_HEIGHT,
       gap: PHOTO_GAP,
@@ -280,7 +308,7 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted, sele
         data-testid="justified-grid"
       >
         {/* Empty state - show inside container so ref is always attached */}
-        {photos.length === 0 ? (
+        {displayPhotos.length === 0 ? (
           <div className="justified-grid-empty" data-testid="justified-grid-empty">
             <div className="empty-state-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
@@ -317,6 +345,17 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted, sele
                 data-testid="justified-grid-row"
               >
                 {row.photos.map(({ photo, width, height }) => {
+                  // Check if this is a pending upload
+                  const pendingPhoto = photo as PhotoMeta & { isPending?: boolean; task?: any };
+                  
+                  if (pendingPhoto.isPending && pendingPhoto.task) {
+                    return (
+                      <div key={photo.id} style={{ width, height }}>
+                        <PendingPhotoThumbnail task={pendingPhoto.task} />
+                      </div>
+                    );
+                  }
+
                   const epochReadKey = epochKeys.get(photo.epochId);
                   const isSelected = selectedIds.has(photo.id);
 

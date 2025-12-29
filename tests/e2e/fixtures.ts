@@ -336,6 +336,8 @@ export class LoginPage {
     const toggleBtn = this.page.getByRole('button', { name: /don't have an account/i });
     if (await toggleBtn.isVisible().catch(() => false)) {
       await toggleBtn.click();
+      // Wait for the registration form to fully appear
+      await expect(this.confirmPasswordInput).toBeVisible({ timeout: 15000 });
     }
   }
 

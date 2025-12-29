@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { getApi, toBase64 } from '../lib/api';
+import { getCryptoClient } from '../lib/crypto-client';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
 import { type EpochKeyBundle } from '../lib/epoch-key-store';
-import { uploadQueue, type UploadTask } from '../lib/upload-queue';
-import { getCryptoClient } from '../lib/crypto-client';
-import { getApi, toBase64 } from '../lib/api';
-import { syncEngine } from '../lib/sync-engine';
-import type { PhotoMeta } from '../workers/types';
 import { createLogger } from '../lib/logger';
+import { syncEngine } from '../lib/sync-engine';
+import { uploadQueue, type UploadTask } from '../lib/upload-queue';
+import type { PhotoMeta } from '../workers/types';
 
 const log = createLogger('UploadContext');
 
@@ -46,6 +46,8 @@ interface UploadContextValue {
   upload: (file: File, albumId: string) => Promise<void>;
   /** Clear the current error */
   clearError: () => void;
+  /** List of currently active upload tasks */
+  activeTasks: UploadTask[];
 }
 
 const UploadContext = createContext<UploadContextValue | null>(null);
@@ -125,6 +127,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<UploadError | null>(null);
+  const [activeTasks, setActiveTasks] = useState<UploadTask[]>([]);
 
   const upload = useCallback(async (file: File, albumId: string) => {
     setIsUploading(true);
@@ -160,10 +163,20 @@ export function UploadProvider({ children }: UploadProviderProps) {
       // Set up progress callback (convert 0-1 to 0-100)
       uploadQueue.onProgress = (task) => {
         setProgress(Math.round(task.progress * 100));
+        setActiveTasks((prev) => {
+          const index = prev.findIndex((t) => t.id === task.id);
+          if (index === -1) return [...prev, task];
+          const next = [...prev];
+          next[index] = task;
+          return next;
+        });
       };
 
       // Create manifest when upload completes
       uploadQueue.onComplete = async (task, shardIds) => {
+        // Remove from active tasks
+        setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
+
         try {
           await createManifestForUpload(task, shardIds, epochKey);
           
@@ -194,7 +207,12 @@ export function UploadProvider({ children }: UploadProviderProps) {
         }
       };
 
-      uploadQueue.onError = (_, uploadErr) => {
+
+
+      uploadQueue.onError = (task, uploadErr) => {
+        // Remove from active tasks
+        setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
+
         log.error('Upload failed:', uploadErr);
         setError(
           new UploadError(
@@ -213,6 +231,10 @@ export function UploadProvider({ children }: UploadProviderProps) {
         epochKey.epochId,
         epochKey.epochSeed
       );
+      
+      // Add to active tasks immediately
+      // We need to fetch the task object back from the queue or construct a minimal one
+      // For now, let's wait for the first progress update or fetch pending tasks
     } catch (err) {
       // Only handle errors not already handled above
       if (!(err instanceof UploadError)) {
@@ -234,7 +256,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
 
   return (
     <UploadContext.Provider
-      value={{ isUploading, progress, error, upload, clearError }}
+      value={{ isUploading, progress, error, upload, clearError, activeTasks }}
     >
       {children}
     </UploadContext.Provider>
