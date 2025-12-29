@@ -65,8 +65,20 @@ export function GalleryHeader({
   const selectedCount = selection?.selectedCount ?? 0;
 
   return (
-    <div className="gallery-header">
-      <h2 className="gallery-title">Photos</h2>
+    <div className={`gallery-header ${isSelectionMode ? 'gallery-header--selection-mode' : ''}`}>
+      <h2 className="gallery-title">
+        {isSelectionMode ? (
+          <span className="gallery-title-selection">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="selection-icon">
+              <polyline points="9 11 12 14 22 4"/>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+            Select Photos
+          </span>
+        ) : (
+          'Photos'
+        )}
+      </h2>
 
       {/* Search Input - hide when in selection mode */}
       {!isSelectionMode && (
@@ -78,58 +90,32 @@ export function GalleryHeader({
         />
       )}
 
+      {/* Selection mode hint - shown instead of search when selecting */}
+      {isSelectionMode && (
+        <div className="selection-mode-hint">
+          {selectedCount === 0 ? (
+            <span>Click photos to select them</span>
+          ) : (
+            <span>{selectedCount} photo{selectedCount !== 1 ? 's' : ''} selected</span>
+          )}
+        </div>
+      )}
+
       <div className="gallery-actions">
-        {/* Selection Mode Controls */}
+        {/* Selection Mode: simplified header - main actions are in floating bar */}
         {isSelectionMode ? (
-          <>
-            {/* Selection count */}
-            {selectedCount > 0 && (
-              <span className="selection-count" data-testid="selection-count">
-                {selectedCount} selected
-              </span>
-            )}
-
-            {/* Select All button */}
-            <button
-              className="button-secondary"
-              onClick={selectionActions?.selectAll}
-              data-testid="select-all-button"
-            >
-              Select All
-            </button>
-
-            {/* Clear Selection button */}
-            {selectedCount > 0 && (
-              <button
-                className="button-secondary"
-                onClick={selectionActions?.clearSelection}
-                data-testid="clear-selection-button"
-              >
-                Clear
-              </button>
-            )}
-
-            {/* Bulk Delete button */}
-            {selectedCount > 0 && permissions.canDelete && (
-              <button
-                className="button-danger"
-                onClick={selectionActions?.onBulkDelete}
-                data-testid="bulk-delete-button"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                Delete ({selectedCount})
-              </button>
-            )}
-
-            {/* Cancel Selection button */}
-            <button
-              className="button-secondary button-active"
-              onClick={selectionActions?.toggleSelectionMode}
-              data-testid="selection-mode-button"
-            >
-              Cancel
-            </button>
-          </>
+          <button
+            className="button-secondary selection-cancel-btn"
+            onClick={selectionActions?.toggleSelectionMode}
+            data-testid="selection-mode-button"
+            title="Exit selection mode (Esc)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+            Cancel
+          </button>
         ) : (
           <>
             {/* View Mode Toggle */}

@@ -45,8 +45,10 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
 
   // Combine real photos with pending uploads
   const displayPhotos = useMemo(() => {
+    const existingAssetIds = new Set(photos.map(p => p.assetId));
+
     const pendingPhotos = activeTasks
-      .filter(t => t.albumId === albumId)
+      .filter(t => t.albumId === albumId && !existingAssetIds.has(t.id))
       .map(t => ({
         id: t.id,
         assetId: t.id,
@@ -219,7 +221,7 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
 
   return (
     <>
-      <div ref={parentRef} className="photo-grid-container" data-testid="photo-grid">
+      <div ref={parentRef} className={`photo-grid-container ${isSelectionMode ? 'photo-grid-selection-mode' : ''}`} data-testid="photo-grid">
         <div
           className="photo-grid-virtual"
           style={{

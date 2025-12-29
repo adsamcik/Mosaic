@@ -118,6 +118,15 @@ vi.mock('../src/lib/photo-service', () => ({
   preloadPhotos: vi.fn(),
 }));
 
+// Mock UploadContext to avoid requiring provider
+vi.mock('../src/contexts/UploadContext', () => ({
+  useUploadContext: vi.fn(() => ({
+    activeTasks: [],
+    isUploading: false,
+    totalProgress: 0,
+  })),
+}));
+
 // Import component after mocks
 import { PhotoGrid } from '../src/components/Gallery/PhotoGrid';
 
