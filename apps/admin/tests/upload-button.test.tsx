@@ -54,8 +54,8 @@ describe('UploadButton', () => {
     const button = container.querySelector('[data-testid="upload-button"]');
     // Should have an SVG icon (upload arrow)
     expect(button?.querySelector('svg')).not.toBeNull();
-    // Should contain "Upload" text
-    expect(button?.textContent).toContain('Upload');
+    // Should contain "Upload" translation key
+    expect(button?.textContent).toContain('upload.button');
     // Should NOT contain emoji character
     expect(button?.textContent).not.toContain('📷');
   });

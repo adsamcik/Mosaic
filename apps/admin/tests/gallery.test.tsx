@@ -385,7 +385,7 @@ describe('Gallery', () => {
 
       const uploadButton = getByTestId('upload-button');
       expect(uploadButton).not.toBeNull();
-      expect(uploadButton?.textContent).toContain('Upload');
+      expect(uploadButton?.textContent).toContain('upload.button');
 
       cleanup();
     });

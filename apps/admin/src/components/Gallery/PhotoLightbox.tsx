@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { loadPhoto, preloadPhotos, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
@@ -80,6 +81,7 @@ export function PhotoLightbox({
   showMetadata = true,
   onDelete,
 }: PhotoLightboxProps) {
+  const { t } = useTranslation();
   const [loadState, setLoadState] = useState<LoadState>({ status: 'loading', progress: 0 });
   const [showInfo, setShowInfo] = useState(false);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -293,7 +295,7 @@ export function PhotoLightbox({
         />
       </div>
       <span className="lightbox-progress-text">
-        {Math.round((loadState as { progress: number }).progress * 100)}%
+        {t('lightbox.loadingProgress', { percent: Math.round((loadState as { progress: number }).progress * 100) })}
       </span>
     </div>
   );
@@ -312,7 +314,7 @@ export function PhotoLightbox({
         onClick={handleRetry}
         data-testid="lightbox-retry"
       >
-        Retry
+        {t('common.retry')}
       </button>
     </div>
   );
@@ -337,13 +339,13 @@ export function PhotoLightbox({
       <dl className="lightbox-metadata-list">
         {photo.takenAt && (
           <>
-            <dt>Date taken</dt>
+            <dt>{t('lightbox.metadata.dateTaken')}</dt>
             <dd>{formatDate(photo.takenAt)}</dd>
           </>
         )}
         {photo.width > 0 && photo.height > 0 && (
           <>
-            <dt>Dimensions</dt>
+            <dt>{t('lightbox.metadata.dimensions')}</dt>
             <dd>
               {photo.width.toLocaleString()} × {photo.height.toLocaleString()}
             </dd>
@@ -351,15 +353,15 @@ export function PhotoLightbox({
         )}
         {loadState.status === 'loaded' && (
           <>
-            <dt>File size</dt>
+            <dt>{t('lightbox.metadata.fileSize')}</dt>
             <dd>{formatFileSize(loadState.result.size)}</dd>
           </>
         )}
-        <dt>Format</dt>
+        <dt>{t('lightbox.metadata.format')}</dt>
         <dd>{photo.mimeType}</dd>
         {photo.lat != null && photo.lng != null && (
           <>
-            <dt>Location</dt>
+            <dt>{t('lightbox.metadata.location')}</dt>
             <dd>
               {photo.lat.toFixed(5)}, {photo.lng.toFixed(5)}
             </dd>
@@ -367,13 +369,13 @@ export function PhotoLightbox({
         )}
         {photo.tags.length > 0 && (
           <>
-            <dt>Tags</dt>
+            <dt>{t('lightbox.metadata.tags')}</dt>
             <dd>{photo.tags.join(', ')}</dd>
           </>
         )}
         {photo.description && (
           <>
-            <dt>Description</dt>
+            <dt>{t('lightbox.metadata.description')}</dt>
             <dd className="lightbox-info-description">{photo.description}</dd>
           </>
         )}
@@ -397,7 +399,7 @@ export function PhotoLightbox({
       <button
         className="lightbox-close"
         onClick={onClose}
-        aria-label="Close lightbox"
+        aria-label={t('lightbox.close')}
         data-testid="lightbox-close"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -408,7 +410,7 @@ export function PhotoLightbox({
         <button
           className="lightbox-nav lightbox-nav-prev"
           onClick={onPrevious}
-          aria-label="Previous photo"
+          aria-label={t('lightbox.previous')}
           data-testid="lightbox-prev"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -418,7 +420,7 @@ export function PhotoLightbox({
         <button
           className="lightbox-nav lightbox-nav-next"
           onClick={onNext}
-          aria-label="Next photo"
+          aria-label={t('lightbox.next')}
           data-testid="lightbox-next"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
@@ -437,7 +439,7 @@ export function PhotoLightbox({
         <button
           className={`lightbox-info-toggle ${showInfo ? 'lightbox-info-toggle-active' : ''}`}
           onClick={toggleInfo}
-          aria-label={showInfo ? 'Hide photo info' : 'Show photo info'}
+          aria-label={showInfo ? t('lightbox.hideMetadata') : t('lightbox.showMetadata')}
           aria-pressed={showInfo}
           data-testid="lightbox-info-toggle"
         >
@@ -450,8 +452,8 @@ export function PhotoLightbox({
         <button
           className="lightbox-download-button"
           onClick={handleDownload}
-          aria-label="Download photo"
-          title="Download photo"
+          aria-label={t('lightbox.download')}
+          title={t('lightbox.download')}
           data-testid="lightbox-download"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -463,8 +465,8 @@ export function PhotoLightbox({
         <button
           className="lightbox-delete-button"
           onClick={handleDelete}
-          aria-label="Delete photo"
-          title="Delete photo (Delete key)"
+          aria-label={t('lightbox.delete')}
+          title={t('lightbox.delete')}
           data-testid="lightbox-delete"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>

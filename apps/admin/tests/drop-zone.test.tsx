@@ -116,7 +116,7 @@ describe('DropZone', () => {
     });
 
     expect(container.querySelector('[data-testid="drop-zone-overlay"]')).not.toBeNull();
-    expect(container.textContent).toContain('Drop photos here');
+    expect(container.textContent).toContain('upload.dropHere');
   });
 
   it('hides overlay when drag leaves', () => {

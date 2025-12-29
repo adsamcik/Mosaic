@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useUploadContext } from '../../contexts/UploadContext';
 import { createLogger } from '../../lib/logger';
 
@@ -18,6 +19,7 @@ interface DropZoneProps {
  * Shows visual feedback when files are dragged over.
  */
 export function DropZone({ albumId, children, className = '', disabled = false }: DropZoneProps) {
+  const { t } = useTranslation();
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef(0);
   const { upload } = useUploadContext();
@@ -101,7 +103,7 @@ export function DropZone({ albumId, children, className = '', disabled = false }
             <span className="drop-zone-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </span>
-            <span className="drop-zone-text">Drop photos here</span>
+            <span className="drop-zone-text">{t('upload.dropHere')}</span>
           </div>
         </div>
       )}
