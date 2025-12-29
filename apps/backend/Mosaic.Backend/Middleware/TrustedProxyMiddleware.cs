@@ -28,8 +28,16 @@ public partial class TrustedProxyMiddleware
     {
         // Public endpoints that don't require authentication
         if (context.Request.Path.StartsWithSegments("/health") ||
-            context.Request.Path.StartsWithSegments("/api/s"))
+            context.Request.Path.StartsWithSegments("/api/s") ||
+            context.Request.Path.StartsWithSegments("/api/auth/init"))
         {
+            // Return 404 for auth/init in ProxyAuth mode - endpoint doesn't exist
+            if (context.Request.Path.StartsWithSegments("/api/auth/init"))
+            {
+                context.Response.StatusCode = 404;
+                await context.Response.WriteAsJsonAsync(new { error = "Not found" });
+                return;
+            }
             await _next(context);
             return;
         }

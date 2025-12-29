@@ -197,6 +197,37 @@ class SessionManager {
   }
 
   /**
+   * Clear corrupted or stuck session state without requiring authentication.
+   * Use this when the user cannot restore their session (e.g., wrong password, corrupted data).
+   * This clears all local session state but preserves encrypted data on the server.
+   */
+  clearCorruptedSession(): void {
+    log.info('Clearing corrupted session state');
+
+    // Clear session storage (removes session state key and cached keys)
+    sessionStorage.clear();
+
+    // Clear any cached keys from memory
+    clearCacheEncryptionKey();
+
+    // Clear cached metadata and covers from memory
+    clearAllCachedMetadata();
+    clearAllCovers();
+
+    // Clear epoch keys from memory
+    clearAllEpochKeys();
+
+    // Reset internal state
+    this._currentUser = null;
+    this._isLoggedIn = false;
+
+    // Notify listeners so UI updates
+    this.notify();
+
+    log.info('Session state cleared - user can now start fresh');
+  }
+
+  /**
    * Check if we can restore session from cached keys (no password needed).
    */
   get canRestoreFromCache(): boolean {
