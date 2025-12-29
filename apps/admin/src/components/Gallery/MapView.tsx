@@ -337,6 +337,17 @@ export function MapView({
     // Add new markers
     clusters.forEach((feature) => {
       const [lng, lat] = feature.geometry.coordinates;
+      
+      // Skip features with invalid coordinates
+      if (
+        typeof lat !== 'number' ||
+        typeof lng !== 'number' ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng)
+      ) {
+        return;
+      }
+      
       const isCluster = feature.properties.cluster === true;
 
       if (isCluster) {
@@ -383,15 +394,39 @@ export function MapView({
     const map = mapRef.current;
     if (!map || points.length === 0) return;
 
-    // Calculate bounds from points
-    const latLngs = points.map((p) => {
-      const [lng, lat] = p.geometry.coordinates;
-      return L.latLng(lat, lng);
-    });
+    // Calculate bounds from points, filtering out invalid coordinates
+    const latLngs = points
+      .map((p) => {
+        const [lng, lat] = p.geometry.coordinates;
+        // Validate coordinates are valid numbers within valid ranges
+        if (
+          typeof lat !== 'number' ||
+          typeof lng !== 'number' ||
+          !Number.isFinite(lat) ||
+          !Number.isFinite(lng) ||
+          lat < -90 ||
+          lat > 90 ||
+          lng < -180 ||
+          lng > 180
+        ) {
+          return null;
+        }
+        return L.latLng(lat, lng);
+      })
+      .filter((latLng): latLng is L.LatLng => latLng !== null);
 
     if (latLngs.length > 0) {
-      const bounds = L.latLngBounds(latLngs);
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+      try {
+        const bounds = L.latLngBounds(latLngs);
+        // Verify bounds are valid before fitting (bounds.isValid() returns false for empty/invalid bounds)
+        if (bounds && typeof bounds.isValid === 'function' && bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+        } else {
+          log.warn('Invalid bounds computed from points, using default view');
+        }
+      } catch {
+        log.warn('Failed to fit map bounds');
+      }
     }
   }, [points]);
 

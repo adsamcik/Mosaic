@@ -7,8 +7,9 @@
  * Test IDs: P1-SETTINGS-1 through P1-SETTINGS-8
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 import { LoginPage, AppShell, SettingsPage } from '../page-objects';
+import { TEST_CONSTANTS } from '../fixtures';
 
 test.describe('Settings Page', () => {
   let loginPage: LoginPage;
@@ -177,20 +178,20 @@ test.describe('Clear Data Functionality', () => {
 });
 
 test.describe('Settings Persistence', () => {
-  test('P1-SETTINGS-11: theme preference persists after logout/login', async ({ page }) => {
-    const loginPage = new LoginPage(page);
-    const appShell = new AppShell(page);
-    const settingsPage = new SettingsPage(page);
+  test('P1-SETTINGS-11: theme preference persists after logout/login', async ({ authenticatedPage, testUser }) => {
+    const loginPage = new LoginPage(authenticatedPage);
+    const appShell = new AppShell(authenticatedPage);
+    const settingsPage = new SettingsPage(authenticatedPage);
 
-    await loginPage.goto();
+    await authenticatedPage.goto('/');
     await loginPage.waitForForm();
-    await loginPage.login();
+    await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
     await loginPage.expectLoginSuccess();
     await appShell.openSettings();
     await settingsPage.waitForLoad();
 
     // Set theme to dark
-    const themeSelect = page.getByTestId('theme-select');
+    const themeSelect = authenticatedPage.getByTestId('theme-select');
     await themeSelect.selectOption('dark');
     await expect(themeSelect).toHaveValue('dark');
 
@@ -203,7 +204,7 @@ test.describe('Settings Persistence', () => {
     await loginPage.waitForForm();
 
     // Login again
-    await loginPage.login();
+    await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
     await loginPage.expectLoginSuccess();
 
     // Go to settings
@@ -211,6 +212,6 @@ test.describe('Settings Persistence', () => {
     await settingsPage.waitForLoad();
 
     // Theme should still be dark
-    await expect(page.getByTestId('theme-select')).toHaveValue('dark');
+    await expect(authenticatedPage.getByTestId('theme-select')).toHaveValue('dark');
   });
 });

@@ -435,6 +435,62 @@ Remove-Item -Force -ErrorAction SilentlyContinue
 Stop-Process -Force
 ```
 
+### 🚨 CRITICAL: Never Pipe Expensive Commands Through Filters
+
+**NEVER pipe expensive commands (tests, builds, long-running processes) directly through filters.** If the filter doesn't match, you lose the output and must re-run the expensive command.
+
+#### The Problem
+
+```powershell
+# ❌ CATASTROPHICALLY WRONG - If filter misses, must re-run entire test suite
+npx playwright test --reporter=list 2>&1 | Select-String -Pattern "passed|failed" | Select-Object -Last 30
+
+# ❌ ALSO WRONG - Same problem with grep
+dotnet test 2>&1 | grep -E "(Passed|Failed)"
+```
+
+#### The Solution: Capture First, Filter Later
+
+**Always save output to a file first, then filter the file.** This allows retrying filters without re-running expensive commands.
+
+```powershell
+# ✅ CORRECT - Capture output to file first
+npx playwright test --reporter=list 2>&1 | Out-File -FilePath "test-output.txt" -Encoding utf8
+
+# ✅ Then filter the saved output (can retry this as needed)
+Get-Content "test-output.txt" | Select-String -Pattern "passed|failed" | Select-Object -Last 30
+
+# ✅ If filter didn't match what you needed, adjust and retry without re-running tests
+Get-Content "test-output.txt" | Select-String -Pattern "PASSED|FAILED|Error"
+```
+
+```bash
+# ✅ CORRECT - Bash/Linux equivalent
+npx playwright test --reporter=list > test-output.txt 2>&1
+
+# ✅ Then filter
+grep -E "(passed|failed)" test-output.txt | tail -30
+```
+
+#### Standard Output File Locations
+
+Use these conventional paths for captured output:
+
+| Command Type | Output File |
+|--------------|-------------|
+| Playwright tests | `tests/e2e/playwright-output.txt` |
+| Vitest tests | `apps/admin/vitest-output.txt` |
+| .NET tests | `apps/backend/dotnet-test-output.txt` |
+| Build output | `build-output.txt` (in project root) |
+
+#### Cleanup
+
+Remove output files after debugging is complete:
+
+```powershell
+Remove-Item -Path "*-output.txt" -Force -ErrorAction SilentlyContinue
+```
+
 ---
 
 ## Running the Development Environment
@@ -479,10 +535,10 @@ The `scripts/dev.ps1` script manages all services as background processes:
 # Check status
 .\scripts\dev.ps1 status
 
-# View logs (live tail)
+# View logs (non-blocking, shows last 50 lines)
 .\scripts\dev.ps1 logs backend
-.\scripts\dev.ps1 logs frontend
-.\scripts\dev.ps1 logs db
+.\scripts\dev.ps1 logs frontend --tail=100    # Last 100 lines
+.\scripts\dev.ps1 logs backend -f             # Live tail (interactive)
 
 # Stop everything
 .\scripts\dev.ps1 stop
@@ -493,6 +549,14 @@ The `scripts/dev.ps1` script manages all services as background processes:
 # Full reset (clears data, stops services)
 .\scripts\dev.ps1 reset
 .\scripts\dev.ps1 reset --full  # Also removes node_modules
+
+# Run tests (services must be running for E2E)
+.\scripts\dev.ps1 test           # Run all unit tests
+.\scripts\dev.ps1 test unit      # Run all unit tests
+.\scripts\dev.ps1 test e2e       # Run E2E tests against running services
+.\scripts\dev.ps1 test e2e auth.spec.ts          # Run specific test file
+.\scripts\dev.ps1 test e2e --grep "P0-IDENTITY"  # Run tests matching pattern
+.\scripts\dev.ps1 test e2e --headed              # Run with visible browser
 ```
 
 **Service URLs:**

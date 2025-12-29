@@ -370,11 +370,11 @@ describe('Gallery', () => {
       cleanup();
     });
 
-    it('renders share button', () => {
+    it('renders album settings dropdown', () => {
       const { getByTestId, cleanup } = renderGallery({ albumId });
 
-      const shareButton = getByTestId('share-button');
-      expect(shareButton).not.toBeNull();
+      const albumSettingsButton = getByTestId('album-settings-button');
+      expect(albumSettingsButton).not.toBeNull();
 
       cleanup();
     });
@@ -469,10 +469,17 @@ describe('Gallery', () => {
   });
 
   describe('Member List', () => {
-    it('opens member list when share button is clicked', () => {
+    it('opens member list when share button is clicked in dropdown', () => {
       const { getByTestId, cleanup } = renderGallery({ albumId });
 
-      const shareButton = getByTestId('share-button');
+      // First open the album settings dropdown
+      const albumSettingsButton = getByTestId('album-settings-button');
+      act(() => {
+        albumSettingsButton?.click();
+      });
+
+      // Then click the share/members menu item
+      const shareButton = getByTestId('menu-share-button');
       act(() => {
         shareButton?.click();
       });
@@ -503,6 +510,90 @@ describe('photosToGeoFeatures', () => {
 
     cleanup();
   });
+
+  it('filters out photos with null coordinates (from SQLite)', async () => {
+    // SQLite returns NULL values as JavaScript null, not undefined
+    // This test ensures photos with null lat/lng are excluded from the map
+    const { usePhotos } = await import('../src/hooks/usePhotos');
+    const photosWithNullCoords: PhotoMeta[] = [
+      {
+        id: 'photo-valid',
+        assetId: 'asset-valid',
+        albumId: 'album-1',
+        filename: 'valid.jpg',
+        mimeType: 'image/jpeg',
+        width: 1920,
+        height: 1080,
+        lat: 40.7128,
+        lng: -74.006,
+        tags: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        shardIds: ['shard-1'],
+        epochId: 1,
+      },
+      {
+        id: 'photo-null',
+        assetId: 'asset-null',
+        albumId: 'album-1',
+        filename: 'null-coords.jpg',
+        mimeType: 'image/jpeg',
+        width: 1920,
+        height: 1080,
+        lat: null as unknown as number,
+        lng: null as unknown as number,
+        tags: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        shardIds: ['shard-2'],
+        epochId: 1,
+      },
+      {
+        id: 'photo-undefined',
+        assetId: 'asset-undefined',
+        albumId: 'album-1',
+        filename: 'undefined-coords.jpg',
+        mimeType: 'image/jpeg',
+        width: 1920,
+        height: 1080,
+        // lat and lng are undefined (not set)
+        tags: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        shardIds: ['shard-3'],
+        epochId: 1,
+      },
+    ];
+
+    vi.mocked(usePhotos).mockReturnValueOnce({
+      photos: photosWithNullCoords,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const { getByTestId, cleanup } = renderGallery({ albumId: 'test-null' });
+
+    const mapToggle = getByTestId('view-toggle-map');
+    act(() => {
+      mapToggle?.click();
+    });
+
+    const mapView = getByTestId('map-view');
+    // Only 1 photo has valid coordinates (photo-valid)
+    // photo-null and photo-undefined should be filtered out
+    expect(mapView?.getAttribute('data-point-count')).toBe('1');
+
+    cleanup();
+
+    // Reset mock
+    vi.mocked(usePhotos).mockReturnValue({
+      photos: mockPhotos,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+  });
 });
 
 describe('Share Links Integration', () => {
@@ -518,31 +609,49 @@ describe('Share Links Integration', () => {
     document.body.innerHTML = '';
   });
 
-  it('shows share links button for album owners', () => {
+  it('shows share links menu item for album owners in dropdown', () => {
     const { getByTestId, cleanup } = renderGallery({ albumId });
 
-    const shareLinksButton = getByTestId('share-links-button');
+    // First open the album settings dropdown
+    const albumSettingsButton = getByTestId('album-settings-button');
+    act(() => {
+      albumSettingsButton?.click();
+    });
+
+    const shareLinksButton = getByTestId('menu-links-button');
     expect(shareLinksButton).not.toBeNull();
-    expect(shareLinksButton?.textContent).toContain('Links');
+    expect(shareLinksButton?.textContent).toContain('Share Links');
 
     cleanup();
   });
 
-  it('hides share links button for non-owners', () => {
+  it('hides share links menu item for non-owners', () => {
     mockState.isOwner = false;
     mockState.currentUserRole = 'viewer';
-    const { queryByTestId, cleanup } = renderGallery({ albumId });
+    const { getByTestId, queryByTestId, cleanup } = renderGallery({ albumId });
 
-    const shareLinksButton = queryByTestId('share-links-button');
+    // Open the dropdown
+    const albumSettingsButton = getByTestId('album-settings-button');
+    act(() => {
+      albumSettingsButton?.click();
+    });
+
+    const shareLinksButton = queryByTestId('menu-links-button');
     expect(shareLinksButton).toBeNull();
 
     cleanup();
   });
 
-  it('opens share links panel when button is clicked', () => {
+  it('opens share links panel when menu item is clicked', () => {
     const { getByTestId, cleanup } = renderGallery({ albumId });
 
-    const shareLinksButton = getByTestId('share-links-button');
+    // Open the dropdown
+    const albumSettingsButton = getByTestId('album-settings-button');
+    act(() => {
+      albumSettingsButton?.click();
+    });
+
+    const shareLinksButton = getByTestId('menu-links-button');
     act(() => {
       shareLinksButton?.click();
     });
@@ -557,8 +666,12 @@ describe('Share Links Integration', () => {
   it('closes share links panel when close button is clicked', () => {
     const { getByTestId, queryByTestId, cleanup } = renderGallery({ albumId });
 
-    // Open the panel
-    const shareLinksButton = getByTestId('share-links-button');
+    // Open the dropdown and click share links
+    const albumSettingsButton = getByTestId('album-settings-button');
+    act(() => {
+      albumSettingsButton?.click();
+    });
+    const shareLinksButton = getByTestId('menu-links-button');
     act(() => {
       shareLinksButton?.click();
     });
@@ -581,8 +694,12 @@ describe('Share Links Integration', () => {
   it('closes share links panel when backdrop is clicked', () => {
     const { getByTestId, queryByTestId, cleanup } = renderGallery({ albumId });
 
-    // Open the panel
-    const shareLinksButton = getByTestId('share-links-button');
+    // Open the dropdown and click share links
+    const albumSettingsButton = getByTestId('album-settings-button');
+    act(() => {
+      albumSettingsButton?.click();
+    });
+    const shareLinksButton = getByTestId('menu-links-button');
     act(() => {
       shareLinksButton?.click();
     });
@@ -605,8 +722,12 @@ describe('Share Links Integration', () => {
   it('shows share links list inside the panel', () => {
     const { getByTestId, cleanup } = renderGallery({ albumId });
 
-    // Open the panel
-    const shareLinksButton = getByTestId('share-links-button');
+    // Open the dropdown and click share links
+    const albumSettingsButton = getByTestId('album-settings-button');
+    act(() => {
+      albumSettingsButton?.click();
+    });
+    const shareLinksButton = getByTestId('menu-links-button');
     act(() => {
       shareLinksButton?.click();
     });

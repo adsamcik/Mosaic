@@ -6,6 +6,7 @@ import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { useAlbumMembers } from '../../hooks/useAlbumMembers';
 import { usePhotos } from '../../hooks/usePhotos';
+import { useSelection } from '../../hooks/useSelection';
 import { useSync } from '../../hooks/useSync';
 import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
 import { createLogger } from '../../lib/logger';
@@ -36,10 +37,11 @@ interface GalleryProps {
 
 /**
  * Convert photos with geolocation to GeoFeatures for the map
+ * Filters out photos without valid GPS coordinates (null, undefined, or invalid)
  */
 function photosToGeoFeatures(photos: PhotoMeta[]): GeoFeature[] {
   return photos
-    .filter((p) => p.lat !== undefined && p.lng !== undefined)
+    .filter((p) => p.lat != null && p.lng != null && Number.isFinite(p.lat) && Number.isFinite(p.lng))
     .map((p) => ({
       type: 'Feature' as const,
       geometry: {
@@ -67,12 +69,19 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
   const [renameError, setRenameError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('justified');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // State for bulk photo delete dialog
+  const [bulkDeletePhotos, setBulkDeletePhotos] = useState<PhotoMeta[]>([]);
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
 
   const { photos, isLoading, error, refetch: reloadPhotos } = usePhotos(albumId, searchQuery);
   const { epochKeys, isLoading: epochKeysLoading } = useAlbumEpochKeys(albumId);
   const { currentUserRole, isOwner, canEdit } = useAlbumMembers(albumId);
   const lightbox = useLightbox(photos);
   const { syncAlbum } = useSync();
+  
+  // Selection state for batch operations (lifted up from photo grids)
+  const selection = useSelection();
   
   // Register this album for background auto-sync
   useAutoSync(albumId);
@@ -192,6 +201,28 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
     }
   }, [isDeleting]);
 
+  // Handle bulk photo delete from header
+  const handleBulkDeleteClick = useCallback(() => {
+    const selectedPhotos = photos.filter((p) => selection.selectedIds.has(p.id));
+    if (selectedPhotos.length > 0) {
+      setBulkDeletePhotos(selectedPhotos);
+      setShowBulkDeleteDialog(true);
+    }
+  }, [photos, selection.selectedIds]);
+
+  // Callback when bulk delete completes in photo grid
+  const handleBulkDeleteComplete = useCallback(() => {
+    setShowBulkDeleteDialog(false);
+    setBulkDeletePhotos([]);
+    selection.exitSelectionMode();
+    reloadPhotos();
+  }, [selection, reloadPhotos]);
+
+  // Select all photos - wrapper for header
+  const handleSelectAll = useCallback(() => {
+    selection.selectAll(photos.map((p) => p.id));
+  }, [photos, selection]);
+
   // Handle album rename
   const handleRenameAlbum = useCallback(() => {
     setRenameError(null);
@@ -287,14 +318,34 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
           onShowShareLinks={() => setShowShareLinks(true)}
           onRenameAlbum={onRenameAlbum ? handleRenameAlbum : undefined}
           onDeleteAlbum={onDeleteAlbum ? handleDeleteAlbum : undefined}
+          selection={{
+            isSelectionMode: selection.isSelectionMode,
+            selectedCount: selection.selectedCount,
+          }}
+          selectionActions={{
+            toggleSelectionMode: selection.toggleSelectionMode,
+            selectAll: handleSelectAll,
+            clearSelection: selection.clearSelection,
+            onBulkDelete: handleBulkDeleteClick,
+          }}
         />
 
       {/* Gallery Content - Wrapped in DropZone for drag-and-drop upload */}
       <DropZone albumId={albumId} className="gallery-content" disabled={!canEdit}>
         {viewMode === 'justified' ? (
-          <JustifiedPhotoGrid albumId={albumId} searchQuery={searchQuery} />
+          <JustifiedPhotoGrid
+            albumId={albumId}
+            searchQuery={searchQuery}
+            selection={selection}
+            onPhotosDeleted={handleBulkDeleteComplete}
+          />
         ) : viewMode === 'grid' ? (
-          <PhotoGrid albumId={albumId} searchQuery={searchQuery} />
+          <PhotoGrid
+            albumId={albumId}
+            searchQuery={searchQuery}
+            selection={selection}
+            onPhotosDeleted={handleBulkDeleteComplete}
+          />
         ) : (
           <MapView
             albumId={albumId}

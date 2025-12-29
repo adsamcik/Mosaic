@@ -73,7 +73,7 @@ public static class TusEventHandlers
         {
             Id = Guid.Parse(fileId),
             UploaderId = user!.Id,
-            StorageKey = $"blobs/{fileId}",
+            StorageKey = fileId,
             SizeBytes = fileSize,
             Status = ShardStatus.PENDING,
             PendingExpiresAt = DateTime.UtcNow.AddHours(24)

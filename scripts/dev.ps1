@@ -20,12 +20,12 @@ param(
     [Parameter(Position=0)]
     [ValidateSet(
         "start", "stop", "restart", "status", "logs",
-        "build", "rebuild", "reset", "help"
+        "build", "rebuild", "reset", "test", "help"
     )]
     [string]$Command = "help",
     
     [Parameter(Position=1)]
-    [ValidateSet("all", "db", "backend", "frontend", "")]
+    [ValidateSet("all", "db", "backend", "frontend", "unit", "e2e", "")]
     [string]$Service = "",
     
     [Parameter(Position=2, ValueFromRemainingArguments=$true)]
@@ -324,32 +324,52 @@ function Show-Status {
 }
 
 function Show-Logs {
-    param([string]$ServiceName)
+    param(
+        [string]$ServiceName,
+        [int]$TailLines = 50,
+        [bool]$Follow = $false
+    )
     
     switch ($ServiceName) {
         "backend" {
             if (Test-Path $BackendLogFile) {
-                Write-Title "Backend Logs (Ctrl+C to exit)"
-                Get-Content $BackendLogFile -Tail 50 -Wait
+                if ($Follow) {
+                    Write-Title "Backend Logs (Ctrl+C to exit)"
+                    Get-Content $BackendLogFile -Tail $TailLines -Wait
+                } else {
+                    Write-Title "Backend Logs (last $TailLines lines)"
+                    Get-Content $BackendLogFile -Tail $TailLines
+                }
             } else {
                 Write-Err "No backend log file found. Is backend running?"
             }
         }
         "frontend" {
             if (Test-Path $FrontendLogFile) {
-                Write-Title "Frontend Logs (Ctrl+C to exit)"
-                Get-Content $FrontendLogFile -Tail 50 -Wait
+                if ($Follow) {
+                    Write-Title "Frontend Logs (Ctrl+C to exit)"
+                    Get-Content $FrontendLogFile -Tail $TailLines -Wait
+                } else {
+                    Write-Title "Frontend Logs (last $TailLines lines)"
+                    Get-Content $FrontendLogFile -Tail $TailLines
+                }
             } else {
                 Write-Err "No frontend log file found. Is frontend running?"
             }
         }
         "db" {
-            Write-Title "Database Logs (Ctrl+C to exit)"
-            docker logs -f mosaic-postgres-dev 2>&1
+            if ($Follow) {
+                Write-Title "Database Logs (Ctrl+C to exit)"
+                docker logs -f mosaic-postgres-dev 2>&1
+            } else {
+                Write-Title "Database Logs (last $TailLines lines)"
+                docker logs --tail $TailLines mosaic-postgres-dev 2>&1
+            }
         }
         default {
             Write-Err "Specify a service: backend, frontend, or db"
             Write-Info "Example: .\dev.ps1 logs backend"
+            Write-Info "         .\dev.ps1 logs backend --follow  # Live tail"
         }
     }
 }
@@ -447,7 +467,14 @@ try {
         }
         
         "logs" {
-            Show-Logs $Service
+            $follow = $ExtraArgs -contains "--follow" -or $ExtraArgs -contains "-f"
+            $tailLines = 50
+            foreach ($arg in $ExtraArgs) {
+                if ($arg -match "^--tail=(\d+)$") {
+                    $tailLines = [int]$Matches[1]
+                }
+            }
+            Show-Logs -ServiceName $Service -TailLines $tailLines -Follow $follow
         }
         
         "build" {
@@ -493,20 +520,161 @@ try {
             Write-Done "Reset complete"
         }
         
+        "test" {
+            $target = if ($Service -eq "") { "all" } else { $Service }
+            
+            switch ($target) {
+                "all" {
+                    Write-Title "Running all tests..."
+                    
+                    # Unit tests
+                    Write-Step "Running crypto library tests..."
+                    Push-Location (Join-Path $ProjectRoot "libs/crypto")
+                    npm test 2>&1
+                    $cryptoExit = $LASTEXITCODE
+                    Pop-Location
+                    
+                    Write-Step "Running frontend tests..."
+                    Push-Location (Join-Path $ProjectRoot "apps/admin")
+                    npm run test:run 2>&1
+                    $frontendExit = $LASTEXITCODE
+                    Pop-Location
+                    
+                    Write-Step "Running backend tests..."
+                    Push-Location (Join-Path $ProjectRoot "apps/backend/Mosaic.Backend.Tests")
+                    dotnet test 2>&1
+                    $backendExit = $LASTEXITCODE
+                    Pop-Location
+                    
+                    if ($cryptoExit -eq 0 -and $frontendExit -eq 0 -and $backendExit -eq 0) {
+                        Write-Done "All unit tests passed!"
+                    } else {
+                        Write-Err "Some tests failed"
+                        exit 1
+                    }
+                }
+                "unit" {
+                    Write-Title "Running unit tests..."
+                    
+                    Write-Step "Running crypto library tests..."
+                    Push-Location (Join-Path $ProjectRoot "libs/crypto")
+                    npm test 2>&1
+                    Pop-Location
+                    
+                    Write-Step "Running frontend tests..."
+                    Push-Location (Join-Path $ProjectRoot "apps/admin")
+                    npm run test:run 2>&1
+                    Pop-Location
+                    
+                    Write-Step "Running backend tests..."
+                    Push-Location (Join-Path $ProjectRoot "apps/backend/Mosaic.Backend.Tests")
+                    dotnet test 2>&1
+                    Pop-Location
+                }
+                "e2e" {
+                    Write-Title "Running E2E tests..."
+                    
+                    # Check if services are running
+                    $backendRunning = Test-ProcessRunning $BackendPidFile
+                    $frontendRunning = Test-ProcessRunning $FrontendPidFile
+                    
+                    if (-not $backendRunning -or -not $frontendRunning) {
+                        Write-Err "Dev services not running. Start them first with: .\dev.ps1 start"
+                        Write-Info "Or run the full E2E test suite with: .\scripts\run-e2e-tests.ps1"
+                        exit 1
+                    }
+                    
+                    Write-Info "Running against: Frontend=http://localhost:$FrontendPort Backend=http://localhost:$BackendPort"
+                    
+                    # Ensure E2E dependencies
+                    $e2ePath = Join-Path $ProjectRoot "tests/e2e"
+                    $e2eNodeModules = Join-Path $e2ePath "node_modules"
+                    if (-not (Test-Path $e2eNodeModules)) {
+                        Write-Step "Installing E2E dependencies..."
+                        Push-Location $e2ePath
+                        npm install 2>&1 | Out-Null
+                        npx playwright install chromium --with-deps 2>&1 | Out-Null
+                        Pop-Location
+                    }
+                    
+                    Push-Location $e2ePath
+                    
+                    # Build playwright command
+                    $playwrightArgs = @("test")
+                    
+                    # Parse extra args for options
+                    $project = "chromium"
+                    $testFile = ""
+                    $headed = $false
+                    $grep = ""
+                    
+                    for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+                        $arg = $ExtraArgs[$i]
+                        switch -Regex ($arg) {
+                            "^--project=(.+)$" { $project = $Matches[1] }
+                            "^--headed$" { $headed = $true }
+                            "^--grep=(.+)$" { $grep = $Matches[1] }
+                            "^-g$" { 
+                                if ($i + 1 -lt $ExtraArgs.Count) { 
+                                    $grep = $ExtraArgs[$i + 1]
+                                    $i++ 
+                                } 
+                            }
+                            "^--debug$" { $playwrightArgs += "--debug" }
+                            "\.spec\.ts$" { $testFile = $arg }
+                            default { 
+                                if (-not $arg.StartsWith("-")) { $testFile = $arg }
+                            }
+                        }
+                    }
+                    
+                    if ($testFile) { $playwrightArgs += $testFile }
+                    if ($project -ne "all") { $playwrightArgs += "--project=$project" }
+                    if ($headed) { $playwrightArgs += "--headed" }
+                    if ($grep) { $playwrightArgs += "--grep=$grep" }
+                    
+                    Write-Info "Command: npx playwright $($playwrightArgs -join ' ')"
+                    Write-Host ""
+                    
+                    # Set environment variables
+                    $env:BASE_URL = "http://localhost:$FrontendPort"
+                    $env:API_URL = "http://localhost:$BackendPort"
+                    
+                    # Run playwright
+                    npx playwright @playwrightArgs
+                    $testExit = $LASTEXITCODE
+                    
+                    Pop-Location
+                    
+                    if ($testExit -eq 0) {
+                        Write-Done "E2E tests passed!"
+                    } else {
+                        Write-Err "E2E tests failed (exit code: $testExit)"
+                        exit $testExit
+                    }
+                }
+                default {
+                    Write-Err "Unknown test type: $target"
+                    Write-Info "Options: all, unit, e2e"
+                }
+            }
+        }
+        
         "help" {
             Write-Host @"
 
 Mosaic Development Environment Manager
 ======================================
 
-Usage: .\scripts\dev.ps1 <command> [service] [options]
+Usage: .\scripts\dev.ps1 <command> [target] [options]
 
 Commands:
   start [service]     Start services (default: all)
   stop [service]      Stop services (default: all)
   restart [service]   Restart services (default: all)
   status              Show status of all services
-  logs <service>      View logs for a service (backend, frontend, db)
+  logs <service>      View recent logs for a service (non-blocking)
+  test [type]         Run tests (unit, e2e, or all)
   build               Build production Docker containers
   rebuild             Build with --no-cache
   reset               Reset environment (add --full to remove node_modules)
@@ -518,12 +686,28 @@ Services:
   backend    .NET backend API only
   frontend   Vite frontend only
 
+Test Types:
+  all        Run all unit tests (crypto, frontend, backend)
+  unit       Same as 'all' - run all unit tests
+  e2e        Run E2E tests against running dev environment
+
 Examples:
   .\dev.ps1 start              # Start all services in background
   .\dev.ps1 status             # Check what's running
-  .\dev.ps1 logs backend       # View backend logs (live tail)
+  .\dev.ps1 logs backend       # View last 50 lines of backend logs
+  .\dev.ps1 logs backend -f    # Live tail (interactive, Ctrl+C to exit)
+  .\dev.ps1 logs backend --tail=100  # View last 100 lines
   .\dev.ps1 restart backend    # Restart just the backend
   .\dev.ps1 stop               # Stop everything
+  
+  # Testing
+  .\dev.ps1 test               # Run all unit tests
+  .\dev.ps1 test unit          # Run all unit tests
+  .\dev.ps1 test e2e           # Run E2E tests (services must be running)
+  .\dev.ps1 test e2e auth.spec.ts             # Run specific test file
+  .\dev.ps1 test e2e --grep "P0-IDENTITY"     # Run tests matching pattern
+  .\dev.ps1 test e2e --headed                 # Run with visible browser
+  .\dev.ps1 test e2e --project=firefox        # Run on Firefox
 
 URLs (when running):
   Frontend:  http://localhost:$FrontendPort

@@ -351,7 +351,7 @@ export function PhotoLightbox({
         )}
         <dt>Format</dt>
         <dd>{photo.mimeType}</dd>
-        {photo.lat !== undefined && photo.lng !== undefined && (
+        {photo.lat != null && photo.lng != null && (
           <>
             <dt>Location</dt>
             <dd>

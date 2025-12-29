@@ -1,18 +1,40 @@
 import { useState } from 'react';
-import { useAlbums } from '../../hooks/useAlbums';
+import type { Album } from './AlbumCard';
 import { AlbumCard } from './AlbumCard';
 import { CreateAlbumDialog } from './CreateAlbumDialog';
 
 interface AlbumListProps {
   onSelectAlbum: (albumId: string) => void;
+  /** Albums to display - passed from parent for shared state */
+  albums: Album[];
+  /** Whether albums are loading */
+  isLoading: boolean;
+  /** Error loading albums */
+  error: Error | null;
+  /** Refresh albums */
+  refetch: () => Promise<void>;
+  /** Create a new album */
+  createAlbum: (name: string) => Promise<Album | null>;
+  /** Whether album creation is in progress */
+  isCreating: boolean;
+  /** Error from album creation */
+  createError: string | null;
 }
 
 /**
  * Album List Component
  * Displays all albums in a grid with create functionality
  */
-export function AlbumList({ onSelectAlbum }: AlbumListProps) {
-  const { albums, isLoading, error, refetch, createAlbum, isCreating, createError } = useAlbums();
+export function AlbumList({
+  onSelectAlbum,
+  albums,
+  isLoading,
+  error,
+  refetch,
+  createAlbum,
+  isCreating,
+  createError,
+}: AlbumListProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   const handleCreate = async (name: string) => {

@@ -163,11 +163,14 @@ test.describe('Error Handling', () => {
       // Reload
       await user.page.reload();
 
-      // Re-login
+      // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      await loginPage.waitForForm();
-      await loginPage.login(TEST_PASSWORD);
-      await loginPage.expectLoginSuccess();
+      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (needsLogin) {
+        await loginPage.login(TEST_PASSWORD);
+        await loginPage.expectLoginSuccess();
+      }
 
       // Should be back to normal
       await appShell.waitForLoad();
@@ -188,10 +191,14 @@ test.describe('Error Handling', () => {
       // Refresh to see it
       await user.page.reload();
 
+      // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      await loginPage.waitForForm();
-      await loginPage.login(TEST_PASSWORD);
-      await loginPage.expectLoginSuccess();
+      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (needsLogin) {
+        await loginPage.login(TEST_PASSWORD);
+        await loginPage.expectLoginSuccess();
+      }
 
       // Should work normally
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });

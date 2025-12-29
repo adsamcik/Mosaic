@@ -104,10 +104,13 @@ test.describe('Album Management', () => {
       // Reload page
       await authenticatedPage.reload();
 
-      // Login again after reload
-      await loginPage.waitForForm();
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
-      await loginPage.expectLoginSuccess();
+      // Check if we need to re-login (session may persist)
+      const needsLogin = await loginPage.loginForm.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (needsLogin) {
+        await loginPage.login(TEST_CONSTANTS.PASSWORD);
+        await loginPage.expectLoginSuccess();
+      }
 
       // Album should still be visible
       await appShell.waitForLoad();

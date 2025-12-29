@@ -22,7 +22,7 @@ vi.mock('../src/lib/crypto-client', () => ({
 }));
 
 // Import after mocks are set up
-import { localAuthLogin, isLocalAuthMode, initAuth, verifyAuth, registerUser } from '../src/lib/local-auth';
+import { localAuthLogin, localAuthRegister, isLocalAuthMode, initAuth, verifyAuth, registerUser } from '../src/lib/local-auth';
 
 describe('LocalAuth', () => {
   beforeEach(() => {
@@ -182,7 +182,7 @@ describe('LocalAuth', () => {
       expect(result.isNewUser).toBe(false);
     });
 
-    it('registers new user when verification fails for non-existent user', async () => {
+    it('throws error when user does not exist (no auto-registration)', async () => {
       // Mock initAuth response
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -201,46 +201,12 @@ describe('LocalAuth', () => {
         json: () => Promise.resolve({ error: 'Invalid credentials' }),
       });
 
-      // Mock registerUser success
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({
-          id: 'new-user-123',
-          username: 'newuser',
-          isAdmin: false,
-        }),
-      });
-
-      // Mock second initAuth (for login after register)
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({
-          challengeId: 'challenge-456',
-          challenge: 'ZGVmZ2hp',
-          userSalt: 'c2FsdDEyMzQ1Njc4OTAxMjM0NTY=',
-          timestamp: 1234567891,
-        }),
-      });
-
-      // Mock second verifyAuth success
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({
-          success: true,
-          userId: 'new-user-123',
-          accountSalt: null,
-          wrappedAccountKey: null,
-          wrappedIdentitySeed: null,
-          identityPubkey: null,
-        }),
-      });
-
-      const result = await localAuthLogin('newuser', 'password123');
-      expect(result.userId).toBe('new-user-123');
-      expect(result.isNewUser).toBe(true);
+      // Login should now throw error instead of auto-registering
+      await expect(localAuthLogin('newuser', 'password123'))
+        .rejects.toThrow('Invalid credentials');
     });
 
-    it('shows "Invalid username or password" when user exists but password is wrong', async () => {
+    it('throws "Invalid credentials" when user exists but password is wrong', async () => {
       // Mock initAuth response
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -259,50 +225,12 @@ describe('LocalAuth', () => {
         json: () => Promise.resolve({ error: 'Invalid credentials' }),
       });
 
-      // Mock registerUser failure (user already exists)
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 409,
-        json: () => Promise.resolve({ error: 'Username already exists' }),
-      });
-
-      // This is the key test: when login fails and registration fails because
-      // user exists, we should get a clear "Invalid username or password" error
+      // Login should propagate the error - no auto-registration attempt
       await expect(localAuthLogin('existinguser', 'wrongpassword'))
-        .rejects.toThrow('Invalid username or password');
+        .rejects.toThrow('Invalid credentials');
     });
 
-    it('propagates other registration errors', async () => {
-      // Mock initAuth response
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({
-          challengeId: 'challenge-123',
-          challenge: 'YWJjZGVm',
-          userSalt: 'c2FsdDEyMzQ1Njc4OTAxMjM0NTY=',
-          timestamp: 1234567890,
-        }),
-      });
-
-      // Mock verifyAuth failure
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve({ error: 'Invalid credentials' }),
-      });
-
-      // Mock registerUser failure (server error)
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        json: () => Promise.resolve({ error: 'Internal server error' }),
-      });
-
-      await expect(localAuthLogin('user', 'password'))
-        .rejects.toThrow('Internal server error');
-    });
-
-    it('propagates non-invalid-credentials errors from verify', async () => {
+    it('propagates other errors from verify', async () => {
       // Mock initAuth response
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -323,6 +251,105 @@ describe('LocalAuth', () => {
 
       await expect(localAuthLogin('user', 'password'))
         .rejects.toThrow('Challenge expired');
+    });
+  });
+
+  describe('localAuthRegister', () => {
+    it('registers a new user and returns credentials', async () => {
+      // Mock initAuth response (for getting user salt)
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          challengeId: 'challenge-123',
+          challenge: 'YWJjZGVm',
+          userSalt: 'c2FsdDEyMzQ1Njc4OTAxMjM0NTY=',
+          timestamp: 1234567890,
+        }),
+      });
+
+      // Mock registerUser success
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          id: 'new-user-123',
+          username: 'newuser',
+          isAdmin: false,
+        }),
+      });
+
+      // Mock initAuth (for login after register)
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          challengeId: 'challenge-456',
+          challenge: 'ZGVmZ2hp',
+          userSalt: 'c2FsdDEyMzQ1Njc4OTAxMjM0NTY=',
+          timestamp: 1234567891,
+        }),
+      });
+
+      // Mock verifyAuth success
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true,
+          userId: 'new-user-123',
+          accountSalt: null,
+          wrappedAccountKey: null,
+          wrappedIdentitySeed: null,
+          identityPubkey: null,
+        }),
+      });
+
+      const result = await localAuthRegister('newuser', 'password123');
+      expect(result.userId).toBe('new-user-123');
+      expect(result.isNewUser).toBe(true);
+    });
+
+    it('throws error when username already exists', async () => {
+      // Mock initAuth response
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          challengeId: 'challenge-123',
+          challenge: 'YWJjZGVm',
+          userSalt: 'c2FsdDEyMzQ1Njc4OTAxMjM0NTY=',
+          timestamp: 1234567890,
+        }),
+      });
+
+      // Mock registerUser failure (user already exists)
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: () => Promise.resolve({ error: 'Username already exists' }),
+      });
+
+      await expect(localAuthRegister('existinguser', 'password123'))
+        .rejects.toThrow('Username already exists');
+    });
+
+    it('propagates server errors during registration', async () => {
+      // Mock initAuth response
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          challengeId: 'challenge-123',
+          challenge: 'YWJjZGVm',
+          userSalt: 'c2FsdDEyMzQ1Njc4OTAxMjM0NTY=',
+          timestamp: 1234567890,
+        }),
+      });
+
+      // Mock registerUser failure (server error)
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({ error: 'Internal server error' }),
+      });
+
+      await expect(localAuthRegister('user', 'password'))
+        .rejects.toThrow('Internal server error');
     });
   });
 });

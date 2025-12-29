@@ -250,11 +250,18 @@ test.describe('Album Rename', () => {
       // Reload page
       await user.page.reload();
 
-      // Re-login
+      // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      await loginPage.waitForForm();
-      await loginPage.login(TEST_PASSWORD);
-      await loginPage.expectLoginSuccess();
+      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (needsLogin) {
+        await loginPage.login(TEST_PASSWORD);
+        await loginPage.expectLoginSuccess();
+      } else {
+        // Session persisted, just wait for app shell to load
+        const appShell = new AppShell(user.page);
+        await appShell.waitForLoad();
+      }
 
       // New name should still appear
       await expect(user.page.getByTestId('album-card').filter({ hasText: newName })).toBeVisible({

@@ -50,33 +50,43 @@ export function App() {
       return;
     }
 
+    // Helper to safely check session with error handling
+    const checkSessionSafely = async () => {
+      try {
+        const user = await session.checkSession();
+        if (user) {
+          setPendingSessionUser(user);
+        }
+      } catch (err) {
+        // Session check failed - proceed to login form
+        console.debug('Session check failed:', err);
+      } finally {
+        setIsCheckingSession(false);
+      }
+    };
+
     // Check if we have a session state marker (page was reloaded while logged in)
     if (!session.isLoggedIn && session.needsSessionRestore) {
       // First, try to restore from cache (no password needed)
       if (session.canRestoreFromCache) {
-        session.restoreFromCache().then((success) => {
-          if (success) {
-            // Session restored from cache, no password needed!
-            setIsCheckingSession(false);
-          } else {
-            // Cache restore failed, fall back to password restore
-            session.checkSession().then((user) => {
-              if (user) {
-                setPendingSessionUser(user);
-              }
+        session.restoreFromCache()
+          .then((success) => {
+            if (success) {
+              // Session restored from cache, no password needed!
               setIsCheckingSession(false);
-            });
-          }
-        });
+            } else {
+              // Cache restore failed, fall back to password restore
+              checkSessionSafely();
+            }
+          })
+          .catch((err) => {
+            // Cache restore threw an error - proceed to login
+            console.debug('Cache restore failed:', err);
+            setIsCheckingSession(false);
+          });
       } else {
         // No cache available, check if backend session is still valid
-        session.checkSession().then((user) => {
-          if (user) {
-            // Session cookie is valid - user needs to enter password to restore
-            setPendingSessionUser(user);
-          }
-          setIsCheckingSession(false);
-        });
+        checkSessionSafely();
       }
     } else {
       setIsCheckingSession(false);

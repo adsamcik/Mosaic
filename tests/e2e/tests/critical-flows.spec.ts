@@ -13,6 +13,7 @@
 import {
   ApiHelper,
   AppShell,
+  CreateAlbumDialogPage,
   expect,
   GalleryPage,
   generateTestImage,
@@ -180,6 +181,11 @@ test.describe('Critical Flow: Complete Authentication', () => {
     // Navigate around the app
     await authenticatedPage.reload();
 
+    // Wait for page to stabilize after reload
+    await expect(
+      authenticatedPage.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
+    ).toBeVisible({ timeout: 30000 });
+
     // Should still be logged in (or need to re-enter password depending on session impl)
     // Check for either app shell or login form
     const stillLoggedIn = await appShell.shell.isVisible().catch(() => false);
@@ -235,54 +241,77 @@ test.describe('Critical Flow: Photo Upload Round-Trip', () => {
   });
 
   test('P0-3b: uploaded photo persists after page reload', async ({
-    authenticatedPage,
+    browser,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
+    // Use browser-based album creation to get real epoch keys
+    const context = await browser.newContext();
+    const page = await context.newPage();
 
-    await authenticatedPage.goto('/');
+    // Set up Remote-User header injection
+    await page.route('**/api/**', async (route) => {
+      const headers = { ...route.request().headers(), 'Remote-User': testUser };
+      await route.continue({ headers });
+    });
 
-    // Login and navigate
-    const loginPage = new LoginPage(authenticatedPage);
-    await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
-    await loginPage.expectLoginSuccess();
+    try {
+      await page.goto('/');
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
-    await expect(albumCard).toBeVisible({ timeout: 30000 });
-    await albumCard.click();
-
-    const gallery = new GalleryPage(authenticatedPage);
-    await gallery.waitForLoad();
-
-    // Upload photo
-    const testImage = generateTestImage();
-    await gallery.uploadPhoto(testImage, 'persistent-photo.png');
-    await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
-
-    const photoCountBefore = await gallery.photos.count();
-
-    // Reload page
-    await authenticatedPage.reload();
-
-    // Re-login if needed
-    const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
-    if (needsLogin) {
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+      // Login
+      const loginPage = new LoginPage(page);
+      await loginPage.waitForForm();
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
 
-      // Navigate back to album
-      const card = authenticatedPage.getByTestId('album-card').first();
+      // Create album through browser UI (generates real epoch keys)
+      const appShell = new AppShell(page);
+      await appShell.waitForLoad();
+      await appShell.createAlbum();
+      const createDialog = new CreateAlbumDialogPage(page);
+      await createDialog.createAlbum('Photo Persist Test');
+
+      // Wait for album and click into it
+      const albumCard = page.getByTestId('album-card').first();
+      await expect(albumCard).toBeVisible({ timeout: 30000 });
+      await albumCard.click();
+
+      const gallery = new GalleryPage(page);
+      await gallery.waitForLoad();
+
+      // Upload photo
+      const testImage = generateTestImage();
+      await gallery.uploadPhoto(testImage, 'persistent-photo.png');
+      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+
+      const photoCountBefore = await gallery.photos.count();
+
+      // Reload page
+      await page.reload();
+
+      // Check if we need to re-login (session may persist)
+      const needsLogin = await loginPage.loginForm.isVisible({ timeout: 5000 }).catch(() => false);
+      if (needsLogin) {
+        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+        await loginPage.expectLoginSuccess();
+      } else {
+        // Session persisted, wait for app shell to load
+        await appShell.waitForLoad();
+      }
+
+      // Navigate back to album (we're on album list after reload)
+      const card = page.getByTestId('album-card').first();
       await expect(card).toBeVisible({ timeout: 30000 });
       await card.click();
+
+      // Wait for gallery and verify photo still exists
+      await gallery.waitForLoad();
+      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+
+      const photoCountAfter = await gallery.photos.count();
+      expect(photoCountAfter).toBe(photoCountBefore);
+    } finally {
+      await context.close();
     }
-
-    // Wait for gallery and verify photo still exists
-    await gallery.waitForLoad();
-    await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
-
-    const photoCountAfter = await gallery.photos.count();
-    expect(photoCountAfter).toBe(photoCountBefore);
   });
 
   test('P0-3c: multiple photos can be uploaded', async ({

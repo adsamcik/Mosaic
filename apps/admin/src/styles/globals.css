@@ -114,6 +114,20 @@ body {
   color: var(--color-text-muted);
 }
 
+/* Checkbox label - inline with checkbox */
+.form-label.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.form-label.checkbox-label input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
 .form-input {
   width: 100%;
   padding: var(--spacing-sm) var(--spacing-md);
@@ -158,6 +172,30 @@ body {
 
 .login-button:disabled {
   opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mode-toggle-button {
+  width: 100%;
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-sm);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-toggle-button:hover:not(:disabled) {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.mode-toggle-button:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -2136,6 +2174,11 @@ body {
 }
 
 /* Delete Photo Dialog */
+/* Ensure delete dialog appears above lightbox (z-index: 200) */
+.dialog-backdrop:has(.delete-photo-dialog) {
+  z-index: 300;
+}
+
 .delete-photo-dialog {
   max-width: 400px;
 }
@@ -2680,6 +2723,73 @@ body {
 }
 
 /* ============================================================================
+ * ACCESS TIER SELECTOR (Share Link Dialog)
+ * ============================================================================ */
+
+/* Container for tier options */
+.tier-selector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+/* Individual tier option - styled radio button */
+.tier-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tier-option:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-hover);
+}
+
+/* Hide default radio but keep accessible */
+.tier-option input[type="radio"] {
+  margin: 0;
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+}
+
+/* Label container */
+.tier-option-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tier-option-label strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.tier-option-description {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+/* Selected state */
+.tier-option:has(input:checked) {
+  background: var(--color-primary-subtle, rgba(59, 130, 246, 0.1));
+  border-color: var(--color-primary);
+}
+
+/* Disabled state */
+.tier-option:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
  * EXPIRY PRESETS
  * ============================================================================ */
 
@@ -2756,6 +2866,70 @@ body {
 .edit-link-info .info-value {
   color: var(--color-text);
   font-weight: 500;
+}
+
+/* Share link created info */
+.share-link-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin-top: var(--spacing-md);
+  font-size: 0.875rem;
+}
+
+.share-link-info .info-item {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.share-link-info .info-label {
+  color: var(--color-text-muted);
+  min-width: 80px;
+}
+
+.share-link-info .info-value {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+/* Max uses input group */
+.max-uses-input {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.max-uses-input .number-input {
+  width: 80px;
+  text-align: center;
+}
+
+/* Share URL input with copy button */
+.input-with-button {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.input-with-button .form-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-url-input {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+}
+
+.copy-button {
+  flex-shrink: 0;
+  min-width: 80px;
 }
 
 /* =============================================================================
@@ -3251,6 +3425,7 @@ body {
 .justified-grid-row {
   display: flex;
   width: 100%;
+  align-items: flex-start;
 }
 
 /* Loading/Error/Empty states */
@@ -3294,11 +3469,10 @@ body {
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: box-shadow 0.2s;
 }
 
 .justified-photo-thumbnail:hover {
-  transform: scale(1.02);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   z-index: 1;
 }
@@ -3581,6 +3755,89 @@ body {
   }
 }
 
+/* ===========================================================================
+   Album Settings Dropdown Styles
+   =========================================================================== */
+
+.album-settings-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.album-settings-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.settings-icon {
+  font-size: 1rem;
+}
+
+.dropdown-arrow {
+  font-size: 0.6rem;
+  opacity: 0.7;
+  margin-left: var(--spacing-xs);
+}
+
+.album-settings-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 100;
+  min-width: 180px;
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.album-settings-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.album-settings-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.album-settings-item--danger {
+  color: var(--color-danger);
+}
+
+.album-settings-item--danger:hover {
+  background: rgba(220, 53, 69, 0.1);
+}
+
+.album-settings-divider {
+  height: 1px;
+  margin: var(--spacing-xs) 0;
+  background: var(--color-border);
+}
+
+.menu-icon {
+  font-size: 1rem;
+  width: 1.25rem;
+  text-align: center;
+}
+
+.menu-label {
+  flex: 1;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .gallery-header {
@@ -3612,5 +3869,12 @@ body {
   
   .justified-photo-thumbnail:hover {
     transform: none;
+  }
+  
+  /* Make dropdown full-width on mobile */
+  .album-settings-menu {
+    left: 0;
+    right: 0;
+    min-width: auto;
   }
 }

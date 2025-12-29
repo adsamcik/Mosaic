@@ -13,7 +13,7 @@
 #   frontend    Run frontend with HMR (Vite dev server)
 #   build       Build and run production containers locally
 #   rebuild     Build without cache and run
-#   logs        View container logs (optionally specify service)
+#   logs        View recent logs (non-blocking, add -f to follow)
 #   status      Show status of development environment
 #   reset       Reset development environment (--full to remove node_modules)
 #   help        Show this help message
@@ -214,10 +214,17 @@ Commands:
   frontend    Run frontend with HMR (Vite dev server)
   build       Build and run production containers locally
   rebuild     Build without cache and run
-  logs        View container logs (optionally specify service)
+  logs        View recent logs (non-blocking, add -f to follow)
   status      Show status of development environment
+  test        Run tests (unit, e2e, or all)
   reset       Reset development environment (--full to remove node_modules)
   help        Show this help message
+
+Test Commands:
+  test             Run all unit tests (crypto, frontend, backend)
+  test unit        Run all unit tests
+  test e2e         Run E2E tests (requires running services)
+  test e2e [opts]  Run E2E with Playwright options (--headed, --grep, etc.)
 
 Quick Start:
   1. ./scripts/dev.sh up              # Start database
@@ -313,10 +320,30 @@ case "$COMMAND" in
     
     logs)
         service="${1:-}"
-        if [ -n "$service" ]; then
-            docker compose logs -f "$service"
+        shift || true
+        follow=false
+        tail_lines=50
+        
+        # Parse options
+        for arg in "$@"; do
+            case "$arg" in
+                -f|--follow) follow=true ;;
+                --tail=*) tail_lines="${arg#*=}" ;;
+            esac
+        done
+        
+        if [ "$follow" = true ]; then
+            if [ -n "$service" ]; then
+                docker compose logs -f --tail="$tail_lines" "$service"
+            else
+                docker compose logs -f --tail="$tail_lines"
+            fi
         else
-            docker compose logs -f
+            if [ -n "$service" ]; then
+                docker compose logs --tail="$tail_lines" "$service"
+            else
+                docker compose logs --tail="$tail_lines"
+            fi
         fi
         ;;
     
@@ -342,6 +369,79 @@ case "$COMMAND" in
         else
             done_msg "Reset complete (use --full to also remove node_modules)"
         fi
+        ;;
+    
+    test)
+        test_type="${1:-all}"
+        shift || true
+        
+        case "$test_type" in
+            all|unit)
+                title "Running all unit tests..."
+                
+                step "Running crypto library tests..."
+                pushd "$PROJECT_ROOT/libs/crypto" > /dev/null
+                npm test
+                popd > /dev/null
+                
+                step "Running frontend tests..."
+                pushd "$PROJECT_ROOT/apps/admin" > /dev/null
+                npm run test:run
+                popd > /dev/null
+                
+                step "Running backend tests..."
+                pushd "$PROJECT_ROOT/apps/backend/Mosaic.Backend.Tests" > /dev/null
+                dotnet test
+                popd > /dev/null
+                
+                done_msg "All unit tests completed!"
+                ;;
+            
+            e2e)
+                title "Running E2E tests..."
+                
+                # Check if services are accessible
+                if ! curl -s "http://localhost:$BACKEND_PORT/health" > /dev/null 2>&1; then
+                    err "Backend not running on port $BACKEND_PORT"
+                    info "Start services first with: ./scripts/dev.sh up && ./scripts/dev.sh backend"
+                    exit 1
+                fi
+                
+                if ! curl -s "http://localhost:$FRONTEND_PORT" > /dev/null 2>&1; then
+                    err "Frontend not running on port $FRONTEND_PORT"
+                    info "Start frontend with: ./scripts/dev.sh frontend"
+                    exit 1
+                fi
+                
+                info "Running against: Frontend=http://localhost:$FRONTEND_PORT Backend=http://localhost:$BACKEND_PORT"
+                
+                # Ensure E2E dependencies
+                e2e_path="$PROJECT_ROOT/tests/e2e"
+                if [ ! -d "$e2e_path/node_modules" ]; then
+                    step "Installing E2E dependencies..."
+                    pushd "$e2e_path" > /dev/null
+                    npm install
+                    npx playwright install chromium --with-deps
+                    popd > /dev/null
+                fi
+                
+                pushd "$e2e_path" > /dev/null
+                
+                export BASE_URL="http://localhost:$FRONTEND_PORT"
+                export API_URL="http://localhost:$BACKEND_PORT"
+                
+                # Pass remaining args to playwright
+                npx playwright test "$@"
+                
+                popd > /dev/null
+                ;;
+            
+            *)
+                err "Unknown test type: $test_type"
+                info "Options: all, unit, e2e"
+                exit 1
+                ;;
+        esac
         ;;
     
     help|*)

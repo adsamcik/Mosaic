@@ -201,25 +201,46 @@ export async function localAuthLogin(
       isNewUser: false,
     };
   } catch (error) {
-    // If verification failed, user might not exist - try to register
-    if (error instanceof Error && error.message.includes('Invalid credentials')) {
-      try {
-        return await registerNewUser(username, password, userSaltBytes);
-      } catch (regError) {
-        // If registration fails because user already exists, the password was wrong
-        if (regError instanceof Error && regError.message.includes('Username already exists')) {
-          throw new Error('Invalid username or password');
-        }
-        throw regError;
-      }
-    }
+    // Pass through authentication errors - user must explicitly register if they don't have an account.
+    // We intentionally do NOT auto-register on "Invalid credentials" because:
+    // 1. The backend returns the same error for "user doesn't exist" and "wrong password" (anti-enumeration)
+    // 2. Auto-registering on wrong password would leak that the username exists
+    // 3. Users should explicitly choose "Create Account" to register
     throw error;
   }
 }
 
 /**
- * Register a new user and return their credentials.
+ * Register a new user with LocalAuth.
+ * This is the explicit registration flow - user must choose to register.
+ * 
+ * @param username - Username to register
+ * @param password - User's password
+ * @returns User credentials after successful registration and login
+ */
+export async function localAuthRegister(
+  username: string,
+  password: string
+): Promise<{
+  userId: string;
+  userSalt: Uint8Array;
+  accountSalt: Uint8Array;
+  isNewUser: boolean;
+  wrappedAccountKey: Uint8Array | null;
+}> {
+  // Step 1: Get a challenge to derive the user salt
+  // (server returns deterministic fake salt for non-existent users)
+  const { userSalt } = await initAuth(username);
+  const userSaltBytes = fromBase64(userSalt);
+  
+  // Step 2: Register the new user
+  return await registerNewUser(username, password, userSaltBytes);
+}
+
+/**
+ * Internal: Register a new user and return their credentials.
  * After registration, performs login to establish session cookie.
+ * This is called by localAuthRegister after user explicitly chooses to register.
  */
 async function registerNewUser(
   username: string,
@@ -333,3 +354,60 @@ export async function isLocalAuthMode(): Promise<boolean> {
     return false;
   }
 }
+
+// =============================================================================
+// Development Authentication (Dev Mode Only)
+// =============================================================================
+
+/** Response from /api/dev-auth/login */
+export interface DevLoginResponse {
+  userId: string;
+  username: string;
+  userSalt: string; // base64
+  accountSalt: string; // base64
+  isNewUser: boolean;
+}
+
+/**
+ * Quick login for development mode.
+ * Creates user and session without cryptographic verification.
+ * Only works when backend is in Development + LocalAuth mode.
+ */
+export async function devLogin(username: string): Promise<DevLoginResponse> {
+  const response = await fetch('/api/dev-auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ username }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Dev login failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Update crypto keys after client-side initialization (dev mode).
+ */
+export async function devUpdateKeys(keys: {
+  authPubkey?: string;
+  identityPubkey?: string;
+  wrappedAccountKey?: string;
+  wrappedIdentitySeed?: string;
+}): Promise<void> {
+  const response = await fetch('/api/dev-auth/update-keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(keys),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Dev key update failed: ${response.status}`);
+  }
+}
+

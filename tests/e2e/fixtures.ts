@@ -205,12 +205,22 @@ export const test = base.extend<{
     const loginForm = page.getByTestId('login-form');
     await expect(loginForm).toBeVisible({ timeout: 30000 });
     
-    // Fill password and submit
-    const passwordInput = page.getByLabel('Password');
-    await passwordInput.fill(TEST_PASSWORD);
+    // Check if LocalAuth mode (has username field) and register new user
+    const usernameInput = page.getByLabel('Username');
+    const isLocalAuth = await usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
     
-    const loginButton = page.getByRole('button', { name: /unlock/i });
-    await loginButton.click();
+    if (isLocalAuth) {
+      // LocalAuth mode: register a new user (tests use unique usernames)
+      const loginPage = new LoginPage(page);
+      await loginPage.register(testUser, TEST_PASSWORD);
+    } else {
+      // ProxyAuth mode: just enter password
+      const passwordInput = page.getByLabel('Password');
+      await passwordInput.fill(TEST_PASSWORD);
+      
+      const loginButton = page.getByRole('button', { name: /sign in|unlock/i });
+      await loginButton.click();
+    }
     
     // Wait for app shell to appear (indicates successful login)
     const appShell = page.getByTestId('app-shell');
@@ -299,8 +309,20 @@ export class LoginPage {
     return this.page.getByLabel('Password');
   }
 
+  get confirmPasswordInput() {
+    return this.page.getByLabel('Confirm Password');
+  }
+
   get loginButton() {
-    return this.page.getByRole('button', { name: /unlock/i });
+    return this.page.getByRole('button', { name: /sign in/i });
+  }
+
+  get createAccountButton() {
+    return this.page.getByRole('button', { name: /create account/i }).first();
+  }
+
+  get modeToggleButton() {
+    return this.page.getByRole('button', { name: /don't have an account|already have an account/i });
   }
 
   get errorMessage() {
@@ -308,8 +330,45 @@ export class LoginPage {
   }
 
   /**
+   * Switch to registration mode
+   */
+  async switchToRegisterMode() {
+    const toggleBtn = this.page.getByRole('button', { name: /don't have an account/i });
+    if (await toggleBtn.isVisible().catch(() => false)) {
+      await toggleBtn.click();
+    }
+  }
+
+  /**
+   * Switch to login mode
+   */
+  async switchToLoginMode() {
+    const toggleBtn = this.page.getByRole('button', { name: /already have an account/i });
+    if (await toggleBtn.isVisible().catch(() => false)) {
+      await toggleBtn.click();
+    }
+  }
+
+  /**
+   * Register a new user with username and password.
+   * This is required for LocalAuth mode where new users must be explicitly registered.
+   */
+  async register(username: string, password: string) {
+    await this.switchToRegisterMode();
+    
+    const usernameField = this.usernameInput;
+    if (await usernameField.isVisible().catch(() => false)) {
+      await usernameField.clear();
+      await usernameField.fill(username);
+    }
+    await this.passwordInput.fill(password);
+    await this.confirmPasswordInput.fill(password);
+    await this.createAccountButton.click();
+  }
+
+  /**
    * Login with username and password.
-   * If username is provided, clears the default 'dev' username and enters the new one.
+   * If username is provided, enters it in the username field.
    * This is required for LocalAuth mode where each test needs a unique username.
    */
   async login(password: string, username?: string) {

@@ -23,8 +23,8 @@ interface JustifiedPhotoThumbnailProps {
   isSelected?: boolean;
   /** Callback when selection changes */
   onSelectionChange?: (selected: boolean) => void;
-  /** Callback to delete this photo */
-  onDelete?: () => void;
+  /** Callback to delete this photo (receives thumbnail blob URL if loaded) */
+  onDelete?: (thumbnailUrl?: string) => void;
   /** Whether selection mode is active */
   selectionMode?: boolean;
   /** Whether to show delete button on hover */
@@ -139,9 +139,10 @@ export function JustifiedPhotoThumbnail({
   const handleDeleteClick = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
-      onDelete?.();
+      const thumbnailUrl = state.status === 'loaded' ? state.result.blobUrl : undefined;
+      onDelete?.(thumbnailUrl);
     },
-    [onDelete]
+    [onDelete, state]
   );
 
   // Handle keyboard activation
@@ -157,7 +158,8 @@ export function JustifiedPhotoThumbnail({
       }
       if ((event.key === 'Delete' || event.key === 'Backspace') && onDelete) {
         event.preventDefault();
-        onDelete();
+        const thumbnailUrl = state.status === 'loaded' ? state.result.blobUrl : undefined;
+        onDelete(thumbnailUrl);
       }
     },
     [state.status, selectionMode, onSelectionChange, isSelected, onClick, onDelete]
