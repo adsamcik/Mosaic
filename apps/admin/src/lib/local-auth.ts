@@ -162,21 +162,19 @@ export async function localAuthLogin(
   
   const userSaltBytes = fromBase64(userSalt);
   
-  // Step 2: Try to authenticate
-  // Derive account salt from a hash of user salt (deterministic per user)
-  const accountSaltBytes = await deriveAccountSalt(userSaltBytes);
-  
-  // Initialize crypto to derive identity key
-  // For initial authentication, we must use init() to derive the auth key
-  // This works because the auth key derivation is deterministic from password+salts
+  // Step 2: Derive the deterministic auth keypair from password + userSalt
+  // This is separate from the random account key - it's derived directly from password+salt
+  // so we can authenticate before getting the wrapped account key from the server
   const cryptoClient = await getCryptoClient();
-  await cryptoClient.init(password, userSaltBytes, accountSaltBytes);
-  await cryptoClient.deriveIdentity();
+  await cryptoClient.deriveAuthKey(password, userSaltBytes);
   
-  // Step 3: Sign challenge
+  // Step 3: Sign challenge with the derived auth key
   const challengeBytes = fromBase64(challenge);
   const signature = await cryptoClient.signAuthChallenge(challengeBytes, username, timestamp);
   const signatureBase64 = toBase64(signature);
+  
+  // Derive account salt for later use
+  const accountSaltBytes = await deriveAccountSalt(userSaltBytes);
   
   // Step 4: Verify with server
   try {
@@ -256,17 +254,26 @@ async function registerNewUser(
   // Generate account salt
   const accountSalt = await deriveAccountSalt(userSalt);
   
-  // Initialize crypto (generates new random account key)
   const cryptoClient = await getCryptoClient();
+  
+  // Step 1: Derive the deterministic auth keypair from password + userSalt
+  // This is used for challenge-response authentication
+  await cryptoClient.deriveAuthKey(password, userSalt);
+  
+  // Get the auth public key (deterministically derived from password+salt)
+  const authPubkey = await cryptoClient.getAuthPublicKey();
+  if (!authPubkey) {
+    throw new Error('Failed to derive auth key');
+  }
+  
+  // Step 2: Initialize crypto with random account key for identity operations
   await cryptoClient.init(password, userSalt, accountSalt);
   await cryptoClient.deriveIdentity();
   
-  // Get public keys
-  const authPubkey = await cryptoClient.getAuthPublicKey();
+  // Get identity public key (derived from random account key, used for epoch key encryption)
   const identityPubkey = await cryptoClient.getIdentityPublicKey();
-  
-  if (!authPubkey || !identityPubkey) {
-    throw new Error('Failed to derive identity keys');
+  if (!identityPubkey) {
+    throw new Error('Failed to derive identity key');
   }
   
   // Get wrapped account key for server storage (CRITICAL for identity persistence)
@@ -288,7 +295,7 @@ async function registerNewUser(
   // Now login to get session cookie (user exists now)
   const { challengeId, challenge, timestamp } = await initAuth(username);
   
-  // Sign the new challenge
+  // Sign the new challenge (authKeypair still available from deriveAuthKey above)
   const challengeBytes = fromBase64(challenge);
   const signature = await cryptoClient.signAuthChallenge(challengeBytes, username, timestamp);
   const signatureBase64 = toBase64(signature);
