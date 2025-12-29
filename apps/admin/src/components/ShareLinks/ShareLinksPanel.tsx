@@ -2,13 +2,15 @@
  * ShareLinksPanel Component
  *
  * Side panel for managing share links of an album.
- * Displays existing share links and allows creating new ones.
+ * Displays existing share links and allows creating/editing them.
  * Only visible to album owners.
  */
 
 import { useState } from 'react';
+import type { ShareLinkInfo } from '../../hooks/useShareLinks';
 import { useShareLinks } from '../../hooks/useShareLinks';
-import { ShareLinkDialog } from './ShareLinkDialog';
+import { EditShareLinkView } from './EditLinkExpirationDialog'; // Rename file eventually?
+import { CreateShareLinkView } from './ShareLinkDialog'; // Rename file eventually?
 import { ShareLinksList } from './ShareLinksList';
 
 interface ShareLinksPanelProps {
@@ -22,13 +24,10 @@ interface ShareLinksPanelProps {
   isOwner: boolean;
 }
 
+type PanelView = 'list' | 'create' | 'edit';
+
 /**
  * ShareLinksPanel Component
- *
- * Provides a side panel for:
- * - Viewing existing share links
- * - Creating new share links with configurable access tiers
- * - Revoking share links
  */
 export function ShareLinksPanel({
   albumId,
@@ -36,7 +35,8 @@ export function ShareLinksPanel({
   onClose,
   isOwner,
 }: ShareLinksPanelProps) {
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [view, setView] = useState<PanelView>('list');
+  const [editingLink, setEditingLink] = useState<ShareLinkInfo | null>(null);
 
   const {
     shareLinks,
@@ -53,9 +53,40 @@ export function ShareLinksPanel({
     updateError,
   } = useShareLinks(albumId);
 
+  // Reset view when closing
+  if (!isOpen && view !== 'list') {
+    setView('list');
+    setEditingLink(null);
+  }
+
   if (!isOpen) {
     return null;
   }
+
+  const handleBack = () => {
+    setView('list');
+    setEditingLink(null);
+  };
+
+  const handleDoneCreation = () => {
+    setView('list');
+    refetch();
+  };
+
+  const handleCreateClick = () => {
+    setView('create');
+  };
+
+  const handleEditClick = (link: ShareLinkInfo) => {
+    setEditingLink(link);
+    setView('edit');
+  };
+
+  const handleSaveEdit = () => {
+    setView('list');
+    setEditingLink(null);
+    refetch();
+  };
 
   return (
     <>
@@ -72,7 +103,26 @@ export function ShareLinksPanel({
         data-testid="share-links-panel"
       >
         <div className="member-panel-header">
-          <h3 className="member-panel-title">Share Links</h3>
+          {view !== 'list' ? (
+            <button
+              type="button"
+              className="panel-back-button"
+              onClick={handleBack}
+              aria-label="Back to list"
+              data-testid="panel-back-button"
+            >
+              ←
+            </button>
+          ) : null}
+          
+          <h3 className="member-panel-title">
+            {view === 'create'
+              ? 'Create Share Link'
+              : view === 'edit'
+              ? 'Edit Share Link'
+              : 'Share Links'}
+          </h3>
+          
           <button
             className="member-panel-close"
             onClick={onClose}
@@ -84,30 +134,46 @@ export function ShareLinksPanel({
         </div>
 
         <div className="member-panel-content">
-          <ShareLinksList
-            shareLinks={shareLinks}
-            isLoading={isLoading}
-            error={error}
-            onRevoke={revokeShareLink}
-            isRevoking={isRevoking}
-            onCreateClick={() => setShowCreateDialog(true)}
-            isOwner={isOwner}
-            albumId={albumId}
-            onUpdateExpiration={updateExpiration}
-            isUpdating={isUpdating}
-            updateError={updateError}
-            onRefresh={refetch}
-          />
+          {view === 'list' && (
+            <ShareLinksList
+              shareLinks={shareLinks}
+              isLoading={isLoading}
+              error={error}
+              onRevoke={revokeShareLink}
+              isRevoking={isRevoking}
+              onCreateClick={handleCreateClick}
+              onEditClick={handleEditClick}
+              isOwner={isOwner}
+              onUpdateExpiration={updateExpiration}
+              isUpdating={isUpdating}
+              updateError={updateError}
+              onRefresh={refetch}
+            />
+          )}
+
+          {view === 'create' && (
+            <CreateShareLinkView
+              onCancel={handleBack}
+              onDone={handleDoneCreation}
+              onCreate={createShareLink}
+              isCreating={isCreating}
+              error={createError}
+            />
+          )}
+
+          {view === 'edit' && editingLink && (
+            <EditShareLinkView
+              link={editingLink}
+              albumId={albumId}
+              onCancel={handleBack}
+              onSave={handleSaveEdit}
+              onUpdate={updateExpiration}
+              isUpdating={isUpdating}
+              error={updateError}
+            />
+          )}
         </div>
       </aside>
-
-      <ShareLinkDialog
-        isOpen={showCreateDialog}
-        onClose={() => setShowCreateDialog(false)}
-        onCreate={createShareLink}
-        isCreating={isCreating}
-        error={createError}
-      />
     </>
   );
 }

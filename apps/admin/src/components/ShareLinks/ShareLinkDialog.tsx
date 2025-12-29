@@ -1,19 +1,20 @@
 /**
- * ShareLinkDialog Component
+ * CreateShareLinkView Component
  *
- * Modal dialog for creating new share links for an album.
+ * View for creating new share links for an album.
  * Handles access tier selection, expiry, max uses, and link generation.
+ * Designed to be rendered within the ShareLinksPanel.
  */
 
-import { useEffect, useRef, useState } from 'react';
-import type { AccessTier } from '../../lib/api-types';
+import { useRef, useState } from 'react';
 import type { CreateShareLinkOptions, CreateShareLinkResult } from '../../hooks/useShareLinks';
+import type { AccessTier } from '../../lib/api-types';
 
-interface ShareLinkDialogProps {
-  /** Whether the dialog is open */
-  isOpen: boolean;
-  /** Called when dialog should close */
-  onClose: () => void;
+interface CreateShareLinkViewProps {
+  /** Called when creation is cancelled */
+  onCancel: () => void;
+  /** Called when creation is done (after success) */
+  onDone: () => void;
   /** Called to create a share link */
   onCreate: (options: CreateShareLinkOptions) => Promise<CreateShareLinkResult>;
   /** Whether creation is in progress */
@@ -64,21 +65,15 @@ const TIER_OPTIONS: TierOption[] = [
 ];
 
 /**
- * ShareLinkDialog Component
- *
- * Provides a modal for:
- * - Selecting access tier (thumbnails, preview, full)
- * - Setting optional expiry date
- * - Setting optional max uses
- * - Generating and displaying the share URL
+ * CreateShareLinkView Component
  */
-export function ShareLinkDialog({
-  isOpen,
-  onClose,
+export function CreateShareLinkView({
+  onCancel,
+  onDone,
   onCreate,
   isCreating,
   error,
-}: ShareLinkDialogProps) {
+}: CreateShareLinkViewProps) {
   const [accessTier, setAccessTier] = useState<AccessTier>(2);
   const [expiryEnabled, setExpiryEnabled] = useState(true);
   const [expiryHours, setExpiryHours] = useState(24 * 7); // Default to 7 days
@@ -89,42 +84,14 @@ export function ShareLinkDialog({
   const [result, setResult] = useState<CreateShareLinkResult | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
-
-  // Reset form when dialog closes
-  useEffect(() => {
-    if (!isOpen) {
-      setAccessTier(2);
-      setExpiryEnabled(true);
-      setExpiryHours(24 * 7);
-      setSelectedPresetIndex(2);
-      setMaxUsesEnabled(false);
-      setMaxUses(10);
-      setLocalError(null);
-      setResult(null);
-      setCopied(false);
-    }
-  }, [isOpen]);
-
-  // Handle escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && !isCreating) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isCreating, onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (result) {
       // If we already have a result, just close
-      onClose();
+      onDone();
       return;
     }
 
@@ -183,237 +150,192 @@ export function ShareLinkDialog({
     }
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget && !isCreating) {
-      onClose();
-    }
-  };
-
-  if (!isOpen) {
-    return null;
-  }
-
   const displayError = localError || error;
 
   // Show result view after successful creation
   if (result) {
     return (
-      <div
-        className="dialog-backdrop"
-        onClick={handleBackdropClick}
-        role="presentation"
-        data-testid="share-link-dialog-backdrop"
-      >
-        <dialog
-          ref={dialogRef}
-          className="dialog"
-          open
-          aria-labelledby="share-link-title"
-          aria-modal="true"
-          data-testid="share-link-dialog"
-        >
-          <div className="dialog-form">
-            <h2 id="share-link-title" className="dialog-title">
-              Share Link Created
-            </h2>
+      <div className="panel-content-view" data-testid="create-share-link-success">
+        <div className="share-link-success-header">
+          <div className="success-icon-circle">✓</div>
+          <h3>Link Created</h3>
+        </div>
 
-            <p className="dialog-description">
-              Your share link has been created. Copy the URL below to share with others.
-            </p>
+        <p className="panel-description">
+          Copy the URL below to share with others.
+        </p>
 
-            <div className="form-group">
-              <label htmlFor="share-url" className="form-label">
-                Share URL
-              </label>
-              <div className="input-with-button">
-                <input
-                  ref={urlInputRef}
-                  id="share-url"
-                  type="text"
-                  value={result.shareUrl}
-                  readOnly
-                  className="form-input share-url-input"
-                  onClick={(e) => (e.target as HTMLInputElement).select()}
-                  data-testid="share-url-input"
-                />
-                <button
-                  type="button"
-                  className="button-primary copy-button"
-                  onClick={handleCopyLink}
-                  data-testid="copy-link-button"
-                >
-                  {copied ? '✓ Copied' : 'Copy'}
-                </button>
-              </div>
-            </div>
-
-            <div className="share-link-info" data-testid="share-link-info">
-              <div className="info-item">
-                <span className="info-label">Access:</span>
-                <span className="info-value">{result.shareLink.accessTierDisplay}</span>
-              </div>
-              {result.shareLink.expiryDisplay && (
-                <div className="info-item">
-                  <span className="info-label">Expires:</span>
-                  <span className="info-value">{result.shareLink.expiryDisplay}</span>
-                </div>
-              )}
-              {result.shareLink.maxUses && (
-                <div className="info-item">
-                  <span className="info-label">Max uses:</span>
-                  <span className="info-value">{result.shareLink.maxUses}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="button-primary"
-                onClick={onClose}
-                data-testid="done-button"
-              >
-                Done
-              </button>
-            </div>
+        <div className="form-group">
+          <label htmlFor="share-url" className="form-label">
+            Share URL
+          </label>
+          <div className="input-with-button">
+            <input
+              ref={urlInputRef}
+              id="share-url"
+              type="text"
+              value={result.shareUrl}
+              readOnly
+              className="form-input share-url-input"
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+              data-testid="share-url-input"
+            />
+            <button
+              type="button"
+              className="button-primary copy-button"
+              onClick={handleCopyLink}
+              data-testid="copy-link-button"
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
           </div>
-        </dialog>
+        </div>
+
+        <div className="share-link-info-card" data-testid="share-link-info">
+          <div className="info-item">
+            <span className="info-label">Access</span>
+            <span className="info-value">{result.shareLink.accessTierDisplay}</span>
+          </div>
+          {result.shareLink.expiryDisplay && (
+            <div className="info-item">
+              <span className="info-label">Expires</span>
+              <span className="info-value">{result.shareLink.expiryDisplay}</span>
+            </div>
+          )}
+          {result.shareLink.maxUses && (
+            <div className="info-item">
+              <span className="info-label">Max uses</span>
+              <span className="info-value">{result.shareLink.maxUses}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="panel-actions">
+          <button
+            type="button"
+            className="button-primary full-width"
+            onClick={onDone}
+            data-testid="done-button"
+          >
+            Done
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div
-      className="dialog-backdrop"
-      onClick={handleBackdropClick}
-      role="presentation"
-      data-testid="share-link-dialog-backdrop"
-    >
-      <dialog
-        ref={dialogRef}
-        className="dialog"
-        open
-        aria-labelledby="share-link-title"
-        aria-modal="true"
-        data-testid="share-link-dialog"
-      >
-        <form onSubmit={handleSubmit} className="dialog-form">
-          <h2 id="share-link-title" className="dialog-title">
-            Create Share Link
-          </h2>
+    <div className="panel-content-view" data-testid="create-share-link-view">
+      <form onSubmit={handleSubmit} className="panel-form">
+        <p className="panel-description">
+          Anyone with the link can view photos at the selected access level.
+        </p>
 
-          <p className="dialog-description">
-            Create a shareable link to this album. Anyone with the link can view photos
-            at the selected access level.
-          </p>
-
-          <div className="form-group">
-            <label className="form-label">Access Level</label>
-            <div className="tier-selector" data-testid="tier-selector">
-              {TIER_OPTIONS.map((option) => (
-                <label key={option.value} className="tier-option">
-                  <input
-                    type="radio"
-                    name="accessTier"
-                    value={option.value}
-                    checked={accessTier === option.value}
-                    onChange={() => setAccessTier(option.value)}
-                    disabled={isCreating}
-                  />
-                  <span className="tier-option-label">
-                    <strong>{option.label}</strong>
-                    <span className="tier-option-description">{option.description}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Link Expiration</label>
-            <div className="expiry-presets" data-testid="expiry-presets">
-              {EXPIRY_PRESETS.map((preset, index) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  className={`expiry-preset-button ${selectedPresetIndex === index ? 'selected' : ''}`}
-                  onClick={() => handlePresetClick(preset, index)}
-                  disabled={isCreating}
-                  data-testid={`expiry-preset-${preset.label.toLowerCase().replace(/\s/g, '-')}`}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            {!expiryEnabled && (
-              <div className="warning-banner" data-testid="never-expires-warning">
-                ⚠️ This link will never expire. Anyone with the link can access 
-                the album indefinitely. Consider setting an expiration date.
-              </div>
-            )}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label checkbox-label">
-              <input
-                type="checkbox"
-                checked={maxUsesEnabled}
-                onChange={(e) => setMaxUsesEnabled(e.target.checked)}
-                disabled={isCreating}
-                data-testid="max-uses-checkbox"
-              />
-              <span>Limit number of uses</span>
-            </label>
-            {maxUsesEnabled && (
-              <div className="max-uses-input" data-testid="max-uses-input-group">
-                <span>Maximum</span>
+        <div className="form-group">
+          <label className="form-label">Access Level</label>
+          <div className="tier-selector vertical" data-testid="tier-selector">
+            {TIER_OPTIONS.map((option) => (
+              <label key={option.value} className={`tier-option ${accessTier === option.value ? 'selected' : ''}`}>
                 <input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={maxUses}
-                  onChange={(e) => setMaxUses(parseInt(e.target.value, 10) || 1)}
+                  type="radio"
+                  name="accessTier"
+                  value={option.value}
+                  checked={accessTier === option.value}
+                  onChange={() => setAccessTier(option.value)}
                   disabled={isCreating}
-                  className="form-input number-input"
-                  data-testid="max-uses-input"
                 />
-                <span>uses</span>
-              </div>
-            )}
+                <div className="tier-option-content">
+                  <span className="tier-option-label">{option.label}</span>
+                  <span className="tier-option-description">{option.description}</span>
+                </div>
+              </label>
+            ))}
           </div>
+        </div>
 
-          {displayError && (
-            <div
-              id="share-link-error"
-              className="form-error"
-              role="alert"
-              data-testid="share-link-error"
-            >
-              {displayError}
+        <div className="form-group">
+          <label className="form-label">Link Expiration</label>
+          <div className="expiry-presets grid-3" data-testid="expiry-presets">
+            {EXPIRY_PRESETS.map((preset, index) => (
+              <button
+                key={preset.label}
+                type="button"
+                className={`expiry-preset-button ${selectedPresetIndex === index ? 'selected' : ''}`}
+                onClick={() => handlePresetClick(preset, index)}
+                disabled={isCreating}
+                data-testid={`expiry-preset-${preset.label.toLowerCase().replace(/\s/g, '-')}`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          {!expiryEnabled && (
+            <div className="warning-banner" data-testid="never-expires-warning">
+              ⚠️ Link will never expire.
             </div>
           )}
+        </div>
 
-          <div className="dialog-actions">
-            <button
-              type="button"
-              className="button-secondary"
-              onClick={onClose}
+        <div className="form-group">
+          <label className="form-label checkbox-label">
+            <input
+              type="checkbox"
+              checked={maxUsesEnabled}
+              onChange={(e) => setMaxUsesEnabled(e.target.checked)}
               disabled={isCreating}
-              data-testid="cancel-button"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="button-primary"
-              disabled={isCreating}
-              data-testid="generate-button"
-            >
-              {isCreating ? 'Generating...' : 'Generate Link'}
-            </button>
+              data-testid="max-uses-checkbox"
+            />
+            <span>Limit number of uses</span>
+          </label>
+          {maxUsesEnabled && (
+            <div className="max-uses-input" data-testid="max-uses-input-group">
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={maxUses}
+                onChange={(e) => setMaxUses(parseInt(e.target.value, 10) || 1)}
+                disabled={isCreating}
+                className="form-input number-input"
+                data-testid="max-uses-input"
+              />
+              <span>uses maximum</span>
+            </div>
+          )}
+        </div>
+
+        {displayError && (
+          <div
+            id="share-link-error"
+            className="form-error"
+            role="alert"
+            data-testid="share-link-error"
+          >
+            {displayError}
           </div>
-        </form>
-      </dialog>
+        )}
+
+        <div className="panel-actions">
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={onCancel}
+            disabled={isCreating}
+            data-testid="cancel-button"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="button-primary"
+            disabled={isCreating}
+            data-testid="generate-button"
+          >
+            {isCreating ? 'Generating...' : 'Generate Link'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
+

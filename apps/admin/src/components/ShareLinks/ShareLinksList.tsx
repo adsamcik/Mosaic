@@ -7,7 +7,6 @@
 import { useState } from 'react';
 import type { ShareLinkInfo } from '../../hooks/useShareLinks';
 import { createLogger } from '../../lib/logger';
-import { EditLinkExpirationDialog } from './EditLinkExpirationDialog';
 
 const log = createLogger('ShareLinksList');
 
@@ -24,11 +23,11 @@ interface ShareLinksListProps {
   isRevoking: boolean;
   /** Called to create a new link */
   onCreateClick: () => void;
+  /** Called to edit a link */
+  onEditClick: (link: ShareLinkInfo) => void;
   /** Whether current user is owner */
   isOwner: boolean;
-  /** Album ID for the links */
-  albumId: string;
-  /** Called to update a link's expiration */
+  /** Called to update a link's expiration (passed down for consistency, though handled by parent now) */
   onUpdateExpiration: (
     linkId: string,
     expiresAt: Date | null,
@@ -60,16 +59,12 @@ export function ShareLinksList({
   onRevoke,
   isRevoking,
   onCreateClick,
+  onEditClick,
   isOwner,
-  albumId,
-  onUpdateExpiration,
   isUpdating,
-  updateError,
-  onRefresh,
 }: ShareLinksListProps) {
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [editingLink, setEditingLink] = useState<ShareLinkInfo | null>(null);
 
   const handleCopyLink = async (link: ShareLinkInfo) => {
     // Only copy the link ID - the secret is not available after creation
@@ -210,7 +205,7 @@ export function ShareLinksList({
                           <button
                             type="button"
                             className="button-secondary button-small"
-                            onClick={() => setEditingLink(link)}
+                            onClick={() => onEditClick(link)}
                             disabled={isRevoking || isUpdating}
                             data-testid="edit-link-button"
                           >
@@ -327,22 +322,7 @@ export function ShareLinksList({
           </dialog>
         </div>
       )}
-
-      {/* Edit Link Expiration Dialog */}
-      {editingLink && (
-        <EditLinkExpirationDialog
-          link={editingLink}
-          albumId={albumId}
-          onSave={() => {
-            setEditingLink(null);
-            onRefresh();
-          }}
-          onClose={() => setEditingLink(null)}
-          onUpdate={onUpdateExpiration}
-          isUpdating={isUpdating}
-          error={updateError}
-        />
-      )}
     </div>
   );
 }
+
