@@ -277,7 +277,34 @@ button {
   font-size: 0.75rem;
   font-weight: 600;
   margin-bottom: var(--spacing-lg);
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+}
+
+.clear-session-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  border: 1px dashed var(--color-border);
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: var(--spacing-md);
+}
+
+.clear-session-button:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.clear-session-button:active {
+  transform: scale(0.98);
 }
 
 /* App Shell */

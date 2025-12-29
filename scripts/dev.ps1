@@ -176,6 +176,7 @@ function Start-BackendService {
 `$env:ConnectionStrings__Default = '$DbConnectionString'
 `$env:Storage__Path = '$storagePath'
 `$env:Auth__TrustedProxies__0 = '127.0.0.0/8'
+`$env:Auth__TrustedProxies__1 = '::1/128'
 `$env:RUN_MIGRATIONS = 'true'
 Set-Location '$backendPath'
 dotnet watch run --no-hot-reload 2>&1
