@@ -34,7 +34,8 @@ services:
       RUN_MIGRATIONS: "true"
       ConnectionStrings__Default: "Host=postgres;Database=mosaic;Username=mosaic;Password=${POSTGRES_PASSWORD:-changeme}"
       Storage__Path: /app/data/blobs
-      Auth__Mode: ${AUTH_MODE:-ProxyAuth}
+      Auth__LocalAuthEnabled: ${LOCAL_AUTH_ENABLED:-true}
+      Auth__ProxyAuthEnabled: ${PROXY_AUTH_ENABLED:-true}
       Auth__TrustedProxies__0: "172.16.0.0/12"
       Auth__TrustedProxies__1: "10.0.0.0/8"
       Auth__TrustedProxies__2: "192.168.0.0/16"

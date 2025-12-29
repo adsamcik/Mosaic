@@ -27,7 +27,8 @@
         "env": {
           "ASPNETCORE_ENVIRONMENT": "Development",
           "ASPNETCORE_URLS": "http://localhost:5000",
-          "Auth__Mode": "LocalAuth"
+          "Auth__LocalAuthEnabled": "true",
+          "Auth__ProxyAuthEnabled": "true"
         }
       },
       "isBackground": true,
@@ -43,7 +44,7 @@
       }
     },
     {
-      "label": "watch-backend-proxyauth",
+      "label": "watch-backend-localauth-only",
       "command": "dotnet",
       "type": "process",
       "args": [
@@ -56,7 +57,38 @@
         "env": {
           "ASPNETCORE_ENVIRONMENT": "Development",
           "ASPNETCORE_URLS": "http://localhost:5000",
-          "Auth__Mode": "ProxyAuth"
+          "Auth__LocalAuthEnabled": "true",
+          "Auth__ProxyAuthEnabled": "false"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\s*Building\\.\\.\\.",
+          "endsPattern": "^\\s*Now listening on:"
+        }
+      }
+    },
+    {
+      "label": "watch-backend-proxyauth-only",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "watch",
+        "run",
+        "--project",
+        "${workspaceFolder}/apps/backend/Mosaic.Backend/Mosaic.Backend.csproj"
+      ],
+      "options": {
+        "env": {
+          "ASPNETCORE_ENVIRONMENT": "Development",
+          "ASPNETCORE_URLS": "http://localhost:5000",
+          "Auth__LocalAuthEnabled": "false",
+          "Auth__ProxyAuthEnabled": "true"
         }
       },
       "isBackground": true,
