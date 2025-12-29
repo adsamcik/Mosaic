@@ -437,6 +437,142 @@ Stop-Process -Force
 
 ---
 
+## Running the Development Environment
+
+Mosaic provides multiple ways to run the development stack. Choose the approach that fits your situation.
+
+### Quick Reference
+
+| Method | Command | Best For |
+|--------|---------|----------|
+| **VS Code Tasks** | `Ctrl+Shift+P` → "Tasks: Run Task" → `start-all` | Daily development in VS Code |
+| **Dev Script** | `.\scripts\dev.ps1 start` | Background services, CLI preference |
+| **Manual** | Individual dotnet/npm commands | Debugging specific components |
+
+### Method 1: VS Code Tasks (Recommended)
+
+Use the preconfigured VS Code tasks for seamless development:
+
+```
+Ctrl+Shift+P → "Tasks: Run Task" → select task
+```
+
+| Task | Purpose |
+|------|---------|
+| `start-all` | Start crypto build → backend → frontend (sequence) |
+| `watch-backend` | Start backend with hot reload |
+| `dev-frontend` | Start Vite dev server |
+| `build-backend` | Build backend without running |
+| `build-crypto` | Build crypto library |
+| `test-all` | Run all test suites in parallel |
+
+**Note:** `watch-backend` and `dev-frontend` are background tasks. They continue running until you terminate them.
+
+### Method 2: Dev Script (CLI)
+
+The `scripts/dev.ps1` script manages all services as background processes:
+
+```powershell
+# Start everything (database, backend, frontend)
+.\scripts\dev.ps1 start
+
+# Check status
+.\scripts\dev.ps1 status
+
+# View logs (live tail)
+.\scripts\dev.ps1 logs backend
+.\scripts\dev.ps1 logs frontend
+.\scripts\dev.ps1 logs db
+
+# Stop everything
+.\scripts\dev.ps1 stop
+
+# Restart specific service
+.\scripts\dev.ps1 restart backend
+
+# Full reset (clears data, stops services)
+.\scripts\dev.ps1 reset
+.\scripts\dev.ps1 reset --full  # Also removes node_modules
+```
+
+**Service URLs:**
+- Frontend: http://localhost:5173
+- Backend: http://localhost:5000
+- Swagger: http://localhost:5000/openapi/v1.json
+
+### Method 3: Manual Commands
+
+For debugging or when you need direct control:
+
+```powershell
+# 1. Start PostgreSQL (required for backend)
+docker compose -f docker-compose.dev.yml up -d postgres
+
+# 2. Build crypto library (required for frontend)
+cd libs/crypto ; npm install ; npm run build
+
+# 3. Start backend (in separate terminal)
+cd apps/backend/Mosaic.Backend
+$env:ASPNETCORE_ENVIRONMENT="Development"
+$env:ASPNETCORE_URLS="http://localhost:5000"
+$env:ConnectionStrings__Default="Host=localhost;Database=mosaic;Username=mosaic;Password=dev"
+dotnet run
+
+# 4. Start frontend (in separate terminal)
+cd apps/admin ; npm install ; npm run dev
+```
+
+### Running Tests
+
+```powershell
+# All tests (uses Docker for integration tests)
+.\scripts\run-tests.ps1 -Suite all
+
+# Specific suites
+.\scripts\run-tests.ps1 -Suite unit      # Crypto + frontend unit tests
+.\scripts\run-tests.ps1 -Suite api       # API integration tests
+.\scripts\run-tests.ps1 -Suite e2e       # Playwright E2E tests
+
+# Individual test commands (non-interactive!)
+cd libs/crypto ; npm test                 # Crypto unit tests
+cd apps/admin ; npm run test:run          # Frontend unit tests  
+cd apps/backend/Mosaic.Backend.Tests ; dotnet test  # Backend tests
+
+# E2E tests (full stack must be running)
+.\scripts\run-e2e-tests.ps1              # Default: Chromium
+.\scripts\run-e2e-tests.ps1 -Headed      # Visible browser
+.\scripts\run-e2e-tests.ps1 -Project firefox
+```
+
+### Docker Operations
+
+For production-like testing or Docker-related work:
+
+```powershell
+# Development stack (PostgreSQL only for local dev)
+docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml down
+
+# Full production stack
+.\scripts\mosaic.ps1 start
+.\scripts\mosaic.ps1 status
+.\scripts\mosaic.ps1 logs backend
+.\scripts\mosaic.ps1 stop
+
+# Build production containers
+.\scripts\docker-build.ps1
+```
+
+### Environment Prerequisites
+
+Before first run, ensure:
+1. **Docker Desktop** is running (for PostgreSQL)
+2. **Node.js 20+** is installed
+3. **.NET 10 SDK** is installed
+4. **npm dependencies** are installed: `cd libs/crypto && npm install && cd ../../apps/admin && npm install`
+
+---
+
 ### Anti-Patterns (Forbidden)
 
 - **`// TODO` comments** - Unless the user explicitly requests a placeholder
