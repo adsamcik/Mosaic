@@ -113,39 +113,34 @@ export function SharedMosaicPhotoGrid({
         height: HEADER_HEIGHT
       });
 
-      const mosaicItems = computeMosaicLayout(groupPhotos, {
+      const mosaicRows = computeMosaicLayout(groupPhotos, {
         containerWidth,
         gap: PHOTO_GAP,
         targetRowHeight: TARGET_ROW_HEIGHT
       });
 
-      const byTop = new Map<number, MosaicItem[]>();
-      mosaicItems.forEach(item => {
-        const t = Math.round(item.rect.top);
-        if (!byTop.has(t)) byTop.set(t, []);
-        byTop.get(t)!.push(item);
-      });
+      // Now we have explicit rows, so we can just map them to virtual items
+      for (const row of mosaicRows) {
+        // Adjust item rects to be relative to the row
+        const rowTop = row.top || 0;
+        
+        // Items in RowDef have absolute `top` (cumulative). 
+        // We need them relative to the row for the `mosaic-row` absolute positioning to work if we treated them as relative.
+        // BUT `computeMosaicLayout` returns them with absolute `top` based on `currentTop`.
+        // The `mosaic-row` in virtualization is placed at `virtualRow.start`.
+        // If we want `mosaic-row` to contain items, we usually want items to be relative to 0 inside that row.
+        // Let's re-map them to be relative: item.rect.top - rowTop.
 
-      const sortedTops = Array.from(byTop.keys()).sort((a, b) => a - b);
-      
-      for (const top of sortedTops) {
-        const items = byTop.get(top)!;
-        let maxBottom = 0;
-        items.forEach(it => {
-            const bottom = it.rect.top + it.rect.height;
-            if (bottom > maxBottom) maxBottom = bottom;
-        });
-        
-        const rowHeight = maxBottom - top;
-        
+        const itemsRelative = row.items.map(it => ({
+             ...it,
+             rect: { ...it.rect, top: it.rect.top - rowTop }
+        }));
+
         rows.push({
           type: 'mosaic-row',
-          items: items.map(it => ({
-            ...it,
-            rect: { ...it.rect, top: it.rect.top - top } 
-          })),
-          height: rowHeight + PHOTO_GAP, 
-          id: `row-${dateString}-${top}`,
+          items: itemsRelative,
+          height: row.height + PHOTO_GAP, 
+          id: `row-${dateString}-${rowTop}`, // Unique ID per row
           top: 0 
         });
       }
