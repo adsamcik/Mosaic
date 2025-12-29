@@ -9,9 +9,12 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { useLinkKeys, parseLinkFragment } from '../../hooks/useLinkKeys';
-import { SharedGallery } from './SharedGallery';
 import '../../../src/styles/globals.css';
+import { parseLinkFragment, useLinkKeys } from '../../hooks/useLinkKeys';
+import type { AccessTier as AccessTierType } from '../../lib/api-types';
+import { decryptAlbumName } from '../../lib/album-metadata-service';
+import '../../styles/shared-album.css';
+import { SharedGallery } from './SharedGallery';
 
 interface SharedAlbumViewerProps {
   /** Link ID from URL path */
@@ -81,11 +84,61 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
     albumId,
     accessTier,
     tierKeys,
+    encryptedName,
     isValid,
   } = useLinkKeys(linkId, linkSecret);
 
   // Memoize tier keys map to prevent unnecessary re-renders
   const tierKeysMap = useMemo(() => tierKeys, [tierKeys]);
+
+  // Decrypt album name
+  const [albumName, setAlbumName] = useState<string | null>(null);
+  
+  useEffect(() => {
+    if (!encryptedName || tierKeys.size === 0) {
+      setAlbumName(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function decryptName() {
+      try {
+        // Get the highest tier key from any epoch
+        let readKey: Uint8Array | undefined;
+        for (const [, epochTiers] of tierKeys) {
+          for (const tier of [3, 2, 1] as AccessTierType[]) { 
+            const tierKey = epochTiers.get(tier);
+            if (tierKey) {
+              readKey = tierKey.key;
+              break;
+            }
+          }
+          if (readKey) break;
+        }
+
+        if (!readKey) {
+          return;
+        }
+
+        const name = await decryptAlbumName(encryptedName!, readKey, albumId ?? 'shared');
+        
+        if (!cancelled) {
+          setAlbumName(name);
+        }
+      } catch (err) {
+        // Failed to decrypt - album name stays null (shows "Shared Album")
+        console.error('Failed to decrypt album name:', err);
+      }
+    }
+
+    decryptName();
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [encryptedName, tierKeys, albumId]);
+
 
   // Missing secret error
   if (!linkSecret) {
@@ -141,7 +194,7 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
     <div className="shared-viewer" data-testid="shared-album-viewer">
       <header className="shared-viewer-header">
         <div className="header-left">
-          <h1 className="app-title">🖼️ Mosaic</h1>
+          <h1 className="app-title">{albumName ? `🖼️ ${albumName}` : '🖼️ Mosaic'}</h1>
           <span className="shared-badge">Shared Album</span>
         </div>
         <div className="header-right">

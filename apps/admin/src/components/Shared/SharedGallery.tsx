@@ -24,6 +24,8 @@ interface SharedGalleryProps {
   tierKeys: Map<number, Map<AccessTierType, TierKey>>;
   /** Whether keys are still loading */
   isLoadingKeys?: boolean;
+  /** Decrypted album name (optional) */
+  albumName?: string | null;
 }
 
 /** Photo response from share link API */
@@ -47,6 +49,7 @@ export function SharedGallery({
   accessTier,
   tierKeys,
   isLoadingKeys = false,
+  albumName,
 }: SharedGalleryProps) {
   const [photos, setPhotos] = useState<PhotoMeta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -217,7 +220,7 @@ export function SharedGallery({
     <div className="shared-gallery" data-testid="shared-gallery">
       <div className="gallery-header">
         <h2 className="gallery-title">
-          Shared Album
+          {albumName || 'Shared Album'}
           <span className="gallery-count">({photos.length} photos)</span>
         </h2>
         <div className="gallery-tier-badge">
