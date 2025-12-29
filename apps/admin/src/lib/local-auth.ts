@@ -340,6 +340,22 @@ async function deriveAccountSalt(userSalt: Uint8Array): Promise<Uint8Array> {
  * Does this by checking if /api/auth/init responds (vs 404 in ProxyAuth mode).
  */
 export async function isLocalAuthMode(): Promise<boolean> {
+  const status = await checkServerStatus();
+  return status.isLocalAuth;
+}
+
+export interface ServerStatus {
+  isOnline: boolean;
+  isLocalAuth: boolean;
+  statusCode?: number;
+  error?: string;
+}
+
+/**
+ * Check server connectivity and authentication mode.
+ * Returns detailed status about the server connection.
+ */
+export async function checkServerStatus(): Promise<ServerStatus> {
   try {
     const response = await fetch('/api/auth/init', {
       method: 'POST',
@@ -347,13 +363,49 @@ export async function isLocalAuthMode(): Promise<boolean> {
       body: JSON.stringify({ username: '__check__' }),
     });
 
-    // If we get a 400 (bad request for username format), auth endpoints exist
-    // If we get 404, auth controller is not registered (ProxyAuth mode)
-    return response.status !== 404;
-  } catch {
-    return false;
+    // 404 means the endpoint doesn't exist -> ProxyAuth mode (but server is online)
+    if (response.status === 404) {
+      return { isOnline: true, isLocalAuth: false, statusCode: 404 };
+    }
+
+    // 5xx means server error, but we treat as isLocalAuth=true (legacy behavior was != 404)
+    // to ensure the UI doesn't collapse the username field unexpectedly.
+    if (response.status >= 500) {
+      let errorDetail = `Server error: ${response.status}`;
+      try {
+        const text = await response.text();
+        if (text) {
+          try {
+            const json = JSON.parse(text);
+            errorDetail = json.error || json.message || errorDetail;
+          } catch {
+            errorDetail = text.slice(0, 100); // Fallback to text, truncated
+          }
+        }
+      } catch {
+        // Ignore body read errors
+      }
+
+      return { 
+        isOnline: true, 
+        isLocalAuth: true, 
+        statusCode: response.status,
+        error: errorDetail
+      };
+    }
+
+    // 200-499 (except 404) usually means the endpoint exists
+    return { isOnline: true, isLocalAuth: true, statusCode: response.status };
+  } catch (err) {
+    // Network error (fetch failed completely)
+    return { 
+      isOnline: false, 
+      isLocalAuth: false, 
+      error: err instanceof Error ? err.message : 'Connection failed' 
+    };
   }
 }
+
 
 // =============================================================================
 // Development Authentication (Dev Mode Only)

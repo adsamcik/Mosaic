@@ -67,14 +67,14 @@ describe('CreateAlbumDialog', () => {
     it('renders nothing when closed', () => {
       const { queryByTestId, cleanup } = renderDialog({ isOpen: false });
 
-      expect(queryByTestId('create-album-dialog')).toBeNull();
+      expect(queryByTestId('create-album')).toBeNull();
       cleanup();
     });
 
     it('renders dialog when open', () => {
       const { getByTestId, getByText, cleanup } = renderDialog();
 
-      expect(getByTestId('create-album-dialog')).not.toBeNull();
+      expect(getByTestId('create-album')).not.toBeNull();
       expect(getByText('Create Album')).not.toBeNull();
       cleanup();
     });
@@ -205,7 +205,7 @@ describe('CreateAlbumDialog', () => {
     it('has aria-labelledby pointing to title', () => {
       const { getByTestId, cleanup } = renderDialog();
 
-      const dialog = getByTestId('create-album-dialog') as HTMLElement;
+      const dialog = getByTestId('create-album') as HTMLElement;
       expect(dialog.getAttribute('aria-labelledby')).toBe('create-album-title');
       cleanup();
     });
@@ -213,7 +213,7 @@ describe('CreateAlbumDialog', () => {
     it('has aria-modal attribute', () => {
       const { getByTestId, cleanup } = renderDialog();
 
-      const dialog = getByTestId('create-album-dialog') as HTMLElement;
+      const dialog = getByTestId('create-album') as HTMLElement;
       expect(dialog.getAttribute('aria-modal')).toBe('true');
       cleanup();
     });

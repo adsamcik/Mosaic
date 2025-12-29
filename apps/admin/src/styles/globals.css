@@ -1870,3 +1870,21 @@ button {
   overflow: hidden;
 }
 
+/* Server Error Styling */
+.form-error.server-error {
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  margin-bottom: 1.5rem;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  text-align: left;
+}
+
+.form-error.server-error svg {
+  color: #ef4444;
+}
+

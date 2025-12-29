@@ -15,13 +15,13 @@ namespace Mosaic.Backend.Migrations
                 name: "auth_challenges",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    username = table.Column<string>(type: "TEXT", nullable: false),
-                    challenge = table.Column<byte[]>(type: "BLOB", nullable: false),
-                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    expires_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    is_used = table.Column<bool>(type: "INTEGER", nullable: false),
-                    ip_address = table.Column<string>(type: "TEXT", nullable: true)
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    username = table.Column<string>(type: "text", nullable: false),
+                    challenge = table.Column<byte[]>(type: "bytea", nullable: false),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    expires_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    is_used = table.Column<bool>(type: "boolean", nullable: false),
+                    ip_address = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -32,18 +32,18 @@ namespace Mosaic.Backend.Migrations
                 name: "users",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    auth_sub = table.Column<string>(type: "TEXT", nullable: false),
-                    identity_pubkey = table.Column<string>(type: "TEXT", nullable: false),
-                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    is_admin = table.Column<bool>(type: "INTEGER", nullable: false),
-                    encrypted_salt = table.Column<byte[]>(type: "BLOB", nullable: true),
-                    salt_nonce = table.Column<byte[]>(type: "BLOB", nullable: true),
-                    user_salt = table.Column<byte[]>(type: "BLOB", nullable: true),
-                    account_salt = table.Column<byte[]>(type: "BLOB", nullable: true),
-                    wrapped_account_key = table.Column<byte[]>(type: "BLOB", nullable: true),
-                    wrapped_identity_seed = table.Column<byte[]>(type: "BLOB", nullable: true),
-                    auth_pubkey = table.Column<string>(type: "TEXT", nullable: true)
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    auth_sub = table.Column<string>(type: "text", nullable: false),
+                    identity_pubkey = table.Column<string>(type: "text", nullable: false),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    is_admin = table.Column<bool>(type: "boolean", nullable: false),
+                    encrypted_salt = table.Column<byte[]>(type: "bytea", nullable: true),
+                    salt_nonce = table.Column<byte[]>(type: "bytea", nullable: true),
+                    user_salt = table.Column<byte[]>(type: "bytea", nullable: true),
+                    account_salt = table.Column<byte[]>(type: "bytea", nullable: true),
+                    wrapped_account_key = table.Column<byte[]>(type: "bytea", nullable: true),
+                    wrapped_identity_seed = table.Column<byte[]>(type: "bytea", nullable: true),
+                    auth_pubkey = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -54,16 +54,16 @@ namespace Mosaic.Backend.Migrations
                 name: "albums",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    owner_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    current_epoch_id = table.Column<int>(type: "INTEGER", nullable: false),
-                    current_version = table.Column<long>(type: "INTEGER", nullable: false),
-                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    encrypted_name = table.Column<string>(type: "TEXT", nullable: true),
-                    encrypted_description = table.Column<string>(type: "TEXT", nullable: true),
-                    expires_at = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
-                    expiration_warning_days = table.Column<int>(type: "INTEGER", nullable: false)
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    owner_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    current_epoch_id = table.Column<int>(type: "integer", nullable: false),
+                    current_version = table.Column<long>(type: "bigint", nullable: false),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    encrypted_name = table.Column<string>(type: "text", nullable: true),
+                    encrypted_description = table.Column<string>(type: "text", nullable: true),
+                    expires_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    expiration_warning_days = table.Column<int>(type: "integer", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -80,16 +80,16 @@ namespace Mosaic.Backend.Migrations
                 name: "sessions",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    user_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    token_hash = table.Column<byte[]>(type: "BLOB", nullable: false),
-                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    last_seen_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    expires_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    revoked_at = table.Column<DateTime>(type: "TEXT", nullable: true),
-                    user_agent = table.Column<string>(type: "TEXT", nullable: true),
-                    ip_address = table.Column<string>(type: "TEXT", nullable: true),
-                    device_name = table.Column<string>(type: "TEXT", nullable: true)
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    token_hash = table.Column<byte[]>(type: "bytea", nullable: false),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    last_seen_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    expires_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    revoked_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    user_agent = table.Column<string>(type: "text", nullable: true),
+                    ip_address = table.Column<string>(type: "text", nullable: true),
+                    device_name = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -106,13 +106,13 @@ namespace Mosaic.Backend.Migrations
                 name: "shards",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    uploader_id = table.Column<Guid>(type: "TEXT", nullable: true),
-                    storage_key = table.Column<string>(type: "TEXT", nullable: false),
-                    size_bytes = table.Column<long>(type: "INTEGER", nullable: false),
-                    status = table.Column<string>(type: "TEXT", nullable: false),
-                    status_updated_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    pending_expires_at = table.Column<DateTime>(type: "TEXT", nullable: true)
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    uploader_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    storage_key = table.Column<string>(type: "text", nullable: false),
+                    size_bytes = table.Column<long>(type: "bigint", nullable: false),
+                    status = table.Column<string>(type: "text", nullable: false),
+                    status_updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    pending_expires_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -129,10 +129,10 @@ namespace Mosaic.Backend.Migrations
                 name: "system_settings",
                 columns: table => new
                 {
-                    key = table.Column<string>(type: "TEXT", nullable: false),
-                    value = table.Column<string>(type: "TEXT", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    updated_by = table.Column<Guid>(type: "TEXT", nullable: true)
+                    key = table.Column<string>(type: "text", nullable: false),
+                    value = table.Column<string>(type: "text", nullable: false),
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    updated_by = table.Column<Guid>(type: "uuid", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -149,12 +149,12 @@ namespace Mosaic.Backend.Migrations
                 name: "user_quotas",
                 columns: table => new
                 {
-                    user_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    max_storage_bytes = table.Column<long>(type: "INTEGER", nullable: false),
-                    used_storage_bytes = table.Column<long>(type: "INTEGER", nullable: false),
-                    max_albums = table.Column<int>(type: "INTEGER", nullable: true),
-                    current_album_count = table.Column<int>(type: "INTEGER", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    max_storage_bytes = table.Column<long>(type: "bigint", nullable: false),
+                    used_storage_bytes = table.Column<long>(type: "bigint", nullable: false),
+                    max_albums = table.Column<int>(type: "integer", nullable: true),
+                    current_album_count = table.Column<int>(type: "integer", nullable: false),
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -171,12 +171,12 @@ namespace Mosaic.Backend.Migrations
                 name: "album_limits",
                 columns: table => new
                 {
-                    album_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    max_photos = table.Column<int>(type: "INTEGER", nullable: true),
-                    max_size_bytes = table.Column<long>(type: "INTEGER", nullable: true),
-                    current_photo_count = table.Column<int>(type: "INTEGER", nullable: false),
-                    current_size_bytes = table.Column<long>(type: "INTEGER", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    album_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    max_photos = table.Column<int>(type: "integer", nullable: true),
+                    max_size_bytes = table.Column<long>(type: "bigint", nullable: true),
+                    current_photo_count = table.Column<int>(type: "integer", nullable: false),
+                    current_size_bytes = table.Column<long>(type: "bigint", nullable: false),
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -193,12 +193,12 @@ namespace Mosaic.Backend.Migrations
                 name: "album_members",
                 columns: table => new
                 {
-                    album_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    user_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    role = table.Column<string>(type: "TEXT", nullable: false),
-                    invited_by = table.Column<Guid>(type: "TEXT", nullable: true),
-                    joined_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    revoked_at = table.Column<DateTime>(type: "TEXT", nullable: true)
+                    album_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    role = table.Column<string>(type: "text", nullable: false),
+                    invited_by = table.Column<Guid>(type: "uuid", nullable: true),
+                    joined_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    revoked_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -227,15 +227,15 @@ namespace Mosaic.Backend.Migrations
                 name: "epoch_keys",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    album_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    recipient_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    epoch_id = table.Column<int>(type: "INTEGER", nullable: false),
-                    encrypted_key_bundle = table.Column<byte[]>(type: "BLOB", nullable: false),
-                    owner_signature = table.Column<byte[]>(type: "BLOB", nullable: false),
-                    sharer_pubkey = table.Column<byte[]>(type: "BLOB", nullable: false),
-                    sign_pubkey = table.Column<byte[]>(type: "BLOB", nullable: false),
-                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    album_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    recipient_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    epoch_id = table.Column<int>(type: "integer", nullable: false),
+                    encrypted_key_bundle = table.Column<byte[]>(type: "bytea", nullable: false),
+                    owner_signature = table.Column<byte[]>(type: "bytea", nullable: false),
+                    sharer_pubkey = table.Column<byte[]>(type: "bytea", nullable: false),
+                    sign_pubkey = table.Column<byte[]>(type: "bytea", nullable: false),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -258,15 +258,15 @@ namespace Mosaic.Backend.Migrations
                 name: "manifests",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    album_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    version_created = table.Column<long>(type: "INTEGER", nullable: false),
-                    is_deleted = table.Column<bool>(type: "INTEGER", nullable: false),
-                    encrypted_meta = table.Column<byte[]>(type: "BLOB", nullable: false),
-                    signature = table.Column<string>(type: "TEXT", nullable: false),
-                    signer_pubkey = table.Column<string>(type: "TEXT", nullable: false),
-                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    album_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    version_created = table.Column<long>(type: "bigint", nullable: false),
+                    is_deleted = table.Column<bool>(type: "boolean", nullable: false),
+                    encrypted_meta = table.Column<byte[]>(type: "bytea", nullable: false),
+                    signature = table.Column<string>(type: "text", nullable: false),
+                    signer_pubkey = table.Column<string>(type: "text", nullable: false),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -283,16 +283,16 @@ namespace Mosaic.Backend.Migrations
                 name: "share_links",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    link_id = table.Column<byte[]>(type: "BLOB", nullable: false),
-                    album_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    access_tier = table.Column<int>(type: "INTEGER", nullable: false),
-                    owner_encrypted_secret = table.Column<byte[]>(type: "BLOB", nullable: true),
-                    expires_at = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
-                    max_uses = table.Column<int>(type: "INTEGER", nullable: true),
-                    use_count = table.Column<int>(type: "INTEGER", nullable: false),
-                    is_revoked = table.Column<bool>(type: "INTEGER", nullable: false),
-                    created_at = table.Column<DateTimeOffset>(type: "TEXT", nullable: false)
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    link_id = table.Column<byte[]>(type: "bytea", nullable: false),
+                    album_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    access_tier = table.Column<int>(type: "integer", nullable: false),
+                    owner_encrypted_secret = table.Column<byte[]>(type: "bytea", nullable: true),
+                    expires_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    max_uses = table.Column<int>(type: "integer", nullable: true),
+                    use_count = table.Column<int>(type: "integer", nullable: false),
+                    is_revoked = table.Column<bool>(type: "boolean", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -309,9 +309,9 @@ namespace Mosaic.Backend.Migrations
                 name: "manifest_shards",
                 columns: table => new
                 {
-                    manifest_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    shard_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    chunk_index = table.Column<int>(type: "INTEGER", nullable: false)
+                    manifest_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    shard_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    chunk_index = table.Column<int>(type: "integer", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -334,12 +334,12 @@ namespace Mosaic.Backend.Migrations
                 name: "link_epoch_keys",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    share_link_id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    epoch_id = table.Column<int>(type: "INTEGER", nullable: false),
-                    tier = table.Column<int>(type: "INTEGER", nullable: false),
-                    wrapped_nonce = table.Column<byte[]>(type: "BLOB", nullable: false),
-                    wrapped_key = table.Column<byte[]>(type: "BLOB", nullable: false)
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    share_link_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    epoch_id = table.Column<int>(type: "integer", nullable: false),
+                    tier = table.Column<int>(type: "integer", nullable: false),
+                    wrapped_nonce = table.Column<byte[]>(type: "bytea", nullable: false),
+                    wrapped_key = table.Column<byte[]>(type: "bytea", nullable: false)
                 },
                 constraints: table =>
                 {
