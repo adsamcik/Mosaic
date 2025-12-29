@@ -39,7 +39,7 @@ export interface SharedPhotoLightboxProps {
 /** Photo loading state */
 type PhotoState =
   | { status: 'loading' }
-  | { status: 'loaded'; blobUrl: string }
+  | { status: 'loaded'; blobUrl: string; isFullRes: boolean }
   | { status: 'error'; message: string };
 
 /**
@@ -58,16 +58,20 @@ export function SharedPhotoLightbox({
   hasPrevious,
 }: SharedPhotoLightboxProps) {
   const [state, setState] = useState<PhotoState>({ status: 'loading' });
+  const [loadProgress, setLoadProgress] = useState(0);
 
   // Load photo when it changes
+  // Strategy: Show thumbnail immediately, then load full-res shards in background
   useEffect(() => {
     let cancelled = false;
-    let blobUrl: string | null = null;
+    let thumbnailBlobUrl: string | null = null;
+    let fullResBlobUrl: string | null = null;
 
     async function loadPhoto() {
       setState({ status: 'loading' });
+      setLoadProgress(0);
 
-      // First try to use embedded thumbnail if available
+      // Phase 1: Show embedded thumbnail immediately for fast perceived load
       if (photo.thumbnail) {
         try {
           const binary = atob(photo.thumbnail);
@@ -76,20 +80,21 @@ export function SharedPhotoLightbox({
             bytes[i] = binary.charCodeAt(i);
           }
           const blob = new Blob([bytes], { type: 'image/jpeg' });
-          blobUrl = URL.createObjectURL(blob);
+          thumbnailBlobUrl = URL.createObjectURL(blob);
           if (!cancelled) {
-            setState({ status: 'loaded', blobUrl });
+            // Show thumbnail immediately, but mark as not full-res
+            setState({ status: 'loaded', blobUrl: thumbnailBlobUrl, isFullRes: false });
           }
-          return;
         } catch {
-          // Fall through to shard loading
+          // Thumbnail decode failed, continue to shard loading
         }
       }
 
-      // Try to load from shards if we have a tier key
+      // Phase 2: Load full-resolution from shards if we have a tier key
       if (!tierKey || !photo.shardIds || photo.shardIds.length === 0) {
-        if (!cancelled) {
-          setState({ status: 'error', message: 'No decryption key available' });
+        // No tier key or shards available - thumbnail is all we have
+        if (!thumbnailBlobUrl && !cancelled) {
+          setState({ status: 'error', message: 'No image available' });
         }
         return;
       }
@@ -98,14 +103,26 @@ export function SharedPhotoLightbox({
         // Download and decrypt shards via share link endpoint
         const crypto = await getCryptoClient();
         const decryptedChunks: Uint8Array[] = [];
+        const totalShards = photo.shardIds.length;
 
-        for (const shardId of photo.shardIds) {
+        for (let i = 0; i < photo.shardIds.length; i++) {
+          if (cancelled) return;
+          
+          const shardId = photo.shardIds[i]!;
           const encryptedShard = await downloadShardViaShareLink(linkId, shardId);
-          // Note: For tier-based access, we use the tier key directly
-          // The tier key is derived from the epoch read key
-          const plaintext = await crypto.decryptShard(encryptedShard, tierKey);
+          
+          // Use decryptShardWithTierKey for share link viewing
+          // The tier key is already derived and unwrapped from the share link
+          const plaintext = await crypto.decryptShardWithTierKey(encryptedShard, tierKey);
           decryptedChunks.push(plaintext);
+          
+          // Update progress
+          if (!cancelled) {
+            setLoadProgress(((i + 1) / totalShards) * 100);
+          }
         }
+
+        if (cancelled) return;
 
         // Combine chunks
         const totalSize = decryptedChunks.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -116,20 +133,30 @@ export function SharedPhotoLightbox({
           offset += chunk.length;
         }
 
-        // Create blob URL
+        // Create blob URL for full-res image
         const blob = new Blob([photoData], { type: photo.mimeType });
-        blobUrl = URL.createObjectURL(blob);
+        fullResBlobUrl = URL.createObjectURL(blob);
 
         if (!cancelled) {
-          setState({ status: 'loaded', blobUrl });
+          // Replace thumbnail with full-res
+          setState({ status: 'loaded', blobUrl: fullResBlobUrl, isFullRes: true });
+          // Revoke thumbnail URL now that we have full-res
+          if (thumbnailBlobUrl) {
+            URL.revokeObjectURL(thumbnailBlobUrl);
+            thumbnailBlobUrl = null;
+          }
         }
       } catch (err) {
-        if (!cancelled) {
+        // Shard decryption failed - this is expected if user's tier key
+        // doesn't have access to the shard tier (e.g., preview key can't decrypt original shards)
+        // If we have a thumbnail, just keep showing it (no error)
+        if (!thumbnailBlobUrl && !cancelled) {
           setState({
             status: 'error',
             message: err instanceof Error ? err.message : 'Failed to load photo',
           });
         }
+        // If we have thumbnail, we already set state to show it, so do nothing
       }
     }
 
@@ -137,8 +164,11 @@ export function SharedPhotoLightbox({
 
     return () => {
       cancelled = true;
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
+      if (thumbnailBlobUrl) {
+        URL.revokeObjectURL(thumbnailBlobUrl);
+      }
+      if (fullResBlobUrl) {
+        URL.revokeObjectURL(fullResBlobUrl);
       }
     };
   }, [photo.id, photo.thumbnail, photo.shardIds, photo.mimeType, tierKey, accessTier, linkId]);
@@ -233,12 +263,31 @@ export function SharedPhotoLightbox({
           )}
 
           {state.status === 'loaded' && (
-            <img
-              src={state.blobUrl}
-              alt={photo.filename}
-              className="lightbox-image"
-              data-testid="lightbox-image"
-            />
+            <>
+              <img
+                src={state.blobUrl}
+                alt={photo.filename}
+                className="lightbox-image"
+                data-testid="lightbox-image"
+              />
+              {/* Show progress overlay while loading full-res */}
+              {!state.isFullRes && loadProgress > 0 && loadProgress < 100 && (
+                <div 
+                  className="lightbox-progress-overlay"
+                  data-testid="lightbox-progress-overlay"
+                >
+                  <div className="lightbox-progress-bar">
+                    <div 
+                      className="lightbox-progress-fill"
+                      style={{ width: `${loadProgress}%` }}
+                    />
+                  </div>
+                  <span className="lightbox-progress-text">
+                    Loading full resolution... {Math.round(loadProgress)}%
+                  </span>
+                </div>
+              )}
+            </>
           )}
 
           {state.status === 'error' && (
