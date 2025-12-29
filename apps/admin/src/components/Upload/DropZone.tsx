@@ -20,7 +20,7 @@ interface DropZoneProps {
 export function DropZone({ albumId, children, className = '', disabled = false }: DropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef(0);
-  const { upload, isUploading, progress } = useUploadContext();
+  const { upload } = useUploadContext();
 
   // Handle drag enter
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -106,20 +106,7 @@ export function DropZone({ albumId, children, className = '', disabled = false }
         </div>
       )}
 
-      {/* Upload progress indicator */}
-      {isUploading && (
-        <div className="drop-zone-progress" data-testid="upload-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
-          <div className="drop-zone-progress-bar">
-            <div
-              className="drop-zone-progress-fill"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <span className="drop-zone-progress-text">
-            Uploading... {progress}%
-          </span>
-        </div>
-      )}
+
     </div>
   );
 }

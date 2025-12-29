@@ -341,10 +341,14 @@ export function PhotoLightbox({
             <dd>{formatDate(photo.takenAt)}</dd>
           </>
         )}
-        <dt>Dimensions</dt>
-        <dd>
-          {photo.width} × {photo.height}
-        </dd>
+        {photo.width > 0 && photo.height > 0 && (
+          <>
+            <dt>Dimensions</dt>
+            <dd>
+              {photo.width.toLocaleString()} × {photo.height.toLocaleString()}
+            </dd>
+          </>
+        )}
         {loadState.status === 'loaded' && (
           <>
             <dt>File size</dt>

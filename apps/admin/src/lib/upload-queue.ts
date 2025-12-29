@@ -28,6 +28,7 @@ const CHUNK_SIZE = 6 * 1024 * 1024;
 
 /** Upload task status */
 export type UploadStatus = 'queued' | 'uploading' | 'complete' | 'error';
+export type UploadAction = 'pending' | 'encrypting' | 'uploading' | 'finalizing';
 
 /** Completed shard with ID and hash for integrity verification */
 export interface CompletedShard {
@@ -44,6 +45,7 @@ export interface UploadTask {
   epochId: number;
   readKey: Uint8Array;
   status: UploadStatus;
+  currentAction: UploadAction;
   progress: number;
   completedShards: CompletedShard[];
   error?: string;
@@ -162,6 +164,7 @@ class UploadQueue {
       epochId,
       readKey,
       status: 'queued',
+      currentAction: 'pending',
       progress: 0,
       completedShards: [],
     };
@@ -225,6 +228,7 @@ class UploadQueue {
 
     try {
       task.status = 'uploading';
+      task.currentAction = 'pending';
       await this.updatePersistedTask(task.id, { status: 'uploading' });
 
       // Generate thumbnail if not already done (resume support)
@@ -275,6 +279,9 @@ class UploadQueue {
         const chunk = await task.file.slice(start, end).arrayBuffer();
 
         // Encrypt the chunk
+        task.currentAction = 'encrypting';
+        this.onProgress?.(task);
+
         const encrypted = await crypto.encryptShard(
           new Uint8Array(chunk),
           task.readKey,
@@ -283,6 +290,8 @@ class UploadQueue {
         );
 
         // Upload via Tus resumable protocol
+        task.currentAction = 'uploading';
+        this.onProgress?.(task);
         const shardId = await this.tusUpload(
           task.albumId,
           encrypted.ciphertext,
@@ -304,6 +313,9 @@ class UploadQueue {
 
       // Mark complete
       task.status = 'complete';
+      task.currentAction = 'finalizing';
+      this.onProgress?.(task);
+      
       await this.updatePersistedTask(task.id, { status: 'complete' });
       this.onComplete?.(task, shardIds);
 

@@ -1,5 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useUploadContext } from '../../contexts/UploadContext';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
@@ -7,6 +8,7 @@ import { usePhotos } from '../../hooks/usePhotos';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
 import type { PhotoMeta } from '../../workers/types';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
+import { PendingPhotoThumbnail } from './PendingPhotoThumbnail';
 import { PhotoLightbox } from './PhotoLightbox';
 import { PhotoThumbnail } from './PhotoThumbnail';
 
@@ -39,6 +41,31 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
   const lightbox = useLightbox(photos);
   const photoActions = usePhotoActions();
+  const { activeTasks } = useUploadContext();
+
+  // Combine real photos with pending uploads
+  const displayPhotos = useMemo(() => {
+    const pendingPhotos = activeTasks
+      .filter(t => t.albumId === albumId)
+      .map(t => ({
+        id: t.id,
+        assetId: t.id,
+        albumId: t.albumId,
+        filename: t.file.name,
+        mimeType: t.file.type,
+        width: t.originalWidth || t.thumbWidth || 800,
+        height: t.originalHeight || t.thumbHeight || 600,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tags: [],
+        shardIds: [],
+        epochId: t.epochId,
+        isPending: true, // Marker for pending state
+        task: t // Reference to the full task
+      } as PhotoMeta & { isPending?: boolean; task?: any }));
+
+    return [...pendingPhotos, ...photos];
+  }, [activeTasks, photos, albumId]);
 
   // Use selection from props if provided (lifted state), otherwise internal state
   const isSelectionMode = selection?.isSelectionMode ?? false;
@@ -48,7 +75,7 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
   const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
   const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<string | undefined>();
 
-  const rowCount = Math.ceil(photos.length / COLUMNS);
+  const rowCount = Math.ceil(displayPhotos.length / COLUMNS);
 
   const virtualizer = useVirtualizer({
     count: rowCount,
@@ -176,7 +203,7 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
     );
   }
 
-  if (photos.length === 0) {
+  if (displayPhotos.length === 0) {
     return (
       <div className="photo-grid-empty">
         <p>No photos yet</p>
@@ -216,8 +243,20 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
             >
               {Array.from({ length: COLUMNS }).map((_, colIndex) => {
                 const photoIndex = virtualRow.index * COLUMNS + colIndex;
-                const photo = photos[photoIndex];
+                const photo = displayPhotos[photoIndex];
                 if (!photo) return null;
+
+                // Check if this is a pending upload
+                const pendingPhoto = photo as PhotoMeta & { isPending?: boolean; task?: any };
+                if (pendingPhoto.isPending && pendingPhoto.task) {
+                  return (
+                    <PendingPhotoThumbnail
+                      key={photo.id}
+                      task={pendingPhoto.task}
+                    />
+                  );
+                }
+
                 // Get epoch read key for this photo
                 const epochReadKey = epochKeys.get(photo.epochId);
                 const isSelected = selectedIds.has(photo.id);

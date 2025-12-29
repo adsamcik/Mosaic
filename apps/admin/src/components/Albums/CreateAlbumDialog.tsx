@@ -99,81 +99,70 @@ export function CreateAlbumDialog({
   const displayError = localError || error;
 
   return (
-    <div
-      className="dialog-backdrop"
-      onClick={handleBackdropClick}
-      role="presentation"
-      data-testid="create-album-backdrop"
-    >
-      <dialog
-        ref={dialogRef}
-        className="dialog"
-        open
-        aria-labelledby="create-album-title"
-        aria-modal="true"
-        data-testid="create-album-dialog"
+  const footer = (
+    <>
+      <button
+        type="button"
+        onClick={onClose}
+        disabled={isCreating}
+        className="button-secondary"
+        data-testid="cancel-button"
       >
-        <form onSubmit={handleSubmit} className="dialog-form">
-          <h2 id="create-album-title" className="dialog-title">
-            Create Album
-          </h2>
+        Cancel
+      </button>
+      <button
+        type="submit"
+        disabled={isCreating || !name.trim()}
+        className="button-primary"
+        data-testid="create-button"
+      >
+        {isCreating ? 'Creating...' : 'Create Album'}
+      </button>
+    </>
+  );
 
-          <p className="dialog-description">
-            Album names are encrypted - only you and invited members can see them.
-          </p>
+  return (
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Create Album"
+      description="Album names are encrypted - only you and invited members can see them."
+      footer={footer}
+      testId="create-album"
+      closeOnBackdropClick={!isCreating}
+    >
+      <form onSubmit={handleSubmit} className="dialog-form" id="create-album-form">
+        <div className="form-group">
+          <label htmlFor="album-name" className="form-label">
+            Album Name
+          </label>
+          <input
+            ref={inputRef}
+            id="album-name"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My Photos"
+            disabled={isCreating}
+            className="form-input"
+            autoComplete="off"
+            maxLength={100}
+            aria-describedby={displayError ? 'album-error' : undefined}
+            data-testid="album-name-input"
+          />
+        </div>
 
-          <div className="form-group">
-            <label htmlFor="album-name" className="form-label">
-              Album Name
-            </label>
-            <input
-              ref={inputRef}
-              id="album-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My Photos"
-              disabled={isCreating}
-              className="form-input"
-              autoComplete="off"
-              maxLength={100}
-              aria-describedby={displayError ? 'album-error' : undefined}
-              data-testid="album-name-input"
-            />
+        {displayError && (
+          <div
+            id="album-error"
+            className="form-error"
+            role="alert"
+            data-testid="create-album-error"
+          >
+            {displayError}
           </div>
-
-          {displayError && (
-            <div
-              id="album-error"
-              className="form-error"
-              role="alert"
-              data-testid="create-album-error"
-            >
-              {displayError}
-            </div>
-          )}
-
-          <div className="dialog-actions">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isCreating}
-              className="button-secondary"
-              data-testid="cancel-button"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isCreating || !name.trim()}
-              className="button-primary"
-              data-testid="create-button"
-            >
-              {isCreating ? 'Creating...' : 'Create Album'}
-            </button>
-          </div>
-        </form>
-      </dialog>
-    </div>
+        )}
+      </form>
+    </Dialog>
   );
 }

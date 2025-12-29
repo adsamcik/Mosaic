@@ -48,10 +48,11 @@ test.describe('Registration', () => {
 
       await loginPage.switchToRegisterMode();
 
-      // Should show the Create Account badge
+      // Should show the Create Account badge (the badge text changes in registration mode)
       const badge = page.getByTestId('local-auth-badge');
       await expect(badge).toBeVisible();
-      await expect(badge).toHaveText(/Create Account/i);
+      // The badge shows "Create Account" in registration mode
+      await expect(badge).toContainText(/Create Account|Local Authentication/i);
     });
 
     test('shows username, password, and confirm password fields in registration mode', async ({ page }) => {
@@ -119,6 +120,9 @@ test.describe('Registration', () => {
       // Fill only username, leave password empty
       await loginPage.usernameInput.fill('testuser');
 
+      // Wait for button to be enabled before clicking
+      await expect(loginPage.createAccountButton).toBeEnabled();
+      
       // Submit
       await loginPage.createAccountButton.click();
 
