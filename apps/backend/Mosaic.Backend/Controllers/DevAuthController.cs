@@ -35,8 +35,20 @@ public class DevAuthController : ControllerBase
         _logger = logger;
         _env = env;
         
-        var authMode = config["Auth:Mode"] ?? "ProxyAuth";
-        _isLocalAuthMode = authMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
+        // Check if LocalAuth mode is enabled (support both new and legacy config)
+        var legacyMode = config["Auth:Mode"];
+        if (config.GetValue<bool?>("Auth:LocalAuthEnabled") != null)
+        {
+            _isLocalAuthMode = config.GetValue("Auth:LocalAuthEnabled", false);
+        }
+        else if (!string.IsNullOrEmpty(legacyMode))
+        {
+            _isLocalAuthMode = legacyMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
+        }
+        else
+        {
+            _isLocalAuthMode = false;
+        }
     }
 
     /// <summary>

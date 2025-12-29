@@ -69,9 +69,32 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Determine auth mode from configuration
-var authMode = builder.Configuration["Auth:Mode"] ?? "ProxyAuth";
-var isLocalAuth = authMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
+// Determine auth modes from configuration (independent toggles)
+// Support both new format (LocalAuthEnabled/ProxyAuthEnabled) and legacy format (Mode)
+var legacyMode = builder.Configuration["Auth:Mode"];
+bool localAuthEnabled, proxyAuthEnabled;
+
+if (builder.Configuration.GetValue<bool?>("Auth:LocalAuthEnabled") != null ||
+    builder.Configuration.GetValue<bool?>("Auth:ProxyAuthEnabled") != null)
+{
+    // New format: independent toggles
+    localAuthEnabled = builder.Configuration.GetValue("Auth:LocalAuthEnabled", false);
+    proxyAuthEnabled = builder.Configuration.GetValue("Auth:ProxyAuthEnabled", false);
+}
+else if (!string.IsNullOrEmpty(legacyMode))
+{
+    // Legacy format: Auth:Mode = "LocalAuth" | "ProxyAuth"
+    localAuthEnabled = legacyMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
+    proxyAuthEnabled = legacyMode.Equals("ProxyAuth", StringComparison.OrdinalIgnoreCase);
+    app.Logger.LogWarning(
+        "Using legacy Auth:Mode configuration. Consider migrating to Auth:LocalAuthEnabled and Auth:ProxyAuthEnabled");
+}
+else
+{
+    // Default: ProxyAuth only
+    localAuthEnabled = false;
+    proxyAuthEnabled = true;
+}
 
 // Middleware order matters:
 // 1. GlobalExceptionMiddleware - catch all errors first
@@ -84,17 +107,11 @@ app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseLogScope();
 app.UseMiddleware<RequestTimingMiddleware>();
 
-// Use appropriate auth middleware based on configuration
-if (isLocalAuth)
-{
-    app.Logger.LogInformation("Using LocalAuth mode - session-based authentication");
-    app.UseMiddleware<LocalAuthMiddleware>();
-}
-else
-{
-    app.Logger.LogInformation("Using ProxyAuth mode - trusting Remote-User header from proxy");
-    app.UseMiddleware<TrustedProxyMiddleware>();
-}
+// Use combined auth middleware (supports both LocalAuth and ProxyAuth independently)
+app.Logger.LogInformation(
+    "Auth configuration: LocalAuth={LocalAuth}, ProxyAuth={ProxyAuth}",
+    localAuthEnabled, proxyAuthEnabled);
+app.UseMiddleware<CombinedAuthMiddleware>();
 
 // Admin auth must come after regular auth
 app.UseAdminAuth();

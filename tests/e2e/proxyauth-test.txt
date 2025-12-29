@@ -1,0 +1,25 @@
+[Global Setup] Starting...
+[Global Setup] API_URL: http://localhost:5000
+[Global Setup] BASE_URL: http://localhost:5173
+[Global Setup] Waiting for backend at http://localhost:5000...
+[Global Setup] Backend is healthy!
+[Global Setup] Verifying critical endpoints...
+[Global Setup] /api/albums: 200 OK
+[Global Setup] /api/users/me: 200 OK
+[Global Setup] All endpoints verified!
+[Global Setup] Verifying COOP/COEP headers at http://localhost:5173...
+[Global Setup] COOP: same-origin Ô£ô
+[Global Setup] COEP: credentialless Ô£ô
+[Global Setup] Cleanup: Skipping (handled per-test)
+[Global Setup] Complete!
+
+Running 1 test using 1 worker
+
+  Ô£ô  1 [chromium] ÔÇ║ tests\album-management.spec.ts:23:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-1: create album via UI with valid name (2.9s)
+
+  1 passed (4.9s)
+
+To open last HTML report run:
+[36m[39m
+[36m  npx playwright show-report[39m
+[36m[39m

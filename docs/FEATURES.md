@@ -42,7 +42,8 @@
 
 **Configuration:**
 ```bash
-Auth__Mode=LocalAuth  # Environment variable
+Auth__LocalAuthEnabled=true   # Enable LocalAuth
+Auth__ProxyAuthEnabled=false  # Disable ProxyAuth
 ```
 
 **Tests:**
@@ -67,7 +68,8 @@ Auth__Mode=LocalAuth  # Environment variable
 
 **Configuration:**
 ```bash
-Auth__Mode=ProxyAuth  # Environment variable
+Auth__LocalAuthEnabled=false  # Disable LocalAuth
+Auth__ProxyAuthEnabled=true   # Enable ProxyAuth
 ```
 
 ---

@@ -1,0 +1,391 @@
+[Global Setup] Starting...
+[Global Setup] API_URL: http://localhost:5000
+[Global Setup] BASE_URL: http://localhost:5173
+[Global Setup] Waiting for backend at http://localhost:5000...
+[Global Setup] Backend is healthy!
+[Global Setup] Verifying critical endpoints...
+[Global Setup] /api/albums: 200 OK
+[Global Setup] /api/users/me: 200 OK
+[Global Setup] All endpoints verified!
+[Global Setup] Verifying COOP/COEP headers at http://localhost:5173...
+[Global Setup] COOP: same-origin Ô£ô
+[Global Setup] COEP: credentialless Ô£ô
+[Global Setup] Cleanup: Skipping (handled per-test)
+[Global Setup] Complete!
+
+Running 237 tests using 4 workers
+
+  Ô£ô    3 [chromium] ÔÇ║ tests\accessibility.spec.ts:10:3 ÔÇ║ Accessibility @p2 @a11y @fast ÔÇ║ has proper heading structure (1.3s)
+  Ô£ô    2 [chromium] ÔÇ║ tests\accessibility.spec.ts:20:3 ÔÇ║ Accessibility @p2 @a11y @fast ÔÇ║ images have alt text (1.8s)
+  Ô£ô    1 [chromium] ÔÇ║ tests\accessibility.spec.ts:36:3 ÔÇ║ Accessibility @p2 @a11y @fast ÔÇ║ buttons have accessible names (1.9s)
+  Ô£ô    4 [chromium] ÔÇ║ tests\accessibility.spec.ts:52:3 ÔÇ║ Accessibility @p2 @a11y @fast ÔÇ║ forms have associated labels (2.0s)
+  Ô£ô    7 [chromium] ÔÇ║ tests\accessibility.spec.ts:115:3 ÔÇ║ Accessibility @p2 @a11y @fast ÔÇ║ supports reduced motion preference (1.8s)
+  Ô£ô    6 [chromium] ÔÇ║ tests\accessibility.spec.ts:95:3 ÔÇ║ Accessibility @p2 @a11y @fast ÔÇ║ color contrast is sufficient (1.8s)
+  Ô£ô    8 [chromium] ÔÇ║ tests\accessibility.spec.ts:128:3 ÔÇ║ Accessibility @p2 @a11y @fast ÔÇ║ works with high contrast mode (1.6s)
+  Ô£ô    9 [chromium] ÔÇ║ tests\album-management.spec.ts:23:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-1: create album via UI with valid name (2.4s)
+  Ô£ô   11 [chromium] ÔÇ║ tests\album-management.spec.ts:63:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-3: cancel create album closes dialog without creating (2.1s)
+  Ô£ô   13 [chromium] ÔÇ║ tests\album-management.spec.ts:118:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Navigation ÔÇ║ P1-ALBUM-5: clicking album card opens gallery view (2.9s)
+  Ô£ô   12 [chromium] ÔÇ║ tests\album-management.spec.ts:89:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-4: multiple albums can be created sequentially (3.4s)
+  Ô£ô   14 [chromium] ÔÇ║ tests\album-management.spec.ts:138:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Navigation ÔÇ║ P1-ALBUM-6: back button returns to album list (3.1s)
+  Ô£ô   15 [chromium] ÔÇ║ tests\album-management.spec.ts:163:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album List Display ÔÇ║ P1-ALBUM-7: empty state shown when no albums (2.9s)
+  Ô£ô   16 [chromium] ÔÇ║ tests\album-management.spec.ts:172:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album List Display ÔÇ║ P1-ALBUM-8: albums persist across page reload (3.2s)
+  Ô£ÿ   17 [chromium] ÔÇ║ tests\album-management.spec.ts:213:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-9: cancel delete album keeps album intact (7.4s)
+  Ô£ÿ   10 [chromium] ÔÇ║ tests\album-management.spec.ts:44:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-2: create album shows error for empty name (17.4s)
+  Ô£ÿ   19 [chromium] ÔÇ║ tests\album-management.spec.ts:213:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-9: cancel delete album keeps album intact (retry #1) (7.5s)
+  Ô£ÿ   18 [chromium] ÔÇ║ tests\album-management.spec.ts:253:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-10: confirm delete album removes album (17.0s)
+  Ô£ÿ   20 [chromium] ÔÇ║ tests\album-management.spec.ts:44:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-2: create album shows error for empty name (retry #1) (17.7s)
+  Ô£ô    5 [chromium] ÔÇ║ tests\accessibility.spec.ts:72:3 ÔÇ║ Accessibility @p2 @a11y @fast ÔÇ║ interactive elements are focusable (46.6s)
+  Ô£ÿ   21 [chromium] ÔÇ║ tests\album-management.spec.ts:293:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-11: deleted album is gone after page reload (17.0s)
+  Ô£ÿ   22 [chromium] ÔÇ║ tests\album-management.spec.ts:253:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-10: confirm delete album removes album (retry #1) (17.5s)
+  Ô£ÿ   24 [chromium] ÔÇ║ tests\album-rename.spec.ts:22:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-1: rename button visible for album owner (7.1s)
+  Ô£ÿ   23 [chromium] ÔÇ║ tests\album-management.spec.ts:342:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-12: delete button shows album info in dialog (17.1s)
+  Ô£ÿ   27 [chromium] ÔÇ║ tests\album-rename.spec.ts:22:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-1: rename button visible for album owner (retry #1) (7.5s)
+  Ô£ÿ   25 [chromium] ÔÇ║ tests\album-management.spec.ts:293:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-11: deleted album is gone after page reload (retry #1) (17.8s)
+  Ô£ÿ   26 [chromium] ÔÇ║ tests\album-rename.spec.ts:42:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-2: clicking rename opens dialog with current name (17.6s)
+  Ô£ÿ   28 [chromium] ÔÇ║ tests\album-management.spec.ts:342:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-12: delete button shows album info in dialog (retry #1) (18.1s)
+  Ô£ÿ   29 [chromium] ÔÇ║ tests\album-rename.spec.ts:78:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-3: cancel closes dialog without renaming (17.5s)
+  Ô£ÿ   30 [chromium] ÔÇ║ tests\album-rename.spec.ts:120:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-4: save button disabled when name unchanged (17.3s)
+  Ô£ÿ   31 [chromium] ÔÇ║ tests\album-rename.spec.ts:42:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-2: clicking rename opens dialog with current name (retry #1) (18.7s)
+  Ô£ÿ   32 [chromium] ÔÇ║ tests\album-rename.spec.ts:147:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-5: save button enabled when name changed (17.0s)
+  Ô£ÿ   33 [chromium] ÔÇ║ tests\album-rename.spec.ts:78:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-3: cancel closes dialog without renaming (retry #1) (17.8s)
+  Ô£ÿ   34 [chromium] ÔÇ║ tests\album-rename.spec.ts:120:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-4: save button disabled when name unchanged (retry #1) (18.6s)
+  Ô£ÿ   35 [chromium] ÔÇ║ tests\album-rename.spec.ts:179:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Successful Rename ÔÇ║ P1-RENAME-6: rename album updates name in gallery (17.3s)
+  Ô£ÿ   36 [chromium] ÔÇ║ tests\album-rename.spec.ts:147:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-5: save button enabled when name changed (retry #1) (17.8s)
+  Ô£ÿ   37 [chromium] ÔÇ║ tests\album-rename.spec.ts:221:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Successful Rename ÔÇ║ P1-RENAME-7: renamed album persists after page reload (17.2s)
+  Ô£ô   40 [chromium] ÔÇ║ tests\albums.spec.ts:14:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album List Display ÔÇ║ displays album list after login (1.8s)
+  Ô£ô   41 [chromium] ÔÇ║ tests\albums.spec.ts:31:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album List Display ÔÇ║ shows empty state for new user (2.2s)
+  Ô£ÿ   38 [chromium] ÔÇ║ tests\album-rename.spec.ts:274:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Validation ÔÇ║ P1-RENAME-8: empty name shows error or disables save (17.6s)
+  Ô£ÿ   39 [chromium] ÔÇ║ tests\album-rename.spec.ts:179:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Successful Rename ÔÇ║ P1-RENAME-6: rename album updates name in gallery (retry #1) (18.1s)
+  Ô£ÿ   43 [chromium] ÔÇ║ tests\albums.spec.ts:50:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album CRUD Operations ÔÇ║ can create a new album (11.6s)
+  Ô£ô   45 [chromium] ÔÇ║ tests\albums.spec.ts:88:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album CRUD Operations ÔÇ║ album persists after page reload (4.4s)
+  Ô£ô   46 [chromium] ÔÇ║ tests\albums.spec.ts:120:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album CRUD Operations ÔÇ║ albums from API are displayed (2.1s)
+  Ô£ÿ   42 [chromium] ÔÇ║ tests\album-rename.spec.ts:221:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Successful Rename ÔÇ║ P1-RENAME-7: renamed album persists after page reload (retry #1) (18.9s)
+  Ô£ô   48 [chromium] ÔÇ║ tests\albums.spec.ts:147:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Navigation ÔÇ║ clicking album navigates to gallery (2.1s)
+  Ô£ô   49 [chromium] ÔÇ║ tests\app-load.spec.ts:11:3 ÔÇ║ App Loading @p1 @fast ÔÇ║ loads the application and shows login form (854ms)
+  Ô£ÿ   50 [chromium] ÔÇ║ tests\app-load.spec.ts:19:3 ÔÇ║ App Loading @p1 @fast ÔÇ║ has correct security headers for SharedArrayBuffer (907ms)
+  Ô£ô   51 [chromium] ÔÇ║ tests\albums.spec.ts:178:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Navigation ÔÇ║ can navigate back from gallery to albums (2.3s)
+  Ô£ÿ   44 [chromium] ÔÇ║ tests\album-rename.spec.ts:274:5 ÔÇ║ Album Rename @p1 @album ÔÇ║ Validation ÔÇ║ P1-RENAME-8: empty name shows error or disables save (retry #1) (18.0s)
+  Ô£ÿ   53 [chromium] ÔÇ║ tests\app-load.spec.ts:19:3 ÔÇ║ App Loading @p1 @fast ÔÇ║ has correct security headers for SharedArrayBuffer (retry #1) (1.2s)
+  Ô£ÿ   52 [chromium] ÔÇ║ tests\app-load.spec.ts:30:3 ÔÇ║ App Loading @p1 @fast ÔÇ║ loads static assets without critical errors (3.4s)
+  Ô£ô   54 [chromium] ÔÇ║ tests\app-load.spec.ts:54:3 ÔÇ║ App Loading @p1 @fast ÔÇ║ is responsive on mobile viewport (972ms)
+[TEST] Detected auth mode: ProxyAuth
+  Ô£ô   56 [chromium] ÔÇ║ tests\auth-modes.spec.ts:56:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ Mode Detection ÔÇ║ frontend detects auth mode from backend (909ms)
+[TEST] ProxyAuth mode detected: init endpoint returned 404
+  Ô£ô   57 [chromium] ÔÇ║ tests\auth-modes.spec.ts:78:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ Mode Detection ÔÇ║ /api/auth/init returns expected response based on mode (289ms)
+  Ô£ô   55 [chromium] ÔÇ║ tests\app-load.spec.ts:64:3 ÔÇ║ App Loading @p1 @fast ÔÇ║ renders main elements correctly (1.6s)
+  Ô£ô   58 [chromium] ÔÇ║ tests\auth-modes.spec.ts:101:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ Mode Detection ÔÇ║ health endpoint is always accessible (208ms)
+  -   60 [chromium] ÔÇ║ tests\auth-modes.spec.ts:129:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ LocalAuth Mode: Registration Flow ÔÇ║ new user can register with username and password
+  -   62 [chromium] ÔÇ║ tests\auth-modes.spec.ts:149:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ LocalAuth Mode: Registration Flow ÔÇ║ registered user can login again after logout
+  -   63 [chromium] ÔÇ║ tests\auth-modes.spec.ts:192:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ LocalAuth Mode: Registration Flow ÔÇ║ LocalAuth mode shows registration badge
+  -   64 [chromium] ÔÇ║ tests\auth-modes.spec.ts:213:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ LocalAuth Mode: Session Management ÔÇ║ session persists across page reloads
+  -   65 [chromium] ÔÇ║ tests\auth-modes.spec.ts:261:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ LocalAuth Mode: Session Management ÔÇ║ logout clears session and shows login form
+  Ô£ô   61 [chromium] ÔÇ║ tests\auth-modes.spec.ts:107:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ Mode Detection ÔÇ║ protected endpoints require authentication (462ms)
+  -   66 [chromium] ÔÇ║ tests\auth-modes.spec.ts:308:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ LocalAuth Mode: Challenge-Response Auth ÔÇ║ wrong password fails authentication
+  Ô£ÿ   47 [chromium] ÔÇ║ tests\albums.spec.ts:50:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album CRUD Operations ÔÇ║ can create a new album (retry #1) (13.7s)
+  Ô£ô   68 [chromium] ÔÇ║ tests\auth-modes.spec.ts:358:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ ProxyAuth Mode: Remote-User Header ÔÇ║ API accepts requests with valid Remote-User header (2.5s)
+  Ô£ô   67 [chromium] ÔÇ║ tests\auth-modes.spec.ts:385:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ ProxyAuth Mode: Remote-User Header ÔÇ║ user identity is consistent across API calls with same header (3.0s)
+  Ô£ô   70 [chromium] ÔÇ║ tests\auth-modes.spec.ts:555:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ ProxyAuth Mode: Authelia Integration Simulation ÔÇ║ validates Remote-User header format (222ms)
+  Ô£ô   71 [chromium] ÔÇ║ tests\auth-modes.spec.ts:567:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ ProxyAuth Mode: Authelia Integration Simulation ÔÇ║ accepts valid email-style Remote-User (225ms)
+  Ô£ô   72 [chromium] ÔÇ║ tests\auth-modes.spec.ts:578:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ ProxyAuth Mode: Authelia Integration Simulation ÔÇ║ accepts valid username-style Remote-User (217ms)
+  Ô£ô   73 [chromium] ÔÇ║ tests\auth-modes.spec.ts:591:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ Header Validation (Both Modes) ÔÇ║ rejects invalid Remote-User header format in ProxyAuth mode (643ms)
+[TEST] ProxyAuth mode UI verified
+[TEST] Successfully authenticated as Authelia user: authelia-user-1767029569065@domain.local
+  Ô£ô   69 [chromium] ÔÇ║ tests\auth-modes.spec.ts:512:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ ProxyAuth Mode: Authelia Integration Simulation ÔÇ║ simulates Authelia header forwarding (3.1s)
+  Ô£ô   74 [chromium] ÔÇ║ tests\auth-modes.spec.ts:613:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ Cross-Mode Behavior ÔÇ║ login form adapts to backend mode (1.1s)
+  Ô£ô   76 [chromium] ÔÇ║ tests\auth.spec.ts:12:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Login Form Display ÔÇ║ shows login form on first visit @smoke (1.1s)
+  Ô£ô   77 [chromium] ÔÇ║ tests\auth.spec.ts:19:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Login Form Display ÔÇ║ shows password input with label (1.1s)
+  Ô£ô   79 [chromium] ÔÇ║ tests\auth.spec.ts:39:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Login Form Display ÔÇ║ password input is autofocused (1.1s)
+  Ô£ô   75 [chromium] ÔÇ║ tests\auth-modes.spec.ts:453:5 ÔÇ║ Authentication Modes @p1 @auth ÔÇ║ ProxyAuth Mode: Remote-User Header ÔÇ║ different Remote-User headers result in different users (3.3s)
+  Ô£ô   80 [chromium] ÔÇ║ tests\auth.spec.ts:51:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Login Validation ÔÇ║ shows error for empty password submission (1.5s)
+  Ô£ô   81 [chromium] ÔÇ║ tests\auth.spec.ts:64:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Login Validation ÔÇ║ password field clears error on input (1.4s)
+  Ô£ô   82 [chromium] ÔÇ║ tests\auth.spec.ts:84:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Complete Login Flow ÔÇ║ successful login shows app shell (2.2s)
+  Ô£ô   84 [chromium] ÔÇ║ tests\auth.spec.ts:120:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Logout Flow ÔÇ║ logout returns to login form (2.2s)
+  Ô£ÿ   59 [chromium] ÔÇ║ tests\app-load.spec.ts:30:3 ÔÇ║ App Loading @p1 @fast ÔÇ║ loads static assets without critical errors (retry #1) (5.7s)
+  Ô£ô   85 [chromium] ÔÇ║ tests\auth.spec.ts:137:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Logout Flow ÔÇ║ logout button is visible in app shell (2.1s)
+  Ô£ô   86 [chromium] ÔÇ║ tests\auth.spec.ts:171:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Session Persistence ÔÇ║ session persists after page reload when logged in (4.6s)
+  Ô£ÿ   78 [chromium] ÔÇ║ tests\auth.spec.ts:29:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Login Form Display ÔÇ║ shows unlock button (16.0s)
+  Ô£ô   87 [chromium] ÔÇ║ tests\auth.spec.ts:150:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Logout Flow ÔÇ║ cannot access app after logout (4.7s)
+  Ô£ô   88 [chromium] ÔÇ║ tests\collaboration.spec.ts:25:5 ÔÇ║ Collaboration @p1 @sharing @multi-user @slow ÔÇ║ Album Sharing ÔÇ║ P1-COLLAB-1: owner can open members panel (3.1s)
+  Ô£ÿ   83 [chromium] ÔÇ║ tests\auth.spec.ts:102:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Complete Login Flow ÔÇ║ shows loading state during login (16.2s)
+  Ô£ô   89 [chromium] ÔÇ║ tests\collaboration.spec.ts:52:5 ÔÇ║ Collaboration @p1 @sharing @multi-user @slow ÔÇ║ Album Sharing ÔÇ║ P1-COLLAB-2: both users see shared album after invite (5.7s)
+  Ô£ô   92 [chromium] ÔÇ║ tests\collaboration.spec.ts:124:5 ÔÇ║ Collaboration @p1 @sharing @multi-user @slow ÔÇ║ Parallel Isolation ÔÇ║ P1-COLLAB-4: alice and bob have separate isolated contexts (5.4s)
+  Ô£ÿ   91 [chromium] ÔÇ║ tests\auth.spec.ts:29:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Login Form Display ÔÇ║ shows unlock button (retry #1) (17.9s)
+  Ô£ÿ   93 [chromium] ÔÇ║ tests\auth.spec.ts:102:5 ÔÇ║ Authentication @p1 @auth @fast ÔÇ║ Complete Login Flow ÔÇ║ shows loading state during login (retry #1) (18.5s)
+  -   95 [chromium] ÔÇ║ tests\collaboration.spec.ts:201:5 ÔÇ║ Collaboration @p1 @sharing @multi-user @slow ÔÇ║ Member Removal & Access Revocation ÔÇ║ P1-COLLAB-6: removed member loses access to shared album
+  -   96 [chromium] ÔÇ║ tests\collaboration.spec.ts:335:5 ÔÇ║ Collaboration @p1 @sharing @multi-user @slow ÔÇ║ Member Removal & Access Revocation ÔÇ║ P1-COLLAB-7: removal dialog shows key rotation progress
+  Ô£ô   98 [chromium] ÔÇ║ tests\critical-flows.spec.ts:58:3 ÔÇ║ Critical Flow: Complete Authentication @p0 @critical @auth @crypto ÔÇ║ P0-2: logout clears session and returns to login form @smoke (2.6s)
+  Ô£ÿ   90 [chromium] ÔÇ║ tests\collaboration.spec.ts:96:5 ÔÇ║ Collaboration @p1 @sharing @multi-user @slow ÔÇ║ Album Sharing ÔÇ║ P1-COLLAB-3: uploaded photo visible to album members (33.7s)
+  Ô£ÿ   99 [chromium] ÔÇ║ tests\critical-flows.spec.ts:88:3 ÔÇ║ Critical Flow: Complete Authentication @p0 @critical @auth @crypto ÔÇ║ P0-5: wrong password shows error and does not authenticate (1.3s)
+  Ô£ÿ  101 [chromium] ÔÇ║ tests\critical-flows.spec.ts:88:3 ÔÇ║ Critical Flow: Complete Authentication @p0 @critical @auth @crypto ÔÇ║ P0-5: wrong password shows error and does not authenticate (retry #1) (3.0s)
+  Ô£ÿ   97 [chromium] ÔÇ║ tests\critical-flows.spec.ts:26:3 ÔÇ║ Critical Flow: Complete Authentication @p0 @critical @auth @crypto ÔÇ║ P0-1: complete password login initializes crypto and shows app shell @smoke (16.0s)
+  Ô£ÿ   94 [chromium] ÔÇ║ tests\collaboration.spec.ts:145:5 ÔÇ║ Collaboration @p1 @sharing @multi-user @slow ÔÇ║ Parallel Isolation ÔÇ║ P1-COLLAB-5: albums created by different users are isolated (35.8s)
+  Ô£ô  102 [chromium] ÔÇ║ tests\critical-flows.spec.ts:114:3 ÔÇ║ Critical Flow: Complete Authentication @p0 @critical @auth @crypto ÔÇ║ P0-5b: second login with different password fails (3.4s)
+  Ô£ô  103 [chromium] ÔÇ║ tests\critical-flows.spec.ts:167:3 ÔÇ║ Critical Flow: Complete Authentication @p0 @critical @auth @crypto ÔÇ║ P0-6: session persists during active use (2.8s)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  105 [chromium] ÔÇ║ tests\critical-flows.spec.ts:26:3 ÔÇ║ Critical Flow: Complete Authentication @p0 @critical @auth @crypto ÔÇ║ P0-1: complete password login initializes crypto and shows app shell @smoke (retry #1) (17.9s)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+  Ô£ÿ  100 [chromium] ÔÇ║ tests\collaboration.spec.ts:96:5 ÔÇ║ Collaboration @p1 @sharing @multi-user @slow ÔÇ║ Album Sharing ÔÇ║ P1-COLLAB-3: uploaded photo visible to album members (retry #1) (34.6s)
+[GalleryPage] Upload appears complete
+  Ô£ô  107 [chromium] ÔÇ║ tests\critical-flows.spec.ts:243:3 ÔÇ║ Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @crypto @slow ÔÇ║ P0-3b: uploaded photo persists after page reload (5.7s)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  104 [chromium] ÔÇ║ tests\collaboration.spec.ts:145:5 ÔÇ║ Collaboration @p1 @sharing @multi-user @slow ÔÇ║ Parallel Isolation ÔÇ║ P1-COLLAB-5: albums created by different users are isolated (retry #1) (40.3s)
+  Ô£ÿ  110 [chromium] ÔÇ║ tests\critical-flows.spec.ts:469:3 ÔÇ║ Critical Flow: Album CRUD @p0 @critical @album ÔÇ║ P1-1a: create album via UI appears in list (2.3s)
+  Ô£ÿ  111 [chromium] ÔÇ║ tests\critical-flows.spec.ts:469:3 ÔÇ║ Critical Flow: Album CRUD @p0 @critical @album ÔÇ║ P1-1a: create album via UI appears in list (retry #1) (2.8s)
+  Ô£ô  112 [chromium] ÔÇ║ tests\critical-flows.spec.ts:524:3 ÔÇ║ Critical Flow: Album CRUD @p0 @critical @album ÔÇ║ P1-1b: albums created via API appear in list (1.9s)
+  Ô£ô  113 [chromium] ÔÇ║ tests\critical-flows.spec.ts:550:3 ÔÇ║ Critical Flow: Album CRUD @p0 @critical @album ÔÇ║ P1-1c: clicking album navigates to gallery view (1.8s)
+  Ô£ô  114 [chromium] ÔÇ║ tests\critical-flows.spec.ts:582:3 ÔÇ║ Critical Flow: Error Handling @p0 @critical @security ÔÇ║ P1-7a: empty password shows validation error (1.1s)
+  Ô£ÿ  115 [chromium] ÔÇ║ tests\critical-flows.spec.ts:595:3 ÔÇ║ Critical Flow: Error Handling @p0 @critical @security ÔÇ║ P1-7b: network failure shows error gracefully (2.2s)
+  Ô£ÿ  106 [chromium] ÔÇ║ tests\critical-flows.spec.ts:201:3 ÔÇ║ Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @crypto @slow ÔÇ║ P0-3: upload photo encrypts locally and appears in gallery after sync (1.1m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  116 [chromium] ÔÇ║ tests\critical-flows.spec.ts:595:3 ÔÇ║ Critical Flow: Error Handling @p0 @critical @security ÔÇ║ P1-7b: network failure shows error gracefully (retry #1) (6.3s)
+  Ô£ô  118 [chromium] ÔÇ║ tests\error-handling.spec.ts:23:5 ÔÇ║ Error Handling @p1 @security ÔÇ║ Network Errors ÔÇ║ P2-ERROR-1: offline state shows indicator (3.3s)
+  Ô£ô  119 [chromium] ÔÇ║ tests\error-handling.spec.ts:45:5 ÔÇ║ Error Handling @p1 @security ÔÇ║ Network Errors ÔÇ║ P2-ERROR-2: API error shows user-friendly message (4.8s)
+  Ô£ÿ  109 [chromium] ÔÇ║ tests\critical-flows.spec.ts:317:3 ÔÇ║ Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @crypto @slow ÔÇ║ P0-3c: multiple photos can be uploaded (1.1m)
+  Ô£ÿ  108 [chromium] ÔÇ║ tests\critical-flows.spec.ts:360:3 ÔÇ║ Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @slow ÔÇ║ P0-4: owner can share album and viewer can access photos (1.2m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  120 [chromium] ÔÇ║ tests\error-handling.spec.ts:75:5 ÔÇ║ Error Handling @p1 @security ÔÇ║ Network Errors ÔÇ║ P2-ERROR-3: timeout error allows retry (32.8s)
+  Ô£ÿ  117 [chromium] ÔÇ║ tests\critical-flows.spec.ts:201:3 ÔÇ║ Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @crypto @slow ÔÇ║ P0-3: upload photo encrypts locally and appears in gallery after sync (retry #1) (1.1m)
+  Ô£ô  124 [chromium] ÔÇ║ tests\error-handling.spec.ts:102:5 ÔÇ║ Error Handling @p1 @security ÔÇ║ Validation Errors ÔÇ║ P2-ERROR-4: invalid input shows validation message (1.1s)
+  Ô£ô  125 [chromium] ÔÇ║ tests\error-handling.spec.ts:117:5 ÔÇ║ Error Handling @p1 @security ÔÇ║ Validation Errors ÔÇ║ P2-ERROR-5: form preserves input after validation error (2.0s)
+  Ô£ô  126 [chromium] ÔÇ║ tests\error-handling.spec.ts:150:5 ÔÇ║ Error Handling @p1 @security ÔÇ║ Recovery Scenarios ÔÇ║ P2-ERROR-6: page reload recovers from error state (3.0s)
+  Ô£ô  127 [chromium] ÔÇ║ tests\error-handling.spec.ts:179:5 ÔÇ║ Error Handling @p1 @security ÔÇ║ Recovery Scenarios ÔÇ║ P2-ERROR-7: can continue working after transient error (2.6s)
+  Ô£ô  128 [chromium] ÔÇ║ tests\gallery.spec.ts:14:5 ÔÇ║ Photo Gallery @p1 @gallery ÔÇ║ Gallery Display ÔÇ║ displays gallery when navigating to album (2.2s)
+  Ô£ô  129 [chromium] ÔÇ║ tests\gallery.spec.ts:36:5 ÔÇ║ Photo Gallery @p1 @gallery ÔÇ║ Gallery Display ÔÇ║ shows empty state in gallery without photos (2.6s)
+  Ô£ô  130 [chromium] ÔÇ║ tests\gallery.spec.ts:60:5 ÔÇ║ Photo Gallery @p1 @gallery ÔÇ║ Upload Button ÔÇ║ shows upload button in gallery (2.5s)
+  Ô£ÿ  123 [chromium] ÔÇ║ tests\error-handling.spec.ts:75:5 ÔÇ║ Error Handling @p1 @security ÔÇ║ Network Errors ÔÇ║ P2-ERROR-3: timeout error allows retry (retry #1) (34.5s)
+  Ô£ô  131 [chromium] ÔÇ║ tests\gallery.spec.ts:82:5 ÔÇ║ Photo Gallery @p1 @gallery ÔÇ║ Upload Button ÔÇ║ file input accepts images (2.1s)
+[TEST] Phase 1: Initial login and album creation
+[TEST] Phase 2: Uploading photo
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[TEST] Photo uploaded successfully. Count: 1
+[TEST] Phase 3: Reloading page and re-authenticating
+  Ô£ô  133 [chromium] ÔÇ║ tests\gallery.spec.ts:113:5 ÔÇ║ Photo Gallery @p1 @gallery ÔÇ║ Keyboard Navigation ÔÇ║ supports keyboard navigation (2.4s)
+[TEST] Phase 1: First login
+[TEST] Session persisted, no re-login needed
+[TEST] Phase 4: Verifying photo accessibility
+[TEST] SUCCESS: Photo still accessible after reload. Count: 1
+[TEST] /api/users/me response: identityPubkey=...
+  Ô£ô  132 [chromium] ÔÇ║ tests\identity-persistence.spec.ts:28:3 ÔÇ║ Identity Persistence: Epoch Key Decryption After Reload @p1 @auth @crypto @slow ÔÇ║ P0-IDENTITY-1: photo remains accessible after page reload and re-login (4.5s)
+[TEST] /api/users/me response: identityPubkey=/at5BPUk1Xt3bN6/xmPw...
+[TEST] /api/users/me response: identityPubkey=/at5BPUk1Xt3bN6/xmPw...
+[TEST] Wrapped key being stored on server
+[TEST] Wrapped account key returned from server
+[TEST] Wrapped account key returned from server
+  Ô£ÿ  122 [chromium] ÔÇ║ tests\critical-flows.spec.ts:360:3 ÔÇ║ Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @slow ÔÇ║ P0-4: owner can share album and viewer can access photos (retry #1) (1.1m)
+[TEST] First identity pubkey: /at5BPUk1Xt3bN6/xmPw...
+[TEST] Phase 2: Logging out
+[TEST] Phase 3: Re-logging in
+[TEST] /api/users/me response: identityPubkey=/at5BPUk1Xt3bN6/xmPw...
+[TEST] /api/users/me response: identityPubkey=/at5BPUk1Xt3bN6/xmPw...
+[TEST] /api/users/me response: identityPubkey=/at5BPUk1Xt3bN6/xmPw...
+[TEST] Phase 1: First session - uploading 3 photos
+[TEST] SUCCESS: Wrapped account key was stored on first login
+[TEST] Wrapped account key returned from server
+[TEST] Second identity pubkey: /at5BPUk1Xt3bN6/xmPw...
+[TEST] SUCCESS: Identity public key is consistent across sessions
+  Ô£ô  134 [chromium] ÔÇ║ tests\identity-persistence.spec.ts:148:3 ÔÇ║ Identity Persistence: Epoch Key Decryption After Reload @p1 @auth @crypto @slow ÔÇ║ P0-IDENTITY-2: identity public key remains consistent across sessions (8.2s)
+[TEST] Wrapped account key returned from server
+[TEST] Wrapped account key returned from server
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[TEST] Uploaded photo 1/3
+  Ô£ÿ  121 [chromium] ÔÇ║ tests\critical-flows.spec.ts:317:3 ÔÇ║ Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @crypto @slow ÔÇ║ P0-3c: multiple photos can be uploaded (retry #1) (1.1m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[TEST] Uploaded photo 2/3
+  Ô£ÿ  137 [chromium] ÔÇ║ tests\photo-download.spec.ts:31:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ P0 - Critical Download Flows ÔÇ║ P0-DOWNLOAD-1: download button appears in lightbox when photo is loaded (2.0s)
+[TEST] SUCCESS: Wrapped account key was returned on subsequent login
+[TEST] SUCCESS: No new wrapped key stored on subsequent login (key reused)
+  Ô£ô  135 [chromium] ÔÇ║ tests\identity-persistence.spec.ts:251:3 ÔÇ║ Identity Persistence: Epoch Key Decryption After Reload @p1 @auth @crypto @slow ÔÇ║ P0-IDENTITY-3: wrapped account key is stored on first login (9.5s)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[TEST] Uploaded photo 3/3
+[TEST] First session complete: 3 photos
+[TEST] Phase 2: Reloading and uploading 2 more photos
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[TEST] Uploaded photo 4/5
+  Ô£ÿ  139 [chromium] ÔÇ║ tests\photo-download.spec.ts:67:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ P0 - Critical Download Flows ÔÇ║ P0-DOWNLOAD-2: clicking download triggers file download (2.5s)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[TEST] Uploaded photo 5/5
+[TEST] Second session complete: 5 photos
+[TEST] Phase 3: Final reload and verification
+[TEST] SUCCESS: All 5 photos accessible after multiple reloads
+  Ô£ô  136 [chromium] ÔÇ║ tests\identity-persistence.spec.ts:346:3 ÔÇ║ Identity Persistence: Epoch Key Decryption After Reload @p1 @auth @crypto @slow ÔÇ║ P0-IDENTITY-STRESS: multiple uploads remain accessible across page reloads (12.3s)
+  Ô£ÿ  142 [chromium] ÔÇ║ tests\photo-download.spec.ts:170:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ P0 - Critical Download Flows ÔÇ║ P0-DOWNLOAD-4: encryption round-trip preserves image data (2.3s)
+  Ô£ÿ  141 [chromium] ÔÇ║ tests\photo-download.spec.ts:67:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ P0 - Critical Download Flows ÔÇ║ P0-DOWNLOAD-2: clicking download triggers file download (retry #1) (3.7s)
+  Ô£ÿ  143 [chromium] ÔÇ║ tests\photo-download.spec.ts:170:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ P0 - Critical Download Flows ÔÇ║ P0-DOWNLOAD-4: encryption round-trip preserves image data (retry #1) (5.1s)
+  Ô£ÿ  138 [chromium] ÔÇ║ tests\photo-download.spec.ts:113:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ P0 - Critical Download Flows ÔÇ║ P0-DOWNLOAD-3: downloaded file has valid image content (2.0s)
+  Ô£ÿ  140 [chromium] ÔÇ║ tests\photo-download.spec.ts:31:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ P0 - Critical Download Flows ÔÇ║ P0-DOWNLOAD-1: download button appears in lightbox when photo is loaded (retry #1) (2.9s)
+  Ô£ÿ  145 [chromium] ÔÇ║ tests\photo-download.spec.ts:269:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ Download Edge Cases ÔÇ║ P1-DOWNLOAD-6: download button not visible while image is loading (3.7s)
+  Ô£ÿ  146 [chromium] ÔÇ║ tests\photo-download.spec.ts:113:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ P0 - Critical Download Flows ÔÇ║ P0-DOWNLOAD-3: downloaded file has valid image content (retry #1) (3.7s)
+  Ô£ÿ  148 [chromium] ÔÇ║ tests\photo-download.spec.ts:269:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ Download Edge Cases ÔÇ║ P1-DOWNLOAD-6: download button not visible while image is loading (retry #1) (4.4s)
+  Ô£ÿ  144 [chromium] ÔÇ║ tests\photo-download.spec.ts:230:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ Download Permissions ÔÇ║ P1-DOWNLOAD-5: owner can download their own photos (33.9s)
+  Ô£ÿ  147 [chromium] ÔÇ║ tests\photo-download.spec.ts:309:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ Download Edge Cases ÔÇ║ P1-DOWNLOAD-7: can download multiple photos in sequence (33.1s)
+  Ô£ÿ  149 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:24:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Upload ÔÇ║ P1-PHOTO-1: upload single photo shows in gallery (32.5s)
+  Ô£ÿ  150 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:50:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Upload ÔÇ║ P1-PHOTO-2: upload multiple photos sequentially (32.7s)
+  Ô£ÿ  151 [chromium] ÔÇ║ tests\photo-download.spec.ts:230:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ Download Permissions ÔÇ║ P1-DOWNLOAD-5: owner can download their own photos (retry #1) (33.1s)
+  Ô£ÿ  155 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:75:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Upload ÔÇ║ P1-PHOTO-3: upload shows progress indicator (3.2s)
+  Ô£ÿ  156 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:75:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Upload ÔÇ║ P1-PHOTO-3: upload shows progress indicator (retry #1) (3.3s)
+  Ô£ÿ  153 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:24:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Upload ÔÇ║ P1-PHOTO-1: upload single photo shows in gallery (retry #1) (33.2s)
+  Ô£ÿ  154 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:50:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Upload ÔÇ║ P1-PHOTO-2: upload multiple photos sequentially (retry #1) (34.6s)
+  Ô£ÿ  152 [chromium] ÔÇ║ tests\photo-download.spec.ts:309:5 ÔÇ║ Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow ÔÇ║ Download Edge Cases ÔÇ║ P1-DOWNLOAD-7: can download multiple photos in sequence (retry #1) (33.6s)
+  Ô£ÿ  157 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:111:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Viewing ÔÇ║ P1-PHOTO-4: clicking photo thumbnail opens lightbox (34.4s)
+  Ô£ÿ  158 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:139:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Viewing ÔÇ║ P1-PHOTO-5: escape key closes lightbox (33.6s)
+  Ô£ÿ  159 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:170:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Viewing ÔÇ║ P1-PHOTO-6: arrow keys navigate between photos in lightbox (33.3s)
+  Ô£ÿ  160 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:215:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Persistence ÔÇ║ P1-PHOTO-7: uploaded photos persist after page reload (34.9s)
+  Ô£ô  164 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:215:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Persistence ÔÇ║ P1-PHOTO-7: uploaded photos persist after page reload (retry #1) (5.3s)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  161 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:111:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Viewing ÔÇ║ P1-PHOTO-4: clicking photo thumbnail opens lightbox (retry #1) (33.7s)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  162 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:139:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Viewing ÔÇ║ P1-PHOTO-5: escape key closes lightbox (retry #1) (34.7s)
+  Ô£ÿ  163 [chromium] ÔÇ║ tests\photo-lifecycle.spec.ts:170:5 ÔÇ║ Photo Lifecycle @p1 @photo @crypto ÔÇ║ Photo Viewing ÔÇ║ P1-PHOTO-6: arrow keys navigate between photos in lightbox (retry #1) (33.9s)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ô  168 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:110:3 ÔÇ║ Photo Workflow: Upload & Display @p1 @photo @crypto @slow ÔÇ║ upload button accepts image files (2.1s)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  165 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:48:3 ÔÇ║ Photo Workflow: Upload & Display @p1 @photo @crypto @slow ÔÇ║ upload single photo displays in gallery (1.1m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  166 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:66:3 ÔÇ║ Photo Workflow: Upload & Display @p1 @photo @crypto @slow ÔÇ║ upload multiple photos sequentially (1.1m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  167 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:87:3 ÔÇ║ Photo Workflow: Upload & Display @p1 @photo @crypto @slow ÔÇ║ uploaded photo shows thumbnail (1.0m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  169 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:122:3 ÔÇ║ Photo Workflow: Upload & Display @p1 @photo @crypto @slow ÔÇ║ upload shows progress indication (1.1m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  170 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:48:3 ÔÇ║ Photo Workflow: Upload & Display @p1 @photo @crypto @slow ÔÇ║ upload single photo displays in gallery (retry #1) (1.1m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  171 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:66:3 ÔÇ║ Photo Workflow: Upload & Display @p1 @photo @crypto @slow ÔÇ║ upload multiple photos sequentially (retry #1) (1.1m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  172 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:87:3 ÔÇ║ Photo Workflow: Upload & Display @p1 @photo @crypto @slow ÔÇ║ uploaded photo shows thumbnail (retry #1) (1.1m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  173 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:122:3 ÔÇ║ Photo Workflow: Upload & Display @p1 @photo @crypto @slow ÔÇ║ upload shows progress indication (retry #1) (1.2m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  174 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:148:3 ÔÇ║ Photo Workflow: Lightbox/Full View @p1 @photo @gallery ÔÇ║ clicking photo opens lightbox (1.0m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  175 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:198:3 ÔÇ║ Photo Workflow: Lightbox/Full View @p1 @photo @gallery ÔÇ║ lightbox can be closed (1.0m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  176 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:235:3 ÔÇ║ Photo Workflow: Lightbox/Full View @p1 @photo @gallery ÔÇ║ lightbox navigation between photos (1.0m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  177 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:289:3 ÔÇ║ Photo Workflow: Deletion @p1 @photo ÔÇ║ photo can be deleted from gallery (1.0m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  178 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:148:3 ÔÇ║ Photo Workflow: Lightbox/Full View @p1 @photo @gallery ÔÇ║ clicking photo opens lightbox (retry #1) (1.1m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ô  182 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:367:3 ÔÇ║ Photo Workflow: Deletion @p1 @photo ÔÇ║ deleted photo does not reappear after reload (6.3s)
+  Ô£ÿ  179 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:198:3 ÔÇ║ Photo Workflow: Lightbox/Full View @p1 @photo @gallery ÔÇ║ lightbox can be closed (retry #1) (1.1m)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ô  184 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:519:3 ÔÇ║ Photo Workflow: Empty States @p2 @photo @ui ÔÇ║ empty gallery shows upload prompt (3.6s)
+  Ô£ô  185 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:546:3 ÔÇ║ Photo Workflow: Empty States @p2 @photo @ui ÔÇ║ empty gallery shows clear call to action (2.3s)
+  Ô£ÿ  180 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:235:3 ÔÇ║ Photo Workflow: Lightbox/Full View @p1 @photo @gallery ÔÇ║ lightbox navigation between photos (retry #1) (1.2m)
+  Ô£ÿ  181 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:289:3 ÔÇ║ Photo Workflow: Deletion @p1 @photo ÔÇ║ photo can be deleted from gallery (retry #1) (1.1m)
+  Ô£ÿ  186 [chromium] ÔÇ║ tests\registration.spec.ts:17:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Display ÔÇ║ shows mode toggle button on first visit (20.2s)
+  Ô£ÿ  188 [chromium] ÔÇ║ tests\registration.spec.ts:43:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Display ÔÇ║ shows LocalAuth badge in registration mode (15.9s)
+  Ô£ÿ  187 [chromium] ÔÇ║ tests\registration.spec.ts:27:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Display ÔÇ║ switches to registration mode when clicking toggle (16.0s)
+  Ô£ÿ  189 [chromium] ÔÇ║ tests\registration.spec.ts:17:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Display ÔÇ║ shows mode toggle button on first visit (retry #1) (16.6s)
+  Ô£ÿ  190 [chromium] ÔÇ║ tests\registration.spec.ts:43:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Display ÔÇ║ shows LocalAuth badge in registration mode (retry #1) (16.5s)
+  Ô£ÿ  183 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:464:3 ÔÇ║ Photo Workflow: Keyboard Navigation @p2 @photo @a11y ÔÇ║ photos can be navigated with arrow keys in gallery (1.0m)
+  Ô£ÿ  191 [chromium] ÔÇ║ tests\registration.spec.ts:27:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Display ÔÇ║ switches to registration mode when clicking toggle (retry #1) (16.5s)
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+[GalleryPage] File input found, setting files...
+[GalleryPage] Files set successfully, waiting for upload to complete...
+[GalleryPage] Upload appears complete
+  Ô£ÿ  192 [chromium] ÔÇ║ tests\registration.spec.ts:58:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Display ÔÇ║ shows username, password, and confirm password fields in registration mode (16.7s)
+  Ô£ÿ  195 [chromium] ÔÇ║ tests\registration.spec.ts:93:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Validation ÔÇ║ shows error for empty username (16.1s)
+  Ô£ÿ  196 [chromium] ÔÇ║ tests\registration.spec.ts:58:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Display ÔÇ║ shows username, password, and confirm password fields in registration mode (retry #1) (16.5s)
+  Ô£ÿ  193 [chromium] ÔÇ║ tests\registration.spec.ts:71:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Display ÔÇ║ can switch back to login mode (16.4s)
+  Ô£ÿ  197 [chromium] ÔÇ║ tests\registration.spec.ts:93:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Validation ÔÇ║ shows error for empty username (retry #1) (16.8s)
+  Ô£ÿ  198 [chromium] ÔÇ║ tests\registration.spec.ts:112:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Validation ÔÇ║ shows error for empty password (16.6s)
+  Ô£ÿ  199 [chromium] ÔÇ║ tests\registration.spec.ts:71:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Display ÔÇ║ can switch back to login mode (retry #1) (16.5s)
+  Ô£ÿ  202 [chromium] ÔÇ║ tests\registration.spec.ts:153:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Validation ÔÇ║ shows error when passwords do not match (16.0s)
+  Ô£ÿ  201 [chromium] ÔÇ║ tests\registration.spec.ts:112:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Validation ÔÇ║ shows error for empty password (retry #1) (16.5s)
+  Ô£ÿ  203 [chromium] ÔÇ║ tests\registration.spec.ts:153:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Validation ÔÇ║ shows error when passwords do not match (retry #1) (16.7s)
+  Ô£ÿ  194 [chromium] ÔÇ║ tests\photo-workflow.spec.ts:464:3 ÔÇ║ Photo Workflow: Keyboard Navigation @p2 @photo @a11y ÔÇ║ photos can be navigated with arrow keys in gallery (retry #1) (1.1m)
+  Ô£ÿ  200 [chromium] ÔÇ║ tests\registration.spec.ts:133:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Validation ÔÇ║ shows error for password less than 8 characters (15.9s)
+  Ô£ÿ  205 [chromium] ÔÇ║ tests\registration.spec.ts:197:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Successful Registration ÔÇ║ can register a new user and access app (16.0s)
+  Ô£ÿ  206 [chromium] ÔÇ║ tests\registration.spec.ts:213:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Successful Registration ÔÇ║ shows loading state during registration (16.6s)
+  Ô£ÿ  204 [chromium] ÔÇ║ tests\registration.spec.ts:173:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Validation ÔÇ║ clears error when switching modes (16.1s)
+  Ô£ÿ  207 [chromium] ÔÇ║ tests\registration.spec.ts:133:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Validation ÔÇ║ shows error for password less than 8 characters (retry #1) (16.9s)
+  Ô£ÿ  209 [chromium] ÔÇ║ tests\registration.spec.ts:213:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Successful Registration ÔÇ║ shows loading state during registration (retry #1) (17.0s)
+  Ô£ÿ  211 [chromium] ÔÇ║ tests\registration.spec.ts:240:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Successful Registration ÔÇ║ newly registered user can logout and login again (16.2s)
+  Ô£ÿ  208 [chromium] ÔÇ║ tests\registration.spec.ts:197:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Successful Registration ÔÇ║ can register a new user and access app (retry #1) (16.7s)
+  Ô£ÿ  210 [chromium] ÔÇ║ tests\registration.spec.ts:173:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Validation ÔÇ║ clears error when switching modes (retry #1) (16.3s)
+  Ô£ô  215 [chromium] ÔÇ║ tests\registration.spec.ts:363:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Accessibility ÔÇ║ password field has correct autocomplete attribute (1.5s)
+  Ô£ÿ  212 [chromium] ÔÇ║ tests\registration.spec.ts:293:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Error Handling ÔÇ║ shows error when registering with existing username (18.6s)
+  Ô£ÿ  213 [chromium] ÔÇ║ tests\registration.spec.ts:349:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Accessibility ÔÇ║ form fields have proper labels (17.0s)
+  Ô£ÿ  214 [chromium] ÔÇ║ tests\registration.spec.ts:240:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Successful Registration ÔÇ║ newly registered user can logout and login again (retry #1) (19.6s)
+  Ô£ÿ  216 [chromium] ÔÇ║ tests\registration.spec.ts:373:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Accessibility ÔÇ║ error messages use role="alert" (16.0s)
+  Ô£ÿ  217 [chromium] ÔÇ║ tests\registration.spec.ts:293:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Error Handling ÔÇ║ shows error when registering with existing username (retry #1) (16.3s)
+  Ô£ÿ  219 [chromium] ÔÇ║ tests\security-errors.spec.ts:27:3 ÔÇ║ Security: Authentication @p1 @security @auth ÔÇ║ empty password rejected with error message (16.3s)
+  Ô£ÿ  218 [chromium] ÔÇ║ tests\registration.spec.ts:349:5 ÔÇ║ Registration @p1 @auth @crypto ÔÇ║ Registration Form Accessibility ÔÇ║ form fields have proper labels (retry #1) (17.9s)
+  Ô£ô  223 [chromium] ÔÇ║ tests\security-errors.spec.ts:57:3 ÔÇ║ Security: Authentication @p1 @security @auth ÔÇ║ password field is type password (not visible) (1.4s)

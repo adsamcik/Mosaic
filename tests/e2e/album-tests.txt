@@ -1,0 +1,380 @@
+[Global Setup] Starting...
+[Global Setup] API_URL: http://localhost:5000
+[Global Setup] BASE_URL: http://localhost:5173
+[Global Setup] Waiting for backend at http://localhost:5000...
+[Global Setup] Backend is healthy!
+[Global Setup] Verifying critical endpoints...
+[Global Setup] /api/albums: 200 OK
+[Global Setup] /api/users/me: 200 OK
+[Global Setup] All endpoints verified!
+[Global Setup] Verifying COOP/COEP headers at http://localhost:5173...
+[Global Setup] COOP: same-origin Ô£ô
+[Global Setup] COEP: credentialless Ô£ô
+[Global Setup] Cleanup: Skipping (handled per-test)
+[Global Setup] Complete!
+
+Running 12 tests using 4 workers
+
+  Ô£ô   3 [chromium] ÔÇ║ tests\album-management.spec.ts:89:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-4: multiple albums can be created sequentially (4.2s)
+  Ô£ô   4 [chromium] ÔÇ║ tests\album-management.spec.ts:23:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-1: create album via UI with valid name (4.7s)
+  Ô£ô   2 [chromium] ÔÇ║ tests\album-management.spec.ts:63:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-3: cancel create album closes dialog without creating (5.2s)
+  Ô£ô   5 [chromium] ÔÇ║ tests\album-management.spec.ts:118:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Navigation ÔÇ║ P1-ALBUM-5: clicking album card opens gallery view (3.1s)
+  Ô£ô   7 [chromium] ÔÇ║ tests\album-management.spec.ts:163:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album List Display ÔÇ║ P1-ALBUM-7: empty state shown when no albums (2.0s)
+  Ô£ô   6 [chromium] ÔÇ║ tests\album-management.spec.ts:138:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Navigation ÔÇ║ P1-ALBUM-6: back button returns to album list (2.3s)
+  Ô£ô   8 [chromium] ÔÇ║ tests\album-management.spec.ts:172:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album List Display ÔÇ║ P1-ALBUM-8: albums persist across page reload (2.9s)
+  Ô£ÿ   9 [chromium] ÔÇ║ tests\album-management.spec.ts:213:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-9: cancel delete album keeps album intact (8.4s)
+  Ô£ÿ   1 [chromium] ÔÇ║ tests\album-management.spec.ts:44:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-2: create album shows error for empty name (19.8s)
+  Ô£ÿ  10 [chromium] ÔÇ║ tests\album-management.spec.ts:253:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-10: confirm delete album removes album (17.2s)
+  Ô£ÿ  11 [chromium] ÔÇ║ tests\album-management.spec.ts:293:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-11: deleted album is gone after page reload (16.7s)
+  Ô£ÿ  12 [chromium] ÔÇ║ tests\album-management.spec.ts:213:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-9: cancel delete album keeps album intact (retry #1) (8.4s)
+  Ô£ÿ  13 [chromium] ÔÇ║ tests\album-management.spec.ts:44:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-2: create album shows error for empty name (retry #1) (17.6s)
+  Ô£ÿ  14 [chromium] ÔÇ║ tests\album-management.spec.ts:253:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-10: confirm delete album removes album (retry #1) (18.7s)
+  Ô£ÿ  16 [chromium] ÔÇ║ tests\album-management.spec.ts:342:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-12: delete button shows album info in dialog (17.4s)
+  Ô£ÿ  15 [chromium] ÔÇ║ tests\album-management.spec.ts:293:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-11: deleted album is gone after page reload (retry #1) (17.7s)
+  Ô£ÿ  17 [chromium] ÔÇ║ tests\album-management.spec.ts:342:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-12: delete button shows album info in dialog (retry #1) (18.4s)
+
+
+  1) [chromium] ÔÇ║ tests\album-management.spec.ts:44:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-2: create album shows error for empty name 
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('create-button')[22m
+    [2m    - locator resolved to <button disabled type="submit" class="button-primary" form="create-album-form" data-testid="create-button">Create Album</button>[22m
+    [2m  - attempting click action[22m
+    [2m    2 ├ù waiting for element to be visible, enabled and stable[22m
+    [2m      - element is not enabled[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 ├ù waiting for element to be visible, enabled and stable[22m
+    [2m      - element is not enabled[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    28 ├ù waiting for element to be visible, enabled and stable[22m
+    [2m       - element is not enabled[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+       at ..\page-objects\index.ts:251
+
+      249 |
+      250 |   async submit(): Promise<void> {
+    > 251 |     await this.createButton.click();
+          |                             ^
+      252 |   }
+      253 |
+      254 |   async cancel(): Promise<void> {
+        at CreateAlbumDialog.submit (G:\Github\Mosaic\tests\e2e\page-objects\index.ts:251:29)
+        at G:\Github\Mosaic\tests\e2e\tests\album-management.spec.ts:55:20
+
+    attachment #1: screenshot (image/png) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-3a526--shows-error-for-empty-name-chromium\test-failed-1.png
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error Context: test-results\album-management-Album-Man-3a526--shows-error-for-empty-name-chromium\error-context.md
+
+    Retry #1 ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('create-button')[22m
+    [2m    - locator resolved to <button disabled type="submit" class="button-primary" form="create-album-form" data-testid="create-button">Create Album</button>[22m
+    [2m  - attempting click action[22m
+    [2m    2 ├ù waiting for element to be visible, enabled and stable[22m
+    [2m      - element is not enabled[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 ├ù waiting for element to be visible, enabled and stable[22m
+    [2m      - element is not enabled[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    28 ├ù waiting for element to be visible, enabled and stable[22m
+    [2m       - element is not enabled[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+       at ..\page-objects\index.ts:251
+
+      249 |
+      250 |   async submit(): Promise<void> {
+    > 251 |     await this.createButton.click();
+          |                             ^
+      252 |   }
+      253 |
+      254 |   async cancel(): Promise<void> {
+        at CreateAlbumDialog.submit (G:\Github\Mosaic\tests\e2e\page-objects\index.ts:251:29)
+        at G:\Github\Mosaic\tests\e2e\tests\album-management.spec.ts:55:20
+
+    attachment #1: screenshot (image/png) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-3a526--shows-error-for-empty-name-chromium-retry1\test-failed-1.png
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error Context: test-results\album-management-Album-Man-3a526--shows-error-for-empty-name-chromium-retry1\error-context.md
+
+    attachment #3: trace (application/zip) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-3a526--shows-error-for-empty-name-chromium-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\album-management-Album-Man-3a526--shows-error-for-empty-name-chromium-retry1\trace.zip
+
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+  2) [chromium] ÔÇ║ tests\album-management.spec.ts:213:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-9: cancel delete album keeps album intact 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByTestId('delete-album-button')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('delete-album-button')[22m
+
+
+       at ..\page-objects\index.ts:404
+
+      402 |
+      403 |   async expectDeleteButtonVisible(): Promise<void> {
+    > 404 |     await expect(this.deleteAlbumButton).toBeVisible({ timeout: 5000 });
+          |                                          ^
+      405 |   }
+      406 |
+      407 |   async expectDeleteButtonHidden(): Promise<void> {
+        at GalleryPage.expectDeleteButtonVisible (G:\Github\Mosaic\tests\e2e\page-objects\index.ts:404:42)
+        at G:\Github\Mosaic\tests\e2e\tests\album-management.spec.ts:233:21
+
+    attachment #1: screenshot (image/png) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-a63e1-te-album-keeps-album-intact-chromium\test-failed-1.png
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error Context: test-results\album-management-Album-Man-a63e1-te-album-keeps-album-intact-chromium\error-context.md
+
+    Retry #1 ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByTestId('delete-album-button')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('delete-album-button')[22m
+
+
+       at ..\page-objects\index.ts:404
+
+      402 |
+      403 |   async expectDeleteButtonVisible(): Promise<void> {
+    > 404 |     await expect(this.deleteAlbumButton).toBeVisible({ timeout: 5000 });
+          |                                          ^
+      405 |   }
+      406 |
+      407 |   async expectDeleteButtonHidden(): Promise<void> {
+        at GalleryPage.expectDeleteButtonVisible (G:\Github\Mosaic\tests\e2e\page-objects\index.ts:404:42)
+        at G:\Github\Mosaic\tests\e2e\tests\album-management.spec.ts:233:21
+
+    attachment #1: screenshot (image/png) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-a63e1-te-album-keeps-album-intact-chromium-retry1\test-failed-1.png
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error Context: test-results\album-management-Album-Man-a63e1-te-album-keeps-album-intact-chromium-retry1\error-context.md
+
+    attachment #3: trace (application/zip) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-a63e1-te-album-keeps-album-intact-chromium-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\album-management-Album-Man-a63e1-te-album-keeps-album-intact-chromium-retry1\trace.zip
+
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+  3) [chromium] ÔÇ║ tests\album-management.spec.ts:253:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-10: confirm delete album removes album 
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('delete-album-button')[22m
+
+
+       at ..\page-objects\index.ts:400
+
+      398 |
+      399 |   async clickDeleteAlbum(): Promise<void> {
+    > 400 |     await this.deleteAlbumButton.click();
+          |                                  ^
+      401 |   }
+      402 |
+      403 |   async expectDeleteButtonVisible(): Promise<void> {
+        at GalleryPage.clickDeleteAlbum (G:\Github\Mosaic\tests\e2e\page-objects\index.ts:400:34)
+        at G:\Github\Mosaic\tests\e2e\tests\album-management.spec.ts:276:21
+
+    attachment #1: screenshot (image/png) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-7e106--delete-album-removes-album-chromium\test-failed-1.png
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error Context: test-results\album-management-Album-Man-7e106--delete-album-removes-album-chromium\error-context.md
+
+    Retry #1 ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('delete-album-button')[22m
+
+
+       at ..\page-objects\index.ts:400
+
+      398 |
+      399 |   async clickDeleteAlbum(): Promise<void> {
+    > 400 |     await this.deleteAlbumButton.click();
+          |                                  ^
+      401 |   }
+      402 |
+      403 |   async expectDeleteButtonVisible(): Promise<void> {
+        at GalleryPage.clickDeleteAlbum (G:\Github\Mosaic\tests\e2e\page-objects\index.ts:400:34)
+        at G:\Github\Mosaic\tests\e2e\tests\album-management.spec.ts:276:21
+
+    attachment #1: screenshot (image/png) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-7e106--delete-album-removes-album-chromium-retry1\test-failed-1.png
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error Context: test-results\album-management-Album-Man-7e106--delete-album-removes-album-chromium-retry1\error-context.md
+
+    attachment #3: trace (application/zip) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-7e106--delete-album-removes-album-chromium-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\album-management-Album-Man-7e106--delete-album-removes-album-chromium-retry1\trace.zip
+
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+  4) [chromium] ÔÇ║ tests\album-management.spec.ts:293:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-11: deleted album is gone after page reload 
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('delete-album-button')[22m
+
+
+       at ..\page-objects\index.ts:400
+
+      398 |
+      399 |   async clickDeleteAlbum(): Promise<void> {
+    > 400 |     await this.deleteAlbumButton.click();
+          |                                  ^
+      401 |   }
+      402 |
+      403 |   async expectDeleteButtonVisible(): Promise<void> {
+        at GalleryPage.clickDeleteAlbum (G:\Github\Mosaic\tests\e2e\page-objects\index.ts:400:34)
+        at G:\Github\Mosaic\tests\e2e\tests\album-management.spec.ts:314:21
+
+    attachment #1: screenshot (image/png) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-9588b-m-is-gone-after-page-reload-chromium\test-failed-1.png
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error Context: test-results\album-management-Album-Man-9588b-m-is-gone-after-page-reload-chromium\error-context.md
+
+    Retry #1 ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('delete-album-button')[22m
+
+
+       at ..\page-objects\index.ts:400
+
+      398 |
+      399 |   async clickDeleteAlbum(): Promise<void> {
+    > 400 |     await this.deleteAlbumButton.click();
+          |                                  ^
+      401 |   }
+      402 |
+      403 |   async expectDeleteButtonVisible(): Promise<void> {
+        at GalleryPage.clickDeleteAlbum (G:\Github\Mosaic\tests\e2e\page-objects\index.ts:400:34)
+        at G:\Github\Mosaic\tests\e2e\tests\album-management.spec.ts:314:21
+
+    attachment #1: screenshot (image/png) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-9588b-m-is-gone-after-page-reload-chromium-retry1\test-failed-1.png
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error Context: test-results\album-management-Album-Man-9588b-m-is-gone-after-page-reload-chromium-retry1\error-context.md
+
+    attachment #3: trace (application/zip) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-9588b-m-is-gone-after-page-reload-chromium-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\album-management-Album-Man-9588b-m-is-gone-after-page-reload-chromium-retry1\trace.zip
+
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+  5) [chromium] ÔÇ║ tests\album-management.spec.ts:342:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-12: delete button shows album info in dialog 
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('delete-album-button')[22m
+
+
+       at ..\page-objects\index.ts:400
+
+      398 |
+      399 |   async clickDeleteAlbum(): Promise<void> {
+    > 400 |     await this.deleteAlbumButton.click();
+          |                                  ^
+      401 |   }
+      402 |
+      403 |   async expectDeleteButtonVisible(): Promise<void> {
+        at GalleryPage.clickDeleteAlbum (G:\Github\Mosaic\tests\e2e\page-objects\index.ts:400:34)
+        at G:\Github\Mosaic\tests\e2e\tests\album-management.spec.ts:368:21
+
+    attachment #1: screenshot (image/png) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-5f67a--shows-album-info-in-dialog-chromium\test-failed-1.png
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error Context: test-results\album-management-Album-Man-5f67a--shows-album-info-in-dialog-chromium\error-context.md
+
+    Retry #1 ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+    [2m  - waiting for getByTestId('delete-album-button')[22m
+
+
+       at ..\page-objects\index.ts:400
+
+      398 |
+      399 |   async clickDeleteAlbum(): Promise<void> {
+    > 400 |     await this.deleteAlbumButton.click();
+          |                                  ^
+      401 |   }
+      402 |
+      403 |   async expectDeleteButtonVisible(): Promise<void> {
+        at GalleryPage.clickDeleteAlbum (G:\Github\Mosaic\tests\e2e\page-objects\index.ts:400:34)
+        at G:\Github\Mosaic\tests\e2e\tests\album-management.spec.ts:368:21
+
+    attachment #1: screenshot (image/png) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-5f67a--shows-album-info-in-dialog-chromium-retry1\test-failed-1.png
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+    Error Context: test-results\album-management-Album-Man-5f67a--shows-album-info-in-dialog-chromium-retry1\error-context.md
+
+    attachment #3: trace (application/zip) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    test-results\album-management-Album-Man-5f67a--shows-album-info-in-dialog-chromium-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\album-management-Album-Man-5f67a--shows-album-info-in-dialog-chromium-retry1\trace.zip
+
+    ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+
+  5 failed
+    [chromium] ÔÇ║ tests\album-management.spec.ts:44:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-2: create album shows error for empty name 
+    [chromium] ÔÇ║ tests\album-management.spec.ts:213:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-9: cancel delete album keeps album intact 
+    [chromium] ÔÇ║ tests\album-management.spec.ts:253:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-10: confirm delete album removes album 
+    [chromium] ÔÇ║ tests\album-management.spec.ts:293:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-11: deleted album is gone after page reload 
+    [chromium] ÔÇ║ tests\album-management.spec.ts:342:5 ÔÇ║ Album Management @p1 @album ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-12: delete button shows album info in dialog 
+  7 passed (1.2m)
+
+To open last HTML report run:
+[36m[39m
+[36m  npx playwright show-report[39m
+[36m[39m

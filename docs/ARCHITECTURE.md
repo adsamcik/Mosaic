@@ -534,7 +534,8 @@ docker compose up -d
 |----------|---------|-------------|
 | `ConnectionStrings__Default` | - | PostgreSQL connection string |
 | `Storage__Path` | `/app/data/blobs` | Blob storage path |
-| `Auth__Mode` | `ProxyAuth` | Auth mode |
+| `Auth__LocalAuthEnabled` | `true` | Enable local auth |
+| `Auth__ProxyAuthEnabled` | `true` | Enable proxy auth |
 | `Auth__TrustedProxies__0` | Docker networks | Trusted CIDRs |
 | `Quota__DefaultMaxBytes` | 10GB | Default user quota |
 
