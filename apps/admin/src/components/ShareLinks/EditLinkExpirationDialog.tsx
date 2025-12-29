@@ -1,23 +1,24 @@
 /**
- * EditLinkExpirationDialog Component
+ * EditShareLinkView Component
  *
- * Modal dialog for editing expiration settings of an existing share link.
+ * View for editing expiration settings of an existing share link.
  * Allows updating expiresAt and maxUses for a link.
+ * Designed to be rendered within the ShareLinksPanel.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { ShareLinkInfo } from '../../hooks/useShareLinks';
 import { EXPIRY_PRESETS, type ExpiryPreset } from './ShareLinkDialog';
 
-export interface EditLinkExpirationDialogProps {
+export interface EditShareLinkViewProps {
   /** The share link to edit */
   link: ShareLinkInfo;
   /** Album ID the link belongs to */
   albumId: string;
   /** Called when save is complete */
   onSave: () => void;
-  /** Called when dialog should close */
-  onClose: () => void;
+  /** Called when editing is cancelled */
+  onCancel: () => void;
   /** Called to update the link expiration */
   onUpdate: (
     linkId: string,
@@ -56,20 +57,16 @@ function getRemainingHours(expiresAt: string | undefined | null): number {
 }
 
 /**
- * EditLinkExpirationDialog Component
- *
- * Provides a modal for editing:
- * - Expiration date (via presets)
- * - Max uses limit
+ * EditShareLinkView Component
  */
-export function EditLinkExpirationDialog({
+export function EditShareLinkView({
   link,
   onSave,
-  onClose,
+  onCancel,
   onUpdate,
   isUpdating,
   error,
-}: EditLinkExpirationDialogProps) {
+}: EditShareLinkViewProps) {
   const [expiryEnabled, setExpiryEnabled] = useState(!!link.expiresAt);
   const [expiryHours, setExpiryHours] = useState(() => getRemainingHours(link.expiresAt));
   const [selectedPresetIndex, setSelectedPresetIndex] = useState(() =>
@@ -78,20 +75,6 @@ export function EditLinkExpirationDialog({
   const [maxUsesEnabled, setMaxUsesEnabled] = useState(link.maxUses !== undefined && link.maxUses !== null);
   const [maxUses, setMaxUses] = useState(link.maxUses ?? 10);
   const [localError, setLocalError] = useState<string | null>(null);
-
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
-  // Handle escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isUpdating) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isUpdating, onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,153 +115,128 @@ export function EditLinkExpirationDialog({
     }
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget && !isUpdating) {
-      onClose();
-    }
-  };
-
   const displayError = localError || error;
 
   return (
-    <div
-      className="dialog-backdrop"
-      onClick={handleBackdropClick}
-      role="presentation"
-      data-testid="edit-link-dialog-backdrop"
-    >
-      <dialog
-        ref={dialogRef}
-        className="dialog"
-        open
-        aria-labelledby="edit-link-title"
-        aria-modal="true"
-        data-testid="edit-link-dialog"
-      >
-        <form onSubmit={handleSubmit} className="dialog-form">
-          <h2 id="edit-link-title" className="dialog-title">
-            Edit Share Link
-          </h2>
+    <div className="panel-content-view" data-testid="edit-share-link-view">
+      <form onSubmit={handleSubmit} className="panel-form">
+        <p className="panel-description">
+          Update the expiration settings for this share link.
+        </p>
 
-          <p className="dialog-description">
-            Update the expiration settings for this share link.
-          </p>
-
-          <div className="edit-link-info" data-testid="edit-link-info">
-            <div className="info-item">
-              <span className="info-label">Access:</span>
-              <span className="info-value">{link.accessTierDisplay}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Uses:</span>
-              <span className="info-value">
-                {link.useCount}
-                {link.maxUses !== undefined && ` / ${link.maxUses}`}
-              </span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Created:</span>
-              <span className="info-value">
-                {new Date(link.createdAt).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
-              </span>
-            </div>
-            {link.expiryDisplay && (
-              <div className="info-item">
-                <span className="info-label">Current expiry:</span>
-                <span className="info-value">{link.expiryDisplay}</span>
-              </div>
-            )}
+        <div className="share-link-info-card" data-testid="edit-link-info">
+          <div className="info-item">
+            <span className="info-label">Access</span>
+            <span className="info-value">{link.accessTierDisplay}</span>
           </div>
-
-          <div className="form-group">
-            <label className="form-label">New Expiration</label>
-            <div className="expiry-presets" data-testid="expiry-presets">
-              {EXPIRY_PRESETS.map((preset, index) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  className={`expiry-preset-button ${selectedPresetIndex === index ? 'selected' : ''}`}
-                  onClick={() => handlePresetClick(preset, index)}
-                  disabled={isUpdating}
-                  data-testid={`expiry-preset-${preset.label.toLowerCase().replace(/\s/g, '-')}`}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            {!expiryEnabled && (
-              <div className="warning-banner" data-testid="never-expires-warning">
-                ⚠️ This link will never expire. Anyone with the link can access 
-                the album indefinitely. Consider setting an expiration date.
-              </div>
-            )}
+          <div className="info-item">
+            <span className="info-label">Uses</span>
+            <span className="info-value">
+              {link.useCount}
+              {link.maxUses !== undefined && ` / ${link.maxUses}`}
+            </span>
           </div>
-
-          <div className="form-group">
-            <label className="form-label checkbox-label">
-              <input
-                type="checkbox"
-                checked={maxUsesEnabled}
-                onChange={(e) => setMaxUsesEnabled(e.target.checked)}
-                disabled={isUpdating}
-                data-testid="max-uses-checkbox"
-              />
-              <span>Limit number of uses</span>
-            </label>
-            {maxUsesEnabled && (
-              <div className="max-uses-input" data-testid="max-uses-input-group">
-                <span>Maximum</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={maxUses}
-                  onChange={(e) => setMaxUses(parseInt(e.target.value, 10) || 1)}
-                  disabled={isUpdating}
-                  className="form-input number-input"
-                  data-testid="max-uses-input"
-                />
-                <span>uses</span>
-              </div>
-            )}
+          <div className="info-item">
+            <span className="info-label">Created</span>
+            <span className="info-value">
+              {new Date(link.createdAt).toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })}
+            </span>
           </div>
-
-          {displayError && (
-            <div
-              id="edit-link-error"
-              className="form-error"
-              role="alert"
-              data-testid="edit-link-error"
-            >
-              {displayError}
+          {link.expiryDisplay && (
+            <div className="info-item">
+              <span className="info-label">Current expiry</span>
+              <span className="info-value">{link.expiryDisplay}</span>
             </div>
           )}
+        </div>
 
-          <div className="dialog-actions">
-            <button
-              type="button"
-              className="button-secondary"
-              onClick={onClose}
-              disabled={isUpdating}
-              data-testid="cancel-button"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="button-primary"
-              disabled={isUpdating}
-              data-testid="save-button"
-            >
-              {isUpdating ? 'Saving...' : 'Save Changes'}
-            </button>
+        <div className="form-group">
+          <label className="form-label">New Expiration</label>
+          <div className="expiry-presets grid-3" data-testid="expiry-presets">
+            {EXPIRY_PRESETS.map((preset, index) => (
+              <button
+                key={preset.label}
+                type="button"
+                className={`expiry-preset-button ${selectedPresetIndex === index ? 'selected' : ''}`}
+                onClick={() => handlePresetClick(preset, index)}
+                disabled={isUpdating}
+                data-testid={`expiry-preset-${preset.label.toLowerCase().replace(/\s/g, '-')}`}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
-        </form>
-      </dialog>
+          {!expiryEnabled && (
+            <div className="warning-banner" data-testid="never-expires-warning">
+              ⚠️ Link will never expire.
+            </div>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label className="form-label checkbox-label">
+            <input
+              type="checkbox"
+              checked={maxUsesEnabled}
+              onChange={(e) => setMaxUsesEnabled(e.target.checked)}
+              disabled={isUpdating}
+              data-testid="max-uses-checkbox"
+            />
+            <span>Limit number of uses</span>
+          </label>
+          {maxUsesEnabled && (
+            <div className="max-uses-input" data-testid="max-uses-input-group">
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={maxUses}
+                onChange={(e) => setMaxUses(parseInt(e.target.value, 10) || 1)}
+                disabled={isUpdating}
+                className="form-input number-input"
+                data-testid="max-uses-input"
+              />
+              <span>uses maximum</span>
+            </div>
+          )}
+        </div>
+
+        {displayError && (
+          <div
+            id="edit-link-error"
+            className="form-error"
+            role="alert"
+            data-testid="edit-link-error"
+          >
+            {displayError}
+          </div>
+        )}
+
+        <div className="panel-actions">
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={onCancel}
+            disabled={isUpdating}
+            data-testid="cancel-button"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="button-primary"
+            disabled={isUpdating}
+            data-testid="save-button"
+          >
+            {isUpdating ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
+
