@@ -11,17 +11,17 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
-    "postinstall": "node -e \"const fs=require('fs'),p='node_modules/sql.js/dist/';['sql-wasm.js','sql-wasm.wasm'].forEach(f=>fs.copyFileSync(p+f,'public/'+f))\""
+    "postinstall": "node -e \"const fs=require('fs'),p='node_modules/fts5-sql-bundle/dist/';['sql-wasm.js','sql-wasm.wasm'].forEach(f=>fs.copyFileSync(p+f,'public/'+f))\""
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.13",
     "comlink": "^4.4.2",
+    "fts5-sql-bundle": "^1.0.2",
     "idb": "^8.0.3",
     "leaflet": "^1.9.4",
     "libsodium-wrappers-sumo": "^0.7.15",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "sql.js": "^1.13.0",
     "supercluster": "^8.0.1",
     "tus-js-client": "^4.3.1"
   },
