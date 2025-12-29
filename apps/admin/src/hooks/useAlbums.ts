@@ -8,9 +8,11 @@ import {
 import { getApi, toBase64 } from '../lib/api';
 import type { Album as ApiAlbum } from '../lib/api-types';
 import { getCryptoClient } from '../lib/crypto-client';
+import { getDbClient } from '../lib/db-client';
 import { ensureEpochKeysLoaded } from '../lib/epoch-key-service';
 import { getCurrentEpochKey, setEpochKey } from '../lib/epoch-key-store';
 import { createLogger } from '../lib/logger';
+import { syncEngine } from '../lib/sync-engine';
 
 const log = createLogger('useAlbums');
 
@@ -30,6 +32,33 @@ async function encryptAlbumName(name: string, epochSeed: Uint8Array): Promise<st
   const encrypted = await crypto.encryptShard(nameBytes, epochSeed, 0, 0);
 
   return toBase64(encrypted.ciphertext);
+}
+
+/**
+ * Load photo counts from local SQLite database for all albums.
+ * Returns a map of albumId -> count.
+ */
+async function fetchPhotoCountsFromDb(albumIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  try {
+    const db = await getDbClient();
+    
+    // Fetch photo counts for all albums in parallel
+    const results = await Promise.all(
+      albumIds.map(async (albumId) => ({
+        albumId,
+        count: await db.getPhotoCount(albumId),
+      }))
+    );
+
+    for (const { albumId, count } of results) {
+      counts.set(albumId, count);
+    }
+  } catch (err) {
+    log.error('Failed to load photo counts from database:', err);
+    // Non-fatal - return empty map, counts will stay at 0
+  }
+  return counts;
 }
 
 /**
@@ -56,7 +85,7 @@ export function useAlbums() {
         id: album.id,
         // Placeholder name until decryption completes
         name: `Album ${album.id.slice(0, 8)}`,
-        // Photo count is not returned from API - would need to sync first
+        // Photo count loaded from local SQLite database
         photoCount: 0,
         createdAt: album.createdAt,
         isDecrypting: true, // Mark as decrypting initially
@@ -69,12 +98,25 @@ export function useAlbums() {
       setAlbums(transformedAlbums);
       setIsLoading(false);
 
-      // Now decrypt album names asynchronously
+      // Load photo counts from local database (non-blocking)
+      const albumIds = transformedAlbums.map((a) => a.id);
+      const photoCounts = await fetchPhotoCountsFromDb(albumIds);
+      
+      // Update albums with photo counts
+      setAlbums((prev) =>
+        prev.map((album) => ({
+          ...album,
+          photoCount: photoCounts.get(album.id) ?? album.photoCount,
+        }))
+      );
+
+      // Decrypt album names asynchronously
       await decryptAlbumNames(transformedAlbums);
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
       setIsLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -166,6 +208,25 @@ export function useAlbums() {
 
     // Wait for all decryption attempts to complete
     await Promise.all(decryptionPromises);
+  }, []);
+
+  /**
+   * Update photo count for a single album.
+   * Called when sync completes for an album.
+   */
+  const updatePhotoCount = useCallback(async (albumId: string) => {
+    try {
+      const db = await getDbClient();
+      const count = await db.getPhotoCount(albumId);
+      
+      setAlbums((prev) =>
+        prev.map((album) =>
+          album.id === albumId ? { ...album, photoCount: count } : album
+        )
+      );
+    } catch (err) {
+      log.error(`Failed to update photo count for album ${albumId}:`, err);
+    }
   }, []);
 
   /**
@@ -372,9 +433,26 @@ export function useAlbums() {
     []
   );
 
+  // Load albums on mount
   useEffect(() => {
     void loadAlbums();
   }, [loadAlbums]);
+
+  // Listen for sync-complete events to update photo counts
+  useEffect(() => {
+    const handleSyncComplete = (event: Event) => {
+      const customEvent = event as CustomEvent<{ albumId: string }>;
+      const { albumId } = customEvent.detail;
+      if (albumId) {
+        void updatePhotoCount(albumId);
+      }
+    };
+
+    syncEngine.addEventListener('sync-complete', handleSyncComplete);
+    return () => {
+      syncEngine.removeEventListener('sync-complete', handleSyncComplete);
+    };
+  }, [updatePhotoCount]);
 
   return {
     albums,
