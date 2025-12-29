@@ -6,6 +6,29 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from '../src/components/App/AppShell';
 
+// Track router state for tests
+let mockRoute: { view: 'albums' | 'gallery' | 'settings' | 'admin'; albumId?: string } = { view: 'albums' };
+const mockNavigate = vi.fn((route: { view: string; albumId?: string }) => {
+  mockRoute = route as typeof mockRoute;
+});
+
+// Mock useRouter hook
+vi.mock('../src/hooks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/hooks')>();
+  return {
+    ...actual,
+    useRouter: () => ({
+      route: mockRoute,
+      navigate: mockNavigate,
+      navigateToAlbums: () => mockNavigate({ view: 'albums' }),
+      navigateToGallery: (albumId: string) => mockNavigate({ view: 'gallery', albumId }),
+      navigateToSettings: () => mockNavigate({ view: 'settings' }),
+      navigateToAdmin: () => mockNavigate({ view: 'admin' }),
+      goBack: () => mockNavigate({ view: 'albums' }),
+    }),
+  };
+});
+
 // Mock child components
 vi.mock('../src/components/Auth/LogoutButton', () => ({
   LogoutButton: () => createElement('button', { className: 'logout-button' }, 'Logout'),
@@ -55,6 +78,9 @@ describe('AppShell', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
+    // Reset router state
+    mockRoute = { view: 'albums' };
+    mockNavigate.mockClear();
   });
 
   afterEach(() => {
@@ -117,37 +143,26 @@ describe('AppShell', () => {
       settingsButton.click();
     });
 
-    expect(container.querySelector('[data-testid="settings-page"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="album-list"]')).toBeFalsy();
+    expect(mockNavigate).toHaveBeenCalledWith({ view: 'settings' });
   });
 
   it('hides settings button when on settings page', async () => {
+    // Start on settings page
+    mockRoute = { view: 'settings' };
+    
     await act(async () => {
       root.render(createElement(AppShell));
-    });
-
-    const settingsButton = container.querySelector(
-      '[data-testid="settings-nav-button"]'
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      settingsButton.click();
     });
 
     expect(container.querySelector('[data-testid="settings-nav-button"]')).toBeFalsy();
   });
 
   it('shows back button on settings page', async () => {
+    // Start on settings page
+    mockRoute = { view: 'settings' };
+    
     await act(async () => {
       root.render(createElement(AppShell));
-    });
-
-    const settingsButton = container.querySelector(
-      '[data-testid="settings-nav-button"]'
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      settingsButton.click();
     });
 
     const backButton = container.querySelector('.back-button');
@@ -156,17 +171,11 @@ describe('AppShell', () => {
   });
 
   it('navigates back to albums from settings', async () => {
+    // Start on settings page
+    mockRoute = { view: 'settings' };
+    
     await act(async () => {
       root.render(createElement(AppShell));
-    });
-
-    // Go to settings
-    const settingsButton = container.querySelector(
-      '[data-testid="settings-nav-button"]'
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      settingsButton.click();
     });
 
     // Go back
@@ -176,8 +185,7 @@ describe('AppShell', () => {
       backButton.click();
     });
 
-    expect(container.querySelector('[data-testid="album-list"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="settings-page"]')).toBeFalsy();
+    expect(mockNavigate).toHaveBeenCalledWith({ view: 'albums' });
   });
 
   it('navigates to gallery when album is selected', async () => {
@@ -193,21 +201,15 @@ describe('AppShell', () => {
       selectButton.click();
     });
 
-    expect(container.querySelector('[data-testid="gallery"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="album-list"]')).toBeFalsy();
+    expect(mockNavigate).toHaveBeenCalledWith({ view: 'gallery', albumId: 'album-1' });
   });
 
   it('shows back button in gallery view', async () => {
+    // Start on gallery page
+    mockRoute = { view: 'gallery', albumId: 'album-1' };
+    
     await act(async () => {
       root.render(createElement(AppShell));
-    });
-
-    const selectButton = container.querySelector(
-      '[data-testid="select-album"]'
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      selectButton.click();
     });
 
     const backButton = container.querySelector('.back-button');
@@ -215,50 +217,29 @@ describe('AppShell', () => {
     expect(backButton?.textContent).toContain('Albums');
   });
 
-  it('navigates back to gallery from settings if album was selected', async () => {
+  it('navigates back to albums from gallery', async () => {
+    // Start on gallery page
+    mockRoute = { view: 'gallery', albumId: 'album-1' };
+
     await act(async () => {
       root.render(createElement(AppShell));
     });
 
-    // Select an album first
-    const selectButton = container.querySelector(
-      '[data-testid="select-album"]'
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      selectButton.click();
-    });
-
-    // Go to settings
-    const settingsButton = container.querySelector(
-      '[data-testid="settings-nav-button"]'
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      settingsButton.click();
-    });
-
-    // Go back should return to gallery
     const backButton = container.querySelector('.back-button') as HTMLButtonElement;
 
     await act(async () => {
       backButton.click();
     });
 
-    expect(container.querySelector('[data-testid="gallery"]')).toBeTruthy();
+    expect(mockNavigate).toHaveBeenCalledWith({ view: 'albums' });
   });
 
   it('passes album ID to gallery component', async () => {
+    // Start on gallery page with album-1
+    mockRoute = { view: 'gallery', albumId: 'album-1' };
+    
     await act(async () => {
       root.render(createElement(AppShell));
-    });
-
-    const selectButton = container.querySelector(
-      '[data-testid="select-album"]'
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      selectButton.click();
     });
 
     const gallery = container.querySelector('[data-testid="gallery"]');

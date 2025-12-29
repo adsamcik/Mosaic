@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { SyncProvider } from '../../contexts/SyncContext';
-import { useAlbums } from '../../hooks/useAlbums';
+import { useAlbums, useRouter } from '../../hooks';
 import { AlbumList } from '../Albums/AlbumList';
 import { AdminPage } from '../Admin';
 import { LogoutButton } from '../Auth/LogoutButton';
@@ -8,15 +8,13 @@ import { Gallery } from '../Gallery/Gallery';
 import { SettingsPage } from '../Settings/SettingsPage';
 import { getApi } from '../../lib/api';
 
-type View = 'albums' | 'gallery' | 'settings' | 'admin';
-
 /**
  * Main Application Shell
  * Contains navigation, header, and main content area
+ * Uses URL-based routing for browser history support
  */
 export function AppShell() {
-  const [currentView, setCurrentView] = useState<View>('albums');
-  const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
+  const { route, navigateToAlbums, navigateToGallery, navigateToSettings, navigateToAdmin } = useRouter();
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   
   // Get albums data - this is the single source of truth for album state
@@ -37,34 +35,36 @@ export function AppShell() {
   }, []);
 
   const handleSelectAlbum = (albumId: string) => {
-    setSelectedAlbumId(albumId);
-    setCurrentView('gallery');
+    navigateToGallery(albumId);
   };
 
   const handleBackToAlbums = () => {
-    setSelectedAlbumId(null);
-    setCurrentView('albums');
+    navigateToAlbums();
   };
 
   const handleOpenSettings = () => {
-    setCurrentView('settings');
+    navigateToSettings();
   };
 
   const handleOpenAdmin = () => {
-    setCurrentView('admin');
+    navigateToAdmin();
   };
 
   const handleBackFromSettings = () => {
-    if (selectedAlbumId) {
-      setCurrentView('gallery');
+    if (route.view === 'gallery' && route.albumId) {
+      navigateToGallery(route.albumId);
     } else {
-      setCurrentView('albums');
+      navigateToAlbums();
     }
   };
 
   const handleBackFromAdmin = () => {
-    setCurrentView('albums');
+    navigateToAlbums();
   };
+
+  // Derive current view and selected album from route
+  const currentView = route.view;
+  const selectedAlbumId = route.view === 'gallery' ? route.albumId : null;
 
   return (
     <SyncProvider>
