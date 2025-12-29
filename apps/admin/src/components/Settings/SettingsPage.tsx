@@ -4,18 +4,26 @@
  * User settings page with sections for:
  * - Account info
  * - Storage quota
+ * - Language
  * - Session settings
  * - Security
  * - About
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clearAllCovers } from '../../lib/album-cover-service';
 import { clearAllCachedMetadata } from '../../lib/album-metadata-service';
 import { getApi } from '../../lib/api';
 import type { User } from '../../lib/api-types';
 import { closeDbClient } from '../../lib/db-client';
 import { clearAllEpochKeys } from '../../lib/epoch-key-store';
+import {
+    changeLanguage,
+    getCurrentLanguage,
+    supportedLanguages,
+    type SupportedLanguage,
+} from '../../lib/i18n';
 import { session } from '../../lib/session';
 import {
     getDefaultSettings,
@@ -51,10 +59,10 @@ function formatBytes(bytes: number): string {
 }
 
 /** Format date to readable string */
-function formatDate(dateStr: string | undefined): string {
+function formatDate(dateStr: string | undefined, locale?: string): string {
   if (!dateStr) return 'Unknown';
   try {
-    return new Date(dateStr).toLocaleDateString(undefined, {
+    return new Date(dateStr).toLocaleDateString(locale, {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -76,6 +84,11 @@ function truncate(str: string, maxLen: number): string {
 // =============================================================================
 
 export function SettingsPage() {
+  const { t, i18n } = useTranslation();
+  
+  // Language state
+  const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>(getCurrentLanguage);
+
   // User state
   const [user, setUser] = useState<User | null>(null);
   const [storageQuota, setStorageQuota] = useState<StorageQuota | null>(null);
@@ -149,6 +162,12 @@ export function SettingsPage() {
     setSettings(getDefaultSettings());
   }, []);
 
+  // Handle language change
+  const handleLanguageChange = useCallback(async (lang: SupportedLanguage) => {
+    await changeLanguage(lang);
+    setCurrentLanguage(lang);
+  }, []);
+
   // Clear local data
   const handleClearLocalData = useCallback(async () => {
     setIsClearing(true);
@@ -206,18 +225,18 @@ export function SettingsPage() {
   return (
     <div className="settings-page" data-testid="settings-page">
       <div className="settings-header">
-        <h1 className="settings-title">Settings</h1>
+        <h1 className="settings-title">{t('settings.title')}</h1>
       </div>
 
       <div className="settings-content">
         {/* Account Info Section */}
         <section className="settings-section" data-testid="account-section">
-          <h2 className="section-title">Account</h2>
+          <h2 className="section-title">{t('settings.account.title')}</h2>
           <div className="settings-card">
             {isLoadingUser ? (
               <div className="settings-loading">
                 <div className="loading-spinner" />
-                <span>Loading account info...</span>
+                <span>{t('settings.account.loading')}</span>
               </div>
             ) : userError ? (
               <div className="settings-error">
@@ -227,23 +246,23 @@ export function SettingsPage() {
             ) : user ? (
               <div className="account-info">
                 <div className="info-row">
-                  <span className="info-label">User ID</span>
+                  <span className="info-label">{t('settings.account.userId')}</span>
                   <span className="info-value" title={user.id}>
                     {truncate(user.id, 20)}
                   </span>
                 </div>
                 <div className="info-row">
-                  <span className="info-label">Identity Public Key</span>
+                  <span className="info-label">{t('settings.account.publicKey')}</span>
                   <span
                     className="info-value info-mono"
-                    title={user.identityPubkey ?? 'Not set'}
+                    title={user.identityPubkey ?? t('common.notSet')}
                   >
-                    {user.identityPubkey ? truncate(user.identityPubkey, 24) : 'Not set'}
+                    {user.identityPubkey ? truncate(user.identityPubkey, 24) : t('common.notSet')}
                   </span>
                 </div>
                 <div className="info-row">
-                  <span className="info-label">Account Created</span>
-                  <span className="info-value">{formatDate(user.createdAt)}</span>
+                  <span className="info-label">{t('settings.account.createdAt')}</span>
+                  <span className="info-value">{formatDate(user.createdAt, i18n.language)}</span>
                 </div>
               </div>
             ) : null}
@@ -252,7 +271,7 @@ export function SettingsPage() {
 
         {/* Storage Quota Section */}
         <section className="settings-section" data-testid="storage-section">
-          <h2 className="section-title">Storage</h2>
+          <h2 className="section-title">{t('settings.storage.title')}</h2>
           <div className="settings-card">
             {storageQuota ? (
               <div className="storage-info">
@@ -265,31 +284,58 @@ export function SettingsPage() {
                 </div>
                 <div className="storage-details">
                   <span className="storage-used">
-                    {formatBytes(storageQuota.used)} used
+                    {t('settings.storage.used', { used: formatBytes(storageQuota.used) })}
                   </span>
-                  <span className="storage-percent">{storagePercent}%</span>
+                  <span className="storage-percent">{t('common.percent', { value: storagePercent })}</span>
                   <span className="storage-max">
-                    {formatBytes(storageQuota.max)} total
+                    {t('settings.storage.of', { total: formatBytes(storageQuota.max) })}
                   </span>
                 </div>
               </div>
             ) : (
               <div className="storage-info">
-                <span className="text-muted">Storage quota unavailable</span>
+                <span className="text-muted">{t('settings.storage.unavailable')}</span>
               </div>
             )}
           </div>
         </section>
 
-        {/* Session Settings Section */}
-        <section className="settings-section" data-testid="session-section">
-          <h2 className="section-title">Session</h2>
+        {/* Language Section */}
+        <section className="settings-section" data-testid="language-section">
+          <h2 className="section-title">{t('settings.language.title')}</h2>
           <div className="settings-card">
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">Idle Timeout</span>
+                <span className="setting-label">{t('settings.language.title')}</span>
                 <span className="setting-description">
-                  Automatically log out after inactivity
+                  {t('settings.language.description')}
+                </span>
+              </div>
+              <select
+                className="setting-select"
+                value={currentLanguage}
+                onChange={(e) => void handleLanguageChange(e.target.value as SupportedLanguage)}
+                data-testid="language-select"
+              >
+                {supportedLanguages.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.nativeName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </section>
+
+        {/* Session Settings Section */}
+        <section className="settings-section" data-testid="session-section">
+          <h2 className="section-title">{t('settings.session.title')}</h2>
+          <div className="settings-card">
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">{t('settings.session.idleTimeout')}</span>
+                <span className="setting-description">
+                  {t('settings.session.idleTimeoutDescription')}
                 </span>
               </div>
               <select
@@ -303,17 +349,17 @@ export function SettingsPage() {
                 }
                 data-testid="idle-timeout-select"
               >
-                <option value={15}>15 minutes</option>
-                <option value={30}>30 minutes</option>
-                <option value={60}>60 minutes</option>
+                <option value={15}>{t('settings.session.minutes15')}</option>
+                <option value={30}>{t('settings.session.minutes30')}</option>
+                <option value={60}>{t('settings.session.minutes60')}</option>
               </select>
             </div>
 
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">Theme</span>
+                <span className="setting-label">{t('settings.session.theme')}</span>
                 <span className="setting-description">
-                  Choose your preferred color scheme
+                  {t('settings.session.themeDescription')}
                 </span>
               </div>
               <select
@@ -324,17 +370,17 @@ export function SettingsPage() {
                 }
                 data-testid="theme-select"
               >
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-                <option value="system">System</option>
+                <option value="dark">{t('settings.session.themeDark')}</option>
+                <option value="light">{t('settings.session.themeLight')}</option>
+                <option value="system">{t('settings.session.themeSystem')}</option>
               </select>
             </div>
 
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">Thumbnail Quality</span>
+                <span className="setting-label">{t('settings.session.thumbnailQuality')}</span>
                 <span className="setting-description">
-                  Higher quality uses more storage
+                  {t('settings.session.thumbnailQualityDescription')}
                 </span>
               </div>
               <select
@@ -348,17 +394,17 @@ export function SettingsPage() {
                 }
                 data-testid="thumbnail-quality-select"
               >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
+                <option value="low">{t('settings.session.qualityLow')}</option>
+                <option value="medium">{t('settings.session.qualityMedium')}</option>
+                <option value="high">{t('settings.session.qualityHigh')}</option>
               </select>
             </div>
 
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">Auto Sync</span>
+                <span className="setting-label">{t('settings.session.autoSync')}</span>
                 <span className="setting-description">
-                  Automatically sync albums in background
+                  {t('settings.session.autoSyncDescription')}
                 </span>
               </div>
               <label className="toggle-switch">
@@ -376,9 +422,9 @@ export function SettingsPage() {
 
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">Remember Session</span>
+                <span className="setting-label">{t('settings.session.rememberSession')}</span>
                 <span className="setting-description">
-                  Keep encryption keys cached to avoid password entry on page reload
+                  {t('settings.session.rememberSessionDescription')}
                 </span>
               </div>
               <select
@@ -392,12 +438,12 @@ export function SettingsPage() {
                 }
                 data-testid="key-cache-duration-select"
               >
-                <option value={0}>Off (always ask for password)</option>
-                <option value={15}>15 minutes</option>
-                <option value={30}>30 minutes</option>
-                <option value={60}>1 hour</option>
-                <option value={240}>4 hours</option>
-                <option value={-1}>Until tab is closed</option>
+                <option value={0}>{t('settings.session.cacheOff')}</option>
+                <option value={15}>{t('settings.session.cache15min')}</option>
+                <option value={30}>{t('settings.session.cache30min')}</option>
+                <option value={60}>{t('settings.session.cache1hour')}</option>
+                <option value={240}>{t('settings.session.cache4hours')}</option>
+                <option value={-1}>{t('settings.session.cacheUntilClose')}</option>
               </select>
             </div>
 
@@ -407,7 +453,7 @@ export function SettingsPage() {
                 onClick={handleResetSettings}
                 type="button"
               >
-                Reset to Defaults
+                {t('settings.resetToDefaults')}
               </button>
               <button
                 className="button-primary"
@@ -415,7 +461,7 @@ export function SettingsPage() {
                 disabled={isSaving}
                 type="button"
               >
-                {isSaving ? 'Saving...' : 'Save Settings'}
+                {isSaving ? t('common.saving') : t('settings.saveSettings')}
               </button>
             </div>
             {saveMessage && (
@@ -432,17 +478,17 @@ export function SettingsPage() {
 
         {/* Security Section */}
         <section className="settings-section" data-testid="security-section">
-          <h2 className="section-title">Security</h2>
+          <h2 className="section-title">{t('settings.security.title')}</h2>
           <div className="settings-card">
             <div className="info-row">
-              <span className="info-label">Last Login</span>
-              <span className="info-value">This session</span>
+              <span className="info-label">{t('settings.security.lastLogin')}</span>
+              <span className="info-value">{t('settings.security.thisSession')}</span>
             </div>
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">Clear Local Data</span>
+                <span className="setting-label">{t('settings.security.clearLocalData')}</span>
                 <span className="setting-description">
-                  Delete cached photos, keys, and database. You will be logged out.
+                  {t('settings.security.clearLocalDataDescription')}
                 </span>
               </div>
               <button
@@ -451,7 +497,7 @@ export function SettingsPage() {
                 type="button"
                 data-testid="clear-data-button"
               >
-                Clear Data
+                {t('settings.security.clearData')}
               </button>
             </div>
             {clearError && (
@@ -465,28 +511,26 @@ export function SettingsPage() {
 
         {/* About Section */}
         <section className="settings-section" data-testid="about-section">
-          <h2 className="section-title">About</h2>
+          <h2 className="section-title">{t('settings.about.title')}</h2>
           <div className="settings-card">
             <div className="info-row">
-              <span className="info-label">Version</span>
+              <span className="info-label">{t('settings.about.version')}</span>
               <span className="info-value">1.0.0</span>
             </div>
             <div className="info-row">
-              <span className="info-label">Documentation</span>
+              <span className="info-label">{t('settings.about.documentation')}</span>
               <a
                 href="https://github.com/mosaic/mosaic"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="info-link"
               >
-                View on GitHub
+                {t('settings.about.viewOnGithub')}
               </a>
             </div>
             <div className="about-description">
               <p>
-                Mosaic is a zero-knowledge encrypted photo gallery. Your photos
-                are encrypted client-side before being uploaded—the server never
-                sees your plaintext data.
+                {t('settings.about.description')}
               </p>
             </div>
           </div>
@@ -509,19 +553,19 @@ export function SettingsPage() {
           >
             <div className="dialog-form">
               <h3 className="dialog-title" id="clear-dialog-title">
-                Clear Local Data?
+                {t('settings.clearDataDialog.title')}
               </h3>
               <p className="dialog-description">
-                This will permanently delete all cached data including:
+                {t('settings.clearDataDialog.description')}
               </p>
               <ul className="clear-data-list">
-                <li>Photo thumbnails and cache</li>
-                <li>Local SQLite database</li>
-                <li>Epoch key cache</li>
-                <li>Session data</li>
+                <li>{t('settings.clearDataDialog.item1')}</li>
+                <li>{t('settings.clearDataDialog.item2')}</li>
+                <li>{t('settings.clearDataDialog.item3')}</li>
+                <li>{t('settings.clearDataDialog.item4')}</li>
               </ul>
               <p className="dialog-description">
-                You will be logged out and will need to re-sync your albums.
+                {t('settings.clearDataDialog.warning')}
               </p>
               <div className="dialog-actions">
                 <button
@@ -530,7 +574,7 @@ export function SettingsPage() {
                   disabled={isClearing}
                   type="button"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   className="button-danger"
@@ -539,7 +583,7 @@ export function SettingsPage() {
                   type="button"
                   data-testid="confirm-clear-button"
                 >
-                  {isClearing ? 'Clearing...' : 'Clear Data'}
+                  {isClearing ? t('common.clearing') : t('settings.security.clearData')}
                 </button>
               </div>
             </div>

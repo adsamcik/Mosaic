@@ -131,7 +131,8 @@ describe('SettingsPage', () => {
     });
 
     const title = container.querySelector('.settings-title');
-    expect(title?.textContent).toBe('Settings');
+    // With i18n mock, the translation key is returned
+    expect(title?.textContent).toBe('settings.title');
   });
 
   it('renders all settings sections', async () => {
@@ -322,7 +323,8 @@ describe('SettingsPage', () => {
       });
 
       const saveButton = container.querySelector('.button-primary');
-      expect(saveButton?.textContent).toContain('Save');
+      // With i18n mock, the translation key is returned
+      expect(saveButton?.textContent).toContain('settings.saveSettings');
     });
 
     it('shows reset button', async () => {
@@ -331,8 +333,9 @@ describe('SettingsPage', () => {
       });
 
       const buttons = container.querySelectorAll('.button-secondary');
+      // With i18n mock, the translation key is returned
       const resetButton = Array.from(buttons).find((b) =>
-        b.textContent?.includes('Reset')
+        b.textContent?.includes('settings.resetToDefaults')
       );
       expect(resetButton).toBeTruthy();
     });
@@ -346,7 +349,8 @@ describe('SettingsPage', () => {
 
       const clearButton = container.querySelector('[data-testid="clear-data-button"]');
       expect(clearButton).toBeTruthy();
-      expect(clearButton?.textContent).toContain('Clear Data');
+      // With i18n mock, the translation key is returned
+      expect(clearButton?.textContent).toContain('settings.security.clearData');
     });
 
     it('shows confirmation dialog when clear data is clicked', async () => {
@@ -418,8 +422,8 @@ describe('SettingsPage', () => {
       });
 
       const aboutSection = container.querySelector('[data-testid="about-section"]');
-      expect(aboutSection?.textContent).toContain('zero-knowledge');
-      expect(aboutSection?.textContent).toContain('encrypted');
+      // With i18n mock, the translation key is returned instead of actual text
+      expect(aboutSection?.textContent).toContain('settings.about.description');
     });
   });
 
