@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dialog } from '../Shared/Dialog';
 
 interface CreateAlbumDialogProps {
@@ -27,6 +28,7 @@ export function CreateAlbumDialog({
   isCreating,
   error,
 }: CreateAlbumDialogProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,12 +68,12 @@ export function CreateAlbumDialog({
 
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setLocalError('Album name is required');
+      setLocalError(t('album.create.error.nameRequired'));
       return;
     }
 
     if (trimmedName.length > 100) {
-      setLocalError('Album name must be 100 characters or less');
+      setLocalError(t('album.create.error.nameTooLong'));
       return;
     }
 
@@ -100,7 +102,7 @@ export function CreateAlbumDialog({
         className="button-secondary"
         data-testid="cancel-button"
       >
-        Cancel
+        {t('common.cancel')}
       </button>
       <button
         type="submit"
@@ -109,7 +111,7 @@ export function CreateAlbumDialog({
         className="button-primary"
         data-testid="create-button"
       >
-        {isCreating ? 'Creating...' : 'Create Album'}
+        {isCreating ? t('album.create.creating') : t('album.create.submit')}
       </button>
     </>
   );
@@ -118,8 +120,8 @@ export function CreateAlbumDialog({
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title="Create Album"
-      description="Album names are encrypted - only you and invited members can see them."
+      title={t('album.create.title')}
+      description={t('album.create.description')}
       footer={footer}
       testId="create-album-dialog"
       closeOnBackdropClick={!isCreating}
@@ -127,7 +129,7 @@ export function CreateAlbumDialog({
       <form onSubmit={handleSubmit} className="dialog-form" id="create-album-form">
         <div className="form-group">
           <label htmlFor="album-name" className="form-label">
-            Album Name
+            {t('album.create.nameLabel')}
           </label>
           <input
             ref={inputRef}
@@ -135,7 +137,7 @@ export function CreateAlbumDialog({
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="My Photos"
+            placeholder={t('album.create.namePlaceholder')}
             disabled={isCreating}
             className="form-input"
             autoComplete="off"

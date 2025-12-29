@@ -75,14 +75,14 @@ describe('CreateAlbumDialog', () => {
       const { getByTestId, getByText, cleanup } = renderDialog();
 
       expect(getByTestId('create-album-dialog')).not.toBeNull();
-      expect(getByText('Create Album')).not.toBeNull();
+      expect(getByText('album.create.title')).not.toBeNull();
       cleanup();
     });
 
     it('renders description about encryption', () => {
       const { getByText, cleanup } = renderDialog();
 
-      expect(getByText('Album names are encrypted')).not.toBeNull();
+      expect(getByText('album.create.description')).not.toBeNull();
       cleanup();
     });
 
@@ -134,7 +134,7 @@ describe('CreateAlbumDialog', () => {
       const cancelButton = getByTestId('cancel-button') as HTMLButtonElement;
       const input = getByTestId('album-name-input') as HTMLInputElement;
 
-      expect(button.textContent).toContain('Creating...');
+      expect(button.textContent).toContain('album.create.creating');
       expect(button.disabled).toBe(true);
       expect(cancelButton.disabled).toBe(true);
       expect(input.disabled).toBe(true);

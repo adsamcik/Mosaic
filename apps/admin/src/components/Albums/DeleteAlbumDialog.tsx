@@ -5,6 +5,7 @@
  * Shows album name and warning about permanent deletion.
  */
 
+import { useTranslation } from 'react-i18next';
 import { Dialog } from '../Shared/Dialog';
 
 export interface DeleteAlbumDialogProps {
@@ -36,7 +37,8 @@ export function DeleteAlbumDialog({
   onCancel,
   error,
 }: DeleteAlbumDialogProps) {
-  
+  const { t } = useTranslation();
+
   const footer = (
     <>
       <button
@@ -46,7 +48,7 @@ export function DeleteAlbumDialog({
         disabled={isDeleting}
         data-testid="delete-album-cancel-button"
       >
-        Cancel
+        {t('common.cancel')}
       </button>
       <button
         type="submit"
@@ -58,10 +60,10 @@ export function DeleteAlbumDialog({
         {isDeleting ? (
           <>
             <span className="button-spinner" />
-            Deleting...
+            {t('common.deleting')}
           </>
         ) : (
-          'Delete Album'
+          t('album.delete.confirm')
         )}
       </button>
     </>
@@ -78,22 +80,22 @@ export function DeleteAlbumDialog({
     <Dialog
       isOpen={true} // Controlled by parent rendering this component
       onClose={onCancel}
-      title="Delete album?"
+      title={t('album.delete.title')}
       footer={footer}
       testId="delete-album-dialog"
       closeOnBackdropClick={!isDeleting}
     >
       <form id="delete-album-form" className="dialog-form" onSubmit={handleSubmit}>
         <p className="dialog-description delete-warning">
-          ⚠️ This action is permanent and cannot be undone.
+          {t('common.permanentAction')}
         </p>
 
         <div className="delete-album-info" data-testid="delete-album-info">
           <p className="album-name-display">
-            <strong>Album:</strong> {albumName}
+            <strong>{t('album.title')}:</strong> {albumName}
           </p>
           <p className="photo-count-display">
-            <strong>Photos:</strong> {photoCount} {photoCount === 1 ? 'photo' : 'photos'} will be permanently deleted.
+            {t('album.delete.photoCount', { count: photoCount })}
           </p>
         </div>
 
