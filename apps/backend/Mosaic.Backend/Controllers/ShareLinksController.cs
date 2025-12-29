@@ -70,6 +70,10 @@ public class LinkAccessResponse
     public Guid AlbumId { get; set; }
     public int AccessTier { get; set; }
     public int EpochCount { get; set; }
+    /// <summary>
+    /// Base64-encoded encrypted album name (can be decrypted with tier key)
+    /// </summary>
+    public string? EncryptedName { get; set; }
 }
 
 /// <summary>
@@ -617,6 +621,7 @@ public class ShareLinksController : ControllerBase
         }
 
         var shareLink = await _db.ShareLinks
+            .Include(sl => sl.Album)
             .Include(sl => sl.LinkEpochKeys)
             .FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
 
@@ -651,7 +656,8 @@ public class ShareLinksController : ControllerBase
         {
             AlbumId = shareLink.AlbumId,
             AccessTier = shareLink.AccessTier,
-            EpochCount = shareLink.LinkEpochKeys.Select(k => k.EpochId).Distinct().Count()
+            EpochCount = shareLink.LinkEpochKeys.Select(k => k.EpochId).Distinct().Count(),
+            EncryptedName = shareLink.Album.EncryptedName
         });
     }
 

@@ -35,6 +35,8 @@ export interface LinkKeyState {
   accessTier: AccessTierType | null;
   /** Album ID this link accesses */
   albumId: string | null;
+  /** Encrypted album name (base64) */
+  encryptedName: string | null;
   /** Unwrapped tier keys by epoch */
   tierKeys: Map<number, Map<AccessTierType, TierKey>>;
   /** Whether the link is valid */
@@ -55,6 +57,7 @@ export interface LinkAccessResponse {
   albumId: string;
   accessTier: AccessTierType;
   epochCount: number;
+  encryptedName?: string | null;
 }
 
 /** IndexedDB database name for link keys */
@@ -241,6 +244,7 @@ export function useLinkKeys(
     linkId: null,
     accessTier: null,
     albumId: null,
+    encryptedName: null,
     tierKeys: new Map(),
     isValid: false,
   });
@@ -298,6 +302,7 @@ export function useLinkKeys(
           linkId,
           accessTier: cached.accessTier,
           albumId: cached.albumId,
+          encryptedName: null,
           tierKeys: cached.tierKeys,
           isValid: true,
         });
@@ -358,6 +363,7 @@ export function useLinkKeys(
         linkId,
         accessTier: linkAccess.accessTier,
         albumId: linkAccess.albumId,
+        encryptedName: linkAccess.encryptedName ?? null,
         tierKeys,
         isValid: true,
       });
