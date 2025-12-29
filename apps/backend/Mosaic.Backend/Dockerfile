@@ -19,6 +19,14 @@ RUN dotnet publish -c Release -o /app/publish --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
+# OCI Image Labels (overwritten by docker/metadata-action in CI)
+LABEL org.opencontainers.image.title="Mosaic Backend" \
+      org.opencontainers.image.description="Zero-knowledge encrypted photo gallery backend API" \
+      org.opencontainers.image.url="https://github.com/eivindholvik/Mosaic" \
+      org.opencontainers.image.source="https://github.com/eivindholvik/Mosaic" \
+      org.opencontainers.image.vendor="Mosaic Contributors" \
+      org.opencontainers.image.licenses="MIT"
+
 # Install curl for health checks
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 

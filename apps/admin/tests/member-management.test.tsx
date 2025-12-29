@@ -323,7 +323,7 @@ describe('InviteMemberDialog', () => {
       const onClose = vi.fn();
       const { getByTestId, cleanup } = renderInviteDialog({ onClose });
 
-      const backdrop = getByTestId('invite-dialog-backdrop') as HTMLElement;
+      const backdrop = getByTestId('invite-member-dialog-backdrop') as HTMLElement;
       act(() => {
         backdrop.click();
       });
@@ -336,7 +336,7 @@ describe('InviteMemberDialog', () => {
       const onClose = vi.fn();
       const { getByTestId, cleanup } = renderInviteDialog({ onClose, isInviting: true });
 
-      const backdrop = getByTestId('invite-dialog-backdrop') as HTMLElement;
+      const backdrop = getByTestId('invite-member-dialog-backdrop') as HTMLElement;
       act(() => {
         backdrop.click();
       });
@@ -359,7 +359,7 @@ describe('InviteMemberDialog', () => {
       const { getByTestId, cleanup } = renderInviteDialog();
 
       const dialog = getByTestId('invite-member-dialog') as HTMLElement;
-      expect(dialog.getAttribute('aria-labelledby')).toBe('invite-member-title');
+      expect(dialog.getAttribute('aria-labelledby')).toBe('invite-member-dialog-title');
       cleanup();
     });
 

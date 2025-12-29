@@ -46,7 +46,7 @@ export function SharedPhotoGrid({
   getTierKey,
   isLoadingKeys = false,
 }: SharedPhotoGridProps) {
-  const parentRef = useRef<HTMLDivElement>(null);
+  const parentRef = useRef<HTMLDivElement | null>(null);
   
   // Lightbox state
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
