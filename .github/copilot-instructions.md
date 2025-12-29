@@ -43,9 +43,38 @@ Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal 
 |------|---------|
 | `.github/agents.md` | Specialized agent personas (@security-agent, @test-agent, etc.) |
 | `.github/.copilotignore` | Files excluded from Copilot context for security and hygiene |
+| `docs/FEATURES.md` | Living catalog of all implemented features |
+| `docs/INSTRUCTION_TREE.md` | Meta-documentation of the instruction hierarchy |
 | `apps/backend/.instructions.md` | Backend-specific (.NET 10) scoped instructions |
 | `apps/admin/.instructions.md` | Frontend-specific (React 19) scoped instructions |
+| `apps/admin/src/components/.instructions.md` | React component patterns |
+| `apps/admin/src/hooks/.instructions.md` | Custom React hook patterns |
+| `apps/admin/src/workers/.instructions.md` | Web Worker patterns (crypto, db, geo) |
 | `libs/crypto/.instructions.md` | Crypto library scoped instructions |
+
+---
+
+## Instruction Tree Overview
+
+Mosaic uses a hierarchical instruction system. Read the appropriate level based on your task:
+
+```
+Level 1: .github/copilot-instructions.md    ← You are here (always read)
+         │
+Level 2: ├── apps/backend/.instructions.md  ← Backend tasks
+         ├── apps/admin/.instructions.md    ← Frontend tasks
+         └── libs/crypto/.instructions.md   ← Crypto tasks
+                   │
+Level 3:           ├── src/components/.instructions.md  ← Component work
+                   ├── src/hooks/.instructions.md       ← Hook development
+                   └── src/workers/.instructions.md     ← Worker operations
+```
+
+**Discovery Protocol:** When working in an unfamiliar area:
+1. Read this file (Level 1)
+2. Check `docs/FEATURES.md` for existing implementations
+3. Read the relevant scoped `.instructions.md` for that directory
+4. Check for sub-directory instructions if available
 
 ---
 
@@ -315,9 +344,47 @@ If a task has multiple parts, complete ALL parts before responding. Do not ask p
 - [ ] E2E tests added if UI changes
 - [ ] Tests executed locally with output reported (e.g., "23 passed, 94% coverage")
 - [ ] No TypeScript/C#/ESLint errors or warnings
+- [ ] **Feature documented in `docs/FEATURES.md`** (if new user-facing feature)
 - [ ] Committed with conventional format: `type(scope): description`
 
 This applies equally to quick fixes, new features, and refactors. No exceptions.
+
+### Feature Documentation Requirement
+
+**Every new user-facing feature MUST be documented in `docs/FEATURES.md`.**
+
+When to document:
+- New feature implemented (add new section)
+- Existing feature behavior changed (update section + add changelog entry)
+- Feature removed (remove section + add changelog entry)
+
+Use this template:
+```markdown
+### Feature Name
+
+**Purpose:** One-sentence description.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Backend | [path/to/file](../relative/path) |
+| Frontend | [path/to/file](../relative/path) |
+
+**Features:**
+- Capability 1
+- Capability 2
+
+**Tests:**
+- Backend: `path/to/tests/`
+- Frontend: `path/to/tests/`
+```
+
+Add a changelog entry at the bottom of `docs/FEATURES.md`:
+```markdown
+| Date | Feature | Action | Notes |
+|------|---------|--------|-------|
+| YYYY-MM-DD | Feature Name | Added/Modified/Removed | Brief description |
+```
 
 ### Self-Correction Audit
 
