@@ -291,6 +291,10 @@ export class LoginPage {
     return this.page.getByTestId('login-form');
   }
 
+  get usernameInput() {
+    return this.page.getByLabel('Username');
+  }
+
   get passwordInput() {
     return this.page.getByLabel('Password');
   }
@@ -303,7 +307,20 @@ export class LoginPage {
     return this.page.getByRole('alert');
   }
 
-  async login(password: string) {
+  /**
+   * Login with username and password.
+   * If username is provided, clears the default 'dev' username and enters the new one.
+   * This is required for LocalAuth mode where each test needs a unique username.
+   */
+  async login(password: string, username?: string) {
+    // If username provided, fill it in (LocalAuth mode)
+    if (username) {
+      const usernameField = this.usernameInput;
+      if (await usernameField.isVisible().catch(() => false)) {
+        await usernameField.clear();
+        await usernameField.fill(username);
+      }
+    }
     await this.passwordInput.fill(password);
     await this.loginButton.click();
   }

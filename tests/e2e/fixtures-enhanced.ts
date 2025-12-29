@@ -24,6 +24,7 @@ import {
   Lightbox,
   MembersPanel,
   InviteMemberDialog,
+  RemoveMemberDialog,
   SettingsPage,
   DeleteConfirmDialog,
   DeleteAlbumDialog,

@@ -51,10 +51,10 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload', () => {
 
       await page.goto('/');
 
-      // Complete login through browser UI
+      // Complete login through browser UI with unique username
       const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
 
       const appShell = new AppShell(page);
@@ -103,7 +103,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload', () => {
       
       if (needsLogin) {
         console.log('[TEST] Re-login required after reload');
-        await loginPage.login(TEST_CONSTANTS.PASSWORD);
+        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
         await loginPage.expectLoginSuccess();
       } else {
         console.log('[TEST] Session persisted, no re-login needed');
@@ -200,7 +200,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload', () => {
 
       const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
 
       const appShell = new AppShell(page);
@@ -220,7 +220,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload', () => {
 
       console.log('[TEST] Phase 3: Re-logging in');
 
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
       await appShell.waitForLoad();
 
@@ -303,7 +303,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload', () => {
 
       const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
 
       const appShell = new AppShell(page);
@@ -320,7 +320,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload', () => {
       await appShell.logout();
       await loginPage.expectLoginFormVisible();
 
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
 
       await page.waitForTimeout(2000);
@@ -331,6 +331,161 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload', () => {
       // On subsequent login, we should NOT store a new wrapped key
       expect(wrappedKeyStored).toBe(false);
       console.log('[TEST] SUCCESS: No new wrapped key stored on subsequent login (key reused)');
+
+    } catch (error) {
+      console.error('=== BROWSER CONSOLE LOGS ===');
+      console.error(logCollector.getFormattedLogs());
+      console.error('=== BACKEND LOGS ===');
+      console.error(LogCollector.fetchBackendLogs());
+      throw error;
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('P0-IDENTITY-STRESS: multiple uploads remain accessible across page reloads', async ({
+    browser,
+    testUser,
+  }) => {
+    /**
+     * Stress test that validates identity persistence under realistic conditions:
+     * 1. Upload multiple photos (3) in one session
+     * 2. Reload page and re-authenticate
+     * 3. Upload more photos (2)
+     * 4. Reload again and verify ALL photos are accessible
+     *
+     * This catches edge cases where:
+     * - Epoch key rotation during upload causes issues
+     * - Multiple shards with same epoch aren't properly tracked
+     * - Session state leaks between uploads
+     */
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    const logCollector = new LogCollector(page);
+
+    // Set up Remote-User header injection
+    await page.route('**/api/**', async (route) => {
+      const headers = {
+        ...route.request().headers(),
+        'Remote-User': testUser,
+      };
+      await route.continue({ headers });
+    });
+
+    try {
+      // ========== PHASE 1: First session - upload 3 photos ==========
+      console.log('[TEST] Phase 1: First session - uploading 3 photos');
+
+      await page.goto('/');
+
+      const loginPage = new LoginPage(page);
+      await loginPage.waitForForm();
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+      await loginPage.expectLoginSuccess();
+
+      const appShell = new AppShell(page);
+      await appShell.waitForLoad();
+
+      // Create album
+      await appShell.createAlbum();
+      const createDialog = new CreateAlbumDialogPage(page);
+      await createDialog.createAlbum('Stress Test Album');
+
+      const albumCard = page.getByTestId('album-card').first();
+      await expect(albumCard).toBeVisible({ timeout: 30000 });
+      await albumCard.click();
+
+      const gallery = new GalleryPage(page);
+      await gallery.waitForLoad();
+
+      // Upload 3 photos sequentially
+      for (let i = 1; i <= 3; i++) {
+        const testImage = generateTestImage();
+        await gallery.uploadPhoto(testImage, `stress-photo-${i}.png`);
+        console.log(`[TEST] Uploaded photo ${i}/3`);
+        // Wait for upload to complete
+        await page.waitForTimeout(1000);
+      }
+
+      // Wait for all photos to appear
+      await expect(gallery.photos.nth(2)).toBeVisible({ timeout: 60000 });
+      const countAfterFirstSession = await gallery.photos.count();
+      expect(countAfterFirstSession).toBe(3);
+
+      console.log(`[TEST] First session complete: ${countAfterFirstSession} photos`);
+
+      // ========== PHASE 2: Reload and upload 2 more ==========
+      console.log('[TEST] Phase 2: Reloading and uploading 2 more photos');
+
+      await page.reload({ waitUntil: 'networkidle' });
+
+      // Re-login if needed
+      const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
+      if (needsLogin) {
+        console.log('[TEST] Re-login required after reload');
+        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+        await loginPage.expectLoginSuccess();
+      }
+
+      // Navigate back to album
+      const appShellVisible = await appShell.shell.isVisible().catch(() => false);
+      if (appShellVisible) {
+        const card = page.getByTestId('album-card').first();
+        await expect(card).toBeVisible({ timeout: 30000 });
+        await card.click();
+      }
+
+      await gallery.waitForLoad();
+
+      // Verify existing photos are still visible
+      await expect(gallery.photos.nth(2)).toBeVisible({ timeout: 60000 });
+
+      // Upload 2 more photos
+      for (let i = 4; i <= 5; i++) {
+        const testImage = generateTestImage();
+        await gallery.uploadPhoto(testImage, `stress-photo-${i}.png`);
+        console.log(`[TEST] Uploaded photo ${i}/5`);
+        await page.waitForTimeout(1000);
+      }
+
+      // Wait for all 5 photos
+      await expect(gallery.photos.nth(4)).toBeVisible({ timeout: 60000 });
+      const countAfterSecondSession = await gallery.photos.count();
+      expect(countAfterSecondSession).toBe(5);
+
+      console.log(`[TEST] Second session complete: ${countAfterSecondSession} photos`);
+
+      // ========== PHASE 3: Final reload and verify all photos ==========
+      console.log('[TEST] Phase 3: Final reload and verification');
+
+      await page.reload({ waitUntil: 'networkidle' });
+
+      // Re-login if needed
+      const needsLoginFinal = await loginPage.loginForm.isVisible().catch(() => false);
+      if (needsLoginFinal) {
+        console.log('[TEST] Re-login required for final verification');
+        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+        await loginPage.expectLoginSuccess();
+      }
+
+      // Navigate back to album
+      const appShellVisibleFinal = await appShell.shell.isVisible().catch(() => false);
+      if (appShellVisibleFinal) {
+        const card = page.getByTestId('album-card').first();
+        await expect(card).toBeVisible({ timeout: 30000 });
+        await card.click();
+      }
+
+      await gallery.waitForLoad();
+
+      // THE CRITICAL CHECK: All 5 photos must be accessible
+      await expect(gallery.photos.nth(4)).toBeVisible({ timeout: 60000 });
+      const finalCount = await gallery.photos.count();
+      expect(finalCount).toBe(5);
+
+      console.log(`[TEST] SUCCESS: All ${finalCount} photos accessible after multiple reloads`);
 
     } catch (error) {
       console.error('=== BROWSER CONSOLE LOGS ===');

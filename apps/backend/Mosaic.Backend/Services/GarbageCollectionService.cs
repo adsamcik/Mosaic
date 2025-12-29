@@ -131,17 +131,24 @@ public class GarbageCollectionService : BackgroundService
         var deletedCount = 0;
         
         // Process expired albums in batches of 10
+        // Note: SQLite doesn't support DateTimeOffset in WHERE or ORDER BY clauses,
+        // so we load albums with expiration dates and filter/sort client-side.
+        // This is acceptable for garbage collection on small datasets.
         while (true)
         {
-            // Use .Value comparison to help EF Core translate nullable DateTimeOffset correctly
-            var expiredAlbums = await db.Albums
-                .Where(a => a.ExpiresAt.HasValue && a.ExpiresAt.Value <= now)
+            // Load albums with expiration dates and filter/sort client-side for SQLite compatibility
+            var expiredAlbums = (await db.Albums
+                .Where(a => a.ExpiresAt != null)
+                .ToListAsync())
+                .Where(a => a.ExpiresAt <= now)
                 .OrderBy(a => a.ExpiresAt)
                 .Take(10)
-                .ToListAsync();
+                .ToList();
 
             if (expiredAlbums.Count == 0)
+            {
                 break;
+            }
 
             foreach (var album in expiredAlbums)
             {
@@ -193,16 +200,23 @@ public class GarbageCollectionService : BackgroundService
         var totalDeleted = 0;
 
         // Delete share links that expired 30+ days ago in batches
+        // Note: SQLite doesn't support DateTimeOffset in WHERE or ORDER BY clauses,
+        // so we load share links with expiration dates and filter/sort client-side.
         while (true)
         {
-            var longExpiredLinks = await db.ShareLinks
-                .Where(sl => sl.ExpiresAt.HasValue && sl.ExpiresAt.Value <= thirtyDaysAgo)
+            // Load share links with expiration dates and filter/sort client-side for SQLite compatibility
+            var longExpiredLinks = (await db.ShareLinks
+                .Where(sl => sl.ExpiresAt != null)
+                .ToListAsync())
+                .Where(sl => sl.ExpiresAt <= thirtyDaysAgo)
                 .OrderBy(sl => sl.ExpiresAt)
                 .Take(100)
-                .ToListAsync();
+                .ToList();
 
             if (longExpiredLinks.Count == 0)
+            {
                 break;
+            }
 
             db.ShareLinks.RemoveRange(longExpiredLinks);
             await db.SaveChangesAsync();

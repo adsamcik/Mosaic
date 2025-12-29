@@ -486,6 +486,74 @@ export class MembersPanel {
       this.page.getByTestId('member-item').filter({ hasText: userId })
     ).toBeHidden({ timeout: 5000 });
   }
+
+  /**
+   * Remove a member and confirm the action
+   * @param userIdOrDisplayName - User ID or display name to identify the member
+   */
+  async removeMemberWithConfirmation(userIdOrDisplayName: string): Promise<void> {
+    // Click the remove button for this member
+    await this.removeMember(userIdOrDisplayName);
+
+    // Wait for and interact with the confirmation dialog
+    const removeDialog = new RemoveMemberDialog(this.page);
+    await removeDialog.waitForOpen();
+    await removeDialog.confirm();
+  }
+}
+
+/**
+ * Remove Member Dialog Page Object
+ * Handles the confirmation dialog when removing a member from an album.
+ * Note: This dialog also shows key rotation progress.
+ */
+export class RemoveMemberDialog {
+  readonly page: Page;
+  readonly dialog: Locator;
+  readonly confirmButton: Locator;
+  readonly cancelButton: Locator;
+  readonly progressIndicator: Locator;
+  readonly errorMessage: Locator;
+
+  constructor(page: Page) {
+    this.page = page;
+    this.dialog = page.getByTestId('remove-member-dialog');
+    this.confirmButton = page.getByTestId('confirm-remove-button');
+    this.cancelButton = page.getByTestId('cancel-remove-button');
+    this.progressIndicator = page.getByTestId('removal-progress');
+    this.errorMessage = page.getByTestId('remove-error');
+  }
+
+  async waitForOpen(timeout = 10000): Promise<void> {
+    await expect(this.dialog).toBeVisible({ timeout });
+  }
+
+  async waitForClose(timeout = 30000): Promise<void> {
+    // Longer timeout because key rotation can take time
+    await expect(this.dialog).toBeHidden({ timeout });
+  }
+
+  async confirm(): Promise<void> {
+    await this.confirmButton.click();
+    // Wait for progress to complete and dialog to close
+    await this.waitForClose();
+  }
+
+  async cancel(): Promise<void> {
+    await this.cancelButton.click();
+    await this.waitForClose();
+  }
+
+  async expectProgress(): Promise<void> {
+    await expect(this.progressIndicator).toBeVisible({ timeout: 5000 });
+  }
+
+  async expectError(message?: string | RegExp): Promise<void> {
+    await expect(this.errorMessage).toBeVisible({ timeout: 5000 });
+    if (message) {
+      await expect(this.errorMessage).toHaveText(message);
+    }
+  }
 }
 
 /**
@@ -683,6 +751,161 @@ export class DeleteAlbumDialog {
 
   async expectAlbumInfo(albumName: string): Promise<void> {
     await expect(this.albumInfo).toContainText(albumName);
+  }
+}
+
+/**
+ * Share Links Panel Page Object
+ */
+export class ShareLinksPanel {
+  readonly page: Page;
+  readonly panel: Locator;
+  readonly closeButton: Locator;
+  readonly createButton: Locator;
+  readonly linksList: Locator;
+  readonly emptyState: Locator;
+  readonly errorState: Locator;
+  readonly loadingState: Locator;
+
+  constructor(page: Page) {
+    this.page = page;
+    this.panel = page.getByTestId('share-links-panel');
+    this.closeButton = page.getByTestId('close-share-links-button');
+    this.createButton = page.getByTestId('create-share-link-button');
+    this.linksList = page.getByTestId('active-share-links');
+    this.emptyState = page.getByTestId('share-links-empty');
+    this.errorState = page.getByTestId('share-links-error');
+    this.loadingState = page.getByTestId('share-links-loading');
+  }
+
+  async waitForOpen(timeout = 10000): Promise<void> {
+    await expect(this.panel).toBeVisible({ timeout });
+  }
+
+  async waitForClose(timeout = 10000): Promise<void> {
+    await expect(this.panel).toBeHidden({ timeout });
+  }
+
+  async close(): Promise<void> {
+    await this.closeButton.click();
+    await this.waitForClose();
+  }
+
+  async openCreateDialog(): Promise<void> {
+    await this.createButton.click();
+  }
+
+  async getLinkItems(): Promise<Locator[]> {
+    return this.page.getByTestId('share-link-item').all();
+  }
+
+  async getLinkCount(): Promise<number> {
+    return (await this.getLinkItems()).length;
+  }
+
+  async copyLink(index: number): Promise<void> {
+    const links = await this.getLinkItems();
+    if (links[index]) {
+      await links[index].getByTestId('copy-link-button').click();
+    }
+  }
+
+  async revokeLink(index: number): Promise<void> {
+    const links = await this.getLinkItems();
+    if (links[index]) {
+      await links[index].getByTestId('revoke-link-button').click();
+    }
+  }
+
+  async editLink(index: number): Promise<void> {
+    const links = await this.getLinkItems();
+    if (links[index]) {
+      await links[index].getByTestId('edit-link-button').click();
+    }
+  }
+}
+
+/**
+ * Create Share Link Dialog Page Object
+ */
+export class CreateShareLinkDialog {
+  readonly page: Page;
+  readonly dialog: Locator;
+  readonly tierSelector: Locator;
+  readonly expiryPresets: Locator;
+  readonly maxUsesCheckbox: Locator;
+  readonly maxUsesInput: Locator;
+  readonly generateButton: Locator;
+  readonly cancelButton: Locator;
+  readonly errorMessage: Locator;
+  readonly urlInput: Locator;
+  readonly copyButton: Locator;
+  readonly doneButton: Locator;
+  readonly neverExpiresWarning: Locator;
+
+  constructor(page: Page) {
+    this.page = page;
+    this.dialog = page.getByTestId('share-link-dialog');
+    this.tierSelector = page.getByTestId('tier-selector');
+    this.expiryPresets = page.getByTestId('expiry-presets');
+    this.maxUsesCheckbox = page.getByTestId('max-uses-checkbox');
+    this.maxUsesInput = page.getByTestId('max-uses-input');
+    this.generateButton = page.getByTestId('generate-button');
+    this.cancelButton = page.getByTestId('cancel-button');
+    this.errorMessage = page.getByTestId('share-link-error');
+    this.urlInput = page.getByTestId('share-url-input');
+    this.copyButton = page.getByTestId('copy-link-button');
+    this.doneButton = page.getByTestId('done-button');
+    this.neverExpiresWarning = page.getByTestId('never-expires-warning');
+  }
+
+  async waitForOpen(timeout = 10000): Promise<void> {
+    await expect(this.dialog).toBeVisible({ timeout });
+  }
+
+  async waitForClose(timeout = 10000): Promise<void> {
+    await expect(this.dialog).toBeHidden({ timeout });
+  }
+
+  async selectTier(tier: 'view' | 'download'): Promise<void> {
+    const tierButton = this.tierSelector.locator(`[data-tier="${tier}"], button:has-text("${tier}")`);
+    await tierButton.first().click();
+  }
+
+  async selectExpiry(preset: string): Promise<void> {
+    const presetButton = this.page.getByTestId(`expiry-preset-${preset.toLowerCase().replace(/\s/g, '-')}`);
+    await presetButton.click();
+  }
+
+  async setMaxUses(uses: number): Promise<void> {
+    await this.maxUsesCheckbox.check();
+    await this.maxUsesInput.fill(uses.toString());
+  }
+
+  async generate(): Promise<void> {
+    await this.generateButton.click();
+    // Wait for the success state with URL input
+    await expect(this.urlInput).toBeVisible({ timeout: 30000 });
+  }
+
+  async cancel(): Promise<void> {
+    await this.cancelButton.click();
+    await this.waitForClose();
+  }
+
+  async done(): Promise<void> {
+    await this.doneButton.click();
+    await this.waitForClose();
+  }
+
+  async copyLink(): Promise<string> {
+    const url = await this.urlInput.inputValue();
+    await this.copyButton.click();
+    return url;
+  }
+
+  async getGeneratedUrl(): Promise<string> {
+    return this.urlInput.inputValue();
   }
 }
 

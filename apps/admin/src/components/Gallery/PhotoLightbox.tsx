@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadPhoto, preloadPhotos, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
+import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import type { PhotoMeta } from '../../workers/types';
 
 /** Props for the PhotoLightbox component */
@@ -174,6 +175,22 @@ export function PhotoLightbox({
         })
       );
   }, [fullResPhotoId, photo.shardIds, photo.mimeType, epochReadKey]);
+
+  // Get album permissions for download capability
+  const { canDownload } = useAlbumPermissions();
+
+  // Handle download button click
+  const handleDownload = useCallback(() => {
+    if (loadState.status !== 'loaded') return;
+
+    // Create a temporary anchor element to trigger download
+    const link = document.createElement('a');
+    link.href = loadState.result.blobUrl;
+    link.download = photo.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [loadState, photo.filename]);
 
   // Handle backdrop click (close on click outside photo)
   const handleBackdropClick = useCallback(
@@ -413,6 +430,19 @@ export function PhotoLightbox({
           data-testid="lightbox-info-toggle"
         >
           ℹ
+        </button>
+      )}
+
+      {/* Download button */}
+      {canDownload && loadState.status === 'loaded' && (
+        <button
+          className="lightbox-download-button"
+          onClick={handleDownload}
+          aria-label="Download photo"
+          title="Download photo"
+          data-testid="lightbox-download"
+        >
+          ⬇️
         </button>
       )}
 
