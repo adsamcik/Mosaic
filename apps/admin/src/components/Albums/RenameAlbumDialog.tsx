@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dialog } from '../Shared/Dialog';
 
 interface RenameAlbumDialogProps {
@@ -30,6 +31,7 @@ export function RenameAlbumDialog({
   error,
   currentName,
 }: RenameAlbumDialogProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(currentName);
   const [localError, setLocalError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,12 +54,12 @@ export function RenameAlbumDialog({
 
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setLocalError('Album name is required');
+      setLocalError(t('album.edit.error.nameRequired'));
       return;
     }
 
     if (trimmedName.length > 100) {
-      setLocalError('Album name must be 100 characters or less');
+      setLocalError(t('album.edit.error.nameTooLong'));
       return;
     }
 
@@ -89,7 +91,7 @@ export function RenameAlbumDialog({
         className="button-secondary"
         data-testid="rename-album-cancel-button"
       >
-        Cancel
+        {t('common.cancel')}
       </button>
       <button
         type="submit"
@@ -98,7 +100,7 @@ export function RenameAlbumDialog({
         className="button-primary"
         data-testid="rename-album-save-button"
       >
-        {isRenaming ? 'Saving...' : 'Save'}
+        {isRenaming ? t('common.saving') : t('common.save')}
       </button>
     </>
   );
@@ -107,8 +109,8 @@ export function RenameAlbumDialog({
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title="Rename Album"
-      description="Album names are encrypted - only you and invited members can see them."
+      title={t('album.edit.title')}
+      description={t('album.edit.description')}
       footer={footer}
       testId="rename-album-dialog"
       closeOnBackdropClick={!isRenaming}
@@ -116,7 +118,7 @@ export function RenameAlbumDialog({
       <form onSubmit={handleSubmit} className="dialog-form" id="rename-album-form">
         <div className="form-group">
           <label htmlFor="rename-album-name" className="form-label">
-            Album Name
+            {t('album.edit.nameLabel')}
           </label>
           <input
             ref={inputRef}
@@ -124,7 +126,7 @@ export function RenameAlbumDialog({
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="My Photos"
+            placeholder={t('album.edit.namePlaceholder')}
             disabled={isRenaming}
             className="form-input"
             autoComplete="off"
