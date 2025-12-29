@@ -1,46 +1,158 @@
-import { useVirtualizer } from '@tanstack/react-virtual';
+/**
+ * Justified Photo Grid Component with Date Headers
+ *
+ * Displays photos in a Google Photos-style justified layout with virtualization.
+ * Photos are grouped by date, and each group fills rows while maintaining aspect ratios.
+ */
+
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { useUploadContext } from '../../contexts/UploadContext';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
-import { usePhotos } from '../../hooks/usePhotos';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
+import {
+    computeJustifiedLayout,
+    type JustifiedRow,
+} from '../../lib/justified-layout';
+import '../../styles/upload.css';
 import type { PhotoMeta } from '../../workers/types';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
+import { JustifiedPhotoThumbnail } from './JustifiedPhotoThumbnail';
 import { PendingPhotoThumbnail } from './PendingPhotoThumbnail';
 import { PhotoLightbox } from './PhotoLightbox';
-import { PhotoThumbnail } from './PhotoThumbnail';
 
-/** Number of columns in the grid */
-const COLUMNS = 4;
+/** Gap between photos in pixels */
+const PHOTO_GAP = 4;
 
-/** Estimated row height for virtualization */
-const ROW_HEIGHT = 200;
+/** Target row height in pixels */
+const TARGET_ROW_HEIGHT = 220;
+
+/** Height of the date header in pixels */
+const HEADER_HEIGHT = 44; // Approx 2.5rem + padding
 
 /** Number of photos to preload ahead/behind in lightbox */
 const PRELOAD_COUNT = 2;
 
 interface PhotoGridProps {
   albumId: string;
-  /** Search query to filter photos */
-  searchQuery?: string;
+  /** Photos to display (passed from Gallery) */
+  photos: PhotoMeta[];
+  /** Whether photos are loading */
+  isLoading: boolean;
+  /** Error if photo loading failed */
+  error: Error | null;
+  /** Function to trigger a photo refetch */
+  refetch: () => void;
   /** Callback when photos are deleted (for refreshing) */
   onPhotosDeleted?: () => void;
   /** Selection state from parent (lifted up for header batch actions) */
   selection?: UseSelectionReturn;
 }
 
+type LayoutItem = 
+  | { type: 'header'; date: string; top: number; height: number; id: string }
+  | { type: 'row'; row: JustifiedRow; top: number; height: number; rowIndex: number; id: string };
+
 /**
- * Virtualized Photo Grid Component
- * Uses TanStack Virtual for efficient rendering of large photo collections
+ * Helper to format date groups
  */
-export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: PhotoGridProps) {
-  const parentRef = useRef<HTMLDivElement>(null);
-  const { photos, isLoading, error, refetch } = usePhotos(albumId, searchQuery);
+function formatDateHeader(dateString: string): string {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'Unknown Date';
+    
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) {
+        return 'Today';
+    }
+    if (date.toDateString() === yesterday.toDateString()) {
+        return 'Yesterday';
+    }
+
+    return new Intl.DateTimeFormat('en-US', { 
+        weekday: 'long', 
+        month: 'short', 
+        day: 'numeric',
+        year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
+    }).format(date);
+}
+
+/**
+ * Group photos by date string (YYYY-MM-DD)
+ */
+function groupPhotosByDate(photos: PhotoMeta[]) {
+    const groups: Record<string, PhotoMeta[]> = {};
+    const sorted = [...photos].sort((a, b) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    for (const photo of sorted) {
+        // Use local date string for grouping to avoid timezone splits if possible, 
+        // but ISO string split is safer for consistency if timezones aren't strict.
+        // Assuming createdAt is ISO UTC.
+        const dateKey = new Date(photo.createdAt).toDateString(); 
+        if (!groups[dateKey]) {
+            groups[dateKey] = [];
+        }
+        groups[dateKey].push(photo);
+    }
+    
+    // Sort keys descending (newest first)
+    return Object.entries(groups).sort((a, b) => 
+        new Date(b[0]).getTime() - new Date(a[0]).getTime()
+    );
+}
+
+/**
+ * Virtualized Justified Photo Grid Component
+ * Uses a Google Photos-style layout with efficient rendering
+ */
+export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotosDeleted, selection }: PhotoGridProps) {
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  
+  // Store the actual container element for scroll/height access
+  const containerElementRef = useRef<HTMLDivElement | null>(null);
+  
+  // Store ResizeObserver instance so we can clean it up
+  const observerRef = useRef<ResizeObserver | null>(null);
+  
+  // Callback ref - called when the container element is attached/detached from DOM
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    // Store the element
+    containerElementRef.current = node;
+    
+    // Clean up previous observer
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    
+    if (node) {
+      // Create new observer for this node
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+           // Use contentRect for accurate inner width
+          setContainerWidth(entry.contentRect.width);
+        }
+      });
+      
+      observer.observe(node);
+      observerRef.current = observer;
+      
+      // Set initial width
+      setContainerWidth(node.clientWidth || node.getBoundingClientRect().width);
+    }
+  }, []);
+
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
   const lightbox = useLightbox(photos);
   const photoActions = usePhotoActions();
+  const permissions = useAlbumPermissions();
   const { activeTasks } = useUploadContext();
 
   // Combine real photos with pending uploads
@@ -77,48 +189,140 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
   const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
   const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<string | undefined>();
 
-  const rowCount = Math.ceil(displayPhotos.length / COLUMNS);
+  // Compute Layout: Headers and Justified Rows
+  const layoutItems = useMemo((): LayoutItem[] => {
+    if (containerWidth <= 0 || displayPhotos.length === 0) return [];
 
-  const virtualizer = useVirtualizer({
-    count: rowCount,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 5,
-  });
+    const grouped = groupPhotosByDate(displayPhotos);
+    const items: LayoutItem[] = [];
+    let currentTop = 0;
+    // Add top padding
+    currentTop += PHOTO_GAP;
 
-  // Compute preload queue for lightbox (photos around current)
+    for (const [dateString, groupPhotos] of grouped) {
+        // Add Header
+        items.push({
+            type: 'header',
+            date: formatDateHeader(dateString),
+            top: currentTop,
+            height: HEADER_HEIGHT,
+            id: `header-${dateString}`
+        });
+        currentTop += HEADER_HEIGHT;
+
+        // Compute rows for this group
+        const rows = computeJustifiedLayout(groupPhotos, {
+            containerWidth,
+            targetRowHeight: TARGET_ROW_HEIGHT,
+            gap: PHOTO_GAP,
+        });
+
+        // Add Rows
+        rows.forEach((row, idx) => {
+            items.push({
+                type: 'row',
+                row,
+                top: currentTop,
+                height: row.height,
+                rowIndex: idx,
+                id: `row-${dateString}-${idx}`
+            });
+            currentTop += row.height + PHOTO_GAP;
+        });
+    }
+
+    return items;
+  }, [displayPhotos, containerWidth]);
+
+  // Get total grid height
+  const totalHeight = useMemo(() => {
+    if (layoutItems.length === 0) return 0;
+    const lastItem = layoutItems[layoutItems.length - 1];
+    if (!lastItem) return 0;
+    return lastItem.top + lastItem.height + PHOTO_GAP;
+  }, [layoutItems]);
+
+  // Get viewport height
+  const viewportHeight = containerElementRef.current?.clientHeight ?? 800;
+
+  // Compute visible items for virtualization
+  const visibleItems = useMemo(() => {
+      const overscan = 500; // pixels
+      const startY = Math.max(0, scrollTop - overscan);
+      const endY = scrollTop + viewportHeight + overscan;
+
+      // Binary search could be faster, but linear scan is fine for typical album sizes (<10k rows) 
+      // since we only render visible ones. Optimization: find start index via binary search.
+      
+      let startIndex = 0;
+      let endIndex = layoutItems.length - 1;
+
+      // Simple find
+      for (let i = 0; i < layoutItems.length; i++) {
+          if (layoutItems[i]!.top + layoutItems[i]!.height >= startY) {
+              startIndex = i;
+              break;
+          }
+      }
+
+      for (let i = startIndex; i < layoutItems.length; i++) {
+          if (layoutItems[i]!.top > endY) {
+              endIndex = i - 1;
+              break;
+          }
+          endIndex = i;
+      }
+      
+      if (layoutItems.length === 0) return [];
+      
+      return layoutItems.slice(startIndex, endIndex + 1);
+  }, [layoutItems, scrollTop, viewportHeight]);
+
+
+  // Handle scroll
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  // Compute preload queue for lightbox
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
-    
+
     const queue: PhotoMeta[] = [];
     const currentIdx = lightbox.currentIndex;
-    
-    // Add photos before and after current
+
     for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
       const prevPhoto = photos[currentIdx - offset];
       const nextPhoto = photos[currentIdx + offset];
-      if (prevPhoto) {
-        queue.push(prevPhoto);
-      }
-      if (nextPhoto) {
-        queue.push(nextPhoto);
-      }
+      if (prevPhoto) queue.push(prevPhoto);
+      if (nextPhoto) queue.push(nextPhoto);
     }
-    
+
     return queue;
   }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, photos]);
 
   // Handle photo click to open lightbox
-  const handlePhotoClick = useCallback((photoIndex: number) => {
-    if (!isSelectionMode) {
-      lightbox.open(photoIndex);
-    }
-  }, [isSelectionMode, lightbox]);
+  const handlePhotoClick = useCallback(
+    (photo: PhotoMeta) => {
+      if (!isSelectionMode) {
+        // Find index in the GLOBAL list (displayPhotos)
+        const index = photos.findIndex((p) => p.id === photo.id);
+        if (index >= 0) {
+          lightbox.open(index); // This expects index into `photos` array
+        }
+      }
+    },
+    [isSelectionMode, lightbox, photos] // Note: lightbox uses index into `photos`
+  );
 
-  // Handle selection change for a single photo
+  // Handle selection change for a single photo (checkbox click)
   const handleSelectionChange = useCallback((photoId: string, selected: boolean) => {
     if (selection) {
       if (selected) {
+        // Enter selection mode if not already in it
+        if (!selection.isSelectionMode) {
+          selection.enterSelectionMode();
+        }
         selection.selectPhoto(photoId);
       } else {
         selection.deselectPhoto(photoId);
@@ -136,7 +340,7 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
   const handleDeleteFromLightbox = useCallback(() => {
     if (lightbox.currentPhoto) {
       setDeleteTarget([lightbox.currentPhoto]);
-      setDeleteThumbnailUrl(undefined); // Lightbox shows full image, not thumbnail
+      setDeleteThumbnailUrl(undefined);
     }
   }, [lightbox.currentPhoto]);
 
@@ -146,40 +350,35 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
 
     try {
       if (deleteTarget.length === 1) {
-        // Single photo delete
         const photoToDelete = deleteTarget[0];
         if (photoToDelete) {
           await photoActions.deletePhoto(photoToDelete.id, albumId);
         }
       } else {
-        // Bulk delete
         await photoActions.deletePhotos(
-          deleteTarget.map(p => p.id),
+          deleteTarget.map((p) => p.id),
           albumId
         );
       }
 
-      // Close dialog
       setDeleteTarget(null);
       setDeleteThumbnailUrl(undefined);
-
+      
       // Clear selection if using lifted state
       if (selection) {
         selection.clearSelection();
       }
 
-      // Close lightbox if open
       if (lightbox.isOpen) {
         lightbox.close();
       }
 
-      // Refresh photos
       refetch();
       onPhotosDeleted?.();
     } catch {
-      // Error is handled by usePhotoActions and shown in dialog
+      // Error is handled by usePhotoActions
     }
-  }, [deleteTarget, photoActions, albumId, lightbox, refetch, onPhotosDeleted, selection]);
+  }, [deleteTarget, photoActions, albumId, lightbox, refetch, onPhotosDeleted]);
 
   // Cancel deletion
   const handleCancelDelete = useCallback(() => {
@@ -188,28 +387,21 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
     photoActions.clearError();
   }, [photoActions]);
 
+  // Loading state
   if (isLoading || keysLoading) {
     return (
-      <div className="photo-grid-loading">
+      <div className="photo-grid-loading" data-testid="photo-grid-loading">
         <div className="loading-spinner" />
         <p>Loading photos...</p>
       </div>
     );
   }
 
+  // Error state
   if (error) {
     return (
-      <div className="photo-grid-error">
+      <div className="photo-grid-error" data-testid="photo-grid-error">
         <p>Failed to load photos: {error.message}</p>
-      </div>
-    );
-  }
-
-  if (displayPhotos.length === 0) {
-    return (
-      <div className="photo-grid-empty">
-        <p>No photos yet</p>
-        <p className="text-muted">Upload some photos to get started</p>
       </div>
     );
   }
@@ -221,63 +413,109 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
 
   return (
     <>
-      <div ref={parentRef} className={`photo-grid-container ${isSelectionMode ? 'photo-grid-selection-mode' : ''}`} data-testid="photo-grid">
+      <div
+        ref={containerRef}
+        className={`photo-grid-container ${isSelectionMode ? 'selection-mode' : ''}`} // Reusing photo-grid classes or creating new ones
+        onScroll={handleScroll}
+        data-testid="photo-grid"
+      >
+        {displayPhotos.length === 0 ? (
+          <div className="photo-grid-empty" data-testid="photo-grid-empty">
+             {/* Using existing empty state styles */}
+            <div className="empty-state-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+            </div>
+            <h3>No photos yet</h3>
+            {permissions.canUpload ? (
+              <p>Upload some photos to get started</p>
+            ) : (
+              <p>This album is empty</p>
+            )}
+          </div>
+        ) : (
         <div
-          className="photo-grid-virtual"
-          style={{
-            height: virtualizer.getTotalSize(),
-            position: 'relative',
-          }}
+          className="photo-grid-content"
+          style={{ height: totalHeight, position: 'relative' }}
         >
-          {virtualizer.getVirtualItems().map((virtualRow) => (
-            <div
-              key={virtualRow.key}
-              className="photo-grid-row"
-              style={{
-                position: 'absolute',
-                top: virtualRow.start,
-                height: virtualRow.size,
-                width: '100%',
-                display: 'grid',
-                gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`,
-                gap: '4px',
-              }}
-            >
-              {Array.from({ length: COLUMNS }).map((_, colIndex) => {
-                const photoIndex = virtualRow.index * COLUMNS + colIndex;
-                const photo = displayPhotos[photoIndex];
-                if (!photo) return null;
+          {visibleItems.map((item) => {
+            if (item.type === 'header') {
+                return (
+                    <div
+                        key={item.id}
+                        className="photo-grid-header"
+                        style={{
+                            position: 'absolute',
+                            top: item.top,
+                            left: 0,
+                            right: 0,
+                            height: item.height,
+                            paddingLeft: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            fontWeight: 600,
+                            color: 'var(--text-secondary)',
+                            zIndex: 1
+                        }}
+                    >
+                        {item.date}
+                    </div>
+                );
+            }
 
-                // Check if this is a pending upload
-                const pendingPhoto = photo as PhotoMeta & { isPending?: boolean; task?: any };
-                if (pendingPhoto.isPending && pendingPhoto.task) {
+            // It's a row
+            return (
+              <div
+                key={item.id}
+                className="photo-grid-row"
+                style={{
+                  position: 'absolute',
+                  top: item.top,
+                  left: 0,
+                  right: 0,
+                  height: item.height,
+                  display: 'flex',
+                  gap: PHOTO_GAP,
+                }}
+                data-testid="photo-grid-row"
+              >
+                {item.row.photos.map(({ photo, width, height }) => {
+                  // Check if this is a pending upload
+                  const pendingPhoto = photo as PhotoMeta & { isPending?: boolean; task?: any };
+                  
+                  if (pendingPhoto.isPending && pendingPhoto.task) {
+                    return (
+                      <div key={photo.id} style={{ width, height }}>
+                        <PendingPhotoThumbnail task={pendingPhoto.task} />
+                      </div>
+                    );
+                  }
+
+                  const epochReadKey = epochKeys.get(photo.epochId);
+                  const isSelected = selectedIds.has(photo.id);
+
                   return (
-                    <PendingPhotoThumbnail
+                    <JustifiedPhotoThumbnail
                       key={photo.id}
-                      task={pendingPhoto.task}
+                      photo={photo}
+                      width={width}
+                      height={height}
+                      epochReadKey={epochReadKey}
+                      isSelected={isSelected}
+                      selectionMode={isSelectionMode}
+                      showDelete={permissions.canDelete}
+                      onClick={() => handlePhotoClick(photo)}
+                      onSelectionChange={(selected: boolean) =>
+                        handleSelectionChange(photo.id, selected)
+                      }
+                      onDelete={(thumbnailUrl) => handleDeletePhoto(photo, thumbnailUrl)}
                     />
                   );
-                }
-
-                // Get epoch read key for this photo
-                const epochReadKey = epochKeys.get(photo.epochId);
-                const isSelected = selectedIds.has(photo.id);
-                return (
-                  <PhotoThumbnail
-                    key={photo.id}
-                    photo={photo}
-                    {...(epochReadKey && { epochReadKey })}
-                    onClick={() => handlePhotoClick(photoIndex)}
-                    isSelected={isSelected}
-                    onSelectionChange={(selected: boolean) => handleSelectionChange(photo.id, selected)}
-                    onDelete={(thumbnailUrl) => handleDeletePhoto(photo, thumbnailUrl)}
-                    selectionMode={isSelectionMode}
-                  />
-                );
-              })}
-            </div>
-          ))}
+                })}
+              </div>
+            );
+          })}
         </div>
+        )}
       </div>
 
       {/* Photo Lightbox */}
@@ -291,7 +529,7 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
           hasNext={lightbox.hasNext}
           hasPrevious={lightbox.hasPrevious}
           preloadQueue={preloadQueue}
-          onDelete={handleDeleteFromLightbox}
+          {...(permissions.canDelete && { onDelete: handleDeleteFromLightbox })}
         />
       )}
 
@@ -309,4 +547,3 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: 
     </>
   );
 }
-

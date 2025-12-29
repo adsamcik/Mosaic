@@ -17,16 +17,17 @@ import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
 import { DropZone } from '../Upload/DropZone';
 import { UploadErrorToast } from '../Upload/UploadErrorToast';
 import { GalleryHeader } from './GalleryHeader';
-import { JustifiedPhotoGrid } from './JustifiedPhotoGrid';
 import { MapView } from './MapView';
+import { MosaicPhotoGrid } from './MosaicPhotoGrid';
 import { PhotoGrid } from './PhotoGrid';
 import { PhotoLightbox } from './PhotoLightbox';
 import { SelectionActionBar } from './SelectionActionBar';
+import { SquarePhotoGrid } from './SquarePhotoGrid';
 
 const log = createLogger('Gallery');
 
 /** View mode for the gallery */
-export type GalleryViewMode = 'grid' | 'justified' | 'map';
+export type GalleryViewMode = 'grid' | 'justified' | 'mosaic' | 'map';
 
 interface GalleryProps {
   albumId: string;
@@ -336,16 +337,32 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
       {/* Gallery Content - Wrapped in DropZone for drag-and-drop upload */}
       <DropZone albumId={albumId} className="gallery-content" disabled={!canEdit}>
         {viewMode === 'justified' ? (
-          <JustifiedPhotoGrid
+          <PhotoGrid
             albumId={albumId}
-            searchQuery={searchQuery}
+            photos={photos}
+            isLoading={isLoading}
+            error={error}
+            refetch={reloadPhotos}
             selection={selection}
             onPhotosDeleted={handleBulkDeleteComplete}
           />
         ) : viewMode === 'grid' ? (
-          <PhotoGrid
+          <SquarePhotoGrid
             albumId={albumId}
-            searchQuery={searchQuery}
+            photos={photos}
+            isLoading={isLoading}
+            error={error}
+            refetch={reloadPhotos}
+            selection={selection}
+            onPhotosDeleted={handleBulkDeleteComplete}
+          />
+        ) : viewMode === 'mosaic' ? (
+          <MosaicPhotoGrid
+            albumId={albumId}
+            photos={photos}
+            isLoading={isLoading}
+            error={error}
+            refetch={reloadPhotos}
             selection={selection}
             onPhotosDeleted={handleBulkDeleteComplete}
           />
@@ -377,7 +394,7 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
         />
       )}
 
-      {/* Photo Lightbox - Only used by MapView; justified/grid grids manage their own */}
+      {/* Photo Lightbox - Only used by MapView; justified/mosaic grids manage their own */}
       {viewMode === 'map' && lightbox.isOpen && lightbox.currentPhoto && currentEpochReadKey && (
         <PhotoLightbox
           photo={lightbox.currentPhoto}
