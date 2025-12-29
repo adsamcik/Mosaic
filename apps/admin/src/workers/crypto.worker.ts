@@ -19,6 +19,7 @@ import {
     verifyShard as cryptoVerifyShard,
     wrapTierKeyForLink as cryptoWrapTierKeyForLink,
     deriveIdentityKeypair,
+    deriveAuthKeypair,
     deriveKeys,
     getArgon2Params,
     memzero,
@@ -49,6 +50,9 @@ class CryptoWorker implements CryptoWorkerApi {
 
   /** User identity keypair (Ed25519 + X25519) */
   private identityKeypair: IdentityKeypair | null = null;
+
+  /** Auth keypair for LocalAuth challenge-response (derived deterministically from password+salt) */
+  private authKeypair: { publicKey: Uint8Array; secretKey: Uint8Array } | null = null;
 
   /** Whether libsodium has been initialized */
   private sodiumReady = false;
@@ -84,7 +88,7 @@ class CryptoWorker implements CryptoWorkerApi {
     // Get device-appropriate Argon2 parameters
     const params = getArgon2Params();
 
-    // Derive full key hierarchy (generates NEW random account key)
+    // Derive key hierarchy (L0 and L1 are zeroed internally by deriveKeys)
     const keys = await deriveKeys(password, userSalt, accountSalt, params);
 
     // Store account key for future operations
@@ -97,10 +101,7 @@ class CryptoWorker implements CryptoWorkerApi {
     // This provides a separate key for database encryption
     this.sessionKey = sodium.crypto_generichash(32, keys.accountKey);
 
-    // Wipe intermediate keys
-    memzero(keys.masterKey);
-    memzero(keys.rootKey);
-    // Note: Keep accountKey reference, but wipe the DerivedKeys copy
+    // Wipe the DerivedKeys copy of accountKey (we have our own copy above)
     memzero(keys.accountKey);
   }
 
@@ -179,6 +180,10 @@ class CryptoWorker implements CryptoWorkerApi {
       memzero(this.identityKeypair.ed25519.secretKey);
       memzero(this.identityKeypair.x25519.secretKey);
       this.identityKeypair = null;
+    }
+    if (this.authKeypair) {
+      memzero(this.authKeypair.secretKey);
+      this.authKeypair = null;
     }
   }
 
@@ -663,8 +668,34 @@ class CryptoWorker implements CryptoWorkerApi {
   private static readonly AUTH_CHALLENGE_CONTEXT = 'Mosaic_Auth_Challenge_v1';
 
   /**
+   * Derive auth keypair directly from password + userSalt.
+   * This is a deterministic derivation path separate from the random account key.
+   * The auth keypair is used for challenge-response authentication.
+   * 
+   * Must be called before signAuthChallenge() or getAuthPublicKey().
+   * 
+   * @param password - User password
+   * @param userSalt - 16-byte user salt from server
+   */
+  async deriveAuthKey(password: string, userSalt: Uint8Array): Promise<void> {
+    await this.ensureSodiumReady();
+    
+    const params = getArgon2Params();
+    
+    // Derive the auth keypair deterministically from password + userSalt
+    // This is separate from the random account key derivation
+    this.authKeypair = await deriveAuthKeypair(password, userSalt, {
+      memoryKiB: params.memory,
+      iterations: params.iterations,
+      parallelism: params.parallelism,
+    });
+    
+    log.debug('Auth keypair derived successfully');
+  }
+
+  /**
    * Sign an authentication challenge for LocalAuth login.
-   * Uses the identity Ed25519 key to prove ownership.
+   * Uses the auth Ed25519 key derived from password+salt.
    * 
    * Message format: context || username_len(4 BE) || username || [timestamp(8 BE)] || challenge
    */
@@ -673,8 +704,8 @@ class CryptoWorker implements CryptoWorkerApi {
     username: string,
     timestamp?: number
   ): Promise<Uint8Array> {
-    if (!this.identityKeypair) {
-      throw new Error('Identity not derived - call deriveIdentity() first');
+    if (!this.authKeypair) {
+      throw new Error('Auth key not derived - call deriveAuthKey() first');
     }
     await this.ensureSodiumReady();
 
@@ -711,20 +742,21 @@ class CryptoWorker implements CryptoWorkerApi {
       offset += part.length;
     }
     
-    // Sign with Ed25519
-    return sodium.crypto_sign_detached(message, this.identityKeypair.ed25519.secretKey);
+    // Sign with Ed25519 auth key
+    return sodium.crypto_sign_detached(message, this.authKeypair.secretKey);
   }
 
   /**
    * Get the Ed25519 public key for authentication.
    * This is the "auth pubkey" stored on server for challenge verification.
+   * Returns the deterministically derived auth key (from password+salt), not the identity key.
    */
   async getAuthPublicKey(): Promise<Uint8Array | null> {
-    if (!this.identityKeypair) {
+    if (!this.authKeypair) {
       return null;
     }
     // Return a copy to prevent external modification
-    return new Uint8Array(this.identityKeypair.ed25519.publicKey);
+    return new Uint8Array(this.authKeypair.publicKey);
   }
 }
 

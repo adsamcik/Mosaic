@@ -337,8 +337,20 @@ export interface CryptoWorkerApi {
   // =========================================================================
 
   /**
+   * Derive auth keypair from password + userSalt.
+   * This is a deterministic derivation separate from the random account key.
+   * The auth keypair is used for challenge-response authentication.
+   * 
+   * Must be called before signAuthChallenge() or getAuthPublicKey().
+   * 
+   * @param password - User password
+   * @param userSalt - 16-byte user salt from server
+   */
+  deriveAuthKey(password: string, userSalt: Uint8Array): Promise<void>;
+
+  /**
    * Sign an authentication challenge for LocalAuth login.
-   * Uses the identity Ed25519 key to prove ownership.
+   * Uses the auth Ed25519 key derived from password+salt.
    * 
    * Message format: context || username_len(4 BE) || username || [timestamp(8 BE)] || challenge
    * 
@@ -356,6 +368,7 @@ export interface CryptoWorkerApi {
   /**
    * Get the Ed25519 public key for authentication.
    * This is the "auth pubkey" stored on server for challenge verification.
+   * Returns the deterministically derived auth key (from password+salt), not the identity key.
    * @returns Ed25519 public key (32 bytes) or null if not initialized
    */
   getAuthPublicKey(): Promise<Uint8Array | null>;
