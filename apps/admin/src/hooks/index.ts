@@ -7,6 +7,8 @@ export { useTheme } from './useTheme';
 export type { LightboxControls, LightboxState, UseLightboxResult } from './useLightbox';
 export { useLinkKeys, parseLinkFragment, clearLinkKeys } from './useLinkKeys';
 export type { TierKey, LinkKeyState, UseLinkKeysResult } from './useLinkKeys';
+export { useRouter } from './useRouter';
+export type { Route } from './useRouter';
 export { useShareLinks } from './useShareLinks';
 export type {
   CreateShareLinkOptions,

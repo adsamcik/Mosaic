@@ -721,6 +721,11 @@ class SessionManager {
     this._currentUser = null;
     sessionStorage.clear();
 
+    // Reset URL to root when logging out (clean slate)
+    if (window.location.pathname !== '/') {
+      window.history.replaceState(null, '', '/');
+    }
+
     this._isLoggedIn = false;
     this.notify();
   }
