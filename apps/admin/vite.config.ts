@@ -56,7 +56,7 @@ export default defineConfig(({ mode }) => {
 
     // Dependency optimization
     optimizeDeps: {
-      include: ['libsodium-wrappers'],
+      include: ['libsodium-wrappers-sumo'],
       exclude: ['sql.js'],
     },
   };
