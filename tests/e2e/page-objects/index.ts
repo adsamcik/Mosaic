@@ -14,6 +14,10 @@ const TEST_PASSWORD = 'test-password-e2e-2024';
 
 /**
  * Login Page Object
+ *
+ * Supports both LocalAuth and ProxyAuth modes:
+ * - LocalAuth: username/password with registration option
+ * - ProxyAuth: password-only (user identity from Remote-User header)
  */
 export class LoginPage {
   readonly page: Page;
@@ -22,14 +26,24 @@ export class LoginPage {
   readonly usernameInput: Locator;
   readonly loginButton: Locator;
   readonly errorMessage: Locator;
+  readonly confirmPasswordInput: Locator;
+  readonly createAccountButton: Locator;
+  readonly modeToggleButton: Locator;
+  readonly loginForm: Locator;
 
   constructor(page: Page) {
     this.page = page;
     this.form = page.getByTestId('login-form');
-    this.passwordInput = page.getByLabel('Password');
-    this.usernameInput = page.getByLabel(/username|user/i);
-    this.loginButton = page.getByRole('button', { name: /unlock/i });
+    this.loginForm = page.getByTestId('login-form');
+    this.passwordInput = page.getByLabel('Password', { exact: true });
+    this.usernameInput = page.getByLabel(/username/i);
+    this.loginButton = page.getByRole('button', { name: /unlock|sign in/i });
     this.errorMessage = page.getByRole('alert');
+    this.confirmPasswordInput = page.getByLabel('Confirm Password');
+    this.createAccountButton = page.getByRole('button', { name: /create account/i }).first();
+    this.modeToggleButton = page.getByRole('button', {
+      name: /don't have an account|already have an account/i,
+    });
   }
 
   async goto(): Promise<void> {
@@ -67,6 +81,56 @@ export class LoginPage {
 
   async expectFormVisible(): Promise<void> {
     await expect(this.form).toBeVisible({ timeout: 30000 });
+  }
+
+  /**
+   * Alias for expectFormVisible for backward compatibility
+   */
+  async expectLoginFormVisible(): Promise<void> {
+    await this.expectFormVisible();
+  }
+
+  /**
+   * Alias for expectError for backward compatibility
+   */
+  async expectErrorMessage(text?: string | RegExp): Promise<void> {
+    await this.expectError(text);
+  }
+
+  /**
+   * Switch to registration mode (LocalAuth only)
+   */
+  async switchToRegisterMode(): Promise<void> {
+    const toggleBtn = this.page.getByRole('button', { name: /don't have an account/i });
+    if (await toggleBtn.isVisible().catch(() => false)) {
+      await toggleBtn.click();
+      await expect(this.confirmPasswordInput).toBeVisible({ timeout: 15000 });
+    }
+  }
+
+  /**
+   * Switch to login mode (LocalAuth only)
+   */
+  async switchToLoginMode(): Promise<void> {
+    const toggleBtn = this.page.getByRole('button', { name: /already have an account/i });
+    if (await toggleBtn.isVisible().catch(() => false)) {
+      await toggleBtn.click();
+    }
+  }
+
+  /**
+   * Register a new user (LocalAuth mode)
+   */
+  async register(username: string, password: string): Promise<void> {
+    await this.switchToRegisterMode();
+
+    if (await this.usernameInput.isVisible().catch(() => false)) {
+      await this.usernameInput.clear();
+      await this.usernameInput.fill(username);
+    }
+    await this.passwordInput.fill(password);
+    await this.confirmPasswordInput.fill(password);
+    await this.createAccountButton.click();
   }
 }
 

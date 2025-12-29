@@ -72,6 +72,54 @@ Auth__Mode=ProxyAuth  # Environment variable
 
 ---
 
+### Authentication Mode E2E Tests
+
+**Purpose:** Comprehensive E2E test coverage for both LocalAuth and ProxyAuth modes.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| E2E Tests | [tests/e2e/tests/auth-modes.spec.ts](../tests/e2e/tests/auth-modes.spec.ts) |
+| Page Objects | [tests/e2e/page-objects/index.ts](../tests/e2e/page-objects/index.ts) - LoginPage class |
+
+**Test Categories:**
+
+**Mode Detection Tests:**
+- Frontend detects auth mode from backend
+- `/api/auth/init` returns expected response based on mode
+- Health endpoint always accessible
+- Protected endpoints require authentication
+
+**LocalAuth Mode Tests:**
+- User registration with username/password
+- Login after logout
+- LocalAuth badge visibility
+- Session persistence across reloads
+- Logout clears session
+- Wrong password fails authentication (challenge-response)
+
+**ProxyAuth Mode Tests:**
+- API accepts valid Remote-User header
+- User identity consistent across API calls
+- Different headers result in different users
+- Authelia header forwarding simulation
+- Remote-User header format validation
+
+**Usage:**
+```bash
+# Run against LocalAuth backend
+$env:API_URL="http://localhost:5000"
+npx playwright test auth-modes.spec.ts --project=chromium
+
+# Run against ProxyAuth backend
+$env:API_URL="http://localhost:8080"
+npx playwright test auth-modes.spec.ts --project=chromium
+```
+
+**Note:** Tests automatically detect the backend mode and skip inapplicable tests. Run against both modes for full coverage.
+
+---
+
 ## Albums & Organization
 
 ### Album Creation & Management
@@ -413,6 +461,7 @@ ENV_VAR=value
 
 | Date | Feature | Action | Notes |
 |------|---------|--------|-------|
+| 2025-12-29 | Auth Mode E2E Tests | Added | Comprehensive tests for LocalAuth and ProxyAuth modes |
 | 2025-12-29 | Photo Selection UX | Added | Floating action bar, keyboard shortcuts |
 | 2025-12-29 | Map View | Fixed | Filter null GPS coordinates |
 | 2025-12-29 | Photo Counts | Fixed | Load from local SQLite database |
