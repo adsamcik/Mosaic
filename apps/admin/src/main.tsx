@@ -4,6 +4,9 @@ import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { logger } from './lib/logger';
 
+// Initialize i18n - must be imported before any components that use translations
+import './lib/i18n';
+
 // Global error handler for uncaught errors
 window.addEventListener('error', (event) => {
   logger.error('Uncaught error', {
