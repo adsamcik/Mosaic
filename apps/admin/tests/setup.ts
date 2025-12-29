@@ -34,3 +34,18 @@ vi.mock('react-i18next', () => ({
     init: vi.fn(),
   },
 }));
+
+// Mock the i18n configuration module to prevent LanguageDetector from
+// reading localStorage during module initialization (before tests set up mocks)
+vi.mock('../src/lib/i18n', () => ({
+  supportedLanguages: [
+    { code: 'en', name: 'English', nativeName: 'English' },
+    { code: 'cs', name: 'Czech', nativeName: 'Čeština' },
+  ],
+  changeLanguage: vi.fn(() => Promise.resolve()),
+  getCurrentLanguage: vi.fn(() => 'en'),
+  default: {
+    language: 'en',
+    changeLanguage: vi.fn(),
+  },
+}));
