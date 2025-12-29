@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
-    "postinstall": "node -e \"const fs=require('fs'),p='node_modules/fts5-sql-bundle/dist/';['sql-wasm.js','sql-wasm.wasm'].forEach(f=>fs.copyFileSync(p+f,'public/'+f))\""
+    "postinstall": "node scripts/copy-sql-wasm.cjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.13",
