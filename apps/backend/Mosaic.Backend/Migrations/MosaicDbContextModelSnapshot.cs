@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mosaic.Backend.Data;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
@@ -16,49 +15,49 @@ namespace Mosaic.Backend.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.1")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
-
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.1");
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.Album", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("id");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("created_at");
 
                     b.Property<int>("CurrentEpochId")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("current_epoch_id");
 
                     b.Property<long>("CurrentVersion")
-                        .HasColumnType("bigint")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("current_version");
 
+                    b.Property<string>("EncryptedDescription")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("encrypted_description");
+
                     b.Property<string>("EncryptedName")
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("encrypted_name");
 
                     b.Property<int>("ExpirationWarningDays")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("expiration_warning_days");
 
                     b.Property<DateTimeOffset?>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("expires_at");
 
                     b.Property<Guid>("OwnerId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("owner_id");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("updated_at");
 
                     b.HasKey("Id")
@@ -77,27 +76,27 @@ namespace Mosaic.Backend.Migrations
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.AlbumLimits", b =>
                 {
                     b.Property<Guid>("AlbumId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("album_id");
 
                     b.Property<int>("CurrentPhotoCount")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("current_photo_count");
 
                     b.Property<long>("CurrentSizeBytes")
-                        .HasColumnType("bigint")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("current_size_bytes");
 
                     b.Property<int?>("MaxPhotos")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("max_photos");
 
                     b.Property<long?>("MaxSizeBytes")
-                        .HasColumnType("bigint")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("max_size_bytes");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("updated_at");
 
                     b.HasKey("AlbumId")
@@ -109,28 +108,28 @@ namespace Mosaic.Backend.Migrations
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.AlbumMember", b =>
                 {
                     b.Property<Guid>("AlbumId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("album_id");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("user_id");
 
                     b.Property<Guid?>("InvitedBy")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("invited_by");
 
                     b.Property<DateTime>("JoinedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("joined_at");
 
                     b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("revoked_at");
 
                     b.Property<string>("Role")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("role");
 
                     b.HasKey("AlbumId", "UserId")
@@ -153,33 +152,33 @@ namespace Mosaic.Backend.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("id");
 
                     b.Property<byte[]>("Challenge")
                         .IsRequired()
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("challenge");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("created_at");
 
                     b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("expires_at");
 
                     b.Property<string>("IpAddress")
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("ip_address");
 
                     b.Property<bool>("IsUsed")
-                        .HasColumnType("boolean")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("is_used");
 
                     b.Property<string>("Username")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("username");
 
                     b.HasKey("Id")
@@ -198,43 +197,43 @@ namespace Mosaic.Backend.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("id");
 
                     b.Property<Guid>("AlbumId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("album_id");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("created_at");
 
                     b.Property<byte[]>("EncryptedKeyBundle")
                         .IsRequired()
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("encrypted_key_bundle");
 
                     b.Property<int>("EpochId")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("epoch_id");
 
                     b.Property<byte[]>("OwnerSignature")
                         .IsRequired()
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("owner_signature");
 
                     b.Property<Guid>("RecipientId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("recipient_id");
 
                     b.Property<byte[]>("SharerPubkey")
                         .IsRequired()
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("sharer_pubkey");
 
                     b.Property<byte[]>("SignPubkey")
                         .IsRequired()
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("sign_pubkey");
 
                     b.HasKey("Id")
@@ -254,29 +253,29 @@ namespace Mosaic.Backend.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("id");
 
                     b.Property<int>("EpochId")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("epoch_id");
 
                     b.Property<Guid>("ShareLinkId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("share_link_id");
 
                     b.Property<int>("Tier")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("tier");
 
                     b.Property<byte[]>("WrappedKey")
                         .IsRequired()
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("wrapped_key");
 
                     b.Property<byte[]>("WrappedNonce")
                         .IsRequired()
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("wrapped_nonce");
 
                     b.HasKey("Id")
@@ -292,42 +291,42 @@ namespace Mosaic.Backend.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("id");
 
                     b.Property<Guid>("AlbumId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("album_id");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("created_at");
 
                     b.Property<byte[]>("EncryptedMeta")
                         .IsRequired()
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("encrypted_meta");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("is_deleted");
 
                     b.Property<string>("Signature")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("signature");
 
                     b.Property<string>("SignerPubkey")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("signer_pubkey");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("updated_at");
 
                     b.Property<long>("VersionCreated")
-                        .HasColumnType("bigint")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("version_created");
 
                     b.HasKey("Id")
@@ -342,15 +341,15 @@ namespace Mosaic.Backend.Migrations
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.ManifestShard", b =>
                 {
                     b.Property<Guid>("ManifestId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("manifest_id");
 
                     b.Property<Guid>("ShardId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("shard_id");
 
                     b.Property<int>("ChunkIndex")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("chunk_index");
 
                     b.HasKey("ManifestId", "ShardId")
@@ -366,44 +365,44 @@ namespace Mosaic.Backend.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("id");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("created_at");
 
                     b.Property<string>("DeviceName")
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("device_name");
 
                     b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("expires_at");
 
                     b.Property<string>("IpAddress")
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("ip_address");
 
                     b.Property<DateTime>("LastSeenAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("last_seen_at");
 
                     b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("revoked_at");
 
                     b.Property<byte[]>("TokenHash")
                         .IsRequired()
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("token_hash");
 
                     b.Property<string>("UserAgent")
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("user_agent");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("user_id");
 
                     b.HasKey("Id")
@@ -425,33 +424,33 @@ namespace Mosaic.Backend.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("id");
 
                     b.Property<DateTime?>("PendingExpiresAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("pending_expires_at");
 
                     b.Property<long>("SizeBytes")
-                        .HasColumnType("bigint")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("size_bytes");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("status");
 
                     b.Property<DateTime>("StatusUpdatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("status_updated_at");
 
                     b.Property<string>("StorageKey")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("storage_key");
 
                     b.Property<Guid?>("UploaderId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("uploader_id");
 
                     b.HasKey("Id")
@@ -471,44 +470,44 @@ namespace Mosaic.Backend.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("id");
 
                     b.Property<int>("AccessTier")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("access_tier");
 
                     b.Property<Guid>("AlbumId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("album_id");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("created_at");
 
                     b.Property<DateTimeOffset?>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("expires_at");
 
                     b.Property<bool>("IsRevoked")
-                        .HasColumnType("boolean")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("is_revoked");
 
                     b.Property<byte[]>("LinkId")
                         .IsRequired()
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("link_id");
 
                     b.Property<int?>("MaxUses")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("max_uses");
 
                     b.Property<byte[]>("OwnerEncryptedSecret")
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("owner_encrypted_secret");
 
                     b.Property<int>("UseCount")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("use_count");
 
                     b.HasKey("Id")
@@ -527,20 +526,20 @@ namespace Mosaic.Backend.Migrations
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.SystemSetting", b =>
                 {
                     b.Property<string>("Key")
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("key");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("updated_at");
 
                     b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("updated_by");
 
                     b.Property<string>("Value")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("value");
 
                     b.HasKey("Key")
@@ -556,53 +555,53 @@ namespace Mosaic.Backend.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("id");
 
                     b.Property<byte[]>("AccountSalt")
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("account_salt");
 
                     b.Property<string>("AuthPubkey")
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("auth_pubkey");
 
                     b.Property<string>("AuthSub")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("auth_sub");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("created_at");
 
                     b.Property<byte[]>("EncryptedSalt")
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("encrypted_salt");
 
                     b.Property<string>("IdentityPubkey")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("TEXT")
                         .HasColumnName("identity_pubkey");
 
                     b.Property<bool>("IsAdmin")
-                        .HasColumnType("boolean")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("is_admin");
 
                     b.Property<byte[]>("SaltNonce")
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("salt_nonce");
 
                     b.Property<byte[]>("UserSalt")
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("user_salt");
 
                     b.Property<byte[]>("WrappedAccountKey")
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("wrapped_account_key");
 
                     b.Property<byte[]>("WrappedIdentitySeed")
-                        .HasColumnType("bytea")
+                        .HasColumnType("BLOB")
                         .HasColumnName("wrapped_identity_seed");
 
                     b.HasKey("Id")
@@ -618,27 +617,27 @@ namespace Mosaic.Backend.Migrations
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.UserQuota", b =>
                 {
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
+                        .HasColumnType("TEXT")
                         .HasColumnName("user_id");
 
                     b.Property<int>("CurrentAlbumCount")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("current_album_count");
 
                     b.Property<int?>("MaxAlbums")
-                        .HasColumnType("integer")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("max_albums");
 
                     b.Property<long>("MaxStorageBytes")
-                        .HasColumnType("bigint")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("max_storage_bytes");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("TEXT")
                         .HasColumnName("updated_at");
 
                     b.Property<long>("UsedStorageBytes")
-                        .HasColumnType("bigint")
+                        .HasColumnType("INTEGER")
                         .HasColumnName("used_storage_bytes");
 
                     b.HasKey("UserId")

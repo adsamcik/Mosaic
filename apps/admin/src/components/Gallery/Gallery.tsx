@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlbumPermissionsProvider } from '../../contexts/AlbumPermissionsContext';
-import { UploadProvider } from '../../contexts/UploadContext';
 import { useAutoSync } from '../../contexts/SyncContext';
+import { UploadProvider } from '../../contexts/UploadContext';
+import { useAlbumMembers } from '../../hooks/useAlbumMembers';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
-import { useAlbumMembers } from '../../hooks/useAlbumMembers';
 import { usePhotos } from '../../hooks/usePhotos';
 import { useSelection } from '../../hooks/useSelection';
 import { useSync } from '../../hooks/useSync';
-import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
 import { createLogger } from '../../lib/logger';
+import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
 import { DeleteAlbumDialog, RenameAlbumDialog } from '../Albums';
 import { MemberList } from '../Members/MemberList';
@@ -71,8 +71,9 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
   const [searchQuery, setSearchQuery] = useState('');
   
   // State for bulk photo delete dialog
-  const [bulkDeletePhotos, setBulkDeletePhotos] = useState<PhotoMeta[]>([]);
-  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  // TODO: Implement bulk delete confirmation dialog using these state variables
+  // const [_bulkDeletePhotos, setBulkDeletePhotos] = useState<PhotoMeta[]>([]);
+  // const [_showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
 
   const { photos, isLoading, error, refetch: reloadPhotos } = usePhotos(albumId, searchQuery);
   const { epochKeys, isLoading: epochKeysLoading } = useAlbumEpochKeys(albumId);
@@ -205,15 +206,16 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
   const handleBulkDeleteClick = useCallback(() => {
     const selectedPhotos = photos.filter((p) => selection.selectedIds.has(p.id));
     if (selectedPhotos.length > 0) {
-      setBulkDeletePhotos(selectedPhotos);
-      setShowBulkDeleteDialog(true);
+      // setBulkDeletePhotos(selectedPhotos);
+      // setShowBulkDeleteDialog(true);
+      console.warn('Bulk delete dialog not implemented');
     }
   }, [photos, selection.selectedIds]);
 
   // Callback when bulk delete completes in photo grid
   const handleBulkDeleteComplete = useCallback(() => {
-    setShowBulkDeleteDialog(false);
-    setBulkDeletePhotos([]);
+    // setShowBulkDeleteDialog(false);
+    // setBulkDeletePhotos([]);
     selection.exitSelectionMode();
     reloadPhotos();
   }, [selection, reloadPhotos]);

@@ -15,6 +15,8 @@ import type {
   CreateAlbumRequest,
   RenameAlbumRequest,
   RenameAlbumResponse,
+  UpdateDescriptionRequest,
+  UpdateDescriptionResponse,
   SyncResponse,
   AlbumMember,
   InviteRequest,
@@ -180,6 +182,16 @@ export function createApiClient(): MosaicApi {
 
     async renameAlbum(albumId: string, request: RenameAlbumRequest): Promise<RenameAlbumResponse> {
       return apiRequest(`/albums/${albumId}/name`, {
+        method: 'PATCH',
+        body: request,
+      });
+    },
+
+    async updateAlbumDescription(
+      albumId: string,
+      request: UpdateDescriptionRequest
+    ): Promise<UpdateDescriptionResponse> {
+      return apiRequest(`/albums/${albumId}/description`, {
         method: 'PATCH',
         body: request,
       });

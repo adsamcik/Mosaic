@@ -1,3 +1,4 @@
+import { deriveTierKeys, memzero } from '@mosaic/crypto';
 import type { DecryptedManifest } from '../workers/types';
 import { fromBase64, getApi } from './api';
 import { getCryptoClient } from './crypto-client';
@@ -16,27 +17,32 @@ import { createLogger } from './logger';
 const log = createLogger('sync-engine');
 
 /**
- * Get epoch read key for an album/epoch.
- * Uses the epoch key store and service for proper unwrapping.
+ * Get epoch thumb key for manifest decryption.
+ * Derives the thumbKey from epochSeed for decrypting manifests.
+ * 
+ * IMPORTANT: Manifests are encrypted with the thumbKey (tier 1), not the raw epochSeed.
+ * This ensures share link recipients (who only have tier keys) can decrypt manifests.
  *
  * @param albumId - Album ID
  * @param epochId - Epoch ID
- * @returns Read key if available, null otherwise
+ * @returns thumbKey if available, null otherwise. Caller must call memzero() after use.
  */
-async function getEpochReadKey(
+async function getEpochThumbKey(
   albumId: string,
   epochId: number
 ): Promise<Uint8Array | null> {
   // Check cache first via epoch-key-store
   const cached = getEpochKey(albumId, epochId);
   if (cached) {
-    return cached.epochSeed;
+    const { thumbKey } = deriveTierKeys(cached.epochSeed);
+    return thumbKey;
   }
 
   // Fetch and unwrap epoch keys from server
   try {
     const bundle = await getOrFetchEpochKey(albumId, epochId);
-    return bundle.epochSeed;
+    const { thumbKey } = deriveTierKeys(bundle.epochSeed);
+    return thumbKey;
   } catch (err) {
     log.error(`Failed to get epoch key ${epochId} for album ${albumId}`, err);
     return null;
@@ -95,16 +101,21 @@ class SyncEngine extends EventTarget {
       // Decrypt manifests
       const decrypted: DecryptedManifest[] = [];
       for (const m of response.manifests) {
-        // Get epoch read key for this manifest
-        // Use the passed readKey if available, otherwise look up by the album's current epoch
-        let epochReadKey = readKey;
-        if (!epochReadKey) {
-          const cachedKey = await getEpochReadKey(albumId, response.currentEpochId);
+        // Get epoch seed for this manifest, then derive thumbKey for decryption.
+        // Manifests are encrypted with thumbKey (tier 1) to enable share link decryption.
+        let epochSeed = readKey;
+        if (!epochSeed) {
+          const cachedKey = await getEpochThumbKey(albumId, response.currentEpochId);
           if (!cachedKey) {
             log.warn(`No epoch key available for album ${albumId} epoch ${response.currentEpochId}`);
             continue;
           }
-          epochReadKey = cachedKey;
+          // getEpochThumbKey already returns the derived thumbKey
+          epochSeed = cachedKey;
+        } else {
+          // Caller passed epochSeed, derive thumbKey from it
+          const { thumbKey } = deriveTierKeys(epochSeed);
+          epochSeed = thumbKey;
         }
 
         // Decode base64 values from API
@@ -121,11 +132,16 @@ class SyncEngine extends EventTarget {
 
         if (!isValid) {
           log.warn(`Invalid signature for manifest ${m.id}`);
+          // Zero out derived key before continuing
+          memzero(epochSeed);
           continue;
         }
 
-        // Decrypt metadata
-        const meta = await crypto.decryptManifest(encryptedMeta, epochReadKey);
+        // Decrypt metadata using the thumbKey
+        const meta = await crypto.decryptManifest(encryptedMeta, epochSeed);
+
+        // Zero out derived key after use
+        memzero(epochSeed);
 
         decrypted.push({
           id: m.id,

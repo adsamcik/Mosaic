@@ -16,6 +16,12 @@ public class Album
     public string? EncryptedName { get; set; }
 
     /// <summary>
+    /// Base64-encoded encrypted album description (encrypted with epoch read key).
+    /// Client-side encrypted, server stores opaque blob.
+    /// </summary>
+    public string? EncryptedDescription { get; set; }
+
+    /// <summary>
     /// When the album will be automatically deleted. Null means no expiration.
     /// </summary>
     public DateTimeOffset? ExpiresAt { get; set; }

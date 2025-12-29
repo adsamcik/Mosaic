@@ -25,6 +25,10 @@ interface Album {
   decryptionFailed?: boolean;
   /** ISO 8601 date when album expires */
   expiresAt?: string | null;
+  /** Base64-encoded encrypted description from server (optional) */
+  encryptedDescription?: string | null;
+  /** Decrypted description (populated after decryption) */
+  decryptedDescription?: string | null;
 }
 
 interface AlbumCardProps {
@@ -109,7 +113,7 @@ export function AlbumCard({ album, onClick }: AlbumCardProps) {
             data-testid="album-icon"
             title={coverError ? 'Failed to load cover' : 'No photos'}
           >
-            📁
+            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           </span>
         )}
       </div>
@@ -128,7 +132,7 @@ export function AlbumCard({ album, onClick }: AlbumCardProps) {
               title="Failed to decrypt album name"
               data-testid="album-name-error"
             >
-              ⚠️
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             </span>
           )}
         </h3>

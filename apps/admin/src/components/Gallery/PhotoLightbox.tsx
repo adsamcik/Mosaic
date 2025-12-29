@@ -6,8 +6,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { loadPhoto, preloadPhotos, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
+import { loadPhoto, preloadPhotos, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
 
 /** Props for the PhotoLightbox component */
@@ -301,7 +301,9 @@ export function PhotoLightbox({
   // Render error state
   const renderError = () => (
     <div className="lightbox-error" data-testid="lightbox-error">
-      <span className="lightbox-error-icon">⚠️</span>
+      <span className="lightbox-error-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </span>
       <p className="lightbox-error-message">
         Failed to load photo: {(loadState as { error: Error }).error.message}
       </p>
@@ -365,6 +367,12 @@ export function PhotoLightbox({
             <dd>{photo.tags.join(', ')}</dd>
           </>
         )}
+        {photo.description && (
+          <>
+            <dt>Description</dt>
+            <dd className="lightbox-info-description">{photo.description}</dd>
+          </>
+        )}
       </dl>
     </div>
   );
@@ -388,7 +396,7 @@ export function PhotoLightbox({
         aria-label="Close lightbox"
         data-testid="lightbox-close"
       >
-        ✕
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
 
       {/* Navigation buttons */}
@@ -399,7 +407,7 @@ export function PhotoLightbox({
           aria-label="Previous photo"
           data-testid="lightbox-prev"
         >
-          ‹
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
       )}
       {hasNext && onNext && (
@@ -409,7 +417,7 @@ export function PhotoLightbox({
           aria-label="Next photo"
           data-testid="lightbox-next"
         >
-          ›
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
       )}
 
@@ -429,7 +437,7 @@ export function PhotoLightbox({
           aria-pressed={showInfo}
           data-testid="lightbox-info-toggle"
         >
-          ℹ
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         </button>
       )}
 
@@ -442,7 +450,7 @@ export function PhotoLightbox({
           title="Download photo"
           data-testid="lightbox-download"
         >
-          ⬇️
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
       )}
 
@@ -455,7 +463,7 @@ export function PhotoLightbox({
           title="Delete photo (Delete key)"
           data-testid="lightbox-delete"
         >
-          🗑️
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         </button>
       )}
 

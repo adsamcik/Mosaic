@@ -25,6 +25,12 @@ public class CreateAlbumRequest
     public string? EncryptedName { get; set; }
 
     /// <summary>
+    /// Base64-encoded encrypted album description (encrypted with epoch read key).
+    /// Optional - if not provided, album description will not be stored.
+    /// </summary>
+    public string? EncryptedDescription { get; set; }
+
+    /// <summary>
     /// Optional expiration date for the album. Must be in the future if provided.
     /// </summary>
     public DateTimeOffset? ExpiresAt { get; set; }
@@ -44,6 +50,11 @@ public record UpdateExpirationRequest(DateTimeOffset? ExpiresAt, int? Expiration
 /// Request to rename an album (update encrypted name)
 /// </summary>
 public record RenameAlbumRequest(string EncryptedName);
+
+/// <summary>
+/// Request to update album description
+/// </summary>
+public record UpdateDescriptionRequest(string? EncryptedDescription);
 
 /// <summary>
 /// Initial epoch key data for album creation
@@ -138,6 +149,7 @@ public class AlbumsController : ControllerBase
                 am.Album.CurrentVersion,
                 am.Album.CreatedAt,
                 am.Album.EncryptedName,
+                am.Album.EncryptedDescription,
                 am.Album.ExpiresAt,
                 am.Album.ExpirationWarningDays,
                 am.Role
@@ -214,6 +226,7 @@ public class AlbumsController : ControllerBase
                 CurrentEpochId = 1,
                 CurrentVersion = 1,
                 EncryptedName = request.EncryptedName,
+                EncryptedDescription = request.EncryptedDescription,
                 ExpiresAt = request.ExpiresAt,
                 ExpirationWarningDays = request.ExpirationWarningDays ?? 7
             };
@@ -267,8 +280,7 @@ public class AlbumsController : ControllerBase
                 album.CurrentEpochId,
                 album.CurrentVersion,
                 album.CreatedAt,
-                album.EncryptedName,
-                album.ExpiresAt,
+                album.EncryptedName,                album.EncryptedDescription,                album.ExpiresAt,
                 album.ExpirationWarningDays
             });
         }
@@ -304,6 +316,7 @@ public class AlbumsController : ControllerBase
             album.CurrentVersion,
             album.CreatedAt,
             album.EncryptedName,
+            album.EncryptedDescription,
             album.ExpiresAt,
             album.ExpirationWarningDays,
             membership.Role
@@ -476,6 +489,56 @@ public class AlbumsController : ControllerBase
         {
             album.Id,
             album.EncryptedName,
+            album.UpdatedAt
+        });
+    }
+
+    /// <summary>
+    /// Update album description. Members with edit access can update.
+    /// </summary>
+    [HttpPatch("{albumId:guid}/description")]
+    public async Task<IActionResult> UpdateDescription(Guid albumId, [FromBody] UpdateDescriptionRequest request)
+    {
+        var user = await GetOrCreateUser();
+
+        // Check membership - owner or editor can update description
+        var membership = await _db.AlbumMembers
+            .Where(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null)
+            .FirstOrDefaultAsync();
+
+        if (membership == null)
+        {
+            return Forbid();
+        }
+
+        // Only owner and editors can update description
+        if (membership.Role != "owner" && membership.Role != "editor")
+        {
+            return Forbid();
+        }
+
+        var album = await _db.Albums.FindAsync(albumId);
+        if (album == null)
+        {
+            return NotFound();
+        }
+
+        // Update encrypted description (null is allowed to clear description)
+        album.EncryptedDescription = request.EncryptedDescription;
+        album.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Album description updated. AlbumId: {AlbumId}, UpdatedBy: {UserId}, CorrelationId: {CorrelationId}",
+            albumId,
+            user.Id,
+            HttpContext.GetCorrelationId());
+
+        return Ok(new
+        {
+            album.Id,
+            album.EncryptedDescription,
             album.UpdatedAt
         });
     }

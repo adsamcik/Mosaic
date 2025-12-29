@@ -306,7 +306,7 @@ export class LoginPage {
   }
 
   get passwordInput() {
-    return this.page.getByLabel('Password');
+    return this.page.getByLabel('Password', { exact: true });
   }
 
   get confirmPasswordInput() {

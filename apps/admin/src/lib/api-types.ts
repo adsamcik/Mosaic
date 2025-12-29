@@ -87,6 +87,8 @@ export interface Album {
   updatedAt?: string;
   /** Base64-encoded encrypted album name (client-side encrypted with epoch read key) */
   encryptedName?: string | null;
+  /** Base64-encoded encrypted album description (client-side encrypted with epoch read key) */
+  encryptedDescription?: string | null;
   /** ISO 8601 date when album expires and will be deleted */
   expiresAt?: string | null;
   /** Days before expiration to show warning (default: 7) */
@@ -97,6 +99,8 @@ export interface CreateAlbumRequest {
   initialEpochKey: CreateEpochKeyRequest;
   /** Base64-encoded encrypted album name (optional) */
   encryptedName?: string;
+  /** Base64-encoded encrypted album description (optional) */
+  encryptedDescription?: string;
   /** ISO 8601 date when album should expire */
   expiresAt?: string;
   /** Days before expiration to show warning (default: 7) */
@@ -121,6 +125,19 @@ export interface RenameAlbumRequest {
 export interface RenameAlbumResponse {
   id: string;
   encryptedName: string;
+  updatedAt: string;
+}
+
+/** Request to update album description */
+export interface UpdateDescriptionRequest {
+  /** Base64-encoded encrypted album description, or null to clear */
+  encryptedDescription?: string | null;
+}
+
+/** Response from updating album description */
+export interface UpdateDescriptionResponse {
+  id: string;
+  encryptedDescription?: string | null;
   updatedAt: string;
 }
 
@@ -436,6 +453,7 @@ export interface MosaicApi {
   getAlbum(albumId: string): Promise<Album>;
   deleteAlbum(albumId: string): Promise<void>;
   renameAlbum(albumId: string, request: RenameAlbumRequest): Promise<RenameAlbumResponse>;
+  updateAlbumDescription(albumId: string, request: UpdateDescriptionRequest): Promise<UpdateDescriptionResponse>;
   syncAlbum(albumId: string, since: number, limit?: number): Promise<SyncResponse>;
 
   // Members
