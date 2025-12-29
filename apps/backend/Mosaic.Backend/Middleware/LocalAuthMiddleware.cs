@@ -79,7 +79,7 @@ public class LocalAuthMiddleware
                 s.RevokedAt == null &&
                 s.ExpiresAt > DateTime.UtcNow);
 
-        if (session == null)
+        if (session == null || session.User == null)
         {
             context.Response.StatusCode = 401;
             await context.Response.WriteAsJsonAsync(new { error = "Session expired or invalid" });

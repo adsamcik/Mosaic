@@ -13,7 +13,7 @@ import {
   hasCachedKeys,
   type CachedKeys,
 } from './key-cache';
-import { localAuthLogin } from './local-auth';
+import { localAuthLogin, localAuthRegister } from './local-auth';
 import { createLogger } from './logger';
 import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
 
@@ -584,6 +584,70 @@ class SessionManager {
     this.attachIdleListeners();
 
     log.info(`LocalAuth login successful: ${username} (${userId})${isNewUser ? ' [new user]' : ''}`);
+  }
+
+  /**
+   * LocalAuth registration with Ed25519 challenge-response.
+   * Explicitly registers a new user (does not auto-login existing users).
+   * Use this when user explicitly chooses to create a new account.
+   *
+   * @param username - The username to register
+   * @param password - User's password for key derivation and authentication
+   * @throws Error if username already exists
+   */
+  async localRegister(username: string, password: string): Promise<void> {
+    // Request persistent storage for OPFS
+    if (navigator.storage?.persist) {
+      const granted = await navigator.storage.persist();
+      if (!granted) {
+        log.warn('Persistent storage not granted - data may be evicted');
+      }
+    }
+
+    // Perform LocalAuth registration (will fail if user exists)
+    const { userId, userSalt, accountSalt, wrappedAccountKey } = await localAuthRegister(username, password);
+
+    // Now fetch the current user (we have a session cookie)
+    const api = getApi();
+    this._currentUser = await api.getCurrentUser();
+
+    // Store salt locally
+    localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+
+    // For new users, localAuthRegister already called init() with correct key
+    // Just need to derive identity for epoch key operations
+    const cryptoClient = await getCryptoClient();
+    
+    // Re-init if wrapped key provided (shouldn't happen for new users, but handle it)
+    if (wrappedAccountKey) {
+      await cryptoClient.initWithWrappedKey(password, userSalt, accountSalt, wrappedAccountKey);
+    }
+    await cryptoClient.deriveIdentity();
+
+    // Initialize database worker with session key
+    const db = await getDbClient();
+    const sessionKey = await cryptoClient.getSessionKey();
+    await db.init(sessionKey);
+
+    this._isLoggedIn = true;
+    this.markSessionActive();
+    this.notify();
+
+    // Cache keys for automatic restore on next reload
+    await this.cacheSessionKeys(userSalt, accountSalt);
+
+    // Subscribe to settings changes
+    this.settingsUnsubscribe = subscribeToSettings(() => {
+      if (this._isLoggedIn) {
+        this.resetIdleTimer();
+      }
+    });
+
+    // Start idle timeout tracking
+    this.resetIdleTimer();
+    this.attachIdleListeners();
+
+    log.info(`LocalAuth registration successful: ${username} (${userId})`);
   }
 
   /**

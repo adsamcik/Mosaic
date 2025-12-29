@@ -57,8 +57,8 @@ async function createManifestForUpload(
     albumId: task.albumId,
     filename: task.file.name,
     mimeType: task.file.type || 'application/octet-stream',
-    width: 0, // Will be updated when we have image dimensions
-    height: 0,
+    width: task.originalWidth ?? 0,
+    height: task.originalHeight ?? 0,
     tags: [],
     createdAt: now,
     updatedAt: now,
@@ -70,9 +70,6 @@ async function createManifestForUpload(
     ...(task.thumbWidth && { thumbWidth: task.thumbWidth }),
     ...(task.thumbHeight && { thumbHeight: task.thumbHeight }),
   };
-
-  // Try to get image dimensions if we have them from thumbnail generation
-  // For now, we'll set defaults since dimensions aren't tracked in the task
 
   // Encrypt the manifest metadata
   const encrypted = await crypto.encryptManifest(

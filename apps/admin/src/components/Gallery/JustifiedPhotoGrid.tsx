@@ -10,6 +10,7 @@ import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
 import { usePhotos } from '../../hooks/usePhotos';
+import type { UseSelectionReturn } from '../../hooks/useSelection';
 import {
   computeJustifiedLayout,
   getRowOffset,
@@ -39,13 +40,15 @@ interface JustifiedPhotoGridProps {
   searchQuery?: string;
   /** Callback when photos are deleted (for refreshing) */
   onPhotosDeleted?: () => void;
+  /** Selection state from parent (lifted up for header batch actions) */
+  selection?: UseSelectionReturn;
 }
 
 /**
  * Virtualized Justified Photo Grid Component
  * Uses a Google Photos-style layout with efficient rendering
  */
-export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: JustifiedPhotoGridProps) {
+export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: JustifiedPhotoGridProps) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   
@@ -88,9 +91,10 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
   const photoActions = usePhotoActions();
   const permissions = useAlbumPermissions();
 
-  // Selection state
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [selectionMode, setSelectionMode] = useState(false);
+  // Use selection from props if provided (lifted state), otherwise internal state
+  // This allows the header to control selection when present
+  const isSelectionMode = selection?.isSelectionMode ?? false;
+  const selectedIds = selection?.selectedIds ?? new Set<string>();
 
   // Delete dialog state
   const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
@@ -162,48 +166,26 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
   // Handle photo click to open lightbox
   const handlePhotoClick = useCallback(
     (photo: PhotoMeta) => {
-      if (!selectionMode) {
+      if (!isSelectionMode) {
         const index = photos.findIndex((p) => p.id === photo.id);
         if (index >= 0) {
           lightbox.open(index);
         }
       }
     },
-    [selectionMode, lightbox, photos]
+    [isSelectionMode, lightbox, photos]
   );
 
   // Handle selection change for a single photo
   const handleSelectionChange = useCallback((photoId: string, selected: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
+    if (selection) {
       if (selected) {
-        next.add(photoId);
+        selection.selectPhoto(photoId);
       } else {
-        next.delete(photoId);
+        selection.deselectPhoto(photoId);
       }
-      return next;
-    });
-  }, []);
-
-  // Toggle selection mode
-  const toggleSelectionMode = useCallback(() => {
-    setSelectionMode((prev) => {
-      if (prev) {
-        setSelectedIds(new Set());
-      }
-      return !prev;
-    });
-  }, []);
-
-  // Select all photos
-  const selectAll = useCallback(() => {
-    setSelectedIds(new Set(photos.map((p) => p.id)));
-  }, [photos]);
-
-  // Clear selection
-  const clearSelection = useCallback(() => {
-    setSelectedIds(new Set());
-  }, []);
+    }
+  }, [selection]);
 
   // Handle delete button click for a single photo
   const handleDeletePhoto = useCallback((photo: PhotoMeta, thumbnailUrl?: string) => {
@@ -218,15 +200,6 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
       setDeleteThumbnailUrl(undefined);
     }
   }, [lightbox.currentPhoto]);
-
-  // Handle bulk delete
-  const handleBulkDelete = useCallback(() => {
-    const selectedPhotos = photos.filter((p) => selectedIds.has(p.id));
-    if (selectedPhotos.length > 0) {
-      setDeleteTarget(selectedPhotos);
-      setDeleteThumbnailUrl(undefined);
-    }
-  }, [photos, selectedIds]);
 
   // Confirm deletion
   const handleConfirmDelete = useCallback(async () => {
@@ -247,7 +220,11 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
 
       setDeleteTarget(null);
       setDeleteThumbnailUrl(undefined);
-      setSelectedIds(new Set());
+      
+      // Clear selection if using lifted state
+      if (selection) {
+        selection.clearSelection();
+      }
 
       if (lightbox.isOpen) {
         lightbox.close();
@@ -291,59 +268,10 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
     ? epochKeys.get(lightbox.currentPhoto.epochId)
     : undefined;
 
-  const selectedCount = selectedIds.size;
   const visibleRows = rows.slice(startIndex, endIndex + 1);
 
   return (
     <>
-      {/* Selection toolbar - only show if user can select */}
-      {permissions.canSelect && (
-        <div className="justified-grid-toolbar" data-testid="justified-grid-toolbar">
-          <button
-            className={`button-secondary ${selectionMode ? 'button-active' : ''}`}
-            onClick={toggleSelectionMode}
-            data-testid="selection-mode-button"
-          >
-            {selectionMode ? 'Cancel' : 'Select'}
-          </button>
-
-          {selectionMode && (
-            <>
-              <button
-                className="button-secondary"
-                onClick={selectAll}
-                data-testid="select-all-button"
-              >
-                Select All
-              </button>
-              {selectedCount > 0 && (
-                <>
-                  <span className="selection-count" data-testid="selection-count">
-                    {selectedCount} selected
-                  </span>
-                  <button
-                    className="button-secondary"
-                    onClick={clearSelection}
-                    data-testid="clear-selection-button"
-                  >
-                    Clear
-                  </button>
-                  {permissions.canDelete && (
-                    <button
-                      className="button-danger"
-                      onClick={handleBulkDelete}
-                      data-testid="bulk-delete-button"
-                    >
-                      Delete ({selectedCount})
-                    </button>
-                  )}
-                </>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
       {/* Virtualized grid container - ALWAYS rendered so ResizeObserver can measure it */}
       <div
         ref={containerRef}
@@ -398,13 +326,13 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted }: Ju
                       height={height}
                       epochReadKey={epochReadKey}
                       isSelected={isSelected}
-                      selectionMode={selectionMode}
+                      selectionMode={isSelectionMode}
                       showDelete={permissions.canDelete}
                       onClick={() => handlePhotoClick(photo)}
                       onSelectionChange={(selected: boolean) =>
                         handleSelectionChange(photo.id, selected)
                       }
-                      onDelete={() => handleDeletePhoto(photo)}
+                      onDelete={(thumbnailUrl) => handleDeletePhoto(photo, thumbnailUrl)}
                     />
                   );
                 })}

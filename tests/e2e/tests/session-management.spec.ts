@@ -33,18 +33,21 @@ test.describe('Session Management', () => {
       // Reload page
       await user.page.reload();
 
+      // Wait for page to stabilize after reload - either login form or app shell should appear
+      await expect(
+        user.page.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
+      ).toBeVisible({ timeout: 30000 });
+
       // Session should restore without requiring password
       // Either we see the app shell directly, or we need to re-login
-      // depending on key cache settings
       const hasAppShell = await user.page
         .getByTestId('app-shell')
-        .isVisible({ timeout: 5000 })
+        .isVisible()
         .catch(() => false);
 
       if (!hasAppShell) {
         // Need to re-login
         const loginPage = new LoginPage(user.page);
-        await loginPage.waitForForm();
         await loginPage.login(TEST_PASSWORD);
         await loginPage.expectLoginSuccess();
       }

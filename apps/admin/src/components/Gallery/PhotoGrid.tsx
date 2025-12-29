@@ -4,6 +4,7 @@ import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
 import { usePhotos } from '../../hooks/usePhotos';
+import type { UseSelectionReturn } from '../../hooks/useSelection';
 import type { PhotoMeta } from '../../workers/types';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
 import { PhotoLightbox } from './PhotoLightbox';
@@ -24,22 +25,24 @@ interface PhotoGridProps {
   searchQuery?: string;
   /** Callback when photos are deleted (for refreshing) */
   onPhotosDeleted?: () => void;
+  /** Selection state from parent (lifted up for header batch actions) */
+  selection?: UseSelectionReturn;
 }
 
 /**
  * Virtualized Photo Grid Component
  * Uses TanStack Virtual for efficient rendering of large photo collections
  */
-export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted }: PhotoGridProps) {
+export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted, selection }: PhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const { photos, isLoading, error, refetch } = usePhotos(albumId, searchQuery);
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
   const lightbox = useLightbox(photos);
   const photoActions = usePhotoActions();
 
-  // Selection state
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [selectionMode, setSelectionMode] = useState(false);
+  // Use selection from props if provided (lifted state), otherwise internal state
+  const isSelectionMode = selection?.isSelectionMode ?? false;
+  const selectedIds = selection?.selectedIds ?? new Set<string>();
 
   // Delete dialog state
   const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
@@ -78,44 +81,21 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted }: PhotoGridPr
 
   // Handle photo click to open lightbox
   const handlePhotoClick = useCallback((photoIndex: number) => {
-    if (!selectionMode) {
+    if (!isSelectionMode) {
       lightbox.open(photoIndex);
     }
-  }, [selectionMode, lightbox]);
+  }, [isSelectionMode, lightbox]);
 
   // Handle selection change for a single photo
   const handleSelectionChange = useCallback((photoId: string, selected: boolean) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
+    if (selection) {
       if (selected) {
-        next.add(photoId);
+        selection.selectPhoto(photoId);
       } else {
-        next.delete(photoId);
+        selection.deselectPhoto(photoId);
       }
-      return next;
-    });
-  }, []);
-
-  // Toggle selection mode
-  const toggleSelectionMode = useCallback(() => {
-    setSelectionMode(prev => {
-      if (prev) {
-        // Exiting selection mode - clear selections
-        setSelectedIds(new Set());
-      }
-      return !prev;
-    });
-  }, []);
-
-  // Select all photos
-  const selectAll = useCallback(() => {
-    setSelectedIds(new Set(photos.map(p => p.id)));
-  }, [photos]);
-
-  // Clear selection
-  const clearSelection = useCallback(() => {
-    setSelectedIds(new Set());
-  }, []);
+    }
+  }, [selection]);
 
   // Handle delete button click for a single photo
   const handleDeletePhoto = useCallback((photo: PhotoMeta, thumbnailUrl?: string) => {
@@ -130,15 +110,6 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted }: PhotoGridPr
       setDeleteThumbnailUrl(undefined); // Lightbox shows full image, not thumbnail
     }
   }, [lightbox.currentPhoto]);
-
-  // Handle bulk delete
-  const handleBulkDelete = useCallback(() => {
-    const selectedPhotos = photos.filter(p => selectedIds.has(p.id));
-    if (selectedPhotos.length > 0) {
-      setDeleteTarget(selectedPhotos);
-      setDeleteThumbnailUrl(undefined);
-    }
-  }, [photos, selectedIds]);
 
   // Confirm deletion
   const handleConfirmDelete = useCallback(async () => {
@@ -163,8 +134,10 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted }: PhotoGridPr
       setDeleteTarget(null);
       setDeleteThumbnailUrl(undefined);
 
-      // Clear selection
-      setSelectedIds(new Set());
+      // Clear selection if using lifted state
+      if (selection) {
+        selection.clearSelection();
+      }
 
       // Close lightbox if open
       if (lightbox.isOpen) {
@@ -177,7 +150,7 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted }: PhotoGridPr
     } catch {
       // Error is handled by usePhotoActions and shown in dialog
     }
-  }, [deleteTarget, photoActions, albumId, lightbox, refetch, onPhotosDeleted]);
+  }, [deleteTarget, photoActions, albumId, lightbox, refetch, onPhotosDeleted, selection]);
 
   // Cancel deletion
   const handleCancelDelete = useCallback(() => {
@@ -217,54 +190,8 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted }: PhotoGridPr
     ? epochKeys.get(lightbox.currentPhoto.epochId)
     : undefined;
 
-  const selectedCount = selectedIds.size;
-
   return (
     <>
-      {/* Selection toolbar */}
-      <div className="photo-grid-toolbar" data-testid="photo-grid-toolbar">
-        <button
-          className={`button-secondary ${selectionMode ? 'button-active' : ''}`}
-          onClick={toggleSelectionMode}
-          data-testid="selection-mode-button"
-        >
-          {selectionMode ? 'Cancel' : 'Select'}
-        </button>
-
-        {selectionMode && (
-          <>
-            <button
-              className="button-secondary"
-              onClick={selectAll}
-              data-testid="select-all-button"
-            >
-              Select All
-            </button>
-            {selectedCount > 0 && (
-              <>
-                <span className="selection-count" data-testid="selection-count">
-                  {selectedCount} selected
-                </span>
-                <button
-                  className="button-secondary"
-                  onClick={clearSelection}
-                  data-testid="clear-selection-button"
-                >
-                  Clear
-                </button>
-                <button
-                  className="button-danger"
-                  onClick={handleBulkDelete}
-                  data-testid="bulk-delete-button"
-                >
-                  Delete ({selectedCount})
-                </button>
-              </>
-            )}
-          </>
-        )}
-      </div>
-
       <div ref={parentRef} className="photo-grid-container" data-testid="photo-grid">
         <div
           className="photo-grid-virtual"
@@ -302,8 +229,8 @@ export function PhotoGrid({ albumId, searchQuery, onPhotosDeleted }: PhotoGridPr
                     onClick={() => handlePhotoClick(photoIndex)}
                     isSelected={isSelected}
                     onSelectionChange={(selected: boolean) => handleSelectionChange(photo.id, selected)}
-                    onDelete={() => handleDeletePhoto(photo)}
-                    selectionMode={selectionMode}
+                    onDelete={(thumbnailUrl) => handleDeletePhoto(photo, thumbnailUrl)}
+                    selectionMode={isSelectionMode}
                   />
                 );
               })}

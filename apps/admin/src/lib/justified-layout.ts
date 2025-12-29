@@ -114,14 +114,14 @@ export function computeJustifiedLayout(
       // height = (containerWidth - (n-1) * gap) / aspectSum
       const actualHeight = (containerWidth - (currentRow.length - 1) * gap) / currentRowAspectSum;
 
-      // Clamp height to reasonable bounds
-      const clampedHeight = Math.min(actualHeight, targetRowHeight * maxRowHeightMultiplier);
+      // Clamp height to reasonable bounds and floor to avoid sub-pixel rendering issues
+      const clampedHeight = Math.floor(Math.min(actualHeight, targetRowHeight * maxRowHeightMultiplier));
 
-      // Create justified row
+      // Create justified row - all photos in the same row have the same height
       const justifiedPhotos: JustifiedPhoto[] = currentRow.map(({ photo: p, aspectRatio: ar }) => ({
         photo: p,
         width: Math.floor(ar * clampedHeight),
-        height: Math.floor(clampedHeight),
+        height: clampedHeight,
       }));
 
       // Adjust last photo width to fill remaining space exactly
@@ -148,15 +148,15 @@ export function computeJustifiedLayout(
 
   // Handle partial last row (don't stretch to fill width)
   if (currentRow.length > 0) {
-    // Use target row height for partial row
-    const rowHeight = targetRowHeight;
+    // Use target row height for partial row (already an integer)
+    const rowHeight = Math.floor(targetRowHeight);
 
     const justifiedPhotos: JustifiedPhoto[] = currentRow.map(({ photo: p, aspectRatio: ar }) => {
       const width = Math.max(Math.floor(ar * rowHeight), minPhotoWidth);
       return {
         photo: p,
         width,
-        height: Math.floor(rowHeight),
+        height: rowHeight,
       };
     });
 
@@ -200,6 +200,7 @@ export function findPhotoRow(
 
 /**
  * Get the row offset (Y position) for a given row index
+ * Returns an integer to avoid sub-pixel rendering issues
  */
 export function getRowOffset(
   rows: JustifiedRow[],
@@ -213,7 +214,7 @@ export function getRowOffset(
       offset += row.height + gap;
     }
   }
-  return offset;
+  return Math.floor(offset);
 }
 
 /**

@@ -11,6 +11,7 @@
 import {
   ApiHelper,
   AppShell,
+  CreateAlbumDialogPage,
   expect,
   GalleryPage,
   generateTestImage,
@@ -108,54 +109,76 @@ test.describe('Sync: Multi-Session', () => {
   });
 
   test('new photos appear after page reload', async ({
-    authenticatedPage,
+    browser,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
+    // Use browser-based album creation to get real epoch keys
+    const context = await browser.newContext();
+    const page = await context.newPage();
 
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
-    await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
-    await loginPage.expectLoginSuccess();
+    // Set up Remote-User header injection
+    await page.route('**/api/**', async (route) => {
+      const headers = { ...route.request().headers(), 'Remote-User': testUser };
+      await route.continue({ headers });
+    });
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
-    await expect(albumCard).toBeVisible({ timeout: 30000 });
-    await albumCard.click();
-
-    const gallery = new GalleryPage(authenticatedPage);
-    await gallery.waitForLoad();
-
-    // Upload photos
-    const testImage = generateTestImage();
-    await gallery.uploadPhoto(testImage, 'reload-photo-1.png');
-    await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
-
-    await gallery.uploadPhoto(testImage, 'reload-photo-2.png');
-    await expect(async () => {
-      expect(await gallery.photos.count()).toBeGreaterThanOrEqual(2);
-    }).toPass({ timeout: 60000 });
-
-    const countBefore = await gallery.photos.count();
-
-    // Reload page
-    await authenticatedPage.reload();
-
-    // Re-login if needed
-    const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
-    if (needsLogin) {
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    try {
+      await page.goto('/');
+      const loginPage = new LoginPage(page);
+      await loginPage.waitForForm();
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
 
-      await authenticatedPage.getByTestId('album-card').first().click();
+      // Create album through browser UI (generates real epoch keys)
+      const appShell = new AppShell(page);
+      await appShell.waitForLoad();
+      await appShell.createAlbum();
+      const createDialog = new CreateAlbumDialogPage(page);
+      await createDialog.createAlbum('Photo Reload Test');
+
+      const albumCard = page.getByTestId('album-card').first();
+      await expect(albumCard).toBeVisible({ timeout: 30000 });
+      await albumCard.click();
+
+      const gallery = new GalleryPage(page);
+      await gallery.waitForLoad();
+
+      // Upload photos
+      const testImage = generateTestImage();
+      await gallery.uploadPhoto(testImage, 'reload-photo-1.png');
+      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+
+      await gallery.uploadPhoto(testImage, 'reload-photo-2.png');
+      await expect(async () => {
+        expect(await gallery.photos.count()).toBeGreaterThanOrEqual(2);
+      }).toPass({ timeout: 60000 });
+
+      const countBefore = await gallery.photos.count();
+
+      // Reload page
+      await page.reload();
+
+      // Check if we need to re-login (session may persist)
+      const needsLogin = await loginPage.loginForm.isVisible({ timeout: 5000 }).catch(() => false);
+      if (needsLogin) {
+        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+        await loginPage.expectLoginSuccess();
+      } else {
+        await appShell.waitForLoad();
+      }
+
+      // Navigate back to album
+      await page.getByTestId('album-card').first().click();
+
+      await gallery.waitForLoad();
+
+      // Photos should persist
+      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+      const countAfter = await gallery.photos.count();
+      expect(countAfter).toBe(countBefore);
+    } finally {
+      await context.close();
     }
-
-    await gallery.waitForLoad();
-
-    // Photos should persist
-    await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
-    const countAfter = await gallery.photos.count();
-    expect(countAfter).toBe(countBefore);
   });
 
   test('album list syncs with server state', async ({

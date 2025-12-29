@@ -14,6 +14,7 @@ import {
   Lightbox,
   loginUser,
   createAlbumViaAPI,
+  createAlbumViaUI,
   generateTestImage,
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
@@ -214,10 +215,11 @@ test.describe('Photo Lifecycle', () => {
     test('P1-PHOTO-7: uploaded photos persist after page reload', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('persister');
 
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
+      // Login first
       await loginUser(user, TEST_PASSWORD);
+
+      // Create album through browser UI (generates real epoch keys)
+      await createAlbumViaUI(user.page, 'Persistence Test Album');
 
       const appShell = new AppShell(user.page);
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
@@ -234,11 +236,16 @@ test.describe('Photo Lifecycle', () => {
       // Reload page
       await user.page.reload();
 
-      // Re-login
+      // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      await loginPage.waitForForm();
-      await loginPage.login(TEST_PASSWORD);
-      await loginPage.expectLoginSuccess();
+      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (needsLogin) {
+        await loginPage.login(TEST_PASSWORD);
+        await loginPage.expectLoginSuccess();
+      } else {
+        await appShell.waitForLoad();
+      }
 
       // Navigate back to album
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });

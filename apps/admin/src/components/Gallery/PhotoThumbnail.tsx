@@ -12,8 +12,8 @@ interface PhotoThumbnailProps {
   isSelected?: boolean;
   /** Callback when selection changes */
   onSelectionChange?: (selected: boolean) => void;
-  /** Callback to delete this photo */
-  onDelete?: () => void;
+  /** Callback to delete this photo (receives thumbnail blob URL if loaded) */
+  onDelete?: (thumbnailUrl?: string) => void;
   /** Whether selection mode is active */
   selectionMode?: boolean;
 }
@@ -185,10 +185,11 @@ export function PhotoThumbnail({
     (event: React.MouseEvent) => {
       event.stopPropagation();
       if (onDelete) {
-        onDelete();
+        const url = state.status === 'loaded' ? state.result.blobUrl : undefined;
+        onDelete(url);
       }
     },
-    [onDelete]
+    [onDelete, state]
   );
 
   // Handle keyboard activation
@@ -205,10 +206,11 @@ export function PhotoThumbnail({
       // Delete on Delete/Backspace key when focused
       if ((event.key === 'Delete' || event.key === 'Backspace') && onDelete) {
         event.preventDefault();
-        onDelete();
+        const url = state.status === 'loaded' ? state.result.blobUrl : undefined;
+        onDelete(url);
       }
     },
-    [onClick, state.status, selectionMode, onSelectionChange, isSelected, onDelete]
+    [onClick, state, selectionMode, onSelectionChange, isSelected, onDelete]
   );
 
   // Get thumbnail URL for delete dialog if loaded

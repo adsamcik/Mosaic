@@ -98,13 +98,22 @@ export function toBase64(data: Uint8Array): string {
 }
 
 /**
- * Convert base64url string to bytes.
+ * Convert base64 string to bytes.
+ * Accepts both URL-safe Base64 (with - and _) and standard Base64 (with + and /).
+ * Handles both padded and unpadded input.
  *
- * @param base64 - Base64url string (with or without padding)
+ * This is important because .NET serializes byte[] to standard Base64,
+ * but we use URL-safe Base64 internally.
+ *
+ * @param base64 - Base64 string (standard or URL-safe, with or without padding)
  * @returns Decoded bytes
  */
 export function fromBase64(base64: string): Uint8Array {
-  return sodium.from_base64(base64, sodium.base64_variants.URLSAFE_NO_PADDING);
+  // Normalize standard Base64 to URL-safe: replace + with -, / with _
+  const normalized = base64.replace(/\+/g, '-').replace(/\//g, '_');
+  // Strip padding (libsodium URLSAFE_NO_PADDING doesn't accept padding)
+  const unpadded = normalized.replace(/=+$/, '');
+  return sodium.from_base64(unpadded, sodium.base64_variants.URLSAFE_NO_PADDING);
 }
 
 /**

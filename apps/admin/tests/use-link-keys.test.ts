@@ -76,7 +76,7 @@ vi.mock('@mosaic/crypto', () => ({
 global.fetch = mocks.fetch as unknown as typeof fetch;
 
 // Import after mocks
-import { useLinkKeys, parseLinkFragment, clearLinkKeys } from '../src/hooks/useLinkKeys';
+import { clearLinkKeys, parseLinkFragment, useLinkKeys } from '../src/hooks/useLinkKeys';
 
 // Test component that captures hook result
 function TestComponent({ 

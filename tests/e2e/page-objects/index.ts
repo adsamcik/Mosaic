@@ -90,7 +90,7 @@ export class AppShell {
     this.albumList = page.getByTestId('album-list');
     this.createAlbumButton = page.getByRole('button', { name: /create album|new album|\+/i });
     this.logoutButton = page.getByRole('button', { name: /lock|logout/i });
-    this.settingsButton = page.getByRole('button', { name: /settings|gear|cog/i });
+    this.settingsButton = page.getByTestId('settings-nav-button');
     this.adminButton = page.getByRole('button', { name: /admin|shield/i });
     this.backButton = page.getByRole('button', { name: /back|albums/i });
     this.searchInput = page.getByTestId('search-input');

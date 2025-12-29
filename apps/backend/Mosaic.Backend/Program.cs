@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
@@ -22,6 +23,11 @@ builder.Services.AddDbContext<MosaicDbContext>(options =>
     {
         options.UseNpgsql(connectionString);
     }
+    
+    // Suppress the PendingModelChangesWarning - we handle migrations manually
+    // This warning is new in EF Core 9 and can trigger false positives when the model
+    // snapshot was generated with a different provider than the runtime provider
+    options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 });
 
 // Services

@@ -103,6 +103,77 @@ describe('utils', () => {
       const decoded = fromBase64(encoded);
       expect(decoded).toEqual(original);
     });
+
+    it('toBase64 produces URL-safe encoding without padding', () => {
+      // Use data that would produce + and / in standard Base64
+      // 0xFB 0xFF produces /w== in standard Base64
+      const data = new Uint8Array([0xFB, 0xFF]);
+      const encoded = toBase64(data);
+      // Should not contain standard Base64 characters
+      expect(encoded).not.toContain('+');
+      expect(encoded).not.toContain('/');
+      expect(encoded).not.toContain('=');
+      // Should use URL-safe characters
+      expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/);
+    });
+
+    it('fromBase64 decodes URL-safe Base64 without padding', () => {
+      // URL-safe encoded "hello"
+      const urlSafe = 'aGVsbG8';
+      const decoded = fromBase64(urlSafe);
+      expect(new TextDecoder().decode(decoded)).toBe('hello');
+    });
+
+    it('fromBase64 decodes standard Base64 with padding', () => {
+      // Standard Base64 encoded "hello" (with padding)
+      const standard = 'aGVsbG8=';
+      const decoded = fromBase64(standard);
+      expect(new TextDecoder().decode(decoded)).toBe('hello');
+    });
+
+    it('fromBase64 handles standard Base64 with + and / characters', () => {
+      // This is key: when .NET serializes byte[] to JSON, it uses standard Base64
+      // which includes + and / characters instead of - and _
+      // "0xFB 0xEF 0xBE" would encode to ++++ in standard Base64 (with special chars)
+      
+      // Test data that produces + in standard Base64
+      // 0xFB -> standard: +w==, urlsafe: -w
+      const standardWithPlus = '+w==';
+      const urlSafeEquiv = '-w';
+      
+      // Both should decode to the same bytes
+      const decodedStandard = fromBase64(standardWithPlus);
+      const decodedUrlSafe = fromBase64(urlSafeEquiv);
+      expect(decodedStandard).toEqual(decodedUrlSafe);
+    });
+
+    it('fromBase64 handles standard Base64 with / character', () => {
+      // Test data that produces / in standard Base64
+      // Base64 "/" maps to "_" in URL-safe
+      const standardWithSlash = '/w==';
+      const urlSafeEquiv = '_w';
+      
+      const decodedStandard = fromBase64(standardWithSlash);
+      const decodedUrlSafe = fromBase64(urlSafeEquiv);
+      expect(decodedStandard).toEqual(decodedUrlSafe);
+    });
+
+    it('fromBase64 handles mixed content from .NET backend', () => {
+      // Simulate what comes from .NET backend for a nonce (24 bytes)
+      // Generate known test data that would have +, /, and = in standard Base64
+      const testBytes = new Uint8Array([
+        0xFB, 0xEF, 0xBE, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+        0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10
+      ]);
+      
+      // Encode using standard Base64 (what .NET would produce)
+      const standardBase64 = btoa(String.fromCharCode(...testBytes));
+      
+      // This should decode correctly even with standard Base64
+      const decoded = fromBase64(standardBase64);
+      expect(decoded).toEqual(testBytes);
+    });
   });
 
   describe('memzero', () => {

@@ -53,6 +53,10 @@ export interface UploadTask {
   thumbWidth?: number;
   /** Thumbnail height */
   thumbHeight?: number;
+  /** Original image width */
+  originalWidth?: number;
+  /** Original image height */
+  originalHeight?: number;
 }
 
 /** Persisted task state (for resume after reload) */
@@ -71,6 +75,10 @@ interface PersistedTask {
   thumbWidth?: number;
   /** Thumbnail height */
   thumbHeight?: number;
+  /** Original image width */
+  originalWidth?: number;
+  /** Original image height */
+  originalHeight?: number;
 }
 
 /** IndexedDB schema */
@@ -227,16 +235,22 @@ class UploadQueue {
           const thumbnailBase64 = uint8ArrayToBase64(thumbResult.data);
           const thumbWidth = thumbResult.width;
           const thumbHeight = thumbResult.height;
+          const originalWidth = thumbResult.originalWidth;
+          const originalHeight = thumbResult.originalHeight;
 
           task.thumbnailBase64 = thumbnailBase64;
           task.thumbWidth = thumbWidth;
           task.thumbHeight = thumbHeight;
+          task.originalWidth = originalWidth;
+          task.originalHeight = originalHeight;
 
-          // Persist thumbnail for resume support
+          // Persist thumbnail and dimensions for resume support
           await this.updatePersistedTask(task.id, {
             thumbnailBase64,
             thumbWidth,
             thumbHeight,
+            originalWidth,
+            originalHeight,
           });
         } catch (thumbError) {
           // Log but don't fail upload if thumbnail generation fails

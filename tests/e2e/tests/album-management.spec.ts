@@ -190,11 +190,17 @@ test.describe('Album Management', () => {
       // Reload page
       await user.page.reload();
 
-      // Re-login
+      // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      await loginPage.waitForForm();
-      await loginPage.login(TEST_PASSWORD);
-      await loginPage.expectLoginSuccess();
+      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (needsLogin) {
+        await loginPage.login(TEST_PASSWORD);
+        await loginPage.expectLoginSuccess();
+      } else {
+        // Session persisted, just wait for app shell to load
+        await appShell.waitForLoad();
+      }
 
       // Album should still be there
       await expect(user.page.getByTestId('album-card').filter({ hasText: albumName })).toBeVisible({
@@ -316,11 +322,17 @@ test.describe('Album Management', () => {
       // Reload page
       await user.page.reload();
 
-      // Re-login
+      // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      await loginPage.waitForForm();
-      await loginPage.login(TEST_PASSWORD);
-      await loginPage.expectLoginSuccess();
+      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (needsLogin) {
+        await loginPage.login(TEST_PASSWORD);
+        await loginPage.expectLoginSuccess();
+      } else {
+        // Session persisted, just wait for app shell to load
+        await appShell.waitForLoad();
+      }
 
       // Album should not be there - either empty state or no album cards
       const albumCards = user.page.getByTestId('album-card');

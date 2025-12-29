@@ -340,8 +340,12 @@ public class ShareLinksController : ControllerBase
         if (album == null) return NotFound(new { error = "Album not found" });
         if (album.OwnerId != user.Id) return Forbid();
 
-        var links = await _db.ShareLinks
+        // Note: SQLite doesn't support DateTimeOffset in ORDER BY, so we order client-side
+        var shareLinks = await _db.ShareLinks
             .Where(sl => sl.AlbumId == albumId)
+            .ToListAsync();
+
+        var links = shareLinks
             .OrderByDescending(sl => sl.CreatedAt)
             .Select(sl => new ShareLinkResponse
             {
@@ -353,8 +357,7 @@ public class ShareLinksController : ControllerBase
                 UseCount = sl.UseCount,
                 IsRevoked = sl.IsRevoked,
                 CreatedAt = sl.CreatedAt
-            })
-            .ToListAsync();
+            }).ToList();
 
         return Ok(links);
     }

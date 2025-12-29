@@ -180,11 +180,16 @@ test.describe('Authentication', () => {
       // Reload
       await authenticatedPage.reload();
 
-      // Should still be in app shell (session maintained)
-      // Note: This depends on session storage implementation
+      // Wait for page to stabilize - session restoration can take a moment
       const appShell = new AppShell(authenticatedPage);
       
-      // Either app shell is shown or login form (if session doesn't persist)
+      // Wait for either app shell (session restored) or login form (session expired)
+      // with a longer timeout since session restoration involves crypto operations
+      await expect(
+        authenticatedPage.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
+      ).toBeVisible({ timeout: 30000 });
+      
+      // Now verify one of them is visible
       const hasAppShell = await appShell.shell.isVisible().catch(() => false);
       const hasLogin = await loginPage.loginForm.isVisible().catch(() => false);
       

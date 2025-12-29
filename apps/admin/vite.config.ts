@@ -19,10 +19,12 @@ export default defineConfig(({ mode }) => {
     },
 
     // Required headers for SharedArrayBuffer (used by some crypto operations)
+    // Using 'credentialless' instead of 'require-corp' to allow cross-origin resources
+    // (like OpenStreetMap tiles) that don't have CORP headers
     server: {
       headers: {
         'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'require-corp',
+        'Cross-Origin-Embedder-Policy': 'credentialless',
       },
       // Proxy API requests to backend during development
       proxy: {

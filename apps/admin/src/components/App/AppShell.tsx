@@ -19,8 +19,8 @@ export function AppShell() {
   const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   
-  // Get albums data for album name display and delete/rename functionality
-  const { albums, deleteAlbum, renameAlbum } = useAlbums();
+  // Get albums data - this is the single source of truth for album state
+  const { albums, isLoading: albumsLoading, error: albumsError, refetch: refetchAlbums, createAlbum, isCreating, createError, deleteAlbum, renameAlbum } = useAlbums();
 
   // Check if current user is admin on mount
   useEffect(() => {
@@ -115,7 +115,16 @@ export function AppShell() {
 
       <main className="app-main">
         {currentView === 'albums' && (
-          <AlbumList onSelectAlbum={handleSelectAlbum} />
+          <AlbumList
+            onSelectAlbum={handleSelectAlbum}
+            albums={albums}
+            isLoading={albumsLoading}
+            error={albumsError}
+            refetch={refetchAlbums}
+            createAlbum={createAlbum}
+            isCreating={isCreating}
+            createError={createError}
+          />
         )}
         {currentView === 'gallery' && selectedAlbumId && (
           <Gallery 
