@@ -100,7 +100,8 @@ describe('AppShell', () => {
 
     const settingsButton = container.querySelector('[data-testid="settings-nav-button"]');
     expect(settingsButton).toBeTruthy();
-    expect(settingsButton?.textContent).toContain('⚙️');
+    // Button uses an SVG icon, check for the svg element
+    expect(settingsButton?.querySelector('svg')).toBeTruthy();
   });
 
   it('navigates to settings when settings button is clicked', async () => {
