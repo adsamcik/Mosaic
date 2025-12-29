@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { User } from '../../lib/api-types';
-import { isLocalAuthMode } from '../../lib/local-auth';
+import { checkServerStatus } from '../../lib/local-auth';
 import { session } from '../../lib/session';
 
 interface LoginFormProps {
@@ -23,20 +23,47 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
   const [isLocalAuth, setIsLocalAuth] = useState(false);
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [checkingAuthMode, setCheckingAuthMode] = useState(true);
+  const [isServerUnreachable, setIsServerUnreachable] = useState(false);
 
   // Whether we're restoring an existing session (page reload case)
   const isSessionRestore = !!pendingSessionUser;
 
+  const checkServer = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const status = await checkServerStatus();
+      setIsLocalAuth(status.isLocalAuth);
+      
+      if (!status.isOnline) {
+        setError('Cannot reach the Mosaic server. Please ensure the server is running.');
+        setIsServerUnreachable(true);
+      } else if (status.statusCode && status.statusCode >= 500) {
+        // Use the detailed error from the server if available, otherwise a friendly message
+        const detail = status.error?.startsWith('Server error:') ? status.error : `System error (${status.statusCode})`;
+        setError(`The server is currently unavailable: ${detail}`);
+        setIsServerUnreachable(true);
+      } else {
+        setIsServerUnreachable(false);
+      }
+    } finally {
+      setLoading(false);
+      setCheckingAuthMode(false);
+    }
+  };
+
   // Check if LocalAuth mode is available on mount
   useEffect(() => {
-    isLocalAuthMode().then((localAuth) => {
-      setIsLocalAuth(localAuth);
-      setCheckingAuthMode(false);
-    });
+    checkServer();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isServerUnreachable) {
+      await checkServer();
+      return;
+    }
 
     // Session restore mode: just need password
     if (isSessionRestore) {
@@ -157,7 +184,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Enter username"
-                disabled={loading}
+                disabled={loading || isServerUnreachable}
                 className="form-input"
                 autoComplete="username"
               />
@@ -174,7 +201,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={isRegisterMode ? 'Create a password (8+ characters)' : 'Enter your password'}
-              disabled={loading}
+              disabled={loading || isServerUnreachable}
               className="form-input"
               autoFocus
             />
@@ -191,14 +218,17 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Confirm your password"
-                disabled={loading}
+                disabled={loading || isServerUnreachable}
                 className="form-input"
               />
             </div>
           )}
 
           {error && (
-            <div className="form-error" role="alert">
+            <div className={`form-error ${isServerUnreachable ? 'server-error' : ''}`} role="alert">
+              {isServerUnreachable && (
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              )}
               {error}
             </div>
           )}
@@ -209,8 +239,8 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
             className="login-button"
           >
             {loading 
-              ? (isRegisterMode ? 'Creating Account...' : 'Signing In...') 
-              : (isRegisterMode ? 'Create Account' : 'Sign In')}
+              ? (isServerUnreachable ? 'Checking Connection...' : (isRegisterMode ? 'Creating Account...' : 'Signing In...')) 
+              : (isServerUnreachable ? 'Retry Connection' : (isRegisterMode ? 'Create Account' : 'Sign In'))}
           </button>
         </form>
 
@@ -219,7 +249,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
             type="button"
             onClick={toggleMode}
             className="mode-toggle-button"
-            disabled={loading}
+            disabled={loading || isServerUnreachable}
           >
             {isRegisterMode 
               ? 'Already have an account? Sign In' 

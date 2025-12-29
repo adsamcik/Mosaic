@@ -1,0 +1,186 @@
+[Global Setup] Starting...
+[Global Setup] API_URL: http://localhost:5000
+[Global Setup] BASE_URL: http://localhost:5173
+[Global Setup] Waiting for backend at http://localhost:5000...
+[Global Setup] Backend is healthy!
+[Global Setup] Verifying critical endpoints...
+[Global Setup] /api/albums: 200 OK
+[Global Setup] /api/users/me: 200 OK
+[Global Setup] All endpoints verified!
+[Global Setup] Verifying COOP/COEP headers at http://localhost:5173...
+[Global Setup] COOP: same-origin Ô£ô
+[Global Setup] COEP: credentialless Ô£ô
+[Global Setup] Cleanup: Skipping (handled per-test)
+[Global Setup] Complete!
+
+Running 212 tests using 4 workers
+
+  Ô£ô    3 [chromium] ÔÇ║ tests\accessibility.spec.ts:10:3 ÔÇ║ Accessibility ÔÇ║ has proper heading structure (4.4s)
+  Ô£ô    1 [chromium] ÔÇ║ tests\accessibility.spec.ts:20:3 ÔÇ║ Accessibility ÔÇ║ images have alt text (4.8s)
+  Ô£ô    4 [chromium] ÔÇ║ tests\accessibility.spec.ts:36:3 ÔÇ║ Accessibility ÔÇ║ buttons have accessible names (4.8s)
+  Ô£ô    2 [chromium] ÔÇ║ tests\accessibility.spec.ts:52:3 ÔÇ║ Accessibility ÔÇ║ forms have associated labels (4.9s)
+  Ô£ô    8 [chromium] ÔÇ║ tests\accessibility.spec.ts:128:3 ÔÇ║ Accessibility ÔÇ║ works with high contrast mode (1.6s)
+  Ô£ô    7 [chromium] ÔÇ║ tests\accessibility.spec.ts:115:3 ÔÇ║ Accessibility ÔÇ║ supports reduced motion preference (1.7s)
+  Ô£ô    6 [chromium] ÔÇ║ tests\accessibility.spec.ts:95:3 ÔÇ║ Accessibility ÔÇ║ color contrast is sufficient (1.9s)
+  Ô£ÿ   11 [chromium] ÔÇ║ tests\album-management.spec.ts:63:5 ÔÇ║ Album Management ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-3: cancel create album closes dialog without creating (16.5s)
+  Ô£ÿ   10 [chromium] ÔÇ║ tests\album-management.spec.ts:44:5 ÔÇ║ Album Management ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-2: create album shows error for empty name (16.8s)
+  Ô£ÿ    9 [chromium] ÔÇ║ tests\album-management.spec.ts:23:5 ÔÇ║ Album Management ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-1: create album via UI with valid name (16.9s)
+  Ô£ô    5 [chromium] ÔÇ║ tests\accessibility.spec.ts:72:3 ÔÇ║ Accessibility ÔÇ║ interactive elements are focusable (26.6s)
+  Ô£ÿ   12 [chromium] ÔÇ║ tests\album-management.spec.ts:63:5 ÔÇ║ Album Management ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-3: cancel create album closes dialog without creating (retry #1) (17.5s)
+  Ô£ÿ   13 [chromium] ÔÇ║ tests\album-management.spec.ts:44:5 ÔÇ║ Album Management ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-2: create album shows error for empty name (retry #1) (17.6s)
+  Ô£ÿ   14 [chromium] ÔÇ║ tests\album-management.spec.ts:23:5 ÔÇ║ Album Management ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-1: create album via UI with valid name (retry #1) (17.6s)
+  Ô£ÿ   15 [chromium] ÔÇ║ tests\album-management.spec.ts:89:5 ÔÇ║ Album Management ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-4: multiple albums can be created sequentially (16.3s)
+  Ô£ÿ   16 [chromium] ÔÇ║ tests\album-management.spec.ts:118:5 ÔÇ║ Album Management ÔÇ║ Album Navigation ÔÇ║ P1-ALBUM-5: clicking album card opens gallery view (16.6s)
+  Ô£ÿ   18 [chromium] ÔÇ║ tests\album-management.spec.ts:163:5 ÔÇ║ Album Management ÔÇ║ Album List Display ÔÇ║ P1-ALBUM-7: empty state shown when no albums (15.9s)
+  Ô£ÿ   17 [chromium] ÔÇ║ tests\album-management.spec.ts:138:5 ÔÇ║ Album Management ÔÇ║ Album Navigation ÔÇ║ P1-ALBUM-6: back button returns to album list (16.1s)
+  Ô£ÿ   19 [chromium] ÔÇ║ tests\album-management.spec.ts:89:5 ÔÇ║ Album Management ÔÇ║ Album Creation ÔÇ║ P1-ALBUM-4: multiple albums can be created sequentially (retry #1) (16.7s)
+[TestContext] Cleanup had 1 errors: [
+  TypeError: fetch failed
+      at node:internal/deps/undici/undici:13510:13
+      at processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at TestContext.deleteAlbumViaAPI (file:///G:/Github/Mosaic/tests/e2e/framework/test-context.ts:189:24)
+      at TestContext.cleanup (file:///G:/Github/Mosaic/tests/e2e/framework/test-context.ts:157:9)
+      at Object.testContext [as fn] (file:///G:/Github/Mosaic/tests/e2e/fixtures-enhanced.ts:173:5)
+      at G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\fixtureRunner.js:98:9
+      at Fixture._teardownInternal (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\fixtureRunner.js:137:7)
+      at G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\testInfo.js:311:11
+      at TimeoutManager.withRunnable (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\timeoutManager.js:67:14)
+      at TestInfoImpl._runWithTimeout (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\testInfo.js:309:7)
+      at TestInfoImpl._runAsStep (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\testInfo.js:300:7)
+      at Fixture.teardown (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\fixtureRunner.js:117:11)
+      at FixtureRunner.teardownScope (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\fixtureRunner.js:183:9)
+      at G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\workerMain.js:345:9
+      at TestInfoImpl._runAsStep (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\testInfo.js:300:7)
+      at WorkerMain._runTest (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\workerMain.js:330:5)
+      at WorkerMain.runTestGroup (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\workerMain.js:199:11)
+      at process.<anonymous> (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\common\process.js:65:22) {
+    [cause]: AggregateError: 
+        at internalConnectMultiple (node:net:1134:18)
+        at afterConnectMultiple (node:net:1715:7)
+        at TCPConnectWrap.callbackTrampoline (node:internal/async_hooks:130:17) {
+      code: 'ECONNREFUSED',
+      [errors]: [Array]
+    }
+  }
+]
+  Ô£ÿ   20 [chromium] ÔÇ║ tests\album-management.spec.ts:118:5 ÔÇ║ Album Management ÔÇ║ Album Navigation ÔÇ║ P1-ALBUM-5: clicking album card opens gallery view (retry #1) (16.2s)
+  Ô£ÿ   21 [chromium] ÔÇ║ tests\album-management.spec.ts:163:5 ÔÇ║ Album Management ÔÇ║ Album List Display ÔÇ║ P1-ALBUM-7: empty state shown when no albums (retry #1) (16.2s)
+[TestContext] Cleanup had 1 errors: [
+  TypeError: fetch failed
+      at node:internal/deps/undici/undici:13510:13
+      at processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at TestContext.deleteAlbumViaAPI (file:///G:/Github/Mosaic/tests/e2e/framework/test-context.ts:189:24)
+      at TestContext.cleanup (file:///G:/Github/Mosaic/tests/e2e/framework/test-context.ts:157:9)
+      at Object.testContext [as fn] (file:///G:/Github/Mosaic/tests/e2e/fixtures-enhanced.ts:173:5)
+      at G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\fixtureRunner.js:98:9
+      at Fixture._teardownInternal (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\fixtureRunner.js:137:7)
+      at G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\testInfo.js:311:11
+      at TimeoutManager.withRunnable (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\timeoutManager.js:67:14)
+      at TestInfoImpl._runWithTimeout (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\testInfo.js:309:7)
+      at TestInfoImpl._runAsStep (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\testInfo.js:300:7)
+      at Fixture.teardown (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\fixtureRunner.js:117:11)
+      at FixtureRunner.teardownScope (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\fixtureRunner.js:183:9)
+      at G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\workerMain.js:345:9
+      at TestInfoImpl._runAsStep (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\testInfo.js:300:7)
+      at WorkerMain._runTest (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\workerMain.js:330:5)
+      at WorkerMain.runTestGroup (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\worker\workerMain.js:199:11)
+      at process.<anonymous> (G:\Github\Mosaic\tests\e2e\node_modules\playwright\lib\common\process.js:65:22) {
+    [cause]: AggregateError: 
+        at internalConnectMultiple (node:net:1134:18)
+        at afterConnectMultiple (node:net:1715:7)
+        at TCPConnectWrap.callbackTrampoline (node:internal/async_hooks:130:17) {
+      code: 'ECONNREFUSED',
+      [errors]: [Array]
+    }
+  }
+]
+  Ô£ÿ   22 [chromium] ÔÇ║ tests\album-management.spec.ts:138:5 ÔÇ║ Album Management ÔÇ║ Album Navigation ÔÇ║ P1-ALBUM-6: back button returns to album list (retry #1) (16.5s)
+  Ô£ÿ   24 [chromium] ÔÇ║ tests\album-management.spec.ts:213:5 ÔÇ║ Album Management ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-9: cancel delete album keeps album intact (281ms)
+  Ô£ÿ   25 [chromium] ÔÇ║ tests\album-management.spec.ts:253:5 ÔÇ║ Album Management ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-10: confirm delete album removes album (382ms)
+  Ô£ÿ   23 [chromium] ÔÇ║ tests\album-management.spec.ts:172:5 ÔÇ║ Album Management ÔÇ║ Album List Display ÔÇ║ P1-ALBUM-8: albums persist across page reload (15.7s)
+  Ô£ÿ   26 [chromium] ÔÇ║ tests\album-management.spec.ts:293:5 ÔÇ║ Album Management ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-11: deleted album is gone after page reload (385ms)
+  Ô£ÿ   27 [chromium] ÔÇ║ tests\album-management.spec.ts:213:5 ÔÇ║ Album Management ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-9: cancel delete album keeps album intact (retry #1) (407ms)
+  Ô£ÿ   28 [chromium] ÔÇ║ tests\album-management.spec.ts:253:5 ÔÇ║ Album Management ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-10: confirm delete album removes album (retry #1) (406ms)
+  Ô£ÿ   30 [chromium] ÔÇ║ tests\album-management.spec.ts:293:5 ÔÇ║ Album Management ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-11: deleted album is gone after page reload (retry #1) (329ms)
+  Ô£ÿ   32 [chromium] ÔÇ║ tests\album-rename.spec.ts:22:5 ÔÇ║ Album Rename ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-1: rename button visible for album owner (252ms)
+  Ô£ÿ   34 [chromium] ÔÇ║ tests\album-rename.spec.ts:22:5 ÔÇ║ Album Rename ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-1: rename button visible for album owner (retry #1) (397ms)
+  Ô£ÿ   29 [chromium] ÔÇ║ tests\album-management.spec.ts:172:5 ÔÇ║ Album Management ÔÇ║ Album List Display ÔÇ║ P1-ALBUM-8: albums persist across page reload (retry #1) (16.3s)
+  Ô£ÿ   31 [chromium] ÔÇ║ tests\album-management.spec.ts:342:5 ÔÇ║ Album Management ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-12: delete button shows album info in dialog (15.8s)
+  Ô£ÿ   33 [chromium] ÔÇ║ tests\album-rename.spec.ts:42:5 ÔÇ║ Album Rename ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-2: clicking rename opens dialog with current name (16.0s)
+  Ô£ÿ   36 [chromium] ÔÇ║ tests\album-rename.spec.ts:120:5 ÔÇ║ Album Rename ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-4: save button disabled when name unchanged (611ms)
+  Ô£ÿ   35 [chromium] ÔÇ║ tests\album-rename.spec.ts:78:5 ÔÇ║ Album Rename ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-3: cancel closes dialog without renaming (16.7s)
+  Ô£ÿ   39 [chromium] ÔÇ║ tests\album-rename.spec.ts:120:5 ÔÇ║ Album Rename ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-4: save button disabled when name unchanged (retry #1) (731ms)
+  Ô£ÿ   41 [chromium] ÔÇ║ tests\album-rename.spec.ts:147:5 ÔÇ║ Album Rename ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-5: save button enabled when name changed (534ms)
+  Ô£ÿ   42 [chromium] ÔÇ║ tests\album-rename.spec.ts:147:5 ÔÇ║ Album Rename ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-5: save button enabled when name changed (retry #1) (407ms)
+  Ô£ÿ   37 [chromium] ÔÇ║ tests\album-management.spec.ts:342:5 ÔÇ║ Album Management ÔÇ║ Album Deletion ÔÇ║ P1-ALBUM-12: delete button shows album info in dialog (retry #1) (16.4s)
+  Ô£ÿ   38 [chromium] ÔÇ║ tests\album-rename.spec.ts:42:5 ÔÇ║ Album Rename ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-2: clicking rename opens dialog with current name (retry #1) (16.8s)
+  Ô£ÿ   45 [chromium] ÔÇ║ tests\album-rename.spec.ts:274:5 ÔÇ║ Album Rename ÔÇ║ Validation ÔÇ║ P1-RENAME-8: empty name shows error or disables save (250ms)
+  Ô£ÿ   40 [chromium] ÔÇ║ tests\album-rename.spec.ts:78:5 ÔÇ║ Album Rename ÔÇ║ Rename Dialog UI ÔÇ║ P1-RENAME-3: cancel closes dialog without renaming (retry #1) (16.4s)
+  Ô£ÿ   46 [chromium] ÔÇ║ tests\album-rename.spec.ts:274:5 ÔÇ║ Album Rename ÔÇ║ Validation ÔÇ║ P1-RENAME-8: empty name shows error or disables save (retry #1) (266ms)
+  Ô£ÿ   47 [chromium] ÔÇ║ tests\albums.spec.ts:14:5 ÔÇ║ Album Management ÔÇ║ Album List Display ÔÇ║ displays album list after login (290ms)
+  Ô£ÿ   49 [chromium] ÔÇ║ tests\albums.spec.ts:14:5 ÔÇ║ Album Management ÔÇ║ Album List Display ÔÇ║ displays album list after login (retry #1) (429ms)
+  Ô£ÿ   43 [chromium] ÔÇ║ tests\album-rename.spec.ts:179:5 ÔÇ║ Album Rename ÔÇ║ Successful Rename ÔÇ║ P1-RENAME-6: rename album updates name in gallery (15.9s)
+  Ô£ÿ   44 [chromium] ÔÇ║ tests\album-rename.spec.ts:221:5 ÔÇ║ Album Rename ÔÇ║ Successful Rename ÔÇ║ P1-RENAME-7: renamed album persists after page reload (15.8s)
+  Ô£ÿ   48 [chromium] ÔÇ║ tests\albums.spec.ts:31:5 ÔÇ║ Album Management ÔÇ║ Album List Display ÔÇ║ shows empty state for new user (16.6s)
+  Ô£ÿ   51 [chromium] ÔÇ║ tests\album-rename.spec.ts:179:5 ÔÇ║ Album Rename ÔÇ║ Successful Rename ÔÇ║ P1-RENAME-6: rename album updates name in gallery (retry #1) (17.2s)
+  Ô£ÿ   54 [chromium] ÔÇ║ tests\albums.spec.ts:88:5 ÔÇ║ Album Management ÔÇ║ Album CRUD Operations ÔÇ║ album persists after page reload (282ms)
+  Ô£ÿ   52 [chromium] ÔÇ║ tests\album-rename.spec.ts:221:5 ÔÇ║ Album Rename ÔÇ║ Successful Rename ÔÇ║ P1-RENAME-7: renamed album persists after page reload (retry #1) (16.0s)
+  Ô£ÿ   55 [chromium] ÔÇ║ tests\albums.spec.ts:88:5 ÔÇ║ Album Management ÔÇ║ Album CRUD Operations ÔÇ║ album persists after page reload (retry #1) (927ms)
+  Ô£ÿ   56 [chromium] ÔÇ║ tests\albums.spec.ts:120:5 ÔÇ║ Album Management ÔÇ║ Album CRUD Operations ÔÇ║ albums from API are displayed (470ms)
+  Ô£ÿ   57 [chromium] ÔÇ║ tests\albums.spec.ts:147:5 ÔÇ║ Album Management ÔÇ║ Album Navigation ÔÇ║ clicking album navigates to gallery (966ms)
+  Ô£ÿ   58 [chromium] ÔÇ║ tests\albums.spec.ts:120:5 ÔÇ║ Album Management ÔÇ║ Album CRUD Operations ÔÇ║ albums from API are displayed (retry #1) (406ms)
+  Ô£ÿ   53 [chromium] ÔÇ║ tests\albums.spec.ts:31:5 ÔÇ║ Album Management ÔÇ║ Album List Display ÔÇ║ shows empty state for new user (retry #1) (17.3s)
+  Ô£ÿ   59 [chromium] ÔÇ║ tests\albums.spec.ts:147:5 ÔÇ║ Album Management ÔÇ║ Album Navigation ÔÇ║ clicking album navigates to gallery (retry #1) (444ms)
+  Ô£ÿ   60 [chromium] ÔÇ║ tests\albums.spec.ts:178:5 ÔÇ║ Album Management ÔÇ║ Album Navigation ÔÇ║ can navigate back from gallery to albums (278ms)
+  Ô£ô   61 [chromium] ÔÇ║ tests\app-load.spec.ts:11:3 ÔÇ║ App Loading ÔÇ║ loads the application and shows login form (1.9s)
+  Ô£ÿ   62 [chromium] ÔÇ║ tests\app-load.spec.ts:19:3 ÔÇ║ App Loading ÔÇ║ has correct security headers for SharedArrayBuffer (1.9s)
+  Ô£ÿ   64 [chromium] ÔÇ║ tests\albums.spec.ts:178:5 ÔÇ║ Album Management ÔÇ║ Album Navigation ÔÇ║ can navigate back from gallery to albums (retry #1) (810ms)
+  Ô£ô   66 [chromium] ÔÇ║ tests\app-load.spec.ts:54:3 ÔÇ║ App Loading ÔÇ║ is responsive on mobile viewport (2.4s)
+  Ô£ÿ   65 [chromium] ÔÇ║ tests\app-load.spec.ts:19:3 ÔÇ║ App Loading ÔÇ║ has correct security headers for SharedArrayBuffer (retry #1) (1.6s)
+  Ô£ô   67 [chromium] ÔÇ║ tests\app-load.spec.ts:64:3 ÔÇ║ App Loading ÔÇ║ renders main elements correctly (1.6s)
+  Ô£ÿ   63 [chromium] ÔÇ║ tests\app-load.spec.ts:30:3 ÔÇ║ App Loading ÔÇ║ loads static assets without critical errors (4.7s)
+  Ô£ô   68 [chromium] ÔÇ║ tests\auth.spec.ts:19:5 ÔÇ║ Authentication ÔÇ║ Login Form Display ÔÇ║ shows password input with label (877ms)
+  Ô£ô   70 [chromium] ÔÇ║ tests\auth.spec.ts:12:5 ÔÇ║ Authentication ÔÇ║ Login Form Display ÔÇ║ shows login form on first visit (1.3s)
+  Ô£ô   72 [chromium] ÔÇ║ tests\auth.spec.ts:39:5 ÔÇ║ Authentication ÔÇ║ Login Form Display ÔÇ║ password input is autofocused (1.3s)
+  Ô£ô   71 [chromium] ÔÇ║ tests\app-load.spec.ts:30:3 ÔÇ║ App Loading ÔÇ║ loads static assets without critical errors (retry #1) (4.6s)
+  Ô£ô   74 [chromium] ÔÇ║ tests\auth.spec.ts:64:5 ÔÇ║ Authentication ÔÇ║ Login Validation ÔÇ║ password field clears error on input (802ms)
+  Ô£ÿ   69 [chromium] ÔÇ║ tests\auth.spec.ts:29:5 ÔÇ║ Authentication ÔÇ║ Login Form Display ÔÇ║ shows unlock button (15.9s)
+  Ô£ÿ   50 [chromium] ÔÇ║ tests\albums.spec.ts:50:5 ÔÇ║ Album Management ÔÇ║ Album CRUD Operations ÔÇ║ can create a new album (1.0m)
+  Ô£ÿ   73 [chromium] ÔÇ║ tests\auth.spec.ts:51:5 ÔÇ║ Authentication ÔÇ║ Login Validation ÔÇ║ shows error for empty password submission (15.8s)
+  Ô£ÿ   76 [chromium] ÔÇ║ tests\auth.spec.ts:29:5 ÔÇ║ Authentication ÔÇ║ Login Form Display ÔÇ║ shows unlock button (retry #1) (16.1s)
+  Ô£ÿ   75 [chromium] ÔÇ║ tests\auth.spec.ts:84:5 ÔÇ║ Authentication ÔÇ║ Complete Login Flow ÔÇ║ successful login shows app shell (31.7s)
+  Ô£ÿ   78 [chromium] ÔÇ║ tests\auth.spec.ts:51:5 ÔÇ║ Authentication ÔÇ║ Login Validation ÔÇ║ shows error for empty password submission (retry #1) (19.5s)
+  Ô£ÿ   79 [chromium] ÔÇ║ tests\auth.spec.ts:102:5 ÔÇ║ Authentication ÔÇ║ Complete Login Flow ÔÇ║ shows loading state during login (19.9s)
+  Ô£ÿ   82 [chromium] ÔÇ║ tests\auth.spec.ts:102:5 ÔÇ║ Authentication ÔÇ║ Complete Login Flow ÔÇ║ shows loading state during login (retry #1) (18.6s)
+  Ô£ÿ   80 [chromium] ÔÇ║ tests\auth.spec.ts:84:5 ÔÇ║ Authentication ÔÇ║ Complete Login Flow ÔÇ║ successful login shows app shell (retry #1) (34.6s)
+  Ô£ÿ   77 [chromium] ÔÇ║ tests\albums.spec.ts:50:5 ÔÇ║ Album Management ÔÇ║ Album CRUD Operations ÔÇ║ can create a new album (retry #1) (1.1m)
+  Ô£ÿ   81 [chromium] ÔÇ║ tests\auth.spec.ts:120:5 ÔÇ║ Authentication ÔÇ║ Logout Flow ÔÇ║ logout returns to login form (1.0m)
+  Ô£ÿ   83 [chromium] ÔÇ║ tests\auth.spec.ts:137:5 ÔÇ║ Authentication ÔÇ║ Logout Flow ÔÇ║ logout button is visible in app shell (1.0m)
+  Ô£ÿ   84 [chromium] ÔÇ║ tests\auth.spec.ts:150:5 ÔÇ║ Authentication ÔÇ║ Logout Flow ÔÇ║ cannot access app after logout (1.0m)
+  Ô£ÿ   85 [chromium] ÔÇ║ tests\auth.spec.ts:171:5 ÔÇ║ Authentication ÔÇ║ Session Persistence ÔÇ║ session persists after page reload when logged in (1.0m)
+  Ô£ÿ   86 [chromium] ÔÇ║ tests\auth.spec.ts:120:5 ÔÇ║ Authentication ÔÇ║ Logout Flow ÔÇ║ logout returns to login form (retry #1) (1.1m)
+  Ô£ÿ   90 [chromium] ÔÇ║ tests\collaboration.spec.ts:25:5 ÔÇ║ Collaboration ÔÇ║ Album Sharing ÔÇ║ P1-COLLAB-1: owner can open members panel (676ms)
+  Ô£ÿ   91 [chromium] ÔÇ║ tests\collaboration.spec.ts:25:5 ÔÇ║ Collaboration ÔÇ║ Album Sharing ÔÇ║ P1-COLLAB-1: owner can open members panel (retry #1) (1.0s)
+  Ô£ÿ   92 [chromium] ÔÇ║ tests\collaboration.spec.ts:52:5 ÔÇ║ Collaboration ÔÇ║ Album Sharing ÔÇ║ P1-COLLAB-2: both users see shared album after invite (350ms)
+  Ô£ÿ   93 [chromium] ÔÇ║ tests\collaboration.spec.ts:52:5 ÔÇ║ Collaboration ÔÇ║ Album Sharing ÔÇ║ P1-COLLAB-2: both users see shared album after invite (retry #1) (881ms)
+  Ô£ÿ   94 [chromium] ÔÇ║ tests\collaboration.spec.ts:96:5 ÔÇ║ Collaboration ÔÇ║ Album Sharing ÔÇ║ P1-COLLAB-3: uploaded photo visible to album members (375ms)
+  Ô£ÿ   95 [chromium] ÔÇ║ tests\collaboration.spec.ts:96:5 ÔÇ║ Collaboration ÔÇ║ Album Sharing ÔÇ║ P1-COLLAB-3: uploaded photo visible to album members (retry #1) (612ms)
+  Ô£ÿ   87 [chromium] ÔÇ║ tests\auth.spec.ts:137:5 ÔÇ║ Authentication ÔÇ║ Logout Flow ÔÇ║ logout button is visible in app shell (retry #1) (1.1m)
+  Ô£ÿ   88 [chromium] ÔÇ║ tests\auth.spec.ts:150:5 ÔÇ║ Authentication ÔÇ║ Logout Flow ÔÇ║ cannot access app after logout (retry #1) (1.1m)
+  Ô£ÿ   89 [chromium] ÔÇ║ tests\auth.spec.ts:171:5 ÔÇ║ Authentication ÔÇ║ Session Persistence ÔÇ║ session persists after page reload when logged in (retry #1) (1.2m)
+  Ô£ÿ   99 [chromium] ÔÇ║ tests\collaboration.spec.ts:335:5 ÔÇ║ Collaboration ÔÇ║ Member Removal & Access Revocation ÔÇ║ P1-COLLAB-7: removal dialog shows key rotation progress (904ms)
+  Ô£ÿ   96 [chromium] ÔÇ║ tests\collaboration.spec.ts:124:5 ÔÇ║ Collaboration ÔÇ║ Parallel Isolation ÔÇ║ P1-COLLAB-4: alice and bob have separate isolated contexts (16.0s)
+  Ô£ÿ   98 [chromium] ÔÇ║ tests\collaboration.spec.ts:201:5 ÔÇ║ Collaboration ÔÇ║ Member Removal & Access Revocation ÔÇ║ P1-COLLAB-6: removed member loses access to shared album (685ms)
+  Ô£ÿ   97 [chromium] ÔÇ║ tests\collaboration.spec.ts:145:5 ÔÇ║ Collaboration ÔÇ║ Parallel Isolation ÔÇ║ P1-COLLAB-5: albums created by different users are isolated (16.7s)
+  Ô£ÿ  100 [chromium] ÔÇ║ tests\collaboration.spec.ts:335:5 ÔÇ║ Collaboration ÔÇ║ Member Removal & Access Revocation ÔÇ║ P1-COLLAB-7: removal dialog shows key rotation progress (retry #1) (665ms)
+  Ô£ÿ  102 [chromium] ÔÇ║ tests\collaboration.spec.ts:201:5 ÔÇ║ Collaboration ÔÇ║ Member Removal & Access Revocation ÔÇ║ P1-COLLAB-6: removed member loses access to shared album (retry #1) (993ms)
+  Ô£ÿ  101 [chromium] ÔÇ║ tests\collaboration.spec.ts:124:5 ÔÇ║ Collaboration ÔÇ║ Parallel Isolation ÔÇ║ P1-COLLAB-4: alice and bob have separate isolated contexts (retry #1) (17.3s)
+  Ô£ÿ  103 [chromium] ÔÇ║ tests\collaboration.spec.ts:145:5 ÔÇ║ Collaboration ÔÇ║ Parallel Isolation ÔÇ║ P1-COLLAB-5: albums created by different users are isolated (retry #1) (17.1s)
+  Ô£ÿ  104 [chromium] ÔÇ║ tests\critical-flows.spec.ts:26:3 ÔÇ║ Critical Flow: Complete Authentication ÔÇ║ P0-1: complete password login initializes crypto and shows app shell (16.2s)
+  Ô£ô  106 [chromium] ÔÇ║ tests\critical-flows.spec.ts:88:3 ÔÇ║ Critical Flow: Complete Authentication ÔÇ║ P0-5: wrong password shows error and does not authenticate (1.2s)
+  Ô£ÿ  109 [chromium] ÔÇ║ tests\critical-flows.spec.ts:26:3 ÔÇ║ Critical Flow: Complete Authentication ÔÇ║ P0-1: complete password login initializes crypto and shows app shell (retry #1) (16.7s)
+  Ô£ÿ  110 [chromium] ÔÇ║ tests\critical-flows.spec.ts:201:3 ÔÇ║ Critical Flow: Photo Upload Round-Trip ÔÇ║ P0-3: upload photo encrypts locally and appears in gallery after sync (290ms)
+  Ô£ÿ  111 [chromium] ÔÇ║ tests\critical-flows.spec.ts:201:3 ÔÇ║ Critical Flow: Photo Upload Round-Trip ÔÇ║ P0-3: upload photo encrypts locally and appears in gallery after sync (retry #1) (427ms)
+  Ô£ÿ  105 [chromium] ÔÇ║ tests\critical-flows.spec.ts:58:3 ÔÇ║ Critical Flow: Complete Authentication ÔÇ║ P0-2: logout clears session and returns to login form (1.0m)
+  Ô£ÿ  107 [chromium] ÔÇ║ tests\critical-flows.spec.ts:114:3 ÔÇ║ Critical Flow: Complete Authentication ÔÇ║ P0-5b: second login with different password fails (1.0m)
+  Ô£ÿ  108 [chromium] ÔÇ║ tests\critical-flows.spec.ts:167:3 ÔÇ║ Critical Flow: Complete Authentication ÔÇ║ P0-6: session persists during active use (1.0m)

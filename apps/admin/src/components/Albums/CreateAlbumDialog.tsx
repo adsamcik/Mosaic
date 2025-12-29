@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Dialog } from '../Shared/Dialog';
 
 interface CreateAlbumDialogProps {
   /** Whether the dialog is open */
@@ -29,7 +30,6 @@ export function CreateAlbumDialog({
   const [name, setName] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLDialogElement>(null);
 
   // Focus input when dialog opens
   useEffect(() => {
@@ -85,20 +85,12 @@ export function CreateAlbumDialog({
     }
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    // Only close if clicking the backdrop itself, not the dialog content
-    if (e.target === e.currentTarget && !isCreating) {
-      onClose();
-    }
-  };
-
   if (!isOpen) {
     return null;
   }
 
   const displayError = localError || error;
 
-  return (
   const footer = (
     <>
       <button
