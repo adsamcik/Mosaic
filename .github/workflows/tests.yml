@@ -29,7 +29,7 @@ jobs:
       
       - name: Run crypto library tests
         working-directory: libs/crypto
-        run: npm run test:run -- --coverage
+        run: npm run test:coverage
       
       - name: Install admin dependencies
         working-directory: apps/admin
@@ -37,7 +37,7 @@ jobs:
       
       - name: Run admin tests
         working-directory: apps/admin
-        run: npm test -- run
+        run: npm run test:run
 
   integration-tests:
     name: Integration Tests

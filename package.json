@@ -1,4 +1,16 @@
 {
+  "name": "mosaic",
+  "version": "0.0.1",
+  "description": "Zero-knowledge encrypted photo gallery for personal use",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eivindholvik/Mosaic.git"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "devDependencies": {
     "happy-dom": "^20.0.11"
   }
