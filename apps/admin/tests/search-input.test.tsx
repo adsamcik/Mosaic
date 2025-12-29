@@ -85,6 +85,48 @@ describe('SearchInput', () => {
     expect(onChange).toHaveBeenCalledWith('photo');
   });
 
+  it('cancels previous debounce when typing rapidly', async () => {
+    const onChange = vi.fn();
+    act(() => {
+      root.render(createElement(SearchInput, { value: '', onChange }));
+    });
+
+    const input = container.querySelector('input[type="search"]') as HTMLInputElement;
+
+    // Type first value
+    act(() => {
+      setInputValue(input, 'ph');
+    });
+
+    // Advance part way through debounce
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+
+    // Type more before debounce fires
+    act(() => {
+      setInputValue(input, 'photo');
+    });
+
+    // Advance past when first debounce would have fired
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+
+    // First value should NOT have been called
+    expect(onChange).not.toHaveBeenCalledWith('ph');
+    expect(onChange).not.toHaveBeenCalled();
+
+    // Now advance past second debounce
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+
+    // Only final value should be called
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith('photo');
+  });
+
   it('calls onChange immediately on Enter key', () => {
     const onChange = vi.fn();
     act(() => {

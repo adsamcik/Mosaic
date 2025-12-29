@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface SearchInputProps {
   value: string;
@@ -18,6 +18,16 @@ export function SearchInput({
   className = '',
 }: SearchInputProps) {
   const [localValue, setLocalValue] = useState(value);
+  const timeoutRef = useRef<number | null>(null);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   // Handle input change with local state for immediate feedback
   const handleChange = useCallback(
@@ -25,12 +35,16 @@ export function SearchInput({
       const newValue = e.target.value;
       setLocalValue(newValue);
 
-      // Debounce the actual search - only trigger after user stops typing
-      const timeoutId = setTimeout(() => {
-        onChange(newValue);
-      }, 300);
+      // Clear any pending debounce timeout
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current);
+      }
 
-      return () => clearTimeout(timeoutId);
+      // Debounce the actual search - only trigger after user stops typing
+      timeoutRef.current = window.setTimeout(() => {
+        onChange(newValue);
+        timeoutRef.current = null;
+      }, 300);
     },
     [onChange]
   );
