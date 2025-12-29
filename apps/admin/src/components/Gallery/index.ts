@@ -12,3 +12,4 @@ export { PhotoLightbox } from './PhotoLightbox';
 export type { PhotoLightboxProps } from './PhotoLightbox';
 export { PhotoThumbnail } from './PhotoThumbnail';
 export { SearchInput } from './SearchInput';
+export { SelectionActionBar } from './SelectionActionBar';

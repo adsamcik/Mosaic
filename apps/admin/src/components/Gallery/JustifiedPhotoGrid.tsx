@@ -97,8 +97,10 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted, sele
 
   // Combine real photos with pending uploads
   const displayPhotos = useMemo(() => {
+    const existingAssetIds = new Set(photos.map(p => p.assetId));
+
     const pendingPhotos = activeTasks
-      .filter(t => t.albumId === albumId)
+      .filter(t => t.albumId === albumId && !existingAssetIds.has(t.id))
       .map(t => ({
         id: t.id,
         assetId: t.id,
@@ -303,7 +305,7 @@ export function JustifiedPhotoGrid({ albumId, searchQuery, onPhotosDeleted, sele
       {/* Virtualized grid container - ALWAYS rendered so ResizeObserver can measure it */}
       <div
         ref={containerRef}
-        className="justified-grid-container"
+        className={`justified-grid-container ${isSelectionMode ? 'selection-mode' : ''}`}
         onScroll={handleScroll}
         data-testid="justified-grid"
       >

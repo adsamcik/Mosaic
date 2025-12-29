@@ -815,6 +815,48 @@ button {
   flex-wrap: wrap;
 }
 
+/* Gallery Header Selection Mode */
+.gallery-header--selection-mode {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(99, 102, 241, 0.02) 100%);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+  animation: selectionHeaderFade 0.3s ease;
+}
+
+@keyframes selectionHeaderFade {
+  from {
+    background: transparent;
+  }
+  to {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(99, 102, 241, 0.02) 100%);
+  }
+}
+
+.gallery-title-selection {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-primary-light);
+}
+
+.gallery-title-selection .selection-icon {
+  color: var(--color-primary);
+}
+
+.selection-mode-hint {
+  flex: 1;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 0 var(--spacing-lg);
+}
+
+.selection-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .album-list-empty {
   display: flex;
   flex-direction: column;
@@ -1457,5 +1499,374 @@ button {
   width: 100%;
   height: 100%;
   color: var(--color-text-tertiary);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               Selection Action Bar                         */
+/* -------------------------------------------------------------------------- */
+
+.selection-action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: var(--spacing-md) var(--spacing-xl);
+  background: linear-gradient(to top, rgba(15, 17, 21, 0.98) 0%, rgba(15, 17, 21, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(99, 102, 241, 0.3);
+  box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  animation: slideUpBar 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpBar {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+[data-theme='light'] .selection-action-bar {
+  background: linear-gradient(to top, rgba(248, 250, 252, 0.98) 0%, rgba(248, 250, 252, 0.95) 100%);
+  border-top-color: rgba(99, 102, 241, 0.4);
+}
+
+.selection-action-bar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1400px;
+  margin: 0 auto;
+  gap: var(--spacing-lg);
+}
+
+.selection-action-bar-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.selection-action-bar-count {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+}
+
+.selection-count-number {
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+  background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1;
+}
+
+.selection-count-label {
+  font-size: 0.95rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.selection-action-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.selection-action-bar-exit {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+/* Action Bar Buttons */
+.action-bar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.action-bar-button svg {
+  flex-shrink: 0;
+}
+
+.action-bar-button-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-primary);
+}
+
+.action-bar-button-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+[data-theme='light'] .action-bar-button-secondary {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='light'] .action-bar-button-secondary:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+.action-bar-button-danger {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+
+.action-bar-button-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.action-bar-button-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-secondary);
+}
+
+.action-bar-button-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+}
+
+/* Keyboard Hints */
+.selection-action-bar-hints {
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-lg);
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.selection-action-bar-hints .hint {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.selection-action-bar-hints kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  font-family: var(--font-body);
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+}
+
+[data-theme='light'] .selection-action-bar-hints kbd {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                          Enhanced Selection Mode Styling                   */
+/* -------------------------------------------------------------------------- */
+
+/* Selection mode indicator on photo grid */
+.photo-grid-selection-mode,
+.justified-grid-container.selection-mode {
+  /* Subtle visual indication of selection mode */
+  position: relative;
+}
+
+/* Enhanced photo thumbnail selection styling */
+.photo-thumbnail-selection-mode,
+.justified-photo-selection-mode {
+  cursor: pointer;
+}
+
+.photo-thumbnail-selection-mode::before,
+.justified-photo-selection-mode::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(99, 102, 241, 0.05);
+  z-index: 1;
+  pointer-events: none;
+  transition: background 0.2s;
+}
+
+.photo-thumbnail-selection-mode:hover::before,
+.justified-photo-selection-mode:hover::before {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+/* Selected photo styling - enhanced */
+.photo-thumbnail-selected,
+.justified-photo-selected {
+  outline: 3px solid var(--color-primary);
+  outline-offset: -3px;
+  transform: scale(0.96);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2), 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.photo-thumbnail-selected::after,
+.justified-photo-selected::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(99, 102, 241, 0.15);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Enhanced checkbox styling */
+.photo-checkbox,
+.justified-photo-checkbox {
+  width: 22px;
+  height: 22px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.photo-checkbox:hover,
+.justified-photo-checkbox:hover {
+  border-color: var(--color-primary-light);
+  background: rgba(99, 102, 241, 0.3);
+  transform: scale(1.1);
+}
+
+.photo-checkbox:checked,
+.justified-photo-checkbox:checked {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.photo-checkbox:checked::after,
+.justified-photo-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 2px;
+  width: 6px;
+  height: 11px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.photo-checkbox:focus,
+.justified-photo-checkbox:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+}
+
+/* Selection overlay positioning */
+.photo-selection-overlay,
+.justified-photo-selection-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 15;
+  animation: fadeInScale 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Enhanced delete button */
+.photo-delete-button,
+.justified-photo-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 34px;
+  height: 34px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 15;
+  backdrop-filter: blur(4px);
+  animation: fadeInScale 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.photo-delete-button:hover,
+.justified-photo-delete:hover {
+  background: var(--color-error);
+  border-color: var(--color-error);
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+/* Gallery in selection mode - bottom padding for action bar */
+.gallery.selection-mode-active .drop-zone,
+.gallery.selection-mode-active .justified-grid-container,
+.gallery.selection-mode-active .photo-grid-container {
+  padding-bottom: 120px;
+}
+
+/* Enhanced hover effect for thumbnails */
+.photo-thumbnail:hover,
+.justified-photo-thumbnail:hover {
+  transform: scale(1.02);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 5;
+}
+
+.photo-thumbnail-selected:hover,
+.justified-photo-selected:hover {
+  transform: scale(0.98);
+}
+
+/* Photo content wrapper */
+.photo-content,
+.justified-photo-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 

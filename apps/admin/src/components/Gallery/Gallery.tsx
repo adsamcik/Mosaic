@@ -21,6 +21,7 @@ import { JustifiedPhotoGrid } from './JustifiedPhotoGrid';
 import { MapView } from './MapView';
 import { PhotoGrid } from './PhotoGrid';
 import { PhotoLightbox } from './PhotoLightbox';
+import { SelectionActionBar } from './SelectionActionBar';
 
 const log = createLogger('Gallery');
 
@@ -308,7 +309,7 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
   return (
     <AlbumPermissionsProvider role={currentUserRole ?? 'viewer'}>
     <UploadProvider>
-      <div className="gallery" data-testid="gallery">
+      <div className={`gallery ${selection.isSelectionMode ? 'selection-mode-active' : ''}`} data-testid="gallery">
         <GalleryHeader
           albumId={albumId}
           viewMode={viewMode}
@@ -414,6 +415,17 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
 
       {/* Upload Error Toast */}
       <UploadErrorToast />
+
+      {/* Selection Action Bar - floating bottom bar when in selection mode */}
+      <SelectionActionBar
+        selectedCount={selection.selectedCount}
+        isSelectionMode={selection.isSelectionMode}
+        onSelectAll={handleSelectAll}
+        onClearSelection={selection.clearSelection}
+        onExitSelectionMode={selection.exitSelectionMode}
+        onDeleteSelected={handleBulkDeleteClick}
+        totalPhotos={photos.length}
+      />
       </div>
     </UploadProvider>
     </AlbumPermissionsProvider>
