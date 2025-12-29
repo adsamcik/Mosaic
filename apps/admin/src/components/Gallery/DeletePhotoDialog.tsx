@@ -5,6 +5,7 @@
  * Shows photo thumbnail and warning about permanent deletion.
  */
 
+import { useTranslation } from 'react-i18next';
 import type { PhotoMeta } from '../../workers/types';
 import { Dialog } from '../Shared/Dialog';
 
@@ -38,6 +39,7 @@ export function DeletePhotoDialog({
   onCancel,
   error,
 }: DeletePhotoDialogProps) {
+  const { t } = useTranslation();
   const isBulkDelete = photos.length > 1;
   const photoCount = photos.length;
   const singlePhoto = photos[0];
@@ -51,7 +53,7 @@ export function DeletePhotoDialog({
         disabled={isDeleting}
         data-testid="delete-cancel-button"
       >
-        Cancel
+        {t('common.cancel')}
       </button>
       <button
         type="submit"
@@ -63,10 +65,10 @@ export function DeletePhotoDialog({
         {isDeleting ? (
           <>
             <span className="button-spinner" />
-            Deleting...
+            {t('common.deleting')}
           </>
         ) : (
-          'Delete'
+          t('common.delete')
         )}
       </button>
     </>
@@ -79,7 +81,9 @@ export function DeletePhotoDialog({
     }
   };
 
-  const title = isBulkDelete ? `Delete ${photoCount} photos?` : 'Delete photo?';
+  const title = isBulkDelete 
+    ? t('gallery.delete.titleBulk', { count: photoCount }) 
+    : t('gallery.delete.titleSingle');
 
   return (
     <Dialog
@@ -92,10 +96,11 @@ export function DeletePhotoDialog({
     >
       <form id="delete-photo-form" className="dialog-form" onSubmit={handleSubmit}>
         <p className="dialog-description delete-warning">
-          ⚠️ This action is permanent and cannot be undone.
+          {t('common.permanentAction')}
+          {' '}
           {isBulkDelete
-            ? ` All ${photoCount} selected photos will be permanently deleted from the server.`
-            : ' This photo will be permanently deleted from the server.'}
+            ? t('gallery.delete.warningBulk', { count: photoCount })
+            : t('gallery.delete.warningSingle')}
         </p>
 
         {/* Show thumbnail preview for single photo */}

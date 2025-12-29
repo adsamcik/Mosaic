@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AlbumPermissionsProvider } from '../../contexts/AlbumPermissionsContext';
 import { useAutoSync } from '../../contexts/SyncContext';
 import { UploadProvider } from '../../contexts/UploadContext';
@@ -284,13 +285,15 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
     ? epochKeys.get(lightbox.currentPhoto.epochId)
     : undefined;
 
+  const { t } = useTranslation();
+
   // Loading state
   if (isLoading) {
     return (
       <div className="gallery" data-testid="gallery">
         <div className="gallery-loading">
           <div className="loading-spinner" />
-          <p>Loading photos...</p>
+          <p>{t('gallery.loading')}</p>
         </div>
       </div>
     );
@@ -301,7 +304,7 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
     return (
       <div className="gallery" data-testid="gallery">
         <div className="gallery-error">
-          <p>Failed to load photos: {error.message}</p>
+          <p>{t('gallery.error.loadFailed')}: {error.message}</p>
         </div>
       </div>
     );

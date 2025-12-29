@@ -364,7 +364,8 @@ describe('Gallery', () => {
     it('renders gallery title', () => {
       const { getByText, cleanup } = renderGallery({ albumId });
 
-      const title = getByText('Photos');
+      // Translation key returned by mock
+      const title = getByText('gallery.title');
       expect(title).not.toBeNull();
 
       cleanup();
@@ -402,7 +403,8 @@ describe('Gallery', () => {
 
       const { getByText, cleanup } = renderGallery({ albumId });
 
-      expect(getByText('Loading photos...')).not.toBeNull();
+      // Translation key returned by mock
+      expect(getByText('gallery.loading')).not.toBeNull();
 
       cleanup();
     });
@@ -420,8 +422,8 @@ describe('Gallery', () => {
 
       const { container, cleanup } = renderGallery({ albumId });
 
-      // Check that error message exists in the rendered content
-      expect(container.textContent).toContain('Failed to load photos');
+      // Check that error translation key exists in the rendered content
+      expect(container.textContent).toContain('gallery.error.loadFailed');
 
       cleanup();
 
