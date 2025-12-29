@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { useUploadContext } from '../../contexts/UploadContext';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
@@ -58,19 +59,19 @@ type LayoutItem =
 /**
  * Helper to format date groups
  */
-function formatDateHeader(dateString: string): string {
+function formatDateHeader(dateString: string, t: (key: string) => string): string {
     const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'Unknown Date';
+    if (isNaN(date.getTime())) return t('gallery.date.unknown');
     
     const today = new Date();
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
 
     if (date.toDateString() === today.toDateString()) {
-        return 'Today';
+        return t('gallery.date.today');
     }
     if (date.toDateString() === yesterday.toDateString()) {
-        return 'Yesterday';
+        return t('gallery.date.yesterday');
     }
 
     return new Intl.DateTimeFormat('en-US', { 
@@ -112,6 +113,7 @@ function groupPhotosByDate(photos: PhotoMeta[]) {
  * Uses a Google Photos-style layout with efficient rendering
  */
 export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotosDeleted, selection }: PhotoGridProps) {
+  const { t } = useTranslation();
   const [containerWidth, setContainerWidth] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   
@@ -203,7 +205,7 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
         // Add Header
         items.push({
             type: 'header',
-            date: formatDateHeader(dateString),
+            date: formatDateHeader(dateString, t),
             top: currentTop,
             height: HEADER_HEIGHT,
             id: `header-${dateString}`
@@ -232,7 +234,7 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
     }
 
     return items;
-  }, [displayPhotos, containerWidth]);
+  }, [displayPhotos, containerWidth, t]);
 
   // Get total grid height
   const totalHeight = useMemo(() => {
@@ -392,7 +394,7 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
     return (
       <div className="photo-grid-loading" data-testid="photo-grid-loading">
         <div className="loading-spinner" />
-        <p>Loading photos...</p>
+        <p>{t('gallery.loading')}</p>
       </div>
     );
   }
@@ -401,7 +403,7 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
   if (error) {
     return (
       <div className="photo-grid-error" data-testid="photo-grid-error">
-        <p>Failed to load photos: {error.message}</p>
+        <p>{t('gallery.error.loadFailed')}: {error.message}</p>
       </div>
     );
   }

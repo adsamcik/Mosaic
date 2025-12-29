@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface SearchInputProps {
   value: string;
@@ -17,6 +18,7 @@ export function SearchInput({
   placeholder = 'Search photos...',
   className = '',
 }: SearchInputProps) {
+  const { t } = useTranslation();
   const [localValue, setLocalValue] = useState(value);
   const timeoutRef = useRef<number | null>(null);
 
@@ -80,7 +82,7 @@ export function SearchInput({
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        aria-label="Search photos"
+        aria-label={t('gallery.searchAriaLabel')}
         data-testid="photo-search-input"
       />
       {localValue && (
@@ -88,7 +90,7 @@ export function SearchInput({
           type="button"
           className="search-clear-btn"
           onClick={handleClear}
-          aria-label="Clear search"
+          aria-label={t('gallery.clearSearch')}
           data-testid="search-clear-button"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

@@ -104,7 +104,7 @@ describe('DeletePhotoDialog', () => {
       });
 
       const title = container.querySelector('#delete-photo-dialog-title');
-      expect(title?.textContent).toBe('Delete photo?');
+      expect(title?.textContent).toBe('gallery.delete.titleSingle');
 
       cleanup();
     });
@@ -115,7 +115,8 @@ describe('DeletePhotoDialog', () => {
       });
 
       const title = container.querySelector('#delete-photo-dialog-title');
-      expect(title?.textContent).toBe('Delete 3 photos?');
+      // Mock returns key with params: gallery.delete.titleBulk:{"count":3}
+      expect(title?.textContent).toContain('gallery.delete.titleBulk');
 
       cleanup();
     });
@@ -191,7 +192,7 @@ describe('DeletePhotoDialog', () => {
       });
 
       const confirmButton = getByTestId('delete-confirm-button');
-      expect(confirmButton?.textContent).toContain('Deleting');
+      expect(confirmButton?.textContent).toContain('common.deleting');
 
       cleanup();
     });
@@ -202,7 +203,7 @@ describe('DeletePhotoDialog', () => {
       });
 
       const confirmButton = getByTestId('delete-confirm-button');
-      expect(confirmButton?.textContent).toBe('Delete');
+      expect(confirmButton?.textContent).toBe('common.delete');
 
       cleanup();
     });

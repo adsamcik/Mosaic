@@ -7,6 +7,7 @@
  */
 
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 
 interface SelectionActionBarProps {
@@ -38,6 +39,7 @@ export function SelectionActionBar({
   onDeleteSelected,
   totalPhotos,
 }: SelectionActionBarProps) {
+  const { t } = useTranslation();
   const permissions = useAlbumPermissions();
 
   // Handle keyboard shortcuts
@@ -89,7 +91,7 @@ export function SelectionActionBar({
           <div className="selection-action-bar-count">
             <span className="selection-count-number">{selectedCount}</span>
             <span className="selection-count-label">
-              {selectedCount === 1 ? 'photo selected' : 'photos selected'}
+              {t('gallery.photoSelected', { count: selectedCount }).replace(`${selectedCount} `, '')}
             </span>
           </div>
         </div>
@@ -101,7 +103,7 @@ export function SelectionActionBar({
             className="action-bar-button action-bar-button-secondary"
             onClick={allSelected ? onClearSelection : onSelectAll}
             data-testid="action-bar-select-all"
-            title={allSelected ? 'Deselect all (Ctrl+A)' : 'Select all (Ctrl+A)'}
+            title={allSelected ? t('gallery.deselectAll') : t('gallery.selectAllTitle')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               {allSelected ? (
@@ -119,7 +121,7 @@ export function SelectionActionBar({
                 </>
               )}
             </svg>
-            <span>{allSelected ? 'Deselect All' : 'Select All'}</span>
+            <span>{allSelected ? t('gallery.deselectAllButton') : t('gallery.selectAllButton')}</span>
           </button>
 
           {/* Clear selection (only when some are selected) */}
@@ -128,13 +130,13 @@ export function SelectionActionBar({
               className="action-bar-button action-bar-button-secondary"
               onClick={onClearSelection}
               data-testid="action-bar-clear"
-              title="Clear selection"
+              title={t('gallery.clearSelection')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"/>
                 <line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
-              <span>Clear</span>
+              <span>{t('common.clear')}</span>
             </button>
           )}
 
@@ -144,13 +146,13 @@ export function SelectionActionBar({
               className="action-bar-button action-bar-button-danger"
               onClick={onDeleteSelected}
               data-testid="action-bar-delete"
-              title="Delete selected (Delete key)"
+              title={t('gallery.deleteSelectedTitle')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6"/>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
               </svg>
-              <span>Delete ({selectedCount})</span>
+              <span>{t('gallery.deleteCount', { count: selectedCount })}</span>
             </button>
           )}
         </div>
@@ -161,22 +163,22 @@ export function SelectionActionBar({
             className="action-bar-button action-bar-button-ghost"
             onClick={onExitSelectionMode}
             data-testid="action-bar-exit"
-            title="Exit selection mode (Esc)"
+            title={t('gallery.exitSelectionModeTitle')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"/>
               <line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
-            <span>Done</span>
+            <span>{t('common.done')}</span>
           </button>
         </div>
       </div>
 
       {/* Keyboard shortcuts hint */}
       <div className="selection-action-bar-hints">
-        <span className="hint"><kbd>Esc</kbd> to exit</span>
-        <span className="hint"><kbd>Ctrl+A</kbd> select all</span>
-        {permissions.canDelete && <span className="hint"><kbd>Del</kbd> delete</span>}
+        <span className="hint"><kbd>{t('common.keyEsc')}</kbd> {t('common.toExit')}</span>
+        <span className="hint"><kbd>{t('common.keyCtrlA')}</kbd> {t('gallery.selectAllButton').toLowerCase()}</span>
+        {permissions.canDelete && <span className="hint"><kbd>{t('common.keyDel')}</kbd> {t('common.delete').toLowerCase()}</span>}
       </div>
     </div>
   );
