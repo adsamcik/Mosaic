@@ -127,77 +127,169 @@ class DbWorker implements DbWorkerApi {
     }
   }
 
+  /**
+   * Get current schema version from SQLite PRAGMA user_version
+   */
+  private getSchemaVersion(): number {
+    if (!this.db) return 0;
+    const result = this.db.exec('PRAGMA user_version');
+    return (result[0]?.values[0]?.[0] as number) ?? 0;
+  }
+
+  /**
+   * Set schema version using SQLite PRAGMA user_version
+   */
+  private setSchemaVersion(version: number): void {
+    if (!this.db) return;
+    this.db.run(`PRAGMA user_version = ${version}`);
+  }
+
+  /**
+   * Check if FTS5 table exists
+   */
+  private ftsTableExists(): boolean {
+    if (!this.db) return false;
+    const result = this.db.exec(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='photos_fts'"
+    );
+    const firstRow = result[0];
+    return result.length > 0 && firstRow !== undefined && (firstRow.values?.length ?? 0) > 0;
+  }
+
+  /**
+   * Create FTS5 table and triggers
+   */
+  private createFtsTable(): void {
+    if (!this.db) return;
+
+    log.info('Creating FTS5 virtual table for full-text search');
+
+    this.db.run(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS photos_fts USING fts5(
+        filename, tags, description,
+        content='photos',
+        content_rowid='rowid'
+      );
+    `);
+
+    // Triggers to keep FTS in sync
+    this.db.run(`
+      CREATE TRIGGER IF NOT EXISTS photos_ai AFTER INSERT ON photos BEGIN
+        INSERT INTO photos_fts(rowid, filename, tags, description)
+        VALUES (NEW.rowid, NEW.filename, NEW.tags, NEW.description);
+      END;
+    `);
+
+    this.db.run(`
+      CREATE TRIGGER IF NOT EXISTS photos_ad AFTER DELETE ON photos BEGIN
+        INSERT INTO photos_fts(photos_fts, rowid, filename, tags, description)
+        VALUES ('delete', OLD.rowid, OLD.filename, OLD.tags, OLD.description);
+      END;
+    `);
+
+    this.db.run(`
+      CREATE TRIGGER IF NOT EXISTS photos_au AFTER UPDATE ON photos BEGIN
+        INSERT INTO photos_fts(photos_fts, rowid, filename, tags, description)
+        VALUES ('delete', OLD.rowid, OLD.filename, OLD.tags, OLD.description);
+        INSERT INTO photos_fts(rowid, filename, tags, description)
+        VALUES (NEW.rowid, NEW.filename, NEW.tags, NEW.description);
+      END;
+    `);
+  }
+
+  /**
+   * Rebuild FTS index from existing photos data
+   */
+  private rebuildFtsIndex(): void {
+    if (!this.db) return;
+
+    log.info('Rebuilding FTS index from existing photos');
+
+    // Clear existing FTS data and rebuild from photos table
+    this.db.run(`
+      INSERT INTO photos_fts(photos_fts) VALUES('rebuild');
+    `);
+
+    log.info('FTS index rebuild complete');
+  }
+
   private async runMigrations(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    this.db.run(`
-      -- Albums table for sync state
-      CREATE TABLE IF NOT EXISTS albums (
-        id TEXT PRIMARY KEY,
-        current_version INTEGER DEFAULT 0
-      );
-      
-      -- Photos table for decrypted metadata
-      CREATE TABLE IF NOT EXISTS photos (
-        id TEXT PRIMARY KEY,
-        asset_id TEXT NOT NULL,
-        album_id TEXT NOT NULL,
-        filename TEXT NOT NULL,
-        mime_type TEXT NOT NULL,
-        width INTEGER,
-        height INTEGER,
-        taken_at TEXT,
-        lat REAL,
-        lng REAL,
-        tags TEXT,
-        created_at TEXT,
-        updated_at TEXT,
-        shard_ids TEXT,
-        epoch_id INTEGER,
-        description TEXT
-      );
-      
-      -- Indexes for common queries
-      CREATE INDEX IF NOT EXISTS idx_photos_album ON photos(album_id);
-      CREATE INDEX IF NOT EXISTS idx_photos_taken ON photos(taken_at);
-      CREATE INDEX IF NOT EXISTS idx_photos_geo ON photos(lat, lng) WHERE lat IS NOT NULL;
-    `);
+    const currentVersion = this.getSchemaVersion();
+    log.debug('Current schema version', { version: currentVersion });
 
-    // FTS5 for full-text search (separate statement for SQLite)
-    try {
+    // Version 0 -> 1: Initial schema
+    if (currentVersion < 1) {
+      log.info('Running migration: v0 -> v1 (initial schema)');
+
       this.db.run(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS photos_fts USING fts5(
-          filename, tags, description,
-          content='photos',
-          content_rowid='rowid'
+        -- Albums table for sync state
+        CREATE TABLE IF NOT EXISTS albums (
+          id TEXT PRIMARY KEY,
+          current_version INTEGER DEFAULT 0
         );
+        
+        -- Photos table for decrypted metadata
+        CREATE TABLE IF NOT EXISTS photos (
+          id TEXT PRIMARY KEY,
+          asset_id TEXT NOT NULL,
+          album_id TEXT NOT NULL,
+          filename TEXT NOT NULL,
+          mime_type TEXT NOT NULL,
+          width INTEGER,
+          height INTEGER,
+          taken_at TEXT,
+          lat REAL,
+          lng REAL,
+          tags TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          shard_ids TEXT,
+          epoch_id INTEGER,
+          description TEXT
+        );
+        
+        -- Indexes for common queries
+        CREATE INDEX IF NOT EXISTS idx_photos_album ON photos(album_id);
+        CREATE INDEX IF NOT EXISTS idx_photos_taken ON photos(taken_at);
+        CREATE INDEX IF NOT EXISTS idx_photos_geo ON photos(lat, lng) WHERE lat IS NOT NULL;
       `);
 
-      // Triggers to keep FTS in sync
-      this.db.run(`
-        CREATE TRIGGER IF NOT EXISTS photos_ai AFTER INSERT ON photos BEGIN
-          INSERT INTO photos_fts(rowid, filename, tags, description)
-          VALUES (NEW.rowid, NEW.filename, NEW.tags, NEW.description);
-        END;
-      `);
+      this.setSchemaVersion(1);
+    }
 
-      this.db.run(`
-        CREATE TRIGGER IF NOT EXISTS photos_ad AFTER DELETE ON photos BEGIN
-          INSERT INTO photos_fts(photos_fts, rowid, filename, tags, description)
-          VALUES ('delete', OLD.rowid, OLD.filename, OLD.tags, OLD.description);
-        END;
-      `);
+    // Version 1 -> 2: Add FTS5 for full-text search
+    if (currentVersion < 2) {
+      log.info('Running migration: v1 -> v2 (FTS5 full-text search)');
 
-      this.db.run(`
-        CREATE TRIGGER IF NOT EXISTS photos_au AFTER UPDATE ON photos BEGIN
-          INSERT INTO photos_fts(photos_fts, rowid, filename, tags, description)
-          VALUES ('delete', OLD.rowid, OLD.filename, OLD.tags, OLD.description);
-          INSERT INTO photos_fts(rowid, filename, tags, description)
-          VALUES (NEW.rowid, NEW.filename, NEW.tags, NEW.description);
-        END;
-      `);
-    } catch {
-      // FTS5 may already exist, ignore errors
+      try {
+        this.createFtsTable();
+
+        // If upgrading from v1, rebuild FTS index to include existing photos
+        if (currentVersion === 1) {
+          this.rebuildFtsIndex();
+        }
+
+        this.setSchemaVersion(2);
+        log.info('FTS5 migration complete');
+      } catch (error) {
+        log.error('Failed to create FTS5 table', error);
+        // Don't update version - will retry on next init
+        throw error;
+      }
+    }
+
+    // Ensure FTS table exists (safety check for corrupted state)
+    if (!this.ftsTableExists()) {
+      log.warn('FTS table missing despite schema version, recreating...');
+      try {
+        this.createFtsTable();
+        this.rebuildFtsIndex();
+        await this.saveToOPFS();
+      } catch (error) {
+        log.error('Failed to recreate FTS table', error);
+      }
     }
   }
 
