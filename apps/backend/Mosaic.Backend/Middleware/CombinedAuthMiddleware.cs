@@ -31,6 +31,7 @@ public partial class CombinedAuthMiddleware
         "/health",
         "/api/health",
         "/api/auth/init",
+        "/api/auth/config",
         "/api/auth/verify",
         "/api/auth/register",
         "/api/dev-auth/",

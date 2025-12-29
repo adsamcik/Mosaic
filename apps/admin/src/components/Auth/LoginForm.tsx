@@ -21,12 +21,17 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isLocalAuth, setIsLocalAuth] = useState(false);
+  const [isProxyAuth, setIsProxyAuth] = useState(false);
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [checkingAuthMode, setCheckingAuthMode] = useState(true);
   const [isServerUnreachable, setIsServerUnreachable] = useState(false);
 
   // Whether we're restoring an existing session (page reload case)
   const isSessionRestore = !!pendingSessionUser;
+  
+  // Show ProxyAuth-only mode when proxy auth is enabled but local auth is not
+  // When both are enabled, prefer LocalAuth (user enters username/password)
+  const isProxyAuthOnly = isProxyAuth && !isLocalAuth;
 
   const checkServer = async () => {
     try {
@@ -34,6 +39,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
       setError('');
       const status = await checkServerStatus();
       setIsLocalAuth(status.isLocalAuth);
+      setIsProxyAuth(status.isProxyAuth);
       
       if (!status.isOnline) {
         setError('Cannot reach the Mosaic server. Please ensure the server is running.');
@@ -92,12 +98,16 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           return;
         }
       }
-    } else {
-      // ProxyAuth mode: only password required
+    } else if (isProxyAuthOnly) {
+      // ProxyAuth-only mode: only password required (username comes from proxy header)
       if (!password.trim()) {
         setError('Please enter a password');
         return;
       }
+    } else {
+      // No auth mode configured - this shouldn't happen
+      setError('No authentication method is configured. Please contact your administrator.');
+      return;
     }
 
     setLoading(true);
@@ -113,8 +123,12 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
         } else {
           await session.localLogin(username, password);
         }
-      } else {
+      } else if (isProxyAuthOnly) {
         await session.login(password);
+      } else {
+        setError('No authentication method available');
+        setLoading(false);
+        return;
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Operation failed';
@@ -185,6 +199,13 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           <div className="dev-mode-badge" data-testid="local-auth-badge">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             {isRegisterMode ? 'Create Account' : 'Local Authentication'}
+          </div>
+        )}
+
+        {isProxyAuthOnly && !isSessionRestore && (
+          <div className="dev-mode-badge" data-testid="proxy-auth-badge" style={{ backgroundColor: 'var(--color-info-bg, #e3f2fd)', color: 'var(--color-info, #1976d2)' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Proxy Authentication
           </div>
         )}
 
@@ -280,7 +301,9 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
               ? (isRegisterMode 
                   ? 'Create a new account. Choose a strong password - it encrypts your data.'
                   : 'Sign in to your existing account.')
-              : 'Your photos are encrypted locally. The server never sees your data.'}
+              : isProxyAuthOnly
+                ? 'You are authenticated via your identity provider. Enter your encryption password.'
+                : 'Your photos are encrypted locally. The server never sees your data.'}
         </p>
       </div>
     </div>
