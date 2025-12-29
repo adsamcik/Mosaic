@@ -12,6 +12,7 @@ import {
   AppShell,
   CreateAlbumDialog,
   GalleryPage,
+  DeleteAlbumDialog,
   loginUser,
   createAlbumViaAPI,
   TEST_PASSWORD,
@@ -199,6 +200,168 @@ test.describe('Album Management', () => {
       await expect(user.page.getByTestId('album-card').filter({ hasText: albumName })).toBeVisible({
         timeout: 10000,
       });
+    });
+  });
+
+  test.describe('Album Deletion', () => {
+    test('P1-ALBUM-9: cancel delete album keeps album intact', async ({ testContext }) => {
+      const user = await testContext.createAuthenticatedUser('delete-cancel');
+      const albumName = testContext.generateAlbumName('To Cancel Delete');
+
+      // Create album via API for faster setup
+      const albumResult = await createAlbumViaAPI(user.email);
+      testContext.trackAlbum(albumResult.id, user.email);
+
+      await loginUser(user, TEST_PASSWORD);
+
+      // Navigate to album
+      const appShell = new AppShell(user.page);
+      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
+      await appShell.clickAlbum(0);
+
+      // Wait for gallery to load
+      const gallery = new GalleryPage(user.page);
+      await gallery.waitForLoad();
+
+      // Click delete button
+      await gallery.expectDeleteButtonVisible();
+      await gallery.clickDeleteAlbum();
+
+      // Verify confirmation dialog appears
+      const deleteDialog = new DeleteAlbumDialog(user.page);
+      await deleteDialog.waitForOpen();
+
+      // Cancel deletion
+      await deleteDialog.cancel();
+
+      // Dialog should close
+      await deleteDialog.waitForClose();
+
+      // Navigate back to albums
+      await appShell.goBack();
+
+      // Album should still exist
+      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
+    });
+
+    test('P1-ALBUM-10: confirm delete album removes album', async ({ testContext }) => {
+      const user = await testContext.createAuthenticatedUser('delete-confirm');
+
+      // Create album via API for faster setup
+      const albumResult = await createAlbumViaAPI(user.email);
+      // Note: We don't track this album because we're deleting it in the test
+
+      await loginUser(user, TEST_PASSWORD);
+
+      // Verify album exists
+      const appShell = new AppShell(user.page);
+      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
+      const initialCount = await user.page.getByTestId('album-card').count();
+      expect(initialCount).toBeGreaterThan(0);
+
+      // Navigate to album
+      await appShell.clickAlbum(0);
+
+      // Wait for gallery to load
+      const gallery = new GalleryPage(user.page);
+      await gallery.waitForLoad();
+
+      // Click delete button
+      await gallery.clickDeleteAlbum();
+
+      // Verify confirmation dialog appears
+      const deleteDialog = new DeleteAlbumDialog(user.page);
+      await deleteDialog.waitForOpen();
+
+      // Confirm deletion
+      await deleteDialog.confirmAndWaitForClose();
+
+      // Should navigate back to album list
+      await expect(user.page.getByTestId('album-list')).toBeVisible({ timeout: 10000 });
+
+      // Album count should decrease
+      const finalCount = await user.page.getByTestId('album-card').count();
+      expect(finalCount).toBe(initialCount - 1);
+    });
+
+    test('P1-ALBUM-11: deleted album is gone after page reload', async ({ testContext }) => {
+      const user = await testContext.createAuthenticatedUser('delete-persist');
+
+      // Create album via API for faster setup
+      const albumResult = await createAlbumViaAPI(user.email);
+      // Note: We don't track this album because we're deleting it in the test
+
+      await loginUser(user, TEST_PASSWORD);
+
+      // Verify album exists
+      const appShell = new AppShell(user.page);
+      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
+
+      // Navigate to album
+      await appShell.clickAlbum(0);
+
+      // Wait for gallery to load
+      const gallery = new GalleryPage(user.page);
+      await gallery.waitForLoad();
+
+      // Delete the album
+      await gallery.clickDeleteAlbum();
+      const deleteDialog = new DeleteAlbumDialog(user.page);
+      await deleteDialog.waitForOpen();
+      await deleteDialog.confirmAndWaitForClose();
+
+      // Should navigate back to album list
+      await expect(user.page.getByTestId('album-list')).toBeVisible({ timeout: 10000 });
+
+      // Reload page
+      await user.page.reload();
+
+      // Re-login
+      const loginPage = new LoginPage(user.page);
+      await loginPage.waitForForm();
+      await loginPage.login(TEST_PASSWORD);
+      await loginPage.expectLoginSuccess();
+
+      // Album should not be there - either empty state or no album cards
+      const albumCards = user.page.getByTestId('album-card');
+      await expect(albumCards).toHaveCount(0, { timeout: 10000 });
+    });
+
+    test('P1-ALBUM-12: delete button shows album info in dialog', async ({ testContext }) => {
+      const user = await testContext.createAuthenticatedUser('delete-info');
+      const albumName = testContext.generateAlbumName('Info Test');
+
+      // Create album via UI to have a known name
+      await loginUser(user, TEST_PASSWORD);
+
+      const appShell = new AppShell(user.page);
+      await appShell.openCreateAlbumDialog();
+
+      const createDialog = new CreateAlbumDialog(user.page);
+      await createDialog.createAlbum(albumName);
+
+      // Wait for album to appear
+      await expect(user.page.getByTestId('album-card').filter({ hasText: albumName })).toBeVisible({
+        timeout: 10000,
+      });
+
+      // Navigate to the album
+      await appShell.clickAlbumByName(albumName);
+
+      // Wait for gallery to load
+      const gallery = new GalleryPage(user.page);
+      await gallery.waitForLoad();
+
+      // Click delete button
+      await gallery.clickDeleteAlbum();
+
+      // Verify dialog shows album info
+      const deleteDialog = new DeleteAlbumDialog(user.page);
+      await deleteDialog.waitForOpen();
+      await deleteDialog.expectAlbumInfo(albumName);
+
+      // Cancel to not delete for cleanup
+      await deleteDialog.cancel();
     });
   });
 });

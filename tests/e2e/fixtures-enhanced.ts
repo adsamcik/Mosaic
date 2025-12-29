@@ -26,6 +26,7 @@ import {
   InviteMemberDialog,
   SettingsPage,
   DeleteConfirmDialog,
+  DeleteAlbumDialog,
   AdminPage,
 } from './page-objects';
 

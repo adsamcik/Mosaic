@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { SyncProvider } from '../../contexts/SyncContext';
+import { useAlbums } from '../../hooks/useAlbums';
 import { AlbumList } from '../Albums/AlbumList';
 import { AdminPage } from '../Admin';
 import { LogoutButton } from '../Auth/LogoutButton';
@@ -17,6 +18,9 @@ export function AppShell() {
   const [currentView, setCurrentView] = useState<View>('albums');
   const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  
+  // Get albums data for album name display and delete functionality
+  const { albums, deleteAlbum } = useAlbums();
 
   // Check if current user is admin on mount
   useEffect(() => {
@@ -114,7 +118,12 @@ export function AppShell() {
           <AlbumList onSelectAlbum={handleSelectAlbum} />
         )}
         {currentView === 'gallery' && selectedAlbumId && (
-          <Gallery albumId={selectedAlbumId} />
+          <Gallery 
+            albumId={selectedAlbumId}
+            albumName={albums.find(a => a.id === selectedAlbumId)?.name}
+            onDeleteAlbum={deleteAlbum}
+            onAlbumDeleted={handleBackToAlbums}
+          />
         )}
         {currentView === 'settings' && <SettingsPage />}
         {currentView === 'admin' && <AdminPage onBack={handleBackFromAdmin} />}

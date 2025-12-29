@@ -10,6 +10,7 @@ import { useSync } from '../../hooks/useSync';
 import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
 import { createLogger } from '../../lib/logger';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
+import { DeleteAlbumDialog } from '../Albums/DeleteAlbumDialog';
 import { MemberList } from '../Members/MemberList';
 import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
 import { DropZone } from '../Upload/DropZone';
@@ -27,6 +28,9 @@ export type GalleryViewMode = 'grid' | 'justified' | 'map';
 
 interface GalleryProps {
   albumId: string;
+  albumName?: string | undefined;
+  onAlbumDeleted?: () => void;
+  onDeleteAlbum?: (albumId: string) => Promise<boolean>;
 }
 
 /**
@@ -51,9 +55,12 @@ function photosToGeoFeatures(photos: PhotoMeta[]): GeoFeature[] {
  * Gallery View Component
  * Displays photos in a virtualized grid or map view with upload capability
  */
-export function Gallery({ albumId }: GalleryProps) {
+export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum }: GalleryProps) {
   const [showMembers, setShowMembers] = useState(false);
   const [showShareLinks, setShowShareLinks] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('justified');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -146,6 +153,41 @@ export function Gallery({ albumId }: GalleryProps) {
     [photos, lightbox]
   );
 
+  // Handle album deletion
+  const handleDeleteAlbum = useCallback(() => {
+    setDeleteError(null);
+    setShowDeleteDialog(true);
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!onDeleteAlbum) return;
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const success = await onDeleteAlbum(albumId);
+      if (success) {
+        setShowDeleteDialog(false);
+        onAlbumDeleted?.();
+      } else {
+        setDeleteError('Failed to delete album. Please try again.');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete album';
+      setDeleteError(message);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [albumId, onDeleteAlbum, onAlbumDeleted]);
+
+  const handleCancelDelete = useCallback(() => {
+    if (!isDeleting) {
+      setShowDeleteDialog(false);
+      setDeleteError(null);
+    }
+  }, [isDeleting]);
+
   // Compute preload queue for lightbox
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
@@ -205,6 +247,7 @@ export function Gallery({ albumId }: GalleryProps) {
           geotaggedCount={geotaggedCount}
           onShowMembers={() => setShowMembers(true)}
           onShowShareLinks={() => setShowShareLinks(true)}
+          onDeleteAlbum={onDeleteAlbum ? handleDeleteAlbum : undefined}
         />
 
       {/* Gallery Content - Wrapped in DropZone for drag-and-drop upload */}
@@ -252,6 +295,18 @@ export function Gallery({ albumId }: GalleryProps) {
           hasNext={lightbox.hasNext}
           hasPrevious={lightbox.hasPrevious}
           preloadQueue={preloadQueue}
+        />
+      )}
+
+      {/* Delete Album Confirmation Dialog */}
+      {showDeleteDialog && (
+        <DeleteAlbumDialog
+          albumName={albumName ?? `Album ${albumId.slice(0, 8)}`}
+          photoCount={photos.length}
+          isDeleting={isDeleting}
+          onConfirm={handleConfirmDelete}
+          onCancel={handleCancelDelete}
+          error={deleteError}
         />
       )}
 

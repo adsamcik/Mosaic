@@ -19,6 +19,7 @@ interface GalleryHeaderProps {
   geotaggedCount: number;
   onShowMembers: () => void;
   onShowShareLinks: () => void;
+  onDeleteAlbum?: (() => void) | undefined;
 }
 
 /**
@@ -33,6 +34,7 @@ export function GalleryHeader({
   geotaggedCount,
   onShowMembers,
   onShowShareLinks,
+  onDeleteAlbum,
 }: GalleryHeaderProps) {
   const permissions = useAlbumPermissions();
 
@@ -107,6 +109,19 @@ export function GalleryHeader({
           >
             <span className="share-links-icon">🔗</span>
             <span className="button-label">Links</span>
+          </button>
+        )}
+
+        {/* Delete button - owners only */}
+        {permissions.isOwner && onDeleteAlbum && (
+          <button
+            className="button-danger delete-album-button"
+            onClick={onDeleteAlbum}
+            aria-label="Delete album"
+            data-testid="delete-album-button"
+          >
+            <span className="delete-icon">🗑️</span>
+            <span className="button-label">Delete</span>
           </button>
         )}
 

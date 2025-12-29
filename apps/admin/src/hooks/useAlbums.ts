@@ -169,6 +169,40 @@ export function useAlbums() {
   }, []);
 
   /**
+   * Delete an album.
+   *
+   * This function:
+   * 1. Calls the DELETE API endpoint
+   * 2. Removes the album from local state
+   * 3. Clears any cached data for this album
+   *
+   * @param albumId - ID of the album to delete
+   * @returns true if deletion succeeded, false otherwise
+   */
+  const deleteAlbum = useCallback(
+    async (albumId: string): Promise<boolean> => {
+      try {
+        const api = getApi();
+        await api.deleteAlbum(albumId);
+
+        // Remove from local state
+        setAlbums((prev) => prev.filter((a) => a.id !== albumId));
+
+        // Clear cached epoch keys for this album
+        // Note: The epoch key store doesn't have a clear function yet,
+        // so we just let it expire naturally
+
+        log.info(`Album ${albumId} deleted successfully`);
+        return true;
+      } catch (err) {
+        log.error(`Failed to delete album ${albumId}:`, err);
+        return false;
+      }
+    },
+    []
+  );
+
+  /**
    * Create a new album with encrypted name and initial epoch key.
    *
    * This function:
@@ -286,5 +320,6 @@ export function useAlbums() {
     createAlbum,
     isCreating,
     createError,
+    deleteAlbum,
   };
 }

@@ -222,6 +222,7 @@ export class GalleryPage {
   readonly viewMapButton: Locator;
   readonly membersButton: Locator;
   readonly shareButton: Locator;
+  readonly deleteAlbumButton: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -236,6 +237,7 @@ export class GalleryPage {
     this.viewMapButton = page.getByTestId('view-toggle-map');
     this.membersButton = page.getByTestId('share-button');
     this.shareButton = page.getByTestId('share-links-button');
+    this.deleteAlbumButton = page.getByTestId('delete-album-button');
   }
 
   async waitForLoad(timeout = 30000): Promise<void> {
@@ -326,6 +328,18 @@ export class GalleryPage {
 
   async openShareLinks(): Promise<void> {
     await this.shareButton.click();
+  }
+
+  async clickDeleteAlbum(): Promise<void> {
+    await this.deleteAlbumButton.click();
+  }
+
+  async expectDeleteButtonVisible(): Promise<void> {
+    await expect(this.deleteAlbumButton).toBeVisible({ timeout: 5000 });
+  }
+
+  async expectDeleteButtonHidden(): Promise<void> {
+    await expect(this.deleteAlbumButton).toBeHidden({ timeout: 5000 });
   }
 }
 
@@ -615,6 +629,60 @@ export class DeleteConfirmDialog {
   async cancel(): Promise<void> {
     await this.cancelButton.click();
     await this.waitForClose();
+  }
+}
+
+/**
+ * Delete Album Dialog Page Object
+ */
+export class DeleteAlbumDialog {
+  readonly page: Page;
+  readonly dialog: Locator;
+  readonly confirmButton: Locator;
+  readonly cancelButton: Locator;
+  readonly albumInfo: Locator;
+  readonly errorMessage: Locator;
+
+  constructor(page: Page) {
+    this.page = page;
+    this.dialog = page.getByTestId('delete-album-dialog');
+    this.confirmButton = page.getByTestId('delete-album-confirm-button');
+    this.cancelButton = page.getByTestId('delete-album-cancel-button');
+    this.albumInfo = page.getByTestId('delete-album-info');
+    this.errorMessage = page.getByTestId('delete-album-error');
+  }
+
+  async waitForOpen(timeout = 10000): Promise<void> {
+    await expect(this.dialog).toBeVisible({ timeout });
+  }
+
+  async waitForClose(timeout = 10000): Promise<void> {
+    await expect(this.dialog).toBeHidden({ timeout });
+  }
+
+  async confirm(): Promise<void> {
+    await this.confirmButton.click();
+  }
+
+  async confirmAndWaitForClose(timeout = 30000): Promise<void> {
+    await this.confirmButton.click();
+    await this.waitForClose(timeout);
+  }
+
+  async cancel(): Promise<void> {
+    await this.cancelButton.click();
+    await this.waitForClose();
+  }
+
+  async expectError(text?: string | RegExp): Promise<void> {
+    await expect(this.errorMessage).toBeVisible({ timeout: 5000 });
+    if (text) {
+      await expect(this.errorMessage).toHaveText(text);
+    }
+  }
+
+  async expectAlbumInfo(albumName: string): Promise<void> {
+    await expect(this.albumInfo).toContainText(albumName);
   }
 }
 

@@ -297,7 +297,7 @@ function UsersTab({ users, defaults, onRefresh }: UsersTabProps) {
         />
       </div>
 
-      <table className="admin-table">
+      <table className="admin-table" data-testid="users-table">
         <thead>
           <tr>
             <th>User</th>
@@ -555,7 +555,7 @@ function AlbumsTab({ albums, defaults, onRefresh }: AlbumsTabProps) {
         />
       </div>
 
-      <table className="admin-table">
+      <table className="admin-table" data-testid="albums-table">
         <thead>
           <tr>
             <th>ID</th>
@@ -982,7 +982,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
   }
 
   return (
-    <div className="admin-page">
+    <div className="admin-page" data-testid="admin-page">
       <header className="admin-header">
         <button onClick={onBack} className="back-button">
           ← Back
@@ -990,28 +990,36 @@ export function AdminPage({ onBack }: AdminPageProps) {
         <h1>Admin Panel</h1>
       </header>
 
-      <nav className="admin-tabs">
+      <nav className="admin-tabs" role="tablist">
         <button
           className={`tab-button ${currentTab === 'dashboard' ? 'active' : ''}`}
           onClick={() => setCurrentTab('dashboard')}
+          role="tab"
+          aria-selected={currentTab === 'dashboard'}
         >
           Dashboard
         </button>
         <button
           className={`tab-button ${currentTab === 'users' ? 'active' : ''}`}
           onClick={() => setCurrentTab('users')}
+          role="tab"
+          aria-selected={currentTab === 'users'}
         >
           Users
         </button>
         <button
           className={`tab-button ${currentTab === 'albums' ? 'active' : ''}`}
           onClick={() => setCurrentTab('albums')}
+          role="tab"
+          aria-selected={currentTab === 'albums'}
         >
           Albums
         </button>
         <button
           className={`tab-button ${currentTab === 'settings' ? 'active' : ''}`}
           onClick={() => setCurrentTab('settings')}
+          role="tab"
+          aria-selected={currentTab === 'settings'}
         >
           Settings
         </button>
