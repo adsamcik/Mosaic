@@ -35,6 +35,14 @@ RUN npm run build
 # Production stage - nginx with custom config
 FROM nginx:alpine AS production
 
+# OCI Image Labels (overwritten by docker/metadata-action in CI)
+LABEL org.opencontainers.image.title="Mosaic Frontend" \
+      org.opencontainers.image.description="Zero-knowledge encrypted photo gallery web interface" \
+      org.opencontainers.image.url="https://github.com/eivindholvik/Mosaic" \
+      org.opencontainers.image.source="https://github.com/eivindholvik/Mosaic" \
+      org.opencontainers.image.vendor="Mosaic Contributors" \
+      org.opencontainers.image.licenses="MIT"
+
 # Copy custom nginx configuration
 COPY apps/admin/nginx.conf /etc/nginx/nginx.conf
 

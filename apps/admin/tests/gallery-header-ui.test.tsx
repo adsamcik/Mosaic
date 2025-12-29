@@ -205,7 +205,7 @@ describe('GalleryHeader - View Toggles', () => {
 
     // Find the map view toggle
     const viewToggleButtons = container.querySelectorAll('.view-toggle-btn');
-    // Should have 3 buttons: justified, grid, map
-    expect(viewToggleButtons.length).toBe(3);
+    // Should have 4 buttons: justified, grid, mosaic, map
+    expect(viewToggleButtons.length).toBe(4);
   });
 });
