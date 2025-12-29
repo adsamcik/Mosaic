@@ -6,7 +6,7 @@
 
 import { test, expect } from '../fixtures';
 
-test.describe('Accessibility', () => {
+test.describe('Accessibility @p2 @a11y @fast', () => {
   test('has proper heading structure', async ({ page }) => {
     await page.goto('/');
 

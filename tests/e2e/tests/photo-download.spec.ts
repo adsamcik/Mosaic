@@ -26,7 +26,7 @@ import {
 } from '../fixtures-enhanced';
 import type { Download } from '@playwright/test';
 
-test.describe('Photo Download - ZK Round-Trip Verification', () => {
+test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow', () => {
   test.describe('P0 - Critical Download Flows', () => {
     test('P0-DOWNLOAD-1: download button appears in lightbox when photo is loaded', async ({
       testContext,

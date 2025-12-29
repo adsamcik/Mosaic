@@ -14,7 +14,7 @@ import {
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
 
-test.describe('Session Management', () => {
+test.describe('Session Management @p1 @auth', () => {
   test.describe('Key Caching', () => {
     test('P1-SESSION-1: session restores after page reload within cache duration', async ({
       testContext,

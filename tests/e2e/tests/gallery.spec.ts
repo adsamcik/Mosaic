@@ -7,7 +7,7 @@
 
 import { ApiHelper, expect, GalleryPage, LoginPage, test, TEST_CONSTANTS } from '../fixtures';
 
-test.describe('Photo Gallery', () => {
+test.describe('Photo Gallery @p1 @gallery', () => {
   const apiHelper = new ApiHelper();
 
   test.describe('Gallery Display', () => {

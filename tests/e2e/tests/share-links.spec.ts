@@ -17,7 +17,7 @@ import {
   CreateShareLinkDialog,
 } from '../page-objects';
 
-test.describe('Share Links Workflow', () => {
+test.describe('Share Links Workflow @p1 @sharing', () => {
   let loginPage: LoginPage;
   let appShell: AppShell;
   let createAlbumDialog: CreateAlbumDialog;
@@ -233,7 +233,7 @@ test.describe('Share Links Workflow', () => {
   });
 });
 
-test.describe('Share Link Access', () => {
+test.describe('Share Link Access @p1 @sharing', () => {
   test.skip('P2-SHARE-9: accessing share link without login shows public view', async ({
     page,
   }) => {

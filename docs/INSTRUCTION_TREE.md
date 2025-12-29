@@ -34,6 +34,9 @@ apps/admin/
 
 libs/crypto/
 └── .instructions.md           # 🔐 CRYPTO: Cryptography implementation rules
+
+tests/e2e/
+└── .instructions.md           # 🧪 E2E TESTS: Test categories and patterns
 ```
 
 ---
@@ -54,6 +57,7 @@ libs/crypto/
 | **Backend work** | `apps/backend/.instructions.md` |
 | **Frontend work** | `apps/admin/.instructions.md` + relevant subdirectory |
 | **Crypto operations** | `libs/crypto/.instructions.md` |
+| **E2E testing** | `tests/e2e/.instructions.md` |
 | **New feature** | Check `docs/specs/SPEC-*.md` for existing design |
 | **Security review** | `docs/SECURITY.md` + `.github/agents.md` (@security-agent) |
 | **Testing** | `.github/agents.md` (@test-agent) |

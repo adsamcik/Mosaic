@@ -12,7 +12,7 @@
 
 import { expect, LoginPage, test, TEST_CONSTANTS } from '../fixtures';
 
-test.describe('Registration', () => {
+test.describe('Registration @p1 @auth @crypto', () => {
   test.describe('Registration Form Display', () => {
     test('shows mode toggle button on first visit', async ({ page }) => {
       await page.goto('/');

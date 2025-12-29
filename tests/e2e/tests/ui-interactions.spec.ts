@@ -18,7 +18,7 @@ import {
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
 
-test.describe('UI Interactions', () => {
+test.describe('UI Interactions @p2 @ui @fast', () => {
   test.describe('Keyboard Navigation', () => {
     test('P2-UI-1: Tab key navigates through interactive elements', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('keyboard-nav');

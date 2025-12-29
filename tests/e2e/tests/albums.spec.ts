@@ -7,7 +7,7 @@
 
 import { ApiHelper, AppShell, expect, LoginPage, test, TEST_CONSTANTS } from '../fixtures';
 
-test.describe('Album Management', () => {
+test.describe('Album Management @p1 @album', () => {
   const apiHelper = new ApiHelper();
 
   test.describe('Album List Display', () => {

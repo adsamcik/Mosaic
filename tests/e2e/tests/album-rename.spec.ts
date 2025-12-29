@@ -17,7 +17,7 @@ import {
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
 
-test.describe('Album Rename', () => {
+test.describe('Album Rename @p1 @album', () => {
   test.describe('Rename Dialog UI', () => {
     test('P1-RENAME-1: rename button visible for album owner', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('owner');

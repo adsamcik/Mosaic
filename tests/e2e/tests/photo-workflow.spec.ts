@@ -23,7 +23,7 @@ import {
   TEST_CONSTANTS,
 } from '../fixtures';
 
-test.describe('Photo Workflow: Upload & Display', () => {
+test.describe('Photo Workflow: Upload & Display @p1 @photo @crypto @slow', () => {
   const apiHelper = new ApiHelper();
 
   test.beforeEach(async ({ authenticatedPage, testUser }) => {
@@ -142,7 +142,7 @@ test.describe('Photo Workflow: Upload & Display', () => {
   });
 });
 
-test.describe('Photo Workflow: Lightbox/Full View', () => {
+test.describe('Photo Workflow: Lightbox/Full View @p1 @photo @gallery', () => {
   const apiHelper = new ApiHelper();
 
   test('clicking photo opens lightbox', async ({
@@ -283,7 +283,7 @@ test.describe('Photo Workflow: Lightbox/Full View', () => {
   });
 });
 
-test.describe('Photo Workflow: Deletion', () => {
+test.describe('Photo Workflow: Deletion @p1 @photo', () => {
   const apiHelper = new ApiHelper();
 
   test('photo can be deleted from gallery', async ({
@@ -458,7 +458,7 @@ test.describe('Photo Workflow: Deletion', () => {
   });
 });
 
-test.describe('Photo Workflow: Keyboard Navigation', () => {
+test.describe('Photo Workflow: Keyboard Navigation @p2 @photo @a11y', () => {
   const apiHelper = new ApiHelper();
 
   test('photos can be navigated with arrow keys in gallery', async ({
@@ -513,7 +513,7 @@ test.describe('Photo Workflow: Keyboard Navigation', () => {
   });
 });
 
-test.describe('Photo Workflow: Empty States', () => {
+test.describe('Photo Workflow: Empty States @p2 @photo @ui', () => {
   const apiHelper = new ApiHelper();
 
   test('empty gallery shows upload prompt', async ({

@@ -18,7 +18,7 @@ import {
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
 
-test.describe('Error Handling', () => {
+test.describe('Error Handling @p1 @security', () => {
   test.describe('Network Errors', () => {
     test('P2-ERROR-1: offline state shows indicator', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('offline-user');

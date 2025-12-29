@@ -19,7 +19,7 @@ import {
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
 
-test.describe('Photo Lifecycle', () => {
+test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
   test.describe('Photo Upload', () => {
     test('P1-PHOTO-1: upload single photo shows in gallery', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('uploader');

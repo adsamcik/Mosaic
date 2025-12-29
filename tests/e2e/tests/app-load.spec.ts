@@ -7,7 +7,7 @@
 
 import { expect, test } from '../fixtures';
 
-test.describe('App Loading', () => {
+test.describe('App Loading @p1 @fast', () => {
   test('loads the application and shows login form', async ({ page }) => {
     await page.goto('/');
 

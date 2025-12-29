@@ -22,8 +22,8 @@ import {
   TEST_CONSTANTS,
 } from '../fixtures';
 
-test.describe('Critical Flow: Complete Authentication', () => {
-  test('P0-1: complete password login initializes crypto and shows app shell', async ({
+test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypto', () => {
+  test('P0-1: complete password login initializes crypto and shows app shell @smoke', async ({
     authenticatedPage,
     testUser,
   }) => {
@@ -55,7 +55,7 @@ test.describe('Critical Flow: Complete Authentication', () => {
     await expect(appShell.albumList).toBeVisible();
   });
 
-  test('P0-2: logout clears session and returns to login form', async ({
+  test('P0-2: logout clears session and returns to login form @smoke', async ({
     authenticatedPage,
     testUser,
   }) => {
@@ -195,7 +195,7 @@ test.describe('Critical Flow: Complete Authentication', () => {
   });
 });
 
-test.describe('Critical Flow: Photo Upload Round-Trip', () => {
+test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @crypto @slow', () => {
   const apiHelper = new ApiHelper();
 
   test('P0-3: upload photo encrypts locally and appears in gallery after sync', async ({
@@ -354,7 +354,7 @@ test.describe('Critical Flow: Photo Upload Round-Trip', () => {
   });
 });
 
-test.describe('Critical Flow: Album Sharing', () => {
+test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @slow', () => {
   const apiHelper = new ApiHelper();
 
   test('P0-4: owner can share album and viewer can access photos', async ({
@@ -463,7 +463,7 @@ test.describe('Critical Flow: Album Sharing', () => {
   });
 });
 
-test.describe('Critical Flow: Album CRUD', () => {
+test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
   const apiHelper = new ApiHelper();
 
   test('P1-1a: create album via UI appears in list', async ({
@@ -578,7 +578,7 @@ test.describe('Critical Flow: Album CRUD', () => {
   });
 });
 
-test.describe('Critical Flow: Error Handling', () => {
+test.describe('Critical Flow: Error Handling @p0 @critical @security', () => {
   test('P1-7a: empty password shows validation error', async ({ page }) => {
     await page.goto('/');
 

@@ -7,9 +7,9 @@
 
 import { AppShell, expect, LoginPage, test, TEST_CONSTANTS } from '../fixtures';
 
-test.describe('Authentication', () => {
+test.describe('Authentication @p1 @auth @fast', () => {
   test.describe('Login Form Display', () => {
-    test('shows login form on first visit', async ({ page }) => {
+    test('shows login form on first visit @smoke', async ({ page }) => {
       await page.goto('/');
 
       const loginPage = new LoginPage(page);

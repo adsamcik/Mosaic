@@ -20,7 +20,7 @@ import {
   TEST_CONSTANTS,
 } from '../fixtures';
 
-test.describe('Sharing: Two-User Collaboration', () => {
+test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', () => {
   const apiHelper = new ApiHelper();
 
   test('owner and viewer see same photos in shared album', async ({
@@ -322,7 +322,7 @@ test.describe('Sharing: Two-User Collaboration', () => {
   });
 });
 
-test.describe('Sharing: Member Removal', () => {
+test.describe('Sharing: Member Removal @p1 @sharing @multi-user', () => {
   const apiHelper = new ApiHelper();
 
   test('removed member loses access to album', async ({
@@ -446,7 +446,7 @@ test.describe('Sharing: Member Removal', () => {
   });
 });
 
-test.describe('Sharing: Member List Display', () => {
+test.describe('Sharing: Member List Display @p1 @sharing @ui', () => {
   const apiHelper = new ApiHelper();
 
   test('owner sees member list in album', async ({
@@ -578,7 +578,7 @@ test.describe('Sharing: Member List Display', () => {
   });
 });
 
-test.describe('Sharing: Security Boundaries', () => {
+test.describe('Sharing: Security Boundaries @p1 @sharing @security', () => {
   const apiHelper = new ApiHelper();
 
   test('non-member cannot see album in list', async ({
@@ -801,7 +801,7 @@ test.describe('Sharing: Security Boundaries', () => {
   });
 });
 
-test.describe('P1-2: Member Management UI', () => {
+test.describe('P1-2: Member Management UI @p1 @sharing @ui', () => {
   const apiHelper = new ApiHelper();
 
   /**
