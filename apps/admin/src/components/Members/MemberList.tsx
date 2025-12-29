@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     useMemberManagement,
     type MemberInfo,
@@ -24,34 +25,34 @@ interface MemberListProps {
 }
 
 /**
- * Get display label for removal progress step
+ * Get translation key for removal progress step
  */
-function getProgressLabel(step: RemovalProgressStep): string {
+function getProgressKey(step: RemovalProgressStep): string {
   switch (step) {
     case 'removing':
-      return 'Removing member...';
+      return 'member.progress.inviting';
     case 'rotating':
-      return 'Rotating keys...';
+      return 'member.progress.keyRotation';
     case 'clearing':
-      return 'Clearing caches...';
+      return 'member.progress.clearingCaches';
     case 'complete':
-      return 'Done!';
+      return 'member.progress.done';
     default:
-      return 'Processing...';
+      return 'common.processing';
   }
 }
 
 /**
- * Get display label for role
+ * Get translation key for role
  */
-function getRoleLabel(role: string): string {
+function getRoleKey(role: string): string {
   switch (role) {
     case 'owner':
-      return 'Owner';
+      return 'member.role.owner';
     case 'editor':
-      return 'Editor';
+      return 'member.role.editor';
     case 'viewer':
-      return 'Viewer';
+      return 'member.role.viewer';
     default:
       return role;
   }
@@ -82,6 +83,7 @@ function getRoleBadgeClass(role: string): string {
  * - Remove buttons (for owner) with confirmation and key rotation
  */
 export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
+  const { t } = useTranslation();
   const {
     members,
     isLoading,
@@ -152,11 +154,11 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
         data-testid="member-panel"
       >
         <div className="member-panel-header">
-          <h3 className="member-panel-title">Members</h3>
+          <h3 className="member-panel-title">{t('member.title')}</h3>
           <button
             className="member-panel-close"
             onClick={onClose}
-            aria-label="Close members panel"
+            aria-label={t('member.closePanel')}
             data-testid="close-members-button"
           >
             ✕
@@ -167,7 +169,7 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
           {isLoading && (
             <div className="member-list-loading" data-testid="members-loading">
               <div className="loading-spinner" />
-              <span>Loading members...</span>
+              <span>{t('member.loading')}</span>
             </div>
           )}
 
@@ -187,7 +189,7 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
                   data-testid="invite-button"
                 >
                   <span className="button-icon">+</span>
-                  Invite Member
+                  {t('member.inviteMember')}
                 </button>
               )}
 
@@ -199,7 +201,7 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
                       <div className="member-details">
                         <span className="member-name">{member.displayName}</span>
                         <span className={getRoleBadgeClass(member.role)}>
-                          {getRoleLabel(member.role)}
+                          {t(getRoleKey(member.role))}
                         </span>
                       </div>
                     </div>
@@ -208,10 +210,10 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
                         className="button-secondary button-small remove-button"
                         onClick={() => handleRemoveClick(member)}
                         disabled={isRemoving}
-                        aria-label={`Remove ${member.displayName}`}
+                        aria-label={t('member.remove')}
                         data-testid={`remove-member-${member.userId}`}
                       >
-                        Remove
+                        {t('member.remove')}
                       </button>
                     )}
                   </li>
@@ -220,7 +222,7 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
 
               {members.length === 0 && (
                 <div className="member-list-empty" data-testid="members-empty">
-                  <span>No members yet</span>
+                  <span>{t('member.noMembers')}</span>
                 </div>
               )}
             </>
@@ -244,23 +246,21 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
             data-testid="remove-member-dialog"
           >
             <h2 id="remove-member-title" className="dialog-title">
-              Remove Member
+              {t('member.removeDialog.title')}
             </h2>
 
             <div className="dialog-content">
               <p>
-                Are you sure you want to remove{' '}
-                <strong>{memberToRemove.displayName}</strong> from this album?
+                {t('member.removeDialog.confirm', { name: memberToRemove.displayName })}
               </p>
               <p className="dialog-warning">
-                ⚠️ This will rotate the encryption keys. The removed member will
-                not be able to access any new photos added after removal.
+                {t('member.removeDialog.warning')}
               </p>
 
               {isRemoving && removalStep && (
                 <div className="removal-progress" data-testid="removal-progress">
                   <div className="loading-spinner" />
-                  <span>{getProgressLabel(removalStep)}</span>
+                  <span>{t(getProgressKey(removalStep))}</span>
                 </div>
               )}
 
@@ -280,7 +280,7 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
                 disabled={isRemoving}
                 data-testid="cancel-remove-button"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
@@ -289,7 +289,7 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
                 disabled={isRemoving}
                 data-testid="confirm-remove-button"
               >
-                {isRemoving ? 'Removing...' : 'Remove Member'}
+                {isRemoving ? t('member.removeDialog.removing') : t('member.removeDialog.submit')}
               </button>
             </div>
           </dialog>

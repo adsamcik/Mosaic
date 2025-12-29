@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ShareLinkInfo } from '../../hooks/useShareLinks';
 import { useShareLinks } from '../../hooks/useShareLinks';
 import { EditShareLinkView } from './EditLinkExpirationDialog'; // Rename file eventually?
@@ -35,6 +36,7 @@ export function ShareLinksPanel({
   onClose,
   isOwner,
 }: ShareLinksPanelProps) {
+  const { t } = useTranslation();
   const [view, setView] = useState<PanelView>('list');
   const [editingLink, setEditingLink] = useState<ShareLinkInfo | null>(null);
 
@@ -108,7 +110,7 @@ export function ShareLinksPanel({
               type="button"
               className="panel-back-button"
               onClick={handleBack}
-              aria-label="Back to list"
+              aria-label={t('shareLink.panel.backToList')}
               data-testid="panel-back-button"
             >
               ←
@@ -117,16 +119,16 @@ export function ShareLinksPanel({
           
           <h3 className="member-panel-title">
             {view === 'create'
-              ? 'Create Share Link'
+              ? t('shareLink.panel.createTitle')
               : view === 'edit'
-              ? 'Edit Share Link'
-              : 'Share Links'}
+              ? t('shareLink.panel.editTitle')
+              : t('shareLink.panel.listTitle')}
           </h3>
           
           <button
             className="member-panel-close"
             onClick={onClose}
-            aria-label="Close share links panel"
+            aria-label={t('common.close')}
             data-testid="close-share-links-button"
           >
             ✕
