@@ -42,13 +42,13 @@ jobs:
         working-directory: libs/crypto
         run: |
           npm ci
-          npm run test:run
+          npm test
 
       - name: Install and test admin frontend
         working-directory: apps/admin
         run: |
           npm ci
-          npm test -- --run
+          npm run test:run
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4

@@ -1,6 +1,6 @@
 {
   "name": "@mosaic/crypto",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Zero-knowledge cryptographic library for Mosaic photo gallery",
   "type": "module",
   "main": "./dist/index.js",

@@ -208,14 +208,44 @@ See [docs/SECURITY.md](docs/SECURITY.md) for the full security model.
 
 - [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) - Detailed technical specification
 - [Security Model](docs/SECURITY.md) - Threat model and cryptographic design
+- [Changelog](CHANGELOG.md) - Version history and release notes
+
+## Releases
+
+Mosaic uses GitHub Container Registry for Docker images. To create a new release:
+
+```bash
+# Tag a version (triggers publish workflow)
+git tag v0.0.1
+git push origin v0.0.1
+```
+
+This will:
+
+1. Run all tests (crypto, frontend, backend)
+2. Build multi-architecture Docker images (amd64, arm64)
+3. Push to `ghcr.io/eivindholvik/mosaic-backend` and `ghcr.io/eivindholvik/mosaic-frontend`
+4. Create a GitHub Release with image digests
+
+### Using Published Images
+
+```bash
+# Pull the latest release
+docker pull ghcr.io/eivindholvik/mosaic-backend:latest
+docker pull ghcr.io/eivindholvik/mosaic-frontend:latest
+
+# Or a specific version
+docker pull ghcr.io/eivindholvik/mosaic-backend:0.0.1
+docker pull ghcr.io/eivindholvik/mosaic-frontend:0.0.1
+```
 
 ## Browser Support
 
-| Browser | Minimum Version |
-|---------|-----------------|
-| Chrome/Edge | 102+ |
-| Firefox | 111+ |
-| Safari | 16.4+ |
+| Browser     | Minimum Version |
+| ----------- | --------------- |
+| Chrome/Edge | 102+            |
+| Firefox     | 111+            |
+| Safari      | 16.4+           |
 
 Requires `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` headers for SharedArrayBuffer support.
 
