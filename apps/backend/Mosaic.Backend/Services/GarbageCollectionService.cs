@@ -86,6 +86,7 @@ public class GarbageCollectionService : BackgroundService
         var toDelete = await db.Shards
             .Where(s => s.Status == ShardStatus.TRASHED
                      && s.StatusUpdatedAt < DateTime.UtcNow.AddDays(-7))
+            .OrderBy(s => s.StatusUpdatedAt)
             .Take(100)  // Batch to avoid long transactions
             .ToListAsync();
 
@@ -132,8 +133,10 @@ public class GarbageCollectionService : BackgroundService
         // Process expired albums in batches of 10
         while (true)
         {
+            // Use .Value comparison to help EF Core translate nullable DateTimeOffset correctly
             var expiredAlbums = await db.Albums
-                .Where(a => a.ExpiresAt != null && a.ExpiresAt <= now)
+                .Where(a => a.ExpiresAt.HasValue && a.ExpiresAt.Value <= now)
+                .OrderBy(a => a.ExpiresAt)
                 .Take(10)
                 .ToListAsync();
 
@@ -193,7 +196,8 @@ public class GarbageCollectionService : BackgroundService
         while (true)
         {
             var longExpiredLinks = await db.ShareLinks
-                .Where(sl => sl.ExpiresAt != null && sl.ExpiresAt <= thirtyDaysAgo)
+                .Where(sl => sl.ExpiresAt.HasValue && sl.ExpiresAt.Value <= thirtyDaysAgo)
+                .OrderBy(sl => sl.ExpiresAt)
                 .Take(100)
                 .ToListAsync();
 
