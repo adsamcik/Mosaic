@@ -212,7 +212,7 @@ describe('MemberList', () => {
       const { getByTestId, cleanup } = renderMemberList();
 
       const closeButton = getByTestId('close-members-button') as HTMLButtonElement;
-      expect(closeButton.getAttribute('aria-label')).toBe('Close members panel');
+      expect(closeButton.getAttribute('aria-label')).toBe('member.closePanel');
       cleanup();
     });
   });
@@ -282,7 +282,7 @@ describe('InviteMemberDialog', () => {
       const { getByTestId, cleanup } = renderInviteDialog({ isInviting: true });
 
       const button = getByTestId('submit-invite-button') as HTMLButtonElement;
-      expect(button.textContent).toContain('Inviting...');
+      expect(button.textContent).toContain('member.invite.inviting');
       expect(button.disabled).toBe(true);
       cleanup();
     });
@@ -291,7 +291,7 @@ describe('InviteMemberDialog', () => {
       const { getByTestId, cleanup } = renderInviteDialog({ isLookingUp: true });
 
       const button = getByTestId('lookup-button') as HTMLButtonElement;
-      expect(button.textContent).toContain('Looking...');
+      expect(button.textContent).toContain('member.invite.looking');
       cleanup();
     });
 
@@ -448,7 +448,7 @@ describe('MemberList - Remove Member Dialog', () => {
       });
 
       const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
-      expect(dialog?.textContent).toContain('rotate the encryption keys');
+      expect(dialog?.textContent).toContain('member.removeDialog.warning');
 
       await act(async () => {
         root!.unmount();

@@ -165,7 +165,7 @@ describe('ShareLinksPanel', () => {
       
       // Check title update
       const header = getByTestId('share-links-panel');
-      expect(header?.textContent).toContain('Create Share Link');
+      expect(header?.textContent).toContain('shareLink.panel.createTitle');
 
       // Check back button
       expect(getByTestId('panel-back-button')).not.toBeNull();
