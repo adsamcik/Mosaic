@@ -14,15 +14,15 @@ describe('Health Check', () => {
   });
 
   it('returns healthy status', async () => {
-    const response = await api.get<{ status: string; timestamp: string }>('/api/health');
+    const response = await api.get<{ status: string; timestamp: string }>('/health');
 
     expect(response.status).toBe(200);
-    expect(response.data.status).toBe('ok');
+    expect(response.data.status).toBe('healthy');
     expect(response.data.timestamp).toBeDefined();
   });
 
   it('returns valid ISO timestamp', async () => {
-    const response = await api.get<{ status: string; timestamp: string }>('/api/health');
+    const response = await api.get<{ status: string; timestamp: string }>('/health');
 
     const timestamp = new Date(response.data.timestamp);
     expect(timestamp.getTime()).not.toBeNaN();
