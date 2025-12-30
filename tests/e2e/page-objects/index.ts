@@ -35,14 +35,15 @@ export class LoginPage {
     this.page = page;
     this.form = page.getByTestId('login-form');
     this.loginForm = page.getByTestId('login-form');
-    this.passwordInput = page.getByLabel('Password', { exact: true });
-    this.usernameInput = page.getByLabel(/username/i);
-    this.loginButton = page.getByRole('button', { name: /unlock|sign in/i });
+    // Support both English and Czech labels
+    this.passwordInput = page.getByLabel(/^(Password|Heslo)$/i);
+    this.usernameInput = page.getByLabel(/username|uživatelské jméno/i);
+    this.loginButton = page.getByRole('button', { name: /unlock|sign in|přihlásit se|odemknout/i });
     this.errorMessage = page.getByRole('alert');
-    this.confirmPasswordInput = page.getByLabel('Confirm Password');
-    this.createAccountButton = page.getByRole('button', { name: /create account/i }).first();
+    this.confirmPasswordInput = page.getByLabel(/confirm password|potvrzení hesla/i);
+    this.createAccountButton = page.getByRole('button', { name: /create account|vytvořit účet/i }).first();
     this.modeToggleButton = page.getByRole('button', {
-      name: /don't have an account|already have an account/i,
+      name: /don't have an account|already have an account|nemáte účet|máte účet/i,
     });
   }
 
@@ -101,7 +102,7 @@ export class LoginPage {
    * Switch to registration mode (LocalAuth only)
    */
   async switchToRegisterMode(): Promise<void> {
-    const toggleBtn = this.page.getByRole('button', { name: /don't have an account/i });
+    const toggleBtn = this.page.getByRole('button', { name: /don't have an account|nemáte účet/i });
     if (await toggleBtn.isVisible().catch(() => false)) {
       await toggleBtn.click();
       await expect(this.confirmPasswordInput).toBeVisible({ timeout: 15000 });
@@ -112,7 +113,7 @@ export class LoginPage {
    * Switch to login mode (LocalAuth only)
    */
   async switchToLoginMode(): Promise<void> {
-    const toggleBtn = this.page.getByRole('button', { name: /already have an account/i });
+    const toggleBtn = this.page.getByRole('button', { name: /already have an account|máte účet/i });
     if (await toggleBtn.isVisible().catch(() => false)) {
       await toggleBtn.click();
     }
@@ -152,11 +153,15 @@ export class AppShell {
     this.page = page;
     this.shell = page.getByTestId('app-shell');
     this.albumList = page.getByTestId('album-list');
-    this.createAlbumButton = page.getByRole('button', { name: /create album|new album|\+/i });
-    this.logoutButton = page.getByRole('button', { name: /lock|logout/i });
+    // EN: "Create Album" / CS: "Vytvořit album"
+    this.createAlbumButton = page.getByRole('button', { name: /create album|new album|vytvořit album|\+/i });
+    // EN: "Lock" / CS: "Zamknout"
+    this.logoutButton = page.getByRole('button', { name: /lock|logout|zamknout/i });
     this.settingsButton = page.getByTestId('settings-nav-button');
-    this.adminButton = page.getByRole('button', { name: /admin|shield/i });
-    this.backButton = page.getByRole('button', { name: /back|albums/i });
+    // EN: "Admin" / CS: "Administrace" (but icon-based via testid would be more reliable)
+    this.adminButton = page.getByRole('button', { name: /admin|shield|administrace/i });
+    // EN: "Back" / CS: "Zpět"
+    this.backButton = page.getByRole('button', { name: /back|albums|zpět|alba/i });
     this.searchInput = page.getByTestId('search-input');
   }
 

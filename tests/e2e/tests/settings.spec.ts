@@ -217,27 +217,16 @@ test.describe('Settings Persistence', () => {
 });
 
 test.describe('Language Settings @p1 @ui', () => {
-  let loginPage: LoginPage;
-  let appShell: AppShell;
-  let settingsPage: SettingsPage;
-
-  test.beforeEach(async ({ page }) => {
-    loginPage = new LoginPage(page);
-    appShell = new AppShell(page);
-    settingsPage = new SettingsPage(page);
-
-    // Login
-    await loginPage.goto();
-    await loginPage.waitForForm();
-    await loginPage.login();
-    await loginPage.expectLoginSuccess();
+  test.beforeEach(async ({ loggedInPage }) => {
+    const appShell = new AppShell(loggedInPage);
+    const settingsPage = new SettingsPage(loggedInPage);
 
     // Navigate to settings
     await appShell.openSettings();
     await settingsPage.waitForLoad();
   });
 
-  test('P1-SETTINGS-12: language selector is visible and functional', async ({ page }) => {
+  test('P1-SETTINGS-12: language selector is visible and functional', async ({ loggedInPage: page }) => {
     // Language select should be visible
     const languageSelect = page.getByTestId('language-select');
     await expect(languageSelect).toBeVisible();
@@ -254,7 +243,7 @@ test.describe('Language Settings @p1 @ui', () => {
     expect(optionValues).toContain('cs');
   });
 
-  test('P1-SETTINGS-13: can switch language to Czech', async ({ page }) => {
+  test('P1-SETTINGS-13: can switch language to Czech', async ({ loggedInPage: page }) => {
     const languageSelect = page.getByTestId('language-select');
     
     // Get initial language
@@ -277,7 +266,7 @@ test.describe('Language Settings @p1 @ui', () => {
     expect(titleText).toBe('Nastavení');
   });
 
-  test('P1-SETTINGS-14: can switch language back to English', async ({ page }) => {
+  test('P1-SETTINGS-14: can switch language back to English', async ({ loggedInPage: page }) => {
     const languageSelect = page.getByTestId('language-select');
 
     // First switch to Czech
@@ -296,7 +285,8 @@ test.describe('Language Settings @p1 @ui', () => {
     expect(titleText).toBe('Settings');
   });
 
-  test('P1-SETTINGS-15: language preference persists after page reload', async ({ page }) => {
+  test('P1-SETTINGS-15: language preference persists after page reload', async ({ loggedInPage: page }) => {
+    const settingsPage = new SettingsPage(page);
     const languageSelect = page.getByTestId('language-select');
 
     // Switch to Czech
@@ -318,67 +308,113 @@ test.describe('Language Settings @p1 @ui', () => {
     await expect(settingsTitle).toHaveText('Nastavení');
   });
 
-  test('P1-SETTINGS-16: language preference persists after logout/login', async ({ authenticatedPage, testUser }) => {
+  // This test verifies language persists across logout/login cycle
+  // Using loggedInPage fixture for reliable authentication
+  test('P1-SETTINGS-16: language preference persists after logout/login', async ({ loggedInPage, testUser }) => {
+    const authenticatedPage = loggedInPage;
     const loginPage = new LoginPage(authenticatedPage);
     const appShell = new AppShell(authenticatedPage);
     const settingsPage = new SettingsPage(authenticatedPage);
-
-    await authenticatedPage.goto('/');
-    await loginPage.waitForForm();
-    await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
-    await loginPage.expectLoginSuccess();
-    await appShell.openSettings();
-    await settingsPage.waitForLoad();
+    
+    // We're already on Settings (beforeEach navigates there)
 
     // Switch to Czech
     const languageSelect = authenticatedPage.getByTestId('language-select');
     await languageSelect.selectOption('cs');
     await expect(languageSelect).toHaveValue('cs');
-    await authenticatedPage.waitForTimeout(300);
+    
+    // Wait for UI to update to Czech (confirms language change was applied)
+    await expect(authenticatedPage.getByRole('heading', { name: 'Jazyk' })).toBeVisible({ timeout: 5000 });
+    
+    // Verify localStorage was updated
+    const savedLang = await authenticatedPage.evaluate(() => localStorage.getItem('mosaic-language'));
+    expect(savedLang).toBe('cs');
 
-    // Go back and logout
+    // Go back and logout  
     await appShell.goBack();
     await appShell.waitForLoad();
     await appShell.logout();
     await loginPage.waitForForm();
 
-    // Login again
-    await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
+    // Verify localStorage persists after logout (language should still be Czech in localStorage)
+    const langAfterLogout = await authenticatedPage.evaluate(() => localStorage.getItem('mosaic-language'));
+    expect(langAfterLogout).toBe('cs');
+
+    // Login again (user already exists now) - wait for form to be ready first
+    await authenticatedPage.waitForTimeout(500); // Allow form to stabilize
+    
+    // Check if LocalAuth mode 
+    const usernameInput = authenticatedPage.getByLabel(/username|uživatelské jméno/i);
+    const isLocalAuth = await usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    
+    if (isLocalAuth) {
+      await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
+    } else {
+      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    }
     await loginPage.expectLoginSuccess();
 
-    // Go to settings
+    // Go to settings - UI should be in Czech
     await appShell.openSettings();
     await settingsPage.waitForLoad();
 
-    // Language should still be Czech
+    // Language should still be Czech (persisted in localStorage)
     await expect(authenticatedPage.getByTestId('language-select')).toHaveValue('cs');
+    
+    // Verify UI is in Czech by checking a translated heading
+    await expect(authenticatedPage.getByRole('heading', { name: 'Jazyk' })).toBeVisible();
 
     // Reset to English for other tests
     await authenticatedPage.getByTestId('language-select').selectOption('en');
+    await expect(authenticatedPage.getByRole('heading', { name: 'Language' })).toBeVisible({ timeout: 5000 });
   });
 });
 
 test.describe('Language Detection @p2 @ui', () => {
-  test('P2-SETTINGS-17: detects browser locale on first visit', async ({ browser }) => {
+  test('P2-SETTINGS-17: detects browser locale on first visit', async ({ browser, testUser }) => {
     // Create a new context with Czech locale
     const context = await browser.newContext({
       locale: 'cs-CZ',
+      storageState: undefined, // Ensure clean state
     });
     const page = await context.newPage();
 
-    // Clear any existing language preference
-    await page.addInitScript(() => {
-      localStorage.removeItem('mosaic-language');
+    // Inject auth headers for API calls (for ProxyAuth mode support)
+    await page.route('**/api/**', async (route) => {
+      const headers = {
+        ...route.request().headers(),
+        'Remote-User': testUser,
+      };
+      await route.continue({ headers });
     });
 
     const loginPage = new LoginPage(page);
     const appShell = new AppShell(page);
     const settingsPage = new SettingsPage(page);
 
-    // Navigate to app
+    // Navigate to app - this is the first visit so no language should be cached
     await loginPage.goto();
+    
+    // Clear any language preference that might have been set during page load
+    await page.evaluate(() => localStorage.removeItem('mosaic-language'));
+    
+    // Reload to trigger fresh language detection
+    await page.reload();
     await loginPage.waitForForm();
-    await loginPage.login();
+
+    // Check if LocalAuth mode - look for username field (in English or Czech)
+    // The field may be in Czech ("Uživatelské jméno") if locale detection worked
+    const usernameInputEn = page.getByLabel('Username');
+    const usernameInputCs = page.getByLabel('Uživatelské jméno');
+    const isLocalAuthEn = await usernameInputEn.isVisible({ timeout: 1000 }).catch(() => false);
+    const isLocalAuthCs = await usernameInputCs.isVisible({ timeout: 1000 }).catch(() => false);
+    const isLocalAuth = isLocalAuthEn || isLocalAuthCs;
+    
+    if (isLocalAuth) {
+      await loginPage.register(testUser, TEST_CONSTANTS.PASSWORD);
+    } else {
+      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    }
     await loginPage.expectLoginSuccess();
 
     // Navigate to settings
@@ -392,26 +428,45 @@ test.describe('Language Detection @p2 @ui', () => {
     await context.close();
   });
 
-  test('P2-SETTINGS-18: falls back to English for unsupported locale', async ({ browser }) => {
+  test('P2-SETTINGS-18: falls back to English for unsupported locale', async ({ browser, testUser }) => {
     // Create a new context with an unsupported locale (German)
     const context = await browser.newContext({
       locale: 'de-DE',
+      storageState: undefined, // Ensure clean state
     });
     const page = await context.newPage();
 
-    // Clear any existing language preference
-    await page.addInitScript(() => {
-      localStorage.removeItem('mosaic-language');
+    // Inject auth headers for API calls (for ProxyAuth mode support)
+    await page.route('**/api/**', async (route) => {
+      const headers = {
+        ...route.request().headers(),
+        'Remote-User': testUser,
+      };
+      await route.continue({ headers });
     });
 
     const loginPage = new LoginPage(page);
     const appShell = new AppShell(page);
     const settingsPage = new SettingsPage(page);
 
-    // Navigate to app
+    // Navigate to app - this is the first visit so no language should be cached
     await loginPage.goto();
+    
+    // Clear any language preference that might have been set during page load
+    await page.evaluate(() => localStorage.removeItem('mosaic-language'));
+    
+    // Reload to trigger fresh language detection
+    await page.reload();
     await loginPage.waitForForm();
-    await loginPage.login();
+
+    // Check if LocalAuth mode - look for username field (English since de-DE falls back to en)
+    const usernameInput = page.getByLabel(/username|uživatelské jméno/i);
+    const isLocalAuth = await usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    if (isLocalAuth) {
+      await loginPage.register(testUser, TEST_CONSTANTS.PASSWORD);
+    } else {
+      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    }
     await loginPage.expectLoginSuccess();
 
     // Navigate to settings
@@ -425,26 +480,49 @@ test.describe('Language Detection @p2 @ui', () => {
     await context.close();
   });
 
-  test('P2-SETTINGS-19: manual selection overrides browser locale', async ({ browser }) => {
+  test('P2-SETTINGS-19: manual selection overrides browser locale', async ({ browser, testUser }) => {
     // Create a new context with Czech locale
     const context = await browser.newContext({
       locale: 'cs-CZ',
+      storageState: undefined, // Ensure clean state
     });
     const page = await context.newPage();
 
-    // Clear any existing language preference
-    await page.addInitScript(() => {
-      localStorage.removeItem('mosaic-language');
+    // Inject auth headers for API calls (for ProxyAuth mode support)
+    await page.route('**/api/**', async (route) => {
+      const headers = {
+        ...route.request().headers(),
+        'Remote-User': testUser,
+      };
+      await route.continue({ headers });
     });
 
     const loginPage = new LoginPage(page);
     const appShell = new AppShell(page);
     const settingsPage = new SettingsPage(page);
 
-    // Navigate and login
+    // Navigate to app - this is the first visit so no language should be cached
     await loginPage.goto();
+    
+    // Clear any language preference that might have been set during page load
+    await page.evaluate(() => localStorage.removeItem('mosaic-language'));
+    
+    // Reload to trigger fresh language detection
+    await page.reload();
     await loginPage.waitForForm();
-    await loginPage.login();
+
+    // Check if LocalAuth mode - look for username field (in English or Czech)
+    const usernameInputEn = page.getByLabel('Username');
+    const usernameInputCs = page.getByLabel('Uživatelské jméno');
+    const isLocalAuthEn = await usernameInputEn.isVisible({ timeout: 1000 }).catch(() => false);
+    const isLocalAuthCs = await usernameInputCs.isVisible({ timeout: 1000 }).catch(() => false);
+    const isLocalAuth = isLocalAuthEn || isLocalAuthCs;
+    
+    if (isLocalAuth) {
+      await loginPage.register(testUser, TEST_CONSTANTS.PASSWORD);
+    } else {
+      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    }
     await loginPage.expectLoginSuccess();
     await appShell.openSettings();
     await settingsPage.waitForLoad();
