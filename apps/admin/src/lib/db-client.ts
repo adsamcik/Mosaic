@@ -33,16 +33,16 @@ function shouldUseSharedWorker(): boolean {
   // Check for automation/testing environments using webdriver property
   // This is a standard property set by Playwright, Puppeteer, Selenium, etc.
   // Not user-agent sniffing - this is a proper automation detection flag
-  if ((navigator as Record<string, unknown>).webdriver === true) return false;
+  if ((navigator as unknown as Record<string, unknown>).webdriver === true) return false;
   
   // Check for OPFS support via feature detection
   // SharedWorker with SQLite requires OPFS for cross-tab persistence
   const supportsOPFS = 'storage' in navigator && 
-    typeof (navigator.storage as Record<string, unknown>)?.getDirectory === 'function';
+    typeof (navigator.storage as unknown as Record<string, unknown>)?.getDirectory === 'function';
   if (!supportsOPFS) return false;
   
   // Manual override for testing - allows disabling SharedWorker programmatically
-  if (typeof window !== 'undefined' && (window as Record<string, unknown>).__MOSAIC_DISABLE_SHARED_WORKER__) return false;
+  if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).__MOSAIC_DISABLE_SHARED_WORKER__) return false;
   
   return true;
 }
