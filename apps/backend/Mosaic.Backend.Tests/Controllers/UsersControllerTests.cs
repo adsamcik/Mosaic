@@ -15,7 +15,7 @@ public class UsersControllerTests
         // Arrange
         using var db = TestDbContextFactory.Create();
         var config = TestConfiguration.Create();
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -44,7 +44,7 @@ public class UsersControllerTests
         var builder = new TestDataBuilder(db);
         var user = await builder.CreateUserAsync(TestAuthSub, "existing-pubkey");
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -70,7 +70,7 @@ public class UsersControllerTests
         var builder = new TestDataBuilder(db);
         await builder.CreateUserAsync(TestAuthSub);
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -98,7 +98,7 @@ public class UsersControllerTests
         var builder = new TestDataBuilder(db);
         await builder.CreateUserAsync(TestAuthSub, "existing-pubkey");
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -124,7 +124,7 @@ public class UsersControllerTests
         var builder = new TestDataBuilder(db);
         await builder.CreateUserAsync(TestAuthSub, "existing-pubkey");
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -150,7 +150,7 @@ public class UsersControllerTests
         var builder = new TestDataBuilder(db);
         await builder.CreateUserAsync(TestAuthSub);
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -184,7 +184,7 @@ public class UsersControllerTests
         var builder = new TestDataBuilder(db);
         await builder.CreateUserAsync(TestAuthSub);
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -211,7 +211,7 @@ public class UsersControllerTests
         var builder = new TestDataBuilder(db);
         await builder.CreateUserAsync(TestAuthSub);
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -239,7 +239,7 @@ public class UsersControllerTests
         var builder = new TestDataBuilder(db);
         await builder.CreateUserAsync(TestAuthSub);
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -267,7 +267,7 @@ public class UsersControllerTests
         var builder = new TestDataBuilder(db);
         var user = await builder.CreateUserAsync(TestAuthSub, "test-pubkey");
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -290,7 +290,7 @@ public class UsersControllerTests
         using var db = TestDbContextFactory.Create();
         var config = TestConfiguration.Create();
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -314,7 +314,7 @@ public class UsersControllerTests
         var builder = new TestDataBuilder(db);
         await builder.CreateUserAsync(TestAuthSub, "my-pubkey");
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -337,7 +337,7 @@ public class UsersControllerTests
         using var db = TestDbContextFactory.Create();
         var config = TestConfiguration.Create();
 
-        var controller = new UsersController(db, config)
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {

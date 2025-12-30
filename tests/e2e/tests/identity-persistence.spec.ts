@@ -23,6 +23,7 @@ import {
   test,
   TEST_CONSTANTS,
 } from '../fixtures';
+import { waitForCondition, waitForNetworkIdle } from '../framework';
 
 test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth @crypto @slow', () => {
   test('P0-IDENTITY-1: photo remains accessible after page reload and re-login', async ({
@@ -206,8 +207,11 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       const appShell = new AppShell(page);
       await appShell.waitForLoad();
 
-      // Wait a moment for the identity to be registered
-      await page.waitForTimeout(2000);
+      // Wait for identity pubkey to be captured from /api/users/me response
+      await waitForCondition(
+        () => capturedPubkeys.first !== undefined,
+        { timeout: 10000, message: 'Identity pubkey not captured from first login' }
+      );
 
       const firstPubkeyDisplay = capturedPubkeys.first ? capturedPubkeys.first.substring(0, 20) : 'not set';
       console.log(`[TEST] First identity pubkey: ${firstPubkeyDisplay}...`);
@@ -224,8 +228,11 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       await loginPage.expectLoginSuccess();
       await appShell.waitForLoad();
 
-      // Wait for the second /api/users/me call
-      await page.waitForTimeout(2000);
+      // Wait for second identity pubkey to be captured from /api/users/me response
+      await waitForCondition(
+        () => capturedPubkeys.second !== undefined,
+        { timeout: 10000, message: 'Identity pubkey not captured from second login' }
+      );
 
       const secondPubkeyDisplay = capturedPubkeys.second ? capturedPubkeys.second.substring(0, 20) : 'not set';
       console.log(`[TEST] Second identity pubkey: ${secondPubkeyDisplay}...`);
@@ -309,8 +316,11 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       const appShell = new AppShell(page);
       await appShell.waitForLoad();
 
-      // Wait for wrapped key to be stored
-      await page.waitForTimeout(3000);
+      // Wait for wrapped key to be stored via PUT request
+      await waitForCondition(
+        () => wrappedKeyStored,
+        { timeout: 15000, message: 'Wrapped account key was not stored on first login' }
+      );
 
       expect(wrappedKeyStored).toBe(true);
       console.log('[TEST] SUCCESS: Wrapped account key was stored on first login');
@@ -323,7 +333,11 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
 
-      await page.waitForTimeout(2000);
+      // Wait for wrapped key to be returned from /api/users/me response
+      await waitForCondition(
+        () => wrappedKeyReturned,
+        { timeout: 10000, message: 'Wrapped account key was not returned on second login' }
+      );
 
       expect(wrappedKeyReturned).toBe(true);
       console.log('[TEST] SUCCESS: Wrapped account key was returned on subsequent login');
@@ -405,8 +419,8 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
         const testImage = generateTestImage();
         await gallery.uploadPhoto(testImage, `stress-photo-${i}.png`);
         console.log(`[TEST] Uploaded photo ${i}/3`);
-        // Wait for upload to complete
-        await page.waitForTimeout(1000);
+        // Wait for upload to complete via network idle
+        await waitForNetworkIdle(page, { timeout: 30000, urlPattern: /\/api\// });
       }
 
       // Wait for all photos to appear
@@ -447,7 +461,8 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
         const testImage = generateTestImage();
         await gallery.uploadPhoto(testImage, `stress-photo-${i}.png`);
         console.log(`[TEST] Uploaded photo ${i}/5`);
-        await page.waitForTimeout(1000);
+        // Wait for upload to complete via network idle
+        await waitForNetworkIdle(page, { timeout: 30000, urlPattern: /\/api\// });
       }
 
       // Wait for all 5 photos

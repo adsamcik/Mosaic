@@ -33,6 +33,7 @@ builder.Services.AddDbContext<MosaicDbContext>(options =>
 // Services
 builder.Services.AddScoped<IStorageService, LocalStorageService>();
 builder.Services.AddScoped<IQuotaSettingsService, QuotaSettingsService>();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
 

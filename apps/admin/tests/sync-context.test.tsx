@@ -265,6 +265,98 @@ describe('SyncContext', () => {
 
       expect(syncEngine.sync).toHaveBeenCalledWith('album-manual', expect.any(Uint8Array));
     });
+
+    it('should prevent duplicate sync operations for the same album (race condition fix)', async () => {
+      let capturedContext: ReturnType<typeof useSyncContext> | null = null;
+
+      // Make sync take some time to complete
+      let resolveSync: (() => void) | null = null;
+      vi.mocked(syncEngine.sync).mockImplementation(() => {
+        return new Promise<void>((resolve) => {
+          resolveSync = resolve;
+        });
+      });
+
+      act(() => {
+        root = createRoot(container);
+        root.render(
+          createElement(SyncProvider, null,
+            createElement(TestConsumer, {
+              onContext: (ctx) => { capturedContext = ctx; }
+            })
+          )
+        );
+      });
+
+      // Trigger multiple syncs simultaneously for the same album
+      // This simulates the race condition: rapid clicks or auto-sync + manual trigger
+      let sync1Done = false;
+      let sync2Done = false;
+      let sync3Done = false;
+
+      act(() => {
+        // Fire all three sync calls without awaiting - simulating rapid succession
+        void capturedContext!.triggerSync('album-race').then(() => { sync1Done = true; });
+        void capturedContext!.triggerSync('album-race').then(() => { sync2Done = true; });
+        void capturedContext!.triggerSync('album-race').then(() => { sync3Done = true; });
+      });
+
+      // The second and third calls should return immediately (already syncing)
+      // while the first is still pending
+      await act(async () => {
+        // Give React time to process the state updates
+        await vi.advanceTimersByTimeAsync(10);
+      });
+
+      // Sync 2 and 3 should complete immediately (short-circuited by lock)
+      expect(sync2Done).toBe(true);
+      expect(sync3Done).toBe(true);
+      // Sync 1 is still waiting for the promise to resolve
+      expect(sync1Done).toBe(false);
+
+      // Now complete the actual sync
+      await act(async () => {
+        resolveSync?.();
+        await vi.advanceTimersByTimeAsync(10);
+      });
+
+      expect(sync1Done).toBe(true);
+
+      // Most importantly: sync engine should only be called ONCE
+      expect(syncEngine.sync).toHaveBeenCalledTimes(1);
+      expect(syncEngine.sync).toHaveBeenCalledWith('album-race', expect.any(Uint8Array));
+    });
+
+    it('should allow syncing different albums concurrently', async () => {
+      let capturedContext: ReturnType<typeof useSyncContext> | null = null;
+
+      // Reset mock to default behavior (resolve immediately)
+      vi.mocked(syncEngine.sync).mockResolvedValue(undefined);
+
+      act(() => {
+        root = createRoot(container);
+        root.render(
+          createElement(SyncProvider, null,
+            createElement(TestConsumer, {
+              onContext: (ctx) => { capturedContext = ctx; }
+            })
+          )
+        );
+      });
+
+      // Trigger syncs for different albums
+      await act(async () => {
+        await Promise.all([
+          capturedContext!.triggerSync('album-1'),
+          capturedContext!.triggerSync('album-2'),
+        ]);
+      });
+
+      // Both should have been synced
+      expect(syncEngine.sync).toHaveBeenCalledTimes(2);
+      expect(syncEngine.sync).toHaveBeenCalledWith('album-1', expect.any(Uint8Array));
+      expect(syncEngine.sync).toHaveBeenCalledWith('album-2', expect.any(Uint8Array));
+    });
   });
 
   describe('useSyncContext outside provider', () => {

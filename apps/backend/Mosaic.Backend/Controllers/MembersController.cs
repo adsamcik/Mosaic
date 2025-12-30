@@ -4,6 +4,7 @@ using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
 using Mosaic.Backend.Middleware;
+using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -13,38 +14,15 @@ public class MembersController : ControllerBase
 {
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
+    private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<MembersController> _logger;
 
-    public MembersController(MosaicDbContext db, IConfiguration config, ILogger<MembersController> logger)
+    public MembersController(MosaicDbContext db, IConfiguration config, ICurrentUserService currentUserService, ILogger<MembersController> logger)
     {
         _db = db;
         _config = config;
+        _currentUserService = currentUserService;
         _logger = logger;
-    }
-
-    private async Task<User> GetOrCreateUser()
-    {
-        var authSub = HttpContext.Items["AuthSub"] as string
-            ?? throw new UnauthorizedAccessException();
-
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
-        if (user == null)
-        {
-            user = new User
-            {
-                Id = Guid.NewGuid(),
-                AuthSub = authSub,
-                IdentityPubkey = ""
-            };
-            _db.Users.Add(user);
-            _db.UserQuotas.Add(new UserQuota
-            {
-                UserId = user.Id,
-                MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes")
-            });
-            await _db.SaveChangesAsync();
-        }
-        return user;
     }
 
     /// <summary>
@@ -53,7 +31,7 @@ public class MembersController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> List(Guid albumId)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify access
         var hasAccess = await _db.AlbumMembers
@@ -102,7 +80,7 @@ public class MembersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Invite(Guid albumId, [FromBody] InviteRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Validate role
         if (request.Role != "viewer" && request.Role != "editor")
@@ -202,7 +180,7 @@ public class MembersController : ControllerBase
     [HttpDelete("{userId}")]
     public async Task<IActionResult> Remove(Guid albumId, Guid userId)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify ownership
         var album = await _db.Albums.FindAsync(albumId);
