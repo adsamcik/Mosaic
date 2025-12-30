@@ -101,7 +101,8 @@ export const test = base.extend<{
   },
 
   /**
-   * Page that has completed the full login flow including crypto initialization
+   * Page that has completed the full login flow including crypto initialization.
+   * Handles both LocalAuth and ProxyAuth modes automatically.
    */
   loggedInPage: async ({ browser, testUser }, use) => {
     const context = await browser.newContext();
@@ -119,7 +120,19 @@ export const test = base.extend<{
 
     const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_PASSWORD);
+
+    // Detect auth mode by checking for username field
+    const usernameInput = page.getByLabel('Username');
+    const isLocalAuth = await usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+
+    if (isLocalAuth) {
+      // LocalAuth mode: register new user (test users are always new)
+      await loginPage.register(testUser, TEST_PASSWORD);
+    } else {
+      // ProxyAuth-only mode: just enter password
+      await loginPage.login(TEST_PASSWORD);
+    }
+
     await loginPage.expectLoginSuccess();
 
     await use(page);
@@ -196,6 +209,10 @@ export const test = base.extend<{
 
 /**
  * Helper to create a fully logged-in user
+ *
+ * Handles both LocalAuth and ProxyAuth modes:
+ * - LocalAuth: Registers the user if they don't exist, otherwise logs in with username
+ * - ProxyAuth-only: Just enters password (username comes from Remote-User header)
  */
 export async function loginUser(
   user: AuthenticatedUser,
@@ -204,7 +221,19 @@ export async function loginUser(
   await user.page.goto('/');
   const loginPage = new LoginPage(user.page);
   await loginPage.waitForForm();
-  await loginPage.login(password);
+
+  // Detect auth mode by checking for username field
+  const usernameInput = user.page.getByLabel('Username');
+  const isLocalAuth = await usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+
+  if (isLocalAuth) {
+    // LocalAuth mode: register new user (test users are always new)
+    await loginPage.register(user.email, password);
+  } else {
+    // ProxyAuth-only mode: just enter password to initialize crypto
+    await loginPage.login(password);
+  }
+
   await loginPage.expectLoginSuccess();
 }
 
