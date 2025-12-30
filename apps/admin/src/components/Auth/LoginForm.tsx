@@ -197,14 +197,14 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           </button>
         )}
 
-        {isLocalAuth && !isSessionRestore && (
+        {isLocalAuth && !isSessionRestore && !isServerUnreachable && (
           <div className="dev-mode-badge" data-testid="local-auth-badge">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             {isRegisterMode ? t('auth.createAccount') : t('auth.localAuthentication')}
           </div>
         )}
 
-        {isProxyAuthOnly && !isSessionRestore && (
+        {isProxyAuthOnly && !isSessionRestore && !isServerUnreachable && (
           <div className="dev-mode-badge" data-testid="proxy-auth-badge" style={{ backgroundColor: 'var(--color-info-bg, #e3f2fd)', color: 'var(--color-info, #1976d2)' }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             {t('auth.proxyAuthentication')}
@@ -212,55 +212,59 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
         )}
 
         <form onSubmit={handleSubmit} className="login-form">
-          {isLocalAuth && !isSessionRestore && (
-            <div className="form-group">
-              <label htmlFor="username" className="form-label">
-                {t('auth.usernameLabel')}
-              </label>
-              <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder={t('auth.usernamePlaceholder')}
-                disabled={loading || isServerUnreachable}
-                className="form-input"
-                autoComplete="username"
-              />
-            </div>
-          )}
+          {!isServerUnreachable && (
+            <>
+              {isLocalAuth && !isSessionRestore && (
+                <div className="form-group">
+                  <label htmlFor="username" className="form-label">
+                    {t('auth.usernameLabel')}
+                  </label>
+                  <input
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder={t('auth.usernamePlaceholder')}
+                    disabled={loading}
+                    className="form-input"
+                    autoComplete="username"
+                  />
+                </div>
+              )}
 
-          <div className="form-group">
-            <label htmlFor="password" className="form-label">
-              {t('auth.passwordLabel')}
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={isRegisterMode ? t('auth.createPasswordPlaceholder') : t('auth.passwordPlaceholder')}
-              disabled={loading || isServerUnreachable}
-              className="form-input"
-              autoFocus
-            />
-          </div>
+              <div className="form-group">
+                <label htmlFor="password" className="form-label">
+                  {t('auth.passwordLabel')}
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={isRegisterMode ? t('auth.createPasswordPlaceholder') : t('auth.passwordPlaceholder')}
+                  disabled={loading}
+                  className="form-input"
+                  autoFocus
+                />
+              </div>
 
-          {isLocalAuth && isRegisterMode && !isSessionRestore && (
-            <div className="form-group">
-              <label htmlFor="confirmPassword" className="form-label">
-                {t('auth.confirmPasswordLabel')}
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder={t('auth.confirmPasswordPlaceholder')}
-                disabled={loading || isServerUnreachable}
-                className="form-input"
-              />
-            </div>
+              {isLocalAuth && isRegisterMode && !isSessionRestore && (
+                <div className="form-group">
+                  <label htmlFor="confirmPassword" className="form-label">
+                    {t('auth.confirmPasswordLabel')}
+                  </label>
+                  <input
+                    id="confirmPassword"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder={t('auth.confirmPasswordPlaceholder')}
+                    disabled={loading}
+                    className="form-input"
+                  />
+                </div>
+              )}
+            </>
           )}
 
           {error && (
@@ -283,12 +287,12 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           </button>
         </form>
 
-        {isLocalAuth && !isSessionRestore && (
+        {isLocalAuth && !isSessionRestore && !isServerUnreachable && (
           <button
             type="button"
             onClick={toggleMode}
             className="mode-toggle-button"
-            disabled={loading || isServerUnreachable}
+            disabled={loading}
           >
             {isRegisterMode 
               ? t('auth.haveAccountSignIn') 
@@ -296,17 +300,19 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           </button>
         )}
 
-        <p className="login-note">
-          {isSessionRestore
-            ? t('auth.sessionRestoreHelp')
-            : isLocalAuth
-              ? (isRegisterMode 
-                  ? t('auth.registerHelp')
-                  : t('auth.loginHelp'))
-              : isProxyAuthOnly
-                ? t('auth.proxyAuthHelp')
-                : t('auth.encryptionHelp')}
-        </p>
+        {!isServerUnreachable && (
+          <p className="login-note">
+            {isSessionRestore
+              ? t('auth.sessionRestoreHelp')
+              : isLocalAuth
+                ? (isRegisterMode 
+                    ? t('auth.registerHelp')
+                    : t('auth.loginHelp'))
+                : isProxyAuthOnly
+                  ? t('auth.proxyAuthHelp')
+                  : t('auth.encryptionHelp')}
+          </p>
+        )}
       </div>
     </div>
   );
