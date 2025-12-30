@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { api, Album } from '../api-client';
-import { waitForApi, uniqueUser, createTestAlbum } from '../utils';
+import { waitForApi, uniqueUser, createTestAlbum, generateCreateAlbumRequest } from '../utils';
 
 describe('Albums API', () => {
   let testUser: string;
@@ -23,19 +23,20 @@ describe('Albums API', () => {
     it('creates a new album', async () => {
       api.setUser(testUser);
 
-      const response = await api.post<Album>('/api/albums');
+      const requestBody = generateCreateAlbumRequest();
+      const response = await api.post<Album>('/api/albums', requestBody);
 
       expect(response.status).toBe(201);
       expect(response.data.id).toBeDefined();
       expect(response.data.ownerId).toBeDefined();
-      expect(response.data.currentVersion).toBe(0);
+      expect(response.data.currentVersion).toBe(1);
       expect(response.data.createdAt).toBeDefined();
     });
 
     it('returns 401 without auth', async () => {
       api.clearAuth();
 
-      const response = await api.post('/api/albums');
+      const response = await api.post('/api/albums', generateCreateAlbumRequest());
 
       expect(response.status).toBe(401);
     });
@@ -46,8 +47,8 @@ describe('Albums API', () => {
       api.setUser(testUser);
 
       // Create two albums
-      await api.post<Album>('/api/albums');
-      await api.post<Album>('/api/albums');
+      await api.post<Album>('/api/albums', generateCreateAlbumRequest());
+      await api.post<Album>('/api/albums', generateCreateAlbumRequest());
 
       const response = await api.get<Album[]>('/api/albums');
 
@@ -67,7 +68,7 @@ describe('Albums API', () => {
     it('includes role in response', async () => {
       api.setUser(testUser);
 
-      await api.post<Album>('/api/albums');
+      await api.post<Album>('/api/albums', generateCreateAlbumRequest());
       const response = await api.get<Album[]>('/api/albums');
 
       expect(response.data[0].role).toBe('owner');
@@ -78,7 +79,7 @@ describe('Albums API', () => {
     it('returns album details', async () => {
       api.setUser(testUser);
 
-      const created = await api.post<Album>('/api/albums');
+      const created = await api.post<Album>('/api/albums', generateCreateAlbumRequest());
       const response = await api.get<Album>(`/api/albums/${created.data.id}`);
 
       expect(response.status).toBe(200);
@@ -88,9 +89,13 @@ describe('Albums API', () => {
 
     it('returns 403 for non-member', async () => {
       api.setUser(testUser);
-      const created = await api.post<Album>('/api/albums');
+      const created = await api.post<Album>('/api/albums', generateCreateAlbumRequest());
 
-      api.setUser(uniqueUser());
+      // Create a different user and ensure they exist
+      const otherUser = uniqueUser();
+      api.setUser(otherUser);
+      await api.get('/api/users/me'); // Ensure user is created
+
       const response = await api.get(`/api/albums/${created.data.id}`);
 
       expect(response.status).toBe(403);
@@ -98,6 +103,7 @@ describe('Albums API', () => {
 
     it('returns 404 for non-existent album', async () => {
       api.setUser(testUser);
+      await api.get('/api/users/me'); // Ensure user is created
 
       const response = await api.get('/api/albums/00000000-0000-0000-0000-000000000000');
 
@@ -113,20 +119,25 @@ describe('Albums API', () => {
       const album = await createTestAlbum(api, testUser);
 
       const response = await api.get<{
-        currentVersion: number;
+        albumVersion: number;
         manifests: unknown[];
       }>(`/api/albums/${album.id}/sync?since=0`);
 
       expect(response.status).toBe(200);
       expect(response.data.manifests).toEqual([]);
-      expect(response.data.currentVersion).toBe(0);
+      // Album is created with version 1 due to initial epoch key
+      expect(response.data.albumVersion).toBe(1);
     });
 
     it('returns 403 for non-member', async () => {
       api.setUser(testUser);
       const album = await createTestAlbum(api, testUser);
 
-      api.setUser(uniqueUser());
+      // Create a different user and ensure they exist
+      const otherUser = uniqueUser();
+      api.setUser(otherUser);
+      await api.get('/api/users/me'); // Ensure user is created
+
       const response = await api.get(`/api/albums/${album.id}/sync?since=0`);
 
       expect(response.status).toBe(403);

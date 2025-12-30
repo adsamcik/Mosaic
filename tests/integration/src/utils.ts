@@ -43,12 +43,52 @@ export function uniqueUser(prefix = 'testuser'): string {
 }
 
 /**
+ * Generate random bytes as Uint8Array
+ */
+export function randomBytes(length: number): Uint8Array {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return bytes;
+}
+
+/**
  * Generate random bytes as base64
  */
 export function randomBase64(length: number): string {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return Buffer.from(bytes).toString('base64');
+  return Buffer.from(randomBytes(length)).toString('base64');
+}
+
+/**
+ * Generate initial epoch key request data for album creation
+ * These are placeholder bytes that satisfy the backend validation
+ * Byte arrays are sent as base64 strings per ASP.NET Core convention
+ */
+export function generateInitialEpochKey() {
+  return {
+    // Sealed box: 48 bytes overhead + key material
+    encryptedKeyBundle: randomBase64(96),
+    // Ed25519 signature: 64 bytes
+    ownerSignature: randomBase64(64),
+    // Ed25519 public key: 32 bytes
+    sharerPubkey: randomBase64(32),
+    // Ed25519 epoch signing public key: 32 bytes
+    signPubkey: randomBase64(32),
+  };
+}
+
+/**
+ * Generate a CreateAlbumRequest body
+ */
+export function generateCreateAlbumRequest(options?: {
+  encryptedName?: string;
+  encryptedDescription?: string;
+  expiresAt?: string;
+  expirationWarningDays?: number;
+}) {
+  return {
+    initialEpochKey: generateInitialEpochKey(),
+    ...options,
+  };
 }
 
 /**
@@ -62,7 +102,7 @@ export async function createTestAlbum(client: ApiClient, user: string) {
     currentEpochId: number | null;
     currentVersion: number;
     createdAt: string;
-  }>('/api/albums');
+  }>('/api/albums', generateCreateAlbumRequest());
 
   if (response.status !== 201) {
     throw new Error(`Failed to create album: ${response.status}`);

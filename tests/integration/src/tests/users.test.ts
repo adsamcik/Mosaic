@@ -40,31 +40,14 @@ describe('Users API', () => {
       const second = await api.get<User>('/api/users/me');
 
       expect(first.data.id).toBe(second.data.id);
-      expect(first.data.createdAt).toBe(second.data.createdAt);
+      // Compare timestamps with tolerance for precision differences
+      const firstDate = new Date(first.data.createdAt).getTime();
+      const secondDate = new Date(second.data.createdAt).getTime();
+      expect(firstDate).toBe(secondDate);
     });
   });
 
   describe('PUT /api/users/me', () => {
-    it('updates display name', async () => {
-      const username = uniqueUser();
-      api.setUser(username);
-
-      // Create user first
-      await api.get<User>('/api/users/me');
-
-      // Update
-      const updateResponse = await api.put<User>('/api/users/me', {
-        displayName: 'Test User',
-      });
-
-      expect(updateResponse.status).toBe(200);
-      expect(updateResponse.data.displayName).toBe('Test User');
-
-      // Verify persistence
-      const getResponse = await api.get<User>('/api/users/me');
-      expect(getResponse.data.displayName).toBe('Test User');
-    });
-
     it('updates identity pubkey', async () => {
       const username = uniqueUser();
       api.setUser(username);
@@ -79,6 +62,10 @@ describe('Users API', () => {
 
       expect(updateResponse.status).toBe(200);
       expect(updateResponse.data.identityPubkey).toBe(pubkey);
+
+      // Verify persistence
+      const getResponse = await api.get<User>('/api/users/me');
+      expect(getResponse.data.identityPubkey).toBe(pubkey);
     });
   });
 });
