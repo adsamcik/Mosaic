@@ -14,6 +14,7 @@ public class ManifestsController : ControllerBase
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
     private readonly IQuotaSettingsService _quotaService;
+    private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<ManifestsController> _logger;
     private readonly bool _useSqlite;
 
@@ -21,23 +22,18 @@ public class ManifestsController : ControllerBase
         MosaicDbContext db,
         IConfiguration config,
         IQuotaSettingsService quotaService,
+        ICurrentUserService currentUserService,
         ILogger<ManifestsController> logger)
     {
         _db = db;
         _config = config;
         _quotaService = quotaService;
+        _currentUserService = currentUserService;
         _logger = logger;
         
         // Detect if we're using SQLite (no row locking support)
         var connectionString = config.GetConnectionString("Default");
         _useSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ?? false;
-    }
-
-    private async Task<User?> GetUser()
-    {
-        var authSub = HttpContext.Items["AuthSub"] as string;
-        if (authSub == null) return null;
-        return await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
     }
 
     public record CreateManifestRequest(
@@ -69,8 +65,7 @@ public class ManifestsController : ControllerBase
         _logger.LogInformation("Creating manifest for album {AlbumId}, shardIds count: {Count}, shardIds: {ShardIds}",
             request.AlbumId, shardGuids.Count, string.Join(",", shardGuids));
 
-        var user = await GetUser();
-        if (user == null) return Unauthorized();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
@@ -221,8 +216,7 @@ public class ManifestsController : ControllerBase
     [HttpGet("{manifestId}")]
     public async Task<IActionResult> Get(Guid manifestId)
     {
-        var user = await GetUser();
-        if (user == null) return Unauthorized();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var manifest = await _db.Manifests
             .Include(m => m.ManifestShards.OrderBy(ms => ms.ChunkIndex))
@@ -260,8 +254,7 @@ public class ManifestsController : ControllerBase
     [HttpDelete("{manifestId}")]
     public async Task<IActionResult> Delete(Guid manifestId)
     {
-        var user = await GetUser();
-        if (user == null) return Unauthorized();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         try

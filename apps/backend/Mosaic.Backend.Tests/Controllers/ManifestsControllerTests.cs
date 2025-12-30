@@ -23,7 +23,7 @@ public class ManifestsControllerTests
         IQuotaSettingsService quotaService,
         string authSub)
     {
-        return new ManifestsController(db, config, quotaService, NullLogger<ManifestsController>.Instance)
+        return new ManifestsController(db, config, quotaService, new MockCurrentUserService(db), NullLogger<ManifestsController>.Instance)
         {
             ControllerContext = { HttpContext = TestHttpContext.Create(authSub) }
         };

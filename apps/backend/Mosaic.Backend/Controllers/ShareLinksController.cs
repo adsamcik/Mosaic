@@ -137,44 +137,18 @@ public class ShareLinksController : ControllerBase
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
     private readonly IStorageService _storage;
+    private readonly ICurrentUserService _currentUserService;
 
-    public ShareLinksController(MosaicDbContext db, IConfiguration config, IStorageService storage)
+    public ShareLinksController(
+        MosaicDbContext db,
+        IConfiguration config,
+        IStorageService storage,
+        ICurrentUserService currentUserService)
     {
         _db = db;
         _config = config;
         _storage = storage;
-    }
-
-    private async Task<User> GetOrCreateUser()
-    {
-        var authSub = HttpContext.Items["AuthSub"] as string
-            ?? throw new UnauthorizedAccessException();
-
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
-        if (user == null)
-        {
-            user = new User
-            {
-                Id = Guid.NewGuid(),
-                AuthSub = authSub,
-                IdentityPubkey = ""
-            };
-            _db.Users.Add(user);
-            _db.UserQuotas.Add(new UserQuota
-            {
-                UserId = user.Id,
-                MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes")
-            });
-            await _db.SaveChangesAsync();
-        }
-        return user;
-    }
-
-    private async Task<User?> GetUser()
-    {
-        var authSub = HttpContext.Items["AuthSub"] as string;
-        if (authSub == null) return null;
-        return await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+        _currentUserService = currentUserService;
     }
 
     /// <summary>
@@ -222,7 +196,7 @@ public class ShareLinksController : ControllerBase
     [HttpPost("api/albums/{albumId}/share-links")]
     public async Task<IActionResult> Create(Guid albumId, [FromBody] CreateShareLinkRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
         var album = await _db.Albums.FindAsync(albumId);
@@ -337,7 +311,7 @@ public class ShareLinksController : ControllerBase
     [HttpGet("api/albums/{albumId}/share-links")]
     public async Task<IActionResult> List(Guid albumId)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
         var album = await _db.Albums.FindAsync(albumId);
@@ -372,7 +346,7 @@ public class ShareLinksController : ControllerBase
     [HttpGet("api/albums/{albumId}/share-links/with-secrets")]
     public async Task<IActionResult> ListWithSecrets(Guid albumId)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
         var album = await _db.Albums.FindAsync(albumId);
@@ -429,7 +403,7 @@ public class ShareLinksController : ControllerBase
     [HttpDelete("api/share-links/{id}")]
     public async Task<IActionResult> Revoke(Guid id)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var shareLink = await _db.ShareLinks
             .Include(sl => sl.Album)
@@ -456,7 +430,7 @@ public class ShareLinksController : ControllerBase
     [HttpPatch("api/albums/{albumId:guid}/share-links/{linkId}/expiration")]
     public async Task<IActionResult> UpdateLinkExpiration(Guid albumId, string linkId, [FromBody] UpdateLinkExpirationRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album exists and user is owner
         var album = await _db.Albums.FindAsync(albumId);
@@ -521,7 +495,7 @@ public class ShareLinksController : ControllerBase
     [HttpPost("api/share-links/{id}/keys")]
     public async Task<IActionResult> AddEpochKeys(Guid id, [FromBody] AddEpochKeysRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var shareLink = await _db.ShareLinks
             .Include(sl => sl.Album)
