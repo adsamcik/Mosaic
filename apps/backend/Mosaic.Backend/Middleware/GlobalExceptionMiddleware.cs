@@ -38,16 +38,28 @@ public class GlobalExceptionMiddleware
         var correlationId = context.GetCorrelationId() ?? Guid.NewGuid().ToString();
         var path = context.Request.Path.Value ?? "/";
 
-        // Log using high-performance source-generated logger
-        _logger.UnhandledException(exception, exception.GetType().Name, path);
+        // Determine appropriate status code based on exception type
+        var statusCode = exception switch
+        {
+            UnauthorizedAccessException => HttpStatusCode.Unauthorized,
+            _ => HttpStatusCode.InternalServerError
+        };
+
+        // Only log unexpected errors (not auth failures)
+        if (statusCode == HttpStatusCode.InternalServerError)
+        {
+            _logger.UnhandledException(exception, exception.GetType().Name, path);
+        }
 
         // Return generic error to client - never expose exception details
-        context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+        context.Response.StatusCode = (int)statusCode;
         context.Response.ContentType = "application/json";
 
         var response = new
         {
-            error = "An unexpected error occurred",
+            error = statusCode == HttpStatusCode.Unauthorized 
+                ? "Authentication required" 
+                : "An unexpected error occurred",
             correlationId = correlationId
         };
 
