@@ -42,9 +42,14 @@ describe('generateAuthChallenge', () => {
 });
 
 describe('signAuthChallenge', () => {
-  const keypair = sodium.crypto_sign_keypair();
-  const challenge = randomBytes(32);
+  let keypair: { publicKey: Uint8Array; privateKey: Uint8Array };
+  let challenge: Uint8Array;
   const username = 'alice';
+
+  beforeAll(() => {
+    keypair = sodium.crypto_sign_keypair();
+    challenge = randomBytes(32);
+  });
 
   it('signs challenge successfully', () => {
     const signature = signAuthChallenge(challenge, username, keypair.privateKey);
@@ -105,9 +110,14 @@ describe('signAuthChallenge', () => {
 });
 
 describe('verifyAuthChallenge', () => {
-  const keypair = sodium.crypto_sign_keypair();
-  const challenge = randomBytes(32);
+  let keypair: { publicKey: Uint8Array; privateKey: Uint8Array };
+  let challenge: Uint8Array;
   const username = 'alice';
+
+  beforeAll(() => {
+    keypair = sodium.crypto_sign_keypair();
+    challenge = randomBytes(32);
+  });
 
   it('verifies valid signature', () => {
     const signature = signAuthChallenge(challenge, username, keypair.privateKey);
@@ -217,7 +227,11 @@ describe('verifyAuthChallenge', () => {
 
 describe('deriveAuthKeypair', () => {
   const password = 'test-password';
-  const userSalt = randomBytes(16);
+  let userSalt: Uint8Array;
+
+  beforeAll(() => {
+    userSalt = randomBytes(16);
+  });
 
   it('derives Ed25519 keypair', async () => {
     const keypair = await deriveAuthKeypair(password, userSalt, fastParams);
@@ -270,7 +284,11 @@ describe('deriveAuthKeypair', () => {
 });
 
 describe('generateFakeUserSalt', () => {
-  const serverSecret = randomBytes(32);
+  let serverSecret: Uint8Array;
+
+  beforeAll(() => {
+    serverSecret = randomBytes(32);
+  });
 
   it('generates 16-byte salt', () => {
     const salt = generateFakeUserSalt('nonexistent', serverSecret);
@@ -304,8 +322,13 @@ describe('generateFakeUserSalt', () => {
 });
 
 describe('generateFakeChallenge', () => {
-  const serverSecret = randomBytes(32);
-  const timestamp = Date.now();
+  let serverSecret: Uint8Array;
+  let timestamp: number;
+
+  beforeAll(() => {
+    serverSecret = randomBytes(32);
+    timestamp = Date.now();
+  });
 
   it('generates 32-byte challenge', () => {
     const challenge = generateFakeChallenge('nonexistent', serverSecret, timestamp);
