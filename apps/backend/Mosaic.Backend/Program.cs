@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Mosaic.Backend.Data;
@@ -68,6 +69,13 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options 
 
 builder.Services.AddOpenApi();
 
+// Add authentication handler for Forbid() support
+// The actual authentication is done by CombinedAuthMiddleware, this just provides
+// a scheme for the Forbid() calls in controllers to work properly
+builder.Services.AddAuthentication(PassThroughAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, PassThroughAuthenticationHandler>(
+        PassThroughAuthenticationHandler.SchemeName, null);
+
 var app = builder.Build();
 
 // Determine auth modes from configuration (independent toggles)
@@ -113,6 +121,10 @@ app.Logger.LogInformation(
     "Auth configuration: LocalAuth={LocalAuth}, ProxyAuth={ProxyAuth}",
     localAuthEnabled, proxyAuthEnabled);
 app.UseMiddleware<CombinedAuthMiddleware>();
+
+// Add authentication/authorization middleware for Forbid() support
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Admin auth must come after regular auth
 app.UseAdminAuth();

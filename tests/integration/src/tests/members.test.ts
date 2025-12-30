@@ -5,8 +5,33 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { api, AlbumMember, User } from '../api-client';
+import { api, User } from '../api-client';
 import { waitForApi, uniqueUser, createTestAlbum, randomBase64 } from '../utils';
+
+/**
+ * Generate invite request with epoch keys
+ */
+function generateInviteRequest(recipientId: string, role: string = 'viewer') {
+  return {
+    recipientId,
+    role,
+    epochKeys: [{
+      epochId: 1,
+      encryptedKeyBundle: randomBase64(96),
+      ownerSignature: randomBase64(64),
+      sharerPubkey: randomBase64(32),
+      signPubkey: randomBase64(32),
+    }],
+  };
+}
+
+interface MemberResponse {
+  userId: string;
+  role: string;
+  joinedAt: string;
+  revokedAt: string | null;
+  invitedBy: string | null;
+}
 
 describe('Members API', () => {
   let owner: string;
@@ -31,7 +56,7 @@ describe('Members API', () => {
     it('lists album members', async () => {
       const album = await createTestAlbum(api, owner);
 
-      const response = await api.get<AlbumMember[]>(`/api/albums/${album.id}/members`);
+      const response = await api.get<MemberResponse[]>(`/api/albums/${album.id}/members`);
 
       expect(response.status).toBe(200);
       expect(response.data).toHaveLength(1);
@@ -41,7 +66,9 @@ describe('Members API', () => {
     it('returns 403 for non-member', async () => {
       const album = await createTestAlbum(api, owner);
 
-      api.setUser(uniqueUser());
+      const nonMember = uniqueUser();
+      api.setUser(nonMember);
+      await api.get('/api/users/me'); // Ensure user exists
       const response = await api.get(`/api/albums/${album.id}/members`);
 
       expect(response.status).toBe(403);
@@ -58,12 +85,9 @@ describe('Members API', () => {
 
       // Add member as owner
       api.setUser(owner);
-      const response = await api.post<AlbumMember>(
+      const response = await api.post<MemberResponse>(
         `/api/albums/${album.id}/members`,
-        {
-          userId: memberUser.data.id,
-          role: 'viewer',
-        }
+        generateInviteRequest(memberUser.data.id, 'viewer')
       );
 
       expect(response.status).toBe(201);
@@ -79,10 +103,10 @@ describe('Members API', () => {
 
       // Add member
       api.setUser(owner);
-      await api.post(`/api/albums/${album.id}/members`, {
-        userId: memberUser.data.id,
-        role: 'viewer',
-      });
+      await api.post(
+        `/api/albums/${album.id}/members`,
+        generateInviteRequest(memberUser.data.id, 'viewer')
+      );
 
       // Member should now have access
       api.setUser(member);
@@ -94,27 +118,27 @@ describe('Members API', () => {
     it('returns 403 for non-owner', async () => {
       const album = await createTestAlbum(api, owner);
 
-      // Get member's user ID and add them
+      // Get member's user ID and add them as viewer
       api.setUser(member);
       const memberUser = await api.get<User>('/api/users/me');
 
       api.setUser(owner);
-      await api.post(`/api/albums/${album.id}/members`, {
-        userId: memberUser.data.id,
-        role: 'viewer',
-      });
+      await api.post(
+        `/api/albums/${album.id}/members`,
+        generateInviteRequest(memberUser.data.id, 'viewer')
+      );
 
-      // Member cannot add other members
+      // Member (viewer) cannot add other members
       api.setUser(member);
       const newMember = uniqueUser();
       api.setUser(newMember);
       const newMemberUser = await api.get<User>('/api/users/me');
 
       api.setUser(member);
-      const response = await api.post(`/api/albums/${album.id}/members`, {
-        userId: newMemberUser.data.id,
-        role: 'viewer',
-      });
+      const response = await api.post(
+        `/api/albums/${album.id}/members`,
+        generateInviteRequest(newMemberUser.data.id, 'viewer')
+      );
 
       expect(response.status).toBe(403);
     });
@@ -129,10 +153,10 @@ describe('Members API', () => {
       const memberUser = await api.get<User>('/api/users/me');
 
       api.setUser(owner);
-      await api.post(`/api/albums/${album.id}/members`, {
-        userId: memberUser.data.id,
-        role: 'viewer',
-      });
+      await api.post(
+        `/api/albums/${album.id}/members`,
+        generateInviteRequest(memberUser.data.id, 'viewer')
+      );
 
       // Remove member
       const deleteResponse = await api.delete(
@@ -156,12 +180,12 @@ describe('Members API', () => {
       const memberUser = await api.get<User>('/api/users/me');
 
       api.setUser(owner);
-      await api.post(`/api/albums/${album.id}/members`, {
-        userId: memberUser.data.id,
-        role: 'viewer',
-      });
+      await api.post(
+        `/api/albums/${album.id}/members`,
+        generateInviteRequest(memberUser.data.id, 'viewer')
+      );
 
-      // Member cannot remove themselves via this endpoint
+      // Viewer cannot remove other members
       api.setUser(member);
       const response = await api.delete(
         `/api/albums/${album.id}/members/${memberUser.data.id}`
