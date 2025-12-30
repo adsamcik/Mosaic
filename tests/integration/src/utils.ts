@@ -16,8 +16,8 @@ export async function waitForApi(
 ): Promise<void> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await client.get<{ status: string }>('/api/health');
-      if (response.status === 200 && response.data.status === 'ok') {
+      const response = await client.get<{ status: string }>('/health');
+      if (response.status === 200 && response.data.status === 'healthy') {
         return;
       }
     } catch {
