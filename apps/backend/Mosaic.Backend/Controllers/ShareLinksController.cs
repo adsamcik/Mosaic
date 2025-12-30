@@ -526,6 +526,7 @@ public class ShareLinksController : ControllerBase
         var shareLink = await _db.ShareLinks
             .Include(sl => sl.Album)
             .Include(sl => sl.LinkEpochKeys)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(sl => sl.Id == id);
 
         if (shareLink == null)
@@ -623,6 +624,7 @@ public class ShareLinksController : ControllerBase
         var shareLink = await _db.ShareLinks
             .Include(sl => sl.Album)
             .Include(sl => sl.LinkEpochKeys)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
 
         if (shareLink == null)

@@ -48,23 +48,26 @@ export const NETWORK_TIMEOUT = {
 
 /**
  * Cryptography-related timeouts for encryption, decryption, and key operations.
- * These are longer timeouts for CPU-intensive operations that may vary by hardware.
+ * 
+ * Note: With VITE_E2E_WEAK_KEYS=true (enabled in E2E test scripts), Argon2id
+ * uses minimal parameters (8 MiB, 1 iteration) for fast key derivation.
+ * These timeouts are tuned for weak keys mode.
  */
 export const CRYPTO_TIMEOUT = {
-  /** Default crypto operation timeout (30s) */
-  DEFAULT: 30000,
-  /** Timeout for key derivation (Argon2id) (45s) */
-  KEY_DERIVATION: 45000,
-  /** Timeout for login with key derivation (60s) */
-  LOGIN: 60000,
-  /** Timeout for photo encryption (per photo) (30s) */
-  PHOTO_ENCRYPT: 30000,
-  /** Timeout for photo decryption (per photo) (30s) */
-  PHOTO_DECRYPT: 30000,
-  /** Timeout for batch crypto operations (120s) */
-  BATCH: 120000,
-  /** Timeout for key rotation (60s) */
-  KEY_ROTATION: 60000,
+  /** Default crypto operation timeout (10s with weak keys) */
+  DEFAULT: 10000,
+  /** Timeout for key derivation (Argon2id) - fast with weak keys (15s) */
+  KEY_DERIVATION: 15000,
+  /** Timeout for login with key derivation (20s with weak keys) */
+  LOGIN: 20000,
+  /** Timeout for photo encryption (per photo) (15s) */
+  PHOTO_ENCRYPT: 15000,
+  /** Timeout for photo decryption (per photo) (15s) */
+  PHOTO_DECRYPT: 15000,
+  /** Timeout for batch crypto operations (60s) */
+  BATCH: 60000,
+  /** Timeout for key rotation (30s) */
+  KEY_ROTATION: 30000,
 } as const;
 
 /**

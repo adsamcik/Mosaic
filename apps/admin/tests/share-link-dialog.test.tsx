@@ -34,11 +34,11 @@ function createMockResult(overrides = {}): CreateShareLinkResult {
   };
 }
 
-// Helper to render ShareLinkDialog
+// Helper to render ShareLinkDialog (now CreateShareLinkView)
 function renderShareLinkDialog(props: Partial<Parameters<typeof ShareLinkDialog>[0]> = {}) {
   const defaultProps = {
-    isOpen: true,
-    onClose: vi.fn(),
+    onCancel: vi.fn(),
+    onDone: vi.fn(),
     onCreate: vi.fn().mockResolvedValue(createMockResult()),
     isCreating: false,
     error: null,
@@ -79,17 +79,10 @@ describe('ShareLinkDialog', () => {
   });
 
   describe('rendering', () => {
-    it('renders nothing when closed', () => {
-      const { queryByTestId, cleanup } = renderShareLinkDialog({ isOpen: false });
-
-      expect(queryByTestId('share-link-dialog')).toBeNull();
-      cleanup();
-    });
-
-    it('renders dialog when open', () => {
+    it('renders view content', () => {
       const { getByTestId, cleanup } = renderShareLinkDialog();
 
-      expect(getByTestId('share-link-dialog')).not.toBeNull();
+      expect(getByTestId('create-share-link-view')).not.toBeNull();
       cleanup();
     });
 
@@ -474,10 +467,10 @@ describe('ShareLinkDialog', () => {
       cleanup();
     });
 
-    it('calls onClose when done button is clicked', async () => {
-      const onClose = vi.fn();
+    it('calls onDone when done button is clicked', async () => {
+      const onDone = vi.fn();
       const onCreate = vi.fn().mockResolvedValue(createMockResult());
-      const { getByTestId, cleanup } = renderShareLinkDialog({ onClose, onCreate });
+      const { getByTestId, cleanup } = renderShareLinkDialog({ onDone, onCreate });
 
       const generateButton = getByTestId('generate-button') as HTMLButtonElement;
 
@@ -492,7 +485,7 @@ describe('ShareLinkDialog', () => {
         doneButton.click();
       });
 
-      expect(onClose).toHaveBeenCalled();
+      expect(onDone).toHaveBeenCalled();
       cleanup();
     });
   });
@@ -516,10 +509,10 @@ describe('ShareLinkDialog', () => {
     });
   });
 
-  describe('dialog interactions', () => {
-    it('calls onClose when cancel button clicked', () => {
-      const onClose = vi.fn();
-      const { getByTestId, cleanup } = renderShareLinkDialog({ onClose });
+  describe('view interactions', () => {
+    it('calls onCancel when cancel button clicked', () => {
+      const onCancel = vi.fn();
+      const { getByTestId, cleanup } = renderShareLinkDialog({ onCancel });
 
       const cancelButton = getByTestId('cancel-button') as HTMLButtonElement;
 
@@ -527,57 +520,12 @@ describe('ShareLinkDialog', () => {
         cancelButton.click();
       });
 
-      expect(onClose).toHaveBeenCalled();
-      cleanup();
-    });
-
-    it('calls onClose when backdrop clicked', () => {
-      const onClose = vi.fn();
-      const { getByTestId, cleanup } = renderShareLinkDialog({ onClose });
-
-      const backdrop = getByTestId('share-link-dialog-backdrop') as HTMLElement;
-
-      act(() => {
-        backdrop.click();
-      });
-
-      expect(onClose).toHaveBeenCalled();
-      cleanup();
-    });
-
-    it('does not close when dialog content clicked', () => {
-      const onClose = vi.fn();
-      const { getByTestId, cleanup } = renderShareLinkDialog({ onClose });
-
-      const dialog = getByTestId('share-link-dialog') as HTMLElement;
-
-      act(() => {
-        dialog.click();
-      });
-
-      // onClose should NOT have been called
-      expect(onClose).not.toHaveBeenCalled();
+      expect(onCancel).toHaveBeenCalled();
       cleanup();
     });
   });
 
   describe('accessibility', () => {
-    it('has aria-modal on dialog', () => {
-      const { getByTestId, cleanup } = renderShareLinkDialog();
-
-      const dialog = getByTestId('share-link-dialog') as HTMLElement;
-      expect(dialog.getAttribute('aria-modal')).toBe('true');
-      cleanup();
-    });
-
-    it('has aria-labelledby pointing to title', () => {
-      const { getByTestId, cleanup } = renderShareLinkDialog();
-
-      const dialog = getByTestId('share-link-dialog') as HTMLElement;
-      expect(dialog.getAttribute('aria-labelledby')).toBe('share-link-title');
-      cleanup();
-    });
-
     it('error has role=alert', () => {
       const { getByTestId, cleanup } = renderShareLinkDialog({
         error: 'Some error',

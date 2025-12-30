@@ -19,6 +19,7 @@ import {
   test,
   TEST_CONSTANTS,
 } from '../fixtures';
+import { waitForCondition } from '../framework';
 
 test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', () => {
   const apiHelper = new ApiHelper();
@@ -198,7 +199,14 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
           const submitBtn = alice.getByRole('button', { name: /invite|add|confirm/i });
           await submitBtn.first().click();
 
-          await alice.waitForTimeout(2000);
+          // Wait for invite to be processed - check that submit button becomes inactive or dialog closes
+          await waitForCondition(
+            async () => {
+              const dialogVisible = await userInput.first().isVisible().catch(() => false);
+              return !dialogVisible;
+            },
+            { timeout: 5000, message: 'Waiting for invite dialog to close' }
+          ).catch(() => {});
 
           // Bob navigates to shared album
           await bob.reload();
@@ -286,7 +294,14 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
           const submitBtn = alice.getByRole('button', { name: /invite|add|confirm/i });
           await submitBtn.first().click();
 
-          await alice.waitForTimeout(2000);
+          // Wait for invite to be processed - check that submit button becomes inactive or dialog closes
+          await waitForCondition(
+            async () => {
+              const dialogVisible = await userInput.first().isVisible().catch(() => false);
+              return !dialogVisible;
+            },
+            { timeout: 5000, message: 'Waiting for invite dialog to close' }
+          ).catch(() => {});
 
           // Bob navigates to shared album
           await bob.reload();
@@ -377,7 +392,14 @@ test.describe('Sharing: Member Removal @p1 @sharing @multi-user', () => {
           const submitBtn = alice.getByRole('button', { name: /invite|add|confirm/i });
           await submitBtn.first().click();
 
-          await alice.waitForTimeout(2000);
+          // Wait for invite to be processed - dialog should close or show success
+          await waitForCondition(
+            async () => {
+              const dialogVisible = await userInput.first().isVisible().catch(() => false);
+              return !dialogVisible;
+            },
+            { timeout: 5000, message: 'Waiting for invite dialog to close' }
+          ).catch(() => {});
 
           // Bob can see album
           await bob.reload();
@@ -417,7 +439,14 @@ test.describe('Sharing: Member Removal @p1 @sharing @multi-user', () => {
                 await confirmBtn.first().click();
               }
 
-              await alice.waitForTimeout(2000);
+              // Wait for removal to be processed - member should disappear from list
+              await waitForCondition(
+                async () => {
+                  const stillVisible = await bobEntry.first().isVisible().catch(() => false);
+                  return !stillVisible;
+                },
+                { timeout: 5000, message: 'Waiting for member removal' }
+              ).catch(() => {});
 
               // Bob should no longer see album
               await bob.reload();
@@ -550,7 +579,14 @@ test.describe('Sharing: Member List Display @p1 @sharing @ui', () => {
           const submitBtn = alice.getByRole('button', { name: /invite|add|confirm/i });
           await submitBtn.first().click();
 
-          await alice.waitForTimeout(2000);
+          // Wait for invite to be processed - dialog should close or show success
+          await waitForCondition(
+            async () => {
+              const dialogVisible = await userInput.first().isVisible().catch(() => false);
+              return !dialogVisible;
+            },
+            { timeout: 5000, message: 'Waiting for invite dialog to close' }
+          ).catch(() => {});
 
           // Close invite dialog if open
           const closeBtn = alice.getByRole('button', { name: /close|done|cancel/i });
@@ -701,7 +737,15 @@ test.describe('Sharing: Security Boundaries @p1 @sharing @security', () => {
     await userInput.first().fill(bobInfo.id);
     const submitBtn = alice.getByRole('button', { name: /invite|add|confirm/i });
     await submitBtn.first().click();
-    await alice.waitForTimeout(2000);
+
+    // Wait for invite to be processed - check that dialog closes
+    await waitForCondition(
+      async () => {
+        const dialogVisible = await userInput.first().isVisible().catch(() => false);
+        return !dialogVisible;
+      },
+      { timeout: 5000, message: 'Waiting for invite dialog to close' }
+    ).catch(() => {});
 
     // Bob should now see the album
     await bob.reload();
@@ -749,12 +793,20 @@ test.describe('Sharing: Security Boundaries @p1 @sharing @security', () => {
       await confirmBtn.first().click();
     }
 
-    await alice.waitForTimeout(2000);
+    // Wait for removal confirmation dialog to close
+    await waitForCondition(
+      async () => {
+        const confirmVisible = await confirmBtn.first().isVisible().catch(() => false);
+        return !confirmVisible;
+      },
+      { timeout: 5000, message: 'Waiting for removal confirmation' }
+    ).catch(() => {});
 
     // Step 4: Alice uploads photo AFTER epoch rotation
     // Close any open dialogs first
     await alice.keyboard.press('Escape');
-    await alice.waitForTimeout(500);
+    // Wait for gallery to be ready for interaction
+    await expect(aliceGallery.uploadButton).toBeEnabled({ timeout: 2000 });
 
     const testImage2 = generateTestImage();
     await aliceGallery.uploadPhoto(testImage2, 'post-rotation-photo.png');
@@ -1009,11 +1061,20 @@ test.describe('P1-2: Member Management UI @p1 @sharing @ui', () => {
 
     const submitBtn = alice.getByRole('button', { name: /invite|add|confirm/i });
     await submitBtn.first().click();
-    await alice.waitForTimeout(2000);
+
+    // Wait for invite to be processed
+    await waitForCondition(
+      async () => {
+        const dialogVisible = await userInput.first().isVisible().catch(() => false);
+        return !dialogVisible;
+      },
+      { timeout: 5000, message: 'Waiting for invite dialog to close' }
+    ).catch(() => {});
 
     // Close dialog and reopen members panel
     await alice.keyboard.press('Escape');
-    await alice.waitForTimeout(500);
+    // Wait for members button to be actionable
+    await expect(membersBtn.first()).toBeEnabled({ timeout: 2000 });
     await membersBtn.first().click();
 
     // Now remove Bob
@@ -1044,7 +1105,14 @@ test.describe('P1-2: Member Management UI @p1 @sharing @ui', () => {
         await confirmBtn.first().click();
       }
 
-      await alice.waitForTimeout(2000);
+      // Wait for removal to be processed
+      await waitForCondition(
+        async () => {
+          const confirmVisible = await confirmBtn.first().isVisible().catch(() => false);
+          return !confirmVisible;
+        },
+        { timeout: 5000, message: 'Waiting for removal confirmation' }
+      ).catch(() => {});
 
       // Verify Bob lost access
       await bob.reload();

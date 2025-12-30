@@ -40,3 +40,13 @@ export {
   retry,
   type WaitOptions,
 } from './wait-utils';
+
+export {
+  getPoolUser,
+  isPoolUser,
+  createCustomUser,
+  generateDynamicUserEmail,
+  POOL_USERS,
+  type AuthMode,
+  type PoolUser,
+} from './test-user-pool';

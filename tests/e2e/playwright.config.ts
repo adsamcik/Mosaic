@@ -125,8 +125,11 @@ export default defineConfig({
     timeout: 15000,
   },
 
-  // Global setup - wait for backend health
+  // Global setup - wait for backend health and seed user pool
   globalSetup: './global-setup.ts',
+
+  // Global teardown - clean up test data
+  globalTeardown: './global-teardown.ts',
 
   // Configure projects for major browsers
   projects: [

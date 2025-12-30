@@ -1,17 +1,21 @@
 /**
  * EditLinkExpirationDialog Component Tests
  *
- * Tests the EditLinkExpirationDialog component using vitest + happy-dom.
+ * Tests the EditShareLinkView component (exported as EditLinkExpirationDialog) using vitest + happy-dom.
  */
 
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  EditLinkExpirationDialog,
-  type EditLinkExpirationDialogProps,
+  EditShareLinkView,
+  type EditShareLinkViewProps,
 } from '../src/components/ShareLinks/EditLinkExpirationDialog';
 import type { ShareLinkInfo } from '../src/hooks/useShareLinks';
+
+// Alias for test backward compatibility
+const EditLinkExpirationDialog = EditShareLinkView;
+type EditLinkExpirationDialogProps = EditShareLinkViewProps;
 
 // Helper to create mock share link
 function createMockLink(overrides: Partial<ShareLinkInfo> = {}): ShareLinkInfo {
@@ -38,7 +42,7 @@ function renderEditLinkExpirationDialog(
     link: createMockLink(),
     albumId: 'album-1',
     onSave: vi.fn(),
-    onClose: vi.fn(),
+    onCancel: vi.fn(),
     onUpdate: vi.fn().mockResolvedValue(undefined),
     isUpdating: false,
     error: null,
@@ -91,12 +95,12 @@ describe('EditLinkExpirationDialog', () => {
   });
 
   describe('rendering', () => {
-    it('renders dialog with title', () => {
+    it('renders view with description', () => {
       const { getByTestId, cleanup } = renderEditLinkExpirationDialog();
 
-      const dialog = getByTestId('edit-link-dialog');
-      expect(dialog).not.toBeNull();
-      expect(dialog?.textContent).toContain('Edit Share Link');
+      const view = getByTestId('edit-share-link-view');
+      expect(view).not.toBeNull();
+      expect(view?.textContent).toContain('Update the expiration settings');
       cleanup();
     });
 
@@ -432,10 +436,10 @@ describe('EditLinkExpirationDialog', () => {
   });
 
   describe('close behavior', () => {
-    it('calls onClose when cancel is clicked', () => {
-      const onClose = vi.fn();
+    it('calls onCancel when cancel is clicked', () => {
+      const onCancel = vi.fn();
       const { getByTestId, cleanup } = renderEditLinkExpirationDialog({
-        onClose,
+        onCancel,
       });
 
       const cancelButton = getByTestId('cancel-button') as HTMLButtonElement;
@@ -444,39 +448,7 @@ describe('EditLinkExpirationDialog', () => {
         cancelButton.click();
       });
 
-      expect(onClose).toHaveBeenCalled();
-      cleanup();
-    });
-
-    it('calls onClose when backdrop is clicked', () => {
-      const onClose = vi.fn();
-      const { getByTestId, cleanup } = renderEditLinkExpirationDialog({
-        onClose,
-      });
-
-      const backdrop = getByTestId('edit-link-dialog-backdrop');
-
-      act(() => {
-        backdrop?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      });
-
-      expect(onClose).toHaveBeenCalled();
-      cleanup();
-    });
-
-    it('does not close when clicking inside dialog', () => {
-      const onClose = vi.fn();
-      const { getByTestId, cleanup } = renderEditLinkExpirationDialog({
-        onClose,
-      });
-
-      const dialog = getByTestId('edit-link-dialog');
-
-      act(() => {
-        dialog?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      });
-
-      expect(onClose).not.toHaveBeenCalled();
+      expect(onCancel).toHaveBeenCalled();
       cleanup();
     });
   });

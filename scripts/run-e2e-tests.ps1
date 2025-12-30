@@ -187,8 +187,14 @@ try {
     }
     
     $backendPath = "$RepoRoot/apps/backend/Mosaic.Backend"
-    $script:BackendProcess = Start-Process -FilePath "dotnet" `
-        -ArgumentList "run", "--urls=http://localhost:8080" `
+    
+    # Set environment variables for E2E tests:
+    # - Development mode loads appsettings.Development.json (has trusted proxies for localhost)
+    # - ProxyAuth enabled so Remote-User header is recognized
+    # - LocalAuth enabled for tests that use username/password
+    # Use cmd.exe with set commands to pass env vars to the process
+    $script:BackendProcess = Start-Process -FilePath "cmd.exe" `
+        -ArgumentList "/c", "set ASPNETCORE_ENVIRONMENT=Development && set Auth__ProxyAuthEnabled=true && set Auth__LocalAuthEnabled=true && set Auth__TrustedProxies__0=127.0.0.0/8 && set Auth__TrustedProxies__1=::1/128 && dotnet run --urls=http://localhost:8080" `
         -WorkingDirectory $backendPath `
         -PassThru `
         -WindowStyle Hidden
@@ -230,9 +236,12 @@ try {
     
     $frontendPath = "$RepoRoot/apps/admin"
     
+    # Set weak keys mode for fast E2E testing
+    $env:VITE_E2E_WEAK_KEYS = "true"
+    
     # Use cmd to run npm since npm.ps1 doesn't work well with Start-Process
     $script:FrontendProcess = Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c", "npm run dev" `
+        -ArgumentList "/c", "set VITE_E2E_WEAK_KEYS=true && npm run dev" `
         -WorkingDirectory $frontendPath `
         -PassThru `
         -WindowStyle Hidden

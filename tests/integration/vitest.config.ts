@@ -5,7 +5,11 @@ export default defineConfig({
     globals: true,
     include: ['src/**/*.test.ts'],
     exclude: ['**/node_modules/**'],
-    testTimeout: 60000, // 60s for integration tests
+    // Enable weak Argon2 params for fast test execution
+    env: {
+      VITE_E2E_WEAK_KEYS: 'true',
+    },
+    testTimeout: 30000, // Reduced with weak keys
     hookTimeout: 30000,
     sequence: {
       shuffle: false, // Run in order for integration tests

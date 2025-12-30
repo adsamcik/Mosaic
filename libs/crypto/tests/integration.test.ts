@@ -139,8 +139,8 @@ describe('integration: album creation and photo upload', () => {
   });
 
   it('encrypts and decrypts photo shards', async () => {
-    // Simulate a 1MB photo chunk
-    const photoData = sodium.randombytes_buf(1024 * 1024);
+    // Simulate a 64KB photo chunk (reduced from 1MB for faster tests)
+    const photoData = sodium.randombytes_buf(64 * 1024);
 
     // Encrypt shard using fullKey (for original resolution)
     const encrypted = await encryptShard(
@@ -544,8 +544,8 @@ describe('integration: complete photo lifecycle', () => {
       tags: ['vacation', '2024'],
     };
 
-    // Encrypt photo data (simulated 2MB file) using fullKey
-    const photoData = sodium.randombytes_buf(2 * 1024 * 1024);
+    // Encrypt photo data (simulated 128KB file, reduced from 2MB for faster tests) using fullKey
+    const photoData = sodium.randombytes_buf(128 * 1024);
     const encrypted = await encryptShard(photoData, epochKey.fullKey, 1, 0, ShardTier.ORIGINAL);
 
     // Encrypt and sign manifest (also using fullKey for metadata)

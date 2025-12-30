@@ -41,6 +41,39 @@ export function isLowMemoryDevice(): boolean {
 }
 
 /**
+ * Check if running in E2E weak keys mode.
+ * Only active when VITE_E2E_WEAK_KEYS=true is set.
+ *
+ * @security This MUST only be used in test environments.
+ */
+function isE2EWeakKeysMode(): boolean {
+  // In Vite/browser context, check import.meta.env
+  // Use unknown intermediate cast for TypeScript compatibility
+  if (typeof import.meta !== 'undefined') {
+    const meta = import.meta as unknown as { env?: { PROD?: boolean; VITE_E2E_WEAK_KEYS?: string } };
+    
+    // Safety: Never enable in production mode
+    if (meta.env?.PROD) {
+      return false;
+    }
+    
+    if (meta.env?.VITE_E2E_WEAK_KEYS === 'true') {
+      return true;
+    }
+  }
+
+  // In Node.js context (e.g., unit tests), check process.env
+  if (typeof process !== 'undefined' && process.env) {
+    if (process.env.NODE_ENV === 'production') {
+      return false;
+    }
+    return process.env.VITE_E2E_WEAK_KEYS === 'true';
+  }
+
+  return false;
+}
+
+/**
  * Get optimal Argon2id parameters for current device.
  *
  * Parameters are tuned to achieve ~500-1000ms derivation time:
@@ -49,8 +82,27 @@ export function isLowMemoryDevice(): boolean {
  *
  * Parallelism is set to 1 for consistent behavior across devices
  * and simpler implementation (WebAssembly limitations).
+ *
+ * @security When VITE_E2E_WEAK_KEYS=true, returns minimal parameters
+ *           for fast E2E testing. NEVER enable in production.
  */
 export function getArgon2Params(): Argon2Params {
+  // Check for E2E weak keys mode first
+  if (isE2EWeakKeysMode()) {
+    // Log warning to ensure visibility
+    if (typeof console !== 'undefined') {
+      console.warn(
+        '[CRYPTO] ⚠️ WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. ' +
+          'This provides NO security and should ONLY be used for E2E testing.'
+      );
+    }
+    return {
+      memory: 8 * 1024, // 8 MiB - minimum practical value
+      iterations: 1, // Minimum iterations
+      parallelism: 1,
+    };
+  }
+
   if (isMobileDevice() || isLowMemoryDevice()) {
     return {
       memory: 32 * 1024, // 32 MiB in KiB
@@ -95,6 +147,18 @@ export const ARGON2_PRESETS = {
   mobileLight: {
     memory: 16 * 1024,
     iterations: 6,
+    parallelism: 1,
+  },
+
+  /**
+   * E2E testing mode - INSECURE, FOR TESTING ONLY.
+   * Uses absolute minimum parameters for near-instant derivation.
+   *
+   * @security NEVER enable in production - provides no meaningful protection.
+   */
+  e2eTest: {
+    memory: 8 * 1024, // 8 MiB - minimum practical value
+    iterations: 1, // Minimum iterations
     parallelism: 1,
   },
 } as const satisfies Record<string, Argon2Params>;

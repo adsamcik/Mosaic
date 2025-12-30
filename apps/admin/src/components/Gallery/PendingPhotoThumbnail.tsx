@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import type { UploadTask } from '../../lib/upload-queue';
 
 interface PendingPhotoThumbnailProps {
@@ -6,9 +6,17 @@ interface PendingPhotoThumbnailProps {
 }
 
 export function PendingPhotoThumbnail({ task }: PendingPhotoThumbnailProps) {
-  // Create a local URL for previewing the file
-  const previewUrl = useMemo(() => {
-    return URL.createObjectURL(task.file);
+  // Create a local URL for previewing the file with proper cleanup
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const url = URL.createObjectURL(task.file);
+    setPreviewUrl(url);
+
+    // Cleanup: revoke the Object URL when component unmounts or file changes
+    return () => {
+      URL.revokeObjectURL(url);
+    };
   }, [task.file]);
 
   const isEncrypting = task.currentAction === 'encrypting';
@@ -52,12 +60,14 @@ export function PendingPhotoThumbnail({ task }: PendingPhotoThumbnailProps) {
   return (
     <div className="photo-thumbnail photo-thumbnail-pending" data-testid="pending-photo-thumbnail">
       <div className="photo-content">
-        <img
-          src={previewUrl}
-          alt={task.file.name}
-          className="photo-image"
-          style={{ opacity: 0.7 }}
-        />
+        {previewUrl && (
+          <img
+            src={previewUrl}
+            alt={task.file.name}
+            className="photo-image"
+            style={{ opacity: 0.7 }}
+          />
+        )}
         
         <div className="upload-overlay">
           {showProgress ? (

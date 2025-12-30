@@ -6,18 +6,15 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     setupFiles: ['./tests/setup.ts'],
+    // Enable weak Argon2 params for fast test execution
+    env: {
+      VITE_E2E_WEAK_KEYS: 'true',
+    },
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     exclude: [
       '**/node_modules/**',
-      // TODO: These tests need to be updated to match refactored component APIs
-      // The components were refactored from dialog-based to view-based patterns
-      'tests/share-link-dialog.test.tsx',
-      'tests/edit-link-expiration-dialog.test.tsx',
-      // TODO: These e2e-flow tests try to make real network requests
-      // They should be converted to proper integration tests with mocked fetch
-      'tests/e2e-flows.test.ts',
     ],
-    testTimeout: 30000,
+    testTimeout: 15000, // Fast with weak keys enabled, but some tests still need time
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

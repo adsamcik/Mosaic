@@ -66,13 +66,44 @@ async function verifyEndpoints(): Promise<void> {
 }
 
 /**
- * Clean up stale test data from previous runs
- * Only cleans data older than 24 hours to avoid affecting running tests
+ * Reset test data from previous runs
+ * Calls the test-seed reset endpoint to clean up test users
  */
-async function cleanupStaleData(): Promise<void> {
-  console.log('[Global Setup] Cleanup: Skipping (handled per-test)');
-  // In a production setup, you might want to call a cleanup endpoint here
-  // For now, each test handles its own cleanup
+async function resetTestData(): Promise<void> {
+  console.log('[Global Setup] Resetting test data...');
+  try {
+    const response = await fetch(`${API_URL}/api/test-seed/reset`, { method: 'POST' });
+    if (!response.ok) {
+      // Log warning but don't fail - endpoint might not exist in non-test builds
+      console.warn(`[Global Setup] Reset endpoint returned ${response.status}`);
+      return;
+    }
+    const result = (await response.json()) as { deletedUsers: number };
+    console.log(`[Global Setup] Deleted ${result.deletedUsers} test users`);
+  } catch (error) {
+    console.warn(`[Global Setup] Reset failed: ${error}`);
+    // Don't fail - endpoint might not exist
+  }
+}
+
+/**
+ * Seed the user pool for parallel test execution
+ * Ensures pool users are available for tests
+ */
+async function seedUserPool(): Promise<void> {
+  console.log('[Global Setup] Seeding user pool...');
+  try {
+    const response = await fetch(`${API_URL}/api/test-seed/ensure-pool`, { method: 'POST' });
+    if (!response.ok) {
+      console.warn(`[Global Setup] Seed pool endpoint returned ${response.status}`);
+      return;
+    }
+    const result = (await response.json()) as { users: string[] };
+    console.log(`[Global Setup] Pool users: ${result.users.join(', ')}`);
+  } catch (error) {
+    console.warn(`[Global Setup] Seed pool failed: ${error}`);
+    // Don't fail - tests may use on-demand user creation
+  }
 }
 
 /**
@@ -120,9 +151,10 @@ async function globalSetup(): Promise<void> {
   console.log(`[Global Setup] BASE_URL: ${process.env.BASE_URL || 'http://localhost:5173'}`);
 
   await waitForBackend();
+  await resetTestData();
+  await seedUserPool();
   await verifyEndpoints();
   await verifyCOOPCOEPHeaders();
-  await cleanupStaleData();
 
   console.log('[Global Setup] Complete!');
 }

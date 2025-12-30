@@ -16,6 +16,7 @@ import {
   ShareLinksPanel,
   CreateShareLinkDialog,
 } from '../page-objects';
+import { waitForCondition } from '../framework';
 
 test.describe('Share Links Workflow @p1 @sharing', () => {
   let loginPage: LoginPage;
@@ -177,7 +178,13 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     await shareLinksPanel.revokeLink(0);
 
     // Wait for UI update - link should move to revoked section or disappear from active
-    await page.waitForTimeout(1000); // Allow for UI transition
+    await waitForCondition(
+      async () => {
+        const currentCount = await shareLinksPanel.getLinkCount();
+        return currentCount === 0;
+      },
+      { timeout: 5000, message: 'Waiting for active link count to become 0' }
+    );
 
     // Active links should now be empty
     linkCount = await shareLinksPanel.getLinkCount();
