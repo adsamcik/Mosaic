@@ -54,9 +54,8 @@ test.describe('Settings Page @p2 @ui', () => {
     await expect(themeSelect).toHaveValue(newTheme);
 
     // Verify theme is applied to document (check for theme class on html/body)
-    await page.waitForTimeout(500); // Allow for theme transition
     const htmlElement = page.locator('html');
-    await expect(htmlElement).toHaveAttribute('data-theme', newTheme);
+    await expect(htmlElement).toHaveAttribute('data-theme', newTheme, { timeout: 2000 });
   });
 
   test('P1-SETTINGS-3: can change idle timeout setting', async ({ page }) => {
@@ -254,16 +253,10 @@ test.describe('Language Settings @p1 @ui', () => {
     await languageSelect.selectOption('cs');
     await expect(languageSelect).toHaveValue('cs');
 
-    // Wait for UI to update
-    await page.waitForTimeout(500);
-
     // Verify some text changed to Czech (check settings title or section headers)
-    // The settings page title should now be in Czech
+    // The settings page title should now be in Czech - wait for it to update
     const settingsTitle = page.locator('.settings-title');
-    const titleText = await settingsTitle.textContent();
-    
-    // "Settings" in Czech is "Nastavení"
-    expect(titleText).toBe('Nastavení');
+    await expect(settingsTitle).toHaveText('Nastavení', { timeout: 2000 });
   });
 
   test('P1-SETTINGS-14: can switch language back to English', async ({ loggedInPage: page }) => {
@@ -272,17 +265,16 @@ test.describe('Language Settings @p1 @ui', () => {
     // First switch to Czech
     await languageSelect.selectOption('cs');
     await expect(languageSelect).toHaveValue('cs');
-    await page.waitForTimeout(300);
+    // Wait for Czech title to confirm language change applied
+    await expect(page.locator('.settings-title')).toHaveText('Nastavení', { timeout: 2000 });
 
     // Then switch back to English
     await languageSelect.selectOption('en');
     await expect(languageSelect).toHaveValue('en');
-    await page.waitForTimeout(300);
 
     // Verify UI is in English
     const settingsTitle = page.locator('.settings-title');
-    const titleText = await settingsTitle.textContent();
-    expect(titleText).toBe('Settings');
+    await expect(settingsTitle).toHaveText('Settings', { timeout: 2000 });
   });
 
   test('P1-SETTINGS-15: language preference persists after page reload', async ({ loggedInPage: page }) => {
@@ -292,7 +284,8 @@ test.describe('Language Settings @p1 @ui', () => {
     // Switch to Czech
     await languageSelect.selectOption('cs');
     await expect(languageSelect).toHaveValue('cs');
-    await page.waitForTimeout(300);
+    // Wait for Czech title to confirm language change applied
+    await expect(page.locator('.settings-title')).toHaveText('Nastavení', { timeout: 2000 });
 
     // Reload the page
     await page.reload();
@@ -341,7 +334,7 @@ test.describe('Language Settings @p1 @ui', () => {
     expect(langAfterLogout).toBe('cs');
 
     // Login again (user already exists now) - wait for form to be ready first
-    await authenticatedPage.waitForTimeout(500); // Allow form to stabilize
+    await expect(authenticatedPage.getByRole('button', { name: /login|přihlásit/i })).toBeEnabled({ timeout: 2000 });
     
     // Check if LocalAuth mode 
     const usernameInput = authenticatedPage.getByLabel(/username|uživatelské jméno/i);
@@ -534,7 +527,8 @@ test.describe('Language Detection @p2 @ui', () => {
     // Manually switch to English
     await languageSelect.selectOption('en');
     await expect(languageSelect).toHaveValue('en');
-    await page.waitForTimeout(300);
+    // Wait for English title to confirm language change applied
+    await expect(page.locator('.settings-title')).toHaveText('Settings', { timeout: 2000 });
 
     // Reload page
     await page.reload();

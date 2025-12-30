@@ -171,7 +171,25 @@ public class LocalStorageServiceTests : IDisposable
     [Fact]
     public async Task OpenReadAsync_ReturnsReadableStream()
     {
-        // Arrange
+        // Arrange - 64KB file (fast CI variant)
+        var key = "readable-file.bin";
+        var content = new byte[64 * 1024]; // 64KB
+        new Random(42).NextBytes(content);
+        await File.WriteAllBytesAsync(Path.Combine(_testPath, key), content);
+
+        // Act
+        using var stream = await _storage.OpenReadAsync(key);
+
+        // Assert
+        Assert.True(stream.CanRead);
+        Assert.Equal(content.Length, stream.Length);
+    }
+
+    [Fact]
+    [Trait("Category", "Nightly")]
+    public async Task OpenReadAsync_ReturnsReadableStream_LargeFile()
+    {
+        // Arrange - 1MB file (nightly only for performance)
         var key = "large-file.bin";
         var content = new byte[1024 * 1024]; // 1MB
         new Random(42).NextBytes(content);

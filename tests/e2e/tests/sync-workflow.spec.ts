@@ -21,6 +21,7 @@ import {
   test,
   TEST_CONSTANTS,
 } from '../fixtures';
+import { waitForCondition } from '../framework';
 
 test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
   const apiHelper = new ApiHelper();
@@ -255,13 +256,23 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
     // Try to upload while offline - should show error or queue
     await gallery.uploadPhoto(testImage, 'offline-upload.png');
 
-    // Wait a moment
-    await authenticatedPage.waitForTimeout(3000);
-
-    // Should show offline indicator or error
+    // Wait for offline indicator or error to appear
     const offlineIndicator = authenticatedPage.getByText(/offline|no connection|network/i);
     const errorIndicator = authenticatedPage.getByRole('alert');
     const queueIndicator = authenticatedPage.getByText(/queued|pending|waiting/i);
+
+    // Wait for any indicator to appear (or timeout after 5s)
+    await waitForCondition(
+      async () => {
+        const hasOffline = await offlineIndicator.first().isVisible().catch(() => false);
+        const hasError = await errorIndicator.first().isVisible().catch(() => false);
+        const hasQueue = await queueIndicator.first().isVisible().catch(() => false);
+        return hasOffline || hasError || hasQueue;
+      },
+      { timeout: 5000, message: 'Waiting for offline/error/queue indicator' }
+    ).catch(() => {
+      // It's acceptable if no indicator appears - the test is checking behavior
+    });
 
     const hasIndicator = await offlineIndicator.first().isVisible().catch(() => false) ||
                          await errorIndicator.first().isVisible().catch(() => false) ||
@@ -333,7 +344,7 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
 
     // Go offline
     await goOffline(authenticatedPage);
-    await authenticatedPage.waitForTimeout(1000);
+    // Network state change is immediate via CDP, no wait needed
 
     // Go back online
     await goOnline(authenticatedPage);
@@ -477,7 +488,10 @@ test.describe('Sync: Version Tracking @p2 @sync', () => {
     const testImage = generateTestImage();
     for (let i = 1; i <= 3; i++) {
       await gallery1.uploadPhoto(testImage, `version-photo-${i}.png`);
-      await page1.waitForTimeout(1000);
+      // Wait for photo to appear before uploading next
+      await expect(async () => {
+        expect(await gallery1.photos.count()).toBeGreaterThanOrEqual(i);
+      }).toPass({ timeout: 60000 });
     }
 
     await expect(async () => {

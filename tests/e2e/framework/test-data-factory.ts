@@ -34,6 +34,23 @@ const IMAGE_DIMENSIONS: Record<ImageSize, { width: number; height: number }> = {
 };
 
 /**
+ * Default colors per size for deterministic test images.
+ * Used when no color is specified to ensure caching works.
+ */
+const DEFAULT_COLORS: Record<ImageSize, [number, number, number]> = {
+  tiny: [255, 0, 0],     // red
+  small: [0, 255, 0],   // green
+  medium: [0, 0, 255],  // blue
+  large: [255, 255, 0], // yellow
+};
+
+/**
+ * Cache for generated test images to avoid repeated PNG generation.
+ * Key format: `${size}-${r}-${g}-${b}`
+ */
+const imageCache = new Map<string, Buffer>();
+
+/**
  * Generate a test image as a Buffer
  *
  * @param size - Image size preset
@@ -44,26 +61,39 @@ export function generateTestImage(
   size: ImageSize = 'tiny',
   color?: [number, number, number]
 ): Buffer {
+  // Use provided color or default color for this size (deterministic for caching)
+  const [r, g, b] = color || DEFAULT_COLORS[size];
+  
+  // Generate cache key
+  const cacheKey = `${size}-${r}-${g}-${b}`;
+  
+  // Return cached if available
+  const cached = imageCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  let result: Buffer;
+  
   // For tiny size, use the simple 1x1 PNG
   if (size === 'tiny') {
     // 1x1 red pixel PNG
     const base64 =
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
-    return Buffer.from(base64, 'base64');
+    result = Buffer.from(base64, 'base64');
+  } else {
+    // For larger sizes, we need to generate proper PNGs
+    // This is a simplified approach - in production you'd use sharp or similar
+    const { width, height } = IMAGE_DIMENSIONS[size];
+
+    // Create a minimal valid PNG with solid color
+    // This is a simplified implementation - for real use, consider using a library
+    result = createSolidColorPNG(width, height, r, g, b);
   }
-
-  // For larger sizes, we need to generate proper PNGs
-  // This is a simplified approach - in production you'd use sharp or similar
-  const { width, height } = IMAGE_DIMENSIONS[size];
-  const [r, g, b] = color || [
-    Math.floor(Math.random() * 256),
-    Math.floor(Math.random() * 256),
-    Math.floor(Math.random() * 256),
-  ];
-
-  // Create a minimal valid PNG with solid color
-  // This is a simplified implementation - for real use, consider using a library
-  return createSolidColorPNG(width, height, r, g, b);
+  
+  // Cache before returning
+  imageCache.set(cacheKey, result);
+  return result;
 }
 
 /**

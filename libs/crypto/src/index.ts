@@ -157,6 +157,13 @@ export {
   generateFakeChallenge,
 } from './auth';
 
+// Re-export memory safety helpers
+export {
+  zeroEpochKey,
+  zeroIdentityKeypair,
+  zeroLinkKeys,
+} from './memory';
+
 import type {
   DeriveKeysResult,
   EpochKey,

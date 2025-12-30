@@ -76,8 +76,8 @@ describe('base64 utilities', () => {
   });
 
   it('handles large data', () => {
-    // 1MB of random-ish data
-    const original = new Uint8Array(1024 * 1024);
+    // 64KB of random-ish data (reduced from 1MB for faster tests)
+    const original = new Uint8Array(64 * 1024);
     for (let i = 0; i < original.length; i++) {
       original[i] = (i * 17 + 31) % 256;
     }

@@ -140,6 +140,17 @@ lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 sleep 1
 
 cd "$REPO_ROOT/apps/backend/Mosaic.Backend"
+
+# Set environment variables for E2E tests:
+# - Development mode loads appsettings.Development.json (has trusted proxies for localhost)
+# - ProxyAuth enabled so Remote-User header is recognized
+# - LocalAuth enabled for tests that use username/password
+export ASPNETCORE_ENVIRONMENT="Development"
+export Auth__ProxyAuthEnabled="true"
+export Auth__LocalAuthEnabled="true"
+export Auth__TrustedProxies__0="127.0.0.0/8"
+export Auth__TrustedProxies__1="::1/128"
+
 dotnet run --urls="http://localhost:8080" > /dev/null 2>&1 &
 BACKEND_PID=$!
 
@@ -171,6 +182,10 @@ lsof -ti:5173 | xargs kill -9 2>/dev/null || true
 sleep 1
 
 cd "$REPO_ROOT/apps/admin"
+
+# Set weak keys mode for fast E2E testing
+export VITE_E2E_WEAK_KEYS="true"
+
 npm run dev > /dev/null 2>&1 &
 FRONTEND_PID=$!
 

@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
 import {
-  deriveKeys,
+  deriveKeysInternal,
   unwrapAccountKey,
   generateSalts,
   getArgon2Params,
@@ -51,7 +51,7 @@ interface SimulatedUser {
 async function createSimulatedUser(id: string, password: string): Promise<SimulatedUser> {
   const { userSalt, accountSalt } = generateSalts();
   const params = getArgon2Params();
-  const keys = await deriveKeys(password, userSalt, accountSalt, params);
+  const keys = await deriveKeysInternal(password, userSalt, accountSalt, params);
   const identity = deriveIdentityKeypair(keys.accountKey);
 
   memzero(keys.masterKey);
@@ -87,7 +87,7 @@ describe('e2e: new user registration flow', () => {
     const params = getArgon2Params();
 
     // Device 1: Initial registration - generates random L2 account key
-    const keysDevice1 = await deriveKeys(password, userSalt, accountSalt, params);
+    const keysDevice1 = await deriveKeysInternal(password, userSalt, accountSalt, params);
     const identityDevice1 = deriveIdentityKeypair(keysDevice1.accountKey);
 
     // Simulate storing wrapped account key and identity pubkey on server
@@ -119,8 +119,8 @@ describe('e2e: new user registration flow', () => {
     const { userSalt, accountSalt } = generateSalts();
     const params = getArgon2Params();
 
-    const correctKeys = await deriveKeys('correct-password', userSalt, accountSalt, params);
-    const wrongKeys = await deriveKeys('wrong-password', userSalt, accountSalt, params);
+    const correctKeys = await deriveKeysInternal('correct-password', userSalt, accountSalt, params);
+    const wrongKeys = await deriveKeysInternal('wrong-password', userSalt, accountSalt, params);
 
     const correctIdentity = deriveIdentityKeypair(correctKeys.accountKey);
     const wrongIdentity = deriveIdentityKeypair(wrongKeys.accountKey);
