@@ -2,9 +2,9 @@
  * Settings E2E Tests
  *
  * Tests the settings page functionality including theme switching,
- * session timeouts, thumbnail quality, and data management.
+ * session timeouts, thumbnail quality, language switching, and data management.
  *
- * Test IDs: P1-SETTINGS-1 through P1-SETTINGS-8
+ * Test IDs: P1-SETTINGS-1 through P1-SETTINGS-14
  */
 
 import { test, expect } from '../fixtures';
@@ -213,5 +213,258 @@ test.describe('Settings Persistence', () => {
 
     // Theme should still be dark
     await expect(authenticatedPage.getByTestId('theme-select')).toHaveValue('dark');
+  });
+});
+
+test.describe('Language Settings @p1 @ui', () => {
+  let loginPage: LoginPage;
+  let appShell: AppShell;
+  let settingsPage: SettingsPage;
+
+  test.beforeEach(async ({ page }) => {
+    loginPage = new LoginPage(page);
+    appShell = new AppShell(page);
+    settingsPage = new SettingsPage(page);
+
+    // Login
+    await loginPage.goto();
+    await loginPage.waitForForm();
+    await loginPage.login();
+    await loginPage.expectLoginSuccess();
+
+    // Navigate to settings
+    await appShell.openSettings();
+    await settingsPage.waitForLoad();
+  });
+
+  test('P1-SETTINGS-12: language selector is visible and functional', async ({ page }) => {
+    // Language select should be visible
+    const languageSelect = page.getByTestId('language-select');
+    await expect(languageSelect).toBeVisible();
+
+    // Should have at least English and Czech options
+    const options = await languageSelect.locator('option').allTextContents();
+    expect(options.length).toBeGreaterThanOrEqual(2);
+    
+    // Verify English and Czech are available
+    const optionValues = await languageSelect.locator('option').evaluateAll(
+      (opts: HTMLOptionElement[]) => opts.map(o => o.value)
+    );
+    expect(optionValues).toContain('en');
+    expect(optionValues).toContain('cs');
+  });
+
+  test('P1-SETTINGS-13: can switch language to Czech', async ({ page }) => {
+    const languageSelect = page.getByTestId('language-select');
+    
+    // Get initial language
+    const initialLang = await languageSelect.inputValue();
+    expect(['en', 'cs']).toContain(initialLang);
+
+    // Switch to Czech
+    await languageSelect.selectOption('cs');
+    await expect(languageSelect).toHaveValue('cs');
+
+    // Wait for UI to update
+    await page.waitForTimeout(500);
+
+    // Verify some text changed to Czech (check settings title or section headers)
+    // The settings page title should now be in Czech
+    const settingsTitle = page.locator('.settings-title');
+    const titleText = await settingsTitle.textContent();
+    
+    // "Settings" in Czech is "Nastavení"
+    expect(titleText).toBe('Nastavení');
+  });
+
+  test('P1-SETTINGS-14: can switch language back to English', async ({ page }) => {
+    const languageSelect = page.getByTestId('language-select');
+
+    // First switch to Czech
+    await languageSelect.selectOption('cs');
+    await expect(languageSelect).toHaveValue('cs');
+    await page.waitForTimeout(300);
+
+    // Then switch back to English
+    await languageSelect.selectOption('en');
+    await expect(languageSelect).toHaveValue('en');
+    await page.waitForTimeout(300);
+
+    // Verify UI is in English
+    const settingsTitle = page.locator('.settings-title');
+    const titleText = await settingsTitle.textContent();
+    expect(titleText).toBe('Settings');
+  });
+
+  test('P1-SETTINGS-15: language preference persists after page reload', async ({ page }) => {
+    const languageSelect = page.getByTestId('language-select');
+
+    // Switch to Czech
+    await languageSelect.selectOption('cs');
+    await expect(languageSelect).toHaveValue('cs');
+    await page.waitForTimeout(300);
+
+    // Reload the page
+    await page.reload();
+    
+    // Wait for settings page to load again
+    await settingsPage.waitForLoad();
+
+    // Language should still be Czech
+    await expect(page.getByTestId('language-select')).toHaveValue('cs');
+
+    // Verify UI is still in Czech
+    const settingsTitle = page.locator('.settings-title');
+    await expect(settingsTitle).toHaveText('Nastavení');
+  });
+
+  test('P1-SETTINGS-16: language preference persists after logout/login', async ({ authenticatedPage, testUser }) => {
+    const loginPage = new LoginPage(authenticatedPage);
+    const appShell = new AppShell(authenticatedPage);
+    const settingsPage = new SettingsPage(authenticatedPage);
+
+    await authenticatedPage.goto('/');
+    await loginPage.waitForForm();
+    await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
+    await loginPage.expectLoginSuccess();
+    await appShell.openSettings();
+    await settingsPage.waitForLoad();
+
+    // Switch to Czech
+    const languageSelect = authenticatedPage.getByTestId('language-select');
+    await languageSelect.selectOption('cs');
+    await expect(languageSelect).toHaveValue('cs');
+    await authenticatedPage.waitForTimeout(300);
+
+    // Go back and logout
+    await appShell.goBack();
+    await appShell.waitForLoad();
+    await appShell.logout();
+    await loginPage.waitForForm();
+
+    // Login again
+    await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
+    await loginPage.expectLoginSuccess();
+
+    // Go to settings
+    await appShell.openSettings();
+    await settingsPage.waitForLoad();
+
+    // Language should still be Czech
+    await expect(authenticatedPage.getByTestId('language-select')).toHaveValue('cs');
+
+    // Reset to English for other tests
+    await authenticatedPage.getByTestId('language-select').selectOption('en');
+  });
+});
+
+test.describe('Language Detection @p2 @ui', () => {
+  test('P2-SETTINGS-17: detects browser locale on first visit', async ({ browser }) => {
+    // Create a new context with Czech locale
+    const context = await browser.newContext({
+      locale: 'cs-CZ',
+    });
+    const page = await context.newPage();
+
+    // Clear any existing language preference
+    await page.addInitScript(() => {
+      localStorage.removeItem('mosaic-language');
+    });
+
+    const loginPage = new LoginPage(page);
+    const appShell = new AppShell(page);
+    const settingsPage = new SettingsPage(page);
+
+    // Navigate to app
+    await loginPage.goto();
+    await loginPage.waitForForm();
+    await loginPage.login();
+    await loginPage.expectLoginSuccess();
+
+    // Navigate to settings
+    await appShell.openSettings();
+    await settingsPage.waitForLoad();
+
+    // Language should be detected as Czech based on browser locale
+    const languageSelect = page.getByTestId('language-select');
+    await expect(languageSelect).toHaveValue('cs');
+
+    await context.close();
+  });
+
+  test('P2-SETTINGS-18: falls back to English for unsupported locale', async ({ browser }) => {
+    // Create a new context with an unsupported locale (German)
+    const context = await browser.newContext({
+      locale: 'de-DE',
+    });
+    const page = await context.newPage();
+
+    // Clear any existing language preference
+    await page.addInitScript(() => {
+      localStorage.removeItem('mosaic-language');
+    });
+
+    const loginPage = new LoginPage(page);
+    const appShell = new AppShell(page);
+    const settingsPage = new SettingsPage(page);
+
+    // Navigate to app
+    await loginPage.goto();
+    await loginPage.waitForForm();
+    await loginPage.login();
+    await loginPage.expectLoginSuccess();
+
+    // Navigate to settings
+    await appShell.openSettings();
+    await settingsPage.waitForLoad();
+
+    // Language should fall back to English
+    const languageSelect = page.getByTestId('language-select');
+    await expect(languageSelect).toHaveValue('en');
+
+    await context.close();
+  });
+
+  test('P2-SETTINGS-19: manual selection overrides browser locale', async ({ browser }) => {
+    // Create a new context with Czech locale
+    const context = await browser.newContext({
+      locale: 'cs-CZ',
+    });
+    const page = await context.newPage();
+
+    // Clear any existing language preference
+    await page.addInitScript(() => {
+      localStorage.removeItem('mosaic-language');
+    });
+
+    const loginPage = new LoginPage(page);
+    const appShell = new AppShell(page);
+    const settingsPage = new SettingsPage(page);
+
+    // Navigate and login
+    await loginPage.goto();
+    await loginPage.waitForForm();
+    await loginPage.login();
+    await loginPage.expectLoginSuccess();
+    await appShell.openSettings();
+    await settingsPage.waitForLoad();
+
+    // Initially should be Czech from locale
+    const languageSelect = page.getByTestId('language-select');
+    await expect(languageSelect).toHaveValue('cs');
+
+    // Manually switch to English
+    await languageSelect.selectOption('en');
+    await expect(languageSelect).toHaveValue('en');
+    await page.waitForTimeout(300);
+
+    // Reload page
+    await page.reload();
+    await settingsPage.waitForLoad();
+
+    // Should remain English (manual preference overrides locale)
+    await expect(page.getByTestId('language-select')).toHaveValue('en');
+
+    await context.close();
   });
 });
