@@ -17,6 +17,7 @@ import {
   goOnline,
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
+import { waitForCondition } from '../framework';
 
 test.describe('Error Handling @p1 @security', () => {
   test.describe('Network Errors', () => {
@@ -31,9 +32,15 @@ test.describe('Error Handling @p1 @security', () => {
       // Go offline
       await goOffline(user.page);
 
-      // Try to interact with the app
-      // The app should handle this gracefully
-      await user.page.waitForTimeout(1000);
+      // Wait for app to detect offline state (service worker or network listener)
+      // Check that the shell remains visible and functional during offline
+      await waitForCondition(
+        async () => {
+          // App should remain stable and visible while offline
+          return await appShell.shell.isVisible();
+        },
+        { timeout: 5000, message: 'App should remain functional while offline' }
+      );
 
       // Go back online
       await goOnline(user.page);
@@ -65,8 +72,21 @@ test.describe('Error Handling @p1 @security', () => {
       const createButton = user.page.getByTestId('create-button');
       await createButton.click();
 
-      // Should show some error feedback (toast, dialog message, etc.)
-      await user.page.waitForTimeout(2000);
+      // Wait for error feedback (toast, dialog message, or error state)
+      // The app may show a toast notification, inline error, or the dialog may close
+      await waitForCondition(
+        async () => {
+          // Check for common error indicators:
+          // 1. Toast/notification with error message
+          const hasToast = await user.page.locator('[data-testid="toast"], [role="alert"], .toast').isVisible().catch(() => false);
+          // 2. Error text in the dialog
+          const hasErrorText = await user.page.getByText(/error|failed|problem/i).isVisible().catch(() => false);
+          // 3. Dialog closed (implicit error handling)
+          const dialogClosed = !(await user.page.getByTestId('create-album-dialog').isVisible().catch(() => false));
+          return hasToast || hasErrorText || dialogClosed;
+        },
+        { timeout: 10000, message: 'Expected error feedback after API error' }
+      );
 
       // App should still be functional
       await expect(appShell.shell).toBeVisible();
@@ -157,7 +177,11 @@ test.describe('Error Handling @p1 @security', () => {
 
       // Cause an error state by going offline briefly
       await goOffline(user.page);
-      await user.page.waitForTimeout(500);
+      // Brief offline period - wait for app to register the offline state
+      await waitForCondition(
+        async () => await appShell.shell.isVisible(),
+        { timeout: 2000, message: 'App should remain stable during brief offline' }
+      );
       await goOnline(user.page);
 
       // Reload

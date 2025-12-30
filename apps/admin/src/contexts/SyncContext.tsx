@@ -52,6 +52,13 @@ export function SyncProvider({ children }: SyncProviderProps) {
   // Track registered albums for auto-sync
   const registeredAlbums = useRef<Set<string>>(new Set());
   const intervalRef = useRef<number | null>(null);
+  
+  // Synchronous lock to prevent race conditions in async sync operations.
+  // Using a ref instead of state because:
+  // 1. State updates are asynchronous - between check and update, another call can slip through
+  // 2. Refs are synchronous - the lock is immediately visible to all code paths
+  // 3. We still maintain syncingAlbums state for UI reactivity (showing spinners, etc.)
+  const syncLockRef = useRef<Set<string>>(new Set());
 
   // Subscribe to settings changes
   useEffect(() => {
@@ -62,12 +69,18 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
   // Sync a single album
   const syncAlbum = useCallback(async (albumId: string): Promise<void> => {
-    if (syncingAlbums.has(albumId)) {
+    // Check the synchronous ref lock to prevent race conditions.
+    // This check is atomic - no async gaps between check and set.
+    if (syncLockRef.current.has(albumId)) {
       log.debug(`Album ${albumId} already syncing, skipping`);
       return;
     }
 
+    // Acquire lock synchronously BEFORE any async work
+    syncLockRef.current.add(albumId);
+
     try {
+      // Update state for UI reactivity (spinners, disabled buttons, etc.)
       setSyncingAlbums((prev) => new Set([...prev, albumId]));
 
       // Get the current epoch key for this album
@@ -90,13 +103,16 @@ export function SyncProvider({ children }: SyncProviderProps) {
     } catch (err) {
       log.error(`Auto-sync failed for album ${albumId}:`, err);
     } finally {
+      // Release lock synchronously
+      syncLockRef.current.delete(albumId);
+      // Update UI state
       setSyncingAlbums((prev) => {
         const next = new Set(prev);
         next.delete(albumId);
         return next;
       });
     }
-  }, [syncingAlbums]);
+  }, []);
 
   // Trigger sync for all registered albums
   const syncAllRegistered = useCallback(async () => {

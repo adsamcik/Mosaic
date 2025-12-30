@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -11,39 +12,13 @@ public class UsersController : ControllerBase
 {
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
+    private readonly ICurrentUserService _currentUserService;
 
-    public UsersController(MosaicDbContext db, IConfiguration config)
+    public UsersController(MosaicDbContext db, IConfiguration config, ICurrentUserService currentUserService)
     {
         _db = db;
         _config = config;
-    }
-
-    private async Task<User> GetOrCreateUser()
-    {
-        var authSub = HttpContext.Items["AuthSub"] as string
-            ?? throw new UnauthorizedAccessException();
-
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
-        if (user == null)
-        {
-            user = new User
-            {
-                Id = Guid.NewGuid(),
-                AuthSub = authSub,
-                IdentityPubkey = ""  // Set on first key upload
-            };
-            _db.Users.Add(user);
-
-            // Create quota
-            _db.UserQuotas.Add(new UserQuota
-            {
-                UserId = user.Id,
-                MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes")
-            });
-
-            await _db.SaveChangesAsync();
-        }
-        return user;
+        _currentUserService = currentUserService;
     }
 
     /// <summary>
@@ -52,7 +27,7 @@ public class UsersController : ControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> GetMe()
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
         var quota = await _db.UserQuotas.FindAsync(user.Id);
 
         return Ok(new
@@ -85,7 +60,7 @@ public class UsersController : ControllerBase
     [HttpPut("me")]
     public async Task<IActionResult> UpdateMe([FromBody] UpdateUserRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Update identity pubkey if provided
         if (request.IdentityPubkey != null)
@@ -152,7 +127,7 @@ public class UsersController : ControllerBase
     [HttpPut("me/wrapped-key")]
     public async Task<IActionResult> UpdateWrappedKey([FromBody] UpdateWrappedKeyRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         try
         {

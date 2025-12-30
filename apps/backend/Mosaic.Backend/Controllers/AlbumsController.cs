@@ -89,46 +89,21 @@ public class AlbumsController : ControllerBase
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
     private readonly IQuotaSettingsService _quotaService;
+    private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<AlbumsController> _logger;
 
     public AlbumsController(
         MosaicDbContext db,
         IConfiguration config,
         IQuotaSettingsService quotaService,
+        ICurrentUserService currentUserService,
         ILogger<AlbumsController> logger)
     {
         _db = db;
         _config = config;
         _quotaService = quotaService;
+        _currentUserService = currentUserService;
         _logger = logger;
-    }
-
-    private async Task<User> GetOrCreateUser()
-    {
-        var authSub = HttpContext.Items["AuthSub"] as string
-            ?? throw new UnauthorizedAccessException();
-
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
-        if (user == null)
-        {
-            user = new User
-            {
-                Id = Guid.NewGuid(),
-                AuthSub = authSub,
-                IdentityPubkey = ""  // Set on first key upload
-            };
-            _db.Users.Add(user);
-
-            // Create quota
-            _db.UserQuotas.Add(new UserQuota
-            {
-                UserId = user.Id,
-                MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes")
-            });
-
-            await _db.SaveChangesAsync();
-        }
-        return user;
     }
 
     /// <summary>
@@ -137,7 +112,7 @@ public class AlbumsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> List()
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var albums = await _db.AlbumMembers
             .Where(am => am.UserId == user.Id && am.RevokedAt == null)
@@ -165,7 +140,7 @@ public class AlbumsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateAlbumRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Validate request
         if (request.InitialEpochKey == null)
@@ -297,7 +272,7 @@ public class AlbumsController : ControllerBase
     [HttpGet("{albumId}")]
     public async Task<IActionResult> Get(Guid albumId)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var membership = await _db.AlbumMembers
             .Where(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null)
@@ -329,7 +304,7 @@ public class AlbumsController : ControllerBase
     [HttpPatch("{albumId:guid}/expiration")]
     public async Task<IActionResult> UpdateExpiration(Guid albumId, [FromBody] UpdateExpirationRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null) return NotFound();
@@ -378,7 +353,7 @@ public class AlbumsController : ControllerBase
     [HttpGet("{albumId}/sync")]
     public async Task<IActionResult> Sync(Guid albumId, [FromQuery] long since)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify access
         var hasAccess = await _db.AlbumMembers
@@ -422,7 +397,7 @@ public class AlbumsController : ControllerBase
     [HttpDelete("{albumId}")]
     public async Task<IActionResult> Delete(Guid albumId)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null) return NotFound();
@@ -443,7 +418,7 @@ public class AlbumsController : ControllerBase
     [HttpPatch("{albumId:guid}/name")]
     public async Task<IActionResult> Rename(Guid albumId, [FromBody] RenameAlbumRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Check membership - owner or editor can rename
         var membership = await _db.AlbumMembers
@@ -499,7 +474,7 @@ public class AlbumsController : ControllerBase
     [HttpPatch("{albumId:guid}/description")]
     public async Task<IActionResult> UpdateDescription(Guid albumId, [FromBody] UpdateDescriptionRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Check membership - owner or editor can update description
         var membership = await _db.AlbumMembers

@@ -12,23 +12,37 @@ import DbWorkerConstructor from '../workers/db.worker.ts?worker';
 let worker: SharedWorker | Worker | null = null;
 let api: Comlink.Remote<DbWorkerApi> | null = null;
 
-// Check if SharedWorker is available (not available in some contexts like tests)
-// Disable SharedWorker in headless browsers and testing environments
+/**
+ * Check if SharedWorker should be used.
+ * Uses proper feature detection instead of fragile user-agent sniffing.
+ * 
+ * SharedWorker requires:
+ * 1. SharedWorker API available in the global scope
+ * 2. OPFS (Origin Private File System) for persistence - requires storage.getDirectory()
+ * 3. Not in an automation/testing environment (webdriver flag)
+ * 
+ * Falls back to regular Worker when SharedWorker cannot be used.
+ */
 function shouldUseSharedWorker(): boolean {
-  if (typeof SharedWorker === 'undefined') return false;
+  // Check if SharedWorker API is available
+  if (!('SharedWorker' in globalThis)) return false;
+  
+  // Check if navigator is available (SSR safety)
   if (typeof navigator === 'undefined') return false;
   
   // Check for automation/testing environments using webdriver property
-  // This is set by Playwright, Puppeteer, Selenium, etc.
-  if ((navigator as any).webdriver === true) return false;
+  // This is a standard property set by Playwright, Puppeteer, Selenium, etc.
+  // Not user-agent sniffing - this is a proper automation detection flag
+  if ((navigator as Record<string, unknown>).webdriver === true) return false;
   
-  const ua = navigator.userAgent.toLowerCase();
-  // Disable in headless browsers (Playwright, Puppeteer, etc.)
-  if (ua.includes('headless')) return false;
-  // Disable in Playwright-controlled browsers
-  if (ua.includes('playwright')) return false;
-  // Environment variable check for testing
-  if (typeof window !== 'undefined' && (window as any).__MOSAIC_DISABLE_SHARED_WORKER__) return false;
+  // Check for OPFS support via feature detection
+  // SharedWorker with SQLite requires OPFS for cross-tab persistence
+  const supportsOPFS = 'storage' in navigator && 
+    typeof (navigator.storage as Record<string, unknown>)?.getDirectory === 'function';
+  if (!supportsOPFS) return false;
+  
+  // Manual override for testing - allows disabling SharedWorker programmatically
+  if (typeof window !== 'undefined' && (window as Record<string, unknown>).__MOSAIC_DISABLE_SHARED_WORKER__) return false;
   
   return true;
 }
@@ -37,8 +51,8 @@ const useSharedWorker = shouldUseSharedWorker();
 
 /**
  * Get the database worker client (singleton)
- * Uses SharedWorker so multiple tabs share the same database instance
- * Falls back to regular Worker in test environments (Playwright sets navigator.webdriver)
+ * Uses SharedWorker so multiple tabs share the same database instance.
+ * Falls back to regular Worker when SharedWorker is unavailable or in automation environments.
  */
 export async function getDbClient(): Promise<Comlink.Remote<DbWorkerApi>> {
   if (api) return api;

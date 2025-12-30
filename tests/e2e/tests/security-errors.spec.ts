@@ -22,6 +22,7 @@ import {
   test,
   TEST_CONSTANTS,
 } from '../fixtures';
+import { waitForCondition } from '../framework';
 
 test.describe('Security: Authentication @p1 @security @auth', () => {
   test('empty password rejected with error message', async ({ page }) => {
@@ -253,15 +254,23 @@ test.describe('Error Handling: Network Failures @p2 @security', () => {
     await loginPage.login(TEST_CONSTANTS.PASSWORD);
 
     // Should show error or login should fail gracefully
-    await authenticatedPage.waitForTimeout(5000);
+    // Wait for either app-shell to appear (login succeeded) or error message
+    const appShell = authenticatedPage.getByTestId('app-shell');
+    const errorMessage = authenticatedPage.getByText(/error|failed|couldn't load/i);
+    await waitForCondition(
+      async () => {
+        const hasShell = await appShell.isVisible().catch(() => false);
+        const hasError = await errorMessage.first().isVisible().catch(() => false);
+        return hasShell || hasError;
+      },
+      { timeout: 10000, message: 'Expected app-shell or error message after login' }
+    );
 
     // Check for either success (if API isn't needed for login) or error
-    const appShell = authenticatedPage.getByTestId('app-shell');
     const hasAppShell = await appShell.isVisible().catch(() => false);
 
     if (hasAppShell) {
       // If we got in, check for album load error
-      const errorMessage = authenticatedPage.getByText(/error|failed|couldn't load/i);
       const hasError = await errorMessage.first().isVisible().catch(() => false);
       // Either has error message or no albums shown
       expect(hasError || true).toBeTruthy();
@@ -306,10 +315,17 @@ test.describe('Error Handling: Network Failures @p2 @security', () => {
     const testImage = generateTestImage();
     await gallery.uploadPhoto(testImage, 'error-test.png');
 
-    // Should show error, not crash
-    await authenticatedPage.waitForTimeout(5000);
-
+    // Should show error, not crash - wait for error message or toast
     const errorMessage = authenticatedPage.getByText(/error|failed|try again/i);
+    await waitForCondition(
+      async () => {
+        const hasError = await errorMessage.first().isVisible().catch(() => false);
+        return hasError;
+      },
+      { timeout: 10000, message: 'Expected error message after upload failure' }
+    ).catch(() => {
+      // Error message may not appear if handled silently
+    });
     const hasError = await errorMessage.first().isVisible().catch(() => false);
 
     // App should still be functional
@@ -338,7 +354,16 @@ test.describe('Error Handling: Network Failures @p2 @security', () => {
 
     // Go offline then back online
     await goOffline(authenticatedPage);
-    await authenticatedPage.waitForTimeout(1000);
+    // Brief wait for offline state to propagate
+    await waitForCondition(
+      async () => {
+        // Check if offline state is established (navigator.onLine would be false)
+        return await authenticatedPage.evaluate(() => !navigator.onLine);
+      },
+      { timeout: 2000, message: 'Expected offline state' }
+    ).catch(() => {
+      // May not need to wait if already offline
+    });
     await goOnline(authenticatedPage);
 
     // Should be able to upload after reconnecting
@@ -439,16 +464,25 @@ test.describe('Error Handling: Crypto Failures @p2 @security @crypto', () => {
     // Try to view photo in lightbox (would need decryption)
     await gallery.photos.first().click();
 
-    // Wait for decryption attempt
-    await authenticatedPage.waitForTimeout(3000);
+    // Wait for decryption attempt - error message or lightbox should appear
+    const errorMessage = authenticatedPage.getByText(/error|corrupt|decrypt|failed/i);
+    const lightbox = authenticatedPage.getByTestId('photo-lightbox');
+    await waitForCondition(
+      async () => {
+        const hasError = await errorMessage.first().isVisible().catch(() => false);
+        const hasLightbox = await lightbox.isVisible().catch(() => false);
+        return hasError || hasLightbox;
+      },
+      { timeout: 10000, message: 'Expected error message or lightbox after decryption attempt' }
+    ).catch(() => {
+      // May handle gracefully without visible error
+    });
 
     // Should show error indicator, not garbage image
-    const errorMessage = authenticatedPage.getByText(/error|corrupt|decrypt|failed/i);
     const hasError = await errorMessage.first().isVisible().catch(() => false);
 
     // Or the lightbox should just not show broken image
     // The important thing is no crash
-    const lightbox = authenticatedPage.getByTestId('photo-lightbox');
     const isLightboxVisible = await lightbox.isVisible().catch(() => false);
 
     // Either error shown or lightbox handles gracefully
@@ -499,14 +533,22 @@ test.describe('Error Handling: Quota & Limits @p2 @security', () => {
     const testImage = generateTestImage();
     await gallery.uploadPhoto(testImage, 'quota-test.png');
 
-    // Should show quota error
-    await authenticatedPage.waitForTimeout(5000);
-
+    // Should show quota error - wait for error message or alert
     const quotaError = authenticatedPage.getByText(/quota|storage|limit|full/i);
+    const generalError = authenticatedPage.getByRole('alert');
+    await waitForCondition(
+      async () => {
+        const hasQuotaError = await quotaError.first().isVisible().catch(() => false);
+        const hasAlert = await generalError.first().isVisible().catch(() => false);
+        return hasQuotaError || hasAlert;
+      },
+      { timeout: 10000, message: 'Expected quota error message or alert' }
+    ).catch(() => {
+      // May handle gracefully without visible error
+    });
     const hasQuotaError = await quotaError.first().isVisible().catch(() => false);
 
     // Or a general error
-    const generalError = authenticatedPage.getByRole('alert');
     const hasError = await generalError.first().isVisible().catch(() => false);
 
     // App should handle gracefully

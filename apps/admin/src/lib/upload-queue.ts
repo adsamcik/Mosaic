@@ -27,8 +27,26 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 const CHUNK_SIZE = 6 * 1024 * 1024;
 
 /** Upload task status */
-export type UploadStatus = 'queued' | 'uploading' | 'complete' | 'error';
+export type UploadStatus = 'queued' | 'uploading' | 'complete' | 'error' | 'permanently_failed';
 export type UploadAction = 'pending' | 'encrypting' | 'uploading' | 'finalizing';
+
+/** Maximum number of retry attempts before marking as permanently failed */
+const MAX_RETRIES = 3;
+
+/** Base delay in milliseconds for exponential backoff (1 second) */
+const BASE_DELAY_MS = 1000;
+
+/** Threshold for stale failed tasks (1 hour in milliseconds) */
+const STALE_THRESHOLD_MS = 60 * 60 * 1000;
+
+/**
+ * Calculate retry delay using exponential backoff
+ * @param retryCount - Number of retries attempted (0-indexed)
+ * @returns Delay in milliseconds (1s, 2s, 4s, 8s, ...)
+ */
+function getRetryDelay(retryCount: number): number {
+  return BASE_DELAY_MS * Math.pow(2, retryCount);
+}
 
 /** Completed shard with ID and hash for integrity verification */
 export interface CompletedShard {
@@ -49,6 +67,10 @@ export interface UploadTask {
   progress: number;
   completedShards: CompletedShard[];
   error?: string;
+  /** Number of retry attempts made */
+  retryCount: number;
+  /** Timestamp of the last attempt (for backoff calculation) */
+  lastAttemptAt: number;
   /** Generated thumbnail base64 (set during upload) */
   thumbnailBase64?: string;
   /** Thumbnail width */
@@ -71,6 +93,10 @@ interface PersistedTask {
   totalChunks: number;
   completedShards: CompletedShard[];
   status: string;
+  /** Number of retry attempts made */
+  retryCount: number;
+  /** Timestamp of the last attempt */
+  lastAttemptAt: number;
   /** Base64-encoded thumbnail (generated once, persisted for resume) */
   thumbnailBase64?: string;
   /** Thumbnail width */
@@ -153,6 +179,8 @@ class UploadQueue {
       totalChunks,
       completedShards: [],
       status: 'queued',
+      retryCount: 0,
+      lastAttemptAt: 0,
     };
     await this.db.put('tasks', persisted);
 
@@ -167,6 +195,8 @@ class UploadQueue {
       currentAction: 'pending',
       progress: 0,
       completedShards: [],
+      retryCount: 0,
+      lastAttemptAt: 0,
     };
 
     this.queue.push(task);
@@ -176,13 +206,23 @@ class UploadQueue {
   }
 
   /**
-   * Get all pending/in-progress tasks
+   * Get all pending/in-progress tasks (excludes complete and permanently failed)
    */
   async getPendingTasks(): Promise<PersistedTask[]> {
     if (!this.db) return [];
     
     const all = await this.db.getAll('tasks');
-    return all.filter((t) => t.status !== 'complete');
+    return all.filter((t) => t.status !== 'complete' && t.status !== 'permanently_failed');
+  }
+
+  /**
+   * Get all failed tasks (both temporary errors and permanently failed)
+   */
+  async getFailedTasks(): Promise<PersistedTask[]> {
+    if (!this.db) return [];
+    
+    const all = await this.db.getAll('tasks');
+    return all.filter((t) => t.status === 'error' || t.status === 'permanently_failed');
   }
 
   /**
@@ -320,10 +360,47 @@ class UploadQueue {
       this.onComplete?.(task, shardIds);
 
     } catch (error) {
-      task.status = 'error';
-      task.error = error instanceof Error ? error.message : 'Unknown error';
-      await this.updatePersistedTask(task.id, { status: 'error' });
-      this.onError?.(task, error instanceof Error ? error : new Error(String(error)));
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const now = Date.now();
+      
+      task.retryCount++;
+      task.lastAttemptAt = now;
+      task.error = errorMessage;
+
+      if (task.retryCount >= MAX_RETRIES) {
+        // Max retries exceeded - mark as permanently failed
+        task.status = 'permanently_failed';
+        log.error(`Upload task ${task.id} permanently failed after ${MAX_RETRIES} retries:`, error);
+        
+        await this.updatePersistedTask(task.id, {
+          status: 'permanently_failed',
+          retryCount: task.retryCount,
+          lastAttemptAt: now,
+        });
+        
+        this.onError?.(task, error instanceof Error ? error : new Error(errorMessage));
+      } else {
+        // Schedule retry with exponential backoff
+        const delay = getRetryDelay(task.retryCount - 1);
+        log.warn(`Upload task ${task.id} failed (attempt ${task.retryCount}/${MAX_RETRIES}), retrying in ${delay}ms: ${errorMessage}`);
+        
+        task.status = 'error';
+        await this.updatePersistedTask(task.id, {
+          status: 'error',
+          retryCount: task.retryCount,
+          lastAttemptAt: now,
+        });
+        
+        this.onError?.(task, error instanceof Error ? error : new Error(errorMessage));
+        
+        // Re-queue for retry after delay
+        setTimeout(() => {
+          task.status = 'queued';
+          task.currentAction = 'pending';
+          this.queue.push(task);
+          void this.processQueue();
+        }, delay);
+      }
     }
   }
 
@@ -338,6 +415,102 @@ class UploadQueue {
       Object.assign(task, updates);
       await this.db.put('tasks', task);
     }
+  }
+
+  /**
+   * Get all permanently failed tasks
+   * These tasks have exceeded MAX_RETRIES and will not be automatically retried
+   */
+  async getPermanentlyFailedTasks(): Promise<PersistedTask[]> {
+    if (!this.db) return [];
+    
+    const all = await this.db.getAll('tasks');
+    return all.filter((t) => t.status === 'permanently_failed');
+  }
+
+  /**
+   * Get stale failed tasks (failed for longer than STALE_THRESHOLD_MS)
+   * These are tasks that failed and haven't been retried or resolved for over 1 hour
+   */
+  async getStaleFailedTasks(): Promise<PersistedTask[]> {
+    if (!this.db) return [];
+    
+    const now = Date.now();
+    const all = await this.db.getAll('tasks');
+    
+    return all.filter((t) => {
+      // Include permanently failed or error tasks that are stale
+      const isFailedStatus = t.status === 'permanently_failed' || t.status === 'error';
+      const isStale = t.lastAttemptAt > 0 && (now - t.lastAttemptAt) > STALE_THRESHOLD_MS;
+      return isFailedStatus && isStale;
+    });
+  }
+
+  /**
+   * Retry a permanently failed task (resets retry count)
+   * @param taskId - ID of the task to retry
+   * @param file - The file to upload (must be re-provided as File objects aren't persisted)
+   * @param readKey - The encryption key (must be re-provided as keys aren't persisted)
+   */
+  async retryPermanentlyFailed(
+    taskId: string,
+    file: File,
+    readKey: Uint8Array
+  ): Promise<void> {
+    if (!this.db) {
+      throw new Error('Upload queue not initialized');
+    }
+
+    const persisted = await this.db.get('tasks', taskId);
+    if (!persisted) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    if (persisted.status !== 'permanently_failed') {
+      throw new Error(`Task ${taskId} is not permanently failed`);
+    }
+
+    // Reset retry state
+    persisted.retryCount = 0;
+    persisted.lastAttemptAt = 0;
+    persisted.status = 'queued';
+    await this.db.put('tasks', persisted);
+
+    // Create in-memory task and queue it
+    const task: UploadTask = {
+      id: taskId,
+      file,
+      albumId: persisted.albumId,
+      epochId: persisted.epochId,
+      readKey,
+      status: 'queued',
+      currentAction: 'pending',
+      progress: persisted.completedShards.length / persisted.totalChunks,
+      completedShards: persisted.completedShards,
+      retryCount: 0,
+      lastAttemptAt: 0,
+      thumbnailBase64: persisted.thumbnailBase64,
+      thumbWidth: persisted.thumbWidth,
+      thumbHeight: persisted.thumbHeight,
+      originalWidth: persisted.originalWidth,
+      originalHeight: persisted.originalHeight,
+    };
+
+    this.queue.push(task);
+    void this.processQueue();
+  }
+
+  /**
+   * Clear all permanently failed tasks from the database
+   */
+  async clearPermanentlyFailedTasks(): Promise<number> {
+    if (!this.db) return 0;
+
+    const failed = await this.getPermanentlyFailedTasks();
+    for (const task of failed) {
+      await this.db.delete('tasks', task.id);
+    }
+    return failed.length;
   }
 
   /**

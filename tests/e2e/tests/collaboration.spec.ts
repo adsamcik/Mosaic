@@ -242,8 +242,8 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
       const inviteDialog = new InviteMemberDialog(alice.page);
       await inviteDialog.inviteMember(bobInfo.id, 'viewer');
 
-      // Wait for invite to complete and verify Bob is in member list
-      await alice.page.waitForTimeout(1000);
+      // Wait for invite dialog to close (indicates invite completed)
+      await expect(inviteDialog.dialog).not.toBeVisible({ timeout: 10000 });
 
       // Reopen members panel to verify
       await aliceGallery.openMembers();
@@ -290,12 +290,17 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
         await membersPanel.removeMemberWithConfirmation(bobDisplayName);
       }
 
-      // Wait for key rotation to complete (happens in background)
-      await alice.page.waitForTimeout(2000);
+      // Wait for removal to complete by checking member count decreases
+      // The removeMemberWithConfirmation waits for dialog close, but key rotation happens in background
+      await expect(async () => {
+        await aliceGallery.openMembers();
+        await membersPanel.waitForOpen();
+        const currentCount = await membersPanel.getMemberCount();
+        expect(currentCount).toBeLessThan(memberCount);
+      }).toPass({ timeout: 10000 });
 
-      // Verify Bob is no longer in member list
-      await aliceGallery.openMembers();
-      await membersPanel.waitForOpen();
+      // Panel is already open from the polling above
+      // Verify Bob is no longer in member list - get the current count
       const postRemovalCount = await membersPanel.getMemberCount();
       expect(postRemovalCount).toBeLessThan(memberCount);
 
@@ -373,8 +378,10 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
       const inviteDialog = new InviteMemberDialog(alice.page);
       await inviteDialog.inviteMember(bobInfo.id, 'viewer');
 
+      // Wait for invite dialog to close before reopening members panel
+      await expect(inviteDialog.dialog).not.toBeVisible({ timeout: 10000 });
+
       // Reopen panel and start removal
-      await alice.page.waitForTimeout(500);
       await aliceGallery.openMembers();
       await membersPanel.waitForOpen();
 

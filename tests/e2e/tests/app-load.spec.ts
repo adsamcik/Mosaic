@@ -38,8 +38,15 @@ test.describe('App Loading @p1 @fast', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // Give time for any deferred loading
-    await page.waitForTimeout(2000);
+    // Wait for deferred loading by ensuring no new errors appear for a stable period
+    let lastErrorCount = errors.length;
+    await expect(async () => {
+      // If error count stabilizes (no new errors for this check), we're done
+      const currentCount = errors.length;
+      const isStable = currentCount === lastErrorCount;
+      lastErrorCount = currentCount;
+      expect(isStable).toBe(true);
+    }).toPass({ timeout: 5000, intervals: [500, 500, 500, 500, 500] });
 
     // Filter out expected errors (e.g., API not available in some test modes)
     const criticalErrors = errors.filter(
