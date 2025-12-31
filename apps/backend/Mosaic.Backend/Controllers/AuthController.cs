@@ -267,11 +267,13 @@ public partial class AuthController : ControllerBase
         await _db.SaveChangesAsync();
 
         // Set session cookie
+        // Use Secure=false in Development/Testing (HTTP), Secure=true in Production (HTTPS)
+        var isSecure = !_env.IsDevelopment() && !_env.EnvironmentName.Equals("Testing", StringComparison.OrdinalIgnoreCase);
         Response.Cookies.Append("mosaic_session", Convert.ToBase64String(sessionToken), new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Strict,
+            Secure = isSecure,
+            SameSite = isSecure ? SameSiteMode.Strict : SameSiteMode.Lax,
             Path = "/api",
             MaxAge = SessionSlidingExpiry
         });
@@ -401,12 +403,13 @@ public partial class AuthController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
-        // Clear cookie
+        // Clear cookie - use same settings as when setting the cookie
+        var isSecure = !_env.IsDevelopment() && !_env.EnvironmentName.Equals("Testing", StringComparison.OrdinalIgnoreCase);
         Response.Cookies.Delete("mosaic_session", new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Strict,
+            Secure = isSecure,
+            SameSite = isSecure ? SameSiteMode.Strict : SameSiteMode.Lax,
             Path = "/api"
         });
 
