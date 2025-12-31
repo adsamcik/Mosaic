@@ -3,15 +3,19 @@ import sodium from 'libsodium-wrappers-sumo';
 import { signManifest, verifyManifest, signShard, verifyShard, signWithContext, verifyWithContext } from '../src/signer';
 import { CryptoErrorCode } from '../src/types';
 
-beforeAll(async () => {
-  await sodium.ready;
-});
-
 describe('signer', () => {
-  const keypair = sodium.crypto_sign_keypair();
-  const manifest = new TextEncoder().encode('{"test": "manifest"}');
-  const header = sodium.randombytes_buf(64);
-  const ciphertext = sodium.randombytes_buf(100);
+  let keypair: { publicKey: Uint8Array; privateKey: Uint8Array; keyType: string };
+  let manifest: Uint8Array;
+  let header: Uint8Array;
+  let ciphertext: Uint8Array;
+
+  beforeAll(async () => {
+    await sodium.ready;
+    keypair = sodium.crypto_sign_keypair();
+    manifest = new TextEncoder().encode('{"test": "manifest"}');
+    header = sodium.randombytes_buf(64);
+    ciphertext = sodium.randombytes_buf(100);
+  });
 
   describe('manifest signing', () => {
     it('produces valid signatures', () => {
