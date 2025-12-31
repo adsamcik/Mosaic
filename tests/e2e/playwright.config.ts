@@ -1,6 +1,19 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
+ * Chrome launch arguments for secure context and SharedArrayBuffer.
+ * In CI, we access frontend via http://frontend:8080 which is NOT a secure context.
+ * crypto.subtle (Web Crypto API) requires a secure context (HTTPS or localhost).
+ */
+function getChromeArgs(): string[] {
+  const args = ['--enable-features=SharedArrayBuffer'];
+  if (process.env.CI && process.env.BASE_URL) {
+    args.push(`--unsafely-treat-insecure-origin-as-secure=${process.env.BASE_URL}`);
+  }
+  return args;
+}
+
+/**
  * Playwright configuration for Mosaic E2E tests.
  *
  * Designed for parallel-safe execution on a single backend instance.
@@ -140,7 +153,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
-          args: ['--enable-features=SharedArrayBuffer'],
+          args: getChromeArgs(),
         },
         // Faster settings for smoke tests
         trace: 'off',
@@ -155,7 +168,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         // Required for SharedArrayBuffer
         launchOptions: {
-          args: ['--enable-features=SharedArrayBuffer'],
+          args: getChromeArgs(),
         },
       },
     },
@@ -175,7 +188,7 @@ export default defineConfig({
       use: {
         ...devices['Pixel 5'],
         launchOptions: {
-          args: ['--enable-features=SharedArrayBuffer'],
+          args: getChromeArgs(),
         },
       },
     },
