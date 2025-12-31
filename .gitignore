@@ -74,6 +74,8 @@ test-results/
 results/
 mutation-report/
 .stryker-tmp/
+*-output.txt
+test-output.txt
 
 # Database
 *.db
