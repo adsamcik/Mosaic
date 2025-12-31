@@ -52,7 +52,12 @@ export class LoginPage {
   }
 
   async waitForForm(timeout = 30000): Promise<void> {
+    // Wait for the form container to be visible
     await expect(this.form).toBeVisible({ timeout });
+    
+    // Wait for the form to finish loading (checkingAuthMode = false)
+    // The password input only appears after auth mode is determined
+    await expect(this.passwordInput).toBeVisible({ timeout });
   }
 
   async login(password: string = TEST_PASSWORD): Promise<void> {
