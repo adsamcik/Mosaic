@@ -152,7 +152,17 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
   }, []);
 
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
-  const lightbox = useLightbox(photos);
+  
+  // Sort photos by createdAt descending to match display order
+  // This ensures lightbox navigation follows the visual order
+  const sortedPhotos = useMemo(() => 
+    [...photos].sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    ),
+    [photos]
+  );
+  
+  const lightbox = useLightbox(sortedPhotos);
   const photoActions = usePhotoActions();
   const permissions = useAlbumPermissions();
   const { activeTasks } = useUploadContext();
@@ -294,27 +304,27 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
     const currentIdx = lightbox.currentIndex;
 
     for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-      const prevPhoto = photos[currentIdx - offset];
-      const nextPhoto = photos[currentIdx + offset];
+      const prevPhoto = sortedPhotos[currentIdx - offset];
+      const nextPhoto = sortedPhotos[currentIdx + offset];
       if (prevPhoto) queue.push(prevPhoto);
       if (nextPhoto) queue.push(nextPhoto);
     }
 
     return queue;
-  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, photos]);
+  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, sortedPhotos]);
 
   // Handle photo click to open lightbox
   const handlePhotoClick = useCallback(
     (photo: PhotoMeta) => {
       if (!isSelectionMode) {
-        // Find index in the GLOBAL list (displayPhotos)
-        const index = photos.findIndex((p) => p.id === photo.id);
+        // Find index in the sorted photos array (matches display order)
+        const index = sortedPhotos.findIndex((p) => p.id === photo.id);
         if (index >= 0) {
-          lightbox.open(index); // This expects index into `photos` array
+          lightbox.open(index);
         }
       }
     },
-    [isSelectionMode, lightbox, photos] // Note: lightbox uses index into `photos`
+    [isSelectionMode, lightbox, sortedPhotos]
   );
 
   // Handle selection change for a single photo (checkbox click)

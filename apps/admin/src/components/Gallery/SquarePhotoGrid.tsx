@@ -154,11 +154,15 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
   }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, photos]);
 
   // Handle photo click to open lightbox
-  const handlePhotoClick = useCallback((photoIndex: number) => {
+  const handlePhotoClick = useCallback((photo: PhotoMeta) => {
     if (!isSelectionMode) {
-      lightbox.open(photoIndex);
+      // Find index in the original photos array (not displayPhotos which includes pending)
+      const index = photos.findIndex((p) => p.id === photo.id);
+      if (index >= 0) {
+        lightbox.open(index);
+      }
     }
-  }, [isSelectionMode, lightbox]);
+  }, [isSelectionMode, lightbox, photos]);
 
   // Handle selection change for a single photo
   const handleSelectionChange = useCallback((photoId: string, selected: boolean) => {
@@ -315,7 +319,7 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
                     key={photo.id}
                     photo={photo}
                     {...(epochReadKey && { epochReadKey })}
-                    onClick={() => handlePhotoClick(photoIndex)}
+                    onClick={() => handlePhotoClick(photo)}
                     isSelected={isSelected}
                     onSelectionChange={(selected: boolean) => handleSelectionChange(photo.id, selected)}
                     onDelete={(thumbnailUrl) => handleDeletePhoto(photo, thumbnailUrl)}

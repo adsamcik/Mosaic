@@ -105,7 +105,17 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
   }, []);
 
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
-  const lightbox = useLightbox(photos);
+  
+  // Sort photos by createdAt descending to match display order
+  // This ensures lightbox navigation follows the visual order
+  const sortedPhotos = useMemo(() => 
+    [...photos].sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    ),
+    [photos]
+  );
+  
+  const lightbox = useLightbox(sortedPhotos);
   const photoActions = usePhotoActions();
   const permissions = useAlbumPermissions();
   const { activeTasks } = useUploadContext();
@@ -196,11 +206,12 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
   const handlePhotoClick = useCallback(
     (photo: PhotoMeta) => {
       if (!isSelectionMode) {
-        const index = photos.findIndex((p) => p.id === photo.id);
+        // Find index in the sorted photos array (matches display order)
+        const index = sortedPhotos.findIndex((p) => p.id === photo.id);
         if (index >= 0) lightbox.open(index);
       }
     },
-    [isSelectionMode, lightbox, photos]
+    [isSelectionMode, lightbox, sortedPhotos]
   );
 
   const handleSelectionChange = useCallback((photoId: string, selected: boolean) => {
@@ -245,13 +256,13 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
     const queue: PhotoMeta[] = [];
     const currentIdx = lightbox.currentIndex;
     for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-      const prev = photos[currentIdx - offset];
-      const next = photos[currentIdx + offset];
+      const prev = sortedPhotos[currentIdx - offset];
+      const next = sortedPhotos[currentIdx + offset];
       if (prev) queue.push(prev);
       if (next) queue.push(next);
     }
     return queue;
-  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, photos]);
+  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, sortedPhotos]);
 
   const currentEpochReadKey = lightbox.currentPhoto
     ? epochKeys.get(lightbox.currentPhoto.epochId)

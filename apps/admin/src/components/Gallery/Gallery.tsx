@@ -81,7 +81,17 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
   const { photos, isLoading, error, refetch: reloadPhotos } = usePhotos(albumId, searchQuery);
   const { epochKeys, isLoading: epochKeysLoading } = useAlbumEpochKeys(albumId);
   const { currentUserRole, isOwner, canEdit } = useAlbumMembers(albumId);
-  const lightbox = useLightbox(photos);
+  
+  // Sort photos by createdAt descending to match display order
+  // This ensures lightbox navigation follows the visual order
+  const sortedPhotos = useMemo(() => 
+    [...photos].sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    ),
+    [photos]
+  );
+  
+  const lightbox = useLightbox(sortedPhotos);
   const { syncAlbum } = useSync();
   
   // Selection state for batch operations (lifted up from photo grids)
@@ -271,8 +281,8 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
     const PRELOAD_COUNT = 2;
 
     for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-      const prevPhoto = photos[currentIdx - offset];
-      const nextPhoto = photos[currentIdx + offset];
+      const prevPhoto = sortedPhotos[currentIdx - offset];
+      const nextPhoto = sortedPhotos[currentIdx + offset];
       if (prevPhoto) queue.push(prevPhoto);
       if (nextPhoto) queue.push(nextPhoto);
     }
