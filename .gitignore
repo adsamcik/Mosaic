@@ -76,6 +76,13 @@ mutation-report/
 .stryker-tmp/
 *-output.txt
 test-output.txt
+*-results.txt
+cookies.txt
+
+# E2E test outputs
+tests/e2e/*-tests.txt
+tests/e2e/full-suite.txt
+tests/e2e/*-test.txt
 
 # Database
 *.db
