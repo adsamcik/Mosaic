@@ -58,12 +58,14 @@ mosaic/
 
 ## Docker Deployment
 
+> **First time?** See the [Deployment Guide](docs/DEPLOYMENT.md) for step-by-step instructions.
+
 ### Quick Start
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/mosaic.git
-cd mosaic
+git clone https://github.com/adsamcik/Mosaic.git
+cd Mosaic
 
 # Configure environment
 cp .env.example .env
@@ -107,13 +109,14 @@ For production, you should:
 2. Put a reverse proxy (Caddy, Traefik, nginx) in front for TLS termination
 3. Configure your reverse proxy to pass the `Remote-User` header for authentication
 
-See [docs/DOCKER.md](docs/DOCKER.md) for complete deployment guide including:
+**Documentation:**
 
-- Building and pushing to registries
-- Reverse proxy configuration (Caddy, Traefik, nginx)
-- Backup and restore procedures
-- Multi-architecture builds
-- Troubleshooting
+| Guide | Description |
+|-------|-------------|
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Beginner-friendly deployment guide |
+| [DOCKER.md](docs/DOCKER.md) | Complete Docker reference |
+
+Topics covered: Building images, reverse proxy setup (Caddy, Traefik, nginx), backup/restore, multi-architecture builds, CI/CD, and troubleshooting.
 
 ### Development with Docker
 

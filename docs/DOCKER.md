@@ -25,8 +25,8 @@ The fastest way to get Mosaic running:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/mosaic.git
-cd mosaic
+git clone https://github.com/adsamcik/Mosaic.git
+cd Mosaic
 
 # 2. Configure environment
 cp .env.example .env
@@ -556,7 +556,7 @@ docker volume prune
 echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 
 # Build and push
-./scripts/docker-build.sh -r ghcr.io/your-org -t v1.0.0
+./scripts/docker-build.sh -r ghcr.io/adsamcik -t v1.0.0
 ```
 
 ### Docker Hub

@@ -12,6 +12,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { useUploadContext } from '../../contexts/UploadContext';
+import { useAnimatedItems } from '../../hooks/useAnimatedItems';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
@@ -25,10 +26,12 @@ import {
 import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
 import '../../styles/upload.css';
 import type { PhotoMeta } from '../../workers/types';
+import { AnimatedTile } from './AnimatedTile';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
 import { EnhancedMosaicTile } from './EnhancedMosaicTile';
 import { JustifiedPhotoThumbnail } from './JustifiedPhotoThumbnail';
 import { PendingPhotoThumbnail } from './PendingPhotoThumbnail';
+import { PhotoGridSkeleton } from './PhotoGridSkeleton';
 import { PhotoLightbox } from './PhotoLightbox';
 
 /** Gap between photos in pixels */
@@ -176,6 +179,34 @@ export function EnhancedMosaicPhotoGrid({
     }
     return map;
   }, [displayPhotos]);
+
+  // Animation state tracking for smooth enter/exit transitions
+  const {
+    animatedItems,
+    handleExitComplete,
+    getStaggerDelay,
+    hasBeenSeen,
+    isInitialLoad,
+  } = useAnimatedItems(displayPhotos, {
+    getKey: (photo) => photo.id,
+    onRemoveComplete: (key) => {
+      // Cleanup resources for removed photo if needed
+      photosMap.delete(key);
+    },
+  });
+
+  // Create animation lookup map for quick access during render
+  const animationLookup = useMemo(() => {
+    const lookup = new Map<string, { isExiting: boolean; staggerDelay: number; hasBeenSeen: boolean }>();
+    for (const item of animatedItems) {
+      lookup.set(item.key, {
+        isExiting: item.isExiting,
+        staggerDelay: getStaggerDelay(item.key),
+        hasBeenSeen: hasBeenSeen(item.key),
+      });
+    }
+    return lookup;
+  }, [animatedItems, getStaggerDelay, hasBeenSeen]);
 
   const isSelectionMode = selection?.isSelectionMode ?? false;
   const selectedIds = selection?.selectedIds ?? new Set<string>();
@@ -338,12 +369,11 @@ export function EnhancedMosaicPhotoGrid({
     ? epochKeys.get(lightbox.currentPhoto.epochId)
     : undefined;
 
-  // Loading state
+  // Loading state - show skeleton
   if (isLoading || keysLoading) {
     return (
-      <div className="photo-grid-loading">
-        <div className="loading-spinner" />
-        <p>Loading photos...</p>
+      <div className="photo-grid-container" data-testid="enhanced-mosaic-photo-grid-loading">
+        <PhotoGridSkeleton count={12} columns={4} />
       </div>
     );
   }
@@ -445,11 +475,21 @@ export function EnhancedMosaicPhotoGrid({
                     ? photosMap.get(mosaicItem.photoId)
                     : undefined;
 
-                  // Handle pending photos
+                  // Get animation state for this photo
+                  const animState = photo ? animationLookup.get(photo.id) : undefined;
+                  const skipAnimation = isInitialLoad || !animState;
+
+                  // Handle pending photos (uploads in progress)
                   if (photo && (photo as any).isPending) {
                     return (
-                      <div 
+                      <AnimatedTile
                         key={photo.id}
+                        itemKey={photo.id}
+                        skipAnimation={skipAnimation}
+                        isExiting={animState?.isExiting ?? false}
+                        onExitComplete={() => handleExitComplete(photo.id)}
+                        staggerDelay={animState?.staggerDelay ?? 0}
+                        hasBeenSeen={animState?.hasBeenSeen ?? false}
                         style={{
                           position: 'absolute',
                           top: mosaicItem.rect.top,
@@ -459,12 +499,11 @@ export function EnhancedMosaicPhotoGrid({
                         }}
                       >
                         <PendingPhotoThumbnail task={(photo as any).task} />
-                      </div>
+                      </AnimatedTile>
                     );
                   }
 
                   const tileProps = {
-                    key: mosaicItem.id,
                     item: mosaicItem,
                     photos: photosMap,
                     onMapClick: handleMapClick,
@@ -472,10 +511,40 @@ export function EnhancedMosaicPhotoGrid({
                       renderThumbnail(p, width, height, onClick),
                   };
 
+                  // Wrap photo tiles with animation, but not map/story tiles
+                  if (photo) {
+                    return (
+                      <AnimatedTile
+                        key={photo.id}
+                        itemKey={photo.id}
+                        skipAnimation={skipAnimation}
+                        isExiting={animState?.isExiting ?? false}
+                        onExitComplete={() => handleExitComplete(photo.id)}
+                        staggerDelay={animState?.staggerDelay ?? 0}
+                        hasBeenSeen={animState?.hasBeenSeen ?? false}
+                        style={{
+                          position: 'absolute',
+                          top: mosaicItem.rect.top,
+                          left: mosaicItem.rect.left,
+                          width: mosaicItem.rect.width,
+                          height: mosaicItem.rect.height,
+                        }}
+                      >
+                        <EnhancedMosaicTile
+                          {...tileProps}
+                          photo={photo}
+                          onClick={() => handlePhotoClick(photo)}
+                          skipPositioning
+                        />
+                      </AnimatedTile>
+                    );
+                  }
+
+                  // Non-photo tiles (map, story) don't need animation wrapper
                   return (
                     <EnhancedMosaicTile
+                      key={mosaicItem.id}
                       {...tileProps}
-                      {...(photo ? { photo, onClick: () => handlePhotoClick(photo) } : {})}
                     />
                   );
                 })}

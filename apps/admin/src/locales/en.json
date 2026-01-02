@@ -13,6 +13,7 @@
     "back": "Back",
     "retry": "Retry",
     "clear": "Clear",
+    "clearing": "Clearing...",
     "copy": "Copy",
     "copied": "Copied",
     "dismiss": "Dismiss",
@@ -318,7 +319,13 @@
       "session1Day": "1 day",
       "session7Days": "7 days",
       "session30Days": "30 days",
-      "sessionUntilClose": "Until tab is closed"
+      "sessionUntilClose": "Until tab is closed",
+      "cacheOff": "Off",
+      "cache15min": "15 minutes",
+      "cache30min": "30 minutes",
+      "cache1hour": "1 hour",
+      "cache4hours": "4 hours",
+      "cacheUntilClose": "Until tab is closed"
     },
     "language": {
       "title": "Language",
@@ -328,9 +335,11 @@
       "title": "Security",
       "lastLogin": "Last Login",
       "lastLoginValue": "Now (this session)",
+      "thisSession": "Now (this session)",
       "clearLocalData": "Clear Local Data",
       "clearLocalDataDescription": "Delete cached photos, keys, and database. You will be logged out.",
-      "clearDataButton": "Clear Data"
+      "clearDataButton": "Clear Data",
+      "clearData": "Clear Data"
     },
     "about": {
       "title": "About",

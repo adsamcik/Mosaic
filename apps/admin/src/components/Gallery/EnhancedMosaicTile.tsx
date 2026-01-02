@@ -24,6 +24,11 @@ interface EnhancedMosaicTileProps {
     height: number;
     onClick?: () => void;
   }) => React.ReactNode;
+  /** 
+   * When true, skip absolute positioning (used when wrapped by AnimatedTile).
+   * The wrapper handles positioning, tile just fills its container.
+   */
+  skipPositioning?: boolean;
 }
 
 /**
@@ -215,8 +220,20 @@ export function EnhancedMosaicTile({
   photo,
   onClick,
   onMapClick,
-  renderThumbnail
+  renderThumbnail,
+  skipPositioning = false,
 }: EnhancedMosaicTileProps) {
+  
+  // Compute base positioning style (can be skipped when wrapped by AnimatedTile)
+  const positionStyle = skipPositioning 
+    ? { width: '100%', height: '100%' }
+    : {
+        position: 'absolute' as const,
+        top: item.rect.top,
+        left: item.rect.left,
+        width: item.rect.width,
+        height: item.rect.height,
+      };
   
   const handleMapClick = useCallback(() => {
     if (item.coordinates && onMapClick) {
@@ -378,13 +395,7 @@ export function EnhancedMosaicTile({
     return (
       <div 
         className={`mosaic-tile mosaic-${item.type}-tile`}
-        style={{
-          position: 'absolute',
-          top: item.rect.top,
-          left: item.rect.left,
-          width: item.rect.width,
-          height: item.rect.height,
-        }}
+        style={positionStyle}
       >
         {renderThumbnail({
           photo,
@@ -401,11 +412,7 @@ export function EnhancedMosaicTile({
     <div 
       className="mosaic-tile mosaic-empty-tile"
       style={{
-        position: 'absolute',
-        top: item.rect.top,
-        left: item.rect.left,
-        width: item.rect.width,
-        height: item.rect.height,
+        ...positionStyle,
         backgroundColor: 'var(--bg-secondary)',
         borderRadius: '4px',
       }}

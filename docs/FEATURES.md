@@ -429,6 +429,34 @@ npx playwright test auth-modes.spec.ts --project=chromium
 
 ---
 
+### Photo Grid Animation System
+
+**Purpose:** Smooth enter/exit animations for photo grid items with TanStack Virtual compatibility.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| CSS | [styles/animations.css](../apps/admin/src/styles/animations.css) |
+| Hook | [hooks/useAnimatedItems.ts](../apps/admin/src/hooks/useAnimatedItems.ts) |
+| Component | [components/Gallery/AnimatedTile.tsx](../apps/admin/src/components/Gallery/AnimatedTile.tsx) |
+| Component | [components/Gallery/PhotoGridSkeleton.tsx](../apps/admin/src/components/Gallery/PhotoGridSkeleton.tsx) |
+| Integration | [components/Gallery/EnhancedMosaicPhotoGrid.tsx](../apps/admin/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx) |
+| Spec | [docs/specs/SPEC-AnimationSystem.md](./specs/SPEC-AnimationSystem.md) |
+
+**Features:**
+- Smooth fade-in for newly added photos (staggered batches)
+- Smooth fade-out for deleted photos ("phantom entries" pattern)
+- No animation on initial load (avoids jarring effect)
+- Full virtualization compatibility via CSS-first approach
+- 60fps performance with GPU-accelerated transforms/opacity
+- `prefers-reduced-motion` accessibility support
+- Skeleton loading state with shimmer animation
+
+**Tests:**
+- Frontend: `apps/admin/tests/use-animated-items.test.ts`
+
+---
+
 ## Feature Documentation Template
 
 When adding new features, use this template:
@@ -463,6 +491,7 @@ ENV_VAR=value
 
 | Date | Feature | Action | Notes |
 |------|---------|--------|-------|
+| 2025-07-24 | Photo Grid Animation System | Added | Enter/exit animations with TanStack Virtual compatibility |
 | 2025-12-29 | Auth Mode E2E Tests | Added | Comprehensive tests for LocalAuth and ProxyAuth modes |
 | 2025-12-29 | Photo Selection UX | Added | Floating action bar, keyboard shortcuts |
 | 2025-12-29 | Map View | Fixed | Filter null GPS coordinates |

@@ -13,6 +13,7 @@
     "back": "Zpět",
     "retry": "Zkusit znovu",
     "clear": "Vymazat",
+    "clearing": "Mazání...",
     "copy": "Kopírovat",
     "copied": "Zkopírováno",
     "dismiss": "Zavřít",
@@ -322,7 +323,13 @@
       "session1Day": "1 den",
       "session7Days": "7 dní",
       "session30Days": "30 dní",
-      "sessionUntilClose": "Do zavření záložky"
+      "sessionUntilClose": "Do zavření záložky",
+      "cacheOff": "Vypnuto",
+      "cache15min": "15 minut",
+      "cache30min": "30 minut",
+      "cache1hour": "1 hodina",
+      "cache4hours": "4 hodiny",
+      "cacheUntilClose": "Do zavření záložky"
     },
     "language": {
       "title": "Jazyk",
@@ -332,9 +339,11 @@
       "title": "Zabezpečení",
       "lastLogin": "Poslední přihlášení",
       "lastLoginValue": "Nyní (tato relace)",
+      "thisSession": "Nyní (tato relace)",
       "clearLocalData": "Vymazat lokální data",
       "clearLocalDataDescription": "Smazat uložené fotky, klíče a databázi. Budete odhlášeni.",
-      "clearDataButton": "Vymazat data"
+      "clearDataButton": "Vymazat data",
+      "clearData": "Vymazat data"
     },
     "about": {
       "title": "O aplikaci",

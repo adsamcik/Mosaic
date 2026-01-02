@@ -38,8 +38,8 @@ FROM nginx:alpine AS production
 # OCI Image Labels (overwritten by docker/metadata-action in CI)
 LABEL org.opencontainers.image.title="Mosaic Frontend" \
       org.opencontainers.image.description="Zero-knowledge encrypted photo gallery web interface" \
-      org.opencontainers.image.url="https://github.com/eivindholvik/Mosaic" \
-      org.opencontainers.image.source="https://github.com/eivindholvik/Mosaic" \
+      org.opencontainers.image.url="https://github.com/adsamcik/Mosaic" \
+      org.opencontainers.image.source="https://github.com/adsamcik/Mosaic" \
       org.opencontainers.image.vendor="Mosaic Contributors" \
       org.opencontainers.image.licenses="MIT"
 

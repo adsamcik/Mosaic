@@ -1,0 +1,281 @@
+/**
+ * Mosaic Animation System
+ * 
+ * CSS-first animation system for smooth photo grid transitions.
+ * Uses GPU-accelerated properties (transform, opacity) for 60fps performance.
+ * 
+ * Animation Phases:
+ * - entering: Initial state (scaled down, transparent)
+ * - entered: Final state (full size, visible)
+ * - exiting: Beginning exit (still visible)
+ * - exited: Final exit state (faded out, scaled down)
+ */
+
+/* =============================================================================
+   TILE ANIMATIONS - Enter/Exit for photo tiles
+   ============================================================================= */
+
+/* Base setup - enable GPU compositing */
+.animated-tile {
+  will-change: transform, opacity;
+  contain: layout style;
+}
+
+/* Remove will-change after animation settles for memory efficiency */
+.animated-tile.animation-settled {
+  will-change: auto;
+}
+
+/* Enter animation - initial state (invisible, slightly scaled down) */
+.tile-enter {
+  opacity: 0;
+  transform: scale(0.92);
+}
+
+/* Enter animation - active/final state (visible, full scale) */
+.tile-enter-active {
+  opacity: 1;
+  transform: scale(1);
+  transition: 
+    opacity 280ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition-delay: var(--stagger-delay, 0ms);
+}
+
+/* Exit animation - starting state (still visible) */
+.tile-exit {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Exit animation - final state (faded, scaled down) */
+.tile-exit-active {
+  opacity: 0;
+  transform: scale(0.85);
+  transition: 
+    opacity 200ms ease-out,
+    transform 200ms cubic-bezier(0.4, 0, 1, 1);
+  pointer-events: none;
+}
+
+/* =============================================================================
+   SKELETON LOADING ANIMATIONS
+   ============================================================================= */
+
+.skeleton-tile {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-surface) 0%,
+    var(--color-bg-surface-hover) 50%,
+    var(--color-bg-surface) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Skeleton fade out when content loads */
+.skeleton-tile-loaded {
+  animation: skeleton-fade-out 300ms ease-out forwards;
+}
+
+@keyframes skeleton-fade-out {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* =============================================================================
+   UPLOAD TRANSITION ANIMATIONS
+   ============================================================================= */
+
+/* Pending → Complete transition with subtle celebration effect */
+.pending-to-complete {
+  animation: pending-complete-morph 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pending-complete-morph {
+  0% {
+    filter: grayscale(0.3) brightness(0.9);
+    transform: scale(0.98);
+  }
+  50% {
+    filter: grayscale(0) brightness(1.05);
+    transform: scale(1.02);
+  }
+  100% {
+    filter: grayscale(0) brightness(1);
+    transform: scale(1);
+  }
+}
+
+/* Upload complete flash effect - radial glow that fades */
+.upload-complete-flash {
+  position: relative;
+}
+
+.upload-complete-flash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.4) 0%, transparent 70%);
+  animation: flash-fade 600ms ease-out forwards;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 10;
+}
+
+@keyframes flash-fade {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+
+/* =============================================================================
+   LAYOUT SHIFT ANIMATIONS
+   ============================================================================= */
+
+/* Smooth layout transitions for grid reorganization */
+.photo-grid-row {
+  transition: transform 200ms ease-out;
+}
+
+/* When items shift position due to deletions/reordering */
+.layout-shift {
+  transition: 
+    transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    left 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    top 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* =============================================================================
+   PROGRESSIVE LOAD ANIMATIONS
+   ============================================================================= */
+
+/* Staggered reveal for initial load */
+.reveal-stagger {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: reveal-up 300ms ease-out forwards;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+@keyframes reveal-up {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Progressive image load (blur to sharp) */
+.image-progressive-load {
+  filter: blur(8px);
+  transform: scale(1.02);
+  transition: 
+    filter 400ms ease-out,
+    transform 400ms ease-out;
+}
+
+.image-progressive-load.loaded {
+  filter: blur(0);
+  transform: scale(1);
+}
+
+/* =============================================================================
+   GRID CONTENT CROSSFADE (Skeleton → Content)
+   ============================================================================= */
+
+.grid-content-hidden {
+  opacity: 0;
+}
+
+.grid-content-visible {
+  opacity: 1;
+  transition: opacity 200ms ease-out;
+}
+
+/* =============================================================================
+   PHOTO GRID SKELETON LAYOUT
+   ============================================================================= */
+
+.photo-grid-skeleton {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 4px;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+}
+
+@media (max-width: 900px) {
+  .photo-grid-skeleton {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .photo-grid-skeleton {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.photo-grid-skeleton .skeleton-tile {
+  aspect-ratio: 1;
+  min-height: 100px;
+}
+
+/* =============================================================================
+   REDUCED MOTION SUPPORT
+   Users who prefer reduced motion get instant transitions
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .animated-tile,
+  .skeleton-tile,
+  .pending-to-complete,
+  .reveal-stagger,
+  .layout-shift {
+    animation: none !important;
+    transition: opacity 100ms linear !important;
+    transform: none !important;
+  }
+  
+  .tile-enter {
+    opacity: 0;
+    transform: none;
+  }
+  
+  .tile-enter-active {
+    opacity: 1;
+    transform: none;
+    transition: opacity 100ms linear !important;
+  }
+  
+  .tile-exit-active {
+    opacity: 0;
+    transform: none;
+    transition: opacity 100ms linear !important;
+  }
+  
+  .upload-complete-flash::after {
+    animation: none !important;
+    display: none;
+  }
+}

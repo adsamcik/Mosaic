@@ -1,6 +1,8 @@
 export { useAlbumCover } from './useAlbumCover';
 export type { AlbumCover, UseAlbumCoverResult } from './useAlbumCover';
 export { useAlbums } from './useAlbums';
+export { useAnimatedItems } from './useAnimatedItems';
+export type { AnimatedItem, UseAnimatedItemsOptions, UseAnimatedItemsReturn } from './useAnimatedItems';
 export { useAlbumEpochKeys, useEpochKey } from './useEpochKeys';
 export { useLightbox } from './useLightbox';
 export { useTheme } from './useTheme';
