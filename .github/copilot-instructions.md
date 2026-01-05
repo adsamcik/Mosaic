@@ -24,6 +24,29 @@
 
 ---
 
+## E2E Test Philosophy
+
+**Tests verify application behavior. Never adjust tests to accommodate bugs.**
+
+When an E2E test fails:
+1. **Investigate the root cause** - Use debug logging, trace execution, check console errors
+2. **Fix the application code** - The bug is in the codebase, not in the test
+3. **Verify the test passes** - Run the test to confirm the fix
+4. **Never skip, simplify, or weaken tests** - If a test exposes a bug, that's valuable
+
+Exceptions (require explicit user approval):
+- Test infrastructure bugs (Playwright, fixtures, page objects)
+- Test environment issues (ports, timeouts, flaky network)
+- Intentional behavior changes that require test updates
+
+When debugging complex issues:
+- Use subagents to parallelize investigation
+- Add targeted debug logging to trace data flow
+- Check both frontend console and backend logs
+- Verify data at each layer (API, cache, component state)
+
+---
+
 ## Project Overview
 
 Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal use (≤50 users). The server never sees plaintext photos or metadata—all encryption/decryption happens client-side.
