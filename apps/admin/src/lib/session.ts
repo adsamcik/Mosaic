@@ -685,6 +685,16 @@ class SessionManager {
    * Log out and clear all session data
    */
   async logout(): Promise<void> {
+    // Call backend logout to revoke session and clear cookie
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+    } catch {
+      // Ignore errors - continue with client-side cleanup
+    }
+    
     // Clear idle timer
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
