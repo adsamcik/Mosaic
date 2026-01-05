@@ -105,6 +105,14 @@ async function createManifestForUpload(
   // Get signer public key
   const signerPubkey = epochKey.signKeypair.publicKey;
 
+  // DEBUG: Log the signing key details
+  log.debug('Creating manifest with signing key', {
+    epochId: epochKey.epochId,
+    signerPubkeyPrefix: Array.from(signerPubkey.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
+    signaturePrefix: Array.from(signature.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
+    ciphertextLength: encrypted.ciphertext.length,
+  });
+
   // Create manifest via API
   await api.createManifest({
     albumId: task.albumId,

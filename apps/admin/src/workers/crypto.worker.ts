@@ -13,6 +13,7 @@ import {
     encryptShard as cryptoEncryptShard,
     generateEpochKey as cryptoGenerateEpochKey,
     generateLinkSecret as cryptoGenerateLinkSecret,
+    peekHeader as cryptoPeekHeader,
     signManifest as cryptoSignManifest,
     unwrapTierKeyFromLink as cryptoUnwrapTierKeyFromLink,
     verifyManifest as cryptoVerifyManifest,
@@ -296,6 +297,25 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   /**
+   * Peek at shard envelope header without decrypting.
+   * Useful for determining which tier key to use for decryption.
+   *
+   * @param envelope - Complete envelope (header + ciphertext)
+   * @returns Header info including epochId, shardId, and tier
+   */
+  async peekHeader(
+    envelope: Uint8Array
+  ): Promise<{ epochId: number; shardId: number; tier: number }> {
+    // peekHeader is synchronous but we expose it as async for consistency
+    const header = cryptoPeekHeader(envelope);
+    return {
+      epochId: header.epochId,
+      shardId: header.shardId,
+      tier: header.tier,
+    };
+  }
+
+  /**
    * Decrypt manifest metadata.
    *
    * Manifest metadata is encrypted as a shard (with epoch 0, shard 0),
@@ -421,7 +441,12 @@ class CryptoWorker implements CryptoWorkerApi {
       );
       timer.end();
       
-      log.debug('Successfully opened epoch key bundle');
+      log.debug('Successfully opened epoch key bundle', {
+        epochId: opened.epochId,
+        signPublicKeyLength: opened.signKeypair.publicKey.length,
+        signPublicKeyPrefix: Array.from(opened.signKeypair.publicKey.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(''),
+        signSecretKeyLength: opened.signKeypair.secretKey.length,
+      });
 
       return {
         epochSeed: opened.epochSeed,
