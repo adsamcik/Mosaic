@@ -1,5 +1,151 @@
 # Mosaic - GitHub Copilot Instructions
 
+Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal use (≤50 users). The server never sees plaintext photos or metadata—all encryption/decryption happens client-side.
+
+> **Development Status:** Active development towards **v1**. All commits go directly to `master`—no pull requests, no feature branches. Move fast, commit often, keep the build green.
+
+---
+
+## Tech Stack
+
+### Backend (.NET 10)
+- ASP.NET Core minimal APIs
+- Entity Framework Core with PostgreSQL
+- Tus protocol for resumable uploads
+- Authentication via trusted reverse proxy (Remote-User header)
+
+### Frontend (React 19 + Vite)
+- TypeScript strict mode
+- Web Workers for crypto and database operations
+- SQLite-WASM with OPFS for local storage
+- libsodium-wrappers for cryptography
+- Comlink for worker communication
+- TanStack Virtual for virtualized lists
+
+### Crypto Library
+- XChaCha20-Poly1305 for encryption
+- Ed25519 for signing
+- Argon2id for key derivation
+- HKDF-SHA256 for key expansion
+
+---
+
+## Project Structure
+
+```
+libs/crypto/           # Shared crypto library (TypeScript)
+apps/backend/          # .NET 10 ASP.NET Core API
+  Mosaic.Backend/      # Main API project
+  Mosaic.Backend.Tests/# Backend tests
+apps/admin/            # React 19 + Vite frontend
+  src/components/      # React components
+  src/hooks/           # Custom hooks
+  src/workers/         # Web Workers (crypto, db, geo)
+tests/e2e/             # Playwright E2E tests
+docs/                  # Documentation
+scripts/               # Build, test, and dev scripts
+```
+
+---
+
+## Build & Test Commands
+
+```bash
+# Start development environment
+.\scripts\dev.ps1 start          # Windows - starts all services
+./scripts/dev.sh start           # Linux/Mac
+
+# Or use VS Code tasks
+Ctrl+Shift+P → "Tasks: Run Task" → "start-all"
+
+# Run tests (non-interactive!)
+cd libs/crypto && npm test       # Crypto unit tests
+cd apps/admin && npm run test:run # Frontend unit tests
+dotnet test apps/backend/Mosaic.Backend.Tests  # Backend tests
+.\scripts\run-e2e-tests.ps1      # E2E tests
+
+# Build
+cd libs/crypto && npm run build  # Build crypto library first
+dotnet build apps/backend/Mosaic.Backend
+cd apps/admin && npm run build
+```
+
+**Service URLs:**
+- Frontend: http://localhost:5173
+- Backend: http://localhost:5000
+- Swagger: http://localhost:5000/openapi/v1.json
+
+---
+
+## Coding Guidelines
+
+### Philosophy (Priority Order)
+1. **Correctness** - Code must work as specified
+2. **Security** - Cryptographic operations must be bulletproof
+3. **Simplicity** - Prefer readable code over clever optimizations
+4. **Performance** - Optimize only when necessary
+
+### General Rules
+- Always use type hints/strict types
+- Unit tests are required and must pass
+- Follow existing patterns in the codebase
+- Never log sensitive data (keys, passwords, PII)
+
+### Frontend (TypeScript)
+- Use semicolons
+- Prefer async/await over callbacks
+- Handle all crypto errors explicitly
+- Call `sodium.memzero()` on sensitive buffers
+
+### Backend (C#)
+- Use async/await consistently
+- Use `TypedResults` for minimal API responses
+- Backend treats all user content as opaque `byte[]` blobs
+- Never parse or inspect encrypted content
+
+---
+
+## Critical Security Constraints
+
+### Zero-Knowledge Invariants
+- Server NEVER sees plaintext photos or metadata
+- All encryption/decryption happens client-side
+- Backend stores only encrypted blobs
+
+### Cryptographic Requirements
+- **ALWAYS** generate 24 fresh random bytes per encryption (nonce)
+- **NEVER** reuse a nonce with the same key
+- Always call `sodium.memzero()` on sensitive keys after use
+- Never log or serialize plaintext keys
+
+### Key Hierarchy
+```
+L0 (Master)  = Argon2id(password, salt)     # Never stored
+L1 (Root)    = HKDF(L0, account_salt)        # Never stored
+L2 (Account) = random(32), wrapped by L1    # Stored encrypted
+L3 (Epoch)   = ReadKey + SignKey per album  # Distributed to members
+```
+
+---
+
+## Scoped Instructions
+
+For detailed guidance on specific areas, see:
+
+| Area | Instructions File |
+|------|-------------------|
+| Backend | `apps/backend/.instructions.md` |
+| Frontend | `apps/admin/.instructions.md` |
+| Crypto | `libs/crypto/.instructions.md` |
+| E2E Tests | `tests/e2e/.instructions.md` |
+| Components | `apps/admin/src/components/.instructions.md` |
+| Hooks | `apps/admin/src/hooks/.instructions.md` |
+| Workers | `apps/admin/src/workers/.instructions.md` |
+
+---
+
+## Additional Context
+
 > **SYSTEM ROLE:** You are a Principal Security Architect and Senior Full-Stack Engineer. You value correctness over speed, type safety over flexibility, and "Zero-Knowledge" privacy above all else.
 
 ## When to Read This Document
@@ -49,18 +195,9 @@ When debugging complex issues:
 
 ## Project Overview
 
-Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal use (≤50 users). The server never sees plaintext photos or metadata—all encryption/decryption happens client-side.
-
 **Development Status:** This project is in active development. When database schema issues arise, it's acceptable to drop all migrations and reset the database rather than writing complex migration fixes.
 
 **Version Target:** We are working towards **v1**. All commits go directly to `master`—no pull requests, no feature branches. Move fast, commit often, keep the build green.
-
-## Philosophy (Priority Order)
-
-1. **Correctness** - Code must work as specified
-2. **Security** - Cryptographic operations must be bulletproof
-3. **Simplicity** - Prefer readable code over clever optimizations
-4. **Performance** - Optimize only when necessary
 
 ## Related Configuration Files
 
@@ -70,13 +207,6 @@ Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal 
 | `.github/.copilotignore` | Files excluded from Copilot context for security and hygiene |
 | `docs/FEATURES.md` | Living catalog of all implemented features |
 | `docs/INSTRUCTION_TREE.md` | Meta-documentation of the instruction hierarchy |
-| `apps/backend/.instructions.md` | Backend-specific (.NET 10) scoped instructions |
-| `apps/admin/.instructions.md` | Frontend-specific (React 19) scoped instructions |
-| `apps/admin/src/components/.instructions.md` | React component patterns |
-| `apps/admin/src/hooks/.instructions.md` | Custom React hook patterns |
-| `apps/admin/src/workers/.instructions.md` | Web Worker patterns (crypto, db, geo) |
-| `libs/crypto/.instructions.md` | Crypto library scoped instructions |
-| `tests/e2e/.instructions.md` | E2E test categories and patterns |
 
 ---
 
@@ -130,39 +260,6 @@ Before writing implementation code for complex features, generate a `SPEC-[Featu
 ### When to Skip the SPEC
 
 For simple tasks (bug fixes, single-file changes, non-crypto features), proceed directly to implementation but still follow TDD principles.
-
----
-
-## Architecture
-
-```
-libs/crypto/       # Shared crypto library (TypeScript)
-apps/backend/      # .NET 10 ASP.NET Core API
-apps/admin/        # React 19 + Vite frontend
-docs/              # Documentation
-```
-
-## Technology Stack
-
-### Backend (.NET 10)
-- ASP.NET Core minimal APIs or controllers
-- Entity Framework Core with PostgreSQL
-- Tus protocol for resumable uploads
-- Authentication via trusted reverse proxy (Remote-User header)
-
-### Frontend (React 19 + Vite)
-- TypeScript strict mode
-- Web Workers for crypto and database operations
-- SQLite-WASM with OPFS for local storage
-- libsodium-wrappers for cryptography
-- Comlink for worker communication
-- TanStack Virtual for virtualized lists
-
-### Crypto Library
-- XChaCha20-Poly1305 for encryption
-- Ed25519 for signing
-- Argon2id for key derivation
-- HKDF-SHA256 for key expansion
 
 ---
 
