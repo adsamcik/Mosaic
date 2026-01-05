@@ -4,7 +4,7 @@
  * Runs once before all tests to ensure the environment is ready.
  */
 
-const API_URL = process.env.API_URL || 'http://localhost:8080';
+const API_URL = process.env.API_URL || 'http://localhost:5000';
 const MAX_WAIT_MS = 60000;
 const POLL_INTERVAL_MS = 2000;
 
