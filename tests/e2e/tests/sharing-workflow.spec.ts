@@ -22,6 +22,9 @@ import {
 import { waitForCondition } from '../framework';
 
 test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', () => {
+  // Triple the timeout for slow multi-user sharing tests
+  test.slow();
+
   const apiHelper = new ApiHelper();
 
   test('owner and viewer see same photos in shared album', async ({

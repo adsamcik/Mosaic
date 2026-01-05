@@ -26,7 +26,7 @@ import { test, expect, LoginPage, AppShell, TEST_CONSTANTS } from '../fixtures';
 /**
  * API base URL for direct API calls
  */
-const API_URL = process.env.API_URL || 'http://localhost:8080';
+const API_URL = process.env.API_URL || 'http://localhost:5000';
 
 /**
  * Detect which auth mode the backend is running in.

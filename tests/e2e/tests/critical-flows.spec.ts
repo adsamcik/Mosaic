@@ -196,6 +196,9 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
 });
 
 test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @crypto @slow', () => {
+  // Triple the timeout for slow critical photo upload tests
+  test.slow();
+
   const apiHelper = new ApiHelper();
 
   test('P0-3: upload photo encrypts locally and appears in gallery after sync', async ({
@@ -355,6 +358,9 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
 });
 
 test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @slow', () => {
+  // Triple the timeout for slow critical sharing tests
+  test.slow();
+
   const apiHelper = new ApiHelper();
 
   test('P0-4: owner can share album and viewer can access photos', async ({

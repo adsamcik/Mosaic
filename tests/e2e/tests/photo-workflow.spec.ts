@@ -24,6 +24,9 @@ import {
 } from '../fixtures';
 
 test.describe('Photo Workflow: Upload & Display @p1 @photo @crypto @slow', () => {
+  // Triple the timeout for slow crypto operations
+  test.slow();
+
   const apiHelper = new ApiHelper();
 
   test.beforeEach(async ({ authenticatedPage, testUser }) => {

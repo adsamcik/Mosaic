@@ -24,6 +24,9 @@ import {
 import { waitForCondition } from '../framework';
 
 test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
+  // Triple the timeout for slow multi-session sync tests
+  test.slow();
+
   const apiHelper = new ApiHelper();
 
   test('photos sync between browser sessions', async ({
@@ -221,6 +224,9 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
 });
 
 test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
+  // Triple the timeout for slow offline resilience tests
+  test.slow();
+
   const apiHelper = new ApiHelper();
 
   test('app handles going offline gracefully', async ({
