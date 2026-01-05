@@ -10,6 +10,7 @@ This guide covers how to build, deploy, and run Mosaic using Docker containers.
 - [Deployment Scenarios](#deployment-scenarios)
 - [Configuration Reference](#configuration-reference)
 - [Reverse Proxy Setup](#reverse-proxy-setup)
+- [Authentication Integration](#authentication-integration) ← See also [AUTHELIA.md](AUTHELIA.md)
 - [Persistent Storage](#persistent-storage)
 - [Monitoring & Logs](#monitoring--logs)
 - [Troubleshooting](#troubleshooting)
@@ -343,11 +344,44 @@ server {
 
 ### Authentication Integration
 
-Mosaic uses the `Remote-User` header for authentication, which should be set by an external authentication provider:
+Mosaic uses the `Remote-User` header for authentication. Your reverse proxy must:
 
-- **Authelia**: Configure `auth_header` in Authelia's nginx config
-- **Authentik**: Use the nginx outpost with forward auth
-- **oauth2-proxy**: Set `--pass-user-headers=true`
+1. Authenticate users via an external provider
+2. Set the `Remote-User` header with the authenticated username
+3. Forward requests to Mosaic
+
+**Supported Providers:**
+
+| Provider | Integration Guide |
+|----------|-------------------|
+| **Authelia** | [Full integration guide](AUTHELIA.md) |
+| **Authentik** | Use nginx outpost with forward auth |
+| **oauth2-proxy** | Set `--pass-user-headers=true` |
+| **Keycloak** | Use Gatekeeper or nginx auth_request |
+
+**Quick Authelia Example (Caddy):**
+
+```caddyfile
+photos.example.com {
+    forward_auth authelia:9091 {
+        uri /api/authz/forward-auth
+        copy_headers Remote-User Remote-Groups Remote-Email Remote-Name
+    }
+    reverse_proxy mosaic-frontend:8080
+}
+```
+
+**Backend Configuration:**
+
+```yaml
+# docker-compose.yml - backend environment
+environment:
+  Auth__LocalAuthEnabled: "false"      # Disable password auth
+  Auth__ProxyAuthEnabled: "true"       # Enable header auth
+  Auth__TrustedProxies__0: "172.16.0.0/12"  # Docker networks
+```
+
+> **Security:** Only accept `Remote-User` from trusted proxy IPs. See [AUTHELIA.md](AUTHELIA.md) for complete setup.
 
 ---
 

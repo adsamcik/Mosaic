@@ -8,13 +8,16 @@ import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import type { PhotoMeta } from '../src/workers/types';
 
 // Mock crypto client - use vi.hoisted to avoid hoisting issues
-const { mockDecryptShardWithTierKey, mockCryptoClient } = vi.hoisted(() => {
+const { mockDecryptShardWithTierKey, mockPeekHeader, mockCryptoClient } = vi.hoisted(() => {
   const mockDecryptShardWithTierKey = vi.fn(() => Promise.resolve(new Uint8Array(10)));
+  // Default: return tier 2 (preview) for all shards
+  const mockPeekHeader = vi.fn(() => Promise.resolve({ epochId: 1, shardId: 0, tier: 2 }));
   const mockCryptoClient = {
     decryptShard: vi.fn(() => Promise.resolve(new Uint8Array(10))),
     decryptShardWithTierKey: mockDecryptShardWithTierKey,
+    peekHeader: mockPeekHeader,
   };
-  return { mockDecryptShardWithTierKey, mockCryptoClient };
+  return { mockDecryptShardWithTierKey, mockPeekHeader, mockCryptoClient };
 });
 
 vi.mock('../src/lib/crypto-client', () => ({
@@ -46,6 +49,9 @@ describe('SharedPhotoLightbox', () => {
 
   beforeEach(() => {
     mockDecryptShardWithTierKey.mockClear();
+    mockPeekHeader.mockClear();
+    // Reset to default behavior: tier 2 (preview) shards
+    mockPeekHeader.mockResolvedValue({ epochId: 1, shardId: 0, tier: 2 });
     mockDownloadShard.mockClear();
     mockCreateObjectURL.mockClear();
     mockRevokeObjectURL.mockClear();
@@ -278,5 +284,108 @@ describe('SharedPhotoLightbox', () => {
     const error = container.querySelector('[data-testid="lightbox-error"]');
     expect(error).toBeTruthy();
     expect(error?.textContent).toContain('No image available');
+  });
+
+  it('peeks at shard headers to determine tier before decrypting', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    await act(async () => {
+      root = createRoot(container!);
+      root!.render(
+        createElement(SharedPhotoLightbox, {
+          photo: mockPhotoWithThumbnail,
+          linkId: 'link-1',
+          tierKey: new Uint8Array(32),
+          accessTier: 2,
+          onClose: vi.fn(),
+          hasNext: false,
+          hasPrevious: false,
+        })
+      );
+      // Wait for async shard loading
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+
+    // Should have called peekHeader to check shard tier
+    expect(mockPeekHeader).toHaveBeenCalled();
+  });
+
+  it('only decrypts shards matching access tier', async () => {
+    // Set up 3 shards with different tiers (thumb=1, preview=2, original=3)
+    const photoWithMultipleShards: PhotoMeta = {
+      ...mockPhotoWithThumbnail,
+      shardIds: ['shard-thumb', 'shard-preview', 'shard-original'],
+    };
+
+    // Return different tiers for each shard
+    mockPeekHeader
+      .mockResolvedValueOnce({ epochId: 1, shardId: 0, tier: 1 }) // thumb
+      .mockResolvedValueOnce({ epochId: 1, shardId: 1, tier: 2 }) // preview
+      .mockResolvedValueOnce({ epochId: 1, shardId: 2, tier: 3 }); // original
+
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    await act(async () => {
+      root = createRoot(container!);
+      root!.render(
+        createElement(SharedPhotoLightbox, {
+          photo: photoWithMultipleShards,
+          linkId: 'link-1',
+          tierKey: new Uint8Array(32),
+          accessTier: 2, // Preview tier - should NOT decrypt original (tier 3)
+          onClose: vi.fn(),
+          hasNext: false,
+          hasPrevious: false,
+        })
+      );
+      // Wait for async shard loading
+      await new Promise(resolve => setTimeout(resolve, 150));
+    });
+
+    // Should have peeked at all 3 shards
+    expect(mockPeekHeader).toHaveBeenCalledTimes(3);
+    
+    // Should only decrypt 1 shard (the preview tier, highest available <= accessTier)
+    expect(mockDecryptShardWithTierKey).toHaveBeenCalledTimes(1);
+    
+    // Should show the loaded image
+    const image = container.querySelector('[data-testid="lightbox-image"]');
+    expect(image).toBeTruthy();
+  });
+
+  it('uses getTierKey callback when provided to get correct key for shard tier', async () => {
+    const mockGetTierKey = vi.fn((epochId: number, tier: number) => {
+      // Return different mock keys for different tiers
+      return new Uint8Array(32).fill(tier);
+    });
+
+    // Set shard tier to 1 (thumb) to test that getTierKey is called with tier 1
+    mockPeekHeader.mockResolvedValue({ epochId: 1, shardId: 0, tier: 1 });
+
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    await act(async () => {
+      root = createRoot(container!);
+      root!.render(
+        createElement(SharedPhotoLightbox, {
+          photo: mockPhotoWithThumbnail,
+          linkId: 'link-1',
+          tierKey: new Uint8Array(32),
+          accessTier: 2,
+          onClose: vi.fn(),
+          hasNext: false,
+          hasPrevious: false,
+          getTierKey: mockGetTierKey,
+        })
+      );
+      // Wait for async shard loading
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+
+    // Should have called getTierKey with epoch 1 and tier 1 (from the shard header)
+    expect(mockGetTierKey).toHaveBeenCalledWith(1, 1);
   });
 });

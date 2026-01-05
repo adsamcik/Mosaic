@@ -214,21 +214,46 @@ Caddy will automatically obtain and renew TLS certificates from Let's Encrypt.
 Mosaic uses the `Remote-User` header for authentication. Your reverse proxy should set this header based on your authentication provider.
 
 **Common authentication solutions:**
-- [Authelia](https://www.authelia.com/) - Self-hosted SSO
-- [Authentik](https://goauthentik.io/) - Open-source identity provider
-- [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/) - OAuth2 authentication proxy
 
-Example Caddy configuration with Authelia:
+| Provider | Description |
+|----------|-------------|
+| [Authelia](https://www.authelia.com/) | Self-hosted SSO (recommended) |
+| [Authentik](https://goauthentik.io/) | Open-source identity provider |
+| [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/) | OAuth2 authentication proxy |
+
+**Quick Caddy + Authelia Example:**
 
 ```caddyfile
+# Caddyfile
+
+# Authelia login portal
+auth.yourdomain.com {
+    reverse_proxy authelia:9091
+}
+
+# Mosaic (protected by Authelia)
 photos.yourdomain.com {
-    forward_auth localhost:9091 {
-        uri /api/verify?rd=https://auth.yourdomain.com
+    forward_auth authelia:9091 {
+        uri /api/authz/forward-auth
         copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
     }
-    reverse_proxy localhost:8080
+    reverse_proxy mosaic-frontend:8080
 }
 ```
+
+**Backend Configuration:**
+
+Update your `docker-compose.yml` to enable proxy authentication:
+
+```yaml
+backend:
+  environment:
+    Auth__LocalAuthEnabled: "false"      # Disable password auth
+    Auth__ProxyAuthEnabled: "true"       # Enable header-based auth
+    Auth__TrustedProxies__0: "172.16.0.0/12"  # Trust Docker networks
+```
+
+> **📖 Full Guide:** See [AUTHELIA.md](AUTHELIA.md) for complete Authelia integration with Caddy, nginx, or Traefik.
 
 ---
 

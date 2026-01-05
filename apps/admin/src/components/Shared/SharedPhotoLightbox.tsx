@@ -56,6 +56,7 @@ export function SharedPhotoLightbox({
   onPrevious,
   hasNext,
   hasPrevious,
+  getTierKey,
 }: SharedPhotoLightboxProps) {
   const [state, setState] = useState<PhotoState>({ status: 'loading' });
   const [loadProgress, setLoadProgress] = useState(0);
@@ -101,24 +102,81 @@ export function SharedPhotoLightbox({
 
       try {
         // Download and decrypt shards via share link endpoint
+        // Only decrypt shards that match our access tier
         const crypto = await getCryptoClient();
         const decryptedChunks: Uint8Array[] = [];
-        const totalShards = photo.shardIds.length;
-
+        
+        // First pass: download all shards and peek at their tier to find matching ones
+        const downloadedShards: { shardId: string; data: Uint8Array; tier: number }[] = [];
+        
         for (let i = 0; i < photo.shardIds.length; i++) {
           if (cancelled) return;
           
           const shardId = photo.shardIds[i]!;
           const encryptedShard = await downloadShardViaShareLink(linkId, shardId);
           
-          // Use decryptShardWithTierKey for share link viewing
-          // The tier key is already derived and unwrapped from the share link
-          const plaintext = await crypto.decryptShardWithTierKey(encryptedShard, tierKey);
+          // Peek at the shard header to determine its tier
+          const header = await crypto.peekHeader(encryptedShard);
+          downloadedShards.push({ shardId, data: encryptedShard, tier: header.tier });
+          
+          // Update progress (download phase)
+          if (!cancelled) {
+            setLoadProgress(((i + 1) / photo.shardIds.length) * 50);
+          }
+        }
+        
+        if (cancelled) return;
+        
+        // Filter to shards matching our access tier
+        // Access tier determines the highest tier we can decrypt:
+        // - Tier 1 (thumb): can only decrypt tier 1 shards
+        // - Tier 2 (preview): can decrypt tier 1 and 2 shards
+        // - Tier 3 (full): can decrypt all tiers
+        // For lightbox, we want the BEST available quality, so pick the highest tier <= accessTier
+        const matchingShards = downloadedShards.filter(s => s.tier <= accessTier);
+        
+        if (matchingShards.length === 0) {
+          // No matching shards found - this shouldn't happen normally
+          if (!thumbnailBlobUrl && !cancelled) {
+            setState({ status: 'error', message: 'No accessible shards for this tier' });
+          }
+          return;
+        }
+        
+        // Sort by tier descending to get highest quality first
+        matchingShards.sort((a, b) => b.tier - a.tier);
+        
+        // For single-photo viewing, we only need ONE shard (the best quality one)
+        // If photos were chunked across multiple shards, we'd need all of the same tier
+        // Group by tier and take the highest tier group
+        const bestTier = matchingShards[0]!.tier;
+        const shardsToDecrypt = matchingShards.filter(s => s.tier === bestTier);
+        
+        // Get the appropriate tier key for decryption
+        // If getTierKey is available, use it to get the exact key for this tier
+        // Otherwise fall back to the provided tierKey (should match accessTier)
+        const decryptionKey = getTierKey 
+          ? getTierKey(photo.epochId, bestTier as AccessTierType)
+          : tierKey;
+        
+        if (!decryptionKey) {
+          if (!thumbnailBlobUrl && !cancelled) {
+            setState({ status: 'error', message: 'No decryption key available for this tier' });
+          }
+          return;
+        }
+        
+        // Decrypt the matching shards
+        for (let i = 0; i < shardsToDecrypt.length; i++) {
+          if (cancelled) return;
+          
+          const shard = shardsToDecrypt[i]!;
+          const plaintext = await crypto.decryptShardWithTierKey(shard.data, decryptionKey);
           decryptedChunks.push(plaintext);
           
-          // Update progress
+          // Update progress (decrypt phase)
           if (!cancelled) {
-            setLoadProgress(((i + 1) / totalShards) * 100);
+            setLoadProgress(50 + ((i + 1) / shardsToDecrypt.length) * 50);
           }
         }
 
@@ -171,7 +229,7 @@ export function SharedPhotoLightbox({
         URL.revokeObjectURL(fullResBlobUrl);
       }
     };
-  }, [photo.id, photo.thumbnail, photo.shardIds, photo.mimeType, tierKey, accessTier, linkId]);
+  }, [photo.id, photo.thumbnail, photo.shardIds, photo.mimeType, photo.epochId, tierKey, accessTier, linkId, getTierKey]);
 
   // Keyboard navigation
   useEffect(() => {

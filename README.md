@@ -115,8 +115,9 @@ For production, you should:
 |-------|-------------|
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Beginner-friendly deployment guide |
 | [DOCKER.md](docs/DOCKER.md) | Complete Docker reference |
+| [AUTHELIA.md](docs/AUTHELIA.md) | SSO integration with Authelia |
 
-Topics covered: Building images, reverse proxy setup (Caddy, Traefik, nginx), backup/restore, multi-architecture builds, CI/CD, and troubleshooting.
+Topics covered: Building images, reverse proxy setup (Caddy, Traefik, nginx), SSO authentication, backup/restore, multi-architecture builds, CI/CD, and troubleshooting.
 
 ### Development with Docker
 
