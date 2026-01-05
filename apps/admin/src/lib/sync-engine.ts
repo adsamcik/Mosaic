@@ -123,6 +123,14 @@ class SyncEngine extends EventTarget {
         const signature = fromBase64(m.signature);
         const signerPubkey = fromBase64(m.signerPubkey);
 
+        // DEBUG: Log the verification key details
+        log.debug('Verifying manifest signature', {
+          manifestId: m.id,
+          signerPubkeyPrefix: Array.from(signerPubkey.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
+          signaturePrefix: Array.from(signature.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
+          encryptedMetaLength: encryptedMeta.length,
+        });
+
         // Verify signature before decryption
         const isValid = await crypto.verifyManifest(
           encryptedMeta,
@@ -212,11 +220,25 @@ class SyncEngine extends EventTarget {
   /**
    * Store an epoch seed in the cache
    * Used when unwrapping keys after sync
+   * 
+   * IMPORTANT: This method preserves existing signKeypair if the epoch key
+   * was already cached with complete data. This prevents overwriting a
+   * correctly unwrapped bundle with one that has empty signKeypair.
    */
   setEpochKey(albumId: string, epochId: number, epochSeed: Uint8Array): void {
-    // Create a minimal bundle with just the epoch seed
-    // Full bundle would include signKeypair, but for legacy compatibility
-    // we support storing just the epoch seed
+    // Check if we already have a cached bundle with complete signKeypair
+    const existing = getEpochKey(albumId, epochId);
+    if (existing) {
+      // Check if existing bundle has a valid (non-zero) signKeypair
+      const hasValidSignKeypair = existing.signKeypair.publicKey.some(b => b !== 0);
+      if (hasValidSignKeypair) {
+        // Don't overwrite - we already have complete data
+        log.debug(`Preserving existing epoch key ${epochId} with valid signKeypair`);
+        return;
+      }
+    }
+    
+    // Store minimal bundle (legacy compatibility)
     storeEpochKey(albumId, {
       epochId,
       epochSeed,

@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fromBase64, getApi } from '../lib/api';
-import { getCryptoClient } from '../lib/crypto-client';
-import { syncEngine } from '../lib/sync-engine';
+import { getOrFetchEpochKey } from '../lib/epoch-key-service';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('useEpochKeys');
@@ -11,6 +9,9 @@ const log = createLogger('useEpochKeys');
  *
  * Returns the epoch read key for the given album and epoch.
  * Handles fetching and unwrapping the key if not already cached.
+ * 
+ * Uses epoch-key-service for proper key management, which stores
+ * complete bundles including signKeypair.
  */
 export function useEpochKey(albumId: string, epochId: number) {
   const [epochReadKey, setEpochReadKey] = useState<Uint8Array | null>(null);
@@ -22,48 +23,11 @@ export function useEpochKey(albumId: string, epochId: number) {
       setIsLoading(true);
       setError(null);
 
-      // Check cache first
-      let key = syncEngine.getEpochKey(albumId, epochId);
-      if (key) {
-        setEpochReadKey(key);
-        return;
-      }
-
-      // Fetch epoch keys from server
-      const api = getApi();
-      const crypto = await getCryptoClient();
-
-      const epochKeys = await api.getEpochKeys(albumId);
-      const epochKeyRecord = epochKeys.find((ek) => ek.epochId === epochId);
-
-      if (!epochKeyRecord) {
-        throw new Error(`No epoch key found for epoch ${epochId}`);
-      }
-
-      // Get the user's identity public key for unwrapping
-      const identityPubkey = await crypto.getIdentityPublicKey();
-      if (!identityPubkey) {
-        throw new Error('Identity key not available');
-      }
-
-      // Unwrap the epoch key bundle
-      const bundle = fromBase64(epochKeyRecord.encryptedKeyBundle);
-      const sharerPubkey = fromBase64(epochKeyRecord.sharerPubkey);
-
-      const unwrapped = await crypto.openEpochKeyBundle(
-        bundle,
-        sharerPubkey,
-        albumId,
-        0 // minEpochId - accept any epoch for now
-      );
-
-      key = unwrapped.epochSeed;
-
-      // Cache the key
-      syncEngine.setEpochKey(albumId, epochId, key);
-
-      setEpochReadKey(key);
+      // Use the centralized epoch-key-service which properly caches complete bundles
+      const bundle = await getOrFetchEpochKey(albumId, epochId);
+      setEpochReadKey(bundle.epochSeed);
     } catch (err) {
+      log.error(`Failed to get epoch key ${epochId} for album ${albumId}:`, err);
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setIsLoading(false);
@@ -80,6 +44,9 @@ export function useEpochKey(albumId: string, epochId: number) {
 /**
  * Hook to get all epoch keys for an album
  * Returns a map of epochId -> readKey
+ * 
+ * Uses fetchAndUnwrapEpochKeys from epoch-key-service which stores
+ * complete bundles including signKeypair.
  */
 export function useAlbumEpochKeys(albumId: string) {
   const [epochKeys, setEpochKeys] = useState<Map<number, Uint8Array>>(new Map());
@@ -91,56 +58,20 @@ export function useAlbumEpochKeys(albumId: string) {
       setIsLoading(true);
       setError(null);
 
-      const api = getApi();
-      const crypto = await getCryptoClient();
-
-      const serverKeys = await api.getEpochKeys(albumId);
-
-      if (serverKeys.length === 0) {
-        setEpochKeys(new Map());
-        return;
-      }
-
-      // Get identity key
-      const identityPubkey = await crypto.getIdentityPublicKey();
-      if (!identityPubkey) {
-        throw new Error('Identity key not available');
-      }
+      // Use the centralized epoch-key-service which properly caches complete bundles
+      const { fetchAndUnwrapEpochKeys } = await import(
+        '../lib/epoch-key-service'
+      );
+      const bundles = await fetchAndUnwrapEpochKeys(albumId);
 
       const keysMap = new Map<number, Uint8Array>();
-
-      // Unwrap each epoch key
-      for (const ek of serverKeys) {
-        // Check cache first
-        let key = syncEngine.getEpochKey(albumId, ek.epochId);
-        if (key) {
-          keysMap.set(ek.epochId, key);
-          continue;
-        }
-
-        try {
-          const bundle = fromBase64(ek.encryptedKeyBundle);
-          const sharerPubkey = fromBase64(ek.sharerPubkey);
-
-          const unwrapped = await crypto.openEpochKeyBundle(
-            bundle,
-            sharerPubkey,
-            albumId,
-            0
-          );
-
-          key = unwrapped.epochSeed;
-          keysMap.set(ek.epochId, key);
-          syncEngine.setEpochKey(albumId, ek.epochId, key);
-        } catch (unwrapError) {
-          log.warn(`Failed to unwrap epoch key ${ek.epochId}:`, {
-            error: unwrapError instanceof Error ? unwrapError.message : String(unwrapError),
-          });
-        }
+      for (const bundle of bundles) {
+        keysMap.set(bundle.epochId, bundle.epochSeed);
       }
 
       setEpochKeys(keysMap);
     } catch (err) {
+      log.error(`Failed to load epoch keys for album ${albumId}:`, err);
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setIsLoading(false);

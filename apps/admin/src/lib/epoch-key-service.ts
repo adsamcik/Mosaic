@@ -149,7 +149,10 @@ export async function fetchAndUnwrapEpochKeys(
         albumId,
         minEpochId
       );
-      log.debug(`Successfully opened epoch key ${record.epochId}`);
+      log.debug(`Successfully opened epoch key ${record.epochId}`, {
+        signPublicKeyLength: opened.signPublicKey.length,
+        signPublicKeyPrefix: Array.from(opened.signPublicKey.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
+      });
 
       const bundle: EpochKeyBundle = {
         epochId: record.epochId,
@@ -161,6 +164,9 @@ export async function fetchAndUnwrapEpochKeys(
       };
 
       // Cache the unwrapped bundle
+      log.debug(`Caching epoch key ${record.epochId} for album ${albumId}`, {
+        bundleSignPublicKeyPrefix: Array.from(bundle.signKeypair.publicKey.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
+      });
       setEpochKey(albumId, bundle);
       unwrappedBundles.push(bundle);
       log.info(`Cached epoch key ${record.epochId} for album ${albumId}`);
@@ -259,6 +265,11 @@ export async function getCurrentOrFetchEpochKey(
   // Check cache first
   let current = getCurrentEpochKey(albumId);
   if (current) {
+    log.debug('Got epoch key from cache', {
+      albumId,
+      epochId: current.epochId,
+      signPublicKeyPrefix: Array.from(current.signKeypair.publicKey.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
+    });
     return current;
   }
 
