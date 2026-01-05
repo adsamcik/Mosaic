@@ -53,6 +53,8 @@ Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal 
 
 **Development Status:** This project is in active development. When database schema issues arise, it's acceptable to drop all migrations and reset the database rather than writing complex migration fixes.
 
+**Version Target:** We are working towards **v1**. All commits go directly to `master`—no pull requests, no feature branches. Move fast, commit often, keep the build green.
+
 ## Philosophy (Priority Order)
 
 1. **Correctness** - Code must work as specified
