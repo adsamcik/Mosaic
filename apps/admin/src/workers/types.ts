@@ -187,6 +187,17 @@ export interface CryptoWorkerApi {
   decryptShardWithTierKey(envelope: Uint8Array, tierKey: Uint8Array): Promise<Uint8Array>;
 
   /**
+   * Peek at shard envelope header without decrypting
+   * @param envelope - Complete envelope (header + ciphertext)
+   * @returns Header info including epochId, shardId, and tier
+   */
+  peekHeader(envelope: Uint8Array): Promise<{
+    epochId: number;
+    shardId: number;
+    tier: number; // 1=thumb, 2=preview, 3=original
+  }>;
+
+  /**
    * Verify shard integrity against expected hash
    * @param envelope - Downloaded shard envelope
    * @param expectedSha256 - Expected SHA256 hash from manifest (base64url)

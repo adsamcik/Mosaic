@@ -63,6 +63,11 @@ export function getCurrentEpochKey(albumId: string): EpochKeyBundle | null {
 /**
  * Store an epoch key bundle in the cache.
  *
+ * IMPORTANT: This function preserves existing signKeypair data if the new bundle
+ * has empty (all zeros) signKeypair but an existing bundle has valid data.
+ * This prevents race conditions where hooks that only have epochSeed overwrite
+ * complete bundles stored by fetchAndUnwrapEpochKeys.
+ *
  * @param albumId - Album ID
  * @param bundle - Epoch key bundle to cache
  */
@@ -72,6 +77,35 @@ export function setEpochKey(albumId: string, bundle: EpochKeyBundle): void {
     albumKeys = new Map();
     epochKeyCache.set(albumId, albumKeys);
   }
+
+  // Check if we already have a bundle with valid signKeypair
+  const existing = albumKeys.get(bundle.epochId);
+  if (existing) {
+    const existingHasValidSignKeypair = existing.signKeypair.publicKey.some(
+      (b) => b !== 0
+    );
+    const newHasValidSignKeypair = bundle.signKeypair.publicKey.some(
+      (b) => b !== 0
+    );
+
+    // Don't overwrite a complete bundle with one that has empty signKeypair
+    if (existingHasValidSignKeypair && !newHasValidSignKeypair) {
+      // Preserve existing, but update epochSeed if the new one is different
+      // (in case the seed was updated but signKeypair wasn't provided)
+      const seedsMatch = existing.epochSeed.every(
+        (b, i) => b === bundle.epochSeed[i]
+      );
+      if (seedsMatch) {
+        // Same seed, existing has better data - keep it
+        return;
+      }
+      // Different seed with no signKeypair - this shouldn't happen, but log it
+      console.warn(
+        `[epoch-key-store] Overwriting epoch ${bundle.epochId} with different seed but empty signKeypair`
+      );
+    }
+  }
+
   albumKeys.set(bundle.epochId, bundle);
 }
 
