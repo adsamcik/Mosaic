@@ -35,6 +35,7 @@ public partial class CombinedAuthMiddleware
         "/api/auth/verify",
         "/api/auth/register",
         "/api/dev-auth/",
+        "/api/test-seed/",  // E2E test seeding (dev/test environments only)
         "/api/s/",
         "/swagger",
         "/openapi"
