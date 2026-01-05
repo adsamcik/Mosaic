@@ -134,7 +134,7 @@ export class LogCollector {
 /**
  * API URL for backend requests
  */
-const API_URL = process.env.API_URL || 'http://localhost:8080';
+const API_URL = process.env.API_URL || 'http://localhost:5000';
 
 /**
  * Test password used for E2E testing
@@ -374,16 +374,29 @@ export class LoginPage {
    * This is required for LocalAuth mode where each test needs a unique username.
    */
   async login(password: string, username?: string) {
+    console.log('[LoginPage] login() called');
+    
+    // Ensure we're in login mode (not register mode)
+    await this.switchToLoginMode();
+    console.log('[LoginPage] Switched to login mode');
+    
     // If username provided, fill it in (LocalAuth mode)
     if (username) {
       const usernameField = this.usernameInput;
       if (await usernameField.isVisible().catch(() => false)) {
         await usernameField.clear();
         await usernameField.fill(username);
+        console.log('[LoginPage] Filled username');
       }
     }
     await this.passwordInput.fill(password);
+    console.log('[LoginPage] Filled password');
+    
+    // Wait for login button to be visible and enabled before clicking
+    await expect(this.loginButton).toBeVisible({ timeout: 10000 });
+    console.log('[LoginPage] Login button visible, clicking...');
     await this.loginButton.click();
+    console.log('[LoginPage] Login button clicked');
   }
 
   async expectErrorMessage(text?: string | RegExp) {
@@ -426,7 +439,8 @@ export class AppShell {
   }
 
   get logoutButton() {
-    return this.page.getByRole('button', { name: /lock|logout/i });
+    // Use specific class selector to avoid matching album cards that might contain "Lock" text
+    return this.page.locator('button.logout-button');
   }
 
   get backToAlbumsButton() {
@@ -548,6 +562,10 @@ export class GalleryPage {
     await expect(fileInput).toBeAttached({ timeout: 10000 });
     console.log('[GalleryPage] File input found, setting files...');
     
+    // Capture current photo count before upload
+    const countBefore = await this.photos.count();
+    console.log(`[GalleryPage] Photo count before upload: ${countBefore}`);
+    
     // Set files on the hidden input - Playwright handles this even when display:none
     await fileInput.setInputFiles({
       name: filename,
@@ -556,18 +574,38 @@ export class GalleryPage {
     });
     console.log('[GalleryPage] Files set successfully, waiting for upload to complete...');
     
-    // Wait for upload button to show progress or complete
-    // The button text changes during upload: "📷 Upload" -> "Uploading... X%"
+    // Wait for upload button to show "Uploading" state first
+    try {
+      await this.page.waitForFunction(() => {
+        const btn = document.querySelector('[data-testid="upload-button"]');
+        return btn?.textContent?.includes('Uploading');
+      }, { timeout: 5000 });
+      console.log('[GalleryPage] Upload started (button shows Uploading)');
+    } catch {
+      console.log('[GalleryPage] Warning: Never saw Uploading state, continuing...');
+    }
+    
+    // Wait for upload button to finish uploading (not show "Uploading" text)
     await this.page.waitForFunction(() => {
       const btn = document.querySelector('[data-testid="upload-button"]');
-      // Wait until it's no longer showing "Uploading" (upload complete)
-      // or a photo appears in the gallery (check both view types)
-      const hasPhoto = document.querySelector('[data-testid="photo-thumbnail"], [data-testid="justified-photo-thumbnail"]');
       const isUploading = btn?.textContent?.includes('Uploading');
-      return hasPhoto || (btn && !isUploading);
+      return btn && !isUploading;
     }, { timeout: 60000 });
     
-    console.log('[GalleryPage] Upload appears complete');
+    console.log('[GalleryPage] Upload appears complete, waiting for photo to render...');
+    
+    // Check count after upload completes
+    const countAfterUpload = await this.photos.count();
+    console.log(`[GalleryPage] Photo count after upload complete: ${countAfterUpload}`);
+    
+    // Wait for photo count to increase by 1
+    const expectedCount = countBefore + 1;
+    console.log(`[GalleryPage] Expecting count to reach: ${expectedCount}`);
+    
+    await expect(this.photos).toHaveCount(expectedCount, { timeout: 60000 });
+    
+    const currentCount = await this.photos.count();
+    console.log(`[GalleryPage] Photo rendered. Final count: ${currentCount}`);
   }
 
   async expectPhotoCount(count: number) {

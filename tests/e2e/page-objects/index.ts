@@ -160,8 +160,8 @@ export class AppShell {
     this.albumList = page.getByTestId('album-list');
     // EN: "Create Album" / CS: "Vytvořit album"
     this.createAlbumButton = page.getByRole('button', { name: /create album|new album|vytvořit album|\+/i });
-    // EN: "Lock" / CS: "Zamknout"
-    this.logoutButton = page.getByRole('button', { name: /lock|logout|zamknout/i });
+    // Use class selector to avoid matching photo elements with similar text
+    this.logoutButton = page.locator('button.logout-button');
     this.settingsButton = page.getByTestId('settings-nav-button');
     // EN: "Admin" / CS: "Administrace" (but icon-based via testid would be more reliable)
     this.adminButton = page.getByRole('button', { name: /admin|shield|administrace/i });
@@ -339,26 +339,36 @@ export class GalleryPage {
   }
 
   async uploadPhoto(imageBuffer: Buffer, filename = 'test.png'): Promise<void> {
+    // Count photos before upload
+    const photoCountBefore = await this.getPhotos().count();
+    console.log(`[GalleryPage PO] Photo count before: ${photoCountBefore}`);
+    
     await expect(this.uploadInput).toBeAttached({ timeout: 10000 });
+    console.log('[GalleryPage PO] Upload input found, setting files...');
 
     await this.uploadInput.setInputFiles({
       name: filename,
       mimeType: 'image/png',
       buffer: imageBuffer,
     });
+    console.log('[GalleryPage PO] Files set, waiting for upload to complete...');
 
-    // Wait for upload to complete
+    // Wait for upload button to finish uploading
     await this.page.waitForFunction(
       () => {
         const btn = document.querySelector('[data-testid="upload-button"]');
-        const hasPhoto = document.querySelector(
-          '[data-testid="photo-thumbnail"], [data-testid="justified-photo-thumbnail"]'
-        );
         const isUploading = btn?.textContent?.includes('Uploading');
-        return hasPhoto || (btn && !isUploading);
+        return btn && !isUploading;
       },
       { timeout: 60000 }
     );
+    console.log('[GalleryPage PO] Upload appears complete, waiting for photo to render...');
+    
+    // Wait for photo count to increase (with buffer for sync)
+    const expectedCount = photoCountBefore + 1;
+    console.log(`[GalleryPage PO] Expecting count: ${expectedCount}`);
+    await expect(this.getPhotos()).toHaveCount(expectedCount, { timeout: 60000 });
+    console.log(`[GalleryPage PO] Photo rendered. Count: ${expectedCount}`);
   }
 
   async uploadMultiplePhotos(

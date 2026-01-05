@@ -311,7 +311,7 @@ export async function mockApiError(
 /**
  * Legacy API Helper (re-implemented for independence)
  */
-const API_URL = process.env.API_URL || 'http://localhost:8080';
+const API_URL = process.env.API_URL || 'http://localhost:5000';
 
 export class ApiHelper {
   constructor(private baseUrl: string = API_URL) {}

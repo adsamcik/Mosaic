@@ -67,7 +67,7 @@ export class TestContext {
   constructor(
     private browser: Browser,
     workerIndex: number,
-    apiBaseUrl: string = process.env.API_URL || 'http://localhost:8080'
+    apiBaseUrl: string = process.env.API_URL || 'http://localhost:5000'
   ) {
     this.testId = generateTestId(workerIndex);
     this.apiBaseUrl = apiBaseUrl;

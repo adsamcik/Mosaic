@@ -11,7 +11,7 @@ import { type Page } from '@playwright/test';
 /**
  * API URL for backend requests
  */
-const API_URL = process.env.API_URL || 'http://localhost:8080';
+const API_URL = process.env.API_URL || 'http://localhost:5000';
 
 /**
  * Default test password
