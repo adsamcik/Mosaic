@@ -35,14 +35,15 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     await loginPage.waitForForm();
     await expect(loginPage.loginForm).toBeVisible();
     await expect(loginPage.passwordInput).toBeVisible();
-    await expect(loginPage.loginButton).toHaveText(/unlock/i);
+    // Button text varies by auth mode: "Sign In" or translations
+    await expect(loginPage.loginButton).toHaveText(/sign in|přihlásit se/i);
 
     // Step 2: Enter password and submit
     await loginPage.passwordInput.fill(TEST_CONSTANTS.PASSWORD);
     await loginPage.loginButton.click();
 
-    // Step 3: Verify loading state
-    await expect(loginPage.loginButton).toHaveText(/unlocking/i);
+    // Step 3: Verify loading state ("Signing In..." or translation)
+    await expect(loginPage.loginButton).toHaveText(/signing in|přihlašuji/i);
 
     // Step 4: Wait for app shell (indicates crypto worker initialized successfully)
     await expect(authenticatedPage.getByTestId('app-shell')).toBeVisible({

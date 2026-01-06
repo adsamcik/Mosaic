@@ -202,24 +202,18 @@ export const test = base.extend<{
     await page.goto('/');
     
     // Wait for login form
-    const loginForm = page.getByTestId('login-form');
-    await expect(loginForm).toBeVisible({ timeout: 30000 });
+    const loginPage = new LoginPage(page);
+    await loginPage.waitForForm();
     
-    // Check if LocalAuth mode (has username field) and register new user
-    const usernameInput = page.getByLabel('Username');
-    const isLocalAuth = await usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    // Check if LocalAuth mode (has username field) using i18n-compatible locator
+    const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
     
     if (isLocalAuth) {
       // LocalAuth mode: register a new user (tests use unique usernames)
-      const loginPage = new LoginPage(page);
       await loginPage.register(testUser, TEST_PASSWORD);
     } else {
       // ProxyAuth mode: just enter password
-      const passwordInput = page.getByLabel('Password');
-      await passwordInput.fill(TEST_PASSWORD);
-      
-      const loginButton = page.getByRole('button', { name: /sign in|unlock/i });
-      await loginButton.click();
+      await loginPage.login(TEST_PASSWORD);
     }
     
     // Wait for app shell to appear (indicates successful login)

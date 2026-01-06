@@ -5,7 +5,7 @@
  * Phase 1: Fixed assertions and improved error handling.
  */
 
-import { expect, test } from '../fixtures';
+import { expect, test, LoginPage } from '../fixtures';
 
 test.describe('App Loading @p1 @fast', () => {
   test('loads the application and shows login form', async ({ page }) => {
@@ -78,8 +78,8 @@ test.describe('App Loading @p1 @fast', () => {
     const title = page.locator('h1');
     await expect(title.first()).toBeVisible();
 
-    // Should have a form or input
-    const passwordInput = page.getByLabel('Password');
-    await expect(passwordInput).toBeVisible({ timeout: 30000 });
+    // Should have a form or input (use i18n-compatible locator)
+    const loginPage = new LoginPage(page);
+    await expect(loginPage.passwordInput).toBeVisible({ timeout: 30000 });
   });
 });

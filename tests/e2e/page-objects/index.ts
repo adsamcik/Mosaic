@@ -60,14 +60,39 @@ export class LoginPage {
     await expect(this.passwordInput).toBeVisible({ timeout });
   }
 
+  /**
+   * Login with password only (for ProxyAuth mode).
+   * If LocalAuth mode is detected (username field visible), this will fail.
+   * Use loginWithUsername() or the register() method for LocalAuth mode.
+   */
   async login(password: string = TEST_PASSWORD): Promise<void> {
     await this.passwordInput.fill(password);
     await this.loginButton.click();
   }
 
+  /**
+   * Login with username and password (for LocalAuth mode).
+   * If username field is not visible (ProxyAuth mode), only password is entered.
+   */
   async loginWithUsername(username: string, password: string = TEST_PASSWORD): Promise<void> {
-    // For dev mode with username field
+    // For LocalAuth mode with username field
     if (await this.usernameInput.isVisible().catch(() => false)) {
+      await this.usernameInput.fill(username);
+    }
+    await this.passwordInput.fill(password);
+    await this.loginButton.click();
+  }
+
+  /**
+   * Login with auto-detection of auth mode.
+   * If LocalAuth (username field visible) and username provided, fills username.
+   * Otherwise just fills password.
+   */
+  async loginAuto(password: string = TEST_PASSWORD, username?: string): Promise<void> {
+    // Check if LocalAuth mode (username field visible)
+    const isLocalAuth = await this.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    
+    if (isLocalAuth && username) {
       await this.usernameInput.fill(username);
     }
     await this.passwordInput.fill(password);

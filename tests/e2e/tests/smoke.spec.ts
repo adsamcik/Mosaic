@@ -63,17 +63,15 @@ test.describe('Smoke Tests @smoke @p0 @fast', () => {
     const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
 
-    // Detect auth mode by checking for username field
-    const usernameInput = page.getByLabel('Username');
-    const isLocalAuth = await usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    // Detect auth mode by checking for username field (use i18n-compatible locator from LoginPage)
+    const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
 
     if (isLocalAuth) {
       // LocalAuth mode: register new user
       await loginPage.register(username, TEST_CONSTANTS.PASSWORD);
     } else {
       // ProxyAuth mode: just enter password to initialize crypto
-      await loginPage.passwordInput.fill(TEST_CONSTANTS.PASSWORD);
-      await page.getByRole('button', { name: /unlock|sign in/i }).click();
+      await loginPage.login(TEST_CONSTANTS.PASSWORD);
     }
 
     // Verify app shell loads (crypto initialized successfully)

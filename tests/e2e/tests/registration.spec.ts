@@ -354,10 +354,10 @@ test.describe('Registration @p1 @auth @crypto', () => {
 
       await loginPage.switchToRegisterMode();
 
-      // Check that inputs have associated labels
-      await expect(page.getByLabel('Username')).toBeVisible();
-      await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
-      await expect(page.getByLabel('Confirm Password')).toBeVisible();
+      // Check that inputs have associated labels (use i18n-compatible locators)
+      await expect(loginPage.usernameInput).toBeVisible();
+      await expect(loginPage.passwordInput).toBeVisible();
+      await expect(loginPage.confirmPasswordInput).toBeVisible();
     });
 
     test('password field has correct autocomplete attribute', async ({ page }) => {
