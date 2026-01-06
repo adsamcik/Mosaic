@@ -240,15 +240,113 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
   });
 });
 
-test.describe('Share Link Access @p1 @sharing', () => {
-  test.skip('P2-SHARE-9: accessing share link without login shows public view', async ({
-    page,
-  }) => {
-    // TODO: Implement when public share link access is available
-    // This test requires unauthenticated access to a share link URL
+test.describe('Share Link Access @p2 @sharing', () => {
+  let loginPage: LoginPage;
+  let appShell: AppShell;
+  let createAlbumDialog: CreateAlbumDialog;
+  let gallery: GalleryPage;
+  let shareLinksPanel: ShareLinksPanel;
+  let createShareLinkDialog: CreateShareLinkDialog;
+  let albumName: string;
+  let generatedShareUrl: string;
+
+  test.beforeEach(async ({ page }) => {
+    loginPage = new LoginPage(page);
+    appShell = new AppShell(page);
+    createAlbumDialog = new CreateAlbumDialog(page);
+    gallery = new GalleryPage(page);
+    shareLinksPanel = new ShareLinksPanel(page);
+    createShareLinkDialog = new CreateShareLinkDialog(page);
+
+    // Generate unique album name
+    albumName = `PublicShareTest-${crypto.randomUUID().slice(0, 8)}`;
+
+    // Login and create a test album
+    await loginPage.goto();
+    await loginPage.waitForForm();
+    await loginPage.login();
+    await loginPage.expectLoginSuccess();
+
+    // Create album
+    await appShell.openCreateAlbumDialog();
+    await createAlbumDialog.createAlbum(albumName);
+
+    // Open the album
+    await appShell.clickAlbumByName(albumName);
+    await gallery.waitForLoad();
+
+    // Create a share link
+    await gallery.openShareLinks();
+    await shareLinksPanel.waitForOpen();
+    await shareLinksPanel.openCreateDialog();
+    await createShareLinkDialog.waitForOpen();
+    await createShareLinkDialog.selectExpiry('7 days');
+    await createShareLinkDialog.generate();
+    generatedShareUrl = await createShareLinkDialog.getGeneratedUrl();
+    await createShareLinkDialog.done();
+    await shareLinksPanel.close();
   });
 
-  test.skip('P2-SHARE-10: expired share link shows appropriate error', async ({ page }) => {
-    // TODO: Implement when we can fast-forward time or create expired links
+  test('P2-SHARE-9: accessing share link without login shows public view', async ({
+    page,
+    browser,
+  }) => {
+    // Open the share link in a fresh browser context (no cookies, no auth)
+    const incognitoContext = await browser.newContext();
+    const incognitoPage = await incognitoContext.newPage();
+
+    try {
+      // Navigate to the share URL
+      await incognitoPage.goto(generatedShareUrl);
+
+      // Verify the shared album viewer is shown
+      const sharedViewer = incognitoPage.getByTestId('shared-album-viewer');
+      await expect(sharedViewer).toBeVisible({ timeout: 30000 });
+
+      // Verify we see the "Shared Album" badge (anonymous access indicator)
+      const sharedBadge = incognitoPage.locator('.shared-badge');
+      await expect(sharedBadge).toBeVisible({ timeout: 5000 });
+
+      // Verify no login form is shown
+      const loginForm = incognitoPage.getByTestId('login-form');
+      await expect(loginForm).not.toBeVisible();
+    } finally {
+      await incognitoContext.close();
+    }
+  });
+
+  test('P2-SHARE-10: expired share link shows appropriate error', async ({ page, browser }) => {
+    // Extract linkId from the generated URL (format: /s/{linkId}#k=...)
+    const urlPath = new URL(generatedShareUrl).pathname;
+    const linkIdMatch = urlPath.match(/\/s\/([A-Za-z0-9_-]+)$/);
+    expect(linkIdMatch).toBeTruthy();
+    const linkId = linkIdMatch![1];
+
+    // Call test-seed API to expire this link
+    const expireResponse = await page.request.post(`/api/test-seed/expire-link/${linkId}`);
+    expect(expireResponse.ok()).toBe(true);
+
+    // Open the expired link in a fresh browser context
+    const incognitoContext = await browser.newContext();
+    const incognitoPage = await incognitoContext.newPage();
+
+    try {
+      // Navigate to the share URL
+      await incognitoPage.goto(generatedShareUrl);
+
+      // Verify the shared album viewer shows error state
+      const sharedViewer = incognitoPage.getByTestId('shared-album-viewer');
+      await expect(sharedViewer).toBeVisible({ timeout: 30000 });
+
+      // Verify error message is displayed
+      const errorMessage = incognitoPage.locator('.shared-viewer-error');
+      await expect(errorMessage).toBeVisible({ timeout: 10000 });
+
+      // Check for expired/invalid message
+      const errorText = await errorMessage.textContent();
+      expect(errorText?.toLowerCase()).toMatch(/expired|invalid|unable to access/);
+    } finally {
+      await incognitoContext.close();
+    }
   });
 });

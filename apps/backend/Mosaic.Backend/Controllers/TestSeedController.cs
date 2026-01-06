@@ -267,7 +267,80 @@ public class TestSeedController : ControllerBase
         return (user, true);
     }
 
+    /// <summary>
+    /// Expires a share link immediately for E2E testing purposes.
+    /// Sets the ExpiresAt to 1 hour in the past.
+    /// </summary>
+    /// <param name="linkIdBase64">Base64url-encoded LinkId.</param>
+    /// <returns>Success status.</returns>
+    /// <response code="200">Link was expired.</response>
+    /// <response code="404">Environment is not Development/Testing or link not found.</response>
+    [HttpPost("expire-link/{linkIdBase64}")]
+    [ProducesResponseType(typeof(ExpireLinkResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ExpireLink(string linkIdBase64)
+    {
+        if (!IsTestEnvironment())
+        {
+            return NotFound();
+        }
+
+        // Decode link ID from base64url
+        var linkIdBytes = FromBase64Url(linkIdBase64);
+        if (linkIdBytes == null)
+        {
+            return BadRequest(new ErrorResponse("Invalid linkId format"));
+        }
+
+        var shareLink = await _db.ShareLinks.FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
+        if (shareLink == null)
+        {
+            return NotFound(new ErrorResponse("Share link not found"));
+        }
+
+        // Set expiry to 1 hour ago
+        shareLink.ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1);
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Expired share link {LinkId} for E2E testing", linkIdBase64);
+
+        return Ok(new ExpireLinkResponse(linkIdBase64, shareLink.ExpiresAt.Value));
+    }
+
+    /// <summary>
+    /// Convert base64url string to bytes
+    /// </summary>
+    private static byte[]? FromBase64Url(string base64Url)
+    {
+        try
+        {
+            // Restore base64 padding
+            var base64 = base64Url
+                .Replace('-', '+')
+                .Replace('_', '/');
+            
+            switch (base64.Length % 4)
+            {
+                case 2: base64 += "=="; break;
+                case 3: base64 += "="; break;
+            }
+            
+            return Convert.FromBase64String(base64);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     #region Request/Response DTOs
+
+    /// <summary>
+    /// Response for the expire-link endpoint.
+    /// </summary>
+    /// <param name="LinkId">The link ID that was expired.</param>
+    /// <param name="ExpiresAt">The new expiration time.</param>
+    public record ExpireLinkResponse(string LinkId, DateTimeOffset ExpiresAt);
 
     /// <summary>
     /// Response for the reset endpoint.
