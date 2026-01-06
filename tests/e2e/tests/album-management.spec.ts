@@ -51,13 +51,18 @@ test.describe('Album Management @p1 @album', () => {
 
       const dialog = new CreateAlbumDialog(user.page);
       await dialog.waitForOpen();
-      await dialog.setName('');
-      await dialog.submit();
 
-      // Should show error or button should be disabled
-      const hasError = await dialog.errorMessage.isVisible().catch(() => false);
-      const isDisabled = await dialog.createButton.isDisabled();
-      expect(hasError || isDisabled).toBeTruthy();
+      // With empty name, the create button should be disabled (client-side validation)
+      await dialog.setName('');
+      await expect(dialog.createButton).toBeDisabled();
+
+      // Verify that typing a name enables the button
+      await dialog.setName('Test Album');
+      await expect(dialog.createButton).toBeEnabled();
+
+      // Clear name again to verify it disables
+      await dialog.setName('');
+      await expect(dialog.createButton).toBeDisabled();
     });
 
     test('P1-ALBUM-3: cancel create album closes dialog without creating', async ({
