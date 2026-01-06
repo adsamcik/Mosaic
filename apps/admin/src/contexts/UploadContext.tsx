@@ -158,8 +158,14 @@ export function UploadProvider({ children }: UploadProviderProps) {
         throw uploadError;
       }
 
-      // Set up progress callback (convert 0-1 to 0-100)
+      // Chain progress callback - preserve existing handlers from upload-store-bridge
+      // This is critical: upload-store-bridge sets up handlers to track pending photos
+      // in the PhotoStore, and we must not overwrite them
+      const previousOnProgress = uploadQueue.onProgress;
       uploadQueue.onProgress = (task) => {
+        // Call bridge handler first (adds to PhotoStore)
+        previousOnProgress?.(task);
+        // Then update local UI state
         setProgress(Math.round(task.progress * 100));
         setActiveTasks((prev) => {
           const index = prev.findIndex((t) => t.id === task.id);
@@ -170,8 +176,11 @@ export function UploadProvider({ children }: UploadProviderProps) {
         });
       };
 
-      // Create manifest when upload completes
+      // Chain complete callback - preserve existing handlers from upload-store-bridge
+      const previousOnComplete = uploadQueue.onComplete;
       uploadQueue.onComplete = async (task, shardIds) => {
+        // Call bridge handler first (transitions to syncing in PhotoStore)
+        await previousOnComplete?.(task, shardIds);
         // Remove from active tasks
         setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
 
@@ -205,9 +214,12 @@ export function UploadProvider({ children }: UploadProviderProps) {
         }
       };
 
-
-
+      // Chain error callback - preserve existing handlers from upload-store-bridge
+      const previousOnError = uploadQueue.onError;
       uploadQueue.onError = (task, uploadErr) => {
+        // Call bridge handler first (marks as failed in PhotoStore)
+        previousOnError?.(task, uploadErr);
+        
         // Remove from active tasks
         setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
 
