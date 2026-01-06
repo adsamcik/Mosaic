@@ -77,8 +77,10 @@ export class LoginPage {
   async loginWithUsername(username: string, password: string = TEST_PASSWORD): Promise<void> {
     // For LocalAuth mode with username field
     if (await this.usernameInput.isVisible().catch(() => false)) {
+      await this.usernameInput.clear();
       await this.usernameInput.fill(username);
     }
+    await this.passwordInput.clear();
     await this.passwordInput.fill(password);
     await this.loginButton.click();
   }
@@ -146,6 +148,8 @@ export class LoginPage {
     const toggleBtn = this.page.getByRole('button', { name: /already have an account|máte účet/i });
     if (await toggleBtn.isVisible().catch(() => false)) {
       await toggleBtn.click();
+      // Wait for the form to switch - confirm password field should disappear
+      await expect(this.confirmPasswordInput).toBeHidden({ timeout: 5000 });
     }
   }
 
@@ -323,6 +327,8 @@ export class GalleryPage {
   readonly shareButton: Locator;
   readonly renameAlbumButton: Locator;
   readonly deleteAlbumButton: Locator;
+  readonly albumSettingsButton: Locator;
+  readonly albumSettingsMenu: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -337,8 +343,11 @@ export class GalleryPage {
     this.viewMapButton = page.getByTestId('view-toggle-map');
     this.membersButton = page.getByTestId('share-button');
     this.shareButton = page.getByTestId('share-links-button');
-    this.renameAlbumButton = page.getByTestId('rename-album-button');
-    this.deleteAlbumButton = page.getByTestId('delete-album-button');
+    this.renameAlbumButton = page.getByTestId('menu-rename-button');
+    // Delete button is inside the album settings dropdown menu
+    this.deleteAlbumButton = page.getByTestId('menu-delete-button');
+    this.albumSettingsButton = page.getByTestId('album-settings-button');
+    this.albumSettingsMenu = page.getByTestId('album-settings-menu');
   }
 
   async waitForLoad(timeout = 30000): Promise<void> {
@@ -441,15 +450,36 @@ export class GalleryPage {
     await this.shareButton.click();
   }
 
+  async openAlbumSettings(): Promise<void> {
+    // Only open if not already open
+    const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
+    if (!isMenuVisible) {
+      await this.albumSettingsButton.click();
+      await expect(this.albumSettingsMenu).toBeVisible({ timeout: 5000 });
+    }
+  }
+
   async clickDeleteAlbum(): Promise<void> {
+    // Delete button is inside the album settings dropdown, need to open it first
+    await this.openAlbumSettings();
     await this.deleteAlbumButton.click();
   }
 
   async expectDeleteButtonVisible(): Promise<void> {
+    // Open the dropdown first to check if delete button is visible
+    await this.openAlbumSettings();
     await expect(this.deleteAlbumButton).toBeVisible({ timeout: 5000 });
   }
 
   async expectDeleteButtonHidden(): Promise<void> {
+    // If dropdown is open, check that delete button is hidden (non-owner)
+    // If dropdown is not open, try to open it first
+    const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
+    if (!isMenuVisible) {
+      await this.albumSettingsButton.click().catch(() => {
+        // Settings button might not be visible for some users
+      });
+    }
     await expect(this.deleteAlbumButton).toBeHidden({ timeout: 5000 });
   }
 }
