@@ -1,8 +1,13 @@
+import { enableMapSet } from 'immer';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { logger } from './lib/logger';
+
+// Enable Immer's MapSet plugin for stores that use Map/Set
+// Must be called before any Zustand store using immer middleware is accessed
+enableMapSet();
 
 // Initialize i18n - must be imported before any components that use translations
 import './lib/i18n';

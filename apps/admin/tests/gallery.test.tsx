@@ -77,10 +77,11 @@ const mockPhotos: PhotoMeta[] = [
 ];
 
 // Mock hooks
-vi.mock('../src/hooks/usePhotos', () => ({
-  usePhotos: vi.fn(() => ({
+vi.mock('../src/hooks/usePhotoList', () => ({
+  usePhotoList: vi.fn(() => ({
     photos: mockPhotos,
     isLoading: false,
+    isRefreshing: false,
     error: null,
     refetch: vi.fn(),
   })),
@@ -393,10 +394,11 @@ describe('Gallery', () => {
 
   describe('Loading State', () => {
     it('shows loading state when photos are loading', async () => {
-      const { usePhotos } = await import('../src/hooks/usePhotos');
-      vi.mocked(usePhotos).mockReturnValueOnce({
+      const { usePhotoList } = await import('../src/hooks/usePhotoList');
+      vi.mocked(usePhotoList).mockReturnValueOnce({
         photos: [],
         isLoading: true,
+        isRefreshing: false,
         error: null,
         refetch: vi.fn(),
       });
@@ -412,10 +414,11 @@ describe('Gallery', () => {
 
   describe('Error State', () => {
     it('shows error state when loading fails', async () => {
-      const { usePhotos } = await import('../src/hooks/usePhotos');
-      vi.mocked(usePhotos).mockReturnValue({
+      const { usePhotoList } = await import('../src/hooks/usePhotoList');
+      vi.mocked(usePhotoList).mockReturnValue({
         photos: [],
         isLoading: false,
+        isRefreshing: false,
         error: new Error('Network error'),
         refetch: vi.fn(),
       });
@@ -428,9 +431,10 @@ describe('Gallery', () => {
       cleanup();
 
       // Reset the mock for other tests
-      vi.mocked(usePhotos).mockReturnValue({
+      vi.mocked(usePhotoList).mockReturnValue({
         photos: mockPhotos,
         isLoading: false,
+        isRefreshing: false,
         error: null,
         refetch: vi.fn(),
       });
@@ -516,7 +520,7 @@ describe('photosToGeoFeatures', () => {
   it('filters out photos with null coordinates (from SQLite)', async () => {
     // SQLite returns NULL values as JavaScript null, not undefined
     // This test ensures photos with null lat/lng are excluded from the map
-    const { usePhotos } = await import('../src/hooks/usePhotos');
+    const { usePhotoList } = await import('../src/hooks/usePhotoList');
     const photosWithNullCoords: PhotoMeta[] = [
       {
         id: 'photo-valid',
@@ -567,9 +571,10 @@ describe('photosToGeoFeatures', () => {
       },
     ];
 
-    vi.mocked(usePhotos).mockReturnValueOnce({
+    vi.mocked(usePhotoList).mockReturnValueOnce({
       photos: photosWithNullCoords,
       isLoading: false,
+      isRefreshing: false,
       error: null,
       refetch: vi.fn(),
     });
@@ -589,9 +594,10 @@ describe('photosToGeoFeatures', () => {
     cleanup();
 
     // Reset mock
-    vi.mocked(usePhotos).mockReturnValue({
+    vi.mocked(usePhotoList).mockReturnValue({
       photos: mockPhotos,
       isLoading: false,
+      isRefreshing: false,
       error: null,
       refetch: vi.fn(),
     });

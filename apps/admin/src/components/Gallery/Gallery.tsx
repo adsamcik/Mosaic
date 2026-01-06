@@ -6,17 +6,19 @@ import { UploadProvider } from '../../contexts/UploadContext';
 import { useAlbumMembers } from '../../hooks/useAlbumMembers';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
-import { usePhotos } from '../../hooks/usePhotos';
+import { usePhotoActions } from '../../hooks/usePhotoActions';
+import { usePhotoList } from '../../hooks/usePhotoList';
 import { useSelection } from '../../hooks/useSelection';
 import { useSync } from '../../hooks/useSync';
 import { createLogger } from '../../lib/logger';
-import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
+import { SyncCoordinatorProvider } from '../../lib/sync-coordinator';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
 import { DeleteAlbumDialog, RenameAlbumDialog } from '../Albums';
 import { MemberList } from '../Members/MemberList';
 import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
 import { DropZone } from '../Upload/DropZone';
 import { UploadErrorToast } from '../Upload/UploadErrorToast';
+import { DeletePhotoDialog } from './DeletePhotoDialog';
 import { GalleryHeader } from './GalleryHeader';
 import { MapView } from './MapView';
 import { MosaicPhotoGrid } from './MosaicPhotoGrid';
@@ -74,13 +76,14 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
   const [searchQuery, setSearchQuery] = useState('');
   
   // State for bulk photo delete dialog
-  // TODO: Implement bulk delete confirmation dialog using these state variables
-  // const [_bulkDeletePhotos, setBulkDeletePhotos] = useState<PhotoMeta[]>([]);
-  // const [_showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [bulkDeletePhotos, setBulkDeletePhotos] = useState<PhotoMeta[]>([]);
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
 
-  const { photos, isLoading, error, refetch: reloadPhotos } = usePhotos(albumId, searchQuery);
+  const { photos, isLoading, error, refetch: reloadPhotos } = usePhotoList(albumId, searchQuery);
   const { epochKeys, isLoading: epochKeysLoading } = useAlbumEpochKeys(albumId);
   const { currentUserRole, isOwner, canEdit } = useAlbumMembers(albumId);
+  const photoActions = usePhotoActions();
   
   // Sort photos by createdAt descending to match display order
   // This ensures lightbox navigation follows the visual order
@@ -135,20 +138,8 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
       });
   }, [albumId, epochKeys, epochKeysLoading, syncAlbum, reloadPhotos]);
 
-  // Listen for sync-complete events to refresh photos (e.g., after upload)
-  useEffect(() => {
-    const handleSyncComplete = (event: Event) => {
-      const detail = (event as CustomEvent<SyncEventDetail>).detail;
-      if (detail.albumId === albumId) {
-        reloadPhotos();
-      }
-    };
-
-    syncEngine.addEventListener('sync-complete', handleSyncComplete);
-    return () => {
-      syncEngine.removeEventListener('sync-complete', handleSyncComplete);
-    };
-  }, [albumId, reloadPhotos]);
+  // Note: sync-complete event handling is now managed by SyncCoordinator
+  // The PhotoStore is updated automatically, and usePhotoList subscribes to those changes
 
   // Convert photos to GeoFeatures for map view
   const geoFeatures = useMemo(() => photosToGeoFeatures(photos), [photos]);
@@ -219,16 +210,55 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
   const handleBulkDeleteClick = useCallback(() => {
     const selectedPhotos = photos.filter((p) => selection.selectedIds.has(p.id));
     if (selectedPhotos.length > 0) {
-      // setBulkDeletePhotos(selectedPhotos);
-      // setShowBulkDeleteDialog(true);
-      console.warn('Bulk delete dialog not implemented');
+      setBulkDeletePhotos(selectedPhotos);
+      setShowBulkDeleteDialog(true);
+      setBulkDeleteError(null);
     }
   }, [photos, selection.selectedIds]);
 
+  // Confirm bulk delete
+  const handleConfirmBulkDelete = useCallback(async () => {
+    if (bulkDeletePhotos.length === 0) return;
+
+    setBulkDeleteError(null);
+
+    try {
+      const result = await photoActions.deletePhotos(
+        bulkDeletePhotos.map((p) => p.id),
+        albumId
+      );
+
+      if (result.failureCount > 0) {
+        // Some photos failed to delete
+        setBulkDeleteError(
+          `Failed to delete ${result.failureCount} of ${bulkDeletePhotos.length} photos. ${result.errors.join(', ')}`
+        );
+      } else {
+        // All photos deleted successfully
+        setShowBulkDeleteDialog(false);
+        setBulkDeletePhotos([]);
+        selection.exitSelectionMode();
+        reloadPhotos();
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete photos';
+      setBulkDeleteError(message);
+    }
+  }, [bulkDeletePhotos, photoActions, albumId, selection, reloadPhotos]);
+
+  // Cancel bulk delete
+  const handleCancelBulkDelete = useCallback(() => {
+    if (!photoActions.isDeleting) {
+      setShowBulkDeleteDialog(false);
+      setBulkDeletePhotos([]);
+      setBulkDeleteError(null);
+    }
+  }, [photoActions.isDeleting]);
+
   // Callback when bulk delete completes in photo grid
   const handleBulkDeleteComplete = useCallback(() => {
-    // setShowBulkDeleteDialog(false);
-    // setBulkDeletePhotos([]);
+    setShowBulkDeleteDialog(false);
+    setBulkDeletePhotos([]);
     selection.exitSelectionMode();
     reloadPhotos();
   }, [selection, reloadPhotos]);
@@ -323,6 +353,7 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
   return (
     <AlbumPermissionsProvider role={currentUserRole ?? 'viewer'}>
     <UploadProvider>
+    <SyncCoordinatorProvider>
       <div className={`gallery ${selection.isSelectionMode ? 'selection-mode-active' : ''}`} data-testid="gallery">
         <GalleryHeader
           albumId={albumId}
@@ -446,6 +477,17 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
       {/* Upload Error Toast */}
       <UploadErrorToast />
 
+      {/* Bulk Delete Photo Confirmation Dialog */}
+      {showBulkDeleteDialog && bulkDeletePhotos.length > 0 && (
+        <DeletePhotoDialog
+          photos={bulkDeletePhotos}
+          isDeleting={photoActions.isDeleting}
+          onConfirm={handleConfirmBulkDelete}
+          onCancel={handleCancelBulkDelete}
+          error={bulkDeleteError}
+        />
+      )}
+
       {/* Selection Action Bar - floating bottom bar when in selection mode */}
       <SelectionActionBar
         selectedCount={selection.selectedCount}
@@ -457,6 +499,7 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
         totalPhotos={photos.length}
       />
       </div>
+    </SyncCoordinatorProvider>
     </UploadProvider>
     </AlbumPermissionsProvider>
   );

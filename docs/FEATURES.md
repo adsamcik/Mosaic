@@ -27,12 +27,12 @@
 **Purpose:** Development-only authentication using Ed25519 challenge-response.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Backend | [Controllers/DevAuthController.cs](../apps/backend/Mosaic.Backend/Controllers/DevAuthController.cs) |
-| Backend | [Services/LocalAuthService.cs](../apps/backend/Mosaic.Backend/Services/LocalAuthService.cs) |
-| Frontend | [lib/local-auth.ts](../apps/admin/src/lib/local-auth.ts) |
-| Frontend | [components/Auth/LocalAuthLogin.tsx](../apps/admin/src/components/Auth/LocalAuthLogin.tsx) |
+| Layer    | Location                                                                                            |
+| -------- | --------------------------------------------------------------------------------------------------- |
+| Backend  | [Controllers/DevAuthController.cs](../apps/backend/Mosaic.Backend/Controllers/DevAuthController.cs) |
+| Backend  | [Services/LocalAuthService.cs](../apps/backend/Mosaic.Backend/Services/LocalAuthService.cs)         |
+| Frontend | [lib/local-auth.ts](../apps/admin/src/lib/local-auth.ts)                                            |
+| Frontend | [components/Auth/LocalAuthLogin.tsx](../apps/admin/src/components/Auth/LocalAuthLogin.tsx)          |
 
 **Flow:**
 1. Client requests challenge with username
@@ -57,10 +57,10 @@ Auth__ProxyAuthEnabled=false  # Disable ProxyAuth
 **Purpose:** Production authentication via trusted reverse proxy (Authelia, Authentik, etc.).
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
+| Layer   | Location                                                                        |
+| ------- | ------------------------------------------------------------------------------- |
 | Backend | [Middleware/ProxyAuthMiddleware.cs](../apps/backend/Mosaic.Backend/Middleware/) |
-| Backend | [Services/ProxyAuthService.cs](../apps/backend/Mosaic.Backend/Services/) |
+| Backend | [Services/ProxyAuthService.cs](../apps/backend/Mosaic.Backend/Services/)        |
 
 **Headers:**
 - `Remote-User`: Authenticated username
@@ -79,9 +79,9 @@ Auth__ProxyAuthEnabled=true   # Enable ProxyAuth
 **Purpose:** Comprehensive E2E test coverage for both LocalAuth and ProxyAuth modes.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| E2E Tests | [tests/e2e/tests/auth-modes.spec.ts](../tests/e2e/tests/auth-modes.spec.ts) |
+| Layer        | Location                                                                                |
+| ------------ | --------------------------------------------------------------------------------------- |
+| E2E Tests    | [tests/e2e/tests/auth-modes.spec.ts](../tests/e2e/tests/auth-modes.spec.ts)             |
 | Page Objects | [tests/e2e/page-objects/index.ts](../tests/e2e/page-objects/index.ts) - LoginPage class |
 
 **Test Categories:**
@@ -129,11 +129,11 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Create, edit, and delete encrypted photo albums.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Backend | [Controllers/AlbumsController.cs](../apps/backend/Mosaic.Backend/Controllers/AlbumsController.cs) |
-| Frontend Hook | [hooks/useAlbums.ts](../apps/admin/src/hooks/useAlbums.ts) |
-| Frontend Components | [components/Albums/](../apps/admin/src/components/Albums/) |
+| Layer               | Location                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------- |
+| Backend             | [Controllers/AlbumsController.cs](../apps/backend/Mosaic.Backend/Controllers/AlbumsController.cs) |
+| Frontend Hook       | [hooks/useAlbums.ts](../apps/admin/src/hooks/useAlbums.ts)                                        |
+| Frontend Components | [components/Albums/](../apps/admin/src/components/Albums/)                                        |
 
 **Features:**
 - Album creation with encrypted metadata
@@ -151,9 +151,9 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Display representative cover images for albums.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Frontend Hook | [hooks/useAlbumCover.ts](../apps/admin/src/hooks/useAlbumCover.ts) |
+| Layer            | Location                                                                   |
+| ---------------- | -------------------------------------------------------------------------- |
+| Frontend Hook    | [hooks/useAlbumCover.ts](../apps/admin/src/hooks/useAlbumCover.ts)         |
 | Frontend Service | [lib/album-cover-service.ts](../apps/admin/src/lib/album-cover-service.ts) |
 
 **Behavior:**
@@ -169,9 +169,9 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Documentation:** [FEATURE_EXPIRATION.md](./FEATURE_EXPIRATION.md)
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Backend | Album entity `ExpiresAt` field |
+| Layer    | Location                                                                              |
+| -------- | ------------------------------------------------------------------------------------- |
+| Backend  | Album entity `ExpiresAt` field                                                        |
 | Frontend | [components/Albums/AlbumExpirationSettings.tsx](../apps/admin/src/components/Albums/) |
 
 ---
@@ -185,12 +185,12 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Specification:** [SPEC-UploadExperience.md](./specs/SPEC-UploadExperience.md)
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Backend | [Controllers/UploadsController.cs](../apps/backend/Mosaic.Backend/Controllers/) |
-| Frontend Context | [contexts/UploadContext.tsx](../apps/admin/src/contexts/UploadContext.tsx) |
-| Frontend Hook | [hooks/useUpload.ts](../apps/admin/src/hooks/useUpload.ts) |
-| Frontend UI | [components/Upload/](../apps/admin/src/components/Upload/) |
+| Layer            | Location                                                                        |
+| ---------------- | ------------------------------------------------------------------------------- |
+| Backend          | [Controllers/UploadsController.cs](../apps/backend/Mosaic.Backend/Controllers/) |
+| Frontend Context | [contexts/UploadContext.tsx](../apps/admin/src/contexts/UploadContext.tsx)      |
+| Frontend Hook    | [hooks/useUpload.ts](../apps/admin/src/hooks/useUpload.ts)                      |
+| Frontend UI      | [components/Upload/](../apps/admin/src/components/Upload/)                      |
 
 **Features:**
 - Client-side encryption before upload
@@ -206,12 +206,12 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Select multiple photos for bulk operations (delete, download, move).
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Frontend Hook | [hooks/useSelection.ts](../apps/admin/src/hooks/useSelection.ts) |
-| Frontend Hook | [hooks/usePhotoActions.ts](../apps/admin/src/hooks/usePhotoActions.ts) |
-| Frontend UI | [components/Gallery/SelectionActionBar.tsx](../apps/admin/src/components/Gallery/) |
-| Styles | [styles/selection-ux.css](../apps/admin/src/styles/selection-ux.css) |
+| Layer         | Location                                                                           |
+| ------------- | ---------------------------------------------------------------------------------- |
+| Frontend Hook | [hooks/useSelection.ts](../apps/admin/src/hooks/useSelection.ts)                   |
+| Frontend Hook | [hooks/usePhotoActions.ts](../apps/admin/src/hooks/usePhotoActions.ts)             |
+| Frontend UI   | [components/Gallery/SelectionActionBar.tsx](../apps/admin/src/components/Gallery/) |
+| Styles        | [styles/selection-ux.css](../apps/admin/src/styles/selection-ux.css)               |
 
 **Features:**
 - Long-press or checkbox selection
@@ -226,10 +226,10 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Soft-delete photos with undo capability.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Backend | [Controllers/PhotosController.cs](../apps/backend/Mosaic.Backend/Controllers/) |
-| Frontend Hook | [hooks/usePhotoActions.ts](../apps/admin/src/hooks/usePhotoActions.ts) |
+| Layer         | Location                                                                       |
+| ------------- | ------------------------------------------------------------------------------ |
+| Backend       | [Controllers/PhotosController.cs](../apps/backend/Mosaic.Backend/Controllers/) |
+| Frontend Hook | [hooks/usePhotoActions.ts](../apps/admin/src/hooks/usePhotoActions.ts)         |
 
 ---
 
@@ -242,10 +242,10 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Specification:** [SPEC-GalleryStreaming.md](./specs/SPEC-GalleryStreaming.md)
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
+| Layer              | Location                                                                               |
+| ------------------ | -------------------------------------------------------------------------------------- |
 | Frontend Component | [components/Gallery/PhotoGrid.tsx](../apps/admin/src/components/Gallery/PhotoGrid.tsx) |
-| Frontend Hook | [hooks/usePhotos.ts](../apps/admin/src/hooks/usePhotos.ts) |
+| Frontend Hook      | [hooks/usePhotos.ts](../apps/admin/src/hooks/usePhotos.ts)                             |
 
 **Features:**
 - TanStack Virtual for viewport-based rendering
@@ -260,9 +260,9 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Full-screen photo viewing with navigation.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Frontend Hook | [hooks/useLightbox.ts](../apps/admin/src/hooks/useLightbox.ts) |
+| Layer              | Location                                                                 |
+| ------------------ | ------------------------------------------------------------------------ |
+| Frontend Hook      | [hooks/useLightbox.ts](../apps/admin/src/hooks/useLightbox.ts)           |
 | Frontend Component | [components/Gallery/Lightbox.tsx](../apps/admin/src/components/Gallery/) |
 
 **Features:**
@@ -278,10 +278,10 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Display photos on a map based on GPS coordinates.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
+| Layer              | Location                                                                |
+| ------------------ | ----------------------------------------------------------------------- |
 | Frontend Component | [components/Gallery/MapView.tsx](../apps/admin/src/components/Gallery/) |
-| Worker | [workers/geo.worker.ts](../apps/admin/src/workers/geo.worker.ts) |
+| Worker             | [workers/geo.worker.ts](../apps/admin/src/workers/geo.worker.ts)        |
 
 **Features:**
 - Leaflet-based map rendering
@@ -297,13 +297,13 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Invite users to access shared albums.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Backend | [Controllers/AlbumMembersController.cs](../apps/backend/Mosaic.Backend/Controllers/) |
-| Frontend Hook | [hooks/useAlbumMembers.ts](../apps/admin/src/hooks/useAlbumMembers.ts) |
-| Frontend Hook | [hooks/useMemberManagement.ts](../apps/admin/src/hooks/useMemberManagement.ts) |
+| Layer            | Location                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| Backend          | [Controllers/AlbumMembersController.cs](../apps/backend/Mosaic.Backend/Controllers/)           |
+| Frontend Hook    | [hooks/useAlbumMembers.ts](../apps/admin/src/hooks/useAlbumMembers.ts)                         |
+| Frontend Hook    | [hooks/useMemberManagement.ts](../apps/admin/src/hooks/useMemberManagement.ts)                 |
 | Frontend Context | [contexts/AlbumPermissionsContext.tsx](../apps/admin/src/contexts/AlbumPermissionsContext.tsx) |
-| Frontend UI | [components/Members/](../apps/admin/src/components/Members/) |
+| Frontend UI      | [components/Members/](../apps/admin/src/components/Members/)                                   |
 
 **Features:**
 - Add members by username
@@ -317,12 +317,12 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Generate public/private shareable links for albums.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Backend | [Controllers/ShareLinksController.cs](../apps/backend/Mosaic.Backend/Controllers/) |
-| Frontend Hook | [hooks/useShareLinks.ts](../apps/admin/src/hooks/useShareLinks.ts) |
-| Frontend Hook | [hooks/useLinkKeys.ts](../apps/admin/src/hooks/useLinkKeys.ts) |
-| Frontend UI | [components/ShareLinks/](../apps/admin/src/components/ShareLinks/) |
+| Layer         | Location                                                                           |
+| ------------- | ---------------------------------------------------------------------------------- |
+| Backend       | [Controllers/ShareLinksController.cs](../apps/backend/Mosaic.Backend/Controllers/) |
+| Frontend Hook | [hooks/useShareLinks.ts](../apps/admin/src/hooks/useShareLinks.ts)                 |
+| Frontend Hook | [hooks/useLinkKeys.ts](../apps/admin/src/hooks/useLinkKeys.ts)                     |
+| Frontend UI   | [components/ShareLinks/](../apps/admin/src/components/ShareLinks/)                 |
 
 **Features:**
 - Time-limited share links
@@ -338,19 +338,19 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Documentation:** See `libs/crypto/.instructions.md`
 
 **Levels:**
-| Level | Name | Derivation | Storage |
-|-------|------|------------|---------|
-| L0 | Master | Argon2id(password, salt) | Never stored |
-| L1 | Root | HKDF(L0, account_salt) | Never stored |
-| L2 | Account | random(32), wrapped by L1 | Encrypted in DB |
-| L3 | Epoch | ReadKey + SignKey per album | Distributed |
+| Level | Name    | Derivation                  | Storage         |
+| ----- | ------- | --------------------------- | --------------- |
+| L0    | Master  | Argon2id(password, salt)    | Never stored    |
+| L1    | Root    | HKDF(L0, account_salt)      | Never stored    |
+| L2    | Account | random(32), wrapped by L1   | Encrypted in DB |
+| L3    | Epoch   | ReadKey + SignKey per album | Distributed     |
 
 **Implementation:**
-| Purpose | Location |
-|---------|----------|
-| Key derivation | [libs/crypto/src/key-derivation.ts](../libs/crypto/src/) |
-| Envelope encryption | [libs/crypto/src/envelope.ts](../libs/crypto/src/) |
-| Epoch keys | [hooks/useEpochKeys.ts](../apps/admin/src/hooks/useEpochKeys.ts) |
+| Purpose             | Location                                                         |
+| ------------------- | ---------------------------------------------------------------- |
+| Key derivation      | [libs/crypto/src/key-derivation.ts](../libs/crypto/src/)         |
+| Envelope encryption | [libs/crypto/src/envelope.ts](../libs/crypto/src/)               |
+| Epoch keys          | [hooks/useEpochKeys.ts](../apps/admin/src/hooks/useEpochKeys.ts) |
 
 ---
 
@@ -373,10 +373,10 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Client-side encrypted storage for offline access.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Worker | [workers/db.worker.ts](../apps/admin/src/workers/db.worker.ts) |
-| Service | [lib/db-service.ts](../apps/admin/src/lib/db-service.ts) |
+| Layer   | Location                                                       |
+| ------- | -------------------------------------------------------------- |
+| Worker  | [workers/db.worker.ts](../apps/admin/src/workers/db.worker.ts) |
+| Service | [lib/db-service.ts](../apps/admin/src/lib/db-service.ts)       |
 
 **Features:**
 - OPFS-backed SQLite database
@@ -391,10 +391,10 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Keep local database synchronized with server.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
+| Layer            | Location                                                               |
+| ---------------- | ---------------------------------------------------------------------- |
 | Frontend Context | [contexts/SyncContext.tsx](../apps/admin/src/contexts/SyncContext.tsx) |
-| Frontend Hook | [hooks/useSync.ts](../apps/admin/src/hooks/useSync.ts) |
+| Frontend Hook    | [hooks/useSync.ts](../apps/admin/src/hooks/useSync.ts)                 |
 
 **Features:**
 - Incremental sync with server
@@ -411,10 +411,10 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Light/dark/system theme preference.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Frontend Hook | [hooks/useTheme.ts](../apps/admin/src/hooks/useTheme.ts) |
-| Frontend UI | [components/Settings/ThemeSettings.tsx](../apps/admin/src/components/Settings/) |
+| Layer         | Location                                                                        |
+| ------------- | ------------------------------------------------------------------------------- |
+| Frontend Hook | [hooks/useTheme.ts](../apps/admin/src/hooks/useTheme.ts)                        |
+| Frontend UI   | [components/Settings/ThemeSettings.tsx](../apps/admin/src/components/Settings/) |
 
 ---
 
@@ -423,8 +423,8 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Track authenticated session state.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
+| Layer         | Location                                                     |
+| ------------- | ------------------------------------------------------------ |
 | Frontend Hook | [hooks/useSession.ts](../apps/admin/src/hooks/useSession.ts) |
 
 ---
@@ -434,14 +434,14 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Smooth enter/exit animations for photo grid items with TanStack Virtual compatibility.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| CSS | [styles/animations.css](../apps/admin/src/styles/animations.css) |
-| Hook | [hooks/useAnimatedItems.ts](../apps/admin/src/hooks/useAnimatedItems.ts) |
-| Component | [components/Gallery/AnimatedTile.tsx](../apps/admin/src/components/Gallery/AnimatedTile.tsx) |
-| Component | [components/Gallery/PhotoGridSkeleton.tsx](../apps/admin/src/components/Gallery/PhotoGridSkeleton.tsx) |
+| Layer       | Location                                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------------ |
+| CSS         | [styles/animations.css](../apps/admin/src/styles/animations.css)                                                   |
+| Hook        | [hooks/useAnimatedItems.ts](../apps/admin/src/hooks/useAnimatedItems.ts)                                           |
+| Component   | [components/Gallery/AnimatedTile.tsx](../apps/admin/src/components/Gallery/AnimatedTile.tsx)                       |
+| Component   | [components/Gallery/PhotoGridSkeleton.tsx](../apps/admin/src/components/Gallery/PhotoGridSkeleton.tsx)             |
 | Integration | [components/Gallery/EnhancedMosaicPhotoGrid.tsx](../apps/admin/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx) |
-| Spec | [docs/specs/SPEC-AnimationSystem.md](./specs/SPEC-AnimationSystem.md) |
+| Spec        | [docs/specs/SPEC-AnimationSystem.md](./specs/SPEC-AnimationSystem.md)                                              |
 
 **Features:**
 - Smooth fade-in for newly added photos (staggered batches)
@@ -454,6 +454,12 @@ npx playwright test auth-modes.spec.ts --project=chromium
 
 **Tests:**
 - Frontend: `apps/admin/tests/use-animated-items.test.ts`
+- Frontend: `apps/admin/tests/animated-tile.test.ts` (hook + CSS class documentation)
+- E2E: `tests/e2e/tests/gallery-animations.spec.ts`
+
+**Known Issues:**
+- Unit tests cannot render `AnimatedTile` directly due to happy-dom/RAF incompatibility
+- See `docs/TROUBLESHOOTING.md` for workarounds
 
 ---
 
@@ -467,9 +473,9 @@ When adding new features, use this template:
 **Purpose:** One-sentence description of what the feature does.
 
 **Implementation:**
-| Layer | Location |
-|-------|----------|
-| Backend | [path/to/file](../relative/path) |
+| Layer    | Location                         |
+| -------- | -------------------------------- |
+| Backend  | [path/to/file](../relative/path) |
 | Frontend | [path/to/file](../relative/path) |
 
 **Features:**
@@ -489,10 +495,11 @@ ENV_VAR=value
 
 ## Changelog
 
-| Date | Feature | Action | Notes |
-|------|---------|--------|-------|
-| 2025-07-24 | Photo Grid Animation System | Added | Enter/exit animations with TanStack Virtual compatibility |
-| 2025-12-29 | Auth Mode E2E Tests | Added | Comprehensive tests for LocalAuth and ProxyAuth modes |
-| 2025-12-29 | Photo Selection UX | Added | Floating action bar, keyboard shortcuts |
-| 2025-12-29 | Map View | Fixed | Filter null GPS coordinates |
-| 2025-12-29 | Photo Counts | Fixed | Load from local SQLite database |
+| Date       | Feature                     | Action | Notes                                                        |
+| ---------- | --------------------------- | ------ | ------------------------------------------------------------ |
+| 2026-01-06 | Gallery Animation Tests     | Added  | E2E tests for AnimatedTile, documented happy-dom limitations |
+| 2025-07-24 | Photo Grid Animation System | Added  | Enter/exit animations with TanStack Virtual compatibility    |
+| 2025-12-29 | Auth Mode E2E Tests         | Added  | Comprehensive tests for LocalAuth and ProxyAuth modes        |
+| 2025-12-29 | Photo Selection UX          | Added  | Floating action bar, keyboard shortcuts                      |
+| 2025-12-29 | Map View                    | Fixed  | Filter null GPS coordinates                                  |
+| 2025-12-29 | Photo Counts                | Fixed  | Load from local SQLite database                              |

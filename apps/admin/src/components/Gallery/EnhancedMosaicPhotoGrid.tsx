@@ -11,19 +11,17 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
-import { useUploadContext } from '../../contexts/UploadContext';
 import { useAnimatedItems } from '../../hooks/useAnimatedItems';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
 import { usePhotos } from '../../hooks/usePhotos';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
-import { 
-  computeEnhancedMosaicLayout,
-  type EnhancedMosaicItem, 
-  type MosaicLayoutConfig 
+import {
+    computeEnhancedMosaicLayout,
+    type EnhancedMosaicItem,
+    type MosaicLayoutConfig
 } from '../../lib/mosaic-layout-v2';
-import { syncEngine, type SyncEventDetail } from '../../lib/sync-engine';
 import '../../styles/upload.css';
 import type { PhotoMeta } from '../../workers/types';
 import { AnimatedTile } from './AnimatedTile';
@@ -144,41 +142,15 @@ export function EnhancedMosaicPhotoGrid({
   const lightbox = useLightbox(sortedPhotos);
   const photoActions = usePhotoActions();
   const permissions = useAlbumPermissions();
-  const { activeTasks } = useUploadContext();
-
-  // Merge pending uploads with existing photos
-  const displayPhotos = useMemo(() => {
-    const existingAssetIds = new Set(photos.map(p => p.assetId));
-    const pendingPhotos = activeTasks
-      .filter(t => t.albumId === albumId && !existingAssetIds.has(t.id))
-      .map(t => ({
-        id: t.id,
-        assetId: t.id,
-        albumId: t.albumId,
-        filename: t.file.name,
-        mimeType: t.file.type,
-        width: t.originalWidth || t.thumbWidth || 800,
-        height: t.originalHeight || t.thumbHeight || 600,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        tags: [],
-        shardIds: [],
-        epochId: t.epochId,
-        isPending: true,
-        task: t
-      } as PhotoMeta & { isPending?: boolean; task?: any }));
-
-    return [...pendingPhotos, ...photos];
-  }, [activeTasks, photos, albumId]);
 
   // Create a map for quick photo lookup
   const photosMap = useMemo(() => {
     const map = new Map<string, PhotoMeta>();
-    for (const photo of displayPhotos) {
+    for (const photo of photos) {
       map.set(photo.id, photo);
     }
     return map;
-  }, [displayPhotos]);
+  }, [photos]);
 
   // Animation state tracking for smooth enter/exit transitions
   const {
@@ -187,7 +159,7 @@ export function EnhancedMosaicPhotoGrid({
     getStaggerDelay,
     hasBeenSeen,
     isInitialLoad,
-  } = useAnimatedItems(displayPhotos, {
+  } = useAnimatedItems(photos, {
     getKey: (photo) => photo.id,
     onRemoveComplete: (key) => {
       // Cleanup resources for removed photo if needed
@@ -213,21 +185,11 @@ export function EnhancedMosaicPhotoGrid({
   const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
   const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<string | undefined>();
 
-  // Sync listener
-  useEffect(() => {
-    const handleSyncComplete = (event: Event) => {
-      const detail = (event as CustomEvent<SyncEventDetail>).detail;
-      if (detail.albumId === albumId) refetch();
-    };
-    syncEngine.addEventListener('sync-complete', handleSyncComplete);
-    return () => syncEngine.removeEventListener('sync-complete', handleSyncComplete);
-  }, [albumId, refetch]);
-
   // Compute layout using the enhanced algorithm
   const virtualRows = useMemo(() => {
-    if (containerWidth <= 0 || displayPhotos.length === 0) return [];
+    if (containerWidth <= 0 || photos.length === 0) return [];
     
-    const grouped = groupPhotosByDate(displayPhotos);
+    const grouped = groupPhotosByDate(photos);
     const rows: VirtualItem[] = [];
     
     const layoutConfig: MosaicLayoutConfig = {
@@ -288,7 +250,7 @@ export function EnhancedMosaicPhotoGrid({
     }
     
     return rows;
-  }, [displayPhotos, containerWidth, enableMapTiles, enableDescriptionTiles]);
+  }, [photos, containerWidth, enableMapTiles, enableDescriptionTiles]);
 
   const virtualizer = useVirtualizer({
     count: virtualRows.length,

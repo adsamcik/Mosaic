@@ -86,11 +86,8 @@ export async function fetchAndUnwrapEpochKeys(
   // Fetch epoch keys from server
   let epochKeyRecords: EpochKeyRecord[];
   try {
-    log.debug(`Fetching epoch keys for album ${albumId}`);
     epochKeyRecords = await api.getEpochKeys(albumId);
-    log.debug(`Received ${epochKeyRecords.length} epoch key records for album ${albumId}`);
   } catch (err) {
-    log.error(`Failed to fetch epoch keys for album ${albumId}:`, err);
     throw new EpochKeyError(
       `Failed to fetch epoch keys for album ${albumId}`,
       EpochKeyErrorCode.FETCH_FAILED,
@@ -99,7 +96,6 @@ export async function fetchAndUnwrapEpochKeys(
   }
 
   if (epochKeyRecords.length === 0) {
-    log.warn(`No epoch keys available for album ${albumId}`);
     throw new EpochKeyError(
       `No epoch keys available for album ${albumId}`,
       EpochKeyErrorCode.NO_KEYS_AVAILABLE
@@ -110,11 +106,8 @@ export async function fetchAndUnwrapEpochKeys(
 
   // Unwrap each epoch key bundle
   for (const record of epochKeyRecords) {
-    log.debug(`Processing epoch key record: epochId=${record.epochId}, minEpochId=${minEpochId}`);
-    
     // Skip epochs below minimum (prevents replay attacks)
     if (record.epochId < minEpochId) {
-      log.debug(`Skipping epoch ${record.epochId} (below minEpochId ${minEpochId})`);
       continue;
     }
 
@@ -122,37 +115,25 @@ export async function fetchAndUnwrapEpochKeys(
     if (hasEpochKey(albumId, record.epochId)) {
       const cached = getEpochKey(albumId, record.epochId);
       if (cached) {
-        log.debug(`Using cached epoch key for epoch ${record.epochId}`);
         unwrappedBundles.push(cached);
         continue;
       }
     }
 
-    // Decode base64 values from server (outside try block for error logging)
-    // Note: encryptedKeyBundle is stored as signature (64 bytes) || sealed box
-    // so we use it directly - no need to prepend ownerSignature again
-    const fullBundle = fromBase64(record.encryptedKeyBundle);
-    const sharerPubkey = fromBase64(record.sharerPubkey);
-    
-    log.debug(`Unwrapping epoch key ${record.epochId}:`, {
-      bundleLength: fullBundle.length,
-      sharerPubkeyLength: sharerPubkey.length,
-      sharerPubkeyPrefix: Array.from(sharerPubkey.slice(0, 4)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
-    });
-
     try {
+      // Decode base64 values from server
+      // Note: encryptedKeyBundle is stored as signature (64 bytes) || sealed box
+      // so we use it directly - no need to prepend ownerSignature again
+      const fullBundle = fromBase64(record.encryptedKeyBundle);
+      const sharerPubkey = fromBase64(record.sharerPubkey);
+
       // Open the epoch key bundle via crypto worker
-      log.debug(`Calling crypto.openEpochKeyBundle for epoch ${record.epochId}, albumId=${albumId}`);
       const opened = await crypto.openEpochKeyBundle(
         fullBundle,
         sharerPubkey,
         albumId,
         minEpochId
       );
-      log.debug(`Successfully opened epoch key ${record.epochId}`, {
-        signPublicKeyLength: opened.signPublicKey.length,
-        signPublicKeyPrefix: Array.from(opened.signPublicKey.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
-      });
 
       const bundle: EpochKeyBundle = {
         epochId: record.epochId,
@@ -164,26 +145,13 @@ export async function fetchAndUnwrapEpochKeys(
       };
 
       // Cache the unwrapped bundle
-      log.debug(`Caching epoch key ${record.epochId} for album ${albumId}`, {
-        bundleSignPublicKeyPrefix: Array.from(bundle.signKeypair.publicKey.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
-      });
       setEpochKey(albumId, bundle);
       unwrappedBundles.push(bundle);
-      log.info(`Cached epoch key ${record.epochId} for album ${albumId}`);
     } catch (err) {
       // Determine error type based on message
       const message = err instanceof Error ? err.message : String(err);
-      
-      log.error(`Failed to unwrap epoch key ${record.epochId}:`, {
-        error: message,
-        albumId,
-        minEpochId,
-        bundleLength: fullBundle.length,
-        sharerPubkeyPrefix: Array.from(sharerPubkey.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
-      });
 
       if (message.includes('signature') || message.includes('Signature')) {
-        log.error(`Signature validation failed for epoch ${record.epochId} - bundle may be tampered or from wrong sender`);
         throw new EpochKeyError(
           `Invalid signature for epoch key ${record.epochId}`,
           EpochKeyErrorCode.SIGNATURE_INVALID,
@@ -192,7 +160,6 @@ export async function fetchAndUnwrapEpochKeys(
       }
 
       if (message.includes('decrypt') || message.includes('open')) {
-        log.error(`Decryption failed for epoch ${record.epochId} - bundle may not be intended for this user's identity`);
         throw new EpochKeyError(
           `Failed to decrypt epoch key ${record.epochId}`,
           EpochKeyErrorCode.DECRYPTION_FAILED,
@@ -201,7 +168,6 @@ export async function fetchAndUnwrapEpochKeys(
       }
 
       if (message.includes('mismatch') || message.includes('context')) {
-        log.error(`Context mismatch for epoch ${record.epochId} - albumId or epochId validation failed`);
         throw new EpochKeyError(
           `Context mismatch for epoch key ${record.epochId}`,
           EpochKeyErrorCode.CONTEXT_MISMATCH,
@@ -210,7 +176,6 @@ export async function fetchAndUnwrapEpochKeys(
       }
 
       // Re-throw unknown errors
-      log.error(`Unknown error type for epoch ${record.epochId}:`, err);
       throw err;
     }
   }

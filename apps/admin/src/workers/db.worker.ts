@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
+import { createLogger } from '../lib/logger';
 import type {
     Bounds,
     DbWorkerApi,
@@ -8,7 +9,6 @@ import type {
     GeoPoint,
     PhotoMeta,
 } from './types';
-import { createLogger } from '../lib/logger';
 
 // Create scoped logger for database worker
 const log = createLogger('DbWorker');
@@ -438,6 +438,23 @@ class DbWorker implements DbWorkerApi {
     const result = this.db.exec('SELECT * FROM photos WHERE id = ?', [id]);
     const photos = this.rowsToPhotos(result);
     return photos[0] ?? null;
+  }
+
+  async clearAlbumPhotos(albumId: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    log.info('Clearing cached photos for album', { albumId });
+
+    // Delete all photos for this album
+    this.db.run('DELETE FROM photos WHERE album_id = ?', [albumId]);
+
+    // Reset album version to force full resync
+    this.db.run('DELETE FROM albums WHERE id = ?', [albumId]);
+
+    // Persist changes to OPFS
+    await this.saveToOPFS();
+
+    log.info('Cleared cached photos for album', { albumId });
   }
 
   private rowsToPhotos(result: { columns: string[]; values: unknown[][] }[]): PhotoMeta[] {

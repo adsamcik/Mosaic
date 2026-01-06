@@ -5,16 +5,16 @@
  * and that the type system catches common errors.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type {
-  PhotoMeta,
-  DecryptedManifest,
-  GeoPoint,
-  Bounds,
-  EncryptedShard,
-  CryptoWorkerApi,
-  DbWorkerApi,
-  GeoWorkerApi,
+    Bounds,
+    CryptoWorkerApi,
+    DbWorkerApi,
+    DecryptedManifest,
+    EncryptedShard,
+    GeoPoint,
+    GeoWorkerApi,
+    PhotoMeta,
 } from '../src/workers/types';
 
 describe('PhotoMeta type', () => {
@@ -179,9 +179,10 @@ describe('Worker API interface completeness', () => {
       'searchPhotos',
       'getPhotosForMap',
       'getPhotoById',
+      'clearAlbumPhotos',
     ];
 
-    expect(requiredMethods).toHaveLength(11);
+    expect(requiredMethods).toHaveLength(12);
   });
 
   it('GeoWorkerApi has required methods', () => {

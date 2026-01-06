@@ -1,18 +1,17 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
-import { useUploadContext } from '../../contexts/UploadContext';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
-import { usePhotoActions } from '../../hooks/usePhotoActions';
+import { usePhotoDelete } from '../../hooks/usePhotoDelete';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
 import { computeMosaicLayout, type MosaicItem } from '../../lib/mosaic-layout';
+import { usePhotoStore, type PhotoItem } from '../../stores/photo-store';
 import '../../styles/upload.css';
 import type { PhotoMeta } from '../../workers/types';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
 import { JustifiedPhotoThumbnail } from './JustifiedPhotoThumbnail';
 import { MosaicTile } from './MosaicTile';
-import { PendingPhotoThumbnail } from './PendingPhotoThumbnail';
 import { PhotoLightbox } from './PhotoLightbox';
 
 /** Gap between photos in pixels */
@@ -116,38 +115,43 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
   );
   
   const lightbox = useLightbox(sortedPhotos);
-  const photoActions = usePhotoActions();
   const permissions = useAlbumPermissions();
-  const { activeTasks } = useUploadContext();
-
-  const displayPhotos = useMemo(() => {
-    const existingAssetIds = new Set(photos.map(p => p.assetId));
-    const pendingPhotos = activeTasks
-      .filter(t => t.albumId === albumId && !existingAssetIds.has(t.id))
-      .map(t => ({
-        id: t.id,
-        assetId: t.id,
-        albumId: t.albumId,
-        filename: t.file.name,
-        mimeType: t.file.type,
-        width: t.originalWidth || t.thumbWidth || 800,
-        height: t.originalHeight || t.thumbHeight || 600,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        tags: [],
-        shardIds: [],
-        epochId: t.epochId,
-        isPending: true,
-        task: t
-      } as PhotoMeta & { isPending?: boolean; task?: any }));
-
-    return [...pendingPhotos, ...photos];
-  }, [activeTasks, photos, albumId]);
+  
+  // Get photo items from store for status checking
+  const getPhotoItem = usePhotoStore((state) => state.getPhoto);
+  
+  /**
+   * Check if a photo is pending/syncing by looking it up in the PhotoStore.
+   * Returns the PhotoItem if pending/syncing, undefined otherwise.
+   */
+  const getPendingPhotoItem = useCallback((photo: PhotoMeta): PhotoItem | undefined => {
+    const item = getPhotoItem(albumId, photo.assetId);
+    if (item && (item.status === 'pending' || item.status === 'syncing')) {
+      return item;
+    }
+    return undefined;
+  }, [getPhotoItem, albumId]);
 
   const isSelectionMode = selection?.isSelectionMode ?? false;
   const selectedIds = selection?.selectedIds ?? new Set<string>();
-  const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
-  const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<string | undefined>();
+
+  // Photo delete workflow
+  const {
+    deleteTarget,
+    deleteThumbnailUrl,
+    isDeleting,
+    error: deleteError,
+    handleDeletePhoto,
+    handleDeleteFromLightbox,
+    handleConfirmDelete,
+    handleCancelDelete,
+  } = usePhotoDelete({
+    albumId,
+    lightbox,
+    selection,
+    refetch,
+    onPhotosDeleted,
+  });
 
   // Compute Layout Items (Headers + Mosaic Blocks)
   // Note: Virtualizing absolute positioned items is tricky if we want to use `useVirtualizer` which expects a flat list of rows.
@@ -155,9 +159,9 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
   // `computeMosaicLayout` returns items with absolute positions. We can group them by their implicit "rows" based on `top` coordinate.
   
   const virtualRows = useMemo(() => {
-    if (containerWidth <= 0 || displayPhotos.length === 0) return [];
+    if (containerWidth <= 0 || photos.length === 0) return [];
     
-    const grouped = groupPhotosByDate(displayPhotos);
+    const grouped = groupPhotosByDate(photos);
     const rows: VirtualItem[] = [];
     
     for (const [dateString, groupPhotos] of grouped) {
@@ -193,7 +197,7 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
       }
     }
     return rows;
-  }, [displayPhotos, containerWidth]);
+  }, [photos, containerWidth]);
 
   const virtualizer = useVirtualizer({
     count: virtualRows.length,
@@ -220,36 +224,6 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
       else selection.deselectPhoto(photoId);
     }
   }, [selection]);
-
-  const handleDeletePhoto = useCallback((photo: PhotoMeta, thumbnailUrl?: string) => {
-    setDeleteTarget([photo]);
-    setDeleteThumbnailUrl(thumbnailUrl);
-  }, []);
-
-  const handleDeleteFromLightbox = useCallback(() => {
-    if (lightbox.currentPhoto) {
-      setDeleteTarget([lightbox.currentPhoto]);
-      setDeleteThumbnailUrl(undefined);
-    }
-  }, [lightbox.currentPhoto]);
-
-  // TODO: Refactor delete actions into a shared hook or context ideally, 
-  // but for now duplicating the confirm/cancel logic is safest to avoid wide refactor.
-  const handleConfirmDelete = useCallback(async () => {
-    if (!deleteTarget || deleteTarget.length === 0) return;
-    try {
-      if (deleteTarget.length === 1) {
-        await photoActions.deletePhoto(deleteTarget[0]!.id, albumId);
-      } else {
-        await photoActions.deletePhotos(deleteTarget.map(p => p.id), albumId);
-      }
-      setDeleteTarget(null);
-      selection?.clearSelection();
-      lightbox.close();
-      refetch();
-      onPhotosDeleted?.();
-    } catch { } // Error in hook
-  }, [deleteTarget, photoActions, albumId, lightbox, refetch, onPhotosDeleted, selection]);
 
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
@@ -340,13 +314,29 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
                         }}
                     >
                         {item.items.map(mosaicItem => {
-                           const photo = displayPhotos.find(p => p.id === mosaicItem.photoId);
+                           const photo = photos.find(p => p.id === mosaicItem.photoId);
                            if (!photo) return null;
 
-                           if ((photo as any).isPending) {
+                           // Check if this photo is pending/syncing in the PhotoStore
+                           const pendingItem = getPendingPhotoItem(photo);
+                           
+                           if (pendingItem) {
+                               // Render pending photo with progress overlay
+                               const progress = pendingItem.uploadProgress ?? 0;
+                               const isUploading = progress > 0 && progress < 1;
+                               const statusText = pendingItem.error 
+                                 ? 'Error' 
+                                 : isUploading 
+                                   ? 'Uploading...' 
+                                   : pendingItem.status === 'syncing'
+                                     ? 'Finalizing...'
+                                     : 'Queued';
+                               const displayProgress = isUploading ? 20 + (progress * 70) : (pendingItem.status === 'syncing' ? 95 : 0);
+                               
                                return (
                                    <div 
                                      key={photo.id}
+                                     className="mosaic-tile"
                                      style={{
                                         position: 'absolute',
                                         top: mosaicItem.rect.top,
@@ -355,7 +345,29 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
                                         height: mosaicItem.rect.height,
                                      }}
                                    >
-                                       <PendingPhotoThumbnail task={(photo as any).task} />
+                                       <div className="photo-thumbnail photo-thumbnail-pending" data-testid="pending-photo-thumbnail">
+                                         <div className="photo-content">
+                                           {pendingItem.localBlobUrl && (
+                                             <img
+                                               src={pendingItem.localBlobUrl}
+                                               alt={photo.filename}
+                                               className="photo-image"
+                                               style={{ opacity: 0.7, width: '100%', height: '100%', objectFit: 'cover' }}
+                                             />
+                                           )}
+                                           <div className="upload-overlay">
+                                             {displayProgress > 0 ? (
+                                               <div className="upload-progress-container">
+                                                 <div 
+                                                   className="upload-progress-bar"
+                                                   style={{ width: `${displayProgress}%` }}
+                                                 />
+                                               </div>
+                                             ) : null}
+                                             <span className="upload-status">{statusText}</span>
+                                           </div>
+                                         </div>
+                                       </div>
                                    </div>
                                );
                            }
@@ -411,10 +423,10 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
         <DeletePhotoDialog
           photos={deleteTarget}
           thumbnailUrl={deleteThumbnailUrl}
-          isDeleting={photoActions.isDeleting}
+          isDeleting={isDeleting}
           onConfirm={handleConfirmDelete}
-          onCancel={() => { setDeleteTarget(null); photoActions.clearError(); }}
-          error={photoActions.error}
+          onCancel={handleCancelDelete}
+          error={deleteError}
         />
       )}
     </>

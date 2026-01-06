@@ -106,6 +106,13 @@ export interface DbWorkerApi {
   searchPhotos(albumId: string, query: string): Promise<PhotoMeta[]>;
   getPhotosForMap(albumId: string, bounds: Bounds): Promise<GeoPoint[]>;
   getPhotoById(id: string): Promise<PhotoMeta | null>;
+
+  /**
+   * Clear all cached photos for an album.
+   * Used after epoch rotation to ensure stale encrypted data is removed.
+   * @param albumId - Album ID to clear photos for
+   */
+  clearAlbumPhotos(albumId: string): Promise<void>;
 }
 
 /** Encrypted shard result */

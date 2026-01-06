@@ -9,8 +9,8 @@
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PhotoMeta } from '../src/workers/types';
 import type { UseSelectionReturn } from '../src/hooks/useSelection';
+import type { PhotoMeta } from '../src/workers/types';
 
 // Mock photos data
 const mockPhotos: PhotoMeta[] = [
@@ -114,9 +114,11 @@ vi.mock('../src/lib/photo-service', () => ({
 // Mock UploadContext to avoid requiring provider
 vi.mock('../src/contexts/UploadContext', () => ({
   useUploadContext: vi.fn(() => ({
-    activeTasks: [],
     isUploading: false,
-    totalProgress: 0,
+    progress: 0,
+    error: null,
+    upload: vi.fn(),
+    clearError: vi.fn(),
   })),
 }));
 

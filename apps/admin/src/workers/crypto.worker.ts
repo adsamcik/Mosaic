@@ -1,15 +1,14 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
-import type { CryptoWorkerApi, EncryptedShard, ExportedKeys, PhotoMeta } from './types';
 import { createLogger } from '../lib/logger';
+import type { CryptoWorkerApi, EncryptedShard, ExportedKeys, PhotoMeta } from './types';
 
 // Import real crypto functions from @mosaic/crypto
 import {
     AccessTier,
     decryptShard as cryptoDecryptShard,
     deriveLinkKeys as cryptoDeriveLinkKeys,
-    deriveTierKeys,
     encryptShard as cryptoEncryptShard,
     generateEpochKey as cryptoGenerateEpochKey,
     generateLinkSecret as cryptoGenerateLinkSecret,
@@ -19,9 +18,10 @@ import {
     verifyManifest as cryptoVerifyManifest,
     verifyShard as cryptoVerifyShard,
     wrapTierKeyForLink as cryptoWrapTierKeyForLink,
-    deriveIdentityKeypair,
     deriveAuthKeypair,
+    deriveIdentityKeypair,
     deriveKeys,
+    deriveTierKeys,
     getArgon2Params,
     memzero,
     sealAndSignBundle,
@@ -407,21 +407,10 @@ class CryptoWorker implements CryptoWorkerApi {
 
     // Parse the bundle format: signature (64) || sealed box
     if (bundle.length < 64) {
-      log.error('Bundle too short', { bundleLength: bundle.length });
       throw new Error('Bundle too short');
     }
     const signature = bundle.slice(0, 64);
     const sealedBox = bundle.slice(64);
-    
-    log.debug('Opening epoch key bundle', {
-      bundleLength: bundle.length,
-      signaturePrefix: Array.from(signature.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
-      sealedBoxLength: sealedBox.length,
-      senderPubkeyPrefix: Array.from(senderPubkey.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
-      myPubkeyPrefix: Array.from(this.identityKeypair.ed25519.publicKey.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
-      albumId,
-      minEpochId,
-    });
 
     // Build validation context
     const context = {
@@ -430,33 +419,21 @@ class CryptoWorker implements CryptoWorkerApi {
     };
 
     // Verify and open the bundle
-    try {
-      const timer = log.startTimer('verifyAndOpenBundle');
-      const opened = verifyAndOpenBundle(
-        sealedBox,
-        signature,
-        senderPubkey,
-        this.identityKeypair,
-        context
-      );
-      timer.end();
-      
-      log.debug('Successfully opened epoch key bundle', {
-        epochId: opened.epochId,
-        signPublicKeyLength: opened.signKeypair.publicKey.length,
-        signPublicKeyPrefix: Array.from(opened.signKeypair.publicKey.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(''),
-        signSecretKeyLength: opened.signKeypair.secretKey.length,
-      });
+    const timer = log.startTimer('verifyAndOpenBundle');
+    const opened = verifyAndOpenBundle(
+      sealedBox,
+      signature,
+      senderPubkey,
+      this.identityKeypair,
+      context
+    );
+    timer.end();
 
-      return {
-        epochSeed: opened.epochSeed,
-        signPublicKey: opened.signKeypair.publicKey,
-        signSecretKey: opened.signKeypair.secretKey,
-      };
-    } catch (err) {
-      log.error('Failed to open epoch key bundle', err);
-      throw err;
-    }
+    return {
+      epochSeed: opened.epochSeed,
+      signPublicKey: opened.signKeypair.publicKey,
+      signSecretKey: opened.signKeypair.secretKey,
+    };
   }
 
   /**

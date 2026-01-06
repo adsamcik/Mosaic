@@ -8,10 +8,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
-import { useUploadContext } from '../../contexts/UploadContext';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
-import { usePhotoActions } from '../../hooks/usePhotoActions';
+import { usePhotoDelete } from '../../hooks/usePhotoDelete';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
 import {
     computeJustifiedLayout,
@@ -163,49 +162,36 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
   );
   
   const lightbox = useLightbox(sortedPhotos);
-  const photoActions = usePhotoActions();
   const permissions = useAlbumPermissions();
-  const { activeTasks } = useUploadContext();
 
-  // Combine real photos with pending uploads
-  const displayPhotos = useMemo(() => {
-    const existingAssetIds = new Set(photos.map(p => p.assetId));
-
-    const pendingPhotos = activeTasks
-      .filter(t => t.albumId === albumId && !existingAssetIds.has(t.id))
-      .map(t => ({
-        id: t.id,
-        assetId: t.id,
-        albumId: t.albumId,
-        filename: t.file.name,
-        mimeType: t.file.type,
-        width: t.originalWidth || t.thumbWidth || 800,
-        height: t.originalHeight || t.thumbHeight || 600,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        tags: [],
-        shardIds: [],
-        epochId: t.epochId,
-        isPending: true, // Marker for pending state
-        task: t // Reference to the full task
-      } as PhotoMeta & { isPending?: boolean; task?: any }));
-
-    return [...pendingPhotos, ...photos];
-  }, [activeTasks, photos, albumId]);
+  // Photo delete workflow
+  const {
+    deleteTarget,
+    deleteThumbnailUrl,
+    isDeleting,
+    error: deleteError,
+    handleDeletePhoto,
+    handleDeleteFromLightbox,
+    handleConfirmDelete,
+    handleCancelDelete,
+  } = usePhotoDelete({
+    albumId,
+    lightbox,
+    selection,
+    refetch,
+    onPhotosDeleted,
+  });
 
   // Use selection from props if provided (lifted state), otherwise internal state
   const isSelectionMode = selection?.isSelectionMode ?? false;
   const selectedIds = selection?.selectedIds ?? new Set<string>();
 
-  // Delete dialog state
-  const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
-  const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<string | undefined>();
-
   // Compute Layout: Headers and Justified Rows
+  // Note: photos prop already includes pending photos from PhotoStore
   const layoutItems = useMemo((): LayoutItem[] => {
-    if (containerWidth <= 0 || displayPhotos.length === 0) return [];
+    if (containerWidth <= 0 || photos.length === 0) return [];
 
-    const grouped = groupPhotosByDate(displayPhotos);
+    const grouped = groupPhotosByDate(photos);
     const items: LayoutItem[] = [];
     let currentTop = 0;
     // Add top padding
@@ -244,7 +230,7 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
     }
 
     return items;
-  }, [displayPhotos, containerWidth, t]);
+  }, [photos, containerWidth, t]);
 
   // Get total grid height
   const totalHeight = useMemo(() => {
@@ -342,63 +328,6 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
     }
   }, [selection]);
 
-  // Handle delete button click for a single photo
-  const handleDeletePhoto = useCallback((photo: PhotoMeta, thumbnailUrl?: string) => {
-    setDeleteTarget([photo]);
-    setDeleteThumbnailUrl(thumbnailUrl);
-  }, []);
-
-  // Handle delete from lightbox
-  const handleDeleteFromLightbox = useCallback(() => {
-    if (lightbox.currentPhoto) {
-      setDeleteTarget([lightbox.currentPhoto]);
-      setDeleteThumbnailUrl(undefined);
-    }
-  }, [lightbox.currentPhoto]);
-
-  // Confirm deletion
-  const handleConfirmDelete = useCallback(async () => {
-    if (!deleteTarget || deleteTarget.length === 0) return;
-
-    try {
-      if (deleteTarget.length === 1) {
-        const photoToDelete = deleteTarget[0];
-        if (photoToDelete) {
-          await photoActions.deletePhoto(photoToDelete.id, albumId);
-        }
-      } else {
-        await photoActions.deletePhotos(
-          deleteTarget.map((p) => p.id),
-          albumId
-        );
-      }
-
-      setDeleteTarget(null);
-      setDeleteThumbnailUrl(undefined);
-      
-      // Clear selection if using lifted state
-      if (selection) {
-        selection.clearSelection();
-      }
-
-      if (lightbox.isOpen) {
-        lightbox.close();
-      }
-
-      refetch();
-      onPhotosDeleted?.();
-    } catch {
-      // Error is handled by usePhotoActions
-    }
-  }, [deleteTarget, photoActions, albumId, lightbox, refetch, onPhotosDeleted]);
-
-  // Cancel deletion
-  const handleCancelDelete = useCallback(() => {
-    setDeleteTarget(null);
-    setDeleteThumbnailUrl(undefined);
-    photoActions.clearError();
-  }, [photoActions]);
-
   // Loading state
   if (isLoading || keysLoading) {
     return (
@@ -431,7 +360,7 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
         onScroll={handleScroll}
         data-testid="photo-grid"
       >
-        {displayPhotos.length === 0 ? (
+        {photos.length === 0 ? (
           <div className="photo-grid-empty" data-testid="photo-grid-empty">
              {/* Using existing empty state styles */}
             <div className="empty-state-icon">
@@ -550,10 +479,10 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
         <DeletePhotoDialog
           photos={deleteTarget}
           thumbnailUrl={deleteThumbnailUrl}
-          isDeleting={photoActions.isDeleting}
+          isDeleting={isDeleting}
           onConfirm={handleConfirmDelete}
           onCancel={handleCancelDelete}
-          error={photoActions.error}
+          error={deleteError}
         />
       )}
     </>

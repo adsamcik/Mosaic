@@ -11,13 +11,14 @@
 
 import { fromBase64, getApi, toBase64 } from './api';
 import type {
-  AlbumMember,
-  CreateEpochKeyRequest,
-  RotateEpochRequest,
-  ShareLinkKeyUpdateRequest,
-  ShareLinkWithSecretResponse,
+    AlbumMember,
+    CreateEpochKeyRequest,
+    RotateEpochRequest,
+    ShareLinkKeyUpdateRequest,
+    ShareLinkWithSecretResponse,
 } from './api-types';
 import { getCryptoClient } from './crypto-client';
+import { getDbClient } from './db-client';
 import { fetchAndUnwrapEpochKeys } from './epoch-key-service';
 import { clearAlbumKeys, setEpochKey, type EpochKeyBundle } from './epoch-key-store';
 import { createLogger } from './logger';
@@ -391,9 +392,16 @@ export async function clearPhotoCaches(albumId: string): Promise<void> {
   // Clear epoch keys (already done in rotateEpoch, but safe to call again)
   clearAlbumKeys(albumId);
 
-  // Note: Photo cache clearing would be done by the database worker
-  // For now, the sync engine will refetch on next sync
-  // TODO: Add db.clearAlbumPhotos(albumId) when db-client supports it
+  // Clear cached photos from local database
+  // This forces a full resync with fresh data encrypted under new keys
+  try {
+    const db = await getDbClient();
+    await db.clearAlbumPhotos(albumId);
+    log.debug('Cleared cached photos for album', { albumId });
+  } catch (error) {
+    log.warn('Failed to clear album photos cache', { albumId, error });
+    // Non-fatal - sync engine will handle stale data gracefully
+  }
 
   // Refresh epoch keys from server for current user
   try {
