@@ -560,57 +560,71 @@ export class GalleryPage {
   }
 
   async uploadPhoto(imageBuffer: Buffer, filename = 'test.png') {
+    // Wait for upload button to be visible and enabled (ensures component is hydrated)
+    const uploadButton = this.page.getByTestId('upload-button');
+    await expect(uploadButton).toBeVisible({ timeout: 10000 });
+    await expect(uploadButton).toBeEnabled({ timeout: 10000 });
+    console.log('[GalleryPage] Upload button ready');
+    
     // Use the testid to find the hidden file input
     const fileInput = this.page.getByTestId('upload-input');
     
     // Wait for file input to be attached to DOM
     await expect(fileInput).toBeAttached({ timeout: 10000 });
-    console.log('[GalleryPage] File input found, setting files...');
+    console.log('[GalleryPage] File input found');
     
     // Capture current photo count before upload
     const countBefore = await this.photos.count();
     console.log(`[GalleryPage] Photo count before upload: ${countBefore}`);
     
     // Set files on the hidden input - Playwright handles this even when display:none
+    console.log('[GalleryPage] Setting files...');
     await fileInput.setInputFiles({
       name: filename,
       mimeType: 'image/png',
       buffer: imageBuffer,
     });
-    console.log('[GalleryPage] Files set successfully, waiting for upload to complete...');
+    console.log('[GalleryPage] Files set, waiting for upload to process...');
     
-    // Wait for upload button to show "Uploading" state first
-    try {
-      await this.page.waitForFunction(() => {
-        const btn = document.querySelector('[data-testid="upload-button"]');
-        return btn?.textContent?.includes('Uploading');
-      }, { timeout: 5000 });
-      console.log('[GalleryPage] Upload started (button shows Uploading)');
-    } catch {
-      console.log('[GalleryPage] Warning: Never saw Uploading state, continuing...');
-    }
-    
-    // Wait for upload button to finish uploading (not show "Uploading" text)
-    await this.page.waitForFunction(() => {
-      const btn = document.querySelector('[data-testid="upload-button"]');
-      const isUploading = btn?.textContent?.includes('Uploading');
-      return btn && !isUploading;
-    }, { timeout: 60000 });
-    
-    console.log('[GalleryPage] Upload appears complete, waiting for photo to render...');
-    
-    // Check count after upload completes
-    const countAfterUpload = await this.photos.count();
-    console.log(`[GalleryPage] Photo count after upload complete: ${countAfterUpload}`);
-    
-    // Wait for photo count to increase by 1
+    // Wait for EITHER: button shows "Uploading" OR photo count increases
+    // This handles both slow uploads (shows Uploading) and fast uploads (completes quickly)
     const expectedCount = countBefore + 1;
-    console.log(`[GalleryPage] Expecting count to reach: ${expectedCount}`);
     
-    await expect(this.photos).toHaveCount(expectedCount, { timeout: 60000 });
+    await this.page.waitForFunction(
+      ([expectedPhotoCount]) => {
+        const btn = document.querySelector('[data-testid="upload-button"]');
+        const isUploading = btn?.textContent?.includes('Uploading');
+        
+        // Count photos - check both grid and justified layouts
+        const photos = document.querySelectorAll('[data-testid="photo-thumbnail"], [data-testid="justified-photo-thumbnail"]');
+        const hasNewPhoto = photos.length >= expectedPhotoCount;
+        
+        // Success if: either upload started (button shows Uploading) or photo already appeared
+        return isUploading || hasNewPhoto;
+      },
+      [expectedCount],
+      { timeout: 30000 }
+    );
+    console.log('[GalleryPage] Upload started or photo appeared');
     
-    const currentCount = await this.photos.count();
-    console.log(`[GalleryPage] Photo rendered. Final count: ${currentCount}`);
+    // Now wait for the upload to complete - button no longer shows "Uploading" AND photo count reached
+    await this.page.waitForFunction(
+      ([expectedPhotoCount]) => {
+        const btn = document.querySelector('[data-testid="upload-button"]');
+        const isUploading = btn?.textContent?.includes('Uploading');
+        
+        const photos = document.querySelectorAll('[data-testid="photo-thumbnail"], [data-testid="justified-photo-thumbnail"]');
+        const hasEnoughPhotos = photos.length >= expectedPhotoCount;
+        
+        // Done when: not uploading AND photo is visible
+        return !isUploading && hasEnoughPhotos;
+      },
+      [expectedCount],
+      { timeout: 60000 }
+    );
+    
+    const finalCount = await this.photos.count();
+    console.log(`[GalleryPage] Upload complete. Final photo count: ${finalCount}`);
   }
 
   async expectPhotoCount(count: number) {
