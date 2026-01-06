@@ -212,6 +212,10 @@ export const test = base.extend<{
  * Handles both LocalAuth and ProxyAuth modes:
  * - LocalAuth: Registers the user if they don't exist, otherwise logs in with username
  * - ProxyAuth-only: Just enters password (username comes from Remote-User header)
+ * 
+ * Note: If createAlbumViaAPI is called before this function, the backend may auto-create
+ * the user from the Remote-User header. In that case, registration will fail and we
+ * automatically fall back to login mode.
  */
 export async function loginUser(
   user: AuthenticatedUser,
@@ -225,8 +229,32 @@ export async function loginUser(
   const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
 
   if (isLocalAuth) {
-    // LocalAuth mode: register new user (test users are always new)
+    // LocalAuth mode: try to register, but fall back to login if user already exists
+    // (happens when createAlbumViaAPI is called before loginUser)
     await loginPage.register(user.email, password);
+    
+    // Wait a moment for potential error to appear, then check
+    // Use Promise.race to either see the app-shell (success) or error (failure)
+    const successOrError = await Promise.race([
+      loginPage.page.getByTestId('app-shell').waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => 'success' as const)
+        .catch(() => null),
+      loginPage.errorMessage.waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => 'error' as const)
+        .catch(() => null),
+    ]);
+
+    if (successOrError === 'error') {
+      // Registration failed - check if it's "already taken" error
+      const errorText = await loginPage.errorMessage.textContent() ?? '';
+      if (errorText.toLowerCase().includes('already taken') || errorText.toLowerCase().includes('already exists')) {
+        // User exists from API call - switch to login mode
+        await loginPage.switchToLoginMode();
+        await loginPage.loginWithUsername(user.email, password);
+      }
+    }
+    // If success, we continue to expectLoginSuccess
+    // If neither, we also continue (might timeout later)
   } else {
     // ProxyAuth-only mode: just enter password to initialize crypto
     await loginPage.login(password);

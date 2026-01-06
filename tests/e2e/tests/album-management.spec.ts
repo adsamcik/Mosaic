@@ -123,11 +123,16 @@ test.describe('Album Management @p1 @album', () => {
     test('P1-ALBUM-5: clicking album card opens gallery view', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('navigator');
 
-      // Create album via API for faster setup
+      // Login first to register the user with proper crypto
+      await loginUser(user, TEST_PASSWORD);
+
+      // Then create album via API for faster setup
       const albumResult = await createAlbumViaAPI(user.email);
       testContext.trackAlbum(albumResult.id, user.email);
 
-      await loginUser(user, TEST_PASSWORD);
+      // Refresh to see the album
+      await user.page.reload();
+      await user.page.waitForLoadState('networkidle');
 
       // Click on album
       const appShell = new AppShell(user.page);
@@ -143,10 +148,16 @@ test.describe('Album Management @p1 @album', () => {
     test('P1-ALBUM-6: back button returns to album list', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('navigator');
 
+      // Login first to register the user with proper crypto
+      await loginUser(user, TEST_PASSWORD);
+
+      // Then create album via API
       const albumResult = await createAlbumViaAPI(user.email);
       testContext.trackAlbum(albumResult.id, user.email);
 
-      await loginUser(user, TEST_PASSWORD);
+      // Refresh to see the album
+      await user.page.reload();
+      await user.page.waitForLoadState('networkidle');
 
       // Navigate to album
       const appShell = new AppShell(user.page);
@@ -219,11 +230,16 @@ test.describe('Album Management @p1 @album', () => {
       const user = await testContext.createAuthenticatedUser('delete-cancel');
       const albumName = testContext.generateAlbumName('To Cancel Delete');
 
-      // Create album via API for faster setup
+      // Login first to register the user with proper crypto
+      await loginUser(user, TEST_PASSWORD);
+
+      // Then create album via API for faster setup
       const albumResult = await createAlbumViaAPI(user.email);
       testContext.trackAlbum(albumResult.id, user.email);
 
-      await loginUser(user, TEST_PASSWORD);
+      // Refresh to see the album
+      await user.page.reload();
+      await user.page.waitForLoadState('networkidle');
 
       // Navigate to album
       const appShell = new AppShell(user.page);
@@ -258,11 +274,16 @@ test.describe('Album Management @p1 @album', () => {
     test('P1-ALBUM-10: confirm delete album removes album', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('delete-confirm');
 
-      // Create album via API for faster setup
+      // Login first to register the user with proper crypto
+      await loginUser(user, TEST_PASSWORD);
+
+      // Then create album via API for faster setup
       const albumResult = await createAlbumViaAPI(user.email);
       // Note: We don't track this album because we're deleting it in the test
 
-      await loginUser(user, TEST_PASSWORD);
+      // Refresh to see the album
+      await user.page.reload();
+      await user.page.waitForLoadState('networkidle');
 
       // Verify album exists
       const appShell = new AppShell(user.page);
@@ -298,11 +319,16 @@ test.describe('Album Management @p1 @album', () => {
     test('P1-ALBUM-11: deleted album is gone after page reload', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('delete-persist');
 
-      // Create album via API for faster setup
+      // Login first to register the user with proper crypto
+      await loginUser(user, TEST_PASSWORD);
+
+      // Then create album via API for faster setup
       const albumResult = await createAlbumViaAPI(user.email);
       // Note: We don't track this album because we're deleting it in the test
 
-      await loginUser(user, TEST_PASSWORD);
+      // Refresh to see the album
+      await user.page.reload();
+      await user.page.waitForLoadState('networkidle');
 
       // Verify album exists
       const appShell = new AppShell(user.page);
