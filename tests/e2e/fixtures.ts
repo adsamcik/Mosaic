@@ -294,7 +294,11 @@ export class LoginPage {
   }
 
   async waitForForm() {
+    // Wait for the form container to be visible
     await expect(this.page.getByTestId('login-form')).toBeVisible({ timeout: 30000 });
+    // Wait for the form to finish loading (checkingAuthMode = false)
+    // The password input only appears after auth mode is determined
+    await expect(this.passwordInput).toBeVisible({ timeout: 30000 });
   }
 
   get loginForm() {
@@ -302,27 +306,32 @@ export class LoginPage {
   }
 
   get usernameInput() {
-    return this.page.getByLabel('Username');
+    // Support both English and Czech labels
+    return this.page.getByLabel(/username|uživatelské jméno/i);
   }
 
   get passwordInput() {
-    return this.page.getByLabel('Password', { exact: true });
+    // Support both English and Czech labels
+    return this.page.getByLabel(/^(Password|Heslo)$/i);
   }
 
   get confirmPasswordInput() {
-    return this.page.getByLabel('Confirm Password');
+    // Support both English and Czech labels
+    return this.page.getByLabel(/confirm password|potvrzení hesla/i);
   }
 
   get loginButton() {
-    return this.page.getByRole('button', { name: /sign in/i });
+    // Support both English and Czech labels
+    return this.page.getByRole('button', { name: /unlock|sign in|přihlásit se|odemknout/i });
   }
 
   get createAccountButton() {
-    return this.page.getByRole('button', { name: /create account/i }).first();
+    // Support both English and Czech labels
+    return this.page.getByRole('button', { name: /create account|vytvořit účet/i }).first();
   }
 
   get modeToggleButton() {
-    return this.page.getByRole('button', { name: /don't have an account|already have an account/i });
+    return this.page.getByRole('button', { name: /don't have an account|already have an account|nemáte účet|máte účet/i });
   }
 
   get errorMessage() {
@@ -333,7 +342,8 @@ export class LoginPage {
    * Switch to registration mode
    */
   async switchToRegisterMode() {
-    const toggleBtn = this.page.getByRole('button', { name: /don't have an account/i });
+    // Support both English and Czech labels
+    const toggleBtn = this.page.getByRole('button', { name: /don't have an account|nemáte účet/i });
     if (await toggleBtn.isVisible().catch(() => false)) {
       await toggleBtn.click();
       // Wait for the registration form to fully appear
@@ -345,7 +355,8 @@ export class LoginPage {
    * Switch to login mode
    */
   async switchToLoginMode() {
-    const toggleBtn = this.page.getByRole('button', { name: /already have an account/i });
+    // Support both English and Czech labels
+    const toggleBtn = this.page.getByRole('button', { name: /already have an account|máte již účet/i });
     if (await toggleBtn.isVisible().catch(() => false)) {
       await toggleBtn.click();
     }
