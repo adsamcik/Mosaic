@@ -338,11 +338,11 @@ export class LoginPage {
   async switchToRegisterMode() {
     // Support both English and Czech labels
     const toggleBtn = this.page.getByRole('button', { name: /don't have an account|nemáte účet/i });
-    if (await toggleBtn.isVisible().catch(() => false)) {
-      await toggleBtn.click();
-      // Wait for the registration form to fully appear
-      await expect(this.confirmPasswordInput).toBeVisible({ timeout: 15000 });
-    }
+    // Wait for toggle button to be visible with timeout
+    await expect(toggleBtn).toBeVisible({ timeout: 10000 });
+    await toggleBtn.click();
+    // Wait for the registration form to fully appear
+    await expect(this.confirmPasswordInput).toBeVisible({ timeout: 15000 });
   }
 
   /**
@@ -350,10 +350,12 @@ export class LoginPage {
    */
   async switchToLoginMode() {
     // Support both English and Czech labels
-    const toggleBtn = this.page.getByRole('button', { name: /already have an account|máte již účet/i });
-    if (await toggleBtn.isVisible().catch(() => false)) {
-      await toggleBtn.click();
-    }
+    const toggleBtn = this.page.getByRole('button', { name: /already have an account|máte účet/i });
+    // Wait for toggle button to be visible with timeout
+    await expect(toggleBtn).toBeVisible({ timeout: 10000 });
+    await toggleBtn.click();
+    // Wait for the form to switch - confirm password field should disappear
+    await expect(this.confirmPasswordInput).toBeHidden({ timeout: 5000 });
   }
 
   /**
@@ -363,13 +365,17 @@ export class LoginPage {
   async register(username: string, password: string) {
     await this.switchToRegisterMode();
     
-    const usernameField = this.usernameInput;
-    if (await usernameField.isVisible().catch(() => false)) {
-      await usernameField.clear();
-      await usernameField.fill(username);
-    }
+    // Wait for and fill username field
+    await expect(this.usernameInput).toBeVisible({ timeout: 5000 });
+    await this.usernameInput.clear();
+    await this.usernameInput.fill(username);
+
+    // Fill password fields
     await this.passwordInput.fill(password);
     await this.confirmPasswordInput.fill(password);
+
+    // Click create account button
+    await expect(this.createAccountButton).toBeVisible({ timeout: 5000 });
     await this.createAccountButton.click();
   }
 
@@ -387,12 +393,11 @@ export class LoginPage {
     
     // If username provided, fill it in (LocalAuth mode)
     if (username) {
-      const usernameField = this.usernameInput;
-      if (await usernameField.isVisible().catch(() => false)) {
-        await usernameField.clear();
-        await usernameField.fill(username);
-        console.log('[LoginPage] Filled username');
-      }
+      // Wait for username field to be visible before filling
+      await expect(this.usernameInput).toBeVisible({ timeout: 5000 });
+      await this.usernameInput.clear();
+      await this.usernameInput.fill(username);
+      console.log('[LoginPage] Filled username');
     }
     await this.passwordInput.fill(password);
     console.log('[LoginPage] Filled password');
