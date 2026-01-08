@@ -162,7 +162,7 @@ export const test = base.extend<{
    * Generate a unique test user for each test
    */
   testUser: async ({}, use) => {
-    const user = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
+    const user = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@e2e.local`;
     await use(user);
   },
 
@@ -230,8 +230,8 @@ export const test = base.extend<{
    * Two authenticated users for sharing tests
    */
   twoUserContext: async ({ browser }, use) => {
-    const aliceUser = `alice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
-    const bobUser = `bob-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
+    const aliceUser = `alice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@e2e.local`;
+    const bobUser = `bob-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@e2e.local`;
     
     // Create contexts for both users
     const aliceContext = await browser.newContext();
@@ -443,14 +443,19 @@ export class LoginPage {
       console.log('[LoginPage] LocalAuth mode detected, attempting registration');
       await this.register(username, password);
       
-      // Wait a bit for the form to process
-      await this.page.waitForTimeout(500);
+      // Wait for either success (app-shell) or error (alert)
+      const appShell = this.page.getByTestId('app-shell');
+      const errorAlert = this.errorMessage;
       
-      // Check if registration failed due to existing user
-      const hasError = await this.errorMessage.isVisible({ timeout: 5000 }).catch(() => false);
-      console.log(`[LoginPage] Error visible after registration: ${hasError}`);
+      // Race: wait for either app-shell or error to appear
+      const result = await Promise.race([
+        appShell.waitFor({ state: 'visible', timeout: 15000 }).then(() => 'success'),
+        errorAlert.waitFor({ state: 'visible', timeout: 15000 }).then(() => 'error'),
+      ]).catch(() => 'timeout');
       
-      if (hasError) {
+      console.log(`[LoginPage] Registration result: ${result}`);
+      
+      if (result === 'error') {
         const errorText = await this.errorMessage.textContent();
         console.log(`[LoginPage] Error text: ${errorText}`);
         if (errorText?.toLowerCase().includes('already taken') || errorText?.toLowerCase().includes('already exists')) {
@@ -463,6 +468,8 @@ export class LoginPage {
           await this.loginButton.click();
         }
       }
+      // If 'success', registration worked, nothing more to do
+      // If 'timeout', let the caller handle it
     } else {
       console.log('[LoginPage] ProxyAuth mode detected, logging in');
       await this.passwordInput.fill(password);
