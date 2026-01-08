@@ -264,7 +264,7 @@ export async function loginUser(
 }
 
 /**
- * Helper to create an album via UI
+ * Helper to create an album via UI and navigate into it
  */
 export async function createAlbumViaUI(
   page: Page,
@@ -275,6 +275,44 @@ export async function createAlbumViaUI(
 
   const dialog = new CreateAlbumDialog(page);
   await dialog.createAlbum(name);
+  
+  // Wait for album card to appear and click it to enter the album
+  const albumCard = page.getByTestId('album-card').first();
+  await expect(albumCard).toBeVisible({ timeout: 10000 });
+  await albumCard.click();
+  
+  // Wait for gallery to load
+  const gallery = new GalleryPage(page);
+  await gallery.waitForLoad();
+}
+
+/**
+ * Helper to reload page and re-login if needed.
+ * After creating albums via API, we need to reload to see them.
+ * Session may persist (no login needed) or require password unlock.
+ */
+export async function reloadAndEnsureLoggedIn(
+  page: Page,
+  password: string = TEST_PASSWORD
+): Promise<void> {
+  await page.reload();
+  
+  // Wait for either login form or app shell to appear
+  const loginForm = page.getByTestId('login-form');
+  const appShell = page.getByTestId('app-shell');
+  
+  // Wait for one of them to be visible
+  await expect(loginForm.or(appShell)).toBeVisible({ timeout: 10000 });
+  
+  // Check which one is visible
+  const isLoggedIn = await appShell.isVisible().catch(() => false);
+  
+  if (!isLoggedIn) {
+    const loginPage = new LoginPage(page);
+    await loginPage.waitForForm();
+    await loginPage.login(password);
+    await loginPage.expectLoginSuccess();
+  }
 }
 
 /**

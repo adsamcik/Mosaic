@@ -4,6 +4,29 @@
 **Blocks:** All other phases  
 **Parallelizable:** No (foundation phase)
 
+> **Parent:** `.github/copilot-instructions.md`
+
+---
+
+## 🚨 Non-Interactive Commands (CRITICAL)
+
+**ALL terminal commands MUST be non-interactive.** Commands that wait for user input will hang indefinitely.
+
+| Task | ✅ Correct Command | Notes |
+|------|-------------------|-------|
+| Install dependencies | `npm install` | Runs and exits |
+| Run crypto tests | `cd libs/crypto ; npm test` | Configured to run and exit |
+| Build crypto | `cd libs/crypto ; npm run build` | Compiles TypeScript |
+| Type check | `npx tsc --noEmit` | No output emitted |
+
+### Output Capture Pattern
+
+```powershell
+# ✅ CORRECT - Capture output to file first
+npm test 2>&1 | Out-File -FilePath "test-output.txt" -Encoding utf8
+Get-Content "test-output.txt" | Select-String -Pattern "PASS|FAIL"
+```
+
 ---
 
 ## Objectives

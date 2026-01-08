@@ -11,6 +11,7 @@ import {
     clearCachedMetadata,
     clearStoredEncryptedName,
     decryptAlbumName,
+    decryptAlbumNameWithTierKey,
     getCachedMetadata,
     getDecryptedAlbumName,
     getStoredEncryptedName,
@@ -21,6 +22,7 @@ import {
 // Mock the crypto client
 const mockCryptoClient = {
   decryptShard: vi.fn(),
+  decryptShardWithTierKey: vi.fn(),
 };
 
 vi.mock('../src/lib/crypto-client', () => ({
@@ -157,6 +159,75 @@ describe('Album Metadata Service', () => {
       );
 
       expect(result).toBe(albumName);
+    });
+  });
+
+  describe('decryptAlbumNameWithTierKey', () => {
+    it('decrypts album name using tier key directly (for share links)', async () => {
+      const albumName = 'Shared Album Name';
+      const encryptedBytes = createEncryptedNameBytes(albumName);
+      const tierKey = new Uint8Array(32).fill(2); // Tier key, not epoch seed
+
+      // Mock decryptShardWithTierKey for share link context
+      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
+        new TextEncoder().encode(albumName)
+      );
+
+      const result = await decryptAlbumNameWithTierKey(encryptedBytes, tierKey, 'album-shared');
+
+      expect(result).toBe(albumName);
+      expect(mockCryptoClient.decryptShardWithTierKey).toHaveBeenCalledWith(
+        encryptedBytes,
+        tierKey
+      );
+      // Should NOT call decryptShard (which derives tier keys)
+      expect(mockCryptoClient.decryptShard).not.toHaveBeenCalled();
+    });
+
+    it('decrypts album name from base64 string with tier key', async () => {
+      const albumName = 'Base64 Shared Album';
+      const encryptedBytes = createEncryptedNameBytes(albumName);
+      const base64Encrypted = toBase64(encryptedBytes);
+      const tierKey = new Uint8Array(32).fill(3);
+
+      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
+        new TextEncoder().encode(albumName)
+      );
+
+      const result = await decryptAlbumNameWithTierKey(base64Encrypted, tierKey, 'album-shared');
+
+      expect(result).toBe(albumName);
+      expect(mockCryptoClient.decryptShardWithTierKey).toHaveBeenCalled();
+    });
+
+    it('throws error for empty encrypted name', async () => {
+      const tierKey = new Uint8Array(32).fill(1);
+
+      await expect(
+        decryptAlbumNameWithTierKey(new Uint8Array(0), tierKey, 'album-shared')
+      ).rejects.toThrow(AlbumMetadataError);
+    });
+
+    it('throws error for invalid tier key length', async () => {
+      const encryptedBytes = createEncryptedNameBytes('Test');
+      const invalidKey = new Uint8Array(16); // Should be 32 bytes
+
+      await expect(
+        decryptAlbumNameWithTierKey(encryptedBytes, invalidKey, 'album-shared')
+      ).rejects.toThrow(AlbumMetadataError);
+    });
+
+    it('throws AlbumMetadataError on decryption failure', async () => {
+      const encryptedBytes = createEncryptedNameBytes('Test');
+      const tierKey = new Uint8Array(32).fill(1);
+
+      mockCryptoClient.decryptShardWithTierKey.mockRejectedValue(
+        new Error('Decryption failed - wrong key or tampered data')
+      );
+
+      await expect(
+        decryptAlbumNameWithTierKey(encryptedBytes, tierKey, 'album-shared')
+      ).rejects.toThrow(AlbumMetadataError);
     });
   });
 

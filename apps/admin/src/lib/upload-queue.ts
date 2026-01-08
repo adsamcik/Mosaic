@@ -81,6 +81,8 @@ export interface UploadTask {
   originalWidth?: number;
   /** Original image height */
   originalHeight?: number;
+  /** BlurHash string for instant placeholder (~30 chars) */
+  blurhash?: string;
 }
 
 /** Persisted task state (for resume after reload) */
@@ -107,6 +109,8 @@ interface PersistedTask {
   originalWidth?: number;
   /** Original image height */
   originalHeight?: number;
+  /** BlurHash string for instant placeholder (~30 chars) */
+  blurhash?: string;
 }
 
 /** IndexedDB schema */
@@ -281,20 +285,23 @@ class UploadQueue {
           const thumbHeight = thumbResult.height;
           const originalWidth = thumbResult.originalWidth;
           const originalHeight = thumbResult.originalHeight;
+          const blurhash = thumbResult.blurhash;
 
           task.thumbnailBase64 = thumbnailBase64;
           task.thumbWidth = thumbWidth;
           task.thumbHeight = thumbHeight;
           task.originalWidth = originalWidth;
           task.originalHeight = originalHeight;
+          task.blurhash = blurhash;
 
-          // Persist thumbnail and dimensions for resume support
+          // Persist thumbnail, dimensions, and blurhash for resume support
           await this.updatePersistedTask(task.id, {
             thumbnailBase64,
             thumbWidth,
             thumbHeight,
             originalWidth,
             originalHeight,
+            blurhash,
           });
         } catch (thumbError) {
           // Log but don't fail upload if thumbnail generation fails
@@ -494,6 +501,7 @@ class UploadQueue {
       thumbHeight: persisted.thumbHeight,
       originalWidth: persisted.originalWidth,
       originalHeight: persisted.originalHeight,
+      blurhash: persisted.blurhash,
     };
 
     this.queue.push(task);

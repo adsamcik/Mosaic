@@ -173,7 +173,8 @@ export default defineConfig({
       },
     },
     // Firefox has issues with WASM/libsodium crypto - hangs on registration/login
-    // See investigation prompt in docs/specs/SPEC-FirefoxCryptoIssue.md
+    // See investigation report in docs/specs/SPEC-FirefoxCryptoIssue.md
+    // Root cause: Argon2id WASM performance is significantly slower in Firefox
     // {
     //   name: 'firefox',
     //   use: { ...devices['Desktop Firefox'] },

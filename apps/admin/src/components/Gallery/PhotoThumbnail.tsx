@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { getCachedBlurhashDataURL, isValidBlurhash } from '../../lib/blurhash-decoder';
 import { loadPhoto, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
 
@@ -18,6 +19,8 @@ interface PhotoThumbnailProps {
   selectionMode?: boolean;
   /** Optional style overrides */
   style?: React.CSSProperties;
+  /** Whether to load full resolution shards (for lightbox/fullscreen) */
+  loadFullResolution?: boolean;
 }
 
 /** Loading state for thumbnail */
@@ -29,7 +32,15 @@ type ThumbnailState =
 
 /**
  * Photo Thumbnail Component
- * Displays a single photo in the grid with encrypted shard loading
+ * Displays a single photo in the grid with encrypted shard loading.
+ * 
+ * Optimization: Uses embedded base64 thumbnails first when available,
+ * only loading full shards when explicitly requested or when no thumbnail exists.
+ * 
+ * Loading priority (instant to slow):
+ * 1. BlurHash placeholder (instant, ~30 char string decoded in <1ms)
+ * 2. Embedded thumbnail (fast, base64 in manifest)
+ * 3. Full resolution shards (slow, network + decryption)
  */
 export function PhotoThumbnail({
   photo,
@@ -40,14 +51,43 @@ export function PhotoThumbnail({
   onDelete,
   selectionMode = false,
   style,
+  loadFullResolution = false,
 }: PhotoThumbnailProps) {
   const [state, setState] = useState<ThumbnailState>({ status: 'idle' });
   const [isHovered, setIsHovered] = useState(false);
 
-  // Load photo when component mounts or photo changes
+  // BlurHash placeholder - instant, decoded in <1ms (highest priority placeholder)
+  const blurhashUrl = useMemo(() => {
+    if (!photo.blurhash || !isValidBlurhash(photo.blurhash)) return null;
+    try {
+      // Use small dimensions (32x32) for fast decoding, CSS will scale it
+      return getCachedBlurhashDataURL(photo.blurhash, 32, 32);
+    } catch {
+      // Invalid blurhash, ignore
+      return null;
+    }
+  }, [photo.blurhash]);
+
+  // Use embedded thumbnail immediately if available (no network request needed)
+  const embeddedThumbnailUrl = useMemo(() => {
+    if (!photo.thumbnail || photo.thumbnail.length === 0) return null;
+    return `data:image/jpeg;base64,${photo.thumbnail}`;
+  }, [photo.thumbnail]);
+
+  // Only load shards if:
+  // 1. No embedded thumbnail exists, OR
+  // 2. Full resolution is explicitly requested
+  // AND we have the epoch key and shard IDs
+  const shouldLoadShards = useMemo(() => {
+    const hasShards = epochReadKey && photo.shardIds && photo.shardIds.length > 0;
+    if (!hasShards) return false;
+    // Load shards if no thumbnail OR if full resolution is requested
+    return !photo.thumbnail || loadFullResolution;
+  }, [epochReadKey, photo.shardIds, photo.thumbnail, loadFullResolution]);
+
+  // Load photo shards when needed
   useEffect(() => {
-    // Can't load without epoch key or shard IDs
-    if (!epochReadKey || !photo.shardIds || photo.shardIds.length === 0) {
+    if (!shouldLoadShards || !epochReadKey) {
       return;
     }
 
@@ -92,7 +132,7 @@ export function PhotoThumbnail({
       cancelled = true;
       releasePhoto(photo.id);
     };
-  }, [photo.id, photo.shardIds, photo.mimeType, epochReadKey]);
+  }, [photo.id, photo.shardIds, photo.mimeType, epochReadKey, shouldLoadShards]);
 
   // Retry handler for failed loads
   const handleRetry = useCallback(() => {
@@ -108,7 +148,70 @@ export function PhotoThumbnail({
   }, [photo.id, photo.shardIds, photo.mimeType, epochReadKey]);
 
   // Render based on state
+  // Priority: full resolution > embedded thumbnail > blurhash > placeholder
   const renderContent = () => {
+    // If fully loaded, show full resolution image
+    if (state.status === 'loaded') {
+      return (
+        <img
+          src={state.result.blobUrl}
+          alt={photo.filename}
+          className="photo-image"
+          data-testid="photo-image"
+          loading="lazy"
+        />
+      );
+    }
+
+    // If we have an embedded thumbnail and aren't loading full resolution, show it
+    if (embeddedThumbnailUrl && !loadFullResolution) {
+      return (
+        <img
+          src={embeddedThumbnailUrl}
+          alt={photo.filename}
+          className="photo-image photo-thumbnail-embedded"
+          data-testid="photo-image-embedded"
+        />
+      );
+    }
+
+    // If loading full resolution and have embedded thumbnail, show it as placeholder while loading
+    if (embeddedThumbnailUrl && loadFullResolution && state.status === 'loading') {
+      return (
+        <div className="photo-upgrading" data-testid="photo-upgrading">
+          <img
+            src={embeddedThumbnailUrl}
+            alt={photo.filename}
+            className="photo-image photo-thumbnail-embedded"
+          />
+          <div className="photo-upgrade-overlay">
+            <div className="loading-spinner" />
+          </div>
+        </div>
+      );
+    }
+
+    // If we have a blurhash, show it as instant placeholder while loading
+    if (blurhashUrl && (state.status === 'idle' || state.status === 'loading')) {
+      return (
+        <div className="photo-blurhash" data-testid="photo-blurhash">
+          <img
+            src={blurhashUrl}
+            alt=""
+            aria-hidden="true"
+            className="photo-blurhash-image"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(0px)' }}
+          />
+          {state.status === 'loading' && state.progress > 0 && (
+            <div
+              className="loading-progress"
+              style={{ width: `${state.progress * 100}%` }}
+            />
+          )}
+        </div>
+      );
+    }
+
     switch (state.status) {
       case 'idle':
         // No epoch key or shard IDs - show placeholder
@@ -136,17 +239,6 @@ export function PhotoThumbnail({
           </div>
         );
 
-      case 'loaded':
-        return (
-          <img
-            src={state.result.blobUrl}
-            alt={photo.filename}
-            className="photo-image"
-            data-testid="photo-image"
-            loading="lazy"
-          />
-        );
-
       case 'error':
         return (
           <div className="photo-error" data-testid="photo-error">
@@ -169,14 +261,17 @@ export function PhotoThumbnail({
     }
   };
 
+  // Allow clicking when any visual is available (blurhash, embedded thumbnail, or fully loaded)
+  const isClickable = blurhashUrl || embeddedThumbnailUrl || state.status === 'loaded';
+
   // Handle click - in selection mode, toggle selection; otherwise open photo
   const handleClick = useCallback(() => {
     if (selectionMode && onSelectionChange) {
       onSelectionChange(!isSelected);
-    } else if (onClick && state.status === 'loaded') {
+    } else if (onClick && isClickable) {
       onClick();
     }
-  }, [selectionMode, onSelectionChange, isSelected, onClick, state.status]);
+  }, [selectionMode, onSelectionChange, isSelected, onClick, isClickable]);
 
   // Handle checkbox click in selection mode
   const handleCheckboxClick = useCallback(
@@ -194,17 +289,19 @@ export function PhotoThumbnail({
     (event: React.MouseEvent) => {
       event.stopPropagation();
       if (onDelete) {
-        const url = state.status === 'loaded' ? state.result.blobUrl : undefined;
+        const url = state.status === 'loaded' 
+          ? state.result.blobUrl 
+          : embeddedThumbnailUrl ?? undefined;
         onDelete(url);
       }
     },
-    [onDelete, state]
+    [onDelete, state, embeddedThumbnailUrl]
   );
 
   // Handle keyboard activation
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if ((event.key === 'Enter' || event.key === ' ') && onClick && state.status === 'loaded') {
+      if ((event.key === 'Enter' || event.key === ' ') && onClick && isClickable) {
         event.preventDefault();
         if (selectionMode && onSelectionChange) {
           onSelectionChange(!isSelected);
@@ -215,15 +312,19 @@ export function PhotoThumbnail({
       // Delete on Delete/Backspace key when focused
       if ((event.key === 'Delete' || event.key === 'Backspace') && onDelete) {
         event.preventDefault();
-        const url = state.status === 'loaded' ? state.result.blobUrl : undefined;
+        const url = state.status === 'loaded' 
+          ? state.result.blobUrl 
+          : embeddedThumbnailUrl ?? undefined;
         onDelete(url);
       }
     },
-    [onClick, state, selectionMode, onSelectionChange, isSelected, onDelete]
+    [onClick, isClickable, selectionMode, onSelectionChange, isSelected, onDelete, state, embeddedThumbnailUrl]
   );
 
-  // Get thumbnail URL for delete dialog if loaded
-  const thumbnailUrl = state.status === 'loaded' ? state.result.blobUrl : undefined;
+  // Get thumbnail URL for delete dialog if loaded or embedded
+  const thumbnailUrl = state.status === 'loaded' 
+    ? state.result.blobUrl 
+    : embeddedThumbnailUrl ?? undefined;
 
   return (
     <div
@@ -234,7 +335,7 @@ export function PhotoThumbnail({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       role={onClick ? 'button' : undefined}
-      tabIndex={onClick && state.status === 'loaded' ? 0 : undefined}
+      tabIndex={onClick && isClickable ? 0 : undefined}
       aria-label={onClick ? `View ${photo.filename}` : undefined}
       aria-selected={isSelected}
       data-photo-id={photo.id}

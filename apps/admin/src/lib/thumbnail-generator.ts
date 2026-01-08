@@ -11,6 +11,7 @@
  * compressed JPEG for efficient storage.
  */
 
+import { encode as encodeBlurhash } from 'blurhash';
 import { encryptShard, ShardTier, type EncryptedShard, type EpochKey } from '@mosaic/crypto';
 
 /** Default max dimension for thumbnails (300px) */
@@ -64,6 +65,8 @@ export interface ThumbnailResult {
   originalWidth: number;
   /** Original image height */
   originalHeight: number;
+  /** BlurHash string for instant placeholder (4x3 components, ~30 chars) */
+  blurhash: string;
 }
 
 /**
@@ -385,6 +388,31 @@ export async function generateThumbnail(
     // Clean up bitmap
     bitmap.close();
 
+    // Generate blurhash from canvas image data (before JPEG encoding)
+    // Use smaller dimensions for faster encoding while maintaining quality
+    const blurhashWidth = Math.min(dims.width, 32);
+    const blurhashHeight = Math.min(dims.height, 32);
+    
+    // Create a small canvas for blurhash to speed up encoding
+    const blurhashCanvas = document.createElement('canvas');
+    blurhashCanvas.width = blurhashWidth;
+    blurhashCanvas.height = blurhashHeight;
+    const blurhashCtx = blurhashCanvas.getContext('2d');
+    if (!blurhashCtx) {
+      throw new ThumbnailError('Failed to get blurhash canvas 2D context');
+    }
+    blurhashCtx.drawImage(canvas, 0, 0, blurhashWidth, blurhashHeight);
+    const blurhashImageData = blurhashCtx.getImageData(0, 0, blurhashWidth, blurhashHeight);
+    
+    // Encode blurhash with 4x3 components for good quality/size balance (~30 chars)
+    const blurhash = encodeBlurhash(
+      blurhashImageData.data,
+      blurhashWidth,
+      blurhashHeight,
+      4,  // componentX
+      3   // componentY
+    );
+
     // Convert to JPEG blob
     let blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, 'image/jpeg', quality)
@@ -416,6 +444,7 @@ export async function generateThumbnail(
       height: dims.height,
       originalWidth: logicalWidth,
       originalHeight: logicalHeight,
+      blurhash,
     };
   } catch (error) {
     if (error instanceof ThumbnailError) {

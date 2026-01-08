@@ -15,8 +15,10 @@ import {
   RemoveMemberDialog,
   loginUser,
   createAlbumViaAPI,
+  createAlbumViaUI,
   generateTestImage,
   getCurrentUserViaAPI,
+  reloadAndEnsureLoggedIn,
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
 
@@ -28,88 +30,70 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
     test('P1-COLLAB-1: owner can open members panel', async ({ collaboration }) => {
       const { alice, trackAlbum } = collaboration;
 
-      // Create album as Alice
+      // Login first to initialize crypto keys, then create album via API
+      await loginUser(alice, TEST_PASSWORD);
+
       const albumResult = await createAlbumViaAPI(alice.email);
       trackAlbum(albumResult.id, alice.email);
 
-      await loginUser(alice, TEST_PASSWORD);
+      // Reload and ensure logged in
+      await reloadAndEnsureLoggedIn(alice.page, TEST_PASSWORD);
 
       // Navigate to album
-      const appShell = new AppShell(alice.page);
       await expect(alice.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
+      const appShell = new AppShell(alice.page);
       await appShell.clickAlbum(0);
 
       const gallery = new GalleryPage(alice.page);
       await gallery.waitForLoad();
 
-      // Open members panel
-      const hasMembersButton = await gallery.membersButton.first().isVisible().catch(() => false);
-
-      if (hasMembersButton) {
-        await gallery.openMembers();
-        const membersPanel = new MembersPanel(alice.page);
-        await membersPanel.waitForOpen();
-      }
+      // Open members panel via album settings dropdown
+      await gallery.openMembers();
+      const membersPanel = new MembersPanel(alice.page);
+      await membersPanel.waitForOpen();
     });
 
     test('P1-COLLAB-2: both users see shared album after invite', async ({ collaboration }) => {
-      const { alice, bob, trackAlbum } = collaboration;
+      const { alice, bob, generateAlbumName } = collaboration;
 
-      // Create album as Alice
-      const albumResult = await createAlbumViaAPI(alice.email);
-      trackAlbum(albumResult.id, alice.email);
-
-      // Login both users
+      // Login both users first to initialize crypto keys
       await loginUser(alice, TEST_PASSWORD);
       await loginUser(bob, TEST_PASSWORD);
 
-      // Alice should see her album
-      const aliceAppShell = new AppShell(alice.page);
-      await expect(alice.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
+      // Create album as Alice via UI (proper crypto)
+      const albumName = generateAlbumName('shared');
+      await createAlbumViaUI(alice.page, albumName);
 
       // Get Bob's user ID for invite
       const bobInfo = await getCurrentUserViaAPI(bob.email);
 
-      // Alice navigates to album and invites Bob
-      await aliceAppShell.clickAlbum(0);
-
+      // Alice opens members panel and invites Bob
       const gallery = new GalleryPage(alice.page);
       await gallery.waitForLoad();
 
-      // Try to open members and invite
-      const hasMembersButton = await gallery.membersButton.first().isVisible().catch(() => false);
+      await gallery.openMembers();
 
-      if (hasMembersButton) {
-        await gallery.openMembers();
+      const membersPanel = new MembersPanel(alice.page);
+      await membersPanel.waitForOpen();
 
-        const membersPanel = new MembersPanel(alice.page);
-        await membersPanel.waitForOpen();
+      await membersPanel.openInviteDialog();
 
-        const hasInviteButton = await membersPanel.inviteButton.first().isVisible().catch(() => false);
-
-        if (hasInviteButton) {
-          await membersPanel.openInviteDialog();
-
-          const inviteDialog = new InviteMemberDialog(alice.page);
-          await inviteDialog.inviteMember(bobInfo.id, 'viewer');
-        }
-      }
+      const inviteDialog = new InviteMemberDialog(alice.page);
+      await inviteDialog.inviteMember(bobInfo.id, 'viewer');
     });
 
     test('P1-COLLAB-3: uploaded photo visible to album members', async ({ collaboration }) => {
       const { alice, bob, generateAlbumName, trackAlbum } = collaboration;
 
-      // Create album
-      const albumResult = await createAlbumViaAPI(alice.email);
-      trackAlbum(albumResult.id, alice.email);
-
-      // Login Alice and upload photo
+      // Login Alice first to initialize crypto keys
       await loginUser(alice, TEST_PASSWORD);
 
-      const aliceAppShell = new AppShell(alice.page);
-      await expect(alice.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await aliceAppShell.clickAlbum(0);
+      // Create album via UI (creates proper crypto keys for upload)
+      const albumName = generateAlbumName('shared');
+      const albumId = await createAlbumViaUI(alice.page, albumName);
+      trackAlbum(albumId, alice.email);
 
+      // Now we're in the gallery after createAlbumViaUI
       const aliceGallery = new GalleryPage(alice.page);
       await aliceGallery.waitForLoad();
 
@@ -162,20 +146,9 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
       const bobAlbum = await createAlbumViaAPI(bob.email);
       trackAlbum(bobAlbum.id, bob.email);
 
-      // Refresh both pages
-      await alice.page.reload();
-      await bob.page.reload();
-
-      // Re-login
-      const aliceLogin = new LoginPage(alice.page);
-      await aliceLogin.waitForForm();
-      await aliceLogin.login(TEST_PASSWORD);
-      await aliceLogin.expectLoginSuccess();
-
-      const bobLogin = new LoginPage(bob.page);
-      await bobLogin.waitForForm();
-      await bobLogin.login(TEST_PASSWORD);
-      await bobLogin.expectLoginSuccess();
+      // Reload both and ensure logged in
+      await reloadAndEnsureLoggedIn(alice.page, TEST_PASSWORD);
+      await reloadAndEnsureLoggedIn(bob.page, TEST_PASSWORD);
 
       // Each should see only their own album (unless sharing is set up)
       const aliceAppShell = new AppShell(alice.page);
@@ -202,43 +175,27 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
      * The observable behavior is that the removed member loses access.
      */
     test('P1-COLLAB-6: removed member loses access to shared album', async ({ collaboration }) => {
-      const { alice, bob, trackAlbum } = collaboration;
+      const { alice, bob, generateAlbumName } = collaboration;
 
-      // Step 1: Create album as Alice
-      const albumResult = await createAlbumViaAPI(alice.email);
-      trackAlbum(albumResult.id, alice.email);
-
-      // Step 2: Login both users
+      // Step 1: Login both users first to initialize crypto keys
       await loginUser(alice, TEST_PASSWORD);
       await loginUser(bob, TEST_PASSWORD);
+
+      // Step 2: Create album as Alice via UI (proper crypto)
+      const albumName = generateAlbumName('removal-test');
+      await createAlbumViaUI(alice.page, albumName);
 
       // Get Bob's user info for the invite
       const bobInfo = await getCurrentUserViaAPI(bob.email);
 
-      // Step 3: Alice navigates to her album
-      const aliceAppShell = new AppShell(alice.page);
-      await expect(alice.page.getByTestId('album-card')).toBeVisible({ timeout: 15000 });
-      await aliceAppShell.clickAlbum(0);
-
+      // Step 3: Alice is already in the album after creating it
       const aliceGallery = new GalleryPage(alice.page);
       await aliceGallery.waitForLoad();
 
       // Step 4: Alice opens members panel and invites Bob
-      const hasMembersButton = await aliceGallery.membersButton.first().isVisible().catch(() => false);
-      if (!hasMembersButton) {
-        test.skip(true, 'Members panel not available in this UI version');
-        return;
-      }
-
       await aliceGallery.openMembers();
       const membersPanel = new MembersPanel(alice.page);
       await membersPanel.waitForOpen();
-
-      const hasInviteButton = await membersPanel.inviteButton.first().isVisible().catch(() => false);
-      if (!hasInviteButton) {
-        test.skip(true, 'Invite functionality not available');
-        return;
-      }
 
       await membersPanel.openInviteDialog();
 
@@ -260,15 +217,7 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
 
       // Step 5: Verify Bob can see the shared album
       const bobAppShell = new AppShell(bob.page);
-      await bob.page.reload();
-
-      // Bob may need to re-login after reload
-      const bobLoginPage = new LoginPage(bob.page);
-      const needsLogin = await bobLoginPage.form.isVisible({ timeout: 3000 }).catch(() => false);
-      if (needsLogin) {
-        await bobLoginPage.login(TEST_PASSWORD);
-        await bobLoginPage.expectLoginSuccess();
-      }
+      await reloadAndEnsureLoggedIn(bob.page, TEST_PASSWORD);
 
       await bobAppShell.waitForLoad();
 
@@ -311,15 +260,7 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
 
       // Step 7: Verify Bob can no longer see the album
       await bob.page.bringToFront();
-      await bob.page.reload();
-
-      // Bob may need to re-login after reload
-      const bobReLoginPage = new LoginPage(bob.page);
-      const needsReLogin = await bobReLoginPage.form.isVisible({ timeout: 3000 }).catch(() => false);
-      if (needsReLogin) {
-        await bobReLoginPage.login(TEST_PASSWORD);
-        await bobReLoginPage.expectLoginSuccess();
-      }
+      await reloadAndEnsureLoggedIn(bob.page, TEST_PASSWORD);
 
       await bobAppShell.waitForLoad();
 
@@ -341,41 +282,26 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
      * directly verify cryptographic epoch changes from E2E perspective.
      */
     test('P1-COLLAB-7: removal dialog shows key rotation progress', async ({ collaboration }) => {
-      const { alice, bob, trackAlbum } = collaboration;
+      const { alice, bob, generateAlbumName } = collaboration;
 
-      // Setup: Create album and invite Bob
-      const albumResult = await createAlbumViaAPI(alice.email);
-      trackAlbum(albumResult.id, alice.email);
-
+      // Login both users first to initialize crypto keys
       await loginUser(alice, TEST_PASSWORD);
       await loginUser(bob, TEST_PASSWORD);
 
+      // Create album as Alice via UI (proper crypto)
+      const albumName = generateAlbumName('key-rotation-test');
+      await createAlbumViaUI(alice.page, albumName);
+
       const bobInfo = await getCurrentUserViaAPI(bob.email);
 
-      // Alice navigates to album
-      const aliceAppShell = new AppShell(alice.page);
-      await expect(alice.page.getByTestId('album-card')).toBeVisible({ timeout: 15000 });
-      await aliceAppShell.clickAlbum(0);
-
+      // Alice is already in the album after creating it
       const aliceGallery = new GalleryPage(alice.page);
       await aliceGallery.waitForLoad();
 
       // Open members and invite Bob
-      const hasMembersButton = await aliceGallery.membersButton.first().isVisible().catch(() => false);
-      if (!hasMembersButton) {
-        test.skip(true, 'Members panel not available');
-        return;
-      }
-
       await aliceGallery.openMembers();
       const membersPanel = new MembersPanel(alice.page);
       await membersPanel.waitForOpen();
-
-      const hasInviteButton = await membersPanel.inviteButton.first().isVisible().catch(() => false);
-      if (!hasInviteButton) {
-        test.skip(true, 'Invite functionality not available');
-        return;
-      }
 
       await membersPanel.openInviteDialog();
       const inviteDialog = new InviteMemberDialog(alice.page);

@@ -8,6 +8,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
+import type { NavigationDirection } from '../../hooks/useLightbox';
 import type { PhotoMeta } from '../../workers/types';
 import { SharedPhotoLightbox } from './SharedPhotoLightbox';
 import { SharedPhotoThumbnail } from './SharedPhotoThumbnail';
@@ -50,6 +51,7 @@ export function SharedPhotoGrid({
   
   // Lightbox state
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [navigationDirection, setNavigationDirection] = useState<NavigationDirection>('initial');
 
   // Track container width for responsive layout
   const [containerWidth, setContainerWidth] = useState(0);
@@ -104,22 +106,47 @@ export function SharedPhotoGrid({
   // Current photo in lightbox
   const currentPhoto = lightboxIndex !== null ? photos[lightboxIndex] : null;
 
-  // Preload queue for lightbox
+  // Direction-aware preload queue for lightbox
+  // When navigating forward: prioritize N+1, N+2, then N-1
+  // When navigating backward: prioritize N-1, N-2, then N+1
+  // When initial (just opened): preload equally in both directions
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (lightboxIndex === null) return [];
 
     const queue: PhotoMeta[] = [];
-    for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-      const prevPhoto = photos[lightboxIndex - offset];
-      const nextPhoto = photos[lightboxIndex + offset];
-      if (prevPhoto) queue.push(prevPhoto);
-      if (nextPhoto) queue.push(nextPhoto);
+    
+    if (navigationDirection === 'forward') {
+      // Moving forward: prioritize ahead, then add one behind
+      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
+        const next = photos[lightboxIndex + offset];
+        if (next?.shardIds?.length) queue.push(next);
+      }
+      const prev = photos[lightboxIndex - 1];
+      if (prev?.shardIds?.length) queue.push(prev);
+    } else if (navigationDirection === 'backward') {
+      // Moving backward: prioritize behind, then add one ahead
+      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
+        const prev = photos[lightboxIndex - offset];
+        if (prev?.shardIds?.length) queue.push(prev);
+      }
+      const next = photos[lightboxIndex + 1];
+      if (next?.shardIds?.length) queue.push(next);
+    } else {
+      // Initial open: preload equally in both directions
+      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
+        const prevPhoto = photos[lightboxIndex - offset];
+        const nextPhoto = photos[lightboxIndex + offset];
+        if (nextPhoto?.shardIds?.length) queue.push(nextPhoto);
+        if (prevPhoto?.shardIds?.length) queue.push(prevPhoto);
+      }
     }
+    
     return queue;
-  }, [lightboxIndex, photos]);
+  }, [lightboxIndex, navigationDirection, photos]);
 
   // Handle photo click to open lightbox
   const handlePhotoClick = useCallback((photoIndex: number) => {
+    setNavigationDirection('initial');
     setLightboxIndex(photoIndex);
   }, []);
 
@@ -129,6 +156,7 @@ export function SharedPhotoGrid({
   }, []);
 
   const handleLightboxNext = useCallback(() => {
+    setNavigationDirection('forward');
     setLightboxIndex((prev) => {
       if (prev === null) return null;
       return prev < photos.length - 1 ? prev + 1 : prev;
@@ -136,6 +164,7 @@ export function SharedPhotoGrid({
   }, [photos.length]);
 
   const handleLightboxPrevious = useCallback(() => {
+    setNavigationDirection('backward');
     setLightboxIndex((prev) => {
       if (prev === null) return null;
       return prev > 0 ? prev - 1 : prev;

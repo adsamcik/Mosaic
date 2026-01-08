@@ -2,6 +2,66 @@
 
 > This file defines specialized agent personas that can be invoked for distinct tasks.
 > Each agent has a specific domain of expertise and strict boundaries.
+>
+> **Parent:** `.github/copilot-instructions.md`
+
+---
+
+## 🚨 CRITICAL: Non-Interactive Terminal Commands
+
+**ALL terminal commands MUST be non-interactive.** Commands that wait for user input will hang indefinitely. All agents MUST use these non-interactive forms.
+
+### Quick Reference Table
+
+| ❌ Interactive (NEVER USE) | ✅ Non-Interactive (ALWAYS USE) | Context |
+|---------------------------|--------------------------------|---------|
+| `vitest` | `vitest run` | Vitest defaults to watch mode |
+| `npm test` (if configured for watch) | `npm run test:run` or `vitest run` | Check package.json scripts |
+| `npx playwright test` | `npx playwright test --reporter=list` | Default reporter may be interactive |
+| `dotnet watch` | `dotnet run` or `dotnet build` | Watch mode is interactive |
+| `npm init` | `npm init -y` | Prompts for package details |
+| `git commit` | `git commit -m "message"` | Opens editor without `-m` |
+| `docker compose up` | `docker compose up -d` | Foreground mode blocks terminal |
+| `psql` | `psql -c "SELECT ..."` | Interactive shell without `-c` |
+| `python` | `python -c "..."` or `python script.py` | REPL without arguments |
+| `node` | `node -e "..."` or `node script.js` | REPL without arguments |
+
+### Project-Specific Commands
+
+```powershell
+# ✅ Crypto tests (non-interactive)
+cd libs/crypto ; npm test           # Already configured to run and exit
+
+# ✅ Frontend tests (non-interactive)
+cd apps/admin ; npm run test:run    # Use test:run, NOT test (which may watch)
+
+# ✅ Backend tests (non-interactive)
+dotnet test apps/backend/Mosaic.Backend.Tests
+
+# ✅ E2E tests (non-interactive)
+cd tests/e2e ; npx playwright test --reporter=list
+
+# ✅ Build commands (non-interactive)
+cd libs/crypto ; npm run build
+dotnet build apps/backend/Mosaic.Backend
+cd apps/admin ; npm run build
+
+# ✅ Background servers (use isBackground=true in run_in_terminal)
+dotnet run --project apps/backend/Mosaic.Backend  # Only with isBackground=true
+cd apps/admin ; npm run dev                        # Only with isBackground=true
+```
+
+### Output Capture Pattern
+
+**NEVER pipe expensive commands directly through filters.** Always capture output first:
+
+```powershell
+# ✅ CORRECT - Capture output to file first
+npx playwright test --reporter=list 2>&1 | Out-File -FilePath "test-output.txt" -Encoding utf8
+
+# ✅ Then filter the saved output (can retry without re-running tests)
+Get-Content "test-output.txt" | Select-String -Pattern "passed|failed" | Select-Object -Last 30
+```
 
 ---
 

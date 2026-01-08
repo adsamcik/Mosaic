@@ -5,6 +5,47 @@
 **Parallel With:** Stream A (Crypto), Stream B (Backend)  
 **Deliverable:** `apps/admin/` - React 19 + Vite application
 
+> **Parent:** `.github/copilot-instructions.md`
+
+---
+
+## 🚨 Non-Interactive Commands (CRITICAL)
+
+**ALL terminal commands MUST be non-interactive.** Commands that wait for user input will hang indefinitely.
+
+| Task | ❌ NEVER USE | ✅ ALWAYS USE |
+|------|--------------|---------------|
+| Create project | `npm create vite@latest` (prompts) | `npm create vite@latest apps/admin -- --template react-ts` |
+| Run tests | `npm test` (may watch) | `npm run test:run` |
+| Dev server | `npm run dev` (foreground) | `npm run dev` with `isBackground=true` |
+| Build | — | `npm run build` |
+| Lint | — | `npm run lint` |
+| Type check | — | `npx tsc --noEmit` |
+
+### Full Command Examples
+
+```powershell
+# ✅ Create project (non-interactive with template flag)
+npm create vite@latest apps/admin -- --template react-ts
+
+# ✅ Install dependencies
+cd apps/admin ; npm install
+
+# ✅ Run tests (non-interactive)
+npm run test:run
+
+# ✅ Build (non-interactive)
+npm run build
+```
+
+### Output Capture Pattern
+
+```powershell
+# ✅ CORRECT - Capture output to file first
+npm run test:run 2>&1 | Out-File -FilePath "vitest-output.txt" -Encoding utf8
+Get-Content "vitest-output.txt" | Select-String -Pattern "PASS|FAIL"
+```
+
 ---
 
 ## Context

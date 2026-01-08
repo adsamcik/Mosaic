@@ -503,7 +503,17 @@ test.describe('Error Handling: Quota & Limits @p2 @security', () => {
 
     const loginPage = new LoginPage(authenticatedPage);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+
+    // Detect auth mode - when LocalAuth is active, we need to provide username
+    // The user was already created by apiHelper.createAlbum, so we login (not register)
+    const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    if (isLocalAuth) {
+      // LocalAuth mode: login with username (user already created via API)
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+    } else {
+      // ProxyAuth mode: just enter password
+      await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    }
     await loginPage.expectLoginSuccess();
 
     const albumCard = authenticatedPage.getByTestId('album-card').first();
@@ -513,46 +523,47 @@ test.describe('Error Handling: Quota & Limits @p2 @security', () => {
     const gallery = new GalleryPage(authenticatedPage);
     await gallery.waitForLoad();
 
-    // Mock quota exceeded response
+    // Mock quota exceeded response - TUS uses 400 Bad Request with FailRequest()
     await authenticatedPage.route('**/api/files', (route) => {
       if (route.request().method() === 'POST') {
+        // TUS protocol: FailRequest returns 400 with plain text body
         route.fulfill({
-          status: 413,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            error: 'Quota exceeded',
-            message: 'Storage limit reached',
-          }),
+          status: 400,
+          contentType: 'text/plain',
+          body: 'Storage quota exceeded',
         });
       } else {
         route.continue();
       }
     });
 
-    // Try to upload
+    // Trigger upload directly without using uploadPhoto() which expects success
     const testImage = generateTestImage();
-    await gallery.uploadPhoto(testImage, 'quota-test.png');
-
-    // Should show quota error - wait for error message or alert
-    const quotaError = authenticatedPage.getByText(/quota|storage|limit|full/i);
-    const generalError = authenticatedPage.getByRole('alert');
-    await waitForCondition(
-      async () => {
-        const hasQuotaError = await quotaError.first().isVisible().catch(() => false);
-        const hasAlert = await generalError.first().isVisible().catch(() => false);
-        return hasQuotaError || hasAlert;
-      },
-      { timeout: 10000, message: 'Expected quota error message or alert' }
-    ).catch(() => {
-      // May handle gracefully without visible error
+    const uploadInput = authenticatedPage.locator('input[type="file"]');
+    await expect(uploadInput).toBeAttached({ timeout: 10000 });
+    await uploadInput.setInputFiles({
+      name: 'quota-test.png',
+      mimeType: 'image/png',
+      buffer: testImage,
     });
-    const hasQuotaError = await quotaError.first().isVisible().catch(() => false);
 
-    // Or a general error
-    const hasError = await generalError.first().isVisible().catch(() => false);
+    // Wait for error toast to appear - the UploadErrorToast shows on upload failures
+    const errorToast = authenticatedPage.getByTestId('upload-error-toast');
+    await expect(errorToast).toBeVisible({ timeout: 30000 });
 
-    // App should handle gracefully
+    // Verify error message contains quota-related text
+    const errorMessage = errorToast.locator('p');
+    await expect(errorMessage).toContainText(/quota|storage/i);
+
+    // App should remain functional - gallery still visible
     await expect(gallery.gallery).toBeVisible();
+
+    // Dismiss the error toast
+    const dismissButton = authenticatedPage.getByTestId('upload-error-dismiss');
+    if (await dismissButton.isVisible()) {
+      await dismissButton.click();
+      await expect(errorToast).toBeHidden({ timeout: 5000 });
+    }
   });
 });
 

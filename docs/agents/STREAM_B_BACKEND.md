@@ -5,6 +5,48 @@
 **Parallel With:** Stream A (Crypto), Stream C (Frontend)  
 **Deliverable:** `apps/backend/` - .NET 10 ASP.NET Core API
 
+> **Parent:** `.github/copilot-instructions.md`
+
+---
+
+## 🚨 Non-Interactive Commands (CRITICAL)
+
+**ALL terminal commands MUST be non-interactive.** Commands that wait for user input will hang indefinitely.
+
+| Task | ❌ NEVER USE | ✅ ALWAYS USE |
+|------|--------------|---------------|
+| Run tests | — | `dotnet test apps/backend/Mosaic.Backend.Tests` |
+| Build | — | `dotnet build apps/backend/Mosaic.Backend` |
+| Run server | `dotnet watch run` | `dotnet run` with `isBackground=true` |
+| Create project | `dotnet new webapi` (prompts) | `dotnet new webapi -n Name -o path` |
+| Add package | — | `dotnet add package <name>` |
+| Add migration | — | `dotnet ef migrations add <name>` |
+| Update database | — | `dotnet ef database update` |
+
+### Full Command Examples
+
+```powershell
+# ✅ Create new project (non-interactive)
+dotnet new webapi -n Mosaic.Backend -o apps/backend
+
+# ✅ Add packages (non-interactive)
+dotnet add package Npgsql.EntityFrameworkCore.PostgreSQL
+
+# ✅ Build backend
+dotnet build apps/backend/Mosaic.Backend
+
+# ✅ Run tests (non-interactive)
+dotnet test apps/backend/Mosaic.Backend.Tests
+```
+
+### Output Capture Pattern
+
+```powershell
+# ✅ CORRECT - Capture output to file first
+dotnet test 2>&1 | Out-File -FilePath "dotnet-test-output.txt" -Encoding utf8
+Get-Content "dotnet-test-output.txt" | Select-String -Pattern "Passed|Failed"
+```
+
 ---
 
 ## Context

@@ -1,11 +1,13 @@
 /**
  * PhotoLightbox Component Tests
  * Tests the updated UI with SVG icons for navigation, info, download, and delete
+ * Tests viewport-based shard preloading behavior
  */
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PhotoLightbox } from '../src/components/Gallery/PhotoLightbox';
+import * as photoService from '../src/lib/photo-service';
 import type { PhotoMeta } from '../src/workers/types';
 
 // Mock the photo-service
@@ -221,5 +223,325 @@ describe('PhotoLightbox', () => {
     const counter = container.querySelector('[data-testid="lightbox-counter"]');
     expect(counter).not.toBeNull();
     expect(counter?.textContent).toContain('vacation-photo.jpg');
+  });
+});
+
+/**
+ * Lightbox Preloading Tests
+ *
+ * Tests the viewport-based shard preloading behavior.
+ * The lightbox preloads adjacent photos when opened or navigated:
+ * - Opening: preloads photos at index-1, index+1, index-2, index+2
+ * - Forward navigation: prioritizes index+1, index+2, then index-1
+ * - Backward navigation: prioritizes index-1, index-2, then index+1
+ */
+describe('PhotoLightbox Preloading', () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  // Create an array of mock photos for preloading tests
+  function createMockPhotos(count: number): PhotoMeta[] {
+    return Array.from({ length: count }, (_, i) => ({
+      id: `photo-${i}`,
+      albumId: 'album-1',
+      epochId: 'epoch-1',
+      filename: `photo-${i}.jpg`,
+      mimeType: 'image/jpeg',
+      width: 1920,
+      height: 1080,
+      shardIds: [`shard-${i}-a`, `shard-${i}-b`],
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tags: [],
+    }));
+  }
+
+  // Create a mock photo with empty shardIds (placeholder/pending photo)
+  function createMockPhotoWithoutShards(index: number): PhotoMeta {
+    return {
+      id: `photo-${index}`,
+      albumId: 'album-1',
+      epochId: 'epoch-1',
+      filename: `photo-${index}.jpg`,
+      mimeType: 'image/jpeg',
+      width: 1920,
+      height: 1080,
+      shardIds: [], // No shards
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tags: [],
+    };
+  }
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  describe('preloads photos from preloadQueue', () => {
+    it('calls preloadPhotos with provided preloadQueue', async () => {
+      const photos = createMockPhotos(10);
+      const currentPhoto = photos[5]!;
+      const preloadQueue = [photos[4]!, photos[6]!, photos[3]!, photos[7]!];
+      const epochReadKey = new Uint8Array(32);
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: currentPhoto,
+            epochReadKey,
+            onClose: vi.fn(),
+            preloadQueue,
+          })
+        );
+        // Allow useEffect to run
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      // Verify preloadPhotos was called
+      expect(photoService.preloadPhotos).toHaveBeenCalled();
+
+      // Verify it was called with the correct photos
+      const call = vi.mocked(photoService.preloadPhotos).mock.calls[0];
+      expect(call).toBeDefined();
+      const [photosArg, keyArg] = call!;
+
+      // Should have 4 photos in the preload queue
+      expect(photosArg).toHaveLength(4);
+
+      // Verify the photo IDs are correct (with :full suffix)
+      const preloadedIds = photosArg.map((p) => p.id);
+      expect(preloadedIds).toContain('photo-4:full');
+      expect(preloadedIds).toContain('photo-6:full');
+      expect(preloadedIds).toContain('photo-3:full');
+      expect(preloadedIds).toContain('photo-7:full');
+
+      // Verify the epoch key is passed correctly
+      expect(keyArg).toBe(epochReadKey);
+    });
+
+    it('does not call preloadPhotos when preloadQueue is empty', async () => {
+      const photos = createMockPhotos(10);
+      const currentPhoto = photos[5]!;
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: currentPhoto,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+            preloadQueue: [],
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      // preloadPhotos should not be called with empty queue
+      expect(photoService.preloadPhotos).not.toHaveBeenCalled();
+    });
+
+    it('does not call preloadPhotos when epochReadKey is missing', async () => {
+      const photos = createMockPhotos(10);
+      const currentPhoto = photos[5]!;
+      const preloadQueue = [photos[4]!, photos[6]!];
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: currentPhoto,
+            epochReadKey: undefined as unknown as Uint8Array,
+            onClose: vi.fn(),
+            preloadQueue,
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      // preloadPhotos should not be called without epoch key
+      expect(photoService.preloadPhotos).not.toHaveBeenCalled();
+    });
+
+    it('uses correct mimeType for each photo in preloadQueue', async () => {
+      const photos = createMockPhotos(5);
+      // Modify mimeTypes to be different
+      photos[1]!.mimeType = 'image/png';
+      photos[2]!.mimeType = 'image/webp';
+      photos[3]!.mimeType = 'image/gif';
+
+      const currentPhoto = photos[2]!;
+      const preloadQueue = [photos[1]!, photos[3]!];
+      const epochReadKey = new Uint8Array(32);
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: currentPhoto,
+            epochReadKey,
+            onClose: vi.fn(),
+            preloadQueue,
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const call = vi.mocked(photoService.preloadPhotos).mock.calls[0];
+      expect(call).toBeDefined();
+      const [photosArg] = call!;
+
+      // Verify mimeTypes are preserved
+      const pngPhoto = photosArg.find((p) => p.id === 'photo-1:full');
+      const gifPhoto = photosArg.find((p) => p.id === 'photo-3:full');
+
+      expect(pngPhoto?.mimeType).toBe('image/png');
+      expect(gifPhoto?.mimeType).toBe('image/gif');
+    });
+
+    it('includes shardIds for each photo in preloadQueue', async () => {
+      const photos = createMockPhotos(5);
+      const currentPhoto = photos[2]!;
+      const preloadQueue = [photos[1]!, photos[3]!];
+      const epochReadKey = new Uint8Array(32);
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: currentPhoto,
+            epochReadKey,
+            onClose: vi.fn(),
+            preloadQueue,
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const call = vi.mocked(photoService.preloadPhotos).mock.calls[0];
+      expect(call).toBeDefined();
+      const [photosArg] = call!;
+
+      // Verify shardIds are included
+      const photo1 = photosArg.find((p) => p.id === 'photo-1:full');
+      const photo3 = photosArg.find((p) => p.id === 'photo-3:full');
+
+      expect(photo1?.shardIds).toEqual(['shard-1-a', 'shard-1-b']);
+      expect(photo3?.shardIds).toEqual(['shard-3-a', 'shard-3-b']);
+    });
+  });
+
+  describe('preload errors are silent', () => {
+    it('does not crash when preloadPhotos fails', async () => {
+      // Mock preloadPhotos to throw an error
+      vi.mocked(photoService.preloadPhotos).mockRejectedValueOnce(
+        new Error('Network error during preload')
+      );
+
+      const photos = createMockPhotos(5);
+      const currentPhoto = photos[2]!;
+      const preloadQueue = [photos[1]!, photos[3]!];
+
+      // This should not throw
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: currentPhoto,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+            preloadQueue,
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      // The lightbox should still render properly
+      const lightbox = container.querySelector('[data-testid="lightbox"]');
+      expect(lightbox).not.toBeNull();
+    });
+
+    it('continues to load main photo when preload fails', async () => {
+      // Mock preloadPhotos to throw an error
+      vi.mocked(photoService.preloadPhotos).mockRejectedValueOnce(
+        new Error('Preload failed')
+      );
+
+      const photos = createMockPhotos(5);
+      const currentPhoto = photos[2]!;
+      const preloadQueue = [photos[1]!, photos[3]!];
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: currentPhoto,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+            preloadQueue,
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      // loadPhoto should still be called for the main photo
+      expect(photoService.loadPhoto).toHaveBeenCalled();
+      const loadPhotoCall = vi.mocked(photoService.loadPhoto).mock.calls[0];
+      expect(loadPhotoCall?.[0]).toBe('photo-2:full');
+    });
+  });
+
+  describe('preloadQueue updates trigger new preloads', () => {
+    it('calls preloadPhotos again when preloadQueue changes', async () => {
+      const photos = createMockPhotos(10);
+      const currentPhoto = photos[5]!;
+      const initialQueue = [photos[4]!, photos[6]!];
+      const epochReadKey = new Uint8Array(32);
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: currentPhoto,
+            epochReadKey,
+            onClose: vi.fn(),
+            preloadQueue: initialQueue,
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      // First call with initial queue
+      expect(photoService.preloadPhotos).toHaveBeenCalledTimes(1);
+
+      // Update the preload queue (simulating navigation)
+      const newQueue = [photos[6]!, photos[7]!, photos[4]!];
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: photos[6]!,
+            epochReadKey,
+            onClose: vi.fn(),
+            preloadQueue: newQueue,
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      // Should be called again with new queue
+      expect(photoService.preloadPhotos).toHaveBeenCalledTimes(2);
+
+      // Verify the second call has the new queue
+      const secondCall = vi.mocked(photoService.preloadPhotos).mock.calls[1];
+      expect(secondCall).toBeDefined();
+      const [photosArg] = secondCall!;
+      const preloadedIds = photosArg.map((p) => p.id);
+      expect(preloadedIds).toContain('photo-6:full');
+      expect(preloadedIds).toContain('photo-7:full');
+      expect(preloadedIds).toContain('photo-4:full');
+    });
   });
 });

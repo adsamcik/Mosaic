@@ -31,6 +31,8 @@ export interface PhotoMeta {
   thumbHeight?: number;
   /** User-provided description for the photo */
   description?: string;
+  /** BlurHash string for instant placeholder (~30 chars, 4x3 components) */
+  blurhash?: string;
 }
 
 /** Encrypted manifest record from server */

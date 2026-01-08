@@ -104,13 +104,21 @@ npx playwright test --grep @sharing
 
 ## Browser Configuration
 
-Tests run on **3 browser configurations** defined in `playwright.config.ts`:
+Tests run on **2 browser configurations** defined in `playwright.config.ts`:
 
 | Project | Browser | Description |
 |---------|---------|-------------|
 | `chromium` | Chromium | Desktop Chrome-like browser |
-| `firefox` | Firefox | Desktop Firefox |
 | `mobile-chrome` | Chromium | Mobile emulation (Pixel 5 viewport) |
+
+### Unsupported Browsers
+
+| Browser | Status | Reason |
+|---------|--------|--------|
+| Firefox | ⏭️ Skipped | Argon2id WASM performance causes crypto operations to hang. See [SPEC-FirefoxCryptoIssue.md](../../docs/specs/SPEC-FirefoxCryptoIssue.md) |
+| WebKit/Safari | ⏭️ Skipped | SharedArrayBuffer compatibility issues |
+
+**Note:** Production support for Firefox and Safari is untested but believed to work—the key derivation operations just take longer. E2E tests are skipped because the performance differential causes timeouts.
 
 ### How Browser Testing Works
 
@@ -140,17 +148,14 @@ This tests responsive design and touch interactions but is not equivalent to tes
 ### Running Specific Browsers
 
 ```bash
-# Run only on Chromium (fastest)
+# Run only on Chromium (default, fastest)
 npx playwright test --project=chromium
-
-# Run only on Firefox
-npx playwright test --project=firefox
 
 # Run only mobile tests
 npx playwright test --project=mobile-chrome
 
 # Run on multiple specific browsers
-npx playwright test --project=chromium --project=firefox
+npx playwright test --project=chromium --project=mobile-chrome
 ```
 
 ## Test Structure

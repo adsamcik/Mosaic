@@ -2,6 +2,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { computeMosaicLayout, type MosaicItem } from '../../lib/mosaic-layout';
+import type { NavigationDirection } from '../../hooks/useLightbox';
 import type { PhotoMeta } from '../../workers/types';
 import { MosaicTile } from '../Gallery/MosaicTile';
 import { SharedPhotoLightbox } from './SharedPhotoLightbox';
@@ -97,6 +98,7 @@ export function SharedMosaicPhotoGrid({
   }, []);
 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [navigationDirection, setNavigationDirection] = useState<NavigationDirection>('initial');
 
   // Compute Layout Items
   const virtualRows = useMemo(() => {
@@ -157,22 +159,50 @@ export function SharedMosaicPhotoGrid({
 
   const handlePhotoClick = useCallback((photo: PhotoMeta) => {
     const index = photos.findIndex(p => p.id === photo.id);
-    if (index >= 0) setLightboxIndex(index);
+    if (index >= 0) {
+      setNavigationDirection('initial');
+      setLightboxIndex(index);
+    }
   }, [photos]);
 
   const currentPhoto = lightboxIndex !== null ? photos[lightboxIndex] : null;
 
+  // Direction-aware preload queue
+  // When navigating forward: prioritize N+1, N+2, then N-1
+  // When navigating backward: prioritize N-1, N-2, then N+1
+  // When initial (just opened): preload equally in both directions
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (lightboxIndex === null) return [];
     const queue: PhotoMeta[] = [];
-    for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
+    
+    if (navigationDirection === 'forward') {
+      // Moving forward: prioritize ahead, then add one behind
+      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
+        const next = photos[lightboxIndex + offset];
+        if (next?.shardIds?.length) queue.push(next);
+      }
+      const prev = photos[lightboxIndex - 1];
+      if (prev?.shardIds?.length) queue.push(prev);
+    } else if (navigationDirection === 'backward') {
+      // Moving backward: prioritize behind, then add one ahead
+      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
+        const prev = photos[lightboxIndex - offset];
+        if (prev?.shardIds?.length) queue.push(prev);
+      }
+      const next = photos[lightboxIndex + 1];
+      if (next?.shardIds?.length) queue.push(next);
+    } else {
+      // Initial open: preload equally in both directions
+      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
         const prev = photos[lightboxIndex - offset];
         const next = photos[lightboxIndex + offset];
-        if (prev) queue.push(prev);
-        if (next) queue.push(next);
+        if (next?.shardIds?.length) queue.push(next);
+        if (prev?.shardIds?.length) queue.push(prev);
+      }
     }
+    
     return queue;
-  }, [lightboxIndex, photos]);
+  }, [lightboxIndex, navigationDirection, photos]);
 
   if (isLoadingKeys) {
     return (
@@ -281,8 +311,14 @@ export function SharedMosaicPhotoGrid({
           tierKey={getTierKey(currentPhoto.epochId, accessTier)} // Current photo key
           accessTier={accessTier}
           onClose={() => setLightboxIndex(null)}
-          onNext={lightboxIndex < photos.length - 1 ? () => setLightboxIndex(i => i !== null ? i + 1 : null) : undefined}
-          onPrevious={lightboxIndex > 0 ? () => setLightboxIndex(i => i !== null ? i - 1 : null) : undefined}
+          onNext={lightboxIndex < photos.length - 1 ? () => {
+            setNavigationDirection('forward');
+            setLightboxIndex(i => i !== null ? i + 1 : null);
+          } : undefined}
+          onPrevious={lightboxIndex > 0 ? () => {
+            setNavigationDirection('backward');
+            setLightboxIndex(i => i !== null ? i - 1 : null);
+          } : undefined}
           hasNext={lightboxIndex < photos.length - 1}
           hasPrevious={lightboxIndex > 0}
           preloadQueue={preloadQueue}

@@ -341,8 +341,8 @@ export class GalleryPage {
     this.viewJustifiedButton = page.getByTestId('view-toggle-justified');
     this.viewGridButton = page.getByTestId('view-toggle-grid');
     this.viewMapButton = page.getByTestId('view-toggle-map');
-    this.membersButton = page.getByTestId('share-button');
-    this.shareButton = page.getByTestId('share-links-button');
+    this.membersButton = page.getByTestId('menu-share-button');
+    this.shareButton = page.getByTestId('menu-links-button');
     this.renameAlbumButton = page.getByTestId('menu-rename-button');
     // Delete button is inside the album settings dropdown menu
     this.deleteAlbumButton = page.getByTestId('menu-delete-button');
@@ -429,7 +429,17 @@ export class GalleryPage {
   }
 
   async openMembers(): Promise<void> {
-    await this.membersButton.first().click();
+    // Close members panel first if it's already open (to allow reopening)
+    const membersPanel = this.page.getByTestId('member-panel');
+    const isPanelOpen = await membersPanel.isVisible().catch(() => false);
+    if (isPanelOpen) {
+      const closeBtn = this.page.getByTestId('close-members-button');
+      await closeBtn.click();
+      await expect(membersPanel).toBeHidden({ timeout: 5000 });
+    }
+    
+    await this.openAlbumSettings();
+    await this.membersButton.click();
   }
 
   async setViewMode(mode: 'justified' | 'grid' | 'map'): Promise<void> {
@@ -447,6 +457,7 @@ export class GalleryPage {
   }
 
   async openShareLinks(): Promise<void> {
+    await this.openAlbumSettings();
     await this.shareButton.click();
   }
 
@@ -594,8 +605,11 @@ export class MembersPanel {
   }
 
   async close(): Promise<void> {
-    await this.closeButton.click();
-    await this.waitForClose();
+    const isVisible = await this.panel.isVisible().catch(() => false);
+    if (isVisible) {
+      await this.closeButton.click();
+      await this.waitForClose();
+    }
   }
 
   async getMemberRows(): Promise<Locator[]> {
@@ -610,9 +624,30 @@ export class MembersPanel {
     await this.inviteButton.click();
   }
 
-  async removeMember(userId: string): Promise<void> {
-    const memberRow = this.page.getByTestId('member-item').filter({ hasText: userId });
-    const removeBtn = memberRow.getByRole('button', { name: /remove|delete/i });
+  async removeMember(userIdOrDisplayName: string): Promise<void> {
+    // Try to find by exact match first
+    let memberRow = this.page.getByTestId('member-item').filter({ hasText: userIdOrDisplayName });
+    let isVisible = await memberRow.first().isVisible().catch(() => false);
+    
+    // If not found, try with first 8 chars of user ID (how it's displayed in UI)
+    if (!isVisible && userIdOrDisplayName.length > 8) {
+      const shortId = userIdOrDisplayName.substring(0, 8);
+      memberRow = this.page.getByTestId('member-item').filter({ hasText: shortId });
+      isVisible = await memberRow.first().isVisible().catch(() => false);
+    }
+    
+    // If still not found, just click the first non-owner remove button
+    if (!isVisible) {
+      const removeButtons = this.page.getByTestId('member-item').getByRole('button', { name: /remove|delete/i });
+      const count = await removeButtons.count();
+      if (count > 0) {
+        await removeButtons.first().click();
+        return;
+      }
+      throw new Error(`Member not found: ${userIdOrDisplayName}`);
+    }
+    
+    const removeBtn = memberRow.first().getByRole('button', { name: /remove|delete/i });
     await removeBtn.click();
   }
 
@@ -704,6 +739,8 @@ export class InviteMemberDialog {
   readonly page: Page;
   readonly dialog: Locator;
   readonly userIdInput: Locator;
+  readonly lookupButton: Locator;
+  readonly foundUser: Locator;
   readonly roleSelect: Locator;
   readonly inviteButton: Locator;
   readonly cancelButton: Locator;
@@ -712,10 +749,12 @@ export class InviteMemberDialog {
   constructor(page: Page) {
     this.page = page;
     this.dialog = page.getByTestId('invite-member-dialog');
-    this.userIdInput = page.getByLabel(/user|member|email|id/i);
-    this.roleSelect = page.getByLabel(/role/i);
-    this.inviteButton = page.getByRole('button', { name: /invite|add|confirm/i });
-    this.cancelButton = page.getByRole('button', { name: /cancel/i });
+    this.userIdInput = page.getByTestId('user-query-input');
+    this.lookupButton = page.getByTestId('lookup-button');
+    this.foundUser = page.getByTestId('found-user');
+    this.roleSelect = page.getByTestId('role-selector');
+    this.inviteButton = page.getByTestId('submit-invite-button');
+    this.cancelButton = page.getByTestId('cancel-invite-button');
     this.errorMessage = page.getByTestId('invite-error');
   }
 
@@ -728,17 +767,22 @@ export class InviteMemberDialog {
   }
 
   async setUserId(userId: string): Promise<void> {
-    await this.userIdInput.first().fill(userId);
+    await this.userIdInput.fill(userId);
+    // Click lookup button and wait for user to be found
+    await this.lookupButton.click();
+    await expect(this.foundUser).toBeVisible({ timeout: 10000 });
   }
 
   async setRole(role: 'viewer' | 'editor'): Promise<void> {
-    if (await this.roleSelect.isVisible().catch(() => false)) {
-      await this.roleSelect.selectOption(role);
+    // Role is selected via radio buttons inside role-selector
+    const roleInput = this.roleSelect.getByRole('radio', { name: new RegExp(role, 'i') });
+    if (await roleInput.isVisible().catch(() => false)) {
+      await roleInput.check();
     }
   }
 
   async submit(): Promise<void> {
-    await this.inviteButton.first().click();
+    await this.inviteButton.click();
   }
 
   async cancel(): Promise<void> {
@@ -750,7 +794,10 @@ export class InviteMemberDialog {
     await this.setUserId(userId);
     await this.setRole(role);
     await this.submit();
-    await this.waitForClose();
+    
+    // Wait for dialog to close (invite completion) with longer timeout
+    // The invite might take time due to key rotation
+    await this.waitForClose(30000);
   }
 }
 

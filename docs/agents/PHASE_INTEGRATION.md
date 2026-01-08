@@ -4,6 +4,45 @@
 **Depends On:** Stream A (Crypto), Stream B (Backend), Stream C (Frontend)  
 **Deliverable:** Fully integrated, working application
 
+> **Parent:** `.github/copilot-instructions.md`
+
+---
+
+## 🚨 Non-Interactive Commands (CRITICAL)
+
+**ALL terminal commands MUST be non-interactive.** Commands that wait for user input will hang indefinitely.
+
+| Task | ✅ Correct Command | Notes |
+|------|-------------------|-------|
+| Build crypto | `cd libs/crypto ; npm run build` | Must build before linking |
+| Link crypto | `npm install ./libs/crypto --save -w apps/admin` | Workspaces link |
+| Run all tests | See below | Each suite separately |
+| E2E tests | `npx playwright test --reporter=list` | Use list reporter |
+
+### Full Test Suite Commands
+
+```powershell
+# ✅ Crypto tests
+cd libs/crypto ; npm test
+
+# ✅ Frontend tests
+cd apps/admin ; npm run test:run
+
+# ✅ Backend tests
+dotnet test apps/backend/Mosaic.Backend.Tests
+
+# ✅ E2E tests (requires services running)
+cd tests/e2e ; npx playwright test --reporter=list
+```
+
+### Output Capture Pattern
+
+```powershell
+# ✅ CORRECT - Capture output to file first
+npx playwright test --reporter=list 2>&1 | Out-File -FilePath "playwright-output.txt" -Encoding utf8
+Get-Content "playwright-output.txt" | Select-String -Pattern "passed|failed"
+```
+
 ---
 
 ## Context

@@ -85,6 +85,40 @@ cd apps/admin && npm run build
 3. **Simplicity** - Prefer readable code over clever optimizations
 4. **Performance** - Optimize only when necessary
 
+### 🔴🟢🔵 Test-Driven Development (TDD) - MANDATORY
+
+**TDD is the default development approach for this project.** Write tests before implementation code.
+
+#### The TDD Cycle
+
+1. **🔴 Red:** Write a failing test that defines expected behavior
+2. **🟢 Green:** Write the minimum code to make the test pass
+3. **🔵 Refactor:** Improve code quality while keeping tests green
+
+#### TDD Rules
+
+- **Never write implementation code without a failing test first**
+- **One test at a time** - Don't write multiple tests before making the first one pass
+- **Test behavior, not implementation** - Tests should survive refactoring
+- **Run tests after every change** - Verify the cycle is complete
+
+#### When TDD Applies
+
+| Scenario | TDD Required? |
+|----------|---------------|
+| New feature | ✅ Yes - Write tests first |
+| Bug fix | ✅ Yes - Write regression test first, then fix |
+| Refactoring | ⚠️ Ensure tests exist before refactoring |
+| Crypto operations | ✅ Absolutely - Security requires test proof |
+| Quick hotfix | ✅ Yes - Even faster with TDD |
+
+#### Benefits
+
+- **Confidence:** Tests prove the code works as specified
+- **Design:** TDD forces clean, testable interfaces
+- **Documentation:** Tests serve as living documentation
+- **Regression prevention:** Future changes won't break existing behavior
+
 ### General Rules
 - Always use type hints/strict types
 - Unit tests are required and must pass
@@ -251,6 +285,8 @@ Before writing implementation code for complex features, generate a `SPEC-[Featu
 *Constraint:* Stop and ask the user to approve the SPEC before proceeding to code.
 
 ### Phase 2: Test-Driven Development (TDD)
+
+**TDD is mandatory.** See the "🔴🟢🔵 Test-Driven Development (TDD)" section above for full details.
 
 1. **Red:** Write the verification tests defined in the SPEC *first*.
 2. **Check:** Run the tests to confirm they fail (demonstrating the gap).

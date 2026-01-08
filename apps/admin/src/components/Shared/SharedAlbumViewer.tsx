@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import '../../../src/styles/globals.css';
 import { parseLinkFragment, useLinkKeys } from '../../hooks/useLinkKeys';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
-import { decryptAlbumName } from '../../lib/album-metadata-service';
+import { decryptAlbumNameWithTierKey } from '../../lib/album-metadata-service';
 import '../../styles/shared-album.css';
 import { SharedGallery } from './SharedGallery';
 
@@ -105,23 +105,26 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
     async function decryptName() {
       try {
         // Get the highest tier key from any epoch
-        let readKey: Uint8Array | undefined;
+        // In share link context, these are already unwrapped tier keys (not epoch seeds)
+        let tierKey: Uint8Array | undefined;
         for (const [, epochTiers] of tierKeys) {
           for (const tier of [3, 2, 1] as AccessTierType[]) { 
-            const tierKey = epochTiers.get(tier);
-            if (tierKey) {
-              readKey = tierKey.key;
+            const key = epochTiers.get(tier);
+            if (key) {
+              tierKey = key.key;
               break;
             }
           }
-          if (readKey) break;
+          if (tierKey) break;
         }
 
-        if (!readKey) {
+        if (!tierKey) {
           return;
         }
 
-        const name = await decryptAlbumName(encryptedName!, readKey, albumId ?? 'shared');
+        // Use decryptAlbumNameWithTierKey for share links since we have
+        // the tier key directly (not an epochSeed that needs derivation)
+        const name = await decryptAlbumNameWithTierKey(encryptedName!, tierKey, albumId ?? 'shared');
         
         if (!cancelled) {
           setAlbumName(name);

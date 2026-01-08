@@ -3,10 +3,17 @@
  *
  * Displays a photo thumbnail for anonymous share link viewers.
  * Uses tier keys instead of epoch read keys.
+ *
+ * Loading priority (instant to slow):
+ * 1. Full resolution (if loaded from shards)
+ * 2. Embedded thumbnail (fast, base64 in manifest)
+ * 3. BlurHash placeholder (instant, ~30 char string decoded in <1ms)
+ * 4. Loading/error states
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
+import { getCachedBlurhashDataURL, isValidBlurhash } from '../../lib/blurhash-decoder';
 import type { PhotoMeta } from '../../workers/types';
 
 export interface SharedPhotoThumbnailProps {
@@ -38,27 +45,27 @@ export function SharedPhotoThumbnail({
 }: SharedPhotoThumbnailProps) {
   const [state, setState] = useState<ThumbnailState>({ status: 'idle' });
 
-  useEffect(() => {
-    // If photo has embedded thumbnail, use it directly
-    if (photo.thumbnail) {
-      // Create blob URL from base64 thumbnail
-      try {
-        const binary = atob(photo.thumbnail);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: 'image/jpeg' });
-        const blobUrl = URL.createObjectURL(blob);
-        setState({ status: 'loaded', blobUrl });
+  // BlurHash placeholder - instant, decoded in <1ms
+  const blurhashUrl = useMemo(() => {
+    if (!photo.blurhash || !isValidBlurhash(photo.blurhash)) return null;
+    try {
+      return getCachedBlurhashDataURL(photo.blurhash, 32, 32);
+    } catch {
+      return null;
+    }
+  }, [photo.blurhash]);
 
-        return () => {
-          URL.revokeObjectURL(blobUrl);
-        };
-      } catch {
-        setState({ status: 'error', error: new Error('Invalid thumbnail data') });
-        return;
-      }
+  // Use embedded thumbnail immediately if available (no network request needed)
+  const embeddedThumbnailUrl = useMemo(() => {
+    if (!photo.thumbnail || photo.thumbnail.length === 0) return null;
+    return `data:image/jpeg;base64,${photo.thumbnail}`;
+  }, [photo.thumbnail]);
+
+  useEffect(() => {
+    // If photo has embedded thumbnail, mark as loaded
+    if (embeddedThumbnailUrl) {
+      setState({ status: 'loaded', blobUrl: embeddedThumbnailUrl });
+      return;
     }
 
     // No embedded thumbnail - show placeholder or attempt to load
@@ -70,7 +77,7 @@ export function SharedPhotoThumbnail({
     // For now, just show placeholder if no embedded thumbnail
     // Full shard loading would require downloading encrypted shards
     setState({ status: 'idle' });
-  }, [photo.id, photo.thumbnail, photo.shardIds, tierKey]);
+  }, [photo.id, embeddedThumbnailUrl, photo.shardIds, tierKey]);
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
@@ -86,6 +93,18 @@ export function SharedPhotoThumbnail({
   const renderContent = () => {
     switch (state.status) {
       case 'idle':
+        // Use blurhash placeholder if available, otherwise show icon placeholder
+        if (blurhashUrl) {
+          return (
+            <img
+              src={blurhashUrl}
+              alt={photo.filename}
+              className="photo-image photo-blurhash"
+              data-testid="photo-blurhash"
+              loading="lazy"
+            />
+          );
+        }
         return (
           <div className="photo-placeholder" data-testid="photo-placeholder">
             <span className="photo-icon">🖼️</span>
@@ -96,6 +115,14 @@ export function SharedPhotoThumbnail({
       case 'loading':
         return (
           <div className="photo-loading" data-testid="photo-loading">
+            {blurhashUrl && (
+              <img
+                src={blurhashUrl}
+                alt=""
+                className="photo-image photo-blurhash"
+                aria-hidden="true"
+              />
+            )}
             <div className="loading-spinner" />
           </div>
         );

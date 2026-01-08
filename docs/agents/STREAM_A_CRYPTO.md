@@ -5,6 +5,30 @@
 **Parallel With:** Stream B (Backend), Stream C (Frontend)  
 **Deliverable:** `libs/crypto/` - fully tested TypeScript library
 
+> **Parent:** `.github/copilot-instructions.md`
+
+---
+
+## 🚨 Non-Interactive Commands (CRITICAL)
+
+**ALL terminal commands MUST be non-interactive.** Commands that wait for user input will hang indefinitely.
+
+| Task | ✅ Correct Command | Notes |
+|------|-------------------|-------|
+| Install dependencies | `cd libs/crypto ; npm install` | Runs and exits |
+| Run tests | `cd libs/crypto ; npm test` | Already configured non-interactive |
+| Run with coverage | `cd libs/crypto ; npm run test:coverage` | Reports coverage and exits |
+| Build library | `cd libs/crypto ; npm run build` | Compiles to dist/ |
+| Type check | `cd libs/crypto ; npx tsc --noEmit` | Type-checks only |
+
+### Output Capture Pattern
+
+```powershell
+# ✅ CORRECT - Capture output to file first
+npm test 2>&1 | Out-File -FilePath "vitest-output.txt" -Encoding utf8
+Get-Content "vitest-output.txt" | Select-String -Pattern "PASS|FAIL"
+```
+
 ---
 
 ## Context

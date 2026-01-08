@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.13",
+    "blurhash": "^2.0.5",
     "comlink": "^4.4.2",
     "fts5-sql-bundle": "^1.0.2",
     "i18next": "^25.7.3",

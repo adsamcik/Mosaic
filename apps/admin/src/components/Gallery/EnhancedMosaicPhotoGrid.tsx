@@ -313,19 +313,47 @@ export function EnhancedMosaicPhotoGrid({
     }
   }, [onMapClick]);
 
-  // Preload queue for lightbox
+  // Preload queue for lightbox - direction-aware for smarter preloading
+  // When navigating forward: prioritize N+1, N+2, then N-1
+  // When navigating backward: prioritize N-1, N-2, then N+1
+  // When initial (just opened): preload equally in both directions
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
+    
     const queue: PhotoMeta[] = [];
     const currentIdx = lightbox.currentIndex;
-    for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-      const prev = sortedPhotos[currentIdx - offset];
-      const next = sortedPhotos[currentIdx + offset];
-      if (prev) queue.push(prev);
-      if (next) queue.push(next);
+    const direction = lightbox.navigationDirection;
+    
+    if (direction === 'forward') {
+      // Moving forward: prioritize ahead, then add one behind
+      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
+        const next = sortedPhotos[currentIdx + offset];
+        if (next?.shardIds?.length) queue.push(next);
+      }
+      // Also preload one behind in case user goes back
+      const prev = sortedPhotos[currentIdx - 1];
+      if (prev?.shardIds?.length) queue.push(prev);
+    } else if (direction === 'backward') {
+      // Moving backward: prioritize behind, then add one ahead
+      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
+        const prev = sortedPhotos[currentIdx - offset];
+        if (prev?.shardIds?.length) queue.push(prev);
+      }
+      // Also preload one ahead in case user goes forward
+      const next = sortedPhotos[currentIdx + 1];
+      if (next?.shardIds?.length) queue.push(next);
+    } else {
+      // Initial open: preload equally in both directions
+      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
+        const next = sortedPhotos[currentIdx + offset];
+        const prev = sortedPhotos[currentIdx - offset];
+        if (next?.shardIds?.length) queue.push(next);
+        if (prev?.shardIds?.length) queue.push(prev);
+      }
     }
+    
     return queue;
-  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, sortedPhotos]);
+  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, lightbox.navigationDirection, sortedPhotos]);
 
   const currentEpochReadKey = lightbox.currentPhoto
     ? epochKeys.get(lightbox.currentPhoto.epochId)

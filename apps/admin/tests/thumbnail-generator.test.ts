@@ -203,6 +203,17 @@ describe('generateThumbnail', () => {
     mockContext = {
       drawImage: vi.fn(),
       transform: vi.fn(),
+      getImageData: vi.fn().mockReturnValue({
+        data: new Uint8ClampedArray(32 * 32 * 4).fill(128), // 32x32 gray image
+        width: 32,
+        height: 32,
+      }),
+      createImageData: vi.fn().mockImplementation((width: number, height: number) => ({
+        data: new Uint8ClampedArray(width * height * 4),
+        width,
+        height,
+      })),
+      putImageData: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
     // Mock canvas
@@ -243,6 +254,27 @@ describe('generateThumbnail', () => {
     expect(result.originalWidth).toBe(800);
     expect(result.originalHeight).toBe(600);
     expect(result.data).toBeInstanceOf(Uint8Array);
+    expect(result.blurhash).toBeDefined();
+    expect(typeof result.blurhash).toBe('string');
+    expect(result.blurhash.length).toBeGreaterThan(6); // BlurHash is at least 6 chars
+  });
+
+  it('generates blurhash with valid format and characters', async () => {
+    const file = new File(['fake-image-data'], 'test.jpg', {
+      type: 'image/jpeg',
+    });
+
+    const result = await generateThumbnail(file);
+
+    // BlurHash should be a string between 6-100 characters
+    expect(result.blurhash.length).toBeGreaterThanOrEqual(6);
+    expect(result.blurhash.length).toBeLessThanOrEqual(100);
+
+    // BlurHash uses base83 encoding with specific characters
+    const validChars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~';
+    for (const char of result.blurhash) {
+      expect(validChars).toContain(char);
+    }
   });
 
   it('generates thumbnail from PNG file', async () => {
@@ -455,6 +487,17 @@ describe('generateThumbnailBase64', () => {
     const mockContext = {
       drawImage: vi.fn(),
       transform: vi.fn(),
+      getImageData: vi.fn().mockReturnValue({
+        data: new Uint8ClampedArray(32 * 32 * 4).fill(128),
+        width: 32,
+        height: 32,
+      }),
+      createImageData: vi.fn().mockImplementation((width: number, height: number) => ({
+        data: new Uint8ClampedArray(width * height * 4),
+        width,
+        height,
+      })),
+      putImageData: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
     const mockCanvas = {
@@ -552,6 +595,17 @@ describe('generateTieredImages', () => {
     mockContext = {
       drawImage: vi.fn(),
       transform: vi.fn(),
+      getImageData: vi.fn().mockReturnValue({
+        data: new Uint8ClampedArray(32 * 32 * 4).fill(128), // 32x32 gray image
+        width: 32,
+        height: 32,
+      }),
+      createImageData: vi.fn().mockImplementation((width: number, height: number) => ({
+        data: new Uint8ClampedArray(width * height * 4),
+        width,
+        height,
+      })),
+      putImageData: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
     // Mock canvas
@@ -753,6 +807,17 @@ describe('generateTieredShards', () => {
     mockContext = {
       drawImage: vi.fn(),
       transform: vi.fn(),
+      getImageData: vi.fn().mockReturnValue({
+        data: new Uint8ClampedArray(32 * 32 * 4).fill(128), // 32x32 gray image
+        width: 32,
+        height: 32,
+      }),
+      createImageData: vi.fn().mockImplementation((width: number, height: number) => ({
+        data: new Uint8ClampedArray(width * height * 4),
+        width,
+        height,
+      })),
+      putImageData: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
     // Mock canvas

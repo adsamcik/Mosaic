@@ -128,6 +128,75 @@ test.describe('Session Management @p1 @auth', () => {
       // Should show error
       await loginPage.expectError();
     });
+
+    test('P1-SESSION-5b: wrong password on cold start (new user first login attempt) shows error and allows retry', async ({
+      testContext,
+    }) => {
+      // Create a fresh user that has NEVER logged in before
+      const user = await testContext.createAuthenticatedUser('cold-start-wrong-pass');
+
+      await user.page.goto('/');
+
+      const loginPage = new LoginPage(user.page);
+      await loginPage.waitForForm();
+
+      // Detect auth mode
+      const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+
+      if (isLocalAuth) {
+        // LocalAuth mode: Try to LOGIN (not register) with credentials for non-existent user
+        // This should fail because the user doesn't exist yet
+        await loginPage.usernameInput.fill('nonexistent-user-12345');
+        await loginPage.passwordInput.fill('some-password');
+        await loginPage.loginButton.click();
+
+        // Should show error (invalid credentials - user doesn't exist)
+        await loginPage.expectError(/invalid|credentials|password|username/i);
+
+        // User should still be on login form (not locked out)
+        await expect(loginPage.form).toBeVisible();
+        await expect(loginPage.loginButton).toBeEnabled();
+
+        // User can switch to register mode and create account successfully
+        await loginPage.switchToRegisterMode();
+        await loginPage.usernameInput.fill(user.email);
+        await loginPage.passwordInput.fill(TEST_PASSWORD);
+        await loginPage.confirmPasswordInput.fill(TEST_PASSWORD);
+        await loginPage.createAccountButton.click();
+
+        // Should succeed now
+        await loginPage.expectLoginSuccess();
+      } else {
+        // ProxyAuth mode: First login with any password creates the account
+        // For ProxyAuth, "wrong password on cold start" doesn't apply because
+        // the first password becomes the key. However, we can test that after
+        // initial setup with one password, a different password fails.
+        
+        // First, login with the correct password to set up the account
+        await loginPage.login(TEST_PASSWORD);
+        await loginPage.expectLoginSuccess();
+
+        // Logout
+        const appShell = new AppShell(user.page);
+        await appShell.logout();
+
+        // Now try with wrong password (this tests returning user scenario)
+        await loginPage.waitForForm();
+        await loginPage.login('completely-wrong-password-xyz');
+
+        // Should show error (can't decrypt with wrong password)
+        await loginPage.expectError();
+
+        // User should still be on login form (not locked out)
+        await expect(loginPage.form).toBeVisible();
+        await expect(loginPage.loginButton).toBeEnabled();
+
+        // User can retry with correct password
+        await loginPage.passwordInput.clear();
+        await loginPage.login(TEST_PASSWORD);
+        await loginPage.expectLoginSuccess();
+      }
+    });
   });
 
   test.describe('Multi-Tab Behavior', () => {
@@ -175,6 +244,113 @@ test.describe('Session Management @p1 @auth', () => {
       await expect(appShell2.shell).toBeVisible();
 
       await page2.close();
+    });
+  });
+
+  test.describe('Idle Timeout', () => {
+    test('P1-SESSION-7: user is logged out after 30+ minutes of inactivity', async ({
+      testContext,
+    }) => {
+      const user = await testContext.createAuthenticatedUser('idle-timeout-user');
+
+      // Install fake timers before navigation
+      // This must be done before any page interaction that would start timers
+      await user.page.clock.install({ time: new Date('2026-01-07T10:00:00.000Z') });
+
+      await loginUser(user, TEST_PASSWORD);
+
+      const appShell = new AppShell(user.page);
+      await appShell.waitForLoad();
+
+      // Verify we're logged in
+      await expect(appShell.shell).toBeVisible();
+
+      // Verify session storage has data before timeout
+      const sessionDataBefore = await user.page.evaluate(() => {
+        return sessionStorage.getItem('mosaic:sessionState');
+      });
+      expect(sessionDataBefore).not.toBeNull();
+
+      // Fast-forward time by 31 minutes (idle timeout is 30 minutes by default)
+      // This simulates 31 minutes of inactivity
+      await user.page.clock.fastForward(31 * 60 * 1000);
+
+      // The idle timeout should have triggered, logging the user out
+      // Wait for the login form to appear
+      const loginPage = new LoginPage(user.page);
+      await loginPage.expectFormVisible();
+
+      // Verify session storage is cleared
+      const sessionDataAfter = await user.page.evaluate(() => {
+        return sessionStorage.getItem('mosaic:sessionState');
+      });
+      expect(sessionDataAfter).toBeNull();
+    });
+
+    test('P1-SESSION-8: user activity resets idle timeout', async ({ testContext }) => {
+      const user = await testContext.createAuthenticatedUser('activity-reset-user');
+
+      // Install fake timers before navigation
+      await user.page.clock.install({ time: new Date('2026-01-07T10:00:00.000Z') });
+
+      await loginUser(user, TEST_PASSWORD);
+
+      const appShell = new AppShell(user.page);
+      await appShell.waitForLoad();
+
+      // Wait 20 minutes (less than 30-minute timeout)
+      await user.page.clock.fastForward(20 * 60 * 1000);
+
+      // Simulate user activity (mousedown event resets idle timer)
+      await user.page.mouse.click(100, 100);
+
+      // Wait another 20 minutes (total 40 minutes, but only 20 since last activity)
+      await user.page.clock.fastForward(20 * 60 * 1000);
+
+      // User should still be logged in because activity reset the timer
+      await expect(appShell.shell).toBeVisible();
+
+      // Session storage should still have data
+      const sessionData = await user.page.evaluate(() => {
+        return sessionStorage.getItem('mosaic:sessionState');
+      });
+      expect(sessionData).not.toBeNull();
+    });
+
+    test('P1-SESSION-9: idle timeout respects minimum timeout setting (15 minutes)', async ({
+      testContext,
+    }) => {
+      const user = await testContext.createAuthenticatedUser('min-timeout-user');
+
+      // Install fake timers before navigation
+      await user.page.clock.install({ time: new Date('2026-01-07T10:00:00.000Z') });
+
+      await loginUser(user, TEST_PASSWORD);
+
+      const appShell = new AppShell(user.page);
+      await appShell.waitForLoad();
+
+      // Set idle timeout to 15 minutes (minimum allowed value)
+      await user.page.evaluate(() => {
+        const settings = JSON.parse(localStorage.getItem('mosaic:settings') || '{}');
+        settings.idleTimeout = 15;
+        localStorage.setItem('mosaic:settings', JSON.stringify(settings));
+        // Trigger storage event to notify the app
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'mosaic:settings',
+          newValue: JSON.stringify(settings),
+        }));
+      });
+
+      // Small pause to let settings change propagate
+      await user.page.waitForTimeout(100);
+
+      // Fast-forward 16 minutes (just over the 15-minute timeout)
+      await user.page.clock.fastForward(16 * 60 * 1000);
+
+      // User should be logged out
+      const loginPage = new LoginPage(user.page);
+      await loginPage.expectFormVisible();
     });
   });
 });

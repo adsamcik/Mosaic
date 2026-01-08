@@ -8,6 +8,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { PhotoMeta } from '../workers/types';
 
+/** Navigation direction for preloading */
+export type NavigationDirection = 'forward' | 'backward' | 'initial';
+
 /**
  * Lightbox state returned by the hook
  */
@@ -22,6 +25,8 @@ export interface LightboxState {
   hasNext: boolean;
   /** Whether there is a previous photo to navigate to */
   hasPrevious: boolean;
+  /** Direction of last navigation for smarter preloading */
+  navigationDirection: NavigationDirection;
 }
 
 /**
@@ -70,6 +75,7 @@ export type UseLightboxResult = LightboxState & LightboxControls;
 export function useLightbox(photos: PhotoMeta[]): UseLightboxResult {
   const [isOpen, setIsOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [navigationDirection, setNavigationDirection] = useState<NavigationDirection>('initial');
 
   // Compute derived state
   const currentPhoto = isOpen && photos.length > 0 ? photos[currentIndex] ?? null : null;
@@ -82,6 +88,7 @@ export function useLightbox(photos: PhotoMeta[]): UseLightboxResult {
   const open = useCallback((index: number) => {
     if (index >= 0 && index < photos.length) {
       setCurrentIndex(index);
+      setNavigationDirection('initial');
       setIsOpen(true);
     }
   }, [photos.length]);
@@ -99,6 +106,7 @@ export function useLightbox(photos: PhotoMeta[]): UseLightboxResult {
   const next = useCallback(() => {
     setCurrentIndex((prev) => {
       if (prev < photos.length - 1) {
+        setNavigationDirection('forward');
         return prev + 1;
       }
       return prev;
@@ -111,6 +119,7 @@ export function useLightbox(photos: PhotoMeta[]): UseLightboxResult {
   const previous = useCallback(() => {
     setCurrentIndex((prev) => {
       if (prev > 0) {
+        setNavigationDirection('backward');
         return prev - 1;
       }
       return prev;
@@ -180,6 +189,7 @@ export function useLightbox(photos: PhotoMeta[]): UseLightboxResult {
     currentPhoto,
     hasNext,
     hasPrevious,
+    navigationDirection,
     open,
     close,
     next,

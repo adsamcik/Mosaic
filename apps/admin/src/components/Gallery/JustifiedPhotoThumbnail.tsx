@@ -3,9 +3,18 @@
  *
  * A photo thumbnail designed for the justified grid layout.
  * Displays at specified dimensions while loading encrypted content.
+ * 
+ * Optimization: Uses embedded base64 thumbnails first when available,
+ * only loading full shards when explicitly requested or when no thumbnail exists.
+ * 
+ * Loading priority (instant to slow):
+ * 1. BlurHash placeholder (instant, ~30 char string decoded in <1ms)
+ * 2. Embedded thumbnail (fast, base64 in manifest)
+ * 3. Full resolution shards (slow, network + decryption)
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { getCachedBlurhashDataURL, isValidBlurhash } from '../../lib/blurhash-decoder';
 import { loadPhoto, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
 
@@ -29,6 +38,8 @@ interface JustifiedPhotoThumbnailProps {
   selectionMode?: boolean;
   /** Whether to show delete button on hover */
   showDelete?: boolean;
+  /** Whether to load full resolution shards (for lightbox/fullscreen) */
+  loadFullResolution?: boolean;
 }
 
 /** Loading state for thumbnail */
@@ -53,13 +64,43 @@ export function JustifiedPhotoThumbnail({
   onDelete,
   selectionMode = false,
   showDelete = true,
+  loadFullResolution = false,
 }: JustifiedPhotoThumbnailProps) {
   const [state, setState] = useState<ThumbnailState>({ status: 'idle' });
   const [isHovered, setIsHovered] = useState(false);
 
-  // Load photo when component mounts or photo changes
+  // BlurHash placeholder - instant, decoded in <1ms (highest priority placeholder)
+  const blurhashUrl = useMemo(() => {
+    if (!photo.blurhash || !isValidBlurhash(photo.blurhash)) return null;
+    try {
+      // Use small dimensions (32x32) for fast decoding, CSS will scale it
+      return getCachedBlurhashDataURL(photo.blurhash, 32, 32);
+    } catch {
+      // Invalid blurhash, ignore
+      return null;
+    }
+  }, [photo.blurhash]);
+
+  // Use embedded thumbnail immediately if available (no network request needed)
+  const embeddedThumbnailUrl = useMemo(() => {
+    if (!photo.thumbnail || photo.thumbnail.length === 0) return null;
+    return `data:image/jpeg;base64,${photo.thumbnail}`;
+  }, [photo.thumbnail]);
+
+  // Only load shards if:
+  // 1. No embedded thumbnail exists, OR
+  // 2. Full resolution is explicitly requested
+  // AND we have the epoch key and shard IDs
+  const shouldLoadShards = useMemo(() => {
+    const hasShards = epochReadKey && photo.shardIds && photo.shardIds.length > 0;
+    if (!hasShards) return false;
+    // Load shards if no thumbnail OR if full resolution is requested
+    return !photo.thumbnail || loadFullResolution;
+  }, [epochReadKey, photo.shardIds, photo.thumbnail, loadFullResolution]);
+
+  // Load photo shards when needed
   useEffect(() => {
-    if (!epochReadKey || !photo.shardIds || photo.shardIds.length === 0) {
+    if (!shouldLoadShards || !epochReadKey) {
       return;
     }
 
@@ -103,7 +144,7 @@ export function JustifiedPhotoThumbnail({
       cancelled = true;
       releasePhoto(photo.id);
     };
-  }, [photo.id, photo.shardIds, photo.mimeType, epochReadKey]);
+  }, [photo.id, photo.shardIds, photo.mimeType, epochReadKey, shouldLoadShards]);
 
   // Retry handler for failed loads
   const handleRetry = useCallback(() => {
@@ -117,14 +158,16 @@ export function JustifiedPhotoThumbnail({
     }
   }, [photo.id, photo.shardIds, photo.mimeType, epochReadKey]);
 
-  // Handle click
+  // Handle click - allow clicking when any visual is available (blurhash, embedded thumbnail, or fully loaded)
+  const isClickable = blurhashUrl || embeddedThumbnailUrl || state.status === 'loaded';
+
   const handleClick = useCallback(() => {
     if (selectionMode && onSelectionChange) {
       onSelectionChange(!isSelected);
-    } else if (onClick && state.status === 'loaded') {
+    } else if (onClick && isClickable) {
       onClick();
     }
-  }, [selectionMode, onSelectionChange, isSelected, onClick, state.status]);
+  }, [selectionMode, onSelectionChange, isSelected, onClick, isClickable]);
 
   // Handle checkbox click
   const handleCheckboxClick = useCallback(
@@ -139,16 +182,18 @@ export function JustifiedPhotoThumbnail({
   const handleDeleteClick = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
-      const thumbnailUrl = state.status === 'loaded' ? state.result.blobUrl : undefined;
+      const thumbnailUrl = state.status === 'loaded' 
+        ? state.result.blobUrl 
+        : embeddedThumbnailUrl ?? undefined;
       onDelete?.(thumbnailUrl);
     },
-    [onDelete, state]
+    [onDelete, state, embeddedThumbnailUrl]
   );
 
   // Handle keyboard activation
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if ((event.key === 'Enter' || event.key === ' ') && state.status === 'loaded') {
+      if ((event.key === 'Enter' || event.key === ' ') && isClickable) {
         event.preventDefault();
         if (selectionMode && onSelectionChange) {
           onSelectionChange(!isSelected);
@@ -158,15 +203,83 @@ export function JustifiedPhotoThumbnail({
       }
       if ((event.key === 'Delete' || event.key === 'Backspace') && onDelete) {
         event.preventDefault();
-        const thumbnailUrl = state.status === 'loaded' ? state.result.blobUrl : undefined;
+        const thumbnailUrl = state.status === 'loaded' 
+          ? state.result.blobUrl 
+          : embeddedThumbnailUrl ?? undefined;
         onDelete(thumbnailUrl);
       }
     },
-    [state.status, selectionMode, onSelectionChange, isSelected, onClick, onDelete]
+    [isClickable, selectionMode, onSelectionChange, isSelected, onClick, onDelete, state, embeddedThumbnailUrl]
   );
 
   // Render content based on state
+  // Priority: full resolution > embedded thumbnail > blurhash > placeholder
   const renderContent = () => {
+    // If fully loaded, show full resolution image
+    if (state.status === 'loaded') {
+      return (
+        <img
+          src={state.result.blobUrl}
+          alt={photo.filename}
+          className="justified-photo-image"
+          data-testid="photo-image"
+          loading="lazy"
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      );
+    }
+
+    // If we have an embedded thumbnail and aren't loading full resolution, show it
+    if (embeddedThumbnailUrl && !loadFullResolution) {
+      return (
+        <img
+          src={embeddedThumbnailUrl}
+          alt={photo.filename}
+          className="justified-photo-image justified-photo-thumbnail-embedded"
+          data-testid="photo-image-embedded"
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      );
+    }
+
+    // If loading full resolution and have embedded thumbnail, show it as placeholder while loading
+    if (embeddedThumbnailUrl && loadFullResolution && state.status === 'loading') {
+      return (
+        <div className="justified-photo-upgrading" data-testid="photo-upgrading">
+          <img
+            src={embeddedThumbnailUrl}
+            alt={photo.filename}
+            className="justified-photo-image justified-photo-thumbnail-embedded"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+          <div className="justified-photo-upgrade-overlay">
+            <div className="loading-spinner-small" />
+          </div>
+        </div>
+      );
+    }
+
+    // If we have a blurhash, show it as instant placeholder while loading
+    if (blurhashUrl && (state.status === 'idle' || state.status === 'loading')) {
+      return (
+        <div className="justified-photo-blurhash" data-testid="photo-blurhash">
+          <img
+            src={blurhashUrl}
+            alt=""
+            aria-hidden="true"
+            className="justified-photo-blurhash-image"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(0px)' }}
+          />
+          {state.status === 'loading' && state.progress > 0 && (
+            <div
+              className="loading-progress-bar"
+              style={{ width: `${state.progress * 100}%` }}
+            />
+          )}
+        </div>
+      );
+    }
+
     switch (state.status) {
       case 'idle':
         return (
@@ -191,18 +304,6 @@ export function JustifiedPhotoThumbnail({
               />
             )}
           </div>
-        );
-
-      case 'loaded':
-        return (
-          <img
-            src={state.result.blobUrl}
-            alt={photo.filename}
-            className="justified-photo-image"
-            data-testid="photo-image"
-            loading="lazy"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
         );
 
       case 'error':
@@ -236,7 +337,7 @@ export function JustifiedPhotoThumbnail({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       role={onClick ? 'button' : undefined}
-      tabIndex={onClick && state.status === 'loaded' ? 0 : undefined}
+      tabIndex={onClick && isClickable ? 0 : undefined}
       aria-label={onClick ? `View ${photo.filename}` : undefined}
       aria-selected={isSelected}
       data-photo-id={photo.id}

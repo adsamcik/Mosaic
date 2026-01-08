@@ -1,6 +1,8 @@
 import { clearAllCovers } from './album-cover-service';
 import { clearAllCachedMetadata } from './album-metadata-service';
 import { fromBase64, getApi, toBase64 } from './api';
+import { clearBlurhashCache } from './blurhash-decoder';
+import { clearPhotoCache } from './photo-service';
 import type { User } from './api-types';
 import { closeCryptoClient, getCryptoClient } from './crypto-client';
 import { closeDbClient, getDbClient } from './db-client';
@@ -715,6 +717,12 @@ class SessionManager {
 
     // Clear album cover cache
     clearAllCovers();
+
+    // Clear blurhash cache
+    clearBlurhashCache();
+
+    // Clear photo cache (revokes decrypted blob URLs)
+    clearPhotoCache();
 
     // Clear epoch keys from memory
     clearAllEpochKeys();

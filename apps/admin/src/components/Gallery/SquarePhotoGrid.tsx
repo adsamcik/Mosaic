@@ -42,7 +42,17 @@ interface SquarePhotoGridProps {
 export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotosDeleted, selection }: SquarePhotoGridProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
-  const lightbox = useLightbox(photos);
+  
+  // Sort photos by createdAt descending to match display order
+  // This ensures lightbox navigation follows the visual order
+  const sortedPhotos = useMemo(() => 
+    [...photos].sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    ),
+    [photos]
+  );
+  
+  const lightbox = useLightbox(sortedPhotos);
 
   // Get photo items from store for status checking
   const getPhotoItem = usePhotoStore((state) => state.getPhoto);
@@ -140,8 +150,8 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
     
     // Add photos before and after current
     for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-      const prevPhoto = photos[currentIdx - offset];
-      const nextPhoto = photos[currentIdx + offset];
+      const prevPhoto = sortedPhotos[currentIdx - offset];
+      const nextPhoto = sortedPhotos[currentIdx + offset];
       if (prevPhoto) {
         queue.push(prevPhoto);
       }
@@ -151,18 +161,18 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
     }
     
     return queue;
-  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, photos]);
+  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, sortedPhotos]);
 
   // Handle photo click to open lightbox
   const handlePhotoClick = useCallback((photo: PhotoMeta) => {
     if (!isSelectionMode) {
-      // Find index in the photos array
-      const index = photos.findIndex((p) => p.id === photo.id);
+      // Find index in the sorted photos array (matches display order)
+      const index = sortedPhotos.findIndex((p) => p.id === photo.id);
       if (index >= 0) {
         lightbox.open(index);
       }
     }
-  }, [isSelectionMode, lightbox, photos]);
+  }, [isSelectionMode, lightbox, sortedPhotos]);
 
   // Handle selection change for a single photo
   const handleSelectionChange = useCallback((photoId: string, selected: boolean) => {
@@ -263,7 +273,7 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
                       <div className="photo-content">
                         {(pendingItem.localBlobUrl || photo.thumbnail) && (
                           <img
-                            src={pendingItem.localBlobUrl ?? photo.thumbnail}
+                            src={pendingItem.localBlobUrl ?? (photo.thumbnail ? `data:image/jpeg;base64,${photo.thumbnail}` : undefined)}
                             alt={photo.filename}
                             className="photo-image"
                             style={{ opacity: 0.7, width: '100%', height: '100%', objectFit: 'cover' }}

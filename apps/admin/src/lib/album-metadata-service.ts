@@ -36,8 +36,12 @@ const metadataCache = new Map<string, DecryptedAlbumMetadata>();
  * Album names are encrypted using the envelope format (XChaCha20-Poly1305)
  * with epoch 0, shard 0 reserved for metadata.
  *
+ * This function derives tier keys from the epochSeed before decryption.
+ * For share links where you have the tier key directly, use
+ * {@link decryptAlbumNameWithTierKey} instead.
+ *
  * @param encryptedName - Base64-encoded encrypted name (or Uint8Array)
- * @param readKey - Epoch read key (32 bytes)
+ * @param readKey - Epoch seed for deriving tier keys (32 bytes)
  * @param albumId - Album ID for error context
  * @returns Decrypted album name
  * @throws AlbumMetadataError if decryption fails
@@ -61,9 +65,59 @@ export async function decryptAlbumName(
       throw new Error('Invalid read key: must be 32 bytes');
     }
 
-    // Decrypt using crypto worker (same as shard decryption)
+    // Decrypt using crypto worker (derives tier keys from epochSeed)
     const crypto = await getCryptoClient();
     const decryptedBytes = await crypto.decryptShard(encryptedBytes, readKey);
+
+    // Decode UTF-8 text
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    const name = decoder.decode(decryptedBytes);
+
+    return name;
+  } catch (err) {
+    throw new AlbumMetadataError(
+      `Failed to decrypt album name: ${err instanceof Error ? err.message : String(err)}`,
+      albumId,
+      err instanceof Error ? err : undefined
+    );
+  }
+}
+
+/**
+ * Decrypt an album name using a tier key directly (for share links).
+ *
+ * Use this function when you have the unwrapped tier key from a share link,
+ * rather than the epochSeed. This is the correct method for SharedAlbumViewer
+ * and other share link contexts where keys are already tier-specific.
+ *
+ * @param encryptedName - Base64-encoded encrypted name (or Uint8Array)
+ * @param tierKey - Tier-specific decryption key (32 bytes, already derived)
+ * @param albumId - Album ID for error context
+ * @returns Decrypted album name
+ * @throws AlbumMetadataError if decryption fails
+ */
+export async function decryptAlbumNameWithTierKey(
+  encryptedName: string | Uint8Array,
+  tierKey: Uint8Array,
+  albumId: string
+): Promise<string> {
+  try {
+    // Convert base64 to Uint8Array if needed
+    const encryptedBytes =
+      typeof encryptedName === 'string' ? fromBase64(encryptedName) : encryptedName;
+
+    // Validate inputs
+    if (!encryptedBytes || encryptedBytes.length === 0) {
+      throw new Error('Encrypted name is empty');
+    }
+
+    if (!tierKey || tierKey.length !== 32) {
+      throw new Error('Invalid tier key: must be 32 bytes');
+    }
+
+    // Decrypt using crypto worker with tier key directly (no derivation)
+    const crypto = await getCryptoClient();
+    const decryptedBytes = await crypto.decryptShardWithTierKey(encryptedBytes, tierKey);
 
     // Decode UTF-8 text
     const decoder = new TextDecoder('utf-8', { fatal: true });
