@@ -395,8 +395,8 @@ export class LoginPage {
 
   /**
    * Login with username and password.
-   * If username is provided, enters it in the username field.
-   * This is required for LocalAuth mode where each test needs a unique username.
+   * In LocalAuth mode (username field visible), username is required.
+   * In ProxyAuth mode (no username field), only password is needed.
    */
   async login(password: string, username?: string) {
     console.log('[LoginPage] login() called');
@@ -405,14 +405,18 @@ export class LoginPage {
     await this.switchToLoginMode();
     console.log('[LoginPage] Switched to login mode');
     
-    // If username provided, fill it in (LocalAuth mode)
-    if (username) {
-      // Wait for username field to be visible before filling
-      await expect(this.usernameInput).toBeVisible({ timeout: 5000 });
+    // Check if LocalAuth mode (username field visible)
+    const isLocalAuth = await this.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    
+    if (isLocalAuth) {
+      if (!username) {
+        throw new Error('[LoginPage] LocalAuth mode detected but no username provided. Call login(password, username) or use register() for new users.');
+      }
       await this.usernameInput.clear();
       await this.usernameInput.fill(username);
       console.log('[LoginPage] Filled username');
     }
+    
     await this.passwordInput.fill(password);
     console.log('[LoginPage] Filled password');
     
@@ -421,6 +425,29 @@ export class LoginPage {
     console.log('[LoginPage] Login button visible, clicking...');
     await this.loginButton.click();
     console.log('[LoginPage] Login button clicked');
+  }
+
+  /**
+   * Login or register based on auth mode.
+   * - In LocalAuth mode: registers a new user with the given username
+   * - In ProxyAuth mode: just enters the password
+   * This is the recommended method for tests that need to complete login.
+   */
+  async loginOrRegister(password: string, username: string) {
+    console.log('[LoginPage] loginOrRegister() called');
+    
+    // Check if LocalAuth mode (username field visible)
+    const isLocalAuth = await this.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    
+    if (isLocalAuth) {
+      console.log('[LoginPage] LocalAuth mode detected, registering new user');
+      await this.register(username, password);
+    } else {
+      console.log('[LoginPage] ProxyAuth mode detected, logging in');
+      await this.passwordInput.fill(password);
+      await expect(this.loginButton).toBeVisible({ timeout: 10000 });
+      await this.loginButton.click();
+    }
   }
 
   async expectErrorMessage(text?: string | RegExp) {

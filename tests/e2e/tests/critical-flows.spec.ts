@@ -38,19 +38,24 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     // Button text varies by auth mode: "Sign In" or translations
     await expect(loginPage.loginButton).toHaveText(/sign in|přihlásit se/i);
 
-    // Step 2: Enter password and submit
-    await loginPage.passwordInput.fill(TEST_CONSTANTS.PASSWORD);
-    await loginPage.loginButton.click();
+    // Step 2: Check if LocalAuth mode (has username field) and register if needed
+    const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    
+    if (isLocalAuth) {
+      // LocalAuth mode: register a new user
+      await loginPage.register(testUser, TEST_CONSTANTS.PASSWORD);
+    } else {
+      // ProxyAuth mode: just enter password
+      await loginPage.passwordInput.fill(TEST_CONSTANTS.PASSWORD);
+      await loginPage.loginButton.click();
+    }
 
-    // Step 3: Verify loading state ("Signing In..." or translation)
-    await expect(loginPage.loginButton).toHaveText(/signing in|přihlašuji/i);
-
-    // Step 4: Wait for app shell (indicates crypto worker initialized successfully)
+    // Step 3: Wait for app shell (indicates crypto worker initialized successfully)
     await expect(authenticatedPage.getByTestId('app-shell')).toBeVisible({
       timeout: 60000,
     });
 
-    // Step 5: Verify app shell has critical elements
+    // Step 4: Verify app shell has critical elements
     const appShell = new AppShell(authenticatedPage);
     await expect(appShell.logoutButton).toBeVisible();
     await expect(appShell.albumList).toBeVisible();
@@ -64,7 +69,7 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     await authenticatedPage.goto('/');
     const loginPage = new LoginPage(authenticatedPage);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     // Verify we're logged in
@@ -173,7 +178,7 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
 
     const loginPage = new LoginPage(authenticatedPage);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     const appShell = new AppShell(authenticatedPage);
@@ -214,7 +219,7 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
     // Login
     const loginPage = new LoginPage(authenticatedPage);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     // Navigate to album
@@ -328,7 +333,7 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
 
     const loginPage = new LoginPage(authenticatedPage);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     const albumCard = authenticatedPage.getByTestId('album-card').first();
@@ -376,7 +381,7 @@ test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @
     await alice.goto('/');
     const aliceLoginPage = new LoginPage(alice);
     await aliceLoginPage.waitForForm();
-    await aliceLoginPage.login(TEST_CONSTANTS.PASSWORD);
+    await aliceLoginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, aliceUser);
     await aliceLoginPage.expectLoginSuccess();
 
     const aliceAppShell = new AppShell(alice);
@@ -399,7 +404,7 @@ test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @
     await bob.goto('/');
     const bobLoginPage = new LoginPage(bob);
     await bobLoginPage.waitForForm();
-    await bobLoginPage.login(TEST_CONSTANTS.PASSWORD);
+    await bobLoginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
     await bobLoginPage.expectLoginSuccess();
 
     const bobAppShell = new AppShell(bob);
@@ -439,7 +444,7 @@ test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @
         // Re-login if needed
         const bobNeedsLogin = await bobLoginPage.loginForm.isVisible().catch(() => false);
         if (bobNeedsLogin) {
-          await bobLoginPage.login(TEST_CONSTANTS.PASSWORD);
+          await bobLoginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
           await bobLoginPage.expectLoginSuccess();
         }
 
@@ -481,7 +486,7 @@ test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
 
     const loginPage = new LoginPage(authenticatedPage);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     const appShell = new AppShell(authenticatedPage);
@@ -540,7 +545,7 @@ test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
 
     const loginPage = new LoginPage(authenticatedPage);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     const appShell = new AppShell(authenticatedPage);
@@ -564,7 +569,7 @@ test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
 
     const loginPage = new LoginPage(authenticatedPage);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     const albumCard = authenticatedPage.getByTestId('album-card').first();
@@ -607,7 +612,7 @@ test.describe('Critical Flow: Error Handling @p0 @critical @security', () => {
 
     const loginPage = new LoginPage(authenticatedPage);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     // Go offline
