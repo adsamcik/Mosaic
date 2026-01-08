@@ -326,6 +326,12 @@ export function useLinkKeys(
       const wrappedKeys: WrappedKeyResponse[] = await keysResponse.json();
 
       // Unwrap tier keys
+      log.debug('Unwrapping tier keys', {
+        keyCount: wrappedKeys.length,
+        epochs: [...new Set(wrappedKeys.map(k => k.epochId))],
+        tiers: wrappedKeys.map(k => ({ epoch: k.epochId, tier: k.tier })),
+      });
+      
       const tierKeys = new Map<number, Map<AccessTierType, TierKey>>();
       for (const wrapped of wrappedKeys) {
         try {
@@ -348,6 +354,13 @@ export function useLinkKeys(
             tier: wrapped.tier,
             key: unwrapped,
             signPubkey: wrapped.signPubkey ? fromBase64(wrapped.signPubkey) : undefined,
+          });
+          
+          log.debug('Unwrapped tier key', {
+            epochId: wrapped.epochId,
+            tier: wrapped.tier,
+            keyLength: unwrapped.length,
+            keyPrefix: Array.from(unwrapped.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
           });
         } catch (err) {
           log.error(`Failed to unwrap key for epoch ${wrapped.epochId} tier ${wrapped.tier}`, err);

@@ -2,7 +2,13 @@
  * Global Setup for E2E Tests
  *
  * Runs once before all tests to ensure the environment is ready.
+ * This includes:
+ * 1. Waiting for backend to be healthy
+ * 2. Resetting test data from previous runs
+ * 3. Pre-authenticating pool users for fast test execution
  */
+
+import { setupPoolUsers, clearAuthStates } from './auth-setup';
 
 const API_URL = process.env.API_URL || 'http://localhost:5000';
 const MAX_WAIT_MS = 60000;
@@ -152,9 +158,17 @@ async function globalSetup(): Promise<void> {
 
   await waitForBackend();
   await resetTestData();
+  
+  // Clear old auth states before creating new ones
+  clearAuthStates();
+  
   await seedUserPool();
   await verifyEndpoints();
   await verifyCOOPCOEPHeaders();
+  
+  // Pre-authenticate pool users (saves browser state for fast test startup)
+  console.log('[Global Setup] Pre-authenticating pool users...');
+  await setupPoolUsers();
 
   console.log('[Global Setup] Complete!');
 }

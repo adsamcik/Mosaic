@@ -1,0 +1,29 @@
+{
+  "cookies": [
+    {
+      "name": "mosaic_session",
+      "value": "QRpsRKT3OeqU9%2FlpA6ExxiSeRQwpkBG14RTSFWhWD1c%3D",
+      "domain": "localhost",
+      "path": "/api",
+      "expires": 1768503323.667891,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://localhost:5173",
+      "localStorage": [
+        {
+          "name": "mosaic-language",
+          "value": "en-GB"
+        },
+        {
+          "name": "mosaic:userSalt",
+          "value": "QXtnIou2L99JdOXZRke9mQ=="
+        }
+      ]
+    }
+  ]
+}

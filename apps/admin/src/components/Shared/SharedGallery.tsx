@@ -9,9 +9,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TierKey } from '../../hooks/useLinkKeys';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
+import { createLogger } from '../../lib/logger';
 import type { PhotoMeta } from '../../workers/types';
 import { SharedMosaicPhotoGrid } from './SharedMosaicPhotoGrid';
 import { SharedPhotoGrid } from './SharedPhotoGrid';
+
+const log = createLogger('SharedGallery');
 
 interface SharedGalleryProps {
   /** Link ID for fetching photos */
@@ -123,9 +126,20 @@ export function SharedGallery({
           }
 
           if (decrypted) {
+            log.debug('Decrypted photo manifest', {
+              photoId: decrypted.id,
+              epochId: decrypted.epochId,
+              shardCount: decrypted.shardIds?.length ?? 0,
+            });
             decryptedPhotos.push(decrypted);
           }
         }
+
+        log.info('Photos loaded', {
+          total: photoResponses.length,
+          decrypted: decryptedPhotos.length,
+          failed: photoResponses.length - decryptedPhotos.length,
+        });
 
         if (!cancelled) {
           setPhotos(decryptedPhotos);
@@ -156,25 +170,55 @@ export function SharedGallery({
    */
   const getTierKey = useCallback(
     (epochId: number, tier: AccessTierType): Uint8Array | undefined => {
+      log.debug('getTierKey called', {
+        epochId,
+        requestedTier: tier,
+        availableEpochs: Array.from(tierKeys.keys()),
+        availableTiers: Array.from(tierKeys.entries()).map(([e, tiers]) => ({
+          epoch: e,
+          tiers: Array.from(tiers.keys()),
+        })),
+      });
+      
       const epochTiers = tierKeys.get(epochId);
       if (!epochTiers) {
+        log.debug('Epoch not found, trying fallback', { epochId });
         // Try to find any epoch with keys (fallback for manifest decryption)
-        for (const [, tiers] of tierKeys) {
+        for (const [fallbackEpochId, tiers] of tierKeys) {
           const key = tiers.get(tier);
-          if (key) return key.key;
+          if (key) {
+            log.debug('Found key via fallback', { 
+              originalEpoch: epochId, 
+              fallbackEpoch: fallbackEpochId,
+              tier,
+            });
+            return key.key;
+          }
         }
+        log.warn('No tier key found', { epochId, tier });
         return undefined;
       }
 
       // Return requested tier or highest available
       const tierKey = epochTiers.get(tier);
-      if (tierKey) return tierKey.key;
+      if (tierKey) {
+        log.debug('Found exact tier key', { 
+          epochId, 
+          tier,
+          keyPrefix: Array.from(tierKey.key.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
+        });
+        return tierKey.key;
+      }
 
       // Fall back to highest available
       for (const t of [3, 2, 1] as AccessTierType[]) {
         const key = epochTiers.get(t);
-        if (key) return key.key;
+        if (key) {
+          log.debug('Using fallback tier', { epochId, requestedTier: tier, actualTier: t });
+          return key.key;
+        }
       }
+      log.warn('No tier key found after fallback', { epochId, tier });
       return undefined;
     },
     [tierKeys]

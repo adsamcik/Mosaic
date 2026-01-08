@@ -11,7 +11,6 @@
  */
 
 import {
-  ApiHelper,
   AppShell,
   CreateAlbumDialogPage,
   expect,
@@ -216,30 +215,27 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
   // Triple the timeout for slow critical photo upload tests
   test.slow();
 
-  const apiHelper = new ApiHelper();
-
   test('P0-3: upload photo encrypts locally and appears in gallery after sync', async ({
-    authenticatedPage,
-    testUser,
+    poolUser,
   }) => {
-    // Create album first
-    const album = await apiHelper.createAlbum(testUser);
+    const { page } = poolUser;
 
-    await authenticatedPage.goto('/');
+    // App shell should already be visible from poolUser fixture
+    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
 
-    // Login
-    const loginPage = new LoginPage(authenticatedPage);
-    await loginPage.waitForForm();
-    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-    await loginPage.expectLoginSuccess();
+    // Create album through browser UI (generates real epoch keys)
+    const appShell = new AppShell(page);
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum('Photo Upload Test');
 
     // Navigate to album
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
     // Wait for gallery
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Initially should be empty
@@ -261,64 +257,61 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
   });
 
   test('P0-3b: uploaded photo persists after page reload', async ({
-    browser,
-    testUser,
+    poolUser,
   }) => {
-    // Use browser-based album creation to get real epoch keys
-    const context = await browser.newContext();
-    const page = await context.newPage();
+    const { page, username } = poolUser;
 
-    // Set up Remote-User header injection
-    await page.route('**/api/**', async (route) => {
-      const headers = { ...route.request().headers(), 'Remote-User': testUser };
-      await route.continue({ headers });
-    });
+    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
 
-    try {
-      await page.goto('/');
+    // Create album through browser UI (generates real epoch keys)
+    const appShell = new AppShell(page);
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum('Photo Persist Test');
 
-      // Login
-      const loginPage = new LoginPage(page);
-      await loginPage.waitForForm();
-      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+    // Wait for album and click into it
+    const albumCard = page.getByTestId('album-card').first();
+    await expect(albumCard).toBeVisible({ timeout: 30000 });
+    await albumCard.click();
+
+    const gallery = new GalleryPage(page);
+    await gallery.waitForLoad();
+
+    // Upload photo
+    const testImage = generateTestImage();
+    await gallery.uploadPhoto(testImage, 'persistent-photo.png');
+    await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+
+    const photoCountBefore = await gallery.photos.count();
+
+    // Reload page
+    await page.reload();
+
+    // Wait for either login form or app shell
+    const loginPage = new LoginPage(page);
+    await expect(
+      page.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
+    ).toBeVisible({ timeout: 30000 });
+
+    // Check if we need to re-login
+    const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
+    if (needsLogin) {
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, username);
       await loginPage.expectLoginSuccess();
+    }
 
-      // Create album through browser UI (generates real epoch keys)
-      const appShell = new AppShell(page);
-      await appShell.waitForLoad();
-      await appShell.createAlbum();
-      const createDialog = new CreateAlbumDialogPage(page);
-      await createDialog.createAlbum('Photo Persist Test');
+    // Now wait for app shell to be ready
+    await appShell.waitForLoad();
 
-      // Wait for album and click into it
-      const albumCard = page.getByTestId('album-card').first();
-      await expect(albumCard).toBeVisible({ timeout: 30000 });
-      await albumCard.click();
-
-      const gallery = new GalleryPage(page);
-      await gallery.waitForLoad();
-
-      // Upload photo
-      const testImage = generateTestImage();
-      await gallery.uploadPhoto(testImage, 'persistent-photo.png');
-      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
-
-      const photoCountBefore = await gallery.photos.count();
-
-      // Reload page
-      await page.reload();
-
-      // Check if we need to re-login (session may persist)
-      const needsLogin = await loginPage.loginForm.isVisible({ timeout: 5000 }).catch(() => false);
-      if (needsLogin) {
-        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
-        await loginPage.expectLoginSuccess();
-      } else {
-        // Session persisted, wait for app shell to load
-        await appShell.waitForLoad();
-      }
-
-      // Navigate back to album (we're on album list after reload)
+    // Check if we're still in gallery view (photo persisted AND route restored)
+    const isInGallery = await gallery.photos.first().isVisible({ timeout: 3000 }).catch(() => false);
+    
+    if (isInGallery) {
+      // Great! The photo is already visible - verify persistence directly
+      const photoCountAfter = await gallery.photos.count();
+      expect(photoCountAfter).toBe(photoCountBefore);
+    } else {
+      // Navigate to album list first, then to the album
       const card = page.getByTestId('album-card').first();
       await expect(card).toBeVisible({ timeout: 30000 });
       await card.click();
@@ -329,37 +322,52 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
 
       const photoCountAfter = await gallery.photos.count();
       expect(photoCountAfter).toBe(photoCountBefore);
-    } finally {
-      await context.close();
     }
   });
 
   test('P0-3c: multiple photos can be uploaded', async ({
-    authenticatedPage,
-    testUser,
+    poolUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
+    const { page } = poolUser;
 
-    await authenticatedPage.goto('/');
+    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
+    console.log('[P0-3c] App shell visible');
 
-    const loginPage = new LoginPage(authenticatedPage);
-    await loginPage.waitForForm();
-    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-    await loginPage.expectLoginSuccess();
+    // Create album through browser UI with unique name
+    const albumName = `Multi Photo Test ${Date.now()}`;
+    console.log(`[P0-3c] Creating album: ${albumName}`);
+    const appShell = new AppShell(page);
+    await appShell.createAlbum();
+    console.log('[P0-3c] Create album button clicked, waiting for dialog');
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(albumName);
+    console.log('[P0-3c] Album created, looking for album card');
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Click the newly created album by name (not first())
+    const albumCard = page.getByTestId('album-card').filter({ hasText: albumName });
     await expect(albumCard).toBeVisible({ timeout: 30000 });
+    console.log('[P0-3c] Album card visible, clicking');
     await albumCard.click();
+    console.log('[P0-3c] Album card clicked, waiting for gallery');
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
+    console.log('[P0-3c] Gallery loaded');
+
+    // Verify album is empty initially
+    const initialCount = await gallery.photos.count();
+    console.log(`[P0-3c] Initial photo count: ${initialCount}`);
+    expect(initialCount).toBe(0);
 
     // Upload multiple photos
     const testImage = generateTestImage();
 
+    console.log('[P0-3c] Uploading photo 1');
     await gallery.uploadPhoto(testImage, 'photo1.png');
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+    console.log('[P0-3c] Photo 1 uploaded and visible');
 
+    console.log('[P0-3c] Uploading photo 2');
     await gallery.uploadPhoto(testImage, 'photo2.png');
     await expect(async () => {
       const count = await gallery.photos.count();
@@ -378,17 +386,12 @@ test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @
   // Triple the timeout for slow critical sharing tests
   test.slow();
 
-  const apiHelper = new ApiHelper();
-
   test('P0-4: owner can share album and viewer can access photos', async ({
     twoUserContext,
   }) => {
     const { alice, bob, aliceUser, bobUser } = twoUserContext;
 
-    // Setup: Alice creates an album
-    const album = await apiHelper.createAlbum(aliceUser);
-
-    // Step 1: Alice logs in and navigates to album
+    // Step 1: Alice logs in and creates an album via browser
     await alice.goto('/');
     const aliceLoginPage = new LoginPage(alice);
     await aliceLoginPage.waitForForm();
@@ -397,6 +400,11 @@ test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @
 
     const aliceAppShell = new AppShell(alice);
     await aliceAppShell.waitForLoad();
+
+    // Create album through browser UI (generates real epoch keys)
+    await aliceAppShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(alice);
+    await createDialog.createAlbum('Shared Album Test');
 
     // Navigate to album
     const aliceAlbumCard = alice.getByTestId('album-card').first();
@@ -434,10 +442,8 @@ test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @
       const hasInviteInput = await inviteInput.first().isVisible().catch(() => false);
 
       if (hasInviteInput) {
-        // Get Bob's user ID
-        const bobInfo = await apiHelper.getCurrentUser(bobUser);
-
-        await inviteInput.first().fill(bobInfo.id);
+        // Enter Bob's username directly
+        await inviteInput.first().fill(bobUser);
 
         const inviteButton = alice.getByRole('button', { name: /invite|add|share/i });
         await inviteButton.click();
@@ -487,24 +493,18 @@ test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @
 });
 
 test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
-  const apiHelper = new ApiHelper();
-
   test('P1-1a: create album via UI appears in list', async ({
-    authenticatedPage,
-    testUser,
+    poolUser,
   }) => {
-    await authenticatedPage.goto('/');
+    const { page } = poolUser;
 
-    const loginPage = new LoginPage(authenticatedPage);
-    await loginPage.waitForForm();
-    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-    await loginPage.expectLoginSuccess();
+    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
 
-    const appShell = new AppShell(authenticatedPage);
+    const appShell = new AppShell(page);
     await appShell.waitForLoad();
 
     // Count initial albums
-    const initialCards = await authenticatedPage.getByTestId('album-card').count();
+    const initialCards = await page.getByTestId('album-card').count();
 
     // Look for create album button
     const createButton = appShell.createAlbumButton;
@@ -514,26 +514,26 @@ test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
       await createButton.click();
 
       // Fill in album name if dialog appears
-      const nameInput = authenticatedPage.getByLabel(/album name|name/i);
+      const nameInput = page.getByLabel(/album name|name/i);
       const hasNameInput = await nameInput.first().isVisible().catch(() => false);
 
       if (hasNameInput) {
         await nameInput.first().fill('Test Album ' + Date.now());
 
         // Submit using the specific testid for the dialog submit button
-        const submitButton = authenticatedPage.getByTestId('create-button');
+        const submitButton = page.getByTestId('create-button');
         await expect(submitButton).toBeVisible({ timeout: 5000 });
         await submitButton.click();
 
         // Wait for album to appear
         await expect(async () => {
-          const newCount = await authenticatedPage.getByTestId('album-card').count();
+          const newCount = await page.getByTestId('album-card').count();
           expect(newCount).toBeGreaterThan(initialCards);
         }).toPass({ timeout: 30000 });
       } else {
         // Maybe it auto-creates without a dialog
         await expect(async () => {
-          const newCount = await authenticatedPage.getByTestId('album-card').count();
+          const newCount = await page.getByTestId('album-card').count();
           expect(newCount).toBeGreaterThan(initialCards);
         }).toPass({ timeout: 30000 });
       }
@@ -545,26 +545,24 @@ test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
     }
   });
 
-  test('P1-1b: albums created via API appear in list', async ({
-    authenticatedPage,
-    testUser,
+  test('P1-1b: albums created via browser appear in list', async ({
+    poolUser,
   }) => {
-    // Create album via API
-    await apiHelper.createAlbum(testUser);
-    await apiHelper.createAlbum(testUser);
+    const { page } = poolUser;
 
-    await authenticatedPage.goto('/');
+    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
 
-    const loginPage = new LoginPage(authenticatedPage);
-    await loginPage.waitForForm();
-    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-    await loginPage.expectLoginSuccess();
+    // Create two albums via browser UI
+    const appShell = new AppShell(page);
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum('Album List Test 1');
 
-    const appShell = new AppShell(authenticatedPage);
-    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    await createDialog.createAlbum('Album List Test 2');
 
     // Should show album cards
-    const albumCards = authenticatedPage.getByTestId('album-card');
+    const albumCards = page.getByTestId('album-card');
     await expect(albumCards.first()).toBeVisible({ timeout: 30000 });
 
     const count = await albumCards.count();
@@ -572,28 +570,27 @@ test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
   });
 
   test('P1-1c: clicking album navigates to gallery view', async ({
-    authenticatedPage,
-    testUser,
+    poolUser,
   }) => {
-    await apiHelper.createAlbum(testUser);
+    const { page } = poolUser;
 
-    await authenticatedPage.goto('/');
+    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
 
-    const loginPage = new LoginPage(authenticatedPage);
-    await loginPage.waitForForm();
-    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-    await loginPage.expectLoginSuccess();
+    // Create an album via browser UI
+    const appShell = new AppShell(page);
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum('Gallery Navigation Test');
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
     // Should show gallery view
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Should have back button to albums
-    const appShell = new AppShell(authenticatedPage);
     const backButton = appShell.backToAlbumsButton;
     const hasBackButton = await backButton.isVisible().catch(() => false);
 
@@ -603,35 +600,31 @@ test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
 });
 
 test.describe('Critical Flow: Error Handling @p0 @critical @security', () => {
-  test('P1-7a: empty password shows validation error', async ({ page }) => {
+  test('P1-7a: empty form shows validation error', async ({ page }) => {
     await page.goto('/');
 
     const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
 
-    // Submit without password
+    // Submit without filling anything
     await loginPage.loginButton.click();
 
-    // Should show error
-    await loginPage.expectErrorMessage(/please enter a password/i);
+    // Should show error (either username or password required depending on auth mode)
+    await loginPage.expectErrorMessage(/required|enter/i);
   });
 
   test('P1-7b: network failure shows error gracefully', async ({
-    authenticatedPage,
-    testUser,
+    poolUser,
   }) => {
-    await authenticatedPage.goto('/');
+    const { page } = poolUser;
 
-    const loginPage = new LoginPage(authenticatedPage);
-    await loginPage.waitForForm();
-    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-    await loginPage.expectLoginSuccess();
+    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
 
     // Go offline
-    await authenticatedPage.context().setOffline(true);
+    await page.context().setOffline(true);
 
     // Try to create an album
-    const appShell = new AppShell(authenticatedPage);
+    const appShell = new AppShell(page);
     const createButton = appShell.createAlbumButton;
     const hasCreateButton = await createButton.isVisible().catch(() => false);
 
@@ -639,15 +632,16 @@ test.describe('Critical Flow: Error Handling @p0 @critical @security', () => {
       await createButton.click();
 
       // Fill name if dialog appears
-      const nameInput = authenticatedPage.getByLabel(/album name|name/i);
+      const nameInput = page.getByLabel(/album name|name/i);
       if (await nameInput.first().isVisible().catch(() => false)) {
         await nameInput.first().fill('Offline Album');
-        const submitButton = authenticatedPage.getByRole('button', { name: /create|save/i });
+        // Use specific testid for dialog submit button
+        const submitButton = page.getByTestId('create-button');
         await submitButton.click();
 
         // Should show network error
         await expect(async () => {
-          const errorText = authenticatedPage.getByText(/network|offline|connection|failed/i);
+          const errorText = page.getByText(/network|offline|connection|failed/i);
           const hasError = await errorText.first().isVisible().catch(() => false);
           expect(hasError).toBeTruthy();
         }).toPass({ timeout: 10000 });
@@ -655,6 +649,6 @@ test.describe('Critical Flow: Error Handling @p0 @critical @security', () => {
     }
 
     // Go back online
-    await authenticatedPage.context().setOffline(false);
+    await page.context().setOffline(false);
   });
 });

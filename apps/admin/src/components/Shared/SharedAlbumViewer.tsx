@@ -13,8 +13,11 @@ import '../../../src/styles/globals.css';
 import { parseLinkFragment, useLinkKeys } from '../../hooks/useLinkKeys';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { decryptAlbumNameWithTierKey } from '../../lib/album-metadata-service';
+import { createLogger } from '../../lib/logger';
 import '../../styles/shared-album.css';
 import { SharedGallery } from './SharedGallery';
+
+const log = createLogger('SharedAlbumViewer');
 
 interface SharedAlbumViewerProps {
   /** Link ID from URL path */
@@ -104,14 +107,26 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
 
     async function decryptName() {
       try {
+        log.debug('Attempting to decrypt album name', {
+          hasEncryptedName: !!encryptedName,
+          encryptedNameLength: encryptedName?.length ?? 0,
+          tierKeyCount: tierKeys.size,
+          availableEpochs: Array.from(tierKeys.keys()),
+        });
+        
         // Get the highest tier key from any epoch
         // In share link context, these are already unwrapped tier keys (not epoch seeds)
         let tierKey: Uint8Array | undefined;
-        for (const [, epochTiers] of tierKeys) {
+        let usedTier: AccessTierType | undefined;
+        let usedEpoch: number | undefined;
+        
+        for (const [epochId, epochTiers] of tierKeys) {
           for (const tier of [3, 2, 1] as AccessTierType[]) { 
             const key = epochTiers.get(tier);
             if (key) {
               tierKey = key.key;
+              usedTier = tier;
+              usedEpoch = epochId;
               break;
             }
           }
@@ -119,19 +134,28 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
         }
 
         if (!tierKey) {
+          log.warn('No tier key found for album name decryption');
           return;
         }
+
+        log.debug('Using tier key for album name', {
+          epochId: usedEpoch,
+          tier: usedTier,
+          keyPrefix: Array.from(tierKey.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
+        });
 
         // Use decryptAlbumNameWithTierKey for share links since we have
         // the tier key directly (not an epochSeed that needs derivation)
         const name = await decryptAlbumNameWithTierKey(encryptedName!, tierKey, albumId ?? 'shared');
+        
+        log.info('Album name decrypted successfully', { name });
         
         if (!cancelled) {
           setAlbumName(name);
         }
       } catch (err) {
         // Failed to decrypt - album name stays null (shows "Shared Album")
-        console.error('Failed to decrypt album name:', err);
+        log.error('Failed to decrypt album name', { error: err instanceof Error ? err.message : String(err) });
       }
     }
 

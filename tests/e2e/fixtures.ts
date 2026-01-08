@@ -13,6 +13,7 @@
 
 import { test as base, expect, type Page, type ConsoleMessage, type Request, type Response } from '@playwright/test';
 import { execSync } from 'child_process';
+import { getAuthStatePath, POOL_USERS, hasAuthState } from './auth-setup';
 
 /**
  * Log capture types
@@ -150,6 +151,20 @@ export function generateTestImage(): Buffer {
 }
 
 /**
+ * Counter for distributing pool users across parallel tests
+ */
+let poolUserIndex = 0;
+
+/**
+ * Get the next pool user in round-robin fashion
+ */
+function getNextPoolUser(): typeof POOL_USERS[number] {
+  const user = POOL_USERS[poolUserIndex % POOL_USERS.length];
+  poolUserIndex++;
+  return user;
+}
+
+/**
  * Extended test fixtures
  */
 export const test = base.extend<{
@@ -157,6 +172,8 @@ export const test = base.extend<{
   testUser: string;
   loggedInPage: Page;
   twoUserContext: { alice: Page; bob: Page; aliceUser: string; bobUser: string };
+  poolUser: { page: Page; username: string };
+  poolUserPage: Page;
 }>({
   /**
    * Generate a unique test user for each test
@@ -164,6 +181,58 @@ export const test = base.extend<{
   testUser: async ({}, use) => {
     const user = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@e2e.local`;
     await use(user);
+  },
+
+  /**
+   * Pre-authenticated pool user page.
+   * Uses stored browser state from global setup for faster login.
+   * The user is already registered, so we just need to enter the password.
+   */
+  poolUser: async ({ browser }, use) => {
+    const user = getNextPoolUser();
+    const statePath = getAuthStatePath(user.stateFile);
+    
+    let context;
+    let isRegistered = false;
+    
+    if (hasAuthState(user.stateFile)) {
+      // Load state with encrypted keys - user is registered
+      context = await browser.newContext({ storageState: statePath });
+      isRegistered = true;
+      console.log(`[Fixture] Loaded auth state for ${user.username} (pre-registered)`);
+    } else {
+      // No stored state, need to register from scratch
+      context = await browser.newContext();
+      console.log(`[Fixture] No auth state for ${user.username}, will register`);
+    }
+    
+    const page = await context.newPage();
+    await page.goto('/');
+    
+    const loginPage = new LoginPage(page);
+    await loginPage.waitForForm();
+    
+    if (isRegistered) {
+      // User is already registered, just login with password
+      await loginPage.login(TEST_PASSWORD, user.username);
+    } else {
+      // Need to register first
+      await loginPage.loginOrRegister(TEST_PASSWORD, user.username);
+    }
+    
+    // Wait for app shell
+    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 60000 });
+    
+    await use({ page, username: user.username });
+    
+    await context.close();
+  },
+
+  /**
+   * Convenience fixture that just returns the page from poolUser
+   */
+  poolUserPage: async ({ poolUser }, use) => {
+    await use(poolUser.page);
   },
 
   /**
@@ -660,42 +729,30 @@ export class GalleryPage {
     });
     console.log('[GalleryPage] Files set, waiting for upload to process...');
     
-    // Wait for EITHER: button shows "Uploading" OR photo count increases
-    // This handles both slow uploads (shows Uploading) and fast uploads (completes quickly)
     const expectedCount = countBefore + 1;
     
-    await this.page.waitForFunction(
-      ([expectedPhotoCount]) => {
-        const btn = document.querySelector('[data-testid="upload-button"]');
-        const isUploading = btn?.textContent?.includes('Uploading');
-        
-        // Count photos - check both grid and justified layouts
-        const photos = document.querySelectorAll('[data-testid="photo-thumbnail"], [data-testid="justified-photo-thumbnail"]');
-        const hasNewPhoto = photos.length >= expectedPhotoCount;
-        
-        // Success if: either upload started (button shows Uploading) or photo already appeared
-        return isUploading || hasNewPhoto;
-      },
-      [expectedCount],
-      { timeout: 30000 }
-    );
+    // First, wait for upload to start (button text changes to "Uploading")
+    // OR if upload is already complete (photo count increased)
+    // Use expect().toPass() for robustness against DOM changes
+    await expect(async () => {
+      const buttonText = await uploadButton.textContent();
+      const currentCount = await this.photos.count();
+      const isUploading = buttonText?.includes('Uploading');
+      const hasNewPhoto = currentCount >= expectedCount;
+      expect(isUploading || hasNewPhoto).toBe(true);
+    }).toPass({ timeout: 30000, intervals: [100, 200, 500, 1000] });
     console.log('[GalleryPage] Upload started or photo appeared');
     
-    // Now wait for the upload to complete - button no longer shows "Uploading" AND photo count reached
-    await this.page.waitForFunction(
-      ([expectedPhotoCount]) => {
-        const btn = document.querySelector('[data-testid="upload-button"]');
-        const isUploading = btn?.textContent?.includes('Uploading');
-        
-        const photos = document.querySelectorAll('[data-testid="photo-thumbnail"], [data-testid="justified-photo-thumbnail"]');
-        const hasEnoughPhotos = photos.length >= expectedPhotoCount;
-        
-        // Done when: not uploading AND photo is visible
-        return !isUploading && hasEnoughPhotos;
-      },
-      [expectedCount],
-      { timeout: 60000 }
-    );
+    // Now wait for upload to complete - button NOT showing "Uploading" AND photo count reached
+    // Use expect().toPass() which is resilient to temporary DOM changes during sync
+    await expect(async () => {
+      const buttonText = await uploadButton.textContent();
+      const isUploading = buttonText?.includes('Uploading');
+      const currentCount = await this.photos.count();
+      // Upload is complete when: not uploading AND photo count reached expected
+      expect(isUploading).toBe(false);
+      expect(currentCount).toBeGreaterThanOrEqual(expectedCount);
+    }).toPass({ timeout: 60000, intervals: [200, 500, 1000, 2000] });
     
     const finalCount = await this.photos.count();
     console.log(`[GalleryPage] Upload complete. Final photo count: ${finalCount}`);
