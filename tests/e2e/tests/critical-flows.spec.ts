@@ -136,7 +136,9 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     await page1.goto('/');
     const loginPage1 = new LoginPage(page1);
     await loginPage1.waitForForm();
-    await loginPage1.login(TEST_CONSTANTS.PASSWORD);
+    
+    // Use loginOrRegister to handle both LocalAuth and ProxyAuth modes
+    await loginPage1.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage1.expectLoginSuccess();
 
     // Logout to clear session
@@ -160,6 +162,15 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     const loginPage2 = new LoginPage(page2);
     await loginPage2.waitForForm();
 
+    // Check if LocalAuth mode
+    const isLocalAuth = await loginPage2.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+
+    if (isLocalAuth) {
+      // LocalAuth mode: switch to login mode and try wrong password
+      await loginPage2.switchToLoginMode();
+      await loginPage2.usernameInput.fill(testUser);
+    }
+    
     // Try wrong password - should fail to decrypt stored keys
     await loginPage2.passwordInput.fill(TEST_CONSTANTS.WRONG_PASSWORD);
     await loginPage2.loginButton.click();

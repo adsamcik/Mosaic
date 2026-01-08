@@ -429,7 +429,7 @@ export class LoginPage {
 
   /**
    * Login or register based on auth mode.
-   * - In LocalAuth mode: registers a new user with the given username
+   * - In LocalAuth mode: tries to register, falls back to login if user exists
    * - In ProxyAuth mode: just enters the password
    * This is the recommended method for tests that need to complete login.
    */
@@ -440,8 +440,23 @@ export class LoginPage {
     const isLocalAuth = await this.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
     
     if (isLocalAuth) {
-      console.log('[LoginPage] LocalAuth mode detected, registering new user');
+      console.log('[LoginPage] LocalAuth mode detected, attempting registration');
       await this.register(username, password);
+      
+      // Check if registration failed due to existing user
+      const hasError = await this.errorMessage.isVisible({ timeout: 2000 }).catch(() => false);
+      if (hasError) {
+        const errorText = await this.errorMessage.textContent();
+        if (errorText?.toLowerCase().includes('already taken') || errorText?.toLowerCase().includes('already exists')) {
+          console.log('[LoginPage] User already exists, switching to login');
+          await this.switchToLoginMode();
+          await this.usernameInput.clear();
+          await this.usernameInput.fill(username);
+          await this.passwordInput.fill(password);
+          await expect(this.loginButton).toBeVisible({ timeout: 10000 });
+          await this.loginButton.click();
+        }
+      }
     } else {
       console.log('[LoginPage] ProxyAuth mode detected, logging in');
       await this.passwordInput.fill(password);
