@@ -388,4 +388,53 @@ describe('SharedPhotoLightbox', () => {
     // Should have called getTierKey with epoch 1 and tier 1 (from the shard header)
     expect(mockGetTierKey).toHaveBeenCalledWith(1, 1);
   });
+
+  it('decrypts full resolution shard when access tier is 3 and shard is tier 3', async () => {
+    // This simulates the share link scenario where:
+    // 1. Photo is encrypted with fullKey (tier 3)
+    // 2. Share link has accessTier 3 (full access)
+    // 3. Shard header has tier 3
+    
+    const mockGetTierKey = vi.fn((epochId: number, tier: number) => {
+      // Return a tier key for tier 3
+      if (tier === 3) {
+        return new Uint8Array(32).fill(3);
+      }
+      return undefined;
+    });
+
+    // Set shard tier to 3 (original)
+    mockPeekHeader.mockResolvedValue({ epochId: 1, shardId: 0, tier: 3 });
+
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    await act(async () => {
+      root = createRoot(container!);
+      root!.render(
+        createElement(SharedPhotoLightbox, {
+          photo: mockPhotoWithThumbnail,
+          linkId: 'link-1',
+          tierKey: new Uint8Array(32).fill(3),
+          accessTier: 3, // Full access
+          onClose: vi.fn(),
+          hasNext: false,
+          hasPrevious: false,
+          getTierKey: mockGetTierKey,
+        })
+      );
+      // Wait for async shard loading and decryption
+      await new Promise(resolve => setTimeout(resolve, 150));
+    });
+
+    // Should have called getTierKey with epoch 1 and tier 3 (from the shard header)
+    expect(mockGetTierKey).toHaveBeenCalledWith(1, 3);
+    
+    // Should have decrypted the shard
+    expect(mockDecryptShardWithTierKey).toHaveBeenCalled();
+    
+    // The key passed should be the tier 3 key
+    const callArgs = mockDecryptShardWithTierKey.mock.calls[0];
+    expect(callArgs![1]).toEqual(new Uint8Array(32).fill(3));
+  });
 });
