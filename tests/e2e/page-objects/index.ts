@@ -132,8 +132,16 @@ export class LoginPage {
 
   /**
    * Switch to registration mode (LocalAuth only)
+   * Only switches if not already in register mode.
    */
   async switchToRegisterMode(): Promise<void> {
+    // Check if we're already in register mode by checking if confirm password field is visible
+    const isAlreadyInRegisterMode = await this.confirmPasswordInput.isVisible().catch(() => false);
+    if (isAlreadyInRegisterMode) {
+      console.log('[LoginPage] Already in register mode, skipping switch');
+      return;
+    }
+    
     const toggleBtn = this.page.getByRole('button', { name: /don't have an account|nemáte účet/i });
     // Wait for the toggle button to be visible with timeout
     await expect(toggleBtn).toBeVisible({ timeout: 10000 });
@@ -144,8 +152,16 @@ export class LoginPage {
 
   /**
    * Switch to login mode (LocalAuth only)
+   * Only switches if not already in login mode.
    */
   async switchToLoginMode(): Promise<void> {
+    // Check if we're already in login mode by checking if confirm password field is hidden
+    const isAlreadyInLoginMode = !(await this.confirmPasswordInput.isVisible().catch(() => false));
+    if (isAlreadyInLoginMode) {
+      console.log('[LoginPage] Already in login mode, skipping switch');
+      return;
+    }
+    
     const toggleBtn = this.page.getByRole('button', { name: /already have an account|máte účet/i });
     // Wait for the toggle button to be visible with timeout
     await expect(toggleBtn).toBeVisible({ timeout: 10000 });

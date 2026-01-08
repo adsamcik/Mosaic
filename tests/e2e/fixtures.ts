@@ -333,9 +333,16 @@ export class LoginPage {
   }
 
   /**
-   * Switch to registration mode
+   * Switch to registration mode (only if currently in login mode)
    */
   async switchToRegisterMode() {
+    // Check if we're already in register mode by checking if confirm password field is visible
+    const isAlreadyInRegisterMode = await this.confirmPasswordInput.isVisible().catch(() => false);
+    if (isAlreadyInRegisterMode) {
+      console.log('[LoginPage] Already in register mode, skipping switch');
+      return;
+    }
+    
     // Support both English and Czech labels
     const toggleBtn = this.page.getByRole('button', { name: /don't have an account|nemáte účet/i });
     // Wait for toggle button to be visible with timeout
@@ -346,9 +353,16 @@ export class LoginPage {
   }
 
   /**
-   * Switch to login mode
+   * Switch to login mode (only if currently in register mode)
    */
   async switchToLoginMode() {
+    // Check if we're already in login mode by checking if confirm password field is hidden
+    const isAlreadyInLoginMode = !(await this.confirmPasswordInput.isVisible().catch(() => false));
+    if (isAlreadyInLoginMode) {
+      console.log('[LoginPage] Already in login mode, skipping switch');
+      return;
+    }
+    
     // Support both English and Czech labels
     const toggleBtn = this.page.getByRole('button', { name: /already have an account|máte účet/i });
     // Wait for toggle button to be visible with timeout
