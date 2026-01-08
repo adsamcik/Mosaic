@@ -520,8 +520,9 @@ test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
       if (hasNameInput) {
         await nameInput.first().fill('Test Album ' + Date.now());
 
-        // Submit
-        const submitButton = authenticatedPage.getByRole('button', { name: /create|save|ok/i });
+        // Submit using the specific testid for the dialog submit button
+        const submitButton = authenticatedPage.getByTestId('create-button');
+        await expect(submitButton).toBeVisible({ timeout: 5000 });
         await submitButton.click();
 
         // Wait for album to appear

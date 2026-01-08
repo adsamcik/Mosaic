@@ -443,10 +443,16 @@ export class LoginPage {
       console.log('[LoginPage] LocalAuth mode detected, attempting registration');
       await this.register(username, password);
       
+      // Wait a bit for the form to process
+      await this.page.waitForTimeout(500);
+      
       // Check if registration failed due to existing user
-      const hasError = await this.errorMessage.isVisible({ timeout: 2000 }).catch(() => false);
+      const hasError = await this.errorMessage.isVisible({ timeout: 5000 }).catch(() => false);
+      console.log(`[LoginPage] Error visible after registration: ${hasError}`);
+      
       if (hasError) {
         const errorText = await this.errorMessage.textContent();
+        console.log(`[LoginPage] Error text: ${errorText}`);
         if (errorText?.toLowerCase().includes('already taken') || errorText?.toLowerCase().includes('already exists')) {
           console.log('[LoginPage] User already exists, switching to login');
           await this.switchToLoginMode();
