@@ -603,4 +603,95 @@ describe('integration: complete photo lifecycle', () => {
     memzero(epochKey.fullKey);
     memzero(epochKey.signKeypair.secretKey);
   });
+
+  it('share link recipients can decrypt data with unwrapped tier keys', async () => {
+    // This test verifies the exact flow used by SharedAlbumViewer
+    // Album owner encrypts data -> share link created -> visitor decrypts with tier key
+    
+    const {
+      generateLinkSecret,
+      deriveLinkKeys,
+      wrapAllTierKeysForLink,
+      unwrapTierKeyFromLink,
+    } = await import('../src/link-sharing');
+    const { AccessTier } = await import('../src/types');
+    const { deriveTierKeys } = await import('../src/epochs');
+    
+    // === STEP 1: Album owner encrypts album name ===
+    const ownerEpochSeed = sodium.randombytes_buf(32);
+    const ownerTierKeys = deriveTierKeys(ownerEpochSeed);
+    const albumName = 'My Vacation Photos 2024';
+    const albumNameBytes = new TextEncoder().encode(albumName);
+    
+    // Album name is encrypted using encryptShard with fullKey (tier 3)
+    // This matches how crypto.worker.encryptShard works
+    const encryptedName = await encryptShard(
+      albumNameBytes,
+      ownerTierKeys.fullKey,
+      0, // epochId 0 for metadata
+      0, // shardIndex 0 for album name
+      ShardTier.ORIGINAL // tier 3
+    );
+    
+    // === STEP 2: Album owner creates share link with full access ===
+    const linkSecret = generateLinkSecret();
+    const { wrappingKey } = deriveLinkKeys(linkSecret);
+    
+    // Wrap all tier keys (full access link)
+    const wrappedKeys = wrapAllTierKeysForLink(
+      { 
+        thumbKey: ownerTierKeys.thumbKey,
+        previewKey: ownerTierKeys.previewKey,
+        fullKey: ownerTierKeys.fullKey,
+      },
+      AccessTier.FULL,
+      wrappingKey
+    );
+    
+    // === STEP 3: Share link visitor unwraps tier keys ===
+    // In real app: visitor derives wrappingKey from linkSecret in URL fragment
+    const visitorWrappingKey = deriveLinkKeys(linkSecret).wrappingKey;
+    
+    // Visitor unwraps the fullKey (tier 3)
+    const wrappedFullKey = wrappedKeys.find(w => w.tier === AccessTier.FULL)!;
+    const visitorFullKey = unwrapTierKeyFromLink(
+      wrappedFullKey,
+      AccessTier.FULL,
+      visitorWrappingKey
+    );
+    
+    // Verify key matches
+    expect(visitorFullKey).toEqual(ownerTierKeys.fullKey);
+    
+    // === STEP 4: Visitor decrypts album name with tier key directly ===
+    // This is what decryptAlbumNameWithTierKey does
+    const decryptedNameBytes = await decryptShard(encryptedName.ciphertext, visitorFullKey);
+    const decryptedName = new TextDecoder().decode(decryptedNameBytes);
+    
+    expect(decryptedName).toBe(albumName);
+    
+    // === STEP 5: Verify photo shards can also be decrypted ===
+    const photoData = sodium.randombytes_buf(1024);
+    const encryptedPhoto = await encryptShard(
+      photoData,
+      ownerTierKeys.fullKey,
+      1, // epochId 1
+      0, // shardIndex 0
+      ShardTier.ORIGINAL
+    );
+    
+    // Visitor decrypts with the same tier key
+    const decryptedPhoto = await decryptShard(encryptedPhoto.ciphertext, visitorFullKey);
+    expect(decryptedPhoto).toEqual(photoData);
+    
+    // Cleanup
+    memzero(ownerEpochSeed);
+    memzero(ownerTierKeys.thumbKey);
+    memzero(ownerTierKeys.previewKey);
+    memzero(ownerTierKeys.fullKey);
+    memzero(linkSecret);
+    memzero(wrappingKey);
+    memzero(visitorWrappingKey);
+    memzero(visitorFullKey);
+  });
 });

@@ -7,9 +7,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
+import { createLogger } from '../../lib/logger';
 import type { PhotoMeta } from '../../workers/types';
 import { downloadShardViaShareLink } from '../../lib/shard-service';
 import { getCryptoClient } from '../../lib/crypto-client';
+
+const log = createLogger('SharedPhotoLightbox');
 
 export interface SharedPhotoLightboxProps {
   /** Current photo to display */
@@ -127,6 +130,14 @@ export function SharedPhotoLightbox({
         
         if (cancelled) return;
         
+        // Log downloaded shards for debugging
+        log.debug('Downloaded shards', {
+          photoId: photo.id,
+          accessTier,
+          shardCount: downloadedShards.length,
+          shardTiers: downloadedShards.map(s => s.tier),
+        });
+        
         // Filter to shards matching our access tier
         // Access tier determines the highest tier we can decrypt:
         // - Tier 1 (thumb): can only decrypt tier 1 shards
@@ -136,9 +147,20 @@ export function SharedPhotoLightbox({
         const matchingShards = downloadedShards.filter(s => s.tier <= accessTier);
         
         if (matchingShards.length === 0) {
-          // No matching shards found - this shouldn't happen normally
-          if (!thumbnailBlobUrl && !cancelled) {
-            setState({ status: 'error', message: 'No accessible shards for this tier' });
+          // No matching shards found - all shards have tier > accessTier
+          // This happens when photos are encrypted with fullKey (tier 3) but user has tier 1/2 access
+          log.warn('No matching shards for access tier', {
+            photoId: photo.id,
+            accessTier,
+            shardTiers: downloadedShards.map(s => s.tier),
+          });
+          if (!cancelled) {
+            // Complete progress to indicate we're done (even though we couldn't decrypt)
+            setLoadProgress(100);
+            if (!thumbnailBlobUrl) {
+              setState({ status: 'error', message: 'No accessible shards for this tier' });
+            }
+            // If we have a thumbnail, state is already set - just complete progress
           }
           return;
         }
@@ -159,9 +181,25 @@ export function SharedPhotoLightbox({
           ? getTierKey(photo.epochId, bestTier as AccessTierType)
           : tierKey;
         
+        log.debug('Decryption key lookup', {
+          photoId: photo.id,
+          epochId: photo.epochId,
+          bestTier,
+          hasKey: !!decryptionKey,
+          usedGetTierKey: !!getTierKey,
+        });
+        
         if (!decryptionKey) {
-          if (!thumbnailBlobUrl && !cancelled) {
-            setState({ status: 'error', message: 'No decryption key available for this tier' });
+          log.warn('No decryption key for tier', {
+            photoId: photo.id,
+            epochId: photo.epochId,
+            bestTier,
+          });
+          if (!cancelled) {
+            setLoadProgress(100);
+            if (!thumbnailBlobUrl) {
+              setState({ status: 'error', message: 'No decryption key available for this tier' });
+            }
           }
           return;
         }
@@ -195,6 +233,12 @@ export function SharedPhotoLightbox({
         const blob = new Blob([photoData], { type: photo.mimeType });
         fullResBlobUrl = URL.createObjectURL(blob);
 
+        log.debug('Full-res photo loaded', {
+          photoId: photo.id,
+          size: totalSize,
+          mimeType: photo.mimeType,
+        });
+
         if (!cancelled) {
           // Replace thumbnail with full-res
           setState({ status: 'loaded', blobUrl: fullResBlobUrl, isFullRes: true });
@@ -207,14 +251,21 @@ export function SharedPhotoLightbox({
       } catch (err) {
         // Shard decryption failed - this is expected if user's tier key
         // doesn't have access to the shard tier (e.g., preview key can't decrypt original shards)
-        // If we have a thumbnail, just keep showing it (no error)
-        if (!thumbnailBlobUrl && !cancelled) {
-          setState({
-            status: 'error',
-            message: err instanceof Error ? err.message : 'Failed to load photo',
-          });
+        log.error('Shard decryption failed', {
+          photoId: photo.id,
+          error: err instanceof Error ? err.message : String(err),
+          hasThumbnail: !!thumbnailBlobUrl,
+        });
+        if (!cancelled) {
+          setLoadProgress(100);
+          if (!thumbnailBlobUrl) {
+            setState({
+              status: 'error',
+              message: err instanceof Error ? err.message : 'Failed to load photo',
+            });
+          }
+          // If we have thumbnail, state is already set - just complete progress
         }
-        // If we have thumbnail, we already set state to show it, so do nothing
       }
     }
 
