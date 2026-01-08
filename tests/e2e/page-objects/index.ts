@@ -135,10 +135,11 @@ export class LoginPage {
    */
   async switchToRegisterMode(): Promise<void> {
     const toggleBtn = this.page.getByRole('button', { name: /don't have an account|nemáte účet/i });
-    if (await toggleBtn.isVisible().catch(() => false)) {
-      await toggleBtn.click();
-      await expect(this.confirmPasswordInput).toBeVisible({ timeout: 15000 });
-    }
+    // Wait for the toggle button to be visible with timeout
+    await expect(toggleBtn).toBeVisible({ timeout: 10000 });
+    await toggleBtn.click();
+    // Wait for registration form to appear
+    await expect(this.confirmPasswordInput).toBeVisible({ timeout: 15000 });
   }
 
   /**
@@ -146,11 +147,11 @@ export class LoginPage {
    */
   async switchToLoginMode(): Promise<void> {
     const toggleBtn = this.page.getByRole('button', { name: /already have an account|máte účet/i });
-    if (await toggleBtn.isVisible().catch(() => false)) {
-      await toggleBtn.click();
-      // Wait for the form to switch - confirm password field should disappear
-      await expect(this.confirmPasswordInput).toBeHidden({ timeout: 5000 });
-    }
+    // Wait for the toggle button to be visible with timeout
+    await expect(toggleBtn).toBeVisible({ timeout: 10000 });
+    await toggleBtn.click();
+    // Wait for the form to switch - confirm password field should disappear
+    await expect(this.confirmPasswordInput).toBeHidden({ timeout: 5000 });
   }
 
   /**
@@ -159,12 +160,17 @@ export class LoginPage {
   async register(username: string, password: string): Promise<void> {
     await this.switchToRegisterMode();
 
-    if (await this.usernameInput.isVisible().catch(() => false)) {
-      await this.usernameInput.clear();
-      await this.usernameInput.fill(username);
-    }
+    // Wait for and fill username field
+    await expect(this.usernameInput).toBeVisible({ timeout: 5000 });
+    await this.usernameInput.clear();
+    await this.usernameInput.fill(username);
+
+    // Fill password fields
     await this.passwordInput.fill(password);
     await this.confirmPasswordInput.fill(password);
+    
+    // Click create account button
+    await expect(this.createAccountButton).toBeVisible({ timeout: 5000 });
     await this.createAccountButton.click();
   }
 }
