@@ -361,6 +361,14 @@ public class AlbumsController : ControllerBase
 
         if (!hasAccess) return Forbid();
 
+        // Fetch album first to ensure it exists
+        var album = await _db.Albums.FindAsync(albumId);
+        if (album == null)
+        {
+            _logger.LogWarning("Sync requested for non-existent album {AlbumId}", albumId);
+            return NotFound();
+        }
+
         var manifests = await _db.Manifests
             .Where(m => m.AlbumId == albumId && m.VersionCreated > since)
             .OrderBy(m => m.VersionCreated)
@@ -374,18 +382,21 @@ public class AlbumsController : ControllerBase
                 m.EncryptedMeta,
                 m.Signature,
                 m.SignerPubkey,
+                // Legacy format for backward compatibility
                 ShardIds = m.ManifestShards
                     .OrderBy(ms => ms.ChunkIndex)
-                    .Select(ms => ms.ShardId)
+                    .Select(ms => ms.ShardId),
+                // New format with tier info
+                Shards = m.ManifestShards
+                    .OrderBy(ms => ms.ChunkIndex)
+                    .Select(ms => new { ms.ShardId, ms.Tier })
             })
             .ToListAsync();
-
-        var album = await _db.Albums.FindAsync(albumId);
 
         return Ok(new
         {
             Manifests = manifests,
-            CurrentEpochId = album!.CurrentEpochId,
+            CurrentEpochId = album.CurrentEpochId,
             AlbumVersion = album.CurrentVersion,
             HasMore = manifests.Count == 100
         });

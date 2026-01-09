@@ -4,7 +4,7 @@ import { type EpochKeyBundle } from '../lib/epoch-key-store';
 import { uploadQueue, type UploadTask } from '../lib/upload-queue';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getApi, toBase64 } from '../lib/api';
-import type { PhotoMeta } from '../workers/types';
+import type { PhotoMeta, TieredShardIds } from '../workers/types';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('useUpload');
@@ -40,7 +40,8 @@ export enum UploadErrorCode {
 async function createManifestForUpload(
   task: UploadTask,
   shardIds: string[],
-  epochKey: EpochKeyBundle
+  epochKey: EpochKeyBundle,
+  tieredShards?: TieredShardIds
 ): Promise<void> {
   const crypto = await getCryptoClient();
   const api = getApi();
@@ -49,7 +50,7 @@ async function createManifestForUpload(
   const sortedShards = [...task.completedShards].sort((a, b) => a.index - b.index);
   const shardHashes = sortedShards.map((s) => s.sha256);
 
-  // Build photo metadata
+  // Build photo metadata with tier-specific shard IDs
   const now = new Date().toISOString();
   const photoMeta: PhotoMeta = {
     id: globalThis.crypto.randomUUID(),
@@ -62,13 +63,22 @@ async function createManifestForUpload(
     tags: [],
     createdAt: now,
     updatedAt: now,
-    shardIds: shardIds,
+    shardIds: shardIds, // Legacy: flat array for backward compatibility
     shardHashes: shardHashes, // For integrity verification during download
     epochId: task.epochId,
     // Only set optional fields if they have values
     ...(task.thumbnailBase64 && { thumbnail: task.thumbnailBase64 }),
     ...(task.thumbWidth && { thumbWidth: task.thumbWidth }),
     ...(task.thumbHeight && { thumbHeight: task.thumbHeight }),
+    // New tier-specific shard IDs
+    ...(tieredShards && {
+      thumbnailShardId: tieredShards.thumbnail.shardId,
+      thumbnailShardHash: tieredShards.thumbnail.sha256,
+      previewShardId: tieredShards.preview.shardId,
+      previewShardHash: tieredShards.preview.sha256,
+      originalShardIds: tieredShards.original.map(s => s.shardId),
+      originalShardHashes: tieredShards.original.map(s => s.sha256),
+    }),
   };
 
   // Encrypt the manifest metadata
@@ -87,6 +97,13 @@ async function createManifestForUpload(
   // Get signer public key
   const signerPubkey = epochKey.signKeypair.publicKey;
 
+  // Build tiered shard info for backend if available
+  const tieredShardInfo = tieredShards ? [
+    { shardId: tieredShards.thumbnail.shardId, tier: 1 },
+    { shardId: tieredShards.preview.shardId, tier: 2 },
+    ...tieredShards.original.map(s => ({ shardId: s.shardId, tier: 3 })),
+  ] : undefined;
+
   // Create manifest via API
   await api.createManifest({
     albumId: task.albumId,
@@ -94,6 +111,8 @@ async function createManifestForUpload(
     signature: toBase64(signature),
     signerPubkey: toBase64(signerPubkey),
     shardIds: shardIds,
+    // Send tier info to backend for new uploads
+    ...(tieredShardInfo && { tieredShards: tieredShardInfo }),
   });
 }
 
@@ -135,9 +154,9 @@ export function useUpload() {
       };
 
       // Create manifest when upload completes
-      uploadQueue.onComplete = async (task, shardIds) => {
+      uploadQueue.onComplete = async (task, shardIds, tieredShards) => {
         try {
-          await createManifestForUpload(task, shardIds, epochKey);
+          await createManifestForUpload(task, shardIds, epochKey, tieredShards);
           setIsUploading(false);
           setProgress(1);
         } catch (manifestErr) {

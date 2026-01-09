@@ -410,6 +410,10 @@ export interface CreateManifestRequest {
   signature: string;
   signerPubkey: string;
   shardIds: string[];
+  /** Optional tier for all shards (defaults to 3/Original) */
+  tier?: number;
+  /** Optional per-shard tier assignment (takes precedence over shardIds if provided) */
+  tieredShards?: Array<{ shardId: string; tier: number }>;
 }
 
 export interface ManifestCreated {

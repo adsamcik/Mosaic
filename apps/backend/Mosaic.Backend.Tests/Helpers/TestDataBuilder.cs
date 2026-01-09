@@ -158,7 +158,8 @@ public class TestDataBuilder
             {
                 ManifestId = manifest.Id,
                 ShardId = shards[i].Id,
-                ChunkIndex = i
+                ChunkIndex = i,
+                Tier = (int)ShardTier.Original // Default tier for tests
             });
         }
 

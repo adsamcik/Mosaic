@@ -119,6 +119,10 @@ public class MosaicDbContext : DbContext
             e.HasKey(ms => new { ms.ManifestId, ms.ShardId });
             e.HasIndex(ms => ms.ShardId);
 
+            // Tier column with default value for backward compatibility
+            e.Property(ms => ms.Tier)
+                .HasDefaultValue((int)ShardTier.Original);
+
             e.HasOne(ms => ms.Manifest)
                 .WithMany(m => m.ManifestShards)
                 .HasForeignKey(ms => ms.ManifestId)

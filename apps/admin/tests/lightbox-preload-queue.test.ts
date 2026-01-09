@@ -71,8 +71,9 @@ function generatePreloadQueue(
 function createMockPhotos(count: number): PhotoMeta[] {
   return Array.from({ length: count }, (_, i) => ({
     id: `photo-${i}`,
+    assetId: `asset-${i}`,
     albumId: 'album-1',
-    epochId: 'epoch-1',
+    epochId: 1,
     filename: `photo-${i}.jpg`,
     mimeType: 'image/jpeg',
     width: 1920,
@@ -88,8 +89,9 @@ function createMockPhotos(count: number): PhotoMeta[] {
 function createPhotoWithoutShards(index: number): PhotoMeta {
   return {
     id: `photo-${index}`,
+    assetId: `asset-${index}`,
     albumId: 'album-1',
-    epochId: 'epoch-1',
+    epochId: 1,
     filename: `photo-${index}.jpg`,
     mimeType: 'image/jpeg',
     width: 1920,

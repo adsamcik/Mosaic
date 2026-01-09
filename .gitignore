@@ -83,6 +83,8 @@ cookies.txt
 tests/e2e/*-tests.txt
 tests/e2e/full-suite.txt
 tests/e2e/*-test.txt
+tests/e2e/*.txt
+tests/e2e/.auth-states/
 
 # Database
 *.db

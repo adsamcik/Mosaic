@@ -45,11 +45,10 @@ public class GlobalExceptionMiddleware
             _ => HttpStatusCode.InternalServerError
         };
 
-        // Only log unexpected errors (not auth failures)
-        if (statusCode == HttpStatusCode.InternalServerError)
-        {
-            _logger.UnhandledException(exception, exception.GetType().Name, path);
-        }
+        // Log ALL exceptions during development for debugging
+        _logger.LogError(exception, 
+            "Exception in {Path}: {ExceptionType} - {Message}", 
+            path, exception.GetType().Name, exception.Message);
 
         // Return generic error to client - never expose exception details
         context.Response.StatusCode = (int)statusCode;

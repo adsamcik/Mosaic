@@ -17,9 +17,9 @@ export interface PhotoMeta {
   tags: string[];
   createdAt: string;
   updatedAt: string;
-  /** Shard IDs for this photo's encrypted data */
+  /** @deprecated Use tier-specific shard fields instead */
   shardIds: string[];
-  /** SHA256 hashes of encrypted shards (base64url, for integrity verification) */
+  /** @deprecated Use tier-specific shard fields instead */
   shardHashes?: string[];
   /** Epoch ID for key lookup */
   epochId: number;
@@ -33,6 +33,29 @@ export interface PhotoMeta {
   description?: string;
   /** BlurHash string for instant placeholder (~30 chars, 4x3 components) */
   blurhash?: string;
+
+  // Tier-specific shard IDs (use these for new uploads)
+  /** Shard ID for 300px thumbnail (tier 1) */
+  thumbnailShardId?: string;
+  /** SHA256 hash of thumbnail shard */
+  thumbnailShardHash?: string;
+
+  /** Shard ID for 1200px preview (tier 2) */
+  previewShardId?: string;
+  /** SHA256 hash of preview shard */
+  previewShardHash?: string;
+
+  /** Shard IDs for full resolution (tier 3, may be chunked for large files) */
+  originalShardIds?: string[];
+  /** SHA256 hashes of original shards (parallel array) */
+  originalShardHashes?: string[];
+}
+
+/** Tiered shard tracking during upload */
+export interface TieredShardIds {
+  thumbnail: { shardId: string; sha256: string };
+  preview: { shardId: string; sha256: string };
+  original: { shardId: string; sha256: string }[];
 }
 
 /** Encrypted manifest record from server */

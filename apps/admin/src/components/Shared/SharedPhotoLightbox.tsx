@@ -95,8 +95,22 @@ export function SharedPhotoLightbox({
       }
 
       // Phase 2: Load full-resolution from shards if we have a tier key
-      if (!tierKey || !photo.shardIds || photo.shardIds.length === 0) {
-        // No tier key or shards available - thumbnail is all we have
+      // First check if we have new tier-specific shard IDs
+      const hasTieredShards = photo.thumbnailShardId || photo.previewShardId || 
+        (photo.originalShardIds && photo.originalShardIds.length > 0);
+      
+      if (!tierKey) {
+        // No tier key - thumbnail is all we have
+        if (!thumbnailBlobUrl && !cancelled) {
+          setState({ status: 'error', message: 'No image available' });
+        }
+        return;
+      }
+      
+      // Check if we have any shards to work with
+      const hasLegacyShards = photo.shardIds && photo.shardIds.length > 0;
+      if (!hasTieredShards && !hasLegacyShards) {
+        // No shards available - thumbnail is all we have
         if (!thumbnailBlobUrl && !cancelled) {
           setState({ status: 'error', message: 'No image available' });
         }
@@ -105,147 +119,195 @@ export function SharedPhotoLightbox({
 
       try {
         // Download and decrypt shards via share link endpoint
-        // Only decrypt shards that match our access tier
         const crypto = await getCryptoClient();
         const decryptedChunks: Uint8Array[] = [];
         
-        // First pass: download all shards and peek at their tier to find matching ones
-        const downloadedShards: { shardId: string; data: Uint8Array; tier: number }[] = [];
+        // Determine which shard to download based on access tier and available tier-specific shards
+        let targetShardId: string | undefined;
+        let targetTier: number = accessTier;
         
-        for (let i = 0; i < photo.shardIds.length; i++) {
-          if (cancelled) return;
-          
-          const shardId = photo.shardIds[i]!;
-          const encryptedShard = await downloadShardViaShareLink(linkId, shardId);
-          
-          // Peek at the shard header to determine its tier
-          const header = await crypto.peekHeader(encryptedShard);
-          downloadedShards.push({ shardId, data: encryptedShard, tier: header.tier });
-          
-          // Update progress (download phase)
-          if (!cancelled) {
-            setLoadProgress(((i + 1) / photo.shardIds.length) * 50);
+        if (hasTieredShards) {
+          // New path: Use tier-specific shard IDs
+          // Pick the best available tier up to our access level
+          if (accessTier >= 3 && photo.originalShardIds && photo.originalShardIds.length > 0) {
+            targetShardId = photo.originalShardIds[0];
+            targetTier = 3;
+          } else if (accessTier >= 2 && photo.previewShardId) {
+            targetShardId = photo.previewShardId;
+            targetTier = 2;
+          } else if (photo.thumbnailShardId) {
+            targetShardId = photo.thumbnailShardId;
+            targetTier = 1;
           }
-        }
-        
-        if (cancelled) return;
-        
-        // Log downloaded shards for debugging
-        log.debug('Downloaded shards', {
-          photoId: photo.id,
-          accessTier,
-          shardCount: downloadedShards.length,
-          shardTiers: downloadedShards.map(s => s.tier),
-        });
-        
-        // Filter to shards matching our access tier
-        // Access tier determines the highest tier we can decrypt:
-        // - Tier 1 (thumb): can only decrypt tier 1 shards
-        // - Tier 2 (preview): can decrypt tier 1 and 2 shards
-        // - Tier 3 (full): can decrypt all tiers
-        // For lightbox, we want the BEST available quality, so pick the highest tier <= accessTier
-        const matchingShards = downloadedShards.filter(s => s.tier <= accessTier);
-        
-        if (matchingShards.length === 0) {
-          // No matching shards found - all shards have tier > accessTier
-          // This happens when photos are encrypted with fullKey (tier 3) but user has tier 1/2 access
-          log.warn('No matching shards for access tier', {
+          
+          log.debug('Using tier-specific shard', {
             photoId: photo.id,
             accessTier,
-            shardTiers: downloadedShards.map(s => s.tier),
+            targetTier,
+            targetShardId,
           });
-          if (!cancelled) {
-            // Complete progress to indicate we're done (even though we couldn't decrypt)
-            setLoadProgress(100);
-            if (!thumbnailBlobUrl) {
-              setState({ status: 'error', message: 'No accessible shards for this tier' });
+          
+          if (targetShardId) {
+            // Single shard download for tier-specific path
+            if (!cancelled) {
+              setLoadProgress(25);
             }
-            // If we have a thumbnail, state is already set - just complete progress
+            
+            const encryptedShard = await downloadShardViaShareLink(linkId, targetShardId);
+            
+            if (!cancelled) {
+              setLoadProgress(50);
+            }
+            
+            // Get the appropriate tier key
+            const decryptionKey = getTierKey 
+              ? getTierKey(photo.epochId, targetTier as AccessTierType)
+              : tierKey;
+            
+            if (!decryptionKey) {
+              log.warn('No decryption key for tier', { photoId: photo.id, targetTier });
+              if (!cancelled) {
+                setLoadProgress(100);
+                if (!thumbnailBlobUrl) {
+                  setState({ status: 'error', message: 'No decryption key available' });
+                }
+              }
+              return;
+            }
+            
+            const plaintext = await crypto.decryptShardWithTierKey(encryptedShard, decryptionKey);
+            decryptedChunks.push(plaintext);
+            
+            if (!cancelled) {
+              setLoadProgress(100);
+            }
           }
-          return;
         }
         
-        // Sort by tier descending to get highest quality first
-        matchingShards.sort((a, b) => b.tier - a.tier);
+        // If no tier-specific shard found, fall back to legacy shard detection
+        if (decryptedChunks.length === 0 && hasLegacyShards) {
+          // Legacy path: Download all shards and filter by tier
+          const downloadedShards: { shardId: string; data: Uint8Array; tier: number }[] = [];
         
-        // For single-photo viewing, we only need ONE shard (the best quality one)
-        // If photos were chunked across multiple shards, we'd need all of the same tier
-        // Group by tier and take the highest tier group
-        const bestTier = matchingShards[0]!.tier;
-        const shardsToDecrypt = matchingShards.filter(s => s.tier === bestTier);
-        
-        // Get the appropriate tier key for decryption
-        // If getTierKey is available, use it to get the exact key for this tier
-        // Otherwise fall back to the provided tierKey (should match accessTier)
-        const decryptionKey = getTierKey 
-          ? getTierKey(photo.epochId, bestTier as AccessTierType)
-          : tierKey;
-        
-        log.debug('Decryption key lookup', {
-          photoId: photo.id,
-          epochId: photo.epochId,
-          bestTier,
-          hasKey: !!decryptionKey,
-          usedGetTierKey: !!getTierKey,
-        });
-        
-        if (!decryptionKey) {
-          log.warn('No decryption key for tier', {
+          for (let i = 0; i < photo.shardIds.length; i++) {
+            if (cancelled) return;
+            
+            const shardId = photo.shardIds[i]!;
+            const encryptedShard = await downloadShardViaShareLink(linkId, shardId);
+            
+            // Peek at the shard header to determine its tier
+            const header = await crypto.peekHeader(encryptedShard);
+            downloadedShards.push({ shardId, data: encryptedShard, tier: header.tier });
+            
+            // Update progress (download phase)
+            if (!cancelled) {
+              setLoadProgress(((i + 1) / photo.shardIds.length) * 50);
+            }
+          }
+          
+          if (cancelled) return;
+          
+          // Log downloaded shards for debugging
+          log.debug('Downloaded shards (legacy)', {
+            photoId: photo.id,
+            accessTier,
+            shardCount: downloadedShards.length,
+            shardTiers: downloadedShards.map(s => s.tier),
+          });
+          
+          // Filter to shards matching our access tier
+          const matchingShards = downloadedShards.filter(s => s.tier <= accessTier);
+          
+          if (matchingShards.length === 0) {
+            log.warn('No matching shards for access tier', {
+              photoId: photo.id,
+              accessTier,
+              shardTiers: downloadedShards.map(s => s.tier),
+            });
+            if (!cancelled) {
+              setLoadProgress(100);
+              if (!thumbnailBlobUrl) {
+                setState({ status: 'error', message: 'No accessible shards for this tier' });
+              }
+            }
+            return;
+          }
+          
+          // Sort by tier descending to get highest quality first
+          matchingShards.sort((a, b) => b.tier - a.tier);
+          
+          // Take the highest tier group
+          const bestTier = matchingShards[0]!.tier;
+          const shardsToDecrypt = matchingShards.filter(s => s.tier === bestTier);
+          
+          // Get the appropriate tier key for decryption
+          const decryptionKey = getTierKey 
+            ? getTierKey(photo.epochId, bestTier as AccessTierType)
+            : tierKey;
+          
+          log.debug('Decryption key lookup (legacy)', {
             photoId: photo.id,
             epochId: photo.epochId,
             bestTier,
+            hasKey: !!decryptionKey,
+            usedGetTierKey: !!getTierKey,
           });
-          if (!cancelled) {
-            setLoadProgress(100);
-            if (!thumbnailBlobUrl) {
-              setState({ status: 'error', message: 'No decryption key available for this tier' });
+          
+          if (!decryptionKey) {
+            log.warn('No decryption key for tier', { photoId: photo.id, bestTier });
+            if (!cancelled) {
+              setLoadProgress(100);
+              if (!thumbnailBlobUrl) {
+                setState({ status: 'error', message: 'No decryption key available for this tier' });
+              }
+            }
+            return;
+          }
+          
+          // Decrypt the matching shards
+          for (let i = 0; i < shardsToDecrypt.length; i++) {
+            if (cancelled) return;
+            
+            const shard = shardsToDecrypt[i]!;
+            const plaintext = await crypto.decryptShardWithTierKey(shard.data, decryptionKey);
+            decryptedChunks.push(plaintext);
+            
+            // Update progress (decrypt phase)
+            if (!cancelled) {
+              setLoadProgress(50 + ((i + 1) / shardsToDecrypt.length) * 50);
             }
           }
-          return;
         }
         
-        // Decrypt the matching shards
-        for (let i = 0; i < shardsToDecrypt.length; i++) {
-          if (cancelled) return;
-          
-          const shard = shardsToDecrypt[i]!;
-          const plaintext = await crypto.decryptShardWithTierKey(shard.data, decryptionKey);
-          decryptedChunks.push(plaintext);
-          
-          // Update progress (decrypt phase)
-          if (!cancelled) {
-            setLoadProgress(50 + ((i + 1) / shardsToDecrypt.length) * 50);
+        // If we have decrypted data, create blob URL
+        if (decryptedChunks.length > 0) {
+          // Combine chunks
+          const totalSize = decryptedChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+          const photoData = new Uint8Array(totalSize);
+          let offset = 0;
+          for (const chunk of decryptedChunks) {
+            photoData.set(chunk, offset);
+            offset += chunk.length;
           }
-        }
 
-        if (cancelled) return;
+          // Create blob URL for full-res image
+          const blob = new Blob([photoData], { type: photo.mimeType });
+          fullResBlobUrl = URL.createObjectURL(blob);
 
-        // Combine chunks
-        const totalSize = decryptedChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-        const photoData = new Uint8Array(totalSize);
-        let offset = 0;
-        for (const chunk of decryptedChunks) {
-          photoData.set(chunk, offset);
-          offset += chunk.length;
-        }
+          log.debug('Full-res photo loaded', {
+            photoId: photo.id,
+            size: totalSize,
+            mimeType: photo.mimeType,
+          });
 
-        // Create blob URL for full-res image
-        const blob = new Blob([photoData], { type: photo.mimeType });
-        fullResBlobUrl = URL.createObjectURL(blob);
-
-        log.debug('Full-res photo loaded', {
-          photoId: photo.id,
-          size: totalSize,
-          mimeType: photo.mimeType,
-        });
-
-        if (!cancelled) {
-          // Replace thumbnail with full-res
-          setState({ status: 'loaded', blobUrl: fullResBlobUrl, isFullRes: true });
-          // Revoke thumbnail URL now that we have full-res
-          if (thumbnailBlobUrl) {
-            URL.revokeObjectURL(thumbnailBlobUrl);
-            thumbnailBlobUrl = null;
+          if (!cancelled) {
+            // Replace thumbnail with full-res
+            setState({ status: 'loaded', blobUrl: fullResBlobUrl, isFullRes: true });
+            // Revoke thumbnail URL now that we have full-res
+            if (thumbnailBlobUrl) {
+              URL.revokeObjectURL(thumbnailBlobUrl);
+              thumbnailBlobUrl = null;
+            }
           }
         }
       } catch (err) {

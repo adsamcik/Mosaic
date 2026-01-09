@@ -41,8 +41,23 @@ public class ManifestsController : ControllerBase
         byte[] EncryptedMeta,
         string Signature,
         string SignerPubkey,
-        List<string> ShardIds
+        List<string> ShardIds,
+        /// <summary>
+        /// Optional tier for all shards. Defaults to 3 (Original) if not provided.
+        /// Use TieredShards for per-shard tier assignment.
+        /// </summary>
+        int? Tier = null,
+        /// <summary>
+        /// Optional list of shards with per-shard tier assignment.
+        /// If provided, takes precedence over ShardIds.
+        /// </summary>
+        List<TieredShardInfo>? TieredShards = null
     );
+
+    /// <summary>
+    /// Shard info with tier assignment
+    /// </summary>
+    public record TieredShardInfo(string ShardId, int Tier);
 
     /// <summary>
     /// Create a new manifest (photo) in an album
@@ -50,17 +65,38 @@ public class ManifestsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateManifestRequest request)
     {
-        // Parse shard IDs from strings (TUS returns IDs as hex strings without hyphens)
-        var shardGuids = new List<Guid>();
-        foreach (var shardIdStr in request.ShardIds)
+        // Build shard info list with tiers - support both legacy ShardIds and new TieredShards
+        var shardInfoList = new List<(Guid Id, int Tier)>();
+        
+        if (request.TieredShards != null && request.TieredShards.Count > 0)
         {
-            if (!Guid.TryParse(shardIdStr, out var shardGuid))
+            // New format: per-shard tier assignment
+            foreach (var tieredShard in request.TieredShards)
             {
-                _logger.LogWarning("Invalid shard ID format: {ShardId}", shardIdStr);
-                return BadRequest($"Invalid shard ID format: {shardIdStr}");
+                if (!Guid.TryParse(tieredShard.ShardId, out var shardGuid))
+                {
+                    _logger.LogWarning("Invalid shard ID format: {ShardId}", tieredShard.ShardId);
+                    return BadRequest($"Invalid shard ID format: {tieredShard.ShardId}");
+                }
+                shardInfoList.Add((shardGuid, tieredShard.Tier));
             }
-            shardGuids.Add(shardGuid);
         }
+        else
+        {
+            // Legacy format: all shards share the same tier
+            var defaultTier = request.Tier ?? (int)ShardTier.Original;
+            foreach (var shardIdStr in request.ShardIds)
+            {
+                if (!Guid.TryParse(shardIdStr, out var shardGuid))
+                {
+                    _logger.LogWarning("Invalid shard ID format: {ShardId}", shardIdStr);
+                    return BadRequest($"Invalid shard ID format: {shardIdStr}");
+                }
+                shardInfoList.Add((shardGuid, defaultTier));
+            }
+        }
+
+        var shardGuids = shardInfoList.Select(s => s.Id).ToList();
 
         _logger.LogInformation("Creating manifest for album {AlbumId}, shardIds count: {Count}, shardIds: {ShardIds}",
             request.AlbumId, shardGuids.Count, string.Join(",", shardGuids));
@@ -162,9 +198,10 @@ public class ManifestsController : ControllerBase
             _db.Manifests.Add(manifest);
 
             // 6. Link shards and mark ACTIVE
-            for (int i = 0; i < shardGuids.Count; i++)
+            for (int i = 0; i < shardInfoList.Count; i++)
             {
-                var shard = shards.First(s => s.Id == shardGuids[i]);
+                var (shardId, tier) = shardInfoList[i];
+                var shard = shards.First(s => s.Id == shardId);
                 shard.Status = ShardStatus.ACTIVE;
                 shard.StatusUpdatedAt = DateTime.UtcNow;
                 shard.PendingExpiresAt = null;
@@ -173,7 +210,8 @@ public class ManifestsController : ControllerBase
                 {
                     ManifestId = manifest.Id,
                     ShardId = shard.Id,
-                    ChunkIndex = i
+                    ChunkIndex = i,
+                    Tier = tier
                 });
             }
 
@@ -242,7 +280,10 @@ public class ManifestsController : ControllerBase
             manifest.EncryptedMeta,
             manifest.Signature,
             manifest.SignerPubkey,
+            // Legacy format for backward compatibility
             ShardIds = manifest.ManifestShards.Select(ms => ms.ShardId),
+            // New format with tier info
+            Shards = manifest.ManifestShards.Select(ms => new { ms.ShardId, ms.Tier }),
             manifest.CreatedAt,
             manifest.UpdatedAt
         });
