@@ -6,8 +6,10 @@ import { createLogger } from './logger';
 import { getThumbnailQualityValue } from './settings-service';
 import {
     generateThumbnail,
+    generateTieredShards,
     isSupportedImageType,
 } from './thumbnail-generator';
+import type { TieredShardIds } from '../workers/types';
 
 const log = createLogger('upload-queue');
 
@@ -53,6 +55,15 @@ export interface CompletedShard {
   index: number;
   shardId: string;
   sha256: string; // Base64url hash for verification
+  /** Shard tier: 1=thumb, 2=preview, 3=original */
+  tier?: number;
+}
+
+/** Tiered shard result from upload (3 tiers) */
+export interface TieredUploadResult {
+  thumbnail: CompletedShard;
+  preview: CompletedShard;
+  original: CompletedShard[];
 }
 
 /** In-memory upload task */
@@ -83,6 +94,8 @@ export interface UploadTask {
   originalHeight?: number;
   /** BlurHash string for instant placeholder (~30 chars) */
   blurhash?: string;
+  /** Tiered shard IDs for the completed upload */
+  tieredShards?: TieredShardIds;
 }
 
 /** Persisted task state (for resume after reload) */
@@ -122,7 +135,7 @@ interface UploadQueueDB {
 }
 
 type ProgressCallback = (task: UploadTask) => void;
-type CompleteCallback = (task: UploadTask, shardIds: string[]) => void;
+type CompleteCallback = (task: UploadTask, shardIds: string[], tieredShards?: TieredShardIds) => void;
 type ErrorCallback = (task: UploadTask, error: Error) => void;
 
 /**
@@ -275,96 +288,14 @@ class UploadQueue {
       task.currentAction = 'pending';
       await this.updatePersistedTask(task.id, { status: 'uploading' });
 
-      // Generate thumbnail if not already done (resume support)
-      if (!task.thumbnailBase64 && isSupportedImageType(task.file.type)) {
-        try {
-          const quality = getThumbnailQualityValue();
-          const thumbResult = await generateThumbnail(task.file, { quality });
-          const thumbnailBase64 = uint8ArrayToBase64(thumbResult.data);
-          const thumbWidth = thumbResult.width;
-          const thumbHeight = thumbResult.height;
-          const originalWidth = thumbResult.originalWidth;
-          const originalHeight = thumbResult.originalHeight;
-          const blurhash = thumbResult.blurhash;
-
-          task.thumbnailBase64 = thumbnailBase64;
-          task.thumbWidth = thumbWidth;
-          task.thumbHeight = thumbHeight;
-          task.originalWidth = originalWidth;
-          task.originalHeight = originalHeight;
-          task.blurhash = blurhash;
-
-          // Persist thumbnail, dimensions, and blurhash for resume support
-          await this.updatePersistedTask(task.id, {
-            thumbnailBase64,
-            thumbWidth,
-            thumbHeight,
-            originalWidth,
-            originalHeight,
-            blurhash,
-          });
-        } catch (thumbError) {
-          // Log but don't fail upload if thumbnail generation fails
-          log.error('Thumbnail generation failed', thumbError);
-        }
+      // Check if this is a supported image type for tiered upload
+      if (isSupportedImageType(task.file.type)) {
+        // New tiered upload flow - generates thumb, preview, and original shards
+        await this.processTieredUpload(task);
+      } else {
+        // Legacy flow for non-image files - single original shard
+        await this.processLegacyUpload(task, crypto);
       }
-
-      const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
-      const shardIds: string[] = new Array(totalChunks);
-
-      for (let i = 0; i < totalChunks; i++) {
-        // Check if this shard was already uploaded (resume support)
-        const existing = task.completedShards.find((s) => s.index === i);
-        if (existing) {
-          shardIds[i] = existing.shardId;
-          continue;
-        }
-
-        // Read chunk from file
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, task.file.size);
-        const chunk = await task.file.slice(start, end).arrayBuffer();
-
-        // Encrypt the chunk
-        task.currentAction = 'encrypting';
-        this.onProgress?.(task);
-
-        const encrypted = await crypto.encryptShard(
-          new Uint8Array(chunk),
-          task.readKey,
-          task.epochId,
-          i
-        );
-
-        // Upload via Tus resumable protocol
-        task.currentAction = 'uploading';
-        this.onProgress?.(task);
-        const shardId = await this.tusUpload(
-          task.albumId,
-          encrypted.ciphertext,
-          encrypted.sha256,
-          i
-        );
-        shardIds[i] = shardId;
-
-        // Persist progress for resume (including hash for integrity verification)
-        task.completedShards.push({ index: i, shardId, sha256: encrypted.sha256 });
-        await this.updatePersistedTask(task.id, {
-          completedShards: task.completedShards,
-        });
-
-        // Update progress
-        task.progress = (i + 1) / totalChunks;
-        this.onProgress?.(task);
-      }
-
-      // Mark complete
-      task.status = 'complete';
-      task.currentAction = 'finalizing';
-      this.onProgress?.(task);
-      
-      await this.updatePersistedTask(task.id, { status: 'complete' });
-      this.onComplete?.(task, shardIds);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -409,6 +340,204 @@ class UploadQueue {
         }, delay);
       }
     }
+  }
+
+  /**
+   * Process tiered upload for image files.
+   * Generates and uploads thumb, preview, and original shards.
+   */
+  private async processTieredUpload(task: UploadTask): Promise<void> {
+    // Import deriveTierKeys to construct full EpochKey
+    const { deriveTierKeys } = await import('@mosaic/crypto');
+    
+    // Derive tier keys from epochSeed (stored as readKey)
+    const tierKeys = deriveTierKeys(task.readKey);
+    
+    // Construct full EpochKey for generateTieredShards
+    const epochKey = {
+      epochId: task.epochId,
+      epochSeed: task.readKey,
+      thumbKey: tierKeys.thumbKey,
+      previewKey: tierKeys.previewKey,
+      fullKey: tierKeys.fullKey,
+      // signKeypair not needed for encryption, provide empty placeholder
+      signKeypair: {
+        publicKey: new Uint8Array(32),
+        secretKey: new Uint8Array(64),
+      },
+    };
+
+    // Generate tiered shards (thumb, preview, original)
+    task.currentAction = 'encrypting';
+    this.onProgress?.(task);
+    
+    log.debug(`Generating tiered shards for ${task.file.name}`);
+    const tieredResult = await generateTieredShards(task.file, epochKey, 0);
+    
+    // Extract dimensions and thumbnail for manifest
+    task.originalWidth = tieredResult.originalWidth;
+    task.originalHeight = tieredResult.originalHeight;
+    task.thumbWidth = tieredResult.thumbnail.width;
+    task.thumbHeight = tieredResult.thumbnail.height;
+    
+    // Generate base64 thumbnail for embedded manifest preview
+    // Use the thumbnail data before encryption for fast gallery loading
+    try {
+      const quality = getThumbnailQualityValue();
+      const thumbResult = await generateThumbnail(task.file, { quality });
+      task.thumbnailBase64 = uint8ArrayToBase64(thumbResult.data);
+      task.blurhash = thumbResult.blurhash;
+    } catch (thumbError) {
+      log.error('Thumbnail generation for manifest failed', thumbError);
+    }
+    
+    // Upload all three tiers
+    task.currentAction = 'uploading';
+    this.onProgress?.(task);
+    
+    // Upload thumbnail shard (tier 1)
+    log.debug(`Uploading thumbnail shard for ${task.file.name}`);
+    const thumbShardId = await this.tusUpload(
+      task.albumId,
+      tieredResult.thumbnail.encrypted.ciphertext,
+      tieredResult.thumbnail.encrypted.sha256,
+      0
+    );
+    task.completedShards.push({
+      index: 0,
+      shardId: thumbShardId,
+      sha256: tieredResult.thumbnail.encrypted.sha256,
+      tier: 1,
+    });
+    task.progress = 0.33;
+    this.onProgress?.(task);
+    
+    // Upload preview shard (tier 2)
+    log.debug(`Uploading preview shard for ${task.file.name}`);
+    const previewShardId = await this.tusUpload(
+      task.albumId,
+      tieredResult.preview.encrypted.ciphertext,
+      tieredResult.preview.encrypted.sha256,
+      0
+    );
+    task.completedShards.push({
+      index: 0,
+      shardId: previewShardId,
+      sha256: tieredResult.preview.encrypted.sha256,
+      tier: 2,
+    });
+    task.progress = 0.66;
+    this.onProgress?.(task);
+    
+    // Upload original shard (tier 3)
+    log.debug(`Uploading original shard for ${task.file.name}`);
+    const originalShardId = await this.tusUpload(
+      task.albumId,
+      tieredResult.original.encrypted.ciphertext,
+      tieredResult.original.encrypted.sha256,
+      0
+    );
+    task.completedShards.push({
+      index: 0,
+      shardId: originalShardId,
+      sha256: tieredResult.original.encrypted.sha256,
+      tier: 3,
+    });
+    task.progress = 1;
+    this.onProgress?.(task);
+    
+    // Build tiered shard IDs for manifest
+    const tieredShards: TieredShardIds = {
+      thumbnail: { shardId: thumbShardId, sha256: tieredResult.thumbnail.encrypted.sha256 },
+      preview: { shardId: previewShardId, sha256: tieredResult.preview.encrypted.sha256 },
+      original: [{ shardId: originalShardId, sha256: tieredResult.original.encrypted.sha256 }],
+    };
+    task.tieredShards = tieredShards;
+    
+    // Persist and complete - only include defined values to satisfy exactOptionalPropertyTypes
+    const persistedUpdate: Partial<PersistedTask> = {
+      status: 'complete',
+      completedShards: task.completedShards,
+      thumbWidth: task.thumbWidth,
+      thumbHeight: task.thumbHeight,
+      originalWidth: task.originalWidth,
+      originalHeight: task.originalHeight,
+    };
+    if (task.thumbnailBase64) persistedUpdate.thumbnailBase64 = task.thumbnailBase64;
+    if (task.blurhash) persistedUpdate.blurhash = task.blurhash;
+    
+    await this.updatePersistedTask(task.id, persistedUpdate);
+    
+    task.status = 'complete';
+    task.currentAction = 'finalizing';
+    this.onProgress?.(task);
+    
+    // Legacy shardIds for backward compatibility
+    const shardIds = [thumbShardId, previewShardId, originalShardId];
+    this.onComplete?.(task, shardIds, tieredShards);
+  }
+
+  /**
+   * Process legacy upload for non-image files.
+   * Uploads file as chunks of original shards only.
+   */
+  private async processLegacyUpload(task: UploadTask, crypto: Awaited<ReturnType<typeof getCryptoClient>>): Promise<void> {
+    const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
+    const shardIds: string[] = new Array(totalChunks);
+
+    for (let i = 0; i < totalChunks; i++) {
+      // Check if this shard was already uploaded (resume support)
+      const existing = task.completedShards.find((s) => s.index === i);
+      if (existing) {
+        shardIds[i] = existing.shardId;
+        continue;
+      }
+
+      // Read chunk from file
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, task.file.size);
+      const chunk = await task.file.slice(start, end).arrayBuffer();
+
+      // Encrypt the chunk
+      task.currentAction = 'encrypting';
+      this.onProgress?.(task);
+
+      const encrypted = await crypto.encryptShard(
+        new Uint8Array(chunk),
+        task.readKey,
+        task.epochId,
+        i
+      );
+
+      // Upload via Tus resumable protocol
+      task.currentAction = 'uploading';
+      this.onProgress?.(task);
+      const shardId = await this.tusUpload(
+        task.albumId,
+        encrypted.ciphertext,
+        encrypted.sha256,
+        i
+      );
+      shardIds[i] = shardId;
+
+      // Persist progress for resume (including hash for integrity verification)
+      task.completedShards.push({ index: i, shardId, sha256: encrypted.sha256, tier: 3 });
+      await this.updatePersistedTask(task.id, {
+        completedShards: task.completedShards,
+      });
+
+      // Update progress
+      task.progress = (i + 1) / totalChunks;
+      this.onProgress?.(task);
+    }
+
+    // Mark complete
+    task.status = 'complete';
+    task.currentAction = 'finalizing';
+    this.onProgress?.(task);
+    
+    await this.updatePersistedTask(task.id, { status: 'complete' });
+    this.onComplete?.(task, shardIds);
   }
 
   private async updatePersistedTask(
