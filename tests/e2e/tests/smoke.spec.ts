@@ -27,10 +27,11 @@ import {
 import { BrowserContext, Page } from '@playwright/test';
 
 // Extend the base test to provide a shared context across all smoke tests
+// Note: Using test scope since serial mode handles state persistence
 const test = base.extend<{
   sharedContext: { context: BrowserContext; page: Page; username: string };
 }>({
-  sharedContext: [async ({ browser }, use) => {
+  sharedContext: async ({ browser }, use) => {
     const username = `smoke-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -47,7 +48,7 @@ const test = base.extend<{
     await use({ context, page, username });
     
     await context.close();
-  }, { scope: 'worker' }],
+  },
 });
 
 // Use serial mode - tests share state

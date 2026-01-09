@@ -39,6 +39,16 @@ export default defineConfig(({ mode }) => {
                 proxyReq.setHeader('Remote-User', req.headers['remote-user']);
               }
             });
+            // Log proxy responses for debugging
+            proxy.on('proxyRes', (proxyRes, req) => {
+              if (proxyRes.statusCode && proxyRes.statusCode >= 400) {
+                console.log(`[Vite Proxy] ${req.method} ${req.url} -> ${proxyRes.statusCode}`);
+              }
+            });
+            // Log proxy errors for debugging
+            proxy.on('error', (err, req, res) => {
+              console.error('[Vite Proxy Error]', err.message, req.url);
+            });
           },
         },
       },

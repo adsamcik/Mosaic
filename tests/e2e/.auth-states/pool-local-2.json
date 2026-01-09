@@ -2,10 +2,10 @@
   "cookies": [
     {
       "name": "mosaic_session",
-      "value": "CEgRe0XJvolIt9tfzYL7aJYWzIJQ67LsMF0LwpsU%2BA0%3D",
+      "value": "Peakxj1YX1CXWKC7V0TAFJ6Yyfdvvxu7ixLZ9Wadhlc%3D",
       "domain": "localhost",
       "path": "/api",
-      "expires": 1768503317.441533,
+      "expires": 1768512172.508281,
       "httpOnly": true,
       "secure": false,
       "sameSite": "Lax"

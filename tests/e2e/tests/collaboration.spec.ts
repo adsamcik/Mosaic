@@ -83,22 +83,21 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
     });
 
     test('P1-COLLAB-3: uploaded photo visible to album members', async ({ collaboration }) => {
-      const { alice, bob, generateAlbumName, trackAlbum } = collaboration;
+      const { alice, generateAlbumName } = collaboration;
 
       // Login Alice first to initialize crypto keys
       await loginUser(alice, TEST_PASSWORD);
 
       // Create album via UI (creates proper crypto keys for upload)
       const albumName = generateAlbumName('shared');
-      const albumId = await createAlbumViaUI(alice.page, albumName);
-      trackAlbum(albumId, alice.email);
+      await createAlbumViaUI(alice.page, albumName);
 
       // Now we're in the gallery after createAlbumViaUI
       const aliceGallery = new GalleryPage(alice.page);
       await aliceGallery.waitForLoad();
 
       // Upload photo
-      const testImage = generateTestImage('tiny');
+      const testImage = generateTestImage();
       await aliceGallery.uploadPhoto(testImage, 'shared-photo.png');
       await aliceGallery.expectPhotoCount(1);
 

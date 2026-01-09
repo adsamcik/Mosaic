@@ -13,7 +13,7 @@
 
 import { test as base, expect, type Page, type ConsoleMessage, type Request, type Response } from '@playwright/test';
 import { execSync } from 'child_process';
-import { getAuthStatePath, POOL_USERS, hasAuthState } from './auth-setup';
+import { POOL_USERS } from './auth-setup';
 
 /**
  * Log capture types
@@ -184,44 +184,39 @@ export const test = base.extend<{
   },
 
   /**
-   * Pre-authenticated pool user page.
-   * Uses stored browser state from global setup for faster login.
-   * The user is already registered, so we just need to enter the password.
+   * Pool user fixture for fast test execution.
+   * 
+   * Pool users are pre-registered in global-setup, so we just need to login.
+   * IMPORTANT: We do NOT use stored browser state because:
+   * - Crypto keys are stored in OPFS (browser-specific), not in storageState
+   * - A fresh login is required to derive and store crypto keys in each context
+   * 
+   * This is still faster than unique users because:
+   * - No registration flow (user exists)
+   * - Login is faster than register (no key derivation from scratch)
    */
   poolUser: async ({ browser }, use) => {
     const user = getNextPoolUser();
-    const statePath = getAuthStatePath(user.stateFile);
+    console.log(`[Fixture] Using pool user: ${user.username}`);
     
-    let context;
-    let isRegistered = false;
-    
-    if (hasAuthState(user.stateFile)) {
-      // Load state with encrypted keys - user is registered
-      context = await browser.newContext({ storageState: statePath });
-      isRegistered = true;
-      console.log(`[Fixture] Loaded auth state for ${user.username} (pre-registered)`);
-    } else {
-      // No stored state, need to register from scratch
-      context = await browser.newContext();
-      console.log(`[Fixture] No auth state for ${user.username}, will register`);
-    }
-    
+    // Always create a fresh browser context (don't use stored state)
+    // The OPFS/IndexedDB is context-specific and can't be shared
+    const context = await browser.newContext();
     const page = await context.newPage();
+    
     await page.goto('/');
     
     const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
     
-    if (isRegistered) {
-      // User is already registered, just login with password
-      await loginPage.login(TEST_PASSWORD, user.username);
-    } else {
-      // Need to register first
-      await loginPage.loginOrRegister(TEST_PASSWORD, user.username);
-    }
+    // Use loginOrRegister to handle both cases:
+    // - User exists: login succeeds
+    // - User doesn't exist (fresh DB): register succeeds
+    await loginPage.loginOrRegister(TEST_PASSWORD, user.username);
     
-    // Wait for app shell
+    // Wait for app shell - confirms login and crypto init complete
     await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 60000 });
+    console.log(`[Fixture] Pool user ${user.username} ready`);
     
     await use({ page, username: user.username });
     
@@ -700,6 +695,28 @@ export class GalleryPage {
 
   get emptyState() {
     return this.page.getByText(/no photos|upload|empty/i);
+  }
+
+  /**
+   * Just set a file on the upload input without waiting for photo to appear.
+   * Use this with page.waitForResponse() when working around the sync bug.
+   */
+  async setFileInput(imageBuffer: Buffer, filename = 'test.png') {
+    // Wait for upload button to be visible and enabled
+    const uploadButton = this.page.getByTestId('upload-button');
+    await expect(uploadButton).toBeVisible({ timeout: 10000 });
+    await expect(uploadButton).toBeEnabled({ timeout: 10000 });
+    
+    // Use the testid to find the hidden file input
+    const fileInput = this.page.getByTestId('upload-input');
+    await expect(fileInput).toBeAttached({ timeout: 10000 });
+    
+    // Set files on the hidden input
+    await fileInput.setInputFiles({
+      name: filename,
+      mimeType: 'image/png',
+      buffer: imageBuffer,
+    });
   }
 
   async uploadPhoto(imageBuffer: Buffer, filename = 'test.png') {

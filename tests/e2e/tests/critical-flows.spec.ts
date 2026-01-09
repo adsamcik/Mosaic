@@ -259,7 +259,20 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
   test('P0-3b: uploaded photo persists after page reload', async ({
     poolUser,
   }) => {
+    // Use poolUser like P0-3 (which works reliably)
     const { page, username } = poolUser;
+
+    // Enable console logging for debugging
+    page.on('console', msg => {
+      if (msg.type() === 'error' || msg.text().includes('[Sync]') || msg.text().includes('photo')) {
+        console.log(`[Browser ${msg.type()}] ${msg.text()}`);
+      }
+    });
+    page.on('response', response => {
+      if (response.url().includes('/api/') && response.status() >= 400) {
+        console.log(`[API Error] ${response.status()} ${response.url()}`);
+      }
+    });
 
     await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
 
@@ -267,24 +280,28 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
     const appShell = new AppShell(page);
     await appShell.createAlbum();
     const createDialog = new CreateAlbumDialogPage(page);
-    await createDialog.createAlbum('Photo Persist Test');
+    const albumName = `Persist Test ${Date.now()}`;
+    await createDialog.createAlbum(albumName);
 
     // Wait for album and click into it
-    const albumCard = page.getByTestId('album-card').first();
+    const albumCard = page.getByTestId('album-card').filter({ hasText: albumName });
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
     const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
-    // Upload photo
+    // Upload photo using the proven uploadPhoto method
     const testImage = generateTestImage();
     await gallery.uploadPhoto(testImage, 'persistent-photo.png');
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
 
     const photoCountBefore = await gallery.photos.count();
+    expect(photoCountBefore).toBe(1);
+    console.log('[Test] Photo uploaded successfully, count before reload:', photoCountBefore);
 
-    // Reload page
+    // Reload page - this is the persistence test
+    console.log('[Test] Reloading page...');
     await page.reload();
 
     // Wait for either login form or app shell
@@ -292,93 +309,100 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
     await expect(
       page.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
     ).toBeVisible({ timeout: 30000 });
+    console.log('[Test] Page reloaded, checking login state...');
 
     // Check if we need to re-login
     const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
     if (needsLogin) {
+      console.log('[Test] Re-login required, logging in...');
       await loginPage.login(TEST_CONSTANTS.PASSWORD, username);
       await loginPage.expectLoginSuccess();
-    }
-
-    // Now wait for app shell to be ready
-    await appShell.waitForLoad();
-
-    // Check if we're still in gallery view (photo persisted AND route restored)
-    const isInGallery = await gallery.photos.first().isVisible({ timeout: 3000 }).catch(() => false);
-    
-    if (isInGallery) {
-      // Great! The photo is already visible - verify persistence directly
-      const photoCountAfter = await gallery.photos.count();
-      expect(photoCountAfter).toBe(photoCountBefore);
     } else {
-      // Navigate to album list first, then to the album
-      const card = page.getByTestId('album-card').first();
-      await expect(card).toBeVisible({ timeout: 30000 });
-      await card.click();
-
-      // Wait for gallery and verify photo still exists
-      await gallery.waitForLoad();
-      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
-
-      const photoCountAfter = await gallery.photos.count();
-      expect(photoCountAfter).toBe(photoCountBefore);
+      console.log('[Test] No re-login needed');
     }
+
+    // Wait for app shell to be ready
+    await appShell.waitForLoad();
+    console.log('[Test] App shell loaded');
+
+    // Wait a moment for sync to complete
+    await page.waitForTimeout(3000);
+    console.log('[Test] Waited 3s for sync');
+
+    // Click Albums button in header to go to album list
+    const albumsButton = page.getByRole('button', { name: 'Albums' });
+    await expect(albumsButton).toBeVisible({ timeout: 10000 });
+    console.log('[Test] Clicking Albums button...');
+    await albumsButton.click();
+
+    // Wait for album list and find our specific album
+    const albumCardAfterReload = page.getByTestId('album-card').filter({ hasText: albumName });
+    await expect(albumCardAfterReload).toBeVisible({ timeout: 30000 });
+    console.log('[Test] Found album card after reload, clicking...');
+    await albumCardAfterReload.click();
+
+    // Wait for gallery and verify photo persisted
+    await gallery.waitForLoad();
+    console.log('[Test] Gallery loaded, waiting for photo...');
+    
+    // Wait longer for sync to complete after entering album
+    await page.waitForTimeout(5000);
+    console.log('[Test] Waited 5s for photo sync');
+
+    await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+
+    const photoCountAfter = await gallery.photos.count();
+    expect(photoCountAfter).toBe(1);
   });
 
   test('P0-3c: multiple photos can be uploaded', async ({
     poolUser,
   }) => {
+    // Use poolUser like P0-3 (which works reliably)
     const { page } = poolUser;
 
     await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
-    console.log('[P0-3c] App shell visible');
 
     // Create album through browser UI with unique name
     const albumName = `Multi Photo Test ${Date.now()}`;
-    console.log(`[P0-3c] Creating album: ${albumName}`);
     const appShell = new AppShell(page);
     await appShell.createAlbum();
-    console.log('[P0-3c] Create album button clicked, waiting for dialog');
     const createDialog = new CreateAlbumDialogPage(page);
     await createDialog.createAlbum(albumName);
-    console.log('[P0-3c] Album created, looking for album card');
 
-    // Click the newly created album by name (not first())
+    // Click the newly created album by name
     const albumCard = page.getByTestId('album-card').filter({ hasText: albumName });
     await expect(albumCard).toBeVisible({ timeout: 30000 });
-    console.log('[P0-3c] Album card visible, clicking');
     await albumCard.click();
-    console.log('[P0-3c] Album card clicked, waiting for gallery');
 
     const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
-    console.log('[P0-3c] Gallery loaded');
 
     // Verify album is empty initially
     const initialCount = await gallery.photos.count();
-    console.log(`[P0-3c] Initial photo count: ${initialCount}`);
     expect(initialCount).toBe(0);
 
-    // Upload multiple photos
+    // Upload multiple photos using the proven uploadPhoto method
     const testImage = generateTestImage();
 
-    console.log('[P0-3c] Uploading photo 1');
+    // Upload photo 1
     await gallery.uploadPhoto(testImage, 'photo1.png');
-    await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
-    console.log('[P0-3c] Photo 1 uploaded and visible');
+    await expect(gallery.photos.first()).toBeVisible({ timeout: 30000 });
+    expect(await gallery.photos.count()).toBeGreaterThanOrEqual(1);
 
-    console.log('[P0-3c] Uploading photo 2');
+    // Upload photo 2
     await gallery.uploadPhoto(testImage, 'photo2.png');
     await expect(async () => {
       const count = await gallery.photos.count();
       expect(count).toBeGreaterThanOrEqual(2);
-    }).toPass({ timeout: 60000 });
+    }).toPass({ timeout: 30000 });
 
+    // Upload photo 3
     await gallery.uploadPhoto(testImage, 'photo3.png');
     await expect(async () => {
       const count = await gallery.photos.count();
       expect(count).toBeGreaterThanOrEqual(3);
-    }).toPass({ timeout: 60000 });
+    }).toPass({ timeout: 30000 });
   });
 });
 
@@ -414,7 +438,7 @@ test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @
     const aliceGallery = new GalleryPage(alice);
     await aliceGallery.waitForLoad();
 
-    // Step 2: Alice uploads a photo
+    // Step 2: Alice uploads a photo using the proven uploadPhoto method
     const testImage = generateTestImage();
     await aliceGallery.uploadPhoto(testImage, 'shared-photo.png');
     await expect(aliceGallery.photos.first()).toBeVisible({ timeout: 60000 });
