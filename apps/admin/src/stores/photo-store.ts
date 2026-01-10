@@ -73,6 +73,20 @@ export interface PhotoStoreActions {
   confirmDeleted: (albumId: string, assetId: string) => void;
   revertDelete: (albumId: string, assetId: string) => void;
   
+  // Server sync lifecycle (from sync-coordinator)
+  addStableFromServer: (
+    albumId: string,
+    assetId: string,
+    thumbnailUrl?: string,
+    createdAt?: Date
+  ) => void;
+  updatePhotoFromServer: (
+    albumId: string,
+    assetId: string,
+    thumbnailUrl?: string,
+    createdAt?: Date
+  ) => void;
+  
   // Selectors
   getAlbumState: (albumId: string) => AlbumPhotoState | undefined;
   getPhoto: (albumId: string, assetId: string) => PhotoItem | undefined;
@@ -310,6 +324,62 @@ export const usePhotoStore = create<PhotoStore>()(
         if (item && item.status === 'deleting') {
           item.status = item.previousStatus ?? 'stable';
           delete item.previousStatus;
+        }
+      });
+    },
+
+    // ------------------------------------------------------------------------
+    // Server Sync Lifecycle (from sync-coordinator)
+    // ------------------------------------------------------------------------
+
+    addStableFromServer: (
+      albumId: string,
+      assetId: string,
+      thumbnailUrl?: string,
+      createdAt?: Date
+    ) => {
+      set((state) => {
+        const album = state.albums.get(albumId);
+        if (!album) return;
+        
+        // Don't overwrite existing items
+        if (album.items.has(assetId)) return;
+        
+        const newItem: PhotoItem = {
+          assetId,
+          albumId,
+          status: 'stable',
+        };
+        
+        if (thumbnailUrl !== undefined) {
+          newItem.thumbnailUrl = thumbnailUrl;
+        }
+        if (createdAt !== undefined) {
+          newItem.createdAt = createdAt;
+        }
+        
+        album.items.set(assetId, newItem);
+      });
+    },
+
+    updatePhotoFromServer: (
+      albumId: string,
+      assetId: string,
+      thumbnailUrl?: string,
+      createdAt?: Date
+    ) => {
+      set((state) => {
+        const album = state.albums.get(albumId);
+        const item = album?.items.get(assetId);
+        
+        // Only update stable items
+        if (item && item.status === 'stable') {
+          if (thumbnailUrl !== undefined) {
+            item.thumbnailUrl = thumbnailUrl;
+          }
+          if (createdAt !== undefined) {
+            item.createdAt = createdAt;
+          }
         }
       });
     },

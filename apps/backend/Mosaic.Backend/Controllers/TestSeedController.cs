@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using System.Text.Json;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -308,10 +309,150 @@ public class TestSeedController : ControllerBase
     }
 
     /// <summary>
+    /// Session sliding expiry duration (matches AuthController).
+    /// </summary>
+    private static readonly TimeSpan SessionSlidingExpiry = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// Creates a user with full crypto setup AND returns a valid session cookie.
+    /// This allows E2E tests to bypass browser-based registration/login for non-auth tests.
+    /// 
+    /// The frontend still needs to unlock the crypto vault with the password, but this
+    /// endpoint eliminates the need for browser automation during user creation.
+    /// </summary>
+    /// <param name="request">The authenticated user creation request.</param>
+    /// <returns>User info, session cookie (set in response), and salts.</returns>
+    /// <response code="200">Returns user info with session cookie set in response headers.</response>
+    /// <response code="400">Invalid request parameters.</response>
+    /// <response code="404">Environment is not Development or Testing.</response>
+    [HttpPost("create-authenticated-user")]
+    [ProducesResponseType(typeof(CreateAuthenticatedUserResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CreateAuthenticatedUser(
+        [FromBody] CreateAuthenticatedUserRequest request)
+    {
+        if (!IsTestEnvironment())
+        {
+            return NotFound();
+        }
+
+        // Validate email format
+        if (string.IsNullOrWhiteSpace(request.Email))
+        {
+            return BadRequest(new ErrorResponse("Email is required"));
+        }
+
+        if (!request.Email.EndsWith(E2EEmailSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new ErrorResponse($"Email must end with {E2EEmailSuffix}"));
+        }
+
+        _logger.LogInformation("Creating authenticated E2E test user: {Email}", request.Email);
+
+        // Check if user already exists
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == request.Email);
+        bool wasCreated = false;
+
+        if (user == null)
+        {
+            // Create new user with crypto setup
+            user = new User
+            {
+                Id = Guid.CreateVersion7(),
+                AuthSub = request.Email,
+                IdentityPubkey = request.IdentityPubkey ?? "",
+                AuthPubkey = request.AuthPubkey,
+                WrappedAccountKey = request.WrappedAccountKey,
+                UserSalt = FromBase64Url(request.UserSalt) ?? RandomNumberGenerator.GetBytes(16),
+                AccountSalt = FromBase64Url(request.AccountSalt) ?? RandomNumberGenerator.GetBytes(16),
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _db.Users.Add(user);
+
+            // Create quota
+            _db.UserQuotas.Add(new UserQuota
+            {
+                UserId = user.Id,
+                MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes", 10L * 1024 * 1024 * 1024)
+            });
+
+            await _db.SaveChangesAsync();
+            wasCreated = true;
+
+            _logger.LogInformation("Created new E2E test user: {Email} with Id: {UserId}", request.Email, user.Id);
+        }
+        else
+        {
+            // User exists - update crypto keys if provided
+            if (!string.IsNullOrEmpty(request.IdentityPubkey))
+            {
+                user.IdentityPubkey = request.IdentityPubkey;
+            }
+            if (request.AuthPubkey != null)
+            {
+                user.AuthPubkey = request.AuthPubkey;
+            }
+            if (request.WrappedAccountKey != null)
+            {
+                user.WrappedAccountKey = request.WrappedAccountKey;
+            }
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation("Updated existing E2E test user: {Email}", request.Email);
+        }
+
+        // Create a session for this user (bypass signature verification for tests)
+        var sessionToken = RandomNumberGenerator.GetBytes(32);
+        var sessionHash = System.Security.Cryptography.SHA256.HashData(sessionToken);
+
+        var session = new Session
+        {
+            Id = Guid.CreateVersion7(),
+            UserId = user.Id,
+            TokenHash = sessionHash,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.Add(SessionSlidingExpiry),
+            LastSeenAt = DateTime.UtcNow
+        };
+
+        _db.Sessions.Add(session);
+        await _db.SaveChangesAsync();
+
+        // Set the session cookie in response
+        var isSecure = Request.IsHttps || Request.Headers.ContainsKey("X-Forwarded-Proto");
+        Response.Cookies.Append("mosaic_session", Convert.ToBase64String(sessionToken), new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = isSecure,
+            SameSite = isSecure ? SameSiteMode.None : SameSiteMode.Lax,
+            Path = "/api",
+            MaxAge = SessionSlidingExpiry
+        });
+
+        _logger.LogInformation("Created session for E2E test user: {Email}", request.Email);
+
+        return Ok(new CreateAuthenticatedUserResponse(
+            user.Id,
+            user.AuthSub,
+            wasCreated,
+            ToBase64Url(user.UserSalt ?? []),
+            ToBase64Url(user.AccountSalt ?? []),
+            Convert.ToBase64String(sessionToken)
+        ));
+    }
+
+    /// <summary>
     /// Convert base64url string to bytes
     /// </summary>
-    private static byte[]? FromBase64Url(string base64Url)
+    private static byte[]? FromBase64Url(string? base64Url)
     {
+        if (string.IsNullOrEmpty(base64Url))
+        {
+            return null;
+        }
+
         try
         {
             // Restore base64 padding
@@ -331,6 +472,17 @@ public class TestSeedController : ControllerBase
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Convert bytes to base64url string
+    /// </summary>
+    private static string ToBase64Url(byte[] bytes)
+    {
+        return Convert.ToBase64String(bytes)
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
     }
 
     #region Request/Response DTOs
@@ -386,6 +538,43 @@ public class TestSeedController : ControllerBase
     /// </summary>
     /// <param name="Error">The error message.</param>
     public record ErrorResponse(string Error);
+
+    /// <summary>
+    /// Request for the create-authenticated-user endpoint.
+    /// Creates a user with full crypto setup and returns a session cookie.
+    /// </summary>
+    /// <param name="Email">Email address for the user. Must end with @e2e.local.</param>
+    /// <param name="IdentityPubkey">Base64-encoded Ed25519 identity public key (optional).</param>
+    /// <param name="AuthPubkey">Base64-encoded Ed25519 auth public key for LocalAuth (optional).</param>
+    /// <param name="WrappedAccountKey">Encrypted account key wrapped by L1 key (optional).</param>
+    /// <param name="UserSalt">Base64url-encoded user salt for L0 derivation (optional, generated if not provided).</param>
+    /// <param name="AccountSalt">Base64url-encoded account salt for L1 derivation (optional, generated if not provided).</param>
+    public record CreateAuthenticatedUserRequest(
+        string Email,
+        string? IdentityPubkey = null,
+        string? AuthPubkey = null,
+        byte[]? WrappedAccountKey = null,
+        string? UserSalt = null,
+        string? AccountSalt = null
+    );
+
+    /// <summary>
+    /// Response for the create-authenticated-user endpoint.
+    /// </summary>
+    /// <param name="Id">The user's ID.</param>
+    /// <param name="Email">The user's email/AuthSub.</param>
+    /// <param name="WasCreated">True if user was created, false if it already existed.</param>
+    /// <param name="UserSalt">Base64url-encoded user salt (for localStorage).</param>
+    /// <param name="AccountSalt">Base64url-encoded account salt (for L1 derivation).</param>
+    /// <param name="SessionToken">Base64-encoded session token (also set in cookie).</param>
+    public record CreateAuthenticatedUserResponse(
+        Guid Id,
+        string Email,
+        bool WasCreated,
+        string UserSalt,
+        string AccountSalt,
+        string SessionToken
+    );
 
     #endregion
 }

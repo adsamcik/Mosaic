@@ -167,8 +167,17 @@ async function globalSetup(): Promise<void> {
   await verifyCOOPCOEPHeaders();
   
   // Pre-authenticate pool users (saves browser state for fast test startup)
-  console.log('[Global Setup] Pre-authenticating pool users...');
-  await setupPoolUsers();
+  // This is optional - the poolUser fixture will register/login fresh if needed
+  console.log('[Global Setup] Pre-authenticating pool users (optional, 30s timeout)...');
+  try {
+    await Promise.race([
+      setupPoolUsers(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth setup timeout')), 30000))
+    ]);
+  } catch (error) {
+    console.warn(`[Global Setup] Auth setup skipped: ${error instanceof Error ? error.message : error}`);
+    console.log('[Global Setup] Tests will register/login pool users on demand');
+  }
 
   console.log('[Global Setup] Complete!');
 }

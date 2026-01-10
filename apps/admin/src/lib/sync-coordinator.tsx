@@ -325,35 +325,18 @@ class SyncCoordinator {
     }
     
     // Process new photos (from other clients or server)
-    if (delta.added.length > 0) {
-      const currentItems = store.albums.get(albumId)?.items;
-      for (const photo of delta.added) {
-        // Don't add if already exists
-        if (currentItems?.has(photo.id)) continue;
-        
-        // Add as stable item via completeFetch-style logic
-        // We'll manually set via direct store access
-        store.initAlbum(albumId);
-        const albumState = store.albums.get(albumId);
-        if (albumState) {
-          const thumbnailUrl = photo.thumbnail 
-            ? `data:image/jpeg;base64,${photo.thumbnail}` 
-            : undefined;
-          
-          const newItem: PhotoItem = {
-            assetId: photo.assetId,
-            albumId,
-            status: 'stable',
-          };
-          
-          if (thumbnailUrl !== undefined) {
-            newItem.thumbnailUrl = thumbnailUrl;
-          }
-          newItem.createdAt = new Date(photo.createdAt);
-          
-          albumState.items.set(photo.id, newItem);
-        }
-      }
+    for (const photo of delta.added) {
+      // Add via proper store action to avoid Immer mutation errors
+      const thumbnailUrl = photo.thumbnail 
+        ? `data:image/jpeg;base64,${photo.thumbnail}` 
+        : undefined;
+      
+      store.addStableFromServer(
+        albumId,
+        photo.assetId,
+        thumbnailUrl,
+        new Date(photo.createdAt)
+      );
     }
     
     // Process removed photos
@@ -363,14 +346,16 @@ class SyncCoordinator {
     
     // Process updates - refresh metadata for existing stable items
     for (const photo of delta.updated) {
-      const existing = store.albums.get(albumId)?.items.get(photo.id);
-      if (existing && existing.status === 'stable') {
-        // Update in place
-        if (photo.thumbnail) {
-          existing.thumbnailUrl = `data:image/jpeg;base64,${photo.thumbnail}`;
-        }
-        existing.createdAt = new Date(photo.createdAt);
-      }
+      const thumbnailUrl = photo.thumbnail 
+        ? `data:image/jpeg;base64,${photo.thumbnail}` 
+        : undefined;
+      
+      store.updatePhotoFromServer(
+        albumId,
+        photo.assetId,
+        thumbnailUrl,
+        new Date(photo.createdAt)
+      );
     }
   }
   

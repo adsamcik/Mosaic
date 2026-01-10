@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Mosaic.Backend.Data;
@@ -7,6 +8,7 @@ using Mosaic.Backend.Services;
 using Scalar.AspNetCore;
 using tusdotnet;
 using tusdotnet.Stores;
+using System.Data.Common;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +21,8 @@ builder.Services.AddDbContext<MosaicDbContext>(options =>
     if (useSqlite)
     {
         options.UseSqlite(connectionString);
+        // Add interceptor to configure SQLite pragmas on connection open
+        options.AddInterceptors(new SqlitePragmaInterceptor());
     }
     else
     {
@@ -177,10 +181,11 @@ if (runMigrations)
     var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
     
     // SQLite uses EnsureCreated (simpler for dev), PostgreSQL uses migrations
+    // Note: SQLite pragmas (WAL mode, busy timeout) are configured via SqlitePragmaInterceptor
     if (useSqlite)
     {
         await db.Database.EnsureCreatedAsync();
-        app.Logger.LogInformation("SQLite database initialized");
+        app.Logger.LogInformation("SQLite database initialized (pragmas configured via interceptor)");
     }
     else
     {

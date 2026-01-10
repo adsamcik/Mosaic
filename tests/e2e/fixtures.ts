@@ -9,9 +9,13 @@
  * Phase 2:
  * - Added log capture infrastructure (browser console, network, backend)
  * - Added CreateAlbumDialog page object for browser-based album creation
+ * 
+ * Phase 3:
+ * - Added TestAPIClient for server-side user creation
+ * - This bypasses browser-based registration to avoid Argon2 parameter mismatches
  */
 
-import { test as base, expect, type Page, type ConsoleMessage, type Request, type Response } from '@playwright/test';
+import { test as base, expect, type Page, type ConsoleMessage, type Request, type Response, type BrowserContext } from '@playwright/test';
 import { execSync } from 'child_process';
 import { POOL_USERS } from './auth-setup';
 
@@ -138,6 +142,123 @@ export class LogCollector {
 const API_URL = process.env.API_URL || 'http://localhost:5000';
 
 /**
+ * Frontend URL
+ */
+const BASE_URL = process.env.BASE_URL || 'http://localhost:5173';
+
+/**
+ * Response from create-authenticated-user API
+ */
+interface CreateAuthenticatedUserResponse {
+  id: string;
+  email: string;
+  wasCreated: boolean;
+  userSalt: string;
+  accountSalt: string;
+  sessionToken: string;
+}
+
+/**
+ * Test API client for managing test users without browser automation.
+ * This bypasses the browser-based registration/login flow, avoiding
+ * Argon2 parameter mismatches between different browser types.
+ */
+export class TestAPIClient {
+  private apiUrl: string;
+
+  constructor(apiUrl = API_URL) {
+    this.apiUrl = apiUrl;
+  }
+
+  /**
+   * Create an authenticated user and get a session cookie.
+   * The user is created on the backend with all necessary fields.
+   * Returns the session token and user salts.
+   */
+  async createAuthenticatedUser(email: string): Promise<CreateAuthenticatedUserResponse> {
+    const response = await fetch(`${this.apiUrl}/api/test-seed/create-authenticated-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to create authenticated user: ${response.status} ${text}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Apply authentication to a browser context.
+   * This sets the session cookie and localStorage values needed for the app.
+   */
+  async applyAuthToContext(
+    context: BrowserContext,
+    authResponse: CreateAuthenticatedUserResponse
+  ): Promise<void> {
+    // Set the session cookie
+    await context.addCookies([
+      {
+        name: 'mosaic_session',
+        value: authResponse.sessionToken,
+        domain: new URL(this.apiUrl).hostname,
+        path: '/api',
+        httpOnly: true,
+        secure: false, // Development mode
+        sameSite: 'Lax',
+      },
+    ]);
+
+    // We also need to set localStorage for the app to recognize the user
+    // This is done via page.evaluate after navigation
+  }
+
+  /**
+   * Setup localStorage after page navigation.
+   * Must be called after page.goto() since localStorage is per-origin.
+   */
+  async setupLocalStorage(
+    page: Page,
+    authResponse: CreateAuthenticatedUserResponse
+  ): Promise<void> {
+    await page.evaluate(
+      ({ userSalt }) => {
+        localStorage.setItem('mosaic:userSalt', userSalt);
+      },
+      { userSalt: authResponse.userSalt }
+    );
+  }
+
+  /**
+   * Full setup: create user, apply auth to context, navigate, and setup localStorage.
+   * After this, the user only needs to enter their password to unlock the vault.
+   */
+  async setupAuthenticatedUser(
+    context: BrowserContext,
+    page: Page,
+    email: string
+  ): Promise<CreateAuthenticatedUserResponse> {
+    const authResponse = await this.createAuthenticatedUser(email);
+    await this.applyAuthToContext(context, authResponse);
+    
+    // Navigate to app
+    await page.goto(BASE_URL);
+    
+    // Setup localStorage
+    await this.setupLocalStorage(page, authResponse);
+    
+    // Reload to apply localStorage
+    await page.reload();
+    
+    return authResponse;
+  }
+}
+
+/**
  * Test password used for E2E testing
  */
 const TEST_PASSWORD = 'test-password-e2e-2024';
@@ -151,17 +272,17 @@ export function generateTestImage(): Buffer {
 }
 
 /**
- * Counter for distributing pool users across parallel tests
+ * Get pool user for a specific worker index.
+ * 
+ * IMPORTANT: We use workerIndex instead of a module-level counter because
+ * Playwright workers run in separate Node.js processes. A module-level counter
+ * would start at 0 in each process, causing all workers to use the same pool user.
+ * 
+ * Using workerIndex ensures each parallel worker gets a different pool user,
+ * preventing session conflicts and race conditions.
  */
-let poolUserIndex = 0;
-
-/**
- * Get the next pool user in round-robin fashion
- */
-function getNextPoolUser(): typeof POOL_USERS[number] {
-  const user = POOL_USERS[poolUserIndex % POOL_USERS.length];
-  poolUserIndex++;
-  return user;
+function getPoolUserByWorkerIndex(workerIndex: number): typeof POOL_USERS[number] {
+  return POOL_USERS[workerIndex % POOL_USERS.length];
 }
 
 /**
@@ -194,29 +315,65 @@ export const test = base.extend<{
    * This is still faster than unique users because:
    * - No registration flow (user exists)
    * - Login is faster than register (no key derivation from scratch)
+   * 
+   * NOTE: We use workerInfo.workerIndex to assign pool users because Playwright
+   * workers run in separate processes. This ensures each parallel worker gets
+   * a unique pool user, preventing session conflicts.
+   * 
+   * UPDATED: Now uses the test API to create users server-side, then only
+   * requires password entry to unlock the crypto vault. This avoids the
+   * Argon2 parameter mismatch between different browser types (chromium vs mobile-chrome).
    */
-  poolUser: async ({ browser }, use) => {
-    const user = getNextPoolUser();
-    console.log(`[Fixture] Using pool user: ${user.username}`);
+  poolUser: async ({ browser }, use, workerInfo) => {
+    const user = getPoolUserByWorkerIndex(workerInfo.workerIndex);
+    console.log(`[Fixture] Worker ${workerInfo.workerIndex} using pool user: ${user.username}`);
     
-    // Always create a fresh browser context (don't use stored state)
-    // The OPFS/IndexedDB is context-specific and can't be shared
+    // Create a fresh browser context
     const context = await browser.newContext();
     const page = await context.newPage();
     
-    await page.goto('/');
-    
-    const loginPage = new LoginPage(page);
-    await loginPage.waitForForm();
-    
-    // Use loginOrRegister to handle both cases:
-    // - User exists: login succeeds
-    // - User doesn't exist (fresh DB): register succeeds
-    await loginPage.loginOrRegister(TEST_PASSWORD, user.username);
-    
-    // Wait for app shell - confirms login and crypto init complete
-    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 60000 });
-    console.log(`[Fixture] Pool user ${user.username} ready`);
+    // Use the test API to create/get the user with a session cookie
+    const testApi = new TestAPIClient();
+    try {
+      const authResponse = await testApi.createAuthenticatedUser(user.username);
+      console.log(`[Fixture] Created/got user via API: ${user.username} (wasCreated: ${authResponse.wasCreated})`);
+      
+      // Apply auth to context (sets session cookie)
+      await testApi.applyAuthToContext(context, authResponse);
+      
+      // Navigate to app
+      await page.goto('/');
+      
+      // Setup localStorage with user salt
+      await testApi.setupLocalStorage(page, authResponse);
+      
+      // Reload to ensure app recognizes the session
+      await page.reload();
+      
+      // Now we should see either:
+      // 1. Password unlock form (user has session but needs to unlock vault)
+      // 2. Login form (if session cookie didn't work properly)
+      const loginPage = new LoginPage(page);
+      await loginPage.waitForForm();
+      
+      // The app should show the password form since we have a session
+      // but the crypto vault needs to be unlocked
+      // Use loginOrRegister to handle any edge case
+      await loginPage.loginOrRegister(TEST_PASSWORD, user.username);
+      
+      // Wait for app shell - confirms login and crypto init complete
+      await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 60000 });
+      console.log(`[Fixture] Pool user ${user.username} ready (worker ${workerInfo.workerIndex})`);
+      
+    } catch (apiError) {
+      console.log(`[Fixture] API setup failed, falling back to browser-based auth: ${apiError}`);
+      // Fallback to browser-based registration if API fails
+      await page.goto('/');
+      const loginPage = new LoginPage(page);
+      await loginPage.waitForForm();
+      await loginPage.loginOrRegister(TEST_PASSWORD, user.username);
+      await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 60000 });
+    }
     
     await use({ page, username: user.username });
     

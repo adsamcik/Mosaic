@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { getDbClient } from '../lib/db-client';
 import { createLogger } from '../lib/logger';
+import { syncEngine, type SyncEventDetail } from '../lib/sync-engine';
 import {
     type AlbumPhotoState,
     type PhotoItem,
@@ -198,6 +199,23 @@ export function usePhotoList(
     
     void fetchFromDb();
   }, [searchQuery, fetchFromDb]);
+
+  // Listen for sync-complete events to refresh photos
+  useEffect(() => {
+    const handleSyncComplete = (event: Event) => {
+      const detail = (event as CustomEvent<SyncEventDetail>).detail;
+      // Only refetch if this sync is for our album
+      if (detail.albumId === albumId) {
+        log.debug(`Sync complete for album ${albumId}, refreshing photos`);
+        void fetchFromDb();
+      }
+    };
+
+    syncEngine.addEventListener('sync-complete', handleSyncComplete);
+    return () => {
+      syncEngine.removeEventListener('sync-complete', handleSyncComplete);
+    };
+  }, [albumId, fetchFromDb]);
 
   // Merge pending photos with DB photos
   // Pending photos appear first, sorted by createdAt descending

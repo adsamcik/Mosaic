@@ -124,6 +124,28 @@
       "type": "npm",
       "script": "dev",
       "path": "apps/admin",
+      "options": {
+        "env": {
+          "VITE_E2E_WEAK_KEYS": "true"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\s*VITE",
+          "endsPattern": "Local:\\s+http://localhost:\\d+"
+        }
+      }
+    },
+    {
+      "label": "dev-frontend-production-crypto",
+      "type": "npm",
+      "script": "dev",
+      "path": "apps/admin",
       "isBackground": true,
       "problemMatcher": {
         "pattern": {
