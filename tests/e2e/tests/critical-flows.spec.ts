@@ -23,12 +23,12 @@ import {
 
 test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypto', () => {
   test('P0-1: complete password login initializes crypto and shows app shell @smoke', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
 
     // Step 1: Verify login form is displayed
     await loginPage.waitForForm();
@@ -50,29 +50,29 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     }
 
     // Step 3: Wait for app shell (indicates crypto worker initialized successfully)
-    await expect(authenticatedPage.getByTestId('app-shell')).toBeVisible({
+    await expect(page.getByTestId('app-shell')).toBeVisible({
       timeout: 60000,
     });
 
     // Step 4: Verify app shell has critical elements
-    const appShell = new AppShell(authenticatedPage);
+    const appShell = new AppShell(page);
     await expect(appShell.logoutButton).toBeVisible();
     await expect(appShell.albumList).toBeVisible();
   });
 
   test('P0-2: logout clears session and returns to login form @smoke', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
     // Login first
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
     await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     // Verify we're logged in
-    const appShell = new AppShell(authenticatedPage);
+    const appShell = new AppShell(page);
     await appShell.waitForLoad();
 
     // Click logout
@@ -82,21 +82,21 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     await loginPage.expectLoginFormVisible();
 
     // Verify reload keeps us on login (session was cleared)
-    await authenticatedPage.reload();
+    await page.reload();
     await loginPage.expectLoginFormVisible();
 
     // Verify we can't navigate to albums directly
-    await authenticatedPage.goto('/albums');
+    await page.goto('/albums');
     await loginPage.expectLoginFormVisible();
   });
 
   test('P0-5: wrong password shows error and does not authenticate', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
 
     // Try wrong password
@@ -109,7 +109,7 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     
     // Wait for either error message or success
     const hasError = await loginPage.errorMessage.isVisible().catch(() => false);
-    const hasAppShell = await authenticatedPage.getByTestId('app-shell').isVisible().catch(() => false);
+    const hasAppShell = await page.getByTestId('app-shell').isVisible().catch(() => false);
     
     // For a new user, initial password sets up keys, so this might succeed
     // The real test is trying a different password after initial setup
@@ -181,25 +181,25 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
   });
 
   test('P0-6: session persists during active use', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
     await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const appShell = new AppShell(authenticatedPage);
+    const appShell = new AppShell(page);
     await appShell.waitForLoad();
 
     // Navigate around the app
-    await authenticatedPage.reload();
+    await page.reload();
 
     // Wait for page to stabilize after reload
     await expect(
-      authenticatedPage.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
+      page.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
     ).toBeVisible({ timeout: 30000 });
 
     // Should still be logged in (or need to re-enter password depending on session impl)
@@ -227,7 +227,7 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
     const appShell = new AppShell(page);
     await appShell.createAlbum();
     const createDialog = new CreateAlbumDialogPage(page);
-    await createDialog.createAlbum('Photo Upload Test');
+    await createDialog.createAlbum(`Photo Upload Test ${Date.now()}`);
 
     // Navigate to album
     const albumCard = page.getByTestId('album-card').first();
@@ -428,7 +428,7 @@ test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @
     // Create album through browser UI (generates real epoch keys)
     await aliceAppShell.createAlbum();
     const createDialog = new CreateAlbumDialogPage(alice);
-    await createDialog.createAlbum('Shared Album Test');
+    await createDialog.createAlbum(`Shared Album Test ${Date.now()}`);
 
     // Navigate to album
     const aliceAlbumCard = alice.getByTestId('album-card').first();
@@ -580,10 +580,10 @@ test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
     const appShell = new AppShell(page);
     await appShell.createAlbum();
     const createDialog = new CreateAlbumDialogPage(page);
-    await createDialog.createAlbum('Album List Test 1');
+    await createDialog.createAlbum(`Album List Test 1 ${Date.now()}`);
 
     await appShell.createAlbum();
-    await createDialog.createAlbum('Album List Test 2');
+    await createDialog.createAlbum(`Album List Test 2 ${Date.now()}`);
 
     // Should show album cards
     const albumCards = page.getByTestId('album-card');
@@ -604,7 +604,7 @@ test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
     const appShell = new AppShell(page);
     await appShell.createAlbum();
     const createDialog = new CreateAlbumDialogPage(page);
-    await createDialog.createAlbum('Gallery Navigation Test');
+    await createDialog.createAlbum(`Gallery Navigation Test ${Date.now()}`);
 
     const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });

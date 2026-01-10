@@ -22,20 +22,25 @@ test.describe('Album Rename @p1 @album', () => {
     test('P1-RENAME-1: rename button visible for album owner', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('owner');
 
-      // Create album via API for faster setup
+      // Login FIRST to register user with proper crypto
+      await loginUser(user, TEST_PASSWORD);
+
+      // Now create album via API (faster setup, user already exists with proper auth)
       const albumResult = await createAlbumViaAPI(user.email);
       testContext.trackAlbum(albumResult.id, user.email);
 
-      await loginUser(user, TEST_PASSWORD);
+      // Reload to see the album (since we created it after login)
+      await user.page.reload();
 
       // Navigate to album
       const appShell = new AppShell(user.page);
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
       await appShell.clickAlbum(0);
 
-      // Rename button should be visible
+      // Rename button should be visible in the album settings menu
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
+      await gallery.openAlbumSettings();
       await expect(gallery.renameAlbumButton).toBeVisible({ timeout: 5000 });
     });
 
@@ -64,7 +69,8 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
-      // Open rename dialog
+      // Open rename dialog (must open settings menu first)
+      await gallery.openAlbumSettings();
       await gallery.renameAlbumButton.click();
 
       const renameDialog = new RenameAlbumDialog(user.page);
@@ -97,7 +103,8 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
-      // Open rename dialog and cancel
+      // Open rename dialog and cancel (must open settings menu first)
+      await gallery.openAlbumSettings();
       await gallery.renameAlbumButton.click();
 
       const renameDialog = new RenameAlbumDialog(user.page);
@@ -120,10 +127,15 @@ test.describe('Album Rename @p1 @album', () => {
     test('P1-RENAME-4: save button disabled when name unchanged', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('owner');
 
+      // Login FIRST to register user with proper crypto
+      await loginUser(user, TEST_PASSWORD);
+
+      // Now create album via API (faster setup, user already exists with proper auth)
       const albumResult = await createAlbumViaAPI(user.email);
       testContext.trackAlbum(albumResult.id, user.email);
 
-      await loginUser(user, TEST_PASSWORD);
+      // Reload to see the album (since we created it after login)
+      await user.page.reload();
 
       const appShell = new AppShell(user.page);
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
@@ -132,6 +144,7 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
+      await gallery.openAlbumSettings();
       await gallery.renameAlbumButton.click();
 
       const renameDialog = new RenameAlbumDialog(user.page);
@@ -147,10 +160,15 @@ test.describe('Album Rename @p1 @album', () => {
     test('P1-RENAME-5: save button enabled when name changed', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('owner');
 
+      // Login FIRST to register user with proper crypto
+      await loginUser(user, TEST_PASSWORD);
+
+      // Now create album via API (faster setup, user already exists with proper auth)
       const albumResult = await createAlbumViaAPI(user.email);
       testContext.trackAlbum(albumResult.id, user.email);
 
-      await loginUser(user, TEST_PASSWORD);
+      // Reload to see the album (since we created it after login)
+      await user.page.reload();
 
       const appShell = new AppShell(user.page);
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
@@ -159,6 +177,7 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
+      await gallery.openAlbumSettings();
       await gallery.renameAlbumButton.click();
 
       const renameDialog = new RenameAlbumDialog(user.page);
@@ -199,7 +218,8 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
-      // Rename
+      // Rename (must open settings menu first)
+      await gallery.openAlbumSettings();
       await gallery.renameAlbumButton.click();
 
       const renameDialog = new RenameAlbumDialog(user.page);
@@ -241,6 +261,8 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
+      // Open settings menu first
+      await gallery.openAlbumSettings();
       await gallery.renameAlbumButton.click();
 
       const renameDialog = new RenameAlbumDialog(user.page);
@@ -263,6 +285,10 @@ test.describe('Album Rename @p1 @album', () => {
         await appShell.waitForLoad();
       }
 
+      // After reload, we're inside the album - navigate back to albums list
+      const appShellAfterReload = new AppShell(user.page);
+      await appShellAfterReload.goBack();
+
       // New name should still appear
       await expect(user.page.getByTestId('album-card').filter({ hasText: newName })).toBeVisible({
         timeout: 15000,
@@ -274,10 +300,15 @@ test.describe('Album Rename @p1 @album', () => {
     test('P1-RENAME-8: empty name shows error or disables save', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('owner');
 
+      // Login FIRST to register user with proper crypto
+      await loginUser(user, TEST_PASSWORD);
+
+      // Now create album via API (faster setup, user already exists with proper auth)
       const albumResult = await createAlbumViaAPI(user.email);
       testContext.trackAlbum(albumResult.id, user.email);
 
-      await loginUser(user, TEST_PASSWORD);
+      // Reload to see the album (since we created it after login)
+      await user.page.reload();
 
       const appShell = new AppShell(user.page);
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
@@ -286,6 +317,7 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
+      await gallery.openAlbumSettings();
       await gallery.renameAlbumButton.click();
 
       const renameDialog = new RenameAlbumDialog(user.page);

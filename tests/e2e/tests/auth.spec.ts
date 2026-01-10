@@ -83,10 +83,10 @@ test.describe('Authentication @p1 @auth @fast', () => {
   });
 
   test.describe('Complete Login Flow', () => {
-    test('successful login shows app shell', async ({ authenticatedPage, testUser }) => {
-      await authenticatedPage.goto('/');
+    test('successful login shows app shell', async ({ page, testUser }) => {
+      await page.goto('/');
 
-      const loginPage = new LoginPage(authenticatedPage);
+      const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
 
       // Detect auth mode and login appropriately
@@ -96,22 +96,22 @@ test.describe('Authentication @p1 @auth @fast', () => {
         await loginPage.register(testUser, TEST_CONSTANTS.PASSWORD);
       } else {
         // ProxyAuth mode: just enter password
-        await loginPage.login(TEST_CONSTANTS.PASSWORD);
+        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       }
 
       // Wait for app shell to appear
-      await expect(authenticatedPage.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
+      await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
 
       // Verify app shell elements
-      const appShell = new AppShell(authenticatedPage);
+      const appShell = new AppShell(page);
       await appShell.waitForLoad();
       await expect(appShell.logoutButton).toBeVisible();
     });
 
-    test('shows loading state during login', async ({ authenticatedPage, testUser }) => {
-      await authenticatedPage.goto('/');
+    test('shows loading state during login', async ({ page, testUser }) => {
+      await page.goto('/');
 
-      const loginPage = new LoginPage(authenticatedPage);
+      const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
 
       // Detect auth mode
@@ -158,100 +158,100 @@ test.describe('Authentication @p1 @auth @fast', () => {
   });
 
   test.describe('Logout Flow', () => {
-    test('logout returns to login form', async ({ authenticatedPage, testUser }) => {
-      await authenticatedPage.goto('/');
+    test('logout returns to login form', async ({ page, testUser }) => {
+      await page.goto('/');
 
       // Login first (handle both auth modes)
-      const loginPage = new LoginPage(authenticatedPage);
+      const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
       
       const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
       if (isLocalAuth) {
         await loginPage.register(testUser, TEST_CONSTANTS.PASSWORD);
       } else {
-        await loginPage.login(TEST_CONSTANTS.PASSWORD);
+        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       }
       await loginPage.expectLoginSuccess();
 
       // Now logout
-      const appShell = new AppShell(authenticatedPage);
+      const appShell = new AppShell(page);
       await appShell.logout();
 
       // Should return to login form
       await loginPage.expectLoginFormVisible();
     });
 
-    test('logout button is visible in app shell', async ({ authenticatedPage, testUser }) => {
-      await authenticatedPage.goto('/');
+    test('logout button is visible in app shell', async ({ page, testUser }) => {
+      await page.goto('/');
 
-      const loginPage = new LoginPage(authenticatedPage);
+      const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
       
       const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
       if (isLocalAuth) {
         await loginPage.register(testUser, TEST_CONSTANTS.PASSWORD);
       } else {
-        await loginPage.login(TEST_CONSTANTS.PASSWORD);
+        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       }
       await loginPage.expectLoginSuccess();
 
-      const appShell = new AppShell(authenticatedPage);
+      const appShell = new AppShell(page);
       await expect(appShell.logoutButton).toBeVisible();
       await expect(appShell.logoutButton).toHaveText(/lock/i);
     });
 
-    test('cannot access app after logout', async ({ authenticatedPage, testUser }) => {
-      await authenticatedPage.goto('/');
+    test('cannot access app after logout', async ({ page, testUser }) => {
+      await page.goto('/');
 
       // Login (handle both auth modes)
-      const loginPage = new LoginPage(authenticatedPage);
+      const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
       
       const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
       if (isLocalAuth) {
         await loginPage.register(testUser, TEST_CONSTANTS.PASSWORD);
       } else {
-        await loginPage.login(TEST_CONSTANTS.PASSWORD);
+        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       }
       await loginPage.expectLoginSuccess();
 
       // Logout
-      const appShell = new AppShell(authenticatedPage);
+      const appShell = new AppShell(page);
       await appShell.logout();
       await loginPage.expectLoginFormVisible();
 
       // Reload page - should still be on login
-      await authenticatedPage.reload();
+      await page.reload();
       await loginPage.expectLoginFormVisible();
     });
   });
 
   test.describe('Session Persistence', () => {
-    test('session persists after page reload when logged in', async ({ authenticatedPage, testUser }) => {
-      await authenticatedPage.goto('/');
+    test('session persists after page reload when logged in', async ({ page, testUser }) => {
+      await page.goto('/');
 
       // Login (handle both auth modes)
-      const loginPage = new LoginPage(authenticatedPage);
+      const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
       
       const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
       if (isLocalAuth) {
         await loginPage.register(testUser, TEST_CONSTANTS.PASSWORD);
       } else {
-        await loginPage.login(TEST_CONSTANTS.PASSWORD);
+        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       }
       await loginPage.expectLoginSuccess();
 
       // Reload
-      await authenticatedPage.reload();
+      await page.reload();
 
       // Wait for page to stabilize - session restoration can take a moment
-      const appShell = new AppShell(authenticatedPage);
+      const appShell = new AppShell(page);
       
       // Wait for either app shell (session restored) or login form (session expired)
       // with a longer timeout since session restoration involves crypto operations
       await expect(
-        authenticatedPage.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
+        page.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
       ).toBeVisible({ timeout: 30000 });
       
       // Now verify one of them is visible

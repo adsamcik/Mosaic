@@ -11,7 +11,7 @@
 
 import {
     AppShell,
-    createAlbumViaAPI,
+    createAlbumViaUI,
     expect,
     GalleryPage,
     generateTestImage,
@@ -24,18 +24,13 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
   test.describe('Photo Enter Animations', () => {
     test('P2-ANIM-1: photos appear with enter animation classes', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('enter-anim');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('EnterAnim');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Upload a photo
       const testImage = generateTestImage('tiny');
@@ -60,18 +55,13 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
 
     test('P2-ANIM-2: stagger delay is applied to batch uploads', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('stagger-anim');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('StaggerAnim');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Upload multiple photos
       const images = [
@@ -97,23 +87,17 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
 
     test('P2-ANIM-3: skip animation flag bypasses enter animation', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('skip-anim');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
-      // Upload photo first, before viewing gallery
-      const testImage = generateTestImage('tiny');
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('SkipAnim');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
+      const appShell = new AppShell(user.page);
 
       // Upload photo
+      const testImage = generateTestImage('tiny');
       await gallery.uploadPhoto(testImage, 'skip-anim.png');
       await gallery.expectPhotoCount(1);
 
@@ -137,18 +121,13 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
   test.describe('Photo Exit Animations', () => {
     test('P2-ANIM-4: deleted photos animate out', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('exit-anim');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('ExitAnim');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Upload a photo
       const testImage = generateTestImage('tiny');
@@ -185,17 +164,13 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
       // Enable reduced motion preference
       await user.page.emulateMedia({ reducedMotion: 'reduce' });
 
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('ReducedMotion');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Upload a photo
       const testImage = generateTestImage('tiny');
@@ -212,18 +187,13 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
   test.describe('Scroll Performance', () => {
     test('P2-ANIM-6: animations complete on scroll-revealed items', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('scroll-anim');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('ScrollAnim');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Upload enough photos to require scrolling
       const images: Array<{ buffer: Buffer; filename: string }> = [];
