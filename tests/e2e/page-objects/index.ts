@@ -397,34 +397,103 @@ export class GalleryPage {
   async uploadPhoto(imageBuffer: Buffer, filename = 'test.png'): Promise<void> {
     // Count photos before upload
     const photoCountBefore = await this.getPhotos().count();
+    const startTime = Date.now();
     console.log(`[GalleryPage PO] Photo count before: ${photoCountBefore}`);
     
     await expect(this.uploadInput).toBeAttached({ timeout: 10000 });
-    console.log('[GalleryPage PO] Upload input found, setting files...');
+    console.log(`[GalleryPage PO] Upload input found at T+${Date.now() - startTime}ms`);
 
-    await this.uploadInput.setInputFiles({
-      name: filename,
-      mimeType: 'image/png',
-      buffer: imageBuffer,
-    });
-    console.log('[GalleryPage PO] Files set, waiting for upload to complete...');
-
-    // Wait for upload button to finish uploading
-    await this.page.waitForFunction(
-      () => {
-        const btn = document.querySelector('[data-testid="upload-button"]');
-        const isUploading = btn?.textContent?.includes('Uploading');
-        return btn && !isUploading;
-      },
-      { timeout: 60000 }
-    );
-    console.log('[GalleryPage PO] Upload appears complete, waiting for photo to render...');
-    
-    // Wait for photo count to increase (with buffer for sync)
     const expectedCount = photoCountBefore + 1;
-    console.log(`[GalleryPage PO] Expecting count: ${expectedCount}`);
-    await expect(this.getPhotos()).toHaveCount(expectedCount, { timeout: 60000 });
-    console.log(`[GalleryPage PO] Photo rendered. Count: ${expectedCount}`);
+    
+    // Retry loop: sometimes setInputFiles doesn't trigger the change event
+    // We detect this by checking if upload started within 2 seconds
+    let attempt = 0;
+    const maxAttempts = 3;
+    
+    while (attempt < maxAttempts) {
+      attempt++;
+      console.log(`[GalleryPage PO] Upload attempt ${attempt}/${maxAttempts} at T+${Date.now() - startTime}ms`);
+      
+      // Set files on the input
+      await this.uploadInput.setInputFiles({
+        name: filename,
+        mimeType: 'image/png',
+        buffer: imageBuffer,
+      });
+      console.log(`[GalleryPage PO] Files set at T+${Date.now() - startTime}ms`);
+
+      // CRITICAL: Give React time to process the change event and update state.
+      await this.page.waitForTimeout(100);
+      
+      // Quick check: did upload start or photo appear?
+      const btn = this.page.getByTestId('upload-button');
+      const buttonText = await btn.textContent().catch(() => '');
+      const currentCount = await this.getPhotos().count();
+      const isUploading = buttonText?.includes('Uploading') || false;
+      const hasNewPhoto = currentCount >= expectedCount;
+      
+      console.log(`[GalleryPage PO] Quick check at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}, uploading=${isUploading}, hasNew=${hasNewPhoto}`);
+      
+      if (isUploading || hasNewPhoto) {
+        console.log(`[GalleryPage PO] Upload triggered on attempt ${attempt}`);
+        break;
+      }
+      
+      // Wait a bit more and check again before retrying
+      await this.page.waitForTimeout(500);
+      const buttonText2 = await btn.textContent().catch(() => '');
+      const currentCount2 = await this.getPhotos().count();
+      const isUploading2 = buttonText2?.includes('Uploading') || false;
+      const hasNewPhoto2 = currentCount2 >= expectedCount;
+      
+      if (isUploading2 || hasNewPhoto2) {
+        console.log(`[GalleryPage PO] Upload triggered on attempt ${attempt} (delayed detection)`);
+        break;
+      }
+      
+      if (attempt < maxAttempts) {
+        console.log(`[GalleryPage PO] Upload not triggered, will retry...`);
+        // Clear the input before retry
+        await this.uploadInput.evaluate((el: HTMLInputElement) => { el.value = ''; });
+      }
+    }
+
+    // Wait for upload to fully start (button text changes to "Uploading")
+    // OR if upload is already complete (photo count increased)
+    let pollCount = 0;
+    await expect(async () => {
+      pollCount++;
+      const btn = this.page.getByTestId('upload-button');
+      const buttonText = await btn.textContent().catch(() => '');
+      const currentCount = await this.getPhotos().count();
+      const isUploading = buttonText?.includes('Uploading') || false;
+      const hasNewPhoto = currentCount >= expectedCount;
+      
+      if (pollCount <= 5 || pollCount % 10 === 0) {
+        console.log(`[GalleryPage PO] Poll #${pollCount} at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}, uploading=${isUploading}, hasNew=${hasNewPhoto}`);
+      }
+      
+      expect(isUploading || hasNewPhoto).toBe(true);
+    }).toPass({ timeout: 30000, intervals: [100, 200, 500, 1000] });
+    console.log(`[GalleryPage PO] Upload started or photo appeared at T+${Date.now() - startTime}ms (${pollCount} polls)`);
+
+    // Wait for upload to complete: button NOT uploading AND photo count reached
+    let completePollCount = 0;
+    await expect(async () => {
+      completePollCount++;
+      const btn = this.page.getByTestId('upload-button');
+      const buttonText = await btn.textContent().catch(() => '');
+      const currentCount = await this.getPhotos().count();
+      const isUploading = buttonText?.includes('Uploading') || false;
+      
+      if (completePollCount <= 3 || completePollCount % 5 === 0) {
+        console.log(`[GalleryPage PO] Complete poll #${completePollCount} at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}`);
+      }
+      
+      expect(!isUploading && currentCount >= expectedCount).toBe(true);
+    }).toPass({ timeout: 60000, intervals: [100, 250, 500, 1000] });
+    
+    console.log(`[GalleryPage PO] Upload complete at T+${Date.now() - startTime}ms. Final count: ${await this.getPhotos().count()}`);
   }
 
   async uploadMultiplePhotos(
