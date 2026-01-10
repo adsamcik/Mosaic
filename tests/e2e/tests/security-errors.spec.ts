@@ -12,13 +12,13 @@
 import {
   ApiHelper,
   AppShell,
+  CreateAlbumDialogPage,
   expect,
   GalleryPage,
   generateTestImage,
   goOffline,
   goOnline,
   LoginPage,
-  mockApiError,
   test,
   TEST_CONSTANTS,
 } from '../fixtures';
@@ -67,12 +67,12 @@ test.describe('Security: Authentication @p1 @security @auth', () => {
   });
 
   test('login button disabled during authentication', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
 
     await loginPage.passwordInput.fill(TEST_CONSTANTS.PASSWORD);
@@ -98,17 +98,17 @@ test.describe('Security: Authentication @p1 @security @auth', () => {
 
 test.describe('Security: Session Management @p1 @security @auth', () => {
   test('logout clears authentication state', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const appShell = new AppShell(authenticatedPage);
+    const appShell = new AppShell(page);
     await appShell.waitForLoad();
 
     // Logout
@@ -118,7 +118,7 @@ test.describe('Security: Session Management @p1 @security @auth', () => {
     await loginPage.expectLoginFormVisible();
 
     // Check sessionStorage is cleared
-    const sessionData = await authenticatedPage.evaluate(() => {
+    const sessionData = await page.evaluate(() => {
       return Object.keys(sessionStorage);
     });
 
@@ -132,18 +132,18 @@ test.describe('Security: Session Management @p1 @security @auth', () => {
   });
 
   test('sensitive data not exposed in DOM', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     // Check DOM for sensitive patterns
-    const pageContent = await authenticatedPage.content();
+    const pageContent = await page.content();
 
     // Should not contain base64-encoded keys (typically 32+ chars of base64)
     // This is a heuristic check
@@ -167,20 +167,20 @@ test.describe('Security: Session Management @p1 @security @auth', () => {
   });
 
   test('password not logged to console', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
     const consoleLogs: string[] = [];
 
-    authenticatedPage.on('console', (msg) => {
+    page.on('console', (msg) => {
       consoleLogs.push(msg.text());
     });
 
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     // Check console logs for password
@@ -209,7 +209,7 @@ test.describe('Security: Authorization @p1 @security', () => {
   });
 
   test('cannot access other users albums via API', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
     // Create album for a different user
@@ -217,14 +217,14 @@ test.describe('Security: Authorization @p1 @security', () => {
     const album = await apiHelper.createAlbum(otherUser);
 
     // Login as test user
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     // Try to access other user's album directly
-    const response = await authenticatedPage.request.get(`/api/albums/${album.id}`, {
+    const response = await page.request.get(`/api/albums/${album.id}`, {
       headers: {
         'Remote-User': testUser,
       },
@@ -236,27 +236,25 @@ test.describe('Security: Authorization @p1 @security', () => {
 });
 
 test.describe('Error Handling: Network Failures @p2 @security', () => {
-  const apiHelper = new ApiHelper();
-
   test('shows error when API unreachable', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
     // Mock API to fail
-    await authenticatedPage.route('**/api/albums', (route) => {
+    await page.route('**/api/albums', (route) => {
       route.abort('failed');
     });
 
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
 
     // Should show error or login should fail gracefully
     // Wait for either app-shell to appear (login succeeded) or error message
-    const appShell = authenticatedPage.getByTestId('app-shell');
-    const errorMessage = authenticatedPage.getByText(/error|failed|couldn't load/i);
+    const appShell = page.getByTestId('app-shell');
+    const errorMessage = page.getByText(/error|failed|couldn't load/i);
     await waitForCondition(
       async () => {
         const hasShell = await appShell.isVisible().catch(() => false);
@@ -278,32 +276,33 @@ test.describe('Error Handling: Network Failures @p2 @security', () => {
   });
 
   test('handles 500 server error gracefully', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    // Create album first
-    const album = await apiHelper.createAlbum(testUser);
-
-    const appShell = new AppShell(authenticatedPage);
+    // Create album via UI (generates real crypto keys)
+    const appShell = new AppShell(page);
     await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Error Test ${Date.now()}`);
 
     // Navigate to album
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Now make API fail for manifest creation
-    await authenticatedPage.route('**/api/manifests', (route) => {
+    await page.route('**/api/manifests', (route) => {
       route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -316,7 +315,7 @@ test.describe('Error Handling: Network Failures @p2 @security', () => {
     await gallery.uploadPhoto(testImage, 'error-test.png');
 
     // Should show error, not crash - wait for error message or toast
-    const errorMessage = authenticatedPage.getByText(/error|failed|try again/i);
+    const errorMessage = page.getByText(/error|failed|try again/i);
     await waitForCondition(
       async () => {
         const hasError = await errorMessage.first().isVisible().catch(() => false);
@@ -333,38 +332,45 @@ test.describe('Error Handling: Network Failures @p2 @security', () => {
   });
 
   test('retry after temporary failure', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
+    // Login FIRST to register user with proper crypto keys
+    await page.goto('/');
 
-    await authenticatedPage.goto('/');
-
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Create album via UI (generates real crypto keys)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Retry Test ${Date.now()}`);
+
+    // Navigate to album
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Go offline then back online
-    await goOffline(authenticatedPage);
+    await goOffline(page);
     // Brief wait for offline state to propagate
     await waitForCondition(
       async () => {
         // Check if offline state is established (navigator.onLine would be false)
-        return await authenticatedPage.evaluate(() => !navigator.onLine);
+        return await page.evaluate(() => !navigator.onLine);
       },
       { timeout: 2000, message: 'Expected offline state' }
     ).catch(() => {
       // May not need to wait if already offline
     });
-    await goOnline(authenticatedPage);
+    await goOnline(page);
 
     // Should be able to upload after reconnecting
     const testImage = generateTestImage();
@@ -374,20 +380,18 @@ test.describe('Error Handling: Network Failures @p2 @security', () => {
 });
 
 test.describe('Error Handling: Validation @p2 @security', () => {
-  const apiHelper = new ApiHelper();
-
   test('album name validation', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const appShell = new AppShell(authenticatedPage);
+    const appShell = new AppShell(page);
     await appShell.waitForLoad();
 
     const createButton = appShell.createAlbumButton;
@@ -396,16 +400,16 @@ test.describe('Error Handling: Validation @p2 @security', () => {
     if (hasCreateButton) {
       await createButton.click();
 
-      const nameInput = authenticatedPage.getByLabel(/album name|name/i);
+      const nameInput = page.getByLabel(/album name|name/i);
       const hasNameInput = await nameInput.first().isVisible().catch(() => false);
 
       if (hasNameInput) {
         // Try empty name
-        const submitButton = authenticatedPage.getByRole('button', { name: /create|save/i });
+        const submitButton = page.getByRole('button', { name: /create|save/i });
         await submitButton.click();
 
         // Should show validation error
-        const error = authenticatedPage.getByText(/required|empty|name/i);
+        const error = page.getByText(/required|empty|name/i);
         const hasError = await error.first().isVisible().catch(() => false);
         expect(hasError).toBeTruthy();
 
@@ -415,7 +419,7 @@ test.describe('Error Handling: Validation @p2 @security', () => {
 
         // Should succeed
         await expect(async () => {
-          const newCard = authenticatedPage.getByTestId('album-card');
+          const newCard = page.getByTestId('album-card');
           const count = await newCard.count();
           expect(count).toBeGreaterThanOrEqual(1);
         }).toPass({ timeout: 30000 });
@@ -425,26 +429,31 @@ test.describe('Error Handling: Validation @p2 @security', () => {
 });
 
 test.describe('Error Handling: Crypto Failures @p2 @security @crypto', () => {
-  const apiHelper = new ApiHelper();
-
   test('corrupted data shows error, not garbage', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
+    // Login FIRST to register user with proper crypto keys
+    await page.goto('/');
 
-    await authenticatedPage.goto('/');
-
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Create album via UI (generates real crypto keys)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Crypto Test ${Date.now()}`);
+
+    // Navigate to album
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Upload a valid photo first
@@ -453,7 +462,7 @@ test.describe('Error Handling: Crypto Failures @p2 @security @crypto', () => {
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
 
     // Mock shard download to return corrupted data
-    await authenticatedPage.route('**/api/shards/*', (route) => {
+    await page.route('**/api/shards/*', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/octet-stream',
@@ -465,8 +474,8 @@ test.describe('Error Handling: Crypto Failures @p2 @security @crypto', () => {
     await gallery.photos.first().click();
 
     // Wait for decryption attempt - error message or lightbox should appear
-    const errorMessage = authenticatedPage.getByText(/error|corrupt|decrypt|failed/i);
-    const lightbox = authenticatedPage.getByTestId('photo-lightbox');
+    const errorMessage = page.getByText(/error|corrupt|decrypt|failed/i);
+    const lightbox = page.getByTestId('photo-lightbox');
     await waitForCondition(
       async () => {
         const hasError = await errorMessage.first().isVisible().catch(() => false);
@@ -491,40 +500,35 @@ test.describe('Error Handling: Crypto Failures @p2 @security @crypto', () => {
 });
 
 test.describe('Error Handling: Quota & Limits @p2 @security', () => {
-  const apiHelper = new ApiHelper();
-
   test('handles upload quota exceeded', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
+    // Login FIRST to register user with proper crypto keys
+    await page.goto('/');
 
-    await authenticatedPage.goto('/');
-
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-
-    // Detect auth mode - when LocalAuth is active, we need to provide username
-    // The user was already created by apiHelper.createAlbum, so we login (not register)
-    const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
-    if (isLocalAuth) {
-      // LocalAuth mode: login with username (user already created via API)
-      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
-    } else {
-      // ProxyAuth mode: just enter password
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
-    }
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Create album via UI (generates real crypto keys)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Quota Test ${Date.now()}`);
+
+    // Navigate to album
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Mock quota exceeded response - TUS uses 400 Bad Request with FailRequest()
-    await authenticatedPage.route('**/api/files', (route) => {
+    await page.route('**/api/files', (route) => {
       if (route.request().method() === 'POST') {
         // TUS protocol: FailRequest returns 400 with plain text body
         route.fulfill({
@@ -539,7 +543,7 @@ test.describe('Error Handling: Quota & Limits @p2 @security', () => {
 
     // Trigger upload directly without using uploadPhoto() which expects success
     const testImage = generateTestImage();
-    const uploadInput = authenticatedPage.locator('input[type="file"]');
+    const uploadInput = page.locator('input[type="file"]');
     await expect(uploadInput).toBeAttached({ timeout: 10000 });
     await uploadInput.setInputFiles({
       name: 'quota-test.png',
@@ -548,7 +552,7 @@ test.describe('Error Handling: Quota & Limits @p2 @security', () => {
     });
 
     // Wait for error toast to appear - the UploadErrorToast shows on upload failures
-    const errorToast = authenticatedPage.getByTestId('upload-error-toast');
+    const errorToast = page.getByTestId('upload-error-toast');
     await expect(errorToast).toBeVisible({ timeout: 30000 });
 
     // Verify error message contains quota-related text
@@ -559,7 +563,7 @@ test.describe('Error Handling: Quota & Limits @p2 @security', () => {
     await expect(gallery.gallery).toBeVisible();
 
     // Dismiss the error toast
-    const dismissButton = authenticatedPage.getByTestId('upload-error-dismiss');
+    const dismissButton = page.getByTestId('upload-error-dismiss');
     if (await dismissButton.isVisible()) {
       await dismissButton.click();
       await expect(errorToast).toBeHidden({ timeout: 5000 });
@@ -568,38 +572,35 @@ test.describe('Error Handling: Quota & Limits @p2 @security', () => {
 });
 
 test.describe('Error Handling: UI Resilience @p2 @security @ui', () => {
-  const apiHelper = new ApiHelper();
-
   test('app recovers from JavaScript errors', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
     const errors: Error[] = [];
 
-    authenticatedPage.on('pageerror', (error) => {
+    page.on('pageerror', (error) => {
       errors.push(error);
     });
 
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
     // Navigate around
-    const appShell = new AppShell(authenticatedPage);
+    const appShell = new AppShell(page);
     await appShell.waitForLoad();
 
-    // Create and navigate to album
-    const album = await apiHelper.createAlbum(testUser);
-    await authenticatedPage.reload();
+    // Create album via UI (generates real crypto keys)
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`UI Resilience Test ${Date.now()}`);
 
-    const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
-    if (needsLogin) {
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
-      await loginPage.expectLoginSuccess();
-    }
+    // Wait for album to appear
+    const albumCard = page.getByTestId('album-card').first();
+    await expect(albumCard).toBeVisible({ timeout: 30000 });
 
     await appShell.waitForLoad();
 
@@ -616,21 +617,21 @@ test.describe('Error Handling: UI Resilience @p2 @security @ui', () => {
   });
 
   test('app handles missing elements gracefully', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    await authenticatedPage.goto('/');
+    await page.goto('/');
 
-    const loginPage = new LoginPage(authenticatedPage);
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const appShell = new AppShell(authenticatedPage);
+    const appShell = new AppShell(page);
     await appShell.waitForLoad();
 
     // Try to interact with possibly non-existent elements
-    const maybeButton = authenticatedPage.getByRole('button', { name: /nonexistent/i });
+    const maybeButton = page.getByRole('button', { name: /nonexistent/i });
     const exists = await maybeButton.isVisible().catch(() => false);
 
     // App should continue to work

@@ -27,28 +27,23 @@ import {
 import { BrowserContext, Page } from '@playwright/test';
 
 // Extend the base test to provide a shared context across all smoke tests
-// Note: Using test scope since serial mode handles state persistence
-const test = base.extend<{
-  sharedContext: { context: BrowserContext; page: Page; username: string };
-}>({
-  sharedContext: async ({ browser }, use) => {
+// Using worker scope to share state across all tests in serial mode
+const test = base.extend<
+  object,
+  { sharedContext: { context: BrowserContext; page: Page; username: string } }
+>({
+  sharedContext: [async ({ browser }, use) => {
     const username = `smoke-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const context = await browser.newContext();
     const page = await context.newPage();
     
-    // Set up auth header injection
-    await page.route('**/api/**', async (route) => {
-      const headers = {
-        ...route.request().headers(),
-        'Remote-User': username,
-      };
-      await route.continue({ headers });
-    });
+    // No header injection - let loginOrRegister() handle authentication
+    // This works for both LocalAuth and ProxyAuth modes
     
     await use({ context, page, username });
     
     await context.close();
-  },
+  }, { scope: 'worker' }],
 });
 
 // Use serial mode - tests share state
@@ -64,16 +59,8 @@ test.describe('Smoke Tests @smoke @p0 @fast', () => {
     const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
 
-    // Detect auth mode by checking for username field (use i18n-compatible locator from LoginPage)
-    const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
-
-    if (isLocalAuth) {
-      // LocalAuth mode: register new user
-      await loginPage.register(username, TEST_CONSTANTS.PASSWORD);
-    } else {
-      // ProxyAuth mode: just enter password to initialize crypto
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
-    }
+    // Use loginOrRegister which handles both LocalAuth and ProxyAuth modes
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, username);
 
     // Verify app shell loads (crypto initialized successfully)
     await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 60000 });

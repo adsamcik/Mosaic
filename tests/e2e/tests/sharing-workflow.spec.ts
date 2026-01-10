@@ -12,6 +12,7 @@
 import {
   ApiHelper,
   AppShell,
+  CreateAlbumDialogPage,
   expect,
   GalleryPage,
   generateTestImage,
@@ -32,15 +33,19 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
   }) => {
     const { alice, bob, aliceUser, bobUser } = twoUserContext;
 
-    // Step 1: Alice creates an album and uploads photos
-    const album = await apiHelper.createAlbum(aliceUser);
-
-    // Alice logs in
+    // Step 1: Alice logs in FIRST (establishes crypto keys)
     await alice.goto('/');
     const aliceLogin = new LoginPage(alice);
     await aliceLogin.waitForForm();
-    await aliceLogin.login(TEST_CONSTANTS.PASSWORD);
+    await aliceLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, aliceUser);
     await aliceLogin.expectLoginSuccess();
+
+    // Create album via UI (generates real epoch keys)
+    const aliceAppShell = new AppShell(alice);
+    await aliceAppShell.waitForLoad();
+    await aliceAppShell.createAlbum();
+    const aliceCreateDialog = new CreateAlbumDialogPage(alice);
+    await aliceCreateDialog.createAlbum(`Shared Album ${Date.now()}`);
 
     // Navigate to album
     const aliceAlbumCard = alice.getByTestId('album-card').first();
@@ -66,7 +71,7 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
     await bob.goto('/');
     const bobLogin = new LoginPage(bob);
     await bobLogin.waitForForm();
-    await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+    await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
     await bobLogin.expectLoginSuccess();
 
     const bobAppShell = new AppShell(bob);
@@ -118,7 +123,7 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
 
           const bobNeedsLogin = await bobLogin.loginForm.isVisible().catch(() => false);
           if (bobNeedsLogin) {
-            await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+            await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
             await bobLogin.expectLoginSuccess();
           }
 
@@ -151,22 +156,26 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
   }) => {
     const { alice, bob, aliceUser, bobUser } = twoUserContext;
 
-    // Alice creates album
-    const album = await apiHelper.createAlbum(aliceUser);
-
-    // Alice logs in
+    // Alice logs in FIRST (establishes crypto keys)
     await alice.goto('/');
     const aliceLogin = new LoginPage(alice);
     await aliceLogin.waitForForm();
-    await aliceLogin.login(TEST_CONSTANTS.PASSWORD);
+    await aliceLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, aliceUser);
     await aliceLogin.expectLoginSuccess();
 
-    // Bob logs in
+    // Bob logs in (establishes crypto keys)
     await bob.goto('/');
     const bobLogin = new LoginPage(bob);
     await bobLogin.waitForForm();
-    await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+    await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
     await bobLogin.expectLoginSuccess();
+
+    // Create album via UI (generates real epoch keys)
+    const aliceAppShell = new AppShell(alice);
+    await aliceAppShell.waitForLoad();
+    await aliceAppShell.createAlbum();
+    const aliceCreateDialog = new CreateAlbumDialogPage(alice);
+    await aliceCreateDialog.createAlbum(`Editor Test Album ${Date.now()}`);
 
     // Alice navigates to album
     const aliceCard = alice.getByTestId('album-card').first();
@@ -216,7 +225,7 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
 
           const bobNeedsLogin = await bobLogin.loginForm.isVisible().catch(() => false);
           if (bobNeedsLogin) {
-            await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+            await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
             await bobLogin.expectLoginSuccess();
           }
 
@@ -248,20 +257,25 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
   }) => {
     const { alice, bob, aliceUser, bobUser } = twoUserContext;
 
-    const album = await apiHelper.createAlbum(aliceUser);
-
-    // Both users log in
+    // Both users log in FIRST (establishes crypto keys)
     await alice.goto('/');
     const aliceLogin = new LoginPage(alice);
     await aliceLogin.waitForForm();
-    await aliceLogin.login(TEST_CONSTANTS.PASSWORD);
+    await aliceLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, aliceUser);
     await aliceLogin.expectLoginSuccess();
 
     await bob.goto('/');
     const bobLogin = new LoginPage(bob);
     await bobLogin.waitForForm();
-    await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+    await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
     await bobLogin.expectLoginSuccess();
+
+    // Create album via UI (generates real epoch keys)
+    const aliceAppShell = new AppShell(alice);
+    await aliceAppShell.waitForLoad();
+    await aliceAppShell.createAlbum();
+    const aliceCreateDialog = new CreateAlbumDialogPage(alice);
+    await aliceCreateDialog.createAlbum(`Viewer Test Album ${Date.now()}`);
 
     // Alice navigates to album
     const aliceCard = alice.getByTestId('album-card').first();
@@ -311,7 +325,7 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
 
           const bobNeedsLogin = await bobLogin.loginForm.isVisible().catch(() => false);
           if (bobNeedsLogin) {
-            await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+            await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
             await bobLogin.expectLoginSuccess();
           }
 
@@ -348,20 +362,25 @@ test.describe('Sharing: Member Removal @p1 @sharing @multi-user', () => {
   }) => {
     const { alice, bob, aliceUser, bobUser } = twoUserContext;
 
-    const album = await apiHelper.createAlbum(aliceUser);
-
-    // Both log in
+    // Both log in FIRST (establishes crypto keys)
     await alice.goto('/');
     const aliceLogin = new LoginPage(alice);
     await aliceLogin.waitForForm();
-    await aliceLogin.login(TEST_CONSTANTS.PASSWORD);
+    await aliceLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, aliceUser);
     await aliceLogin.expectLoginSuccess();
 
     await bob.goto('/');
     const bobLogin = new LoginPage(bob);
     await bobLogin.waitForForm();
-    await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+    await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
     await bobLogin.expectLoginSuccess();
+
+    // Create album via UI (generates real epoch keys)
+    const aliceAppShell = new AppShell(alice);
+    await aliceAppShell.waitForLoad();
+    await aliceAppShell.createAlbum();
+    const aliceCreateDialog = new CreateAlbumDialogPage(alice);
+    await aliceCreateDialog.createAlbum(`Removal Test Album ${Date.now()}`);
 
     // Alice adds photos and invites Bob
     const aliceCard = alice.getByTestId('album-card').first();
@@ -408,7 +427,7 @@ test.describe('Sharing: Member Removal @p1 @sharing @multi-user', () => {
           await bob.reload();
           const bobNeedsLogin = await bobLogin.loginForm.isVisible().catch(() => false);
           if (bobNeedsLogin) {
-            await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+            await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
             await bobLogin.expectLoginSuccess();
           }
 
@@ -456,7 +475,7 @@ test.describe('Sharing: Member Removal @p1 @sharing @multi-user', () => {
 
               const bobNeedsLoginAgain = await bobLogin.loginForm.isVisible().catch(() => false);
               if (bobNeedsLoginAgain) {
-                await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+                await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
                 await bobLogin.expectLoginSuccess();
               }
 
@@ -482,33 +501,39 @@ test.describe('Sharing: Member List Display @p1 @sharing @ui', () => {
   const apiHelper = new ApiHelper();
 
   test('owner sees member list in album', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    // Login FIRST (establishes crypto keys)
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Create album via UI (generates real epoch keys)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Member List Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Open members panel
-    const membersBtn = authenticatedPage.getByRole('button', { name: /members|share/i });
+    const membersBtn = page.getByRole('button', { name: /members|share/i });
     const hasMembers = await membersBtn.first().isVisible().catch(() => false);
 
     if (hasMembers) {
       await membersBtn.first().click();
 
       // Should show at least owner in member list
-      const memberList = authenticatedPage.getByTestId('member-list');
+      const memberList = page.getByTestId('member-list');
       const hasMemberList = await memberList.isVisible().catch(() => false);
 
       if (hasMemberList) {
@@ -518,7 +543,7 @@ test.describe('Sharing: Member List Display @p1 @sharing @ui', () => {
         expect(memberCount).toBeGreaterThanOrEqual(1);
       } else {
         // Member list may use different structure
-        const ownerLabel = authenticatedPage.getByText(/owner|you/i);
+        const ownerLabel = page.getByText(/owner|you/i);
         const hasOwner = await ownerLabel.first().isVisible().catch(() => false);
         expect(hasOwner).toBeTruthy();
       }
@@ -535,20 +560,25 @@ test.describe('Sharing: Member List Display @p1 @sharing @ui', () => {
   }) => {
     const { alice, bob, aliceUser, bobUser } = twoUserContext;
 
-    const album = await apiHelper.createAlbum(aliceUser);
-
-    // Both log in
+    // Both log in FIRST (establishes crypto keys)
     await alice.goto('/');
     const aliceLogin = new LoginPage(alice);
     await aliceLogin.waitForForm();
-    await aliceLogin.login(TEST_CONSTANTS.PASSWORD);
+    await aliceLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, aliceUser);
     await aliceLogin.expectLoginSuccess();
 
     await bob.goto('/');
     const bobLogin = new LoginPage(bob);
     await bobLogin.waitForForm();
-    await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+    await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
     await bobLogin.expectLoginSuccess();
+
+    // Create album via UI (generates real epoch keys)
+    const aliceAppShell = new AppShell(alice);
+    await aliceAppShell.waitForLoad();
+    await aliceAppShell.createAlbum();
+    const aliceCreateDialog = new CreateAlbumDialogPage(alice);
+    await aliceCreateDialog.createAlbum(`Roles Display Test ${Date.now()}`);
 
     // Alice navigates and invites Bob as editor
     const aliceCard = alice.getByTestId('album-card').first();
@@ -623,17 +653,28 @@ test.describe('Sharing: Security Boundaries @p1 @sharing @security', () => {
   test('non-member cannot see album in list', async ({
     twoUserContext,
   }) => {
-    const { alice, bob, aliceUser } = twoUserContext;
+    const { alice, bob, aliceUser, bobUser } = twoUserContext;
 
-    // Alice creates a private album
-    const album = await apiHelper.createAlbum(aliceUser);
-
-    // Alice logs in and uploads photos
+    // Both log in FIRST (establishes crypto keys)
     await alice.goto('/');
     const aliceLogin = new LoginPage(alice);
     await aliceLogin.waitForForm();
-    await aliceLogin.login(TEST_CONSTANTS.PASSWORD);
+    await aliceLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, aliceUser);
     await aliceLogin.expectLoginSuccess();
+
+    // Bob logs in (NOT invited but needs crypto keys)
+    await bob.goto('/');
+    const bobLogin = new LoginPage(bob);
+    await bobLogin.waitForForm();
+    await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
+    await bobLogin.expectLoginSuccess();
+
+    // Alice creates a private album via UI (generates real epoch keys)
+    const aliceAppShell = new AppShell(alice);
+    await aliceAppShell.waitForLoad();
+    await aliceAppShell.createAlbum();
+    const aliceCreateDialog = new CreateAlbumDialogPage(alice);
+    await aliceCreateDialog.createAlbum(`Private Album ${Date.now()}`);
 
     const aliceCard = alice.getByTestId('album-card').first();
     await expect(aliceCard).toBeVisible({ timeout: 30000 });
@@ -645,13 +686,6 @@ test.describe('Sharing: Security Boundaries @p1 @sharing @security', () => {
     const testImage = generateTestImage();
     await aliceGallery.uploadPhoto(testImage, 'private-photo.png');
     await expect(aliceGallery.photos.first()).toBeVisible({ timeout: 60000 });
-
-    // Bob logs in (NOT invited)
-    await bob.goto('/');
-    const bobLogin = new LoginPage(bob);
-    await bobLogin.waitForForm();
-    await bobLogin.login(TEST_CONSTANTS.PASSWORD);
-    await bobLogin.expectLoginSuccess();
 
     const bobAppShell = new AppShell(bob);
     await bobAppShell.waitForLoad();
@@ -674,20 +708,25 @@ test.describe('Sharing: Security Boundaries @p1 @sharing @security', () => {
   }) => {
     const { alice, bob, aliceUser, bobUser } = twoUserContext;
 
-    // Step 1: Alice creates album and invites Bob
-    const album = await apiHelper.createAlbum(aliceUser);
-
+    // Step 1: Both log in FIRST (establishes crypto keys)
     await alice.goto('/');
     const aliceLogin = new LoginPage(alice);
     await aliceLogin.waitForForm();
-    await aliceLogin.login(TEST_CONSTANTS.PASSWORD);
+    await aliceLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, aliceUser);
     await aliceLogin.expectLoginSuccess();
 
     await bob.goto('/');
     const bobLogin = new LoginPage(bob);
     await bobLogin.waitForForm();
-    await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+    await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
     await bobLogin.expectLoginSuccess();
+
+    // Step 2: Alice creates album via UI (generates real epoch keys)
+    const aliceAppShell = new AppShell(alice);
+    await aliceAppShell.waitForLoad();
+    await aliceAppShell.createAlbum();
+    const aliceCreateDialog = new CreateAlbumDialogPage(alice);
+    await aliceCreateDialog.createAlbum(`Forward Secrecy Test ${Date.now()}`);
 
     // Navigate to album
     const aliceCard = alice.getByTestId('album-card').first();
@@ -697,7 +736,7 @@ test.describe('Sharing: Security Boundaries @p1 @sharing @security', () => {
     const aliceGallery = new GalleryPage(alice);
     await aliceGallery.waitForLoad();
 
-    // Step 2: Upload photo BEFORE member removal (Bob should eventually access this)
+    // Step 3: Upload photo BEFORE member removal (Bob should eventually access this)
     const testImage1 = generateTestImage();
     await aliceGallery.uploadPhoto(testImage1, 'pre-rotation-photo.png');
     await expect(aliceGallery.photos.first()).toBeVisible({ timeout: 60000 });
@@ -754,7 +793,7 @@ test.describe('Sharing: Security Boundaries @p1 @sharing @security', () => {
     await bob.reload();
     const bobNeedsLogin = await bobLogin.loginForm.isVisible().catch(() => false);
     if (bobNeedsLogin) {
-      await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+      await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
       await bobLogin.expectLoginSuccess();
     }
 
@@ -863,26 +902,32 @@ test.describe('P1-2: Member Management UI @p1 @sharing @ui', () => {
    * Test that owner can view member list
    */
   test('owner can view member list with roles', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    // Login FIRST (establishes crypto keys)
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Create album via UI (generates real epoch keys)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`View Members Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Open members panel
-    const membersBtn = authenticatedPage.getByRole('button', { name: /members|share/i });
+    const membersBtn = page.getByRole('button', { name: /members|share/i });
     const hasMembers = await membersBtn.first().isVisible().catch(() => false);
 
     if (!hasMembers) {
@@ -896,8 +941,8 @@ test.describe('P1-2: Member Management UI @p1 @sharing @ui', () => {
     await membersBtn.first().click();
 
     // Verify member list is visible
-    const memberList = authenticatedPage.getByTestId('member-list');
-    const memberPanel = authenticatedPage.locator('[data-testid="members-panel"], [class*="member"]');
+    const memberList = page.getByTestId('member-list');
+    const memberPanel = page.locator('[data-testid="members-panel"], [class*="member"]');
     
     const hasList = await memberList.isVisible().catch(() => false);
     const hasPanel = await memberPanel.first().isVisible().catch(() => false);
@@ -905,7 +950,7 @@ test.describe('P1-2: Member Management UI @p1 @sharing @ui', () => {
     expect(hasList || hasPanel).toBeTruthy();
 
     // Owner should be visible with owner role
-    const ownerLabel = authenticatedPage.getByText(/owner|you/i);
+    const ownerLabel = page.getByText(/owner|you/i);
     await expect(ownerLabel.first()).toBeVisible();
   });
 
@@ -917,20 +962,25 @@ test.describe('P1-2: Member Management UI @p1 @sharing @ui', () => {
   }) => {
     const { alice, bob, aliceUser, bobUser } = twoUserContext;
 
-    const album = await apiHelper.createAlbum(aliceUser);
-
-    // Both log in
+    // Both log in FIRST (establishes crypto keys)
     await alice.goto('/');
     const aliceLogin = new LoginPage(alice);
     await aliceLogin.waitForForm();
-    await aliceLogin.login(TEST_CONSTANTS.PASSWORD);
+    await aliceLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, aliceUser);
     await aliceLogin.expectLoginSuccess();
 
     await bob.goto('/');
     const bobLogin = new LoginPage(bob);
     await bobLogin.waitForForm();
-    await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+    await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
     await bobLogin.expectLoginSuccess();
+
+    // Create album via UI (generates real epoch keys)
+    const aliceAppShell = new AppShell(alice);
+    await aliceAppShell.waitForLoad();
+    await aliceAppShell.createAlbum();
+    const aliceCreateDialog = new CreateAlbumDialogPage(alice);
+    await aliceCreateDialog.createAlbum(`Invite Member Test ${Date.now()}`);
 
     // Alice navigates to album
     const aliceCard = alice.getByTestId('album-card').first();
@@ -995,7 +1045,7 @@ test.describe('P1-2: Member Management UI @p1 @sharing @ui', () => {
     await bob.reload();
     const bobNeedsLogin = await bobLogin.loginForm.isVisible().catch(() => false);
     if (bobNeedsLogin) {
-      await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+      await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
       await bobLogin.expectLoginSuccess();
     }
 
@@ -1011,20 +1061,25 @@ test.describe('P1-2: Member Management UI @p1 @sharing @ui', () => {
   }) => {
     const { alice, bob, aliceUser, bobUser } = twoUserContext;
 
-    const album = await apiHelper.createAlbum(aliceUser);
-
-    // Both log in
+    // Both log in FIRST (establishes crypto keys)
     await alice.goto('/');
     const aliceLogin = new LoginPage(alice);
     await aliceLogin.waitForForm();
-    await aliceLogin.login(TEST_CONSTANTS.PASSWORD);
+    await aliceLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, aliceUser);
     await aliceLogin.expectLoginSuccess();
 
     await bob.goto('/');
     const bobLogin = new LoginPage(bob);
     await bobLogin.waitForForm();
-    await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+    await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
     await bobLogin.expectLoginSuccess();
+
+    // Create album via UI (generates real epoch keys)
+    const aliceAppShell = new AppShell(alice);
+    await aliceAppShell.waitForLoad();
+    await aliceAppShell.createAlbum();
+    const aliceCreateDialog = new CreateAlbumDialogPage(alice);
+    await aliceCreateDialog.createAlbum(`Remove Member Test ${Date.now()}`);
 
     const bobInfo = await apiHelper.getCurrentUser(bobUser);
 
@@ -1121,7 +1176,7 @@ test.describe('P1-2: Member Management UI @p1 @sharing @ui', () => {
       await bob.reload();
       const bobNeedsLogin = await bobLogin.loginForm.isVisible().catch(() => false);
       if (bobNeedsLogin) {
-        await bobLogin.login(TEST_CONSTANTS.PASSWORD);
+        await bobLogin.loginOrRegister(TEST_CONSTANTS.PASSWORD, bobUser);
         await bobLogin.expectLoginSuccess();
       }
 

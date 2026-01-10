@@ -23,21 +23,13 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
   test.describe('Photo Upload', () => {
     test('P1-PHOTO-1: upload single photo shows in gallery', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('uploader');
-
-      // Create album
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      // Navigate to album
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('Upload');
+      await createAlbumViaUI(user.page, albumName);
 
-      // Upload photo
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       const testImage = generateTestImage('tiny');
       const filename = testContext.generatePhotoName(1);
@@ -49,18 +41,13 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
 
     test('P1-PHOTO-2: upload multiple photos sequentially', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('multi-uploader');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('MultiUpload');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Upload 3 photos
       for (let i = 1; i <= 3; i++) {
@@ -74,18 +61,13 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
 
     test('P1-PHOTO-3: upload shows progress indicator', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('progress-watcher');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('Progress');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Start upload and check for progress
       const testImage = generateTestImage('small'); // Slightly larger for visible progress
@@ -110,18 +92,13 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
   test.describe('Photo Viewing', () => {
     test('P1-PHOTO-4: clicking photo thumbnail opens lightbox', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('viewer');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('View');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Upload a photo first
       const testImage = generateTestImage('tiny');
@@ -138,18 +115,13 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
 
     test('P1-PHOTO-5: escape key closes lightbox', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('escapist');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('Escape');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       const testImage = generateTestImage('tiny');
       await gallery.uploadPhoto(testImage, testContext.generatePhotoName(1));
@@ -169,18 +141,13 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
 
     test('P1-PHOTO-6: arrow keys navigate between photos in lightbox', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('navigator');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('Navigate');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Upload 3 photos
       for (let i = 1; i <= 3; i++) {

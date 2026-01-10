@@ -194,10 +194,10 @@ test.describe('Registration @p1 @auth @crypto', () => {
   });
 
   test.describe('Successful Registration', () => {
-    test('can register a new user and access app', async ({ authenticatedPage, testUser }) => {
-      await authenticatedPage.goto('/');
+    test('can register a new user and access app', async ({ page, testUser }) => {
+      await page.goto('/');
 
-      const loginPage = new LoginPage(authenticatedPage);
+      const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
 
       // Register new user
@@ -207,13 +207,13 @@ test.describe('Registration @p1 @auth @crypto', () => {
       await loginPage.expectLoginSuccess();
 
       // Verify app shell is visible
-      await expect(authenticatedPage.getByTestId('app-shell')).toBeVisible();
+      await expect(page.getByTestId('app-shell')).toBeVisible();
     });
 
-    test('shows loading state during registration', async ({ authenticatedPage, testUser }) => {
-      await authenticatedPage.goto('/');
+    test('shows loading state during registration', async ({ page, testUser }) => {
+      await page.goto('/');
 
-      const loginPage = new LoginPage(authenticatedPage);
+      const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
 
       await loginPage.switchToRegisterMode();
@@ -231,16 +231,16 @@ test.describe('Registration @p1 @auth @crypto', () => {
       // The registration process may complete quickly or show loading text
       // Either the button shows "Creating Account..." OR we navigate to app shell
       await expect(
-        authenticatedPage.locator('[data-testid="app-shell"]').or(
-          authenticatedPage.getByRole('button', { name: /creating account/i })
+        page.locator('[data-testid="app-shell"]').or(
+          page.getByRole('button', { name: /creating account/i })
         )
       ).toBeVisible({ timeout: 60000 });
     });
 
-    test('newly registered user can logout and login again', async ({ authenticatedPage, testUser }) => {
-      await authenticatedPage.goto('/');
+    test('newly registered user can logout and login again', async ({ page, testUser }) => {
+      await page.goto('/');
 
-      const loginPage = new LoginPage(authenticatedPage);
+      const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
 
       // Register new user
@@ -248,7 +248,7 @@ test.describe('Registration @p1 @auth @crypto', () => {
       await loginPage.expectLoginSuccess();
 
       // Logout
-      const logoutButton = authenticatedPage.getByRole('button', { name: /lock/i });
+      const logoutButton = page.getByRole('button', { name: /lock/i });
       await logoutButton.click();
 
       // Should return to login form
@@ -269,14 +269,14 @@ test.describe('Registration @p1 @auth @crypto', () => {
       // In LocalAuth mode, login after fresh registration may require re-registration
       // or the keys may need to be loaded from storage
       await expect(
-        authenticatedPage.locator('[data-testid="app-shell"]').or(
-          authenticatedPage.getByRole('alert')
+        page.locator('[data-testid="app-shell"]').or(
+          page.getByRole('alert')
         )
       ).toBeVisible({ timeout: 60000 });
 
       // If we got an error, that's expected in LocalAuth mode for a fresh context
       // If we got app-shell, the login succeeded
-      const hasError = await authenticatedPage.getByRole('alert').isVisible().catch(() => false);
+      const hasError = await page.getByRole('alert').isVisible().catch(() => false);
       if (hasError) {
         // Login failed - this is expected behavior in LocalAuth mode when
         // the user's local crypto keys haven't been persisted across sessions

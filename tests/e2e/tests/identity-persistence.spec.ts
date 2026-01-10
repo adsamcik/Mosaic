@@ -89,7 +89,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       await appShell.createAlbum();
 
       const createDialog = new CreateAlbumDialogPage(page);
-      await createDialog.createAlbum('Identity Test Album');
+      await createDialog.createAlbum(`Identity Test Album ${Date.now()}`);
 
       // Wait for album to appear in list
       const albumCard = page.getByTestId('album-card').first();
@@ -128,7 +128,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       
       if (needsLogin) {
         console.log('[TEST] Re-login required after reload');
-        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+        await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
         await loginPage.expectLoginSuccess();
       } else {
         console.log('[TEST] Session persisted, no re-login needed');
@@ -252,7 +252,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
 
       console.log('[TEST] Phase 3: Re-logging in');
 
-      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+      await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
       await appShell.waitForLoad();
 
@@ -373,7 +373,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       await appShell.logout();
       await loginPage.expectLoginFormVisible();
 
-      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+      await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
 
       // Wait for wrapped key to be returned from /api/users/me response
@@ -449,7 +449,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       // Create album
       await appShell.createAlbum();
       const createDialog = new CreateAlbumDialogPage(page);
-      await createDialog.createAlbum('Stress Test Album');
+      await createDialog.createAlbum(`Stress Test Album ${Date.now()}`);
 
       const albumCard = page.getByTestId('album-card').first();
       await expect(albumCard).toBeVisible({ timeout: 30000 });
@@ -483,7 +483,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
       if (needsLogin) {
         console.log('[TEST] Re-login required after reload');
-        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+        await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
         await loginPage.expectLoginSuccess();
       }
 
@@ -546,7 +546,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       const needsLoginFinal = await loginPage.loginForm.isVisible().catch(() => false);
       if (needsLoginFinal) {
         console.log('[TEST] Re-login required for final verification');
-        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+        await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
         await loginPage.expectLoginSuccess();
       }
 
@@ -614,42 +614,62 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       await route.continue({ headers });
     });
 
+    // Track album name for reliable navigation after re-login
+    const albumName = `Logout Persistence Test Album ${Date.now()}`;
+
     try {
       // ========== PHASE 1: Initial login and setup ==========
       console.log('[TEST] Phase 1: Initial login and album creation');
+      console.log(`[TEST] Test user: ${testUser}`);
+      console.log(`[TEST] Album name: ${albumName}`);
 
       await page.goto('/');
+      console.log('[TEST] Navigated to /');
 
       const loginPage = new LoginPage(page);
       await firstTimeLogin(page, loginPage, testUser, TEST_CONSTANTS.PASSWORD);
+      console.log('[TEST] firstTimeLogin completed, waiting for success');
       await loginPage.expectLoginSuccess();
+      console.log('[TEST] Login success confirmed');
 
       const appShell = new AppShell(page);
       await appShell.waitForLoad();
+      console.log('[TEST] App shell loaded');
 
       // Create album through browser UI
       await appShell.createAlbum();
+      console.log('[TEST] Create album button clicked');
 
       const createDialog = new CreateAlbumDialogPage(page);
-      await createDialog.createAlbum('Logout Persistence Test Album');
+      await createDialog.createAlbum(albumName);
+      console.log('[TEST] Album created, dialog closed');
 
       // Wait for album to appear and click it
       const albumCard = page.getByTestId('album-card').first();
       await expect(albumCard).toBeVisible({ timeout: 30000 });
+      console.log('[TEST] Album card visible');
       await albumCard.click();
+      console.log('[TEST] Album card clicked');
 
       // Wait for gallery view
       const gallery = new GalleryPage(page);
       await gallery.waitForLoad();
+      console.log('[TEST] Gallery loaded');
 
       // ========== PHASE 2: Upload a photo ==========
       console.log('[TEST] Phase 2: Uploading photo');
 
       const testImage = generateTestImage();
       await gallery.uploadPhoto(testImage, 'logout-test-photo.png');
+      console.log('[TEST] Upload initiated');
 
       // Wait for photo to appear and stabilize
       await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+      console.log('[TEST] Photo visible');
+
+      // Wait for network to settle after upload
+      await waitForNetworkIdle(page, { timeout: 30000, urlPattern: /\/api\// });
+      console.log('[TEST] Network idle after upload');
 
       const photoCountBefore = await gallery.photos.count();
       expect(photoCountBefore).toBeGreaterThanOrEqual(1);
@@ -662,40 +682,70 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       // Navigate back to app shell first (if needed)
       const backButton = page.getByRole('button', { name: /back|albums|zpět|alba/i });
       if (await backButton.isVisible().catch(() => false)) {
+        console.log('[TEST] Back button visible, clicking');
         await backButton.click();
         await appShell.waitForLoad();
+        console.log('[TEST] Navigated back to app shell');
       }
 
       // Click the logout button
+      console.log('[TEST] Clicking logout button');
       await appShell.logout();
 
-      // Verify we're back at login form
-      await loginPage.expectLoginFormVisible();
+      // Wait for login form to appear with explicit timeout and logging
+      console.log('[TEST] Waiting for login form to appear after logout');
+      await expect(loginPage.loginForm).toBeVisible({ timeout: 30000 });
+      console.log('[TEST] Login form visible after logout');
 
+      // Additional wait for logout to fully complete (session cleanup)
+      await page.waitForTimeout(500);
       console.log('[TEST] Logout complete - session cleared');
 
       // ========== PHASE 4: Re-login with same password ==========
       console.log('[TEST] Phase 4: Re-logging in with same password');
 
-      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+      // Wait for form to be stable before interacting
+      await expect(loginPage.passwordInput).toBeVisible({ timeout: 10000 });
+      console.log('[TEST] Password input visible');
+
+      await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
+      console.log('[TEST] loginOrRegister called, waiting for success');
       await loginPage.expectLoginSuccess();
+      console.log('[TEST] Login success confirmed');
 
       await appShell.waitForLoad();
+      console.log('[TEST] App shell loaded after re-login');
+
+      // Wait for album list to populate (async fetch after login)
+      await waitForNetworkIdle(page, { timeout: 30000, urlPattern: /\/api\// });
+      console.log('[TEST] Network idle after re-login');
 
       console.log('[TEST] Re-login successful');
 
       // ========== PHASE 5: Navigate back to album ==========
       console.log('[TEST] Phase 5: Navigating to album');
 
-      // Find and click the album we created
-      const albumCardAfterLogin = page.getByTestId('album-card').first();
+      // Find and click the album we created - use name for reliability
+      const albumCardAfterLogin = page.getByTestId('album-card').filter({ hasText: albumName });
+      console.log('[TEST] Looking for album card with name: ' + albumName);
       await expect(albumCardAfterLogin).toBeVisible({ timeout: 30000 });
+      console.log('[TEST] Album card found, clicking');
       await albumCardAfterLogin.click();
 
       // ========== PHASE 6: Verify photo is still accessible ==========
       console.log('[TEST] Phase 6: Verifying photo accessibility after logout/re-login');
 
       await gallery.waitForLoad();
+      console.log('[TEST] Gallery loaded after navigation');
+
+      // Wait for crypto worker to process and photos to decrypt
+      // This is critical: after re-login, the crypto system needs time to:
+      // 1. Re-derive identity from password
+      // 2. Fetch and unwrap account key
+      // 3. Fetch and open epoch keys
+      // 4. Decrypt photo thumbnails
+      await waitForNetworkIdle(page, { timeout: 30000, urlPattern: /\/api\// });
+      console.log('[TEST] Network idle in gallery');
 
       // THE CRITICAL CHECK: Can we still see the photo after explicit logout and re-login?
       // This validates that:
@@ -703,9 +753,12 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       // - Wrapped account key was correctly retrieved and unwrapped
       // - Epoch key sealed to identity was correctly opened
       // - Photo shard was correctly decrypted
+      console.log('[TEST] Waiting for photo to be visible');
       await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+      console.log('[TEST] Photo visible, counting');
 
       const photoCountAfter = await gallery.photos.count();
+      console.log(`[TEST] Photo count after re-login: ${photoCountAfter}`);
       expect(photoCountAfter).toBe(photoCountBefore);
 
       console.log(`[TEST] SUCCESS: Photo still accessible after explicit logout and re-login. Count: ${photoCountAfter}`);

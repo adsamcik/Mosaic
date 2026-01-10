@@ -12,7 +12,6 @@
  */
 
 import {
-  ApiHelper,
   AppShell,
   CreateAlbumDialogPage,
   expect,
@@ -27,49 +26,59 @@ test.describe('Photo Workflow: Upload & Display @p1 @photo @crypto @slow', () =>
   // Triple the timeout for slow crypto operations
   test.slow();
 
-  const apiHelper = new ApiHelper();
-
-  test.beforeEach(async ({ authenticatedPage, testUser }) => {
-    // Create album for each test
-    await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+  test.beforeEach(async ({ page, testUser }) => {
+    // 1. Login FIRST (registers user with crypto)
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
+    // 2. Create album via UI (generates real epoch keys through crypto worker)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Upload Test ${Date.now()}`);
+
     // Navigate to the album
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
   });
 
   test('upload single photo displays in gallery', async ({
-    authenticatedPage,
+    page,
   }) => {
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     const testImage = generateTestImage();
 
     // Initially empty
     const initialCount = await gallery.photos.count();
+    console.log(`[Test] Initial photo count: ${initialCount}`);
     expect(initialCount).toBe(0);
 
-    // Upload photo
+    // Upload photo - uploadPhoto has internal logging for timing
+    console.log('[Test] Starting single photo upload...');
     await gallery.uploadPhoto(testImage, 'single-test.png');
+    console.log('[Test] uploadPhoto returned');
 
-    // Wait for photo to appear
+    // Wait for photo to appear in gallery
+    console.log('[Test] Waiting for photo to be visible...');
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
-    expect(await gallery.photos.count()).toBe(1);
+    
+    const finalCount = await gallery.photos.count();
+    console.log(`[Test] Final photo count: ${finalCount}`);
+    expect(finalCount).toBe(1);
   });
 
   test('upload multiple photos sequentially', async ({
-    authenticatedPage,
+    page,
   }) => {
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     const testImage = generateTestImage();
 
     // Upload 3 photos
@@ -88,9 +97,9 @@ test.describe('Photo Workflow: Upload & Display @p1 @photo @crypto @slow', () =>
   });
 
   test('uploaded photo shows thumbnail', async ({
-    authenticatedPage,
+    page,
   }) => {
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     const testImage = generateTestImage();
 
     await gallery.uploadPhoto(testImage, 'thumbnail-test.png');
@@ -111,9 +120,9 @@ test.describe('Photo Workflow: Upload & Display @p1 @photo @crypto @slow', () =>
   });
 
   test('upload button accepts image files', async ({
-    authenticatedPage,
+    page,
   }) => {
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
 
     // Check file input accept attribute
     const acceptAttr = await gallery.fileInput.first().getAttribute('accept');
@@ -123,13 +132,13 @@ test.describe('Photo Workflow: Upload & Display @p1 @photo @crypto @slow', () =>
   });
 
   test('upload shows progress indication', async ({
-    authenticatedPage,
+    page,
   }) => {
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     const testImage = generateTestImage();
 
     // Set up a promise to capture progress indicator
-    const progressPromise = authenticatedPage.waitForSelector(
+    const progressPromise = page.waitForSelector(
       '[role="progressbar"], [data-testid="upload-progress"], .progress, .uploading',
       { timeout: 5000 }
     ).catch(() => null);
@@ -146,25 +155,29 @@ test.describe('Photo Workflow: Upload & Display @p1 @photo @crypto @slow', () =>
 });
 
 test.describe('Photo Workflow: Lightbox/Full View @p1 @photo @gallery', () => {
-  const apiHelper = new ApiHelper();
-
   test('clicking photo opens lightbox', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    // 1. Login FIRST (registers user with crypto)
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // 2. Create album via UI (generates real epoch keys through crypto worker)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Lightbox Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Upload a photo
@@ -176,7 +189,7 @@ test.describe('Photo Workflow: Lightbox/Full View @p1 @photo @gallery', () => {
     await gallery.photos.first().click();
 
     // Lightbox should open
-    const lightbox = authenticatedPage.getByTestId('photo-lightbox');
+    const lightbox = page.getByTestId('photo-lightbox');
     const hasLightbox = await lightbox.isVisible().catch(() => false);
 
     if (hasLightbox) {
@@ -187,7 +200,7 @@ test.describe('Photo Workflow: Lightbox/Full View @p1 @photo @gallery', () => {
       await expect(fullImage.first()).toBeVisible({ timeout: 30000 });
     } else {
       // Lightbox may use a different selector
-      const dialog = authenticatedPage.locator('[role="dialog"], .lightbox, .modal');
+      const dialog = page.locator('[role="dialog"], .lightbox, .modal');
       const hasDialog = await dialog.first().isVisible().catch(() => false);
 
       expect(hasDialog || true).toBeTruthy(); // Pass with warning if no lightbox found
@@ -199,22 +212,28 @@ test.describe('Photo Workflow: Lightbox/Full View @p1 @photo @gallery', () => {
   });
 
   test('lightbox can be closed', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    // 1. Login FIRST (registers user with crypto)
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // 2. Create album via UI (generates real epoch keys through crypto worker)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Lightbox Close Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     const testImage = generateTestImage();
@@ -224,34 +243,40 @@ test.describe('Photo Workflow: Lightbox/Full View @p1 @photo @gallery', () => {
     // Open lightbox
     await gallery.photos.first().click();
 
-    const lightbox = authenticatedPage.getByTestId('photo-lightbox');
+    const lightbox = page.getByTestId('photo-lightbox');
     const hasLightbox = await lightbox.isVisible().catch(() => false);
 
     if (hasLightbox) {
       // Close with escape key
-      await authenticatedPage.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
 
       await expect(lightbox).not.toBeVisible({ timeout: 5000 });
     }
   });
 
   test('lightbox navigation between photos', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    // 1. Login FIRST (registers user with crypto)
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // 2. Create album via UI (generates real epoch keys through crypto worker)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Lightbox Nav Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Upload multiple photos
@@ -267,45 +292,49 @@ test.describe('Photo Workflow: Lightbox/Full View @p1 @photo @gallery', () => {
     // Open first photo
     await gallery.photos.first().click();
 
-    const lightbox = authenticatedPage.getByTestId('photo-lightbox');
+    const lightbox = page.getByTestId('photo-lightbox');
     const hasLightbox = await lightbox.isVisible().catch(() => false);
 
     if (hasLightbox) {
       // Navigate with arrow keys
-      await authenticatedPage.keyboard.press('ArrowRight');
+      await page.keyboard.press('ArrowRight');
 
       // Should still be in lightbox
       await expect(lightbox).toBeVisible();
 
-      await authenticatedPage.keyboard.press('ArrowLeft');
+      await page.keyboard.press('ArrowLeft');
       await expect(lightbox).toBeVisible();
 
       // Close
-      await authenticatedPage.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
     }
   });
 });
 
 test.describe('Photo Workflow: Deletion @p1 @photo', () => {
-  const apiHelper = new ApiHelper();
-
   test('photo can be deleted from gallery', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    // 1. Login FIRST (registers user with crypto)
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // 2. Create album via UI (generates real epoch keys through crypto worker)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Delete Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Upload photo
@@ -313,58 +342,42 @@ test.describe('Photo Workflow: Deletion @p1 @photo', () => {
     await gallery.uploadPhoto(testImage, 'delete-test.png');
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
 
+    // CRITICAL: Wait for photo to be fully synced (not just visible as pending)
+    // Pending uploads have aria-label "View Uploading...", synced photos have "View <filename>"
+    // Use a polling assertion to wait for the sync to complete
+    await expect(async () => {
+      const ariaLabel = await gallery.photos.first().getAttribute('aria-label');
+      expect(ariaLabel).not.toContain('Uploading...');
+    }).toPass({ timeout: 60000 });
+
     const initialCount = await gallery.photos.count();
     expect(initialCount).toBe(1);
 
-    // Look for delete option (could be context menu, button, or selection mode)
-    // Try right-click context menu
-    await gallery.photos.first().click({ button: 'right' });
+    // Hover over photo to reveal delete button, then click it
+    const photoThumbnail = gallery.photos.first();
+    await photoThumbnail.hover();
 
-    const deleteOption = authenticatedPage.getByRole('menuitem', { name: /delete/i });
-    const hasDeleteMenu = await deleteOption.isVisible().catch(() => false);
+    // Find and click the delete button on the thumbnail (shown on hover)
+    const deleteButton = page.getByTestId('photo-delete-button');
+    await expect(deleteButton).toBeVisible({ timeout: 5000 });
+    await deleteButton.click();
 
-    if (hasDeleteMenu) {
-      await deleteOption.click();
+    // Wait for delete confirmation dialog
+    const deleteDialog = page.getByTestId('delete-photo-dialog');
+    await expect(deleteDialog).toBeVisible({ timeout: 5000 });
 
-      // Confirm deletion if dialog appears
-      const confirmButton = authenticatedPage.getByRole('button', { name: /delete|confirm|yes/i });
-      const hasConfirm = await confirmButton.first().isVisible().catch(() => false);
-      if (hasConfirm) {
-        await confirmButton.first().click();
-      }
+    // Click confirm delete button
+    const confirmButton = page.getByTestId('delete-confirm-button');
+    await confirmButton.click();
 
-      // Photo should be removed
-      await expect(async () => {
-        const count = await gallery.photos.count();
-        expect(count).toBeLessThan(initialCount);
-      }).toPass({ timeout: 30000 });
-    } else {
-      // Try selection mode + delete button
-      await gallery.photos.first().click(); // Select photo
+    // Wait for dialog to close (deletion in progress and completed)
+    await expect(deleteDialog).toBeHidden({ timeout: 30000 });
 
-      const deleteButton = authenticatedPage.getByRole('button', { name: /delete/i });
-      const hasDeleteButton = await deleteButton.first().isVisible().catch(() => false);
-
-      if (hasDeleteButton) {
-        await deleteButton.first().click();
-
-        const confirmButton = authenticatedPage.getByRole('button', { name: /delete|confirm|yes/i });
-        const hasConfirm = await confirmButton.first().isVisible().catch(() => false);
-        if (hasConfirm) {
-          await confirmButton.first().click();
-        }
-
-        await expect(async () => {
-          const count = await gallery.photos.count();
-          expect(count).toBeLessThan(initialCount);
-        }).toPass({ timeout: 30000 });
-      } else {
-        test.info().annotations.push({
-          type: 'skip',
-          description: 'Delete functionality not found in UI',
-        });
-      }
-    }
+    // Photo should be removed - wait for empty state or count decrease
+    await expect(async () => {
+      const count = await gallery.photos.count();
+      expect(count).toBeLessThan(initialCount);
+    }).toPass({ timeout: 30000 });
   });
 
   test('deleted photo does not reappear after reload', async ({
@@ -385,7 +398,7 @@ test.describe('Photo Workflow: Deletion @p1 @photo', () => {
       await page.goto('/');
       const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
-      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+      await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
 
       // Create album through browser UI (generates real epoch keys)
@@ -393,7 +406,7 @@ test.describe('Photo Workflow: Deletion @p1 @photo', () => {
       await appShell.waitForLoad();
       await appShell.createAlbum();
       const createDialog = new CreateAlbumDialogPage(page);
-      await createDialog.createAlbum('Photo Delete Test');
+      await createDialog.createAlbum(`Photo Delete Test ${Date.now()}`);
 
       const albumCard = page.getByTestId('album-card').first();
       await expect(albumCard).toBeVisible({ timeout: 30000 });
@@ -440,7 +453,7 @@ test.describe('Photo Workflow: Deletion @p1 @photo', () => {
         // Check if we need to re-login (session may persist)
         const needsLogin = await loginPage.loginForm.isVisible({ timeout: 5000 }).catch(() => false);
         if (needsLogin) {
-          await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+          await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
           await loginPage.expectLoginSuccess();
         } else {
           await appShell.waitForLoad();
@@ -462,25 +475,29 @@ test.describe('Photo Workflow: Deletion @p1 @photo', () => {
 });
 
 test.describe('Photo Workflow: Keyboard Navigation @p2 @photo @a11y', () => {
-  const apiHelper = new ApiHelper();
-
   test('photos can be navigated with arrow keys in gallery', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    // 1. Login FIRST (registers user with crypto)
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // 2. Create album via UI (generates real epoch keys through crypto worker)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Keyboard Nav Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Upload photos
@@ -497,16 +514,16 @@ test.describe('Photo Workflow: Keyboard Navigation @p2 @photo @a11y', () => {
     await gallery.photoGrid.focus();
 
     // Navigate with arrow keys
-    await authenticatedPage.keyboard.press('ArrowRight');
-    await authenticatedPage.keyboard.press('ArrowRight');
-    await authenticatedPage.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowLeft');
 
     // Press Enter to open lightbox
-    await authenticatedPage.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
 
     // Check if lightbox opened
-    const lightbox = authenticatedPage.getByTestId('photo-lightbox');
-    const dialog = authenticatedPage.locator('[role="dialog"]');
+    const lightbox = page.getByTestId('photo-lightbox');
+    const dialog = page.locator('[role="dialog"]');
 
     const hasOverlay = await lightbox.isVisible().catch(() => false) ||
                        await dialog.first().isVisible().catch(() => false);
@@ -517,29 +534,33 @@ test.describe('Photo Workflow: Keyboard Navigation @p2 @photo @a11y', () => {
 });
 
 test.describe('Photo Workflow: Empty States @p2 @photo @ui', () => {
-  const apiHelper = new ApiHelper();
-
   test('empty gallery shows upload prompt', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    // 1. Login FIRST (registers user with crypto)
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // 2. Create album via UI (generates real epoch keys through crypto worker)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Empty State Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Should show empty state
-    const emptyMessage = authenticatedPage.getByText(/no photos|empty|upload|get started/i);
+    const emptyMessage = page.getByText(/no photos|empty|upload|get started/i);
     await expect(emptyMessage.first()).toBeVisible({ timeout: 10000 });
 
     // Upload button should be visible
@@ -547,22 +568,28 @@ test.describe('Photo Workflow: Empty States @p2 @photo @ui', () => {
   });
 
   test('empty gallery shows clear call to action', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    // 1. Login FIRST (registers user with crypto)
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // 2. Create album via UI (generates real epoch keys through crypto worker)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`CTA Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Should have clickable upload button or drop zone

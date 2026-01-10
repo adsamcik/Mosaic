@@ -177,12 +177,12 @@ test.describe('Clear Data Functionality', () => {
 });
 
 test.describe('Settings Persistence', () => {
-  test('P1-SETTINGS-11: theme preference persists after logout/login', async ({ authenticatedPage, testUser }) => {
-    const loginPage = new LoginPage(authenticatedPage);
-    const appShell = new AppShell(authenticatedPage);
-    const settingsPage = new SettingsPage(authenticatedPage);
+  test('P1-SETTINGS-11: theme preference persists after logout/login', async ({ page, testUser }) => {
+    const loginPage = new LoginPage(page);
+    const appShell = new AppShell(page);
+    const settingsPage = new SettingsPage(page);
 
-    await authenticatedPage.goto('/');
+    await page.goto('/');
     await loginPage.waitForForm();
     await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
     await loginPage.expectLoginSuccess();
@@ -190,7 +190,7 @@ test.describe('Settings Persistence', () => {
     await settingsPage.waitForLoad();
 
     // Set theme to dark
-    const themeSelect = authenticatedPage.getByTestId('theme-select');
+    const themeSelect = page.getByTestId('theme-select');
     await themeSelect.selectOption('dark');
     await expect(themeSelect).toHaveValue('dark');
 
@@ -211,7 +211,7 @@ test.describe('Settings Persistence', () => {
     await settingsPage.waitForLoad();
 
     // Theme should still be dark
-    await expect(authenticatedPage.getByTestId('theme-select')).toHaveValue('dark');
+    await expect(page.getByTestId('theme-select')).toHaveValue('dark');
   });
 });
 
@@ -304,23 +304,23 @@ test.describe('Language Settings @p1 @ui', () => {
   // This test verifies language persists across logout/login cycle
   // Using loggedInPage fixture for reliable authentication
   test('P1-SETTINGS-16: language preference persists after logout/login', async ({ loggedInPage, testUser }) => {
-    const authenticatedPage = loggedInPage;
-    const loginPage = new LoginPage(authenticatedPage);
-    const appShell = new AppShell(authenticatedPage);
-    const settingsPage = new SettingsPage(authenticatedPage);
+    const page = loggedInPage;
+    const loginPage = new LoginPage(page);
+    const appShell = new AppShell(page);
+    const settingsPage = new SettingsPage(page);
     
     // We're already on Settings (beforeEach navigates there)
 
     // Switch to Czech
-    const languageSelect = authenticatedPage.getByTestId('language-select');
+    const languageSelect = page.getByTestId('language-select');
     await languageSelect.selectOption('cs');
     await expect(languageSelect).toHaveValue('cs');
     
     // Wait for UI to update to Czech (confirms language change was applied)
-    await expect(authenticatedPage.getByRole('heading', { name: 'Jazyk' })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: 'Jazyk' })).toBeVisible({ timeout: 5000 });
     
     // Verify localStorage was updated
-    const savedLang = await authenticatedPage.evaluate(() => localStorage.getItem('mosaic-language'));
+    const savedLang = await page.evaluate(() => localStorage.getItem('mosaic-language'));
     expect(savedLang).toBe('cs');
 
     // Go back and logout  
@@ -330,14 +330,14 @@ test.describe('Language Settings @p1 @ui', () => {
     await loginPage.waitForForm();
 
     // Verify localStorage persists after logout (language should still be Czech in localStorage)
-    const langAfterLogout = await authenticatedPage.evaluate(() => localStorage.getItem('mosaic-language'));
+    const langAfterLogout = await page.evaluate(() => localStorage.getItem('mosaic-language'));
     expect(langAfterLogout).toBe('cs');
 
     // Login again (user already exists now) - wait for form to be ready first
-    await expect(authenticatedPage.getByRole('button', { name: /login|přihlásit/i })).toBeEnabled({ timeout: 2000 });
+    await expect(page.getByRole('button', { name: /login|přihlásit/i })).toBeEnabled({ timeout: 2000 });
     
     // Check if LocalAuth mode 
-    const usernameInput = authenticatedPage.getByLabel(/username|uživatelské jméno/i);
+    const usernameInput = page.getByLabel(/username|uživatelské jméno/i);
     const isLocalAuth = await usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
     
     if (isLocalAuth) {
@@ -352,14 +352,14 @@ test.describe('Language Settings @p1 @ui', () => {
     await settingsPage.waitForLoad();
 
     // Language should still be Czech (persisted in localStorage)
-    await expect(authenticatedPage.getByTestId('language-select')).toHaveValue('cs');
+    await expect(page.getByTestId('language-select')).toHaveValue('cs');
     
     // Verify UI is in Czech by checking a translated heading
-    await expect(authenticatedPage.getByRole('heading', { name: 'Jazyk' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Jazyk' })).toBeVisible();
 
     // Reset to English for other tests
-    await authenticatedPage.getByTestId('language-select').selectOption('en');
-    await expect(authenticatedPage.getByRole('heading', { name: 'Language' })).toBeVisible({ timeout: 5000 });
+    await page.getByTestId('language-select').selectOption('en');
+    await expect(page.getByRole('heading', { name: 'Language' })).toBeVisible({ timeout: 5000 });
   });
 });
 

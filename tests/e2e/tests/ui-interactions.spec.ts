@@ -13,7 +13,7 @@ import {
   Lightbox,
   CreateAlbumDialog,
   loginUser,
-  createAlbumViaAPI,
+  createAlbumViaUI,
   generateTestImage,
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
@@ -100,35 +100,89 @@ test.describe('UI Interactions @p2 @ui @fast', () => {
 
     test('P2-UI-5: gallery adapts to viewport size', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('responsive-gallery');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('Responsive');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
-      // Upload a photo
+      // Upload a photo with retry logic for upload flakiness
       const testImage = generateTestImage('tiny');
+      console.log('[Test] Starting photo upload...');
       await gallery.uploadPhoto(testImage, 'responsive-test.png');
+      console.log('[Test] uploadPhoto returned, verifying photo count...');
+      
+      // Verify the upload actually succeeded before proceeding
+      const photoCount = await gallery.getPhotoCount();
+      console.log(`[Test] Photo count after upload: ${photoCount}`);
+      
+      // Ensure photo is fully rendered and visible before viewport tests
+      // Wait for thumbnail to not just exist but be visually stable
+      console.log('[Test] Waiting for thumbnail to be rendered with positive dimensions...');
+      await user.page.waitForFunction(() => {
+        const thumbnails = document.querySelectorAll('[data-testid="photo-thumbnail"], [data-testid="justified-photo-thumbnail"]');
+        console.log(`[waitForFunction] Found ${thumbnails.length} thumbnail(s)`);
+        if (thumbnails.length !== 1) return false;
+        const rect = thumbnails[0].getBoundingClientRect();
+        console.log(`[waitForFunction] Thumbnail rect: ${rect.width}x${rect.height}`);
+        return rect.width > 0 && rect.height > 0;
+      }, { timeout: 30000 });
+      console.log('[Test] Photo thumbnail is fully rendered');
+      
       await gallery.expectPhotoCount(1);
+      console.log('[Test] Initial photo count verified: 1');
 
-      // Resize viewport
+      // Helper to wait for layout to stabilize after viewport resize
+      // ResizeObserver callbacks are async, so we need to wait for:
+      // 1. ResizeObserver to fire
+      // 2. React state update (containerWidth)
+      // 3. Layout recalculation (layoutItems useMemo)
+      // 4. Visible items recalculation (visibleItems useMemo)
+      // 5. DOM update
+      const waitForLayoutStable = async () => {
+        // Wait for any pending ResizeObserver callbacks and React updates
+        await user.page.waitForTimeout(200);
+        // Wait for the grid container to be present and have positive dimensions
+        await user.page.waitForFunction(() => {
+          const grid = document.querySelector('[data-testid="photo-grid"], [data-testid="justified-grid"]');
+          if (!grid) return false;
+          const rect = grid.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        }, { timeout: 10000 });
+        // Wait for photos to still be visible after layout change
+        await user.page.waitForFunction(() => {
+          const thumbnails = document.querySelectorAll('[data-testid="photo-thumbnail"], [data-testid="justified-photo-thumbnail"]');
+          if (thumbnails.length === 0) return false;
+          // Check that at least one thumbnail has positive dimensions
+          for (const thumb of thumbnails) {
+            const rect = thumb.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) return true;
+          }
+          return false;
+        }, { timeout: 10000 });
+      };
+
+      // Resize to mobile viewport
+      console.log('[Test] Resizing to mobile viewport: 400x600');
       await user.page.setViewportSize({ width: 400, height: 600 });
+      await waitForLayoutStable();
+      console.log('[Test] Layout stabilized after mobile resize');
 
-      // Gallery should still show photos
+      // Gallery should still show photos after layout stabilizes
       await gallery.expectPhotoCount(1);
+      console.log('[Test] Photo count verified after mobile resize: 1');
 
-      // Resize back
+      // Resize back to desktop
+      console.log('[Test] Resizing back to desktop: 1280x720');
       await user.page.setViewportSize({ width: 1280, height: 720 });
+      await waitForLayoutStable();
+      console.log('[Test] Layout stabilized after desktop resize');
 
       // Still works
       await gallery.expectPhotoCount(1);
+      console.log('[Test] Photo count verified after desktop resize: 1');
     });
   });
 
@@ -169,18 +223,13 @@ test.describe('UI Interactions @p2 @ui @fast', () => {
   test.describe('View Modes', () => {
     test('P2-UI-8: gallery supports grid view', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('grid-view');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('Grid');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Upload photos
       for (let i = 1; i <= 4; i++) {
@@ -198,18 +247,13 @@ test.describe('UI Interactions @p2 @ui @fast', () => {
   test.describe('Drag and Drop', () => {
     test('P2-UI-9: drop zone appears when dragging file', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('drag-drop');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('DragDrop');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Simulate drag enter
       await user.page.evaluate(() => {

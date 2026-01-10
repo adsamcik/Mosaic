@@ -20,7 +20,7 @@ import {
   GalleryPage,
   Lightbox,
   loginUser,
-  createAlbumViaAPI,
+  createAlbumViaUI,
   generateTestImage,
   TEST_PASSWORD,
 } from '../fixtures-enhanced';
@@ -35,21 +35,13 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       testContext,
     }) => {
       const user = await testContext.createAuthenticatedUser('downloader');
-
-      // Create album
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      // Navigate to album
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('Download');
+      await createAlbumViaUI(user.page, albumName);
 
-      // Upload photo
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       const testImage = generateTestImage('small');
       const filename = testContext.generatePhotoName(1);
@@ -71,21 +63,13 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       testContext,
     }) => {
       const user = await testContext.createAuthenticatedUser('download-clicker');
-
-      // Create album
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      // Navigate to album
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('DownloadClick');
+      await createAlbumViaUI(user.page, albumName);
 
-      // Upload photo
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       const testImage = generateTestImage('small');
       const filename = `download-test-${Date.now()}.png`;
@@ -117,21 +101,13 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       testContext,
     }) => {
       const user = await testContext.createAuthenticatedUser('content-verifier');
-
-      // Create album
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      // Navigate to album
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('ContentVerify');
+      await createAlbumViaUI(user.page, albumName);
 
-      // Upload a photo with known content
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Use a small image for faster testing
       const testImage = generateTestImage('small');
@@ -174,20 +150,13 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       testContext,
     }) => {
       const user = await testContext.createAuthenticatedUser('roundtrip-tester');
-
-      // Create album
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      // Navigate to album
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('RoundTrip');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Use a deterministic image for comparison
       // Using specific color for reproducibility
@@ -234,18 +203,13 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       testContext,
     }) => {
       const user = await testContext.createAuthenticatedUser('owner-download');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('OwnerDownload');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       const testImage = generateTestImage('tiny');
       await gallery.uploadPhoto(testImage, testContext.generatePhotoName(1));
@@ -273,18 +237,13 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       testContext,
     }) => {
       const user = await testContext.createAuthenticatedUser('loading-check');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('LoadingCheck');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Use a larger image to ensure there's loading time
       const testImage = generateTestImage('medium');
@@ -313,18 +272,13 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       testContext,
     }) => {
       const user = await testContext.createAuthenticatedUser('multi-download');
-
-      const albumResult = await createAlbumViaAPI(user.email);
-      testContext.trackAlbum(albumResult.id, user.email);
-
       await loginUser(user, TEST_PASSWORD);
 
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
+      // Use createAlbumViaUI for real crypto setup (required for photo operations)
+      const albumName = testContext.generateAlbumName('MultiDownload');
+      await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
-      await gallery.waitForLoad();
 
       // Upload 2 photos
       for (let i = 1; i <= 2; i++) {

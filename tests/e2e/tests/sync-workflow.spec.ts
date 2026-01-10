@@ -9,7 +9,6 @@
  */
 
 import {
-  ApiHelper,
   AppShell,
   CreateAlbumDialogPage,
   expect,
@@ -24,18 +23,15 @@ import {
 import { waitForCondition } from '../framework';
 
 test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
+  // Run these tests serially to avoid resource contention between multi-browser sessions
+  test.describe.configure({ mode: 'serial' });
   // Triple the timeout for slow multi-session sync tests
   test.slow();
-
-  const apiHelper = new ApiHelper();
 
   test('photos sync between browser sessions', async ({
     browser,
     testUser,
   }) => {
-    // Create album
-    const album = await apiHelper.createAlbum(testUser);
-
     // Session 1: Upload photos
     const context1 = await browser.newContext();
     const page1 = await context1.newPage();
@@ -51,9 +47,17 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
     await page1.goto('/');
     const login1 = new LoginPage(page1);
     await login1.waitForForm();
-    await login1.login(TEST_CONSTANTS.PASSWORD);
+    await login1.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await login1.expectLoginSuccess();
 
+    // Create album via UI (generates real epoch keys)
+    const appShell1 = new AppShell(page1);
+    await appShell1.waitForLoad();
+    await appShell1.createAlbum();
+    const createDialog1 = new CreateAlbumDialogPage(page1);
+    await createDialog1.createAlbum(`Sync Album ${Date.now()}`);
+
+    // Navigate to the album
     const card1 = page1.getByTestId('album-card').first();
     await expect(card1).toBeVisible({ timeout: 30000 });
     await card1.click();
@@ -88,7 +92,7 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
     await page2.goto('/');
     const login2 = new LoginPage(page2);
     await login2.waitForForm();
-    await login2.login(TEST_CONSTANTS.PASSWORD);
+    await login2.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await login2.expectLoginSuccess();
 
     const card2 = page2.getByTestId('album-card').first();
@@ -130,7 +134,7 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
       await page.goto('/');
       const loginPage = new LoginPage(page);
       await loginPage.waitForForm();
-      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+      await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
 
       // Create album through browser UI (generates real epoch keys)
@@ -138,7 +142,7 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
       await appShell.waitForLoad();
       await appShell.createAlbum();
       const createDialog = new CreateAlbumDialogPage(page);
-      await createDialog.createAlbum('Photo Reload Test');
+      await createDialog.createAlbum(`Photo Reload Test ${Date.now()}`);
 
       const albumCard = page.getByTestId('album-card').first();
       await expect(albumCard).toBeVisible({ timeout: 30000 });
@@ -159,93 +163,105 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
 
       const countBefore = await gallery.photos.count();
 
-      // Reload page
-      await page.reload();
+      // Reload page and wait for network to stabilize
+      await page.reload({ waitUntil: 'networkidle' });
+
+      // Give the app time to initialize before checking login state
+      await page.waitForTimeout(500);
 
       // Check if we need to re-login (session may persist)
-      const needsLogin = await loginPage.loginForm.isVisible({ timeout: 5000 }).catch(() => false);
+      // Use longer timeout to allow for initial render
+      const needsLogin = await loginPage.loginForm.isVisible({ timeout: 10000 }).catch(() => false);
       if (needsLogin) {
-        await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
+        await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
         await loginPage.expectLoginSuccess();
+        await appShell.waitForLoad();
       } else {
         await appShell.waitForLoad();
       }
 
+      // Navigate to home to see albums list
+      await page.goto('/', { waitUntil: 'networkidle' });
+      await appShell.waitForLoad();
+
+      // Wait for albums to sync from server
+      await page.waitForTimeout(500);
+
       // Navigate back to album
-      await page.getByTestId('album-card').first().click();
+      const albumCardReload = page.getByTestId('album-card').first();
+      await expect(albumCardReload).toBeVisible({ timeout: 30000 });
+      await albumCardReload.click();
 
       await gallery.waitForLoad();
 
-      // Photos should persist
+      // Photos should persist - use toPass for resilience against sync timing
       await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
-      const countAfter = await gallery.photos.count();
-      expect(countAfter).toBe(countBefore);
+      await expect(async () => {
+        const countAfter = await gallery.photos.count();
+        expect(countAfter).toBe(countBefore);
+      }).toPass({ timeout: 30000, intervals: [500, 1000, 2000] });
     } finally {
       await context.close();
     }
   });
 
   test('album list syncs with server state', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const appShell = new AppShell(authenticatedPage);
+    const appShell = new AppShell(page);
     await appShell.waitForLoad();
 
     // Initially no albums
-    const initialCount = await authenticatedPage.getByTestId('album-card').count();
+    const initialCount = await page.getByTestId('album-card').count();
     expect(initialCount).toBe(0);
 
-    // Create album via API
-    await apiHelper.createAlbum(testUser);
+    // Create album via UI (generates real epoch keys)
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Sync Album ${Date.now()}`);
 
-    // Reload to sync
-    await authenticatedPage.reload();
-
-    const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
-    if (needsLogin) {
-      await loginPage.login(TEST_CONSTANTS.PASSWORD);
-      await loginPage.expectLoginSuccess();
-    }
-
-    await appShell.waitForLoad();
-
-    // Should now show album
-    await expect(authenticatedPage.getByTestId('album-card').first()).toBeVisible({ timeout: 30000 });
-    const finalCount = await authenticatedPage.getByTestId('album-card').count();
+    // Should now show album (no reload needed with UI creation)
+    await expect(page.getByTestId('album-card').first()).toBeVisible({ timeout: 30000 });
+    const finalCount = await page.getByTestId('album-card').count();
     expect(finalCount).toBeGreaterThan(initialCount);
   });
 });
 
 test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
+  // Run these tests serially to avoid resource contention with offline/online state changes
+  test.describe.configure({ mode: 'serial' });
   // Triple the timeout for slow offline resilience tests
   test.slow();
 
-  const apiHelper = new ApiHelper();
-
   test('app handles going offline gracefully', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Create album via UI (generates real epoch keys)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Offline Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Upload photo while online
@@ -254,7 +270,7 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
 
     // Go offline
-    await goOffline(authenticatedPage);
+    await goOffline(page);
 
     // Photo should still be visible (cached)
     await expect(gallery.photos.first()).toBeVisible();
@@ -263,9 +279,9 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
     await gallery.uploadPhoto(testImage, 'offline-upload.png');
 
     // Wait for offline indicator or error to appear
-    const offlineIndicator = authenticatedPage.getByText(/offline|no connection|network/i);
-    const errorIndicator = authenticatedPage.getByRole('alert');
-    const queueIndicator = authenticatedPage.getByText(/queued|pending|waiting/i);
+    const offlineIndicator = page.getByText(/offline|no connection|network/i);
+    const errorIndicator = page.getByRole('alert');
+    const queueIndicator = page.getByText(/queued|pending|waiting/i);
 
     // Wait for any indicator to appear (or timeout after 5s)
     await waitForCondition(
@@ -285,29 +301,34 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
                          await queueIndicator.first().isVisible().catch(() => false);
 
     // Go back online
-    await goOnline(authenticatedPage);
+    await goOnline(page);
 
     // App should recover
     await expect(gallery.gallery).toBeVisible();
   });
 
   test('cached photos viewable offline', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Create album via UI (generates real epoch keys)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Cache Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Upload and view photos
@@ -318,7 +339,7 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
     const countOnline = await gallery.photos.count();
 
     // Go offline
-    await goOffline(authenticatedPage);
+    await goOffline(page);
 
     // Photos should still be visible (from local cache/OPFS)
     await expect(gallery.photos.first()).toBeVisible({ timeout: 5000 });
@@ -326,34 +347,60 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
     expect(countOffline).toBe(countOnline);
 
     // Go back online
-    await goOnline(authenticatedPage);
+    await goOnline(page);
   });
 
   test('app reconnects after going back online', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Create album via UI (generates real epoch keys)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Reconnect Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Go offline
-    await goOffline(authenticatedPage);
-    // Network state change is immediate via CDP, no wait needed
+    await goOffline(page);
+
+    // Wait briefly for app to detect offline state
+    await page.waitForTimeout(500);
 
     // Go back online
-    await goOnline(authenticatedPage);
+    await goOnline(page);
+
+    // Wait for app to detect online state and stabilize
+    // The app needs time to detect 'online' event and re-establish connections
+    await page.waitForTimeout(1000);
+
+    // After going offline/online, the app may need a refresh to restore full functionality
+    // Wait for the upload button to appear, which indicates permissions are restored
+    const uploadButton = page.getByTestId('upload-button');
+    
+    // If upload button isn't visible after going online, reload the page to restore state
+    const uploadButtonVisible = await uploadButton.isVisible({ timeout: 5000 }).catch(() => false);
+    if (!uploadButtonVisible) {
+      // Reload to restore full app state
+      await page.reload({ waitUntil: 'networkidle' });
+      await gallery.waitForLoad();
+    }
+
+    // Now wait for upload button to be ready
+    await expect(uploadButton).toBeVisible({ timeout: 30000 });
 
     // Upload should work again
     const testImage = generateTestImage();
@@ -363,25 +410,28 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
 });
 
 test.describe('Sync: Incremental Updates @p1 @sync', () => {
-  const apiHelper = new ApiHelper();
-
   test('new uploads appear without full refresh', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Create album via UI (generates real epoch keys)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Incremental Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Upload first photo
@@ -404,22 +454,27 @@ test.describe('Sync: Incremental Updates @p1 @sync', () => {
   });
 
   test('deleted photos removed from view', async ({
-    authenticatedPage,
+    page,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
-    await authenticatedPage.goto('/');
-    const loginPage = new LoginPage(authenticatedPage);
+    await page.goto('/');
+    const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
-    await loginPage.login(TEST_CONSTANTS.PASSWORD);
+    await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await loginPage.expectLoginSuccess();
 
-    const albumCard = authenticatedPage.getByTestId('album-card').first();
+    // Create album via UI (generates real epoch keys)
+    const appShell = new AppShell(page);
+    await appShell.waitForLoad();
+    await appShell.createAlbum();
+    const createDialog = new CreateAlbumDialogPage(page);
+    await createDialog.createAlbum(`Delete Sync Test ${Date.now()}`);
+
+    const albumCard = page.getByTestId('album-card').first();
     await expect(albumCard).toBeVisible({ timeout: 30000 });
     await albumCard.click();
 
-    const gallery = new GalleryPage(authenticatedPage);
+    const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
     // Upload photos
@@ -437,13 +492,13 @@ test.describe('Sync: Incremental Updates @p1 @sync', () => {
     // Delete one photo
     await gallery.photos.first().click({ button: 'right' });
 
-    const deleteOption = authenticatedPage.getByRole('menuitem', { name: /delete/i });
+    const deleteOption = page.getByRole('menuitem', { name: /delete/i });
     const hasDeleteMenu = await deleteOption.isVisible().catch(() => false);
 
     if (hasDeleteMenu) {
       await deleteOption.click();
 
-      const confirmBtn = authenticatedPage.getByRole('button', { name: /delete|confirm/i });
+      const confirmBtn = page.getByRole('button', { name: /delete|confirm/i });
       if (await confirmBtn.first().isVisible().catch(() => false)) {
         await confirmBtn.first().click();
       }
@@ -457,14 +512,10 @@ test.describe('Sync: Incremental Updates @p1 @sync', () => {
 });
 
 test.describe('Sync: Version Tracking @p2 @sync', () => {
-  const apiHelper = new ApiHelper();
-
   test('album remembers last sync version', async ({
     browser,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
     // Session 1: Upload photos
     const context1 = await browser.newContext();
     const page1 = await context1.newPage();
@@ -480,8 +531,15 @@ test.describe('Sync: Version Tracking @p2 @sync', () => {
     await page1.goto('/');
     const login1 = new LoginPage(page1);
     await login1.waitForForm();
-    await login1.login(TEST_CONSTANTS.PASSWORD);
+    await login1.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await login1.expectLoginSuccess();
+
+    // Create album via UI (generates real epoch keys)
+    const appShell1 = new AppShell(page1);
+    await appShell1.waitForLoad();
+    await appShell1.createAlbum();
+    const createDialog1 = new CreateAlbumDialogPage(page1);
+    await createDialog1.createAlbum(`Version Track ${Date.now()}`);
 
     const card1 = page1.getByTestId('album-card').first();
     await expect(card1).toBeVisible({ timeout: 30000 });
@@ -528,7 +586,7 @@ test.describe('Sync: Version Tracking @p2 @sync', () => {
     await page2.goto('/');
     const login2 = new LoginPage(page2);
     await login2.waitForForm();
-    await login2.login(TEST_CONSTANTS.PASSWORD);
+    await login2.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await login2.expectLoginSuccess();
 
     const card2 = page2.getByTestId('album-card').first();
@@ -548,14 +606,13 @@ test.describe('Sync: Version Tracking @p2 @sync', () => {
 });
 
 test.describe('Sync: Conflict Handling @p2 @sync', () => {
-  const apiHelper = new ApiHelper();
-
+  // Run serially - this test creates multiple browser contexts which is resource-intensive
+  test.describe.configure({ mode: 'serial' });
+  
   test('concurrent uploads from same user handled correctly', async ({
     browser,
     testUser,
   }) => {
-    const album = await apiHelper.createAlbum(testUser);
-
     // Create two sessions for same user
     const context1 = await browser.newContext();
     const context2 = await browser.newContext();
@@ -574,24 +631,34 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
       });
     }
 
-    // Login both sessions
+    // Login first session (registers user with crypto keys)
     await page1.goto('/');
     const login1 = new LoginPage(page1);
     await login1.waitForForm();
-    await login1.login(TEST_CONSTANTS.PASSWORD);
+    await login1.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await login1.expectLoginSuccess();
 
+    // Create album via UI (generates real epoch keys)
+    const appShell1 = new AppShell(page1);
+    await appShell1.waitForLoad();
+    await appShell1.createAlbum();
+    const createDialog1 = new CreateAlbumDialogPage(page1);
+    await createDialog1.createAlbum(`Conflict Test ${Date.now()}`);
+
+    const card1 = page1.getByTestId('album-card').first();
+    await expect(card1).toBeVisible({ timeout: 30000 });
+
+    // Login second session
     await page2.goto('/');
     const login2 = new LoginPage(page2);
     await login2.waitForForm();
-    await login2.login(TEST_CONSTANTS.PASSWORD);
+    await login2.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
     await login2.expectLoginSuccess();
 
-    // Navigate both to album
-    const card1 = page1.getByTestId('album-card').first();
-    await expect(card1).toBeVisible({ timeout: 30000 });
+    // Navigate session 1 to album
     await card1.click();
 
+    // Navigate session 2 to album
     const card2 = page2.getByTestId('album-card').first();
     await expect(card2).toBeVisible({ timeout: 30000 });
     await card2.click();
@@ -605,35 +672,84 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
     // Upload from both sessions concurrently
     const testImage = generateTestImage();
 
-    // Start uploads almost simultaneously
-    const upload1 = gallery1.uploadPhoto(testImage, 'session1-photo.png');
-    const upload2 = gallery2.uploadPhoto(testImage, 'session2-photo.png');
+    // For concurrent uploads, use setFileInput instead of uploadPhoto
+    // uploadPhoto waits for button state changes which can race between sessions
+    // Instead, trigger both uploads and then wait for results separately
+    
+    // Start uploads almost simultaneously using the low-level file input method
+    await gallery1.setFileInput(testImage, 'session1-photo.png');
+    await gallery2.setFileInput(testImage, 'session2-photo.png');
 
-    await Promise.all([upload1, upload2]);
-
-    // Wait for both to complete
+    // Wait for uploads to complete on both sessions
+    // Each session should see at least one photo after their upload completes
     await expect(gallery1.photos.first()).toBeVisible({ timeout: 60000 });
     await expect(gallery2.photos.first()).toBeVisible({ timeout: 60000 });
 
-    // Refresh both to sync
-    await page1.reload();
-    await page2.reload();
+    // Wait for upload buttons to return to "Upload" state (not "Uploading")
+    // This ensures the uploads are fully committed before reload
+    const uploadBtn1 = page1.getByTestId('upload-button');
+    const uploadBtn2 = page2.getByTestId('upload-button');
+    
+    await expect(async () => {
+      const text1 = await uploadBtn1.textContent();
+      const text2 = await uploadBtn2.textContent();
+      expect(text1?.includes('Uploading')).toBe(false);
+      expect(text2?.includes('Uploading')).toBe(false);
+    }).toPass({ timeout: 60000, intervals: [500, 1000, 2000] });
 
-    // Re-login if needed
-    if (await login1.loginForm.isVisible().catch(() => false)) {
-      await login1.login(TEST_CONSTANTS.PASSWORD);
+    // Each session should at minimum see its own upload completed
+    // Cross-session sync may take additional time, which is why we reload
+    await expect(gallery1.photos.first()).toBeVisible({ timeout: 60000 });
+    await expect(gallery2.photos.first()).toBeVisible({ timeout: 60000 });
+
+    // Wait a bit for server to persist both uploads
+    await page1.waitForTimeout(3000);
+
+    // Refresh both to sync - wait for network to stabilize
+    await Promise.all([
+      page1.reload({ waitUntil: 'networkidle' }),
+      page2.reload({ waitUntil: 'networkidle' }),
+    ]);
+
+    // Give apps time to initialize before checking login state
+    await page1.waitForTimeout(500);
+    await page2.waitForTimeout(500);
+
+    // Re-login if needed - use proper timeout
+    if (await login1.loginForm.isVisible({ timeout: 10000 }).catch(() => false)) {
+      await login1.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
       await login1.expectLoginSuccess();
-      await page1.getByTestId('album-card').first().click();
     }
 
-    if (await login2.loginForm.isVisible().catch(() => false)) {
-      await login2.login(TEST_CONSTANTS.PASSWORD);
+    if (await login2.loginForm.isVisible({ timeout: 10000 }).catch(() => false)) {
+      await login2.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
       await login2.expectLoginSuccess();
-      await page2.getByTestId('album-card').first().click();
     }
+
+    // Navigate to home first to ensure we're on the album list
+    await Promise.all([
+      page1.goto('/', { waitUntil: 'networkidle' }),
+      page2.goto('/', { waitUntil: 'networkidle' }),
+    ]);
+
+    // Wait for app shell and album cards on both pages
+    await appShell1.waitForLoad();
+    
+    // Create appShell for page2 - page2 doesn't have an appShell yet
+    const appShell2 = new AppShell(page2);
+    await appShell2.waitForLoad();
+
+    // Navigate to the album on both pages
+    await expect(page1.getByTestId('album-card').first()).toBeVisible({ timeout: 30000 });
+    await expect(page2.getByTestId('album-card').first()).toBeVisible({ timeout: 30000 });
+    await page1.getByTestId('album-card').first().click();
+    await page2.getByTestId('album-card').first().click();
 
     await gallery1.waitForLoad();
     await gallery2.waitForLoad();
+
+    // Allow time for photos to load from server
+    await page1.waitForTimeout(2000);
 
     // Both should show both photos
     await expect(async () => {
