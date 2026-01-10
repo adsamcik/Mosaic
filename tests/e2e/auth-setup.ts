@@ -25,13 +25,20 @@ const TEST_PASSWORD = 'test-password-e2e-2024';
 export const AUTH_STATE_DIR = path.join(__dirname, '.auth-states');
 
 /**
- * Pool users that will be pre-authenticated
+ * Pool users that will be pre-authenticated.
+ * 
+ * We have 8 pool users to support up to 8 parallel workers without collision.
+ * Each worker gets a unique user via workerIndex % POOL_USERS.length.
  */
 export const POOL_USERS = [
   { username: 'pool-local-1@e2e.local', stateFile: 'pool-local-1.json' },
   { username: 'pool-local-2@e2e.local', stateFile: 'pool-local-2.json' },
   { username: 'pool-local-3@e2e.local', stateFile: 'pool-local-3.json' },
   { username: 'pool-local-4@e2e.local', stateFile: 'pool-local-4.json' },
+  { username: 'pool-local-5@e2e.local', stateFile: 'pool-local-5.json' },
+  { username: 'pool-local-6@e2e.local', stateFile: 'pool-local-6.json' },
+  { username: 'pool-local-7@e2e.local', stateFile: 'pool-local-7.json' },
+  { username: 'pool-local-8@e2e.local', stateFile: 'pool-local-8.json' },
 ] as const;
 
 /**

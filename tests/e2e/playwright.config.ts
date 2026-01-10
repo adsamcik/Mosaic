@@ -18,6 +18,26 @@ function getChromeArgs(): string[] {
  *
  * Designed for parallel-safe execution on a single backend instance.
  *
+ * ## Parallelization Strategy
+ *
+ * Tests are grouped by isolation requirements:
+ * 
+ * 1. **Read-only tests** (accessibility, app-load, animations)
+ *    - Safe for maximum parallelization
+ *    - No database mutations
+ *
+ * 2. **Isolated write tests** (most tests using testUser fixture)
+ *    - Each test gets a unique user
+ *    - Safe for full parallelization
+ *
+ * 3. **Pool user tests** (critical-flows using poolUser fixture)
+ *    - Share state within a worker
+ *    - Limited to 1 test per worker at a time
+ *
+ * 4. **Serial tests** (smoke)
+ *    - Must run sequentially
+ *    - Shared context between tests
+ *
  * ## Test Categories
  *
  * Tests are organized with tags for selective execution:
@@ -72,7 +92,7 @@ function getChromeArgs(): string[] {
 export default defineConfig({
   testDir: './tests',
 
-  // Run tests in parallel - each test is fully isolated
+  // Run tests in parallel - each test is fully isolated via unique users
   fullyParallel: true,
 
   // Fail the build on CI if you accidentally left test.only in the source code
@@ -82,9 +102,10 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 1,
 
   // Worker configuration for parallelism
-  // Local: 4 workers for fast feedback
-  // CI: 2 workers for stability
-  workers: process.env.CI ? 2 : 4,
+  // We have 8 pool users, so we can scale up to 8 workers
+  // Local: Use up to 6 workers for fast feedback (leaves CPU for backend/frontend)
+  // CI: 4 workers for balance of speed vs stability
+  workers: process.env.CI ? 4 : 6,
 
   // Fail fast in CI - stop after N failures to save resources
   maxFailures: process.env.CI ? 5 : undefined,
