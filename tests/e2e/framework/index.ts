@@ -23,6 +23,7 @@ export {
   checkBackendHealth,
   waitForBackendHealth,
   prepareFileUpload,
+  ensureUserExists,
   type ImageSize,
   type AlbumCreationResult,
 } from './test-data-factory';

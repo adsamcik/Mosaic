@@ -881,7 +881,8 @@ export class GalleryPage {
     const uploadButton = this.page.getByTestId('upload-button');
     await expect(uploadButton).toBeVisible({ timeout: 10000 });
     await expect(uploadButton).toBeEnabled({ timeout: 10000 });
-    console.log('[GalleryPage] Upload button ready');
+    const initialButtonText = await uploadButton.textContent();
+    console.log(`[GalleryPage] Upload button ready, text: "${initialButtonText}"`);
     
     // Use the testid to find the hidden file input
     const fileInput = this.page.getByTestId('upload-input');
@@ -894,42 +895,65 @@ export class GalleryPage {
     const countBefore = await this.photos.count();
     console.log(`[GalleryPage] Photo count before upload: ${countBefore}`);
     
+    const expectedCount = countBefore + 1;
+    const startTime = Date.now();
+    
     // Set files on the hidden input - Playwright handles this even when display:none
-    console.log('[GalleryPage] Setting files...');
+    console.log(`[GalleryPage] Setting files at T+0ms...`);
     await fileInput.setInputFiles({
       name: filename,
       mimeType: 'image/png',
       buffer: imageBuffer,
     });
-    console.log('[GalleryPage] Files set, waiting for upload to process...');
+    console.log(`[GalleryPage] Files set at T+${Date.now() - startTime}ms, waiting for upload to process...`);
     
-    const expectedCount = countBefore + 1;
+    // CRITICAL: Give React time to process the change event and update state.
+    // The setInputFiles() call returns immediately but React's event handler
+    // runs asynchronously. Without this, we might start polling before
+    // isUploading state is set, causing false negatives.
+    await this.page.waitForTimeout(50);
     
     // First, wait for upload to start (button text changes to "Uploading")
     // OR if upload is already complete (photo count increased)
     // Use expect().toPass() for robustness against DOM changes
+    let pollCount = 0;
     await expect(async () => {
+      pollCount++;
       const buttonText = await uploadButton.textContent();
       const currentCount = await this.photos.count();
       const isUploading = buttonText?.includes('Uploading');
       const hasNewPhoto = currentCount >= expectedCount;
+      
+      // Log every poll to help debug timing issues
+      if (pollCount <= 5 || pollCount % 10 === 0) {
+        console.log(`[GalleryPage] Poll #${pollCount} at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}, uploading=${isUploading}, hasNew=${hasNewPhoto}`);
+      }
+      
       expect(isUploading || hasNewPhoto).toBe(true);
     }).toPass({ timeout: 30000, intervals: [100, 200, 500, 1000] });
-    console.log('[GalleryPage] Upload started or photo appeared');
+    console.log(`[GalleryPage] Upload started or photo appeared at T+${Date.now() - startTime}ms (after ${pollCount} polls)`);
     
     // Now wait for upload to complete - button NOT showing "Uploading" AND photo count reached
     // Use expect().toPass() which is resilient to temporary DOM changes during sync
+    let completePollCount = 0;
     await expect(async () => {
+      completePollCount++;
       const buttonText = await uploadButton.textContent();
       const isUploading = buttonText?.includes('Uploading');
       const currentCount = await this.photos.count();
+      
+      // Log completion polls
+      if (completePollCount <= 3 || completePollCount % 5 === 0) {
+        console.log(`[GalleryPage] Complete poll #${completePollCount} at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}, uploading=${isUploading}`);
+      }
+      
       // Upload is complete when: not uploading AND photo count reached expected
       expect(isUploading).toBe(false);
       expect(currentCount).toBeGreaterThanOrEqual(expectedCount);
     }).toPass({ timeout: 60000, intervals: [200, 500, 1000, 2000] });
     
     const finalCount = await this.photos.count();
-    console.log(`[GalleryPage] Upload complete. Final photo count: ${finalCount}`);
+    console.log(`[GalleryPage] Upload complete at T+${Date.now() - startTime}ms. Final photo count: ${finalCount}`);
   }
 
   async expectPhotoCount(count: number) {

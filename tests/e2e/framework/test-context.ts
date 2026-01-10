@@ -75,15 +75,22 @@ export class TestContext {
 
   /**
    * Create an authenticated user with their own browser context
-   * The user will have Remote-User header injected for all API calls
+   * The user will have Remote-User header injected for all API calls.
+   * 
+   * NOTE: In local auth mode, the user should be registered via the UI first (using loginUser)
+   * before calling createAlbumViaAPI or other API functions that require the user to exist.
    */
   async createAuthenticatedUser(name: string): Promise<AuthenticatedUser> {
     const email = generateUserEmail(this.testId, name);
 
-    // Check if user already exists
+    // Check if user already exists in our local cache
     if (this.users.has(name)) {
       return this.users.get(name)!;
     }
+
+    // NOTE: We do NOT create the user in the backend here.
+    // In local auth mode, users must be registered via the UI (loginUser) to set up proper crypto.
+    // In proxy auth mode, users are auto-created by the backend when API requests have Remote-User header.
 
     // Create new browser context
     const context = await this.browser.newContext();

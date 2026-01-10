@@ -7,6 +7,7 @@
  */
 
 import { type Page } from '@playwright/test';
+import * as zlib from 'zlib';
 
 /**
  * API URL for backend requests
@@ -142,7 +143,6 @@ function createSolidColorPNG(
   }
 
   // Compress with zlib
-  const zlib = require('zlib');
   const compressed = zlib.deflateSync(rawData);
   const idatChunk = createPNGChunk('IDAT', compressed);
 
@@ -210,13 +210,45 @@ export interface AlbumCreationResult {
 }
 
 /**
+ * Ensure a user exists with proper auth credentials.
+ * Uses the test API to create users with wrapped account keys so they can log in with passwords.
+ * Returns true if the user was created, false if they already existed.
+ */
+export async function ensureUserExists(userEmail: string): Promise<boolean> {
+  const response = await fetch(`${API_URL}/api/test-seed/create-authenticated-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email: userEmail }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.warn(`[ensureUserExists] Warning: ${response.status} ${text}`);
+    return false;
+  }
+
+  const data = await response.json();
+  return data.wasCreated;
+}
+
+/**
  * Create an album via the backend API
- * Faster than UI but bypasses crypto
+ * Faster than UI but bypasses crypto.
+ * 
+ * IMPORTANT: In local auth mode, ensure the user is registered via the UI first (using loginUser)
+ * before calling this function. The Remote-User header will auto-create a user if one doesn't exist,
+ * but that user won't have proper crypto setup for password-based login.
  */
 export async function createAlbumViaAPI(
   userEmail: string,
   name?: string
 ): Promise<AlbumCreationResult> {
+  // NOTE: We do NOT call ensureUserExists here anymore.
+  // In local auth mode, users must be registered via UI first to set up proper crypto.
+  // The Remote-User header will auto-create the user if needed for proxy-auth mode.
+
   // Generate dummy crypto data - backend stores but doesn't validate crypto content
   const dummyBytes32 = Buffer.alloc(32).toString('base64');
   const dummyBytes64 = Buffer.alloc(64).toString('base64');
