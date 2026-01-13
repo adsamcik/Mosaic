@@ -90,8 +90,7 @@ public class GarbageCollectionService : BackgroundService
             .Take(100)  // Batch to avoid long transactions
             .ToListAsync();
 
-        // Use database-specific NOW function
-        var nowFunc = _useSqlite ? "datetime('now')" : "NOW()";
+        var now = DateTime.UtcNow;
 
         foreach (var shard in toDelete)
         {
@@ -102,9 +101,8 @@ public class GarbageCollectionService : BackgroundService
                 // Reclaim quota
                 if (shard.UploaderId.HasValue)
                 {
-                    await db.Database.ExecuteSqlRawAsync(
-                        $"UPDATE user_quotas SET used_storage_bytes = used_storage_bytes - {{0}}, updated_at = {nowFunc} WHERE user_id = {{1}}",
-                        shard.SizeBytes, shard.UploaderId.Value);
+                    await db.Database.ExecuteSqlAsync(
+                        $"UPDATE user_quotas SET used_storage_bytes = used_storage_bytes - {shard.SizeBytes}, updated_at = {now} WHERE user_id = {shard.UploaderId.Value}");
                 }
 
                 db.Shards.Remove(shard);
