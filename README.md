@@ -136,67 +136,100 @@ docker compose -f docker-compose.dev.yml --profile tools up -d
 
 ### Prerequisites
 
-- Node.js 20+
-- .NET 10 SDK
-- PostgreSQL 16+ (or use Docker, or use SQLite in development)
+| Requirement | Version | Check Command |
+|-------------|---------|---------------|
+| Node.js | 20+ | `node --version` |
+| .NET SDK | 10+ | `dotnet --version` |
+| Docker | Latest | `docker --version` |
 
-### VS Code (Recommended)
+### 🚀 Quick Start (Recommended)
+
+The fastest way to get the development environment running:
+
+```powershell
+# Windows (PowerShell)
+.\scripts\dev.ps1 start      # Starts database + backend + frontend
+.\scripts\dev.ps1 status     # Verify everything is running
+```
+
+```bash
+# Linux/macOS
+./scripts/dev.sh start
+./scripts/dev.sh status
+```
+
+Once started, open http://localhost:5173 in your browser.
+
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:5173 |
+| Backend API | http://localhost:5000 |
+| API Docs | http://localhost:5000/openapi/v1.json |
+
+### Development Script Commands
+
+```powershell
+# Service Management
+.\scripts\dev.ps1 start              # Start all services
+.\scripts\dev.ps1 start backend      # Start only backend
+.\scripts\dev.ps1 stop               # Stop all services
+.\scripts\dev.ps1 restart            # Restart all services
+.\scripts\dev.ps1 status             # Show service status
+
+# Logs
+.\scripts\dev.ps1 logs backend       # View backend logs (last 50 lines)
+.\scripts\dev.ps1 logs frontend      # View frontend logs
+.\scripts\dev.ps1 logs backend -f    # Live tail (Ctrl+C to exit)
+
+# Testing
+.\scripts\dev.ps1 test               # Run all unit tests
+.\scripts\dev.ps1 test e2e           # Run E2E tests
+
+# Maintenance
+.\scripts\dev.ps1 reset              # Reset development database
+.\scripts\dev.ps1 reset --full       # Reset + remove node_modules
+```
+
+### VS Code Tasks
+
+For integrated development, use VS Code tasks:
 
 1. Open the workspace in VS Code
-2. Press **F5** or select a launch configuration:
+2. Press `Ctrl+Shift+P` → "Tasks: Run Task" → select:
+   - **start-all** - Start crypto build → backend → frontend
+   - **watch-backend** - Backend with hot reload
+   - **watch-frontend** - Vite dev server
+   - **test-all** - Run all test suites
+
+Or use launch configurations (F5):
    - **Backend + Frontend** - Start both, opens http://localhost:5173
    - **Full Stack (Debug Both)** - Debug both simultaneously
    - **Backend (.NET)** - Just the API with Swagger
-3. SQLite database auto-created in `./data/mosaic.db`
-
-No Docker required for development!
 
 ### Visual Studio 2022/2026
 
 1. Open `Mosaic.slnx` in Visual Studio
 2. Set **Mosaic.Backend** as startup project
 3. Press **F5** to run (Swagger opens automatically)
-4. For frontend: Open terminal, run:
-   ```bash
-   cd apps/admin
-   npm install
-   npm run dev
-   ```
+4. For frontend: Run `cd apps/admin && npm install && npm run dev` in terminal
 
-Backend runs on http://localhost:5000, frontend on http://localhost:5173.
+### Manual Setup (Without Scripts)
 
-### Command Line
+If you prefer to run services manually:
 
 ```bash
-# Start PostgreSQL (optional - SQLite used by default in dev)
+# 1. Start PostgreSQL (required)
 docker compose -f docker-compose.dev.yml up -d
 
-# Install frontend dependencies
-cd apps/admin
-npm install
+# 2. Build crypto library (required for frontend)
+cd libs/crypto && npm install && npm run build
 
-# Run frontend dev server
-npm run dev
-
-# In another terminal, run backend
+# 3. In terminal 1: Run backend
 cd apps/backend/Mosaic.Backend
 dotnet run
-```
 
-### Helper Scripts
-
-Use `dev.ps1` / `dev.sh` for Docker-based development:
-
-```bash
-# Windows
-.\scripts\dev.ps1 up         # Start PostgreSQL
-.\scripts\dev.ps1 backend    # Run backend with hot-reload
-.\scripts\dev.ps1 frontend   # Run Vite dev server
-
-# Linux/macOS
-./scripts/dev.sh up
-./scripts/dev.sh backend
-./scripts/dev.sh frontend
+# 4. In terminal 2: Run frontend
+cd apps/admin && npm install && npm run dev
 ```
 
 ## Security Model
@@ -210,9 +243,14 @@ See [docs/SECURITY.md](docs/SECURITY.md) for the full security model.
 
 ## Documentation
 
-- [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) - Detailed technical specification
-- [Security Model](docs/SECURITY.md) - Threat model and cryptographic design
-- [Changelog](CHANGELOG.md) - Version history and release notes
+| Guide | Description |
+|-------|-------------|
+| [Development Guide](docs/DEVELOPMENT.md) | Complete local development setup |
+| [Deployment Guide](docs/DEPLOYMENT.md) | Production deployment instructions |
+| [Security Model](docs/SECURITY.md) | Threat model and cryptographic design |
+| [Architecture](docs/ARCHITECTURE.md) | System design and components |
+| [Features](docs/FEATURES.md) | List of implemented features |
+| [Changelog](CHANGELOG.md) | Version history and release notes |
 
 ## Releases
 
