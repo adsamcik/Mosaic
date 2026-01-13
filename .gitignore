@@ -95,8 +95,7 @@ tests/e2e/.auth-states/
 
 # Blob storage (development)
 apps/backend/Mosaic.Backend/Data/blobs/
-apps/backend/Mosaic.Backend/data/
-data/
+/data/
 
 # Docker
 docker-compose.override.yml
