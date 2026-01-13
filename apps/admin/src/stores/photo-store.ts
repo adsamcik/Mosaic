@@ -7,6 +7,9 @@ import { immer } from 'zustand/middleware/immer';
 
 export type PhotoStatus = 'stable' | 'pending' | 'syncing' | 'deleting';
 
+/** Current action during upload */
+export type UploadAction = 'waiting' | 'encrypting' | 'uploading' | 'finalizing';
+
 export interface PhotoItem {
   assetId: string;
   albumId: string;
@@ -20,6 +23,7 @@ export interface PhotoItem {
   // Pending-specific fields
   localBlobUrl?: string;
   uploadProgress?: number;
+  uploadAction?: UploadAction;
   error?: string;
   
   // For optimistic delete recovery
@@ -58,7 +62,7 @@ export interface PhotoStoreActions {
   
   // Pending upload lifecycle
   addPending: (albumId: string, assetId: string, localBlobUrl: string) => void;
-  updateProgress: (albumId: string, assetId: string, progress: number) => void;
+  updateProgress: (albumId: string, assetId: string, progress: number, action?: UploadAction) => void;
   transitionToSyncing: (albumId: string, assetId: string) => void;
   promoteToStable: (
     albumId: string,
@@ -214,17 +218,21 @@ export const usePhotoStore = create<PhotoStore>()(
           status: 'pending',
           localBlobUrl,
           uploadProgress: 0,
+          uploadAction: 'waiting',
           createdAt: new Date(),
         });
       });
     },
 
-    updateProgress: (albumId: string, assetId: string, progress: number) => {
+    updateProgress: (albumId: string, assetId: string, progress: number, action?: UploadAction) => {
       set((state) => {
         const album = state.albums.get(albumId);
         const item = album?.items.get(assetId);
         if (item && (item.status === 'pending' || item.status === 'syncing')) {
           item.uploadProgress = Math.min(100, Math.max(0, progress));
+          if (action) {
+            item.uploadAction = action;
+          }
         }
       });
     },

@@ -75,6 +75,7 @@ function pendingToPhotoMeta(item: PhotoItem): PhotoMeta {
     // Pending upload state
     isPending: true,
     uploadProgress: item.uploadProgress ?? 0,
+    uploadAction: item.uploadAction ?? 'waiting',
     isSyncing: item.status === 'syncing',
   };
   

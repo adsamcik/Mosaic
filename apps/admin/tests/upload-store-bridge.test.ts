@@ -317,7 +317,8 @@ describe('Upload Store Bridge', () => {
       uploadQueue.onProgress?.(task);
       uploadQueue.onComplete?.(task, ['shard-1']);
       
-      expect(existingCallback).toHaveBeenCalledWith(task, ['shard-1']);
+      // Callback receives (task, shardIds, tieredShards) - tieredShards is undefined here
+      expect(existingCallback).toHaveBeenCalledWith(task, ['shard-1'], undefined);
     });
 
     it('chains with existing onError callback', () => {

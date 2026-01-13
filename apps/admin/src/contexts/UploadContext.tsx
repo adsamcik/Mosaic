@@ -1,13 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { getApi, toBase64 } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
-import { type EpochKeyBundle } from '../lib/epoch-key-store';
+import { type EpochKeyBundle, getEpochKey } from '../lib/epoch-key-store';
 import { createLogger } from '../lib/logger';
 import { syncEngine } from '../lib/sync-engine';
 import { uploadQueue, type UploadTask } from '../lib/upload-queue';
 import { initUploadStoreBridge } from '../lib/upload-store-bridge';
-import type { PhotoMeta } from '../workers/types';
+import type { PhotoMeta, TieredShardIds } from '../workers/types';
 
 const log = createLogger('UploadContext');
 
@@ -58,7 +58,8 @@ const UploadContext = createContext<UploadContextValue | null>(null);
 async function createManifestForUpload(
   task: UploadTask,
   shardIds: string[],
-  epochKey: EpochKeyBundle
+  epochKey: EpochKeyBundle,
+  tieredShards?: TieredShardIds
 ): Promise<void> {
   const crypto = await getCryptoClient();
   const api = getApi();
@@ -67,7 +68,7 @@ async function createManifestForUpload(
   const sortedShards = [...task.completedShards].sort((a, b) => a.index - b.index);
   const shardHashes = sortedShards.map((s) => s.sha256);
 
-  // Build photo metadata
+  // Build photo metadata with tier-specific shard IDs
   const now = new Date().toISOString();
   const photoMeta: PhotoMeta = {
     id: globalThis.crypto.randomUUID(),
@@ -75,17 +76,27 @@ async function createManifestForUpload(
     albumId: task.albumId,
     filename: task.file.name,
     mimeType: task.file.type || 'application/octet-stream',
-    width: 0,
-    height: 0,
+    width: task.originalWidth ?? 0,
+    height: task.originalHeight ?? 0,
     tags: [],
     createdAt: now,
     updatedAt: now,
-    shardIds: shardIds,
-    shardHashes: shardHashes,
+    shardIds: shardIds, // Legacy: flat array for backward compatibility
+    shardHashes: shardHashes, // For integrity verification during download
     epochId: task.epochId,
+    // Only set optional fields if they have values
     ...(task.thumbnailBase64 && { thumbnail: task.thumbnailBase64 }),
     ...(task.thumbWidth && { thumbWidth: task.thumbWidth }),
     ...(task.thumbHeight && { thumbHeight: task.thumbHeight }),
+    // New tier-specific shard IDs
+    ...(tieredShards && {
+      thumbnailShardId: tieredShards.thumbnail.shardId,
+      thumbnailShardHash: tieredShards.thumbnail.sha256,
+      previewShardId: tieredShards.preview.shardId,
+      previewShardHash: tieredShards.preview.sha256,
+      originalShardIds: tieredShards.original.map(s => s.shardId),
+      originalShardHashes: tieredShards.original.map(s => s.sha256),
+    }),
   };
 
   // Encrypt the manifest metadata
@@ -104,6 +115,13 @@ async function createManifestForUpload(
   // Get signer public key
   const signerPubkey = epochKey.signKeypair.publicKey;
 
+  // Build tiered shard info for backend if available
+  const tieredShardInfo = tieredShards ? [
+    { shardId: tieredShards.thumbnail.shardId, tier: 1 },
+    { shardId: tieredShards.preview.shardId, tier: 2 },
+    ...tieredShards.original.map(s => ({ shardId: s.shardId, tier: 3 })),
+  ] : undefined;
+
   // Create manifest via API
   await api.createManifest({
     albumId: task.albumId,
@@ -111,6 +129,8 @@ async function createManifestForUpload(
     signature: toBase64(signature),
     signerPubkey: toBase64(signerPubkey),
     shardIds: shardIds,
+    // Send tier info to backend for new uploads
+    ...(tieredShardInfo && { tieredShards: tieredShardInfo }),
   });
 }
 
@@ -127,11 +147,106 @@ export function UploadProvider({ children }: UploadProviderProps) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<UploadError | null>(null);
   const [, setActiveTasks] = useState<UploadTask[]>([]);
+  
+  // Track whether callbacks have been set up to avoid re-chaining
+  const callbacksInitialized = useRef(false);
 
   // Initialize upload-store bridge on mount
   useEffect(() => {
     const cleanup = initUploadStoreBridge();
     return cleanup;
+  }, []);
+
+  // Set up upload queue callbacks ONCE on mount
+  // This avoids the bug where callbacks chain on each upload() call
+  useEffect(() => {
+    if (callbacksInitialized.current) {
+      return;
+    }
+    callbacksInitialized.current = true;
+
+    // Capture the bridge handlers that were set by initUploadStoreBridge
+    const bridgeOnProgress = uploadQueue.onProgress;
+    const bridgeOnComplete = uploadQueue.onComplete;
+    const bridgeOnError = uploadQueue.onError;
+
+    // Set up progress callback
+    uploadQueue.onProgress = (task) => {
+      // Call bridge handler first (adds to PhotoStore)
+      bridgeOnProgress?.(task);
+      // Then update local UI state
+      setProgress(Math.round(task.progress * 100));
+      setActiveTasks((prev) => {
+        const index = prev.findIndex((t) => t.id === task.id);
+        if (index === -1) return [...prev, task];
+        const next = [...prev];
+        next[index] = task;
+        return next;
+      });
+    };
+
+    // Set up complete callback
+    uploadQueue.onComplete = async (task, shardIds, tieredShards) => {
+      // Call bridge handler first (transitions to syncing in PhotoStore)
+      await bridgeOnComplete?.(task, shardIds, tieredShards);
+      // Remove from active tasks
+      setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
+
+      try {
+        // Look up the full epoch key from the store using task's albumId and epochId
+        // The epoch key was cached when upload() fetched it via getCurrentOrFetchEpochKey
+        const epochKey = getEpochKey(task.albumId, task.epochId);
+        if (!epochKey) {
+          throw new Error(`Epoch key not found for album ${task.albumId}, epoch ${task.epochId}`);
+        }
+
+        await createManifestForUpload(task, shardIds, epochKey, tieredShards);
+        
+        // Sync to pull the newly created manifest into local DB
+        log.info(`Upload complete, syncing album ${task.albumId}`);
+        try {
+          await syncEngine.sync(task.albumId, epochKey.epochSeed);
+          log.info(`Post-upload sync complete for album ${task.albumId}`);
+        } catch (syncErr) {
+          // Non-fatal: photo was uploaded, sync will happen later
+          log.warn('Post-upload sync failed (photo still uploaded):', {
+            error: syncErr instanceof Error ? syncErr.message : String(syncErr),
+          });
+        }
+        
+        setIsUploading(false);
+        setProgress(100);
+      } catch (manifestErr) {
+        log.error('Failed to create manifest:', manifestErr);
+        setError(
+          new UploadError(
+            `Upload succeeded but manifest creation failed: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`,
+            UploadErrorCode.MANIFEST_FAILED,
+            manifestErr instanceof Error ? manifestErr : undefined
+          )
+        );
+        setIsUploading(false);
+      }
+    };
+
+    // Set up error callback
+    uploadQueue.onError = (task, uploadErr) => {
+      // Call bridge handler first (marks as failed in PhotoStore)
+      bridgeOnError?.(task, uploadErr);
+      
+      // Remove from active tasks
+      setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
+
+      log.error('Upload failed:', uploadErr);
+      setError(
+        new UploadError(
+          uploadErr.message,
+          UploadErrorCode.UPLOAD_FAILED,
+          uploadErr
+        )
+      );
+      setIsUploading(false);
+    };
   }, []);
 
   // Warn user before leaving page during upload
@@ -159,6 +274,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
       await uploadQueue.init();
 
       // Get the current epoch key for this album
+      // This caches the key in epoch-key-store for use in onComplete callback
       let epochKey: EpochKeyBundle;
       try {
         epochKey = await getCurrentOrFetchEpochKey(albumId);
@@ -173,82 +289,6 @@ export function UploadProvider({ children }: UploadProviderProps) {
         throw uploadError;
       }
 
-      // Chain progress callback - preserve existing handlers from upload-store-bridge
-      // This is critical: upload-store-bridge sets up handlers to track pending photos
-      // in the PhotoStore, and we must not overwrite them
-      const previousOnProgress = uploadQueue.onProgress;
-      uploadQueue.onProgress = (task) => {
-        // Call bridge handler first (adds to PhotoStore)
-        previousOnProgress?.(task);
-        // Then update local UI state
-        setProgress(Math.round(task.progress * 100));
-        setActiveTasks((prev) => {
-          const index = prev.findIndex((t) => t.id === task.id);
-          if (index === -1) return [...prev, task];
-          const next = [...prev];
-          next[index] = task;
-          return next;
-        });
-      };
-
-      // Chain complete callback - preserve existing handlers from upload-store-bridge
-      const previousOnComplete = uploadQueue.onComplete;
-      uploadQueue.onComplete = async (task, shardIds) => {
-        // Call bridge handler first (transitions to syncing in PhotoStore)
-        await previousOnComplete?.(task, shardIds);
-        // Remove from active tasks
-        setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
-
-        try {
-          await createManifestForUpload(task, shardIds, epochKey);
-          
-          // Sync to pull the newly created manifest into local DB
-          log.info(`Upload complete, syncing album ${task.albumId}`);
-          try {
-            await syncEngine.sync(task.albumId, epochKey.epochSeed);
-            log.info(`Post-upload sync complete for album ${task.albumId}`);
-          } catch (syncErr) {
-            // Non-fatal: photo was uploaded, sync will happen later
-            log.warn('Post-upload sync failed (photo still uploaded):', {
-              error: syncErr instanceof Error ? syncErr.message : String(syncErr),
-            });
-          }
-          
-          setIsUploading(false);
-          setProgress(100);
-        } catch (manifestErr) {
-          log.error('Failed to create manifest:', manifestErr);
-          setError(
-            new UploadError(
-              `Upload succeeded but manifest creation failed: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`,
-              UploadErrorCode.MANIFEST_FAILED,
-              manifestErr instanceof Error ? manifestErr : undefined
-            )
-          );
-          setIsUploading(false);
-        }
-      };
-
-      // Chain error callback - preserve existing handlers from upload-store-bridge
-      const previousOnError = uploadQueue.onError;
-      uploadQueue.onError = (task, uploadErr) => {
-        // Call bridge handler first (marks as failed in PhotoStore)
-        previousOnError?.(task, uploadErr);
-        
-        // Remove from active tasks
-        setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
-
-        log.error('Upload failed:', uploadErr);
-        setError(
-          new UploadError(
-            uploadErr.message,
-            UploadErrorCode.UPLOAD_FAILED,
-            uploadErr
-          )
-        );
-        setIsUploading(false);
-      };
-
       // Add file to queue with real epoch key
       log.info(`Adding file to upload queue: ${file.name}, albumId=${albumId}, epochId=${epochKey.epochId}`);
       await uploadQueue.add(
@@ -258,10 +298,6 @@ export function UploadProvider({ children }: UploadProviderProps) {
         epochKey.epochSeed
       );
       log.info(`File added to upload queue: ${file.name}`);
-      
-      // Add to active tasks immediately
-      // We need to fetch the task object back from the queue or construct a minimal one
-      // For now, let's wait for the first progress update or fetch pending tasks
     } catch (err) {
       // Only handle errors not already handled above
       if (!(err instanceof UploadError)) {

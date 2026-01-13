@@ -16,6 +16,7 @@
  */
 
 import { usePhotoStore } from '../stores/photo-store';
+import type { TieredShardIds } from '../workers/types';
 import { createLogger } from './logger';
 import { syncCoordinator } from './sync-coordinator';
 import { uploadQueue, type UploadTask } from './upload-queue';
@@ -30,6 +31,18 @@ let cleanupFn: (() => void) | null = null;
 
 /** Track if bridge is initialized */
 let initialized = false;
+
+/**
+ * Map upload queue action to store action
+ */
+function mapAction(action: string): 'waiting' | 'encrypting' | 'uploading' | 'finalizing' {
+  switch (action) {
+    case 'encrypting': return 'encrypting';
+    case 'uploading': return 'uploading';
+    case 'finalizing': return 'finalizing';
+    default: return 'waiting';
+  }
+}
 
 /**
  * Handle upload progress event.
@@ -54,9 +67,10 @@ function handleProgress(task: UploadTask): void {
     log.debug(`Added pending photo: albumId=${task.albumId}, assetId=${task.id}`);
   }
   
-  // Update progress (0-1 scale in task, store expects 0-100)
+  // Update progress (0-1 scale in task, store expects 0-100) and action
   const progressPercent = Math.round(task.progress * 100);
-  store.updateProgress(task.albumId, task.id, progressPercent);
+  const action = mapAction(task.currentAction);
+  store.updateProgress(task.albumId, task.id, progressPercent, action);
 }
 
 /**
@@ -209,11 +223,12 @@ export function initUploadStoreBridge(): () => void {
   };
   
   // Set up complete handler (chains with existing)
-  uploadQueue.onComplete = (task: UploadTask, shardIds: string[]) => {
+  uploadQueue.onComplete = (task: UploadTask, shardIds: string[], tieredShards?: TieredShardIds) => {
     handleComplete(task, shardIds);
     // Note: previousOnComplete may be async (creates manifest)
     // We call it but don't await - let it run in parallel
-    void previousOnComplete?.(task, shardIds);
+    // Forward all parameters including tieredShards
+    void previousOnComplete?.(task, shardIds, tieredShards);
   };
   
   // Set up error handler (chains with existing)

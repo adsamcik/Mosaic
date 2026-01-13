@@ -11,19 +11,19 @@
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 8px 10px;
-  background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 60%, transparent 100%);
+  padding: 10px 12px;
+  background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.6) 50%, transparent 100%);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   z-index: 10;
   pointer-events: none;
 }
 
 .pending-progress-container {
   width: 100%;
-  height: 3px;
-  background: rgba(255, 255, 255, 0.25);
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -35,22 +35,14 @@
   transition: width 0.3s ease-out;
 }
 
+.pending-progress-bar.encrypting {
+  background: linear-gradient(90deg, #a855f7, #c084fc);
+}
+
 .pending-progress-bar.syncing {
   background: linear-gradient(90deg, #10b981, #34d399);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
-}
-
-.pending-status-text {
-  color: white;
-  font-size: 11px;
-  font-weight: 500;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
-  letter-spacing: 0.02em;
-}
-
-.pending-error {
-  color: #fca5a5;
 }
 
 @keyframes shimmer {
@@ -58,10 +50,72 @@
   100% { background-position: 200% 0; }
 }
 
+/* Status display */
+.pending-status {
+  display: flex;
+  align-items: center;
+}
+
+.pending-status span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: white;
+  font-size: 11px;
+  font-weight: 500;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  letter-spacing: 0.02em;
+}
+
+.pending-status svg {
+  flex-shrink: 0;
+}
+
+.pending-status-waiting svg {
+  opacity: 0.8;
+}
+
+.pending-status-encrypting {
+  color: #e9d5ff !important;
+}
+
+.pending-status-encrypting svg {
+  animation: pulse-icon 1s ease-in-out infinite;
+}
+
+.pending-status-uploading {
+  color: #93c5fd !important;
+}
+
+.pending-status-syncing {
+  color: #6ee7b7 !important;
+}
+
+.pending-status-syncing svg {
+  animation: spin 1.5s linear infinite;
+}
+
+.pending-status-finalizing {
+  color: #6ee7b7 !important;
+}
+
+.pending-status-error {
+  color: #fca5a5 !important;
+}
+
+@keyframes pulse-icon {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* Pending photo dim effect */
 .justified-photo-thumbnail:has(.justified-photo-pending-overlay) .justified-photo-content img {
-  opacity: 0.85;
-  filter: brightness(0.95);
+  filter: brightness(0.9);
 }
 
 .upload-overlay {

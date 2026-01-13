@@ -20,7 +20,6 @@ import '../../styles/upload.css';
 import type { PhotoMeta } from '../../workers/types';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
 import { JustifiedPhotoThumbnail } from './JustifiedPhotoThumbnail';
-import { PendingPhotoThumbnail } from './PendingPhotoThumbnail';
 import { PhotoLightbox } from './PhotoLightbox';
 
 /** Gap between photos in pixels */
@@ -420,17 +419,6 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
                 data-testid="photo-grid-row"
               >
                 {item.row.photos.map(({ photo, width, height }) => {
-                  // Check if this is a pending upload
-                  const pendingPhoto = photo as PhotoMeta & { isPending?: boolean; task?: any };
-                  
-                  if (pendingPhoto.isPending && pendingPhoto.task) {
-                    return (
-                      <div key={photo.id} style={{ width, height }}>
-                        <PendingPhotoThumbnail task={pendingPhoto.task} />
-                      </div>
-                    );
-                  }
-
                   const epochReadKey = epochKeys.get(photo.epochId);
                   const isSelected = selectedIds.has(photo.id);
 
@@ -443,7 +431,7 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
                       epochReadKey={epochReadKey}
                       isSelected={isSelected}
                       selectionMode={isSelectionMode}
-                      showDelete={permissions.canDelete}
+                      showDelete={permissions.canDelete && !photo.isPending}
                       onClick={() => handlePhotoClick(photo)}
                       onSelectionChange={(selected: boolean) =>
                         handleSelectionChange(photo.id, selected)

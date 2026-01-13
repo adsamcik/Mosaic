@@ -28,7 +28,6 @@ import { AnimatedTile } from './AnimatedTile';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
 import { EnhancedMosaicTile } from './EnhancedMosaicTile';
 import { JustifiedPhotoThumbnail } from './JustifiedPhotoThumbnail';
-import { PendingPhotoThumbnail } from './PendingPhotoThumbnail';
 import { PhotoGridSkeleton } from './PhotoGridSkeleton';
 import { PhotoLightbox } from './PhotoLightbox';
 
@@ -373,12 +372,6 @@ export function EnhancedMosaicPhotoGrid({
 
   // Render thumbnail helper
   const renderThumbnail = (photo: PhotoMeta, width: number, height: number, onClick?: () => void) => {
-    const isPending = (photo as any).isPending;
-    
-    if (isPending) {
-      return <PendingPhotoThumbnail task={(photo as any).task} />;
-    }
-    
     const epochKey = epochKeys.get(photo.epochId);
     const isSelected = selectedIds.has(photo.id);
     
@@ -389,6 +382,7 @@ export function EnhancedMosaicPhotoGrid({
           epochReadKey={epochKey}
           isSelected={isSelected}
           selectionMode={isSelectionMode}
+          showDelete={!photo.isPending}
           onSelectionChange={(selected) => handleSelectionChange(photo.id, selected)}
           onClick={() => onClick?.()}
           width={width}
@@ -468,30 +462,6 @@ export function EnhancedMosaicPhotoGrid({
                   // Get animation state for this photo
                   const animState = photo ? animationLookup.get(photo.id) : undefined;
                   const skipAnimation = isInitialLoad || !animState;
-
-                  // Handle pending photos (uploads in progress)
-                  if (photo && (photo as any).isPending) {
-                    return (
-                      <AnimatedTile
-                        key={photo.id}
-                        itemKey={photo.id}
-                        skipAnimation={skipAnimation}
-                        isExiting={animState?.isExiting ?? false}
-                        onExitComplete={() => handleExitComplete(photo.id)}
-                        staggerDelay={animState?.staggerDelay ?? 0}
-                        hasBeenSeen={animState?.hasBeenSeen ?? false}
-                        style={{
-                          position: 'absolute',
-                          top: mosaicItem.rect.top,
-                          left: mosaicItem.rect.left,
-                          width: mosaicItem.rect.width,
-                          height: mosaicItem.rect.height,
-                        }}
-                      >
-                        <PendingPhotoThumbnail task={(photo as any).task} />
-                      </AnimatedTile>
-                    );
-                  }
 
                   const tileProps = {
                     item: mosaicItem,

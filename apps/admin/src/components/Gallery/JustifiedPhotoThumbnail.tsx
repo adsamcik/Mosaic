@@ -385,21 +385,48 @@ export function JustifiedPhotoThumbnail({
       {/* Pending upload overlay */}
       {photo.isPending && (
         <div className="justified-photo-pending-overlay" data-testid="photo-pending-overlay">
+          {/* Progress bar */}
           <div className="pending-progress-container">
             <div 
-              className={`pending-progress-bar ${photo.isSyncing ? 'syncing' : ''}`}
+              className={`pending-progress-bar ${photo.uploadAction === 'encrypting' ? 'encrypting' : ''} ${photo.isSyncing ? 'syncing' : ''}`}
               style={{ width: `${photo.isSyncing ? 100 : (photo.uploadProgress ?? 0)}%` }}
             />
           </div>
-          <span className="pending-status-text">
+          
+          {/* Status with icon */}
+          <div className="pending-status">
             {photo.uploadError ? (
-              <span className="pending-error">Upload failed</span>
+              <span className="pending-status-error">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                <span>Failed</span>
+              </span>
             ) : photo.isSyncing ? (
-              'Syncing...'
+              <span className="pending-status-syncing">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                <span>Syncing</span>
+              </span>
+            ) : photo.uploadAction === 'waiting' ? (
+              <span className="pending-status-waiting">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>Waiting</span>
+              </span>
+            ) : photo.uploadAction === 'encrypting' ? (
+              <span className="pending-status-encrypting">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span>Encrypting</span>
+              </span>
+            ) : photo.uploadAction === 'uploading' ? (
+              <span className="pending-status-uploading">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span>{Math.round(photo.uploadProgress ?? 0)}%</span>
+              </span>
             ) : (
-              `${Math.round(photo.uploadProgress ?? 0)}%`
+              <span className="pending-status-finalizing">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <span>Finalizing</span>
+              </span>
             )}
-          </span>
+          </div>
         </div>
       )}
 

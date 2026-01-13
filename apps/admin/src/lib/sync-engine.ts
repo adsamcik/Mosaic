@@ -65,6 +65,9 @@ interface SyncEventDetail {
 class SyncEngine extends EventTarget {
   private syncing = false;
   private syncAbortController: AbortController | null = null;
+  
+  /** Queued sync requests - album IDs that need sync after current sync completes */
+  private pendingSyncQueue = new Map<string, Uint8Array | undefined>();
 
   /** Whether sync is currently in progress */
   get isSyncing(): boolean {
@@ -72,13 +75,17 @@ class SyncEngine extends EventTarget {
   }
 
   /**
-   * Sync an album from the server
+   * Sync an album from the server.
+   * If sync is already in progress, queues the request for after completion.
    * @param albumId - Album ID to sync
    * @param readKey - Epoch read key for decryption (optional if using cached keys)
    */
   async sync(albumId: string, readKey?: Uint8Array): Promise<void> {
     if (this.syncing) {
-      log.warn('Sync already in progress');
+      // Queue this sync request - it will run after current sync completes
+      // If same album is already queued, this updates the readKey
+      log.debug(`Sync in progress, queueing sync for album ${albumId}`);
+      this.pendingSyncQueue.set(albumId, readKey);
       return;
     }
 
@@ -189,6 +196,34 @@ class SyncEngine extends EventTarget {
     } finally {
       this.syncing = false;
       this.syncAbortController = null;
+      
+      // Process queued sync requests
+      void this.processQueuedSyncs();
+    }
+  }
+
+  /**
+   * Process any queued sync requests after current sync completes.
+   * This ensures uploads that completed during a sync still get synced.
+   */
+  private async processQueuedSyncs(): Promise<void> {
+    if (this.pendingSyncQueue.size === 0) {
+      return;
+    }
+    
+    // Take all queued requests and clear the queue
+    const queuedSyncs = Array.from(this.pendingSyncQueue.entries());
+    this.pendingSyncQueue.clear();
+    
+    log.info(`Processing ${queuedSyncs.length} queued sync request(s)`);
+    
+    // Process each queued album (they will queue themselves if another is in progress)
+    for (const [queuedAlbumId, queuedReadKey] of queuedSyncs) {
+      try {
+        await this.sync(queuedAlbumId, queuedReadKey);
+      } catch (err) {
+        log.error(`Queued sync failed for album ${queuedAlbumId}`, err);
+      }
     }
   }
 
