@@ -76,6 +76,98 @@ const MAX_CACHE_ENTRIES = 200;
 /** Current cache size in bytes */
 let currentCacheSize = 0;
 
+// =============================================================================
+// Memory Pressure Handling
+// =============================================================================
+
+/** Ratio to reduce cache to when under memory pressure (25% of max) */
+const REDUCED_CACHE_RATIO = 0.25;
+
+/** Track if tab is currently backgrounded */
+let isTabBackgrounded = false;
+
+/** Track if memory pressure handling is initialized */
+let memoryPressureInitialized = false;
+
+/**
+ * Check if the tab is currently backgrounded
+ */
+export function isMemoryPressureActive(): boolean {
+  return isTabBackgrounded;
+}
+
+/**
+ * Reduce cache sizes to a fraction of their normal maximum.
+ * Used when tab is backgrounded to free memory.
+ * 
+ * @param ratio - Target ratio (0.0 to 1.0) of max cache size
+ */
+export function reduceCacheToRatio(ratio: number): void {
+  const targetPhotoSize = Math.floor(MAX_CACHE_SIZE * ratio);
+  
+  log.info(`Reducing photo cache to ${Math.round(ratio * 100)}% (target: ${targetPhotoSize} bytes)`);
+
+  // Evict photo cache entries
+  const photoEntries = Array.from(photoCache.entries())
+    .sort(([, a], [, b]) => a.lastAccess - b.lastAccess);
+  
+  for (const [id, entry] of photoEntries) {
+    if (currentCacheSize <= targetPhotoSize) break;
+    if (entry.refCount > 0) continue; // Don't evict in-use photos
+    
+    URL.revokeObjectURL(entry.blobUrl);
+    currentCacheSize -= entry.blob.size;
+    photoCache.delete(id);
+  }
+  
+  log.info(`Photo cache reduced: entries=${photoCache.size}, size=${currentCacheSize} bytes`);
+}
+
+/**
+ * Handle visibility change events to manage memory
+ */
+function handleVisibilityChange(): void {
+  if (document.hidden) {
+    // Tab is now hidden - reduce cache to save memory
+    isTabBackgrounded = true;
+    reduceCacheToRatio(REDUCED_CACHE_RATIO);
+    // Also reduce thumbnail cache
+    reduceThumbnailCacheToRatio(REDUCED_CACHE_RATIO);
+  } else {
+    // Tab is now visible - resume normal caching
+    isTabBackgrounded = false;
+    log.info('Tab visible - resuming normal cache behavior');
+  }
+}
+
+/**
+ * Initialize memory pressure handling.
+ * Call this during app initialization.
+ */
+export function initMemoryPressureHandling(): void {
+  if (memoryPressureInitialized) return;
+  
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    memoryPressureInitialized = true;
+    log.info('Memory pressure handling initialized');
+  }
+}
+
+/**
+ * Cleanup memory pressure handling.
+ * Call this during app teardown.
+ */
+export function cleanupMemoryPressureHandling(): void {
+  if (!memoryPressureInitialized) return;
+  
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    memoryPressureInitialized = false;
+    log.info('Memory pressure handling cleaned up');
+  }
+}
+
 /**
  * Evict oldest entries to make room for new data
  * Uses LRU eviction based on lastAccess time
@@ -335,6 +427,32 @@ let thumbnailCacheSize = 0;
 
 /** Maximum thumbnail cache size (20MB - smaller than full photos) */
 const MAX_THUMBNAIL_CACHE_SIZE = 20 * 1024 * 1024;
+
+/**
+ * Reduce thumbnail cache to a fraction of max size.
+ * Called by memory pressure handling when tab is backgrounded.
+ * 
+ * @param ratio - Target ratio (0.0 to 1.0) of max cache size
+ */
+function reduceThumbnailCacheToRatio(ratio: number): void {
+  const targetSize = Math.floor(MAX_THUMBNAIL_CACHE_SIZE * ratio);
+  
+  log.info(`Reducing thumbnail cache to ${Math.round(ratio * 100)}% (target: ${targetSize} bytes)`);
+
+  const entries = Array.from(thumbnailCache.entries())
+    .sort(([, a], [, b]) => a.lastAccess - b.lastAccess);
+  
+  for (const [id, entry] of entries) {
+    if (thumbnailCacheSize <= targetSize) break;
+    if (entry.refCount > 0) continue;
+    
+    URL.revokeObjectURL(entry.blobUrl);
+    thumbnailCacheSize -= entry.blob.size;
+    thumbnailCache.delete(id);
+  }
+  
+  log.info(`Thumbnail cache reduced: entries=${thumbnailCache.size}, size=${thumbnailCacheSize} bytes`);
+}
 
 /**
  * Evict oldest thumbnail entries to make room for new data

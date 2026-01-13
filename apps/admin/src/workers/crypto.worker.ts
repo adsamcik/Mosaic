@@ -236,9 +236,12 @@ class CryptoWorker implements CryptoWorkerApi {
    * Validates envelope header, checks reserved bytes are zero,
    * then decrypts using XChaCha20-Poly1305 with header as AAD.
    *
-   * The epochSeed is used to derive the fullKey (tier 3) for decryption.
+   * The epochSeed is used to derive tier-specific keys for decryption.
+   * The correct tier key is selected by peeking at the tier byte in the
+   * envelope header (tier 1=thumb, 2=preview, 3=original).
+   *
    * For backwards compatibility with photos encrypted before tier key derivation
-   * was implemented, falls back to trying epochSeed directly if fullKey fails.
+   * was implemented, falls back to trying epochSeed directly if tier key fails.
    *
    * For share link decryption where you have the tier key directly,
    * use decryptShardWithTierKey instead.
@@ -254,10 +257,27 @@ class CryptoWorker implements CryptoWorkerApi {
   ): Promise<Uint8Array> {
     await this.ensureSodiumReady();
     
-    // First try with derived fullKey (new encryption method)
-    const { fullKey } = deriveTierKeys(epochSeed);
+    // Peek at the envelope header to determine which tier key to use
+    const header = cryptoPeekHeader(envelope);
+    const { thumbKey, previewKey, fullKey } = deriveTierKeys(epochSeed);
+    
+    // Select the appropriate tier key based on the envelope's tier byte
+    let tierKey: Uint8Array;
+    switch (header.tier) {
+      case 1: // THUMB
+        tierKey = thumbKey;
+        break;
+      case 2: // PREVIEW
+        tierKey = previewKey;
+        break;
+      case 3: // ORIGINAL
+      default:
+        tierKey = fullKey;
+        break;
+    }
+    
     try {
-      return await cryptoDecryptShard(envelope, fullKey);
+      return await cryptoDecryptShard(envelope, tierKey);
     } catch {
       // Fall back to epochSeed directly for backwards compatibility
       // (photos encrypted before tier key derivation was implemented)
@@ -318,11 +338,18 @@ class CryptoWorker implements CryptoWorkerApi {
   /**
    * Decrypt manifest metadata.
    *
-   * Manifest metadata is encrypted as a shard (with epoch 0, shard 0),
+   * Manifest metadata is encrypted as a shard (with thumbKey tier),
    * containing JSON-encoded PhotoMeta.
    *
+   * The readKey (epochSeed) is used to derive the thumbKey for decryption,
+   * since manifests are encrypted with thumbKey to allow share link recipients
+   * with thumbnail access to read photo metadata.
+   *
+   * For backwards compatibility with manifests encrypted before tier key
+   * derivation was implemented, falls back to trying readKey directly.
+   *
    * @param encryptedMeta - Encrypted manifest bytes (envelope format)
-   * @param readKey - Epoch read key (32 bytes)
+   * @param readKey - Epoch seed (32 bytes) for deriving thumbKey
    * @returns Decrypted and parsed PhotoMeta
    */
   async decryptManifest(
@@ -331,9 +358,18 @@ class CryptoWorker implements CryptoWorkerApi {
   ): Promise<PhotoMeta> {
     await this.ensureSodiumReady();
 
-    // Manifest metadata uses the envelope format
-    // Epoch 0 and shard 0 are reserved for manifest metadata
-    const plaintext = await cryptoDecryptShard(encryptedMeta, readKey);
+    // Manifest metadata uses the envelope format and is encrypted with thumbKey
+    // Derive thumbKey from epochSeed for decryption
+    const { thumbKey } = deriveTierKeys(readKey);
+    
+    let plaintext: Uint8Array;
+    try {
+      plaintext = await cryptoDecryptShard(encryptedMeta, thumbKey);
+    } catch {
+      // Fall back to readKey directly for backwards compatibility
+      // (manifests encrypted before tier key derivation was implemented)
+      plaintext = await cryptoDecryptShard(encryptedMeta, readKey);
+    }
 
     // Parse JSON from decrypted bytes
     const decoder = new TextDecoder();

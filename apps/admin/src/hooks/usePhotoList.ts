@@ -72,9 +72,19 @@ function pendingToPhotoMeta(item: PhotoItem): PhotoMeta {
     updatedAt: new Date().toISOString(),
     shardIds: [],
     epochId: 0,
+    // Pending upload state
+    isPending: true,
+    uploadProgress: item.uploadProgress ?? 0,
+    isSyncing: item.status === 'syncing',
   };
   
+  // Only add error if we have a value (exactOptionalPropertyTypes)
+  if (item.error) {
+    base.uploadError = item.error;
+  }
+  
   // Only add thumbnail if we have a value (exactOptionalPropertyTypes)
+  // localBlobUrl is a blob: URL, which JustifiedPhotoThumbnail now handles
   const thumbnailValue = item.localBlobUrl ?? item.thumbnailUrl;
   if (thumbnailValue) {
     base.thumbnail = thumbnailValue;

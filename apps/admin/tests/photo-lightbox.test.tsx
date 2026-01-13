@@ -544,4 +544,177 @@ describe('PhotoLightbox Preloading', () => {
       expect(preloadedIds).toContain('photo-4:full');
     });
   });
+
+  describe('Original Shard Extraction', () => {
+    it('uses originalShardIds when available', async () => {
+      vi.mocked(photoService.loadPhoto).mockClear();
+      
+      const photo = createMockPhoto({
+        shardIds: ['thumb-shard', 'preview-shard', 'original-shard'],
+        originalShardIds: ['original-shard-1', 'original-shard-2'],
+      });
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoService.loadPhoto).toHaveBeenCalledWith(
+        `${photo.id}:full`,
+        ['original-shard-1', 'original-shard-2'], // Should use originalShardIds
+        expect.any(Uint8Array),
+        'image/jpeg',
+        expect.any(Object)
+      );
+    });
+
+    it('extracts original from 3-shard legacy format', async () => {
+      vi.mocked(photoService.loadPhoto).mockClear();
+      
+      const photo = createMockPhoto({
+        shardIds: ['thumb-shard', 'preview-shard', 'original-shard'],
+        originalShardIds: undefined, // No tier-specific fields
+      });
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoService.loadPhoto).toHaveBeenCalledWith(
+        `${photo.id}:full`,
+        ['original-shard'], // Should extract only shardIds[2]
+        expect.any(Uint8Array),
+        'image/jpeg',
+        expect.any(Object)
+      );
+    });
+
+    it('uses all shards for legacy chunked format (non-3 shard count)', async () => {
+      vi.mocked(photoService.loadPhoto).mockClear();
+      
+      const photo = createMockPhoto({
+        shardIds: ['chunk-1', 'chunk-2', 'chunk-3', 'chunk-4'], // 4 chunks = large file
+        originalShardIds: undefined,
+      });
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoService.loadPhoto).toHaveBeenCalledWith(
+        `${photo.id}:full`,
+        ['chunk-1', 'chunk-2', 'chunk-3', 'chunk-4'], // All chunks for legacy format
+        expect.any(Uint8Array),
+        'image/jpeg',
+        expect.any(Object)
+      );
+    });
+
+    it('uses single shard for small files', async () => {
+      vi.mocked(photoService.loadPhoto).mockClear();
+      
+      const photo = createMockPhoto({
+        shardIds: ['single-original'],
+        originalShardIds: undefined,
+      });
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoService.loadPhoto).toHaveBeenCalledWith(
+        `${photo.id}:full`,
+        ['single-original'], // Single shard used as-is
+        expect.any(Uint8Array),
+        'image/jpeg',
+        expect.any(Object)
+      );
+    });
+
+    it('falls back to shardIds when originalShardIds is empty array', async () => {
+      vi.mocked(photoService.loadPhoto).mockClear();
+      
+      const photo = createMockPhoto({
+        shardIds: ['thumb', 'preview', 'original'],
+        originalShardIds: [], // Empty array
+      });
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoService.loadPhoto).toHaveBeenCalledWith(
+        `${photo.id}:full`,
+        ['original'], // Falls back to shardIds[2]
+        expect.any(Uint8Array),
+        'image/jpeg',
+        expect.any(Object)
+      );
+    });
+
+    it('extracts original shards in preload queue', async () => {
+      vi.mocked(photoService.preloadPhotos).mockClear();
+      
+      const mainPhoto = createMockPhoto({ id: 'main' });
+      const preloadPhoto = createMockPhoto({
+        id: 'preload-1',
+        shardIds: ['thumb', 'preview', 'original'],
+        originalShardIds: undefined,
+      });
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: mainPhoto,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+            preloadQueue: [preloadPhoto],
+          })
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoService.preloadPhotos).toHaveBeenCalled();
+      const [photosArg] = vi.mocked(photoService.preloadPhotos).mock.calls[0]!;
+      
+      // Verify preload extracts only original shard
+      const preloadItem = photosArg.find(p => p.id === 'preload-1:full');
+      expect(preloadItem).toBeDefined();
+      expect(preloadItem?.shardIds).toEqual(['original']); // Only original shard
+    });
+  });
 });

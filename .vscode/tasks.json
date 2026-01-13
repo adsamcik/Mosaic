@@ -120,7 +120,7 @@
       "problemMatcher": []
     },
     {
-      "label": "dev-frontend",
+      "label": "watch-frontend",
       "type": "npm",
       "script": "dev",
       "path": "apps/admin",
@@ -142,7 +142,7 @@
       }
     },
     {
-      "label": "dev-frontend-production-crypto",
+      "label": "watch-frontend-production-crypto",
       "type": "npm",
       "script": "dev",
       "path": "apps/admin",
@@ -160,7 +160,7 @@
     },
     {
       "label": "start-all",
-      "dependsOn": ["build-crypto", "watch-backend", "dev-frontend"],
+      "dependsOn": ["build-crypto", "watch-backend", "watch-frontend"],
       "dependsOrder": "sequence",
       "problemMatcher": []
     },

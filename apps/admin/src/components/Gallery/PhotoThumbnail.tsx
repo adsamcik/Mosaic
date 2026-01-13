@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { getCachedBlurhashDataURL, isValidBlurhash } from '../../lib/blurhash-decoder';
 import { loadPhoto, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
@@ -42,7 +42,7 @@ type ThumbnailState =
  * 2. Embedded thumbnail (fast, base64 in manifest)
  * 3. Full resolution shards (slow, network + decryption)
  */
-export function PhotoThumbnail({
+export const PhotoThumbnail = memo(function PhotoThumbnail({
   photo,
   epochReadKey,
   onClick,
@@ -383,4 +383,4 @@ export function PhotoThumbnail({
       </div>
     </div>
   );
-}
+});

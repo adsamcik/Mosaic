@@ -256,7 +256,7 @@ export function EnhancedMosaicPhotoGrid({
     count: virtualRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (i) => virtualRows[i]?.height ?? 0,
-    overscan: 500,
+    overscan: 3, // Number of extra rows to render above/below viewport
   });
 
   // Event handlers

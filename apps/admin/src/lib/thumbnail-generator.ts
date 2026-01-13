@@ -2,13 +2,15 @@
  * Thumbnail Generator Service
  *
  * Generates three-tier images from photos using the Canvas API:
- * - Thumbnail: 300px max dimension, ~80% quality JPEG
- * - Preview: 1200px max dimension, ~85% quality JPEG
+ * - Thumbnail: 300px max dimension, ~80% quality WebP/JPEG
+ * - Preview: 1200px max dimension, ~85% quality WebP/JPEG
  * - Original: unchanged source file
  *
  * Each tier is encrypted with its corresponding key (thumbKey, previewKey, fullKey).
  * Handles EXIF orientation, maintains aspect ratio, and outputs
- * compressed JPEG for efficient storage.
+ * compressed WebP (with JPEG fallback) for efficient storage.
+ * 
+ * WebP provides 30-40% smaller files at equivalent quality.
  */
 
 import { encode as encodeBlurhash } from 'blurhash';
@@ -40,6 +42,96 @@ const SUPPORTED_TYPES = [
   'image/heic',
   'image/heif',
 ];
+
+// =============================================================================
+// WebP Support Detection
+// =============================================================================
+
+/** Cached result of WebP support detection */
+let webpSupportCache: boolean | null = null;
+
+/**
+ * Reset WebP support cache (for testing only)
+ * @internal
+ */
+export function _resetWebPCache(): void {
+  webpSupportCache = null;
+}
+
+/**
+ * Detect if the browser supports WebP encoding via Canvas.toBlob()
+ * Result is cached for performance.
+ */
+export function detectWebPSupport(): boolean {
+  if (webpSupportCache !== null) {
+    return webpSupportCache;
+  }
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    // Check if toDataURL returns a WebP data URL
+    const dataUrl = canvas.toDataURL('image/webp');
+    webpSupportCache = dataUrl.startsWith('data:image/webp');
+  } catch {
+    webpSupportCache = false;
+  }
+
+  return webpSupportCache;
+}
+
+// =============================================================================
+// AVIF Support Detection
+// =============================================================================
+
+/** Cached result of AVIF support detection */
+let avifSupportCache: boolean | null = null;
+
+/**
+ * Reset AVIF support cache (for testing only)
+ * @internal
+ */
+export function _resetAVIFCache(): void {
+  avifSupportCache = null;
+}
+
+/**
+ * Detect if the browser supports AVIF encoding via Canvas.toDataURL()
+ * Result is cached for performance.
+ */
+export function detectAVIFSupport(): boolean {
+  if (avifSupportCache !== null) {
+    return avifSupportCache;
+  }
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    // Check if toDataURL returns an AVIF data URL
+    const dataUrl = canvas.toDataURL('image/avif');
+    avifSupportCache = dataUrl.startsWith('data:image/avif');
+  } catch {
+    avifSupportCache = false;
+  }
+
+  return avifSupportCache;
+}
+
+/**
+ * Get the preferred output format for thumbnails/previews
+ * Priority: AVIF (best compression) > WebP > JPEG (fallback)
+ */
+export function getPreferredImageFormat(): 'image/avif' | 'image/webp' | 'image/jpeg' {
+  if (detectAVIFSupport()) {
+    return 'image/avif';
+  }
+  if (detectWebPSupport()) {
+    return 'image/webp';
+  }
+  return 'image/jpeg';
+}
 
 /**
  * Options for thumbnail generation (legacy single-tier)
@@ -413,13 +505,16 @@ export async function generateThumbnail(
       3   // componentY
     );
 
-    // Convert to JPEG blob
+    // Use WebP if supported (30-40% smaller), fallback to JPEG
+    const outputFormat = getPreferredImageFormat();
+    
+    // Convert to WebP/JPEG blob
     let blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', quality)
+      canvas.toBlob(resolve, outputFormat, quality)
     );
 
     if (!blob) {
-      throw new ThumbnailError('Failed to encode thumbnail as JPEG');
+      throw new ThumbnailError(`Failed to encode thumbnail as ${outputFormat}`);
     }
 
     // If thumbnail is too large, reduce quality
@@ -427,10 +522,10 @@ export async function generateThumbnail(
     while (blob.size > MAX_THUMBNAIL_BYTES && currentQuality > 0.3) {
       currentQuality -= 0.1;
       blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, 'image/jpeg', currentQuality)
+        canvas.toBlob(resolve, outputFormat, currentQuality)
       );
       if (!blob) {
-        throw new ThumbnailError('Failed to encode thumbnail as JPEG');
+        throw new ThumbnailError(`Failed to encode thumbnail as ${outputFormat}`);
       }
     }
 
@@ -539,13 +634,16 @@ async function resizeImage(
     ctx.drawImage(bitmap, 0, 0, dims.width, dims.height);
   }
 
-  // Convert to JPEG blob
+  // Use WebP if supported (30-40% smaller), fallback to JPEG
+  const outputFormat = getPreferredImageFormat();
+
+  // Convert to WebP/JPEG blob
   let blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, 'image/jpeg', quality)
+    canvas.toBlob(resolve, outputFormat, quality)
   );
 
   if (!blob) {
-    throw new ThumbnailError('Failed to encode image as JPEG');
+    throw new ThumbnailError(`Failed to encode image as ${outputFormat}`);
   }
 
   // If image is too large, reduce quality
@@ -553,10 +651,10 @@ async function resizeImage(
   while (blob.size > maxBytes && currentQuality > 0.3) {
     currentQuality -= 0.1;
     blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', currentQuality)
+      canvas.toBlob(resolve, outputFormat, currentQuality)
     );
     if (!blob) {
-      throw new ThumbnailError('Failed to encode image as JPEG');
+      throw new ThumbnailError(`Failed to encode image as ${outputFormat}`);
     }
   }
 

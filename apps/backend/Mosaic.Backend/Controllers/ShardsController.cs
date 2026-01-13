@@ -49,6 +49,10 @@ public class ShardsController : ControllerBase
 
         if (!hasAccess) return Forbid();
 
+        // Set aggressive caching headers - shards are immutable (content-addressed)
+        Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+        Response.Headers.ETag = $"\"{shardId}\"";
+
         var stream = await _storage.OpenReadAsync(shard.StorageKey);
         return File(stream, "application/octet-stream");
     }

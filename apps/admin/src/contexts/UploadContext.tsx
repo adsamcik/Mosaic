@@ -134,6 +134,21 @@ export function UploadProvider({ children }: UploadProviderProps) {
     return cleanup;
   }, []);
 
+  // Warn user before leaving page during upload
+  useEffect(() => {
+    if (!isUploading) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Standard way to trigger browser's confirmation dialog
+      e.preventDefault();
+      // For older browsers, return a string (modern browsers show generic message)
+      return '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isUploading]);
+
   const upload = useCallback(async (file: File, albumId: string) => {
     setIsUploading(true);
     setProgress(0);
@@ -235,12 +250,14 @@ export function UploadProvider({ children }: UploadProviderProps) {
       };
 
       // Add file to queue with real epoch key
+      log.info(`Adding file to upload queue: ${file.name}, albumId=${albumId}, epochId=${epochKey.epochId}`);
       await uploadQueue.add(
         file,
         albumId,
         epochKey.epochId,
         epochKey.epochSeed
       );
+      log.info(`File added to upload queue: ${file.name}`);
       
       // Add to active tasks immediately
       // We need to fetch the task object back from the queue or construct a minimal one

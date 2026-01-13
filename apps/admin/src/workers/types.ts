@@ -49,6 +49,16 @@ export interface PhotoMeta {
   originalShardIds?: string[];
   /** SHA256 hashes of original shards (parallel array) */
   originalShardHashes?: string[];
+
+  // Pending upload state (for optimistic UI)
+  /** True if this photo is being uploaded (not yet confirmed by server) */
+  isPending?: boolean;
+  /** Upload progress (0-100) for pending photos */
+  uploadProgress?: number;
+  /** True if this photo is syncing (upload complete, awaiting server confirmation) */
+  isSyncing?: boolean;
+  /** Error message if upload failed */
+  uploadError?: string;
 }
 
 /** Tiered shard tracking during upload */

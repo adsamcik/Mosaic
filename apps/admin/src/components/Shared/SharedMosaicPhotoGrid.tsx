@@ -154,7 +154,7 @@ export function SharedMosaicPhotoGrid({
     count: virtualRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (i) => virtualRows[i]?.height ?? TARGET_ROW_HEIGHT,
-    overscan: 500,
+    overscan: 3, // Number of extra rows to render above/below viewport
   });
 
   const handlePhotoClick = useCallback((photo: PhotoMeta) => {

@@ -395,7 +395,7 @@ describe('generateThumbnail', () => {
 
     await expect(generateThumbnail(file)).rejects.toThrow(ThumbnailError);
     await expect(generateThumbnail(file)).rejects.toThrow(
-      'Failed to encode thumbnail as JPEG'
+      /Failed to encode thumbnail as image\/(jpeg|webp)/
     );
   });
 

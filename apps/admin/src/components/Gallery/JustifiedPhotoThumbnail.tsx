@@ -17,6 +17,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getCachedBlurhashDataURL, isValidBlurhash } from '../../lib/blurhash-decoder';
 import { loadPhoto, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('JustifiedPhotoThumbnail');
 
 interface JustifiedPhotoThumbnailProps {
   photo: PhotoMeta;
@@ -82,8 +85,16 @@ export function JustifiedPhotoThumbnail({
   }, [photo.blurhash]);
 
   // Use embedded thumbnail immediately if available (no network request needed)
+  // Handles both base64 thumbnails and blob URLs from pending uploads
   const embeddedThumbnailUrl = useMemo(() => {
     if (!photo.thumbnail || photo.thumbnail.length === 0) return null;
+    // Check if it's already a URL (blob: or data: or http:)
+    if (photo.thumbnail.startsWith('blob:') || 
+        photo.thumbnail.startsWith('data:') || 
+        photo.thumbnail.startsWith('http')) {
+      return photo.thumbnail;
+    }
+    // Otherwise treat as base64
     return `data:image/jpeg;base64,${photo.thumbnail}`;
   }, [photo.thumbnail]);
 
@@ -129,6 +140,7 @@ export function JustifiedPhotoThumbnail({
           setState({ status: 'loaded', result });
         }
       } catch (error) {
+        log.error(`Photo ${photo.id} load failed:`, error);
         if (!cancelled) {
           setState({
             status: 'error',
@@ -358,7 +370,7 @@ export function JustifiedPhotoThumbnail({
       )}
 
       {/* Delete button */}
-      {isHovered && !selectionMode && showDelete && onDelete && (
+      {isHovered && !selectionMode && showDelete && onDelete && !photo.isPending && (
         <button
           className="justified-photo-delete"
           onClick={handleDeleteClick}
@@ -368,6 +380,27 @@ export function JustifiedPhotoThumbnail({
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         </button>
+      )}
+
+      {/* Pending upload overlay */}
+      {photo.isPending && (
+        <div className="justified-photo-pending-overlay" data-testid="photo-pending-overlay">
+          <div className="pending-progress-container">
+            <div 
+              className={`pending-progress-bar ${photo.isSyncing ? 'syncing' : ''}`}
+              style={{ width: `${photo.isSyncing ? 100 : (photo.uploadProgress ?? 0)}%` }}
+            />
+          </div>
+          <span className="pending-status-text">
+            {photo.uploadError ? (
+              <span className="pending-error">Upload failed</span>
+            ) : photo.isSyncing ? (
+              'Syncing...'
+            ) : (
+              `${Math.round(photo.uploadProgress ?? 0)}%`
+            )}
+          </span>
+        </div>
       )}
 
       {/* Photo content */}

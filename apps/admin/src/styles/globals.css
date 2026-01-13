@@ -467,6 +467,8 @@ button {
 
 .search-input-wrapper {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .search-input {
@@ -496,6 +498,38 @@ button {
   transform: translateY(-50%);
   color: var(--color-text-tertiary);
   pointer-events: none;
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.search-clear-btn:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-surface-hover);
+}
+
+.search-clear-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+/* Add padding-right to search input when clear button is visible */
+.search-input-wrapper:has(.search-clear-btn) .search-input {
+  padding-right: 36px;
 }
 
 /* Photo Thumbnail */
@@ -772,12 +806,45 @@ button {
   cursor: pointer;
   box-shadow: var(--shadow-md);
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .upload-button:hover {
   background: var(--color-primary-hover);
   transform: translateY(-1px);
   box-shadow: var(--shadow-lg);
+}
+
+.upload-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+
+.upload-button--uploading {
+  background: linear-gradient(135deg, var(--color-primary) 0%, #60a5fa 100%);
+  cursor: wait;
+}
+
+.upload-button--uploading:hover {
+  transform: none;
+}
+
+.upload-button-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-spinner {
+  display: flex;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* Scrollbar */

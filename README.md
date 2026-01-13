@@ -19,7 +19,7 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 
 ## Architecture
 
-```
+```text
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │   Browser   │────▶│   Backend   │────▶│  PostgreSQL │
 │  (Encrypt)  │     │  (Storage)  │     │  (Metadata) │
@@ -35,7 +35,7 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 ## Technology Stack
 
 | Layer | Technology |
-|-------|------------|
+| ----- | ---------- |
 | Frontend | React 19, Vite, TypeScript |
 | Backend | .NET 10, ASP.NET Core |
 | Database | PostgreSQL 16+ |
@@ -45,7 +45,7 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 
 ## Project Structure
 
-```
+```text
 mosaic/
 ├── apps/
 │   ├── admin/          # React frontend
@@ -112,7 +112,7 @@ For production, you should:
 **Documentation:**
 
 | Guide | Description |
-|-------|-------------|
+| ----- | ----------- |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Beginner-friendly deployment guide |
 | [DOCKER.md](docs/DOCKER.md) | Complete Docker reference |
 | [AUTHELIA.md](docs/AUTHELIA.md) | SSO integration with Authelia |
@@ -137,7 +137,7 @@ docker compose -f docker-compose.dev.yml --profile tools up -d
 ### Prerequisites
 
 | Requirement | Version | Check Command |
-|-------------|---------|---------------|
+| ----------- | ------- | ------------- |
 | Node.js | 20+ | `node --version` |
 | .NET SDK | 10+ | `dotnet --version` |
 | Docker | Latest | `docker --version` |
@@ -158,13 +158,13 @@ The fastest way to get the development environment running:
 ./scripts/dev.sh status
 ```
 
-Once started, open http://localhost:5173 in your browser.
+Once started, open <http://localhost:5173> in your browser.
 
 | Service | URL |
-|---------|-----|
-| Frontend | http://localhost:5173 |
-| Backend API | http://localhost:5000 |
-| API Docs | http://localhost:5000/openapi/v1.json |
+| ------- | --- |
+| Frontend | <http://localhost:5173> |
+| Backend API | <http://localhost:5000> |
+| API Docs | <http://localhost:5000/openapi/v1.json> |
 
 ### Development Script Commands
 
@@ -196,15 +196,17 @@ For integrated development, use VS Code tasks:
 
 1. Open the workspace in VS Code
 2. Press `Ctrl+Shift+P` → "Tasks: Run Task" → select:
+
    - **start-all** - Start crypto build → backend → frontend
    - **watch-backend** - Backend with hot reload
    - **watch-frontend** - Vite dev server
    - **test-all** - Run all test suites
 
 Or use launch configurations (F5):
-   - **Backend + Frontend** - Start both, opens http://localhost:5173
-   - **Full Stack (Debug Both)** - Debug both simultaneously
-   - **Backend (.NET)** - Just the API with Swagger
+
+- **Backend + Frontend** - Start both, opens <http://localhost:5173>
+- **Full Stack (Debug Both)** - Debug both simultaneously
+- **Backend (.NET)** - Just the API with Swagger
 
 ### Visual Studio 2022/2026
 
@@ -244,7 +246,7 @@ See [docs/SECURITY.md](docs/SECURITY.md) for the full security model.
 ## Documentation
 
 | Guide | Description |
-|-------|-------------|
+| ----- | ----------- |
 | [Development Guide](docs/DEVELOPMENT.md) | Complete local development setup |
 | [Deployment Guide](docs/DEPLOYMENT.md) | Production deployment instructions |
 | [Security Model](docs/SECURITY.md) | Threat model and cryptographic design |

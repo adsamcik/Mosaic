@@ -220,7 +220,8 @@ Exceptions (require explicit user approval):
 - Intentional behavior changes that require test updates
 
 When debugging complex issues:
-- Use subagents to parallelize investigation
+- **ALWAYS use subagents** to parallelize investigation across multiple files
+- Delegate "find all X" tasks to subagents—they search exhaustively
 - Add targeted debug logging to trace data flow
 - Check both frontend console and backend logs
 - Verify data at each layer (API, cache, component state)
@@ -527,8 +528,8 @@ Use this template:
 **Implementation:**
 | Layer | Location |
 |-------|----------|
-| Backend | [path/to/file](../relative/path) |
-| Frontend | [path/to/file](../relative/path) |
+| Backend | `path/to/file` |
+| Frontend | `path/to/file` |
 
 **Features:**
 - Capability 1
@@ -744,12 +745,13 @@ Ctrl+Shift+P → "Tasks: Run Task" → select task
 |------|---------|
 | `start-all` | Start crypto build → backend → frontend (sequence) |
 | `watch-backend` | Start backend with hot reload |
-| `dev-frontend` | Start Vite dev server |
+| `watch-frontend` | Start Vite dev server with weak keys (for E2E testing) |
+| `watch-frontend-production-crypto` | Start Vite dev server with production crypto |
 | `build-backend` | Build backend without running |
 | `build-crypto` | Build crypto library |
 | `test-all` | Run all test suites in parallel |
 
-**Note:** `watch-backend` and `dev-frontend` are background tasks. They continue running until you terminate them.
+**Note:** `watch-backend` and `watch-frontend` are background tasks. They continue running until you terminate them.
 
 ### Method 2: Dev Script (CLI)
 
@@ -909,50 +911,85 @@ Invalid reasons (just do it):
 - "This might take a while" — do it anyway
 - "This requires multiple files" — edit them all
 - "I'm not sure about the test approach" — pick a reasonable approach and implement it
-## Subagent Delegation
 
-Use subagents to parallelize and delegate complex work. Subagents are autonomous agents that can research, search, and execute multi-step tasks independently.
+---
 
-### When to Use Subagents
+## Subagent Delegation (MANDATORY for Complex Tasks)
 
-- **Research tasks** - Investigating unfamiliar APIs, libraries, or patterns
-- **Code search** - Finding implementations, usages, or patterns across the codebase
-- **Multi-file analysis** - Understanding how components interact across the project
-- **Parallel investigations** - When multiple independent research tasks are needed
-- **Complex refactoring research** - Mapping all usages before making changes
+**Subagents are your primary tool for research and multi-step analysis.** Use them aggressively—they are fast, thorough, and free up your context for implementation work.
 
-### Subagent Guidelines
+### 🔴 ALWAYS Use Subagents For
 
-1. **Be specific** - Provide detailed prompts with clear objectives and expected outputs
-2. **Define scope** - Specify whether the agent should research only or also write code
-3. **Request structured output** - Tell the agent exactly what information to return
-4. **Trust but verify** - Agent outputs are generally reliable but should be validated
+| Scenario | Why |
+|----------|-----|
+| **Any search across >3 files** | Subagents search exhaustively; you might miss edge cases |
+| **Understanding unfamiliar code** | Delegate research, preserve your context for coding |
+| **Finding all usages of a symbol** | Subagents systematically map every occurrence |
+| **Analyzing data flow** | Let subagents trace end-to-end while you plan |
+| **Investigating test failures** | Subagents can check logs, trace code paths, find root causes |
+| **Comparing implementations** | Subagents can analyze multiple files in parallel |
+| **Any task requiring >5 file reads** | Offload to subagent, get structured summary back |
+
+### When NOT to Use Subagents
+
+- Simple single-file edits you already understand
+- Running terminal commands
+- When you already have all necessary context
+
+### Subagent Best Practices
+
+1. **Be extremely specific** - Include file paths, function names, expected output format
+2. **Request structured output** - Ask for tables, lists, or specific data shapes
+3. **Specify "research only"** - Tell the agent not to write code when you only need information
+4. **Chain subagents** - Use one subagent's output to inform the next subagent's task
+5. **Parallelize when independent** - Launch multiple subagents for unrelated research tasks
 
 ### Example Delegation Patterns
 
 ```
-# Research pattern
-"Search the codebase for all usages of EpochKey. List each file, 
-the function/method using it, and whether it's being created, 
-read, or modified. Return a structured summary."
+# Exhaustive search (ALWAYS delegate these)
+"Search the entire codebase for all usages of CryptoWorker. 
+For each usage, report: file path, line number, function name, 
+and whether it's importing, calling, or extending. Return as a 
+markdown table sorted by file path."
 
-# Multi-component analysis
-"Analyze how the upload flow works end-to-end: from the Upload 
-component through the worker to the API. Document the data 
-transformations at each step. Do not write code."
+# Data flow analysis
+"Trace the complete data flow for photo upload: from the Upload 
+button click through all components, hooks, workers, and API calls 
+to the backend endpoint. Document each transformation. Do not write 
+code—return a numbered list of steps with file:line references."
 
-# Cross-cutting search
-"Find all places where we handle authentication errors. Include 
-frontend components, API clients, and backend middleware. Report 
-file paths and line numbers for each occurrence."
+# Debugging investigation
+"The thumbnail generation is failing silently. Search for all code 
+paths that generate thumbnails, check error handling at each step, 
+and identify any places where errors might be swallowed. Report 
+findings with specific file:line locations."
+
+# Pre-refactoring analysis
+"I need to rename 'EpochKey' to 'ContentKey'. Find every file that 
+references EpochKey (imports, type annotations, variable names, 
+comments). Return a complete list of files and line numbers that 
+will need updating."
+
+# Test coverage analysis
+"Find all test files related to the sync system. For each test file, 
+list the test names and what functionality they cover. Identify any 
+gaps where sync functionality lacks test coverage."
 ```
+
+### Subagent Output Integration
+
+When a subagent returns results:
+1. **Validate key findings** - Spot-check 1-2 items if the list is long
+2. **Use results immediately** - Don't re-research what the subagent found
+3. **Reference in your work** - Cite the subagent's findings when making changes
 
 ### Benefits
 
-- **Efficiency** - Delegate research while focusing on implementation
-- **Thoroughness** - Agents systematically explore without missing edge cases
-- **Parallelism** - Multiple investigations can inform a cohesive solution
-- **Context gathering** - Build comprehensive understanding before coding
+- **Context preservation** - Your main context stays focused on implementation
+- **Exhaustive search** - Subagents don't get tired or skip files
+- **Parallel research** - Multiple subagents can investigate simultaneously
+- **Structured data** - Get exactly the information format you need
 
 ---
 

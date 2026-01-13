@@ -5,7 +5,7 @@
  * Supports keyboard navigation, touch gestures, and preloading.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { loadPhoto, preloadPhotos, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
@@ -90,9 +90,22 @@ export function PhotoLightbox({
   // Generate a unique cache key for full-resolution photos (separate from thumbnails)
   const fullResPhotoId = `${photo.id}:full`;
 
+  // For tiered uploads, shardIds = [thumb, preview, original]
+  // Use originalShardIds if available, otherwise extract original from legacy shardIds
+  // Memoize to prevent useEffect infinite loop (array reference stability)
+  const originalShards = useMemo(() => {
+    if (photo.originalShardIds && photo.originalShardIds.length > 0) {
+      return photo.originalShardIds;
+    }
+    if (photo.shardIds.length === 3) {
+      return [photo.shardIds[2]!]; // New tiered format: [thumb, preview, original]
+    }
+    return photo.shardIds; // Legacy format: all shards are original chunks
+  }, [photo.originalShardIds, photo.shardIds]);
+
   // Load the full-resolution photo
   useEffect(() => {
-    if (!epochReadKey || !photo.shardIds || photo.shardIds.length === 0) {
+    if (!epochReadKey || !originalShards || originalShards.length === 0) {
       setLoadState({
         status: 'error',
         error: new Error('Missing epoch key or shard IDs'),
@@ -108,7 +121,7 @@ export function PhotoLightbox({
       try {
         const result = await loadPhoto(
           fullResPhotoId,
-          photo.shardIds,
+          originalShards,
           epochReadKey,
           photo.mimeType,
           {
@@ -140,29 +153,37 @@ export function PhotoLightbox({
       cancelled = true;
       releasePhoto(fullResPhotoId);
     };
-  }, [fullResPhotoId, photo.shardIds, photo.mimeType, epochReadKey]);
+  }, [fullResPhotoId, originalShards, photo.mimeType, epochReadKey]);
 
-  // Preload next/previous photos
+  // Preload next/previous photos - use original shards only
   useEffect(() => {
     if (preloadQueue.length === 0 || !epochReadKey) return;
 
     void preloadPhotos(
-      preloadQueue.map((p) => ({
-        id: `${p.id}:full`,
-        shardIds: p.shardIds,
-        mimeType: p.mimeType,
-      })),
+      preloadQueue.map((p) => {
+        // Extract original shards for preloading
+        const origShards = p.originalShardIds && p.originalShardIds.length > 0
+          ? p.originalShardIds
+          : p.shardIds.length === 3
+            ? [p.shardIds[2]!]
+            : p.shardIds;
+        return {
+          id: `${p.id}:full`,
+          shardIds: origShards,
+          mimeType: p.mimeType,
+        };
+      }),
       epochReadKey
     );
   }, [preloadQueue, epochReadKey]);
 
   // Retry loading on error
   const handleRetry = useCallback(() => {
-    if (!epochReadKey || !photo.shardIds?.length) return;
+    if (!epochReadKey || !originalShards?.length) return;
 
     setLoadState({ status: 'loading', progress: 0 });
 
-    loadPhoto(fullResPhotoId, photo.shardIds, epochReadKey, photo.mimeType, {
+    loadPhoto(fullResPhotoId, originalShards, epochReadKey, photo.mimeType, {
       skipCache: true,
       onProgress: (loaded, total) => {
         const progress = total > 0 ? loaded / total : 0;
@@ -176,7 +197,7 @@ export function PhotoLightbox({
           error: error instanceof Error ? error : new Error(String(error)),
         })
       );
-  }, [fullResPhotoId, photo.shardIds, photo.mimeType, epochReadKey]);
+  }, [fullResPhotoId, originalShards, photo.mimeType, epochReadKey]);
 
   // Get album permissions for download capability
   const { canDownload } = useAlbumPermissions();

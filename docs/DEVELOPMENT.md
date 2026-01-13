@@ -15,11 +15,12 @@ This guide covers setting up and running the Mosaic development environment.
 ```
 
 This single command starts:
+
 - PostgreSQL database (Docker container)
 - .NET backend with hot reload
 - Vite frontend with HMR
 
-Open http://localhost:5173 when ready.
+Open <http://localhost:5173> when ready.
 
 ---
 
@@ -28,7 +29,7 @@ Open http://localhost:5173 when ready.
 ### Required Software
 
 | Software | Version | Installation |
-|----------|---------|--------------|
+| -------- | ------- | ------------ |
 | **Node.js** | 20+ | [nodejs.org](https://nodejs.org) |
 | **pnpm/npm** | Latest | Included with Node.js |
 | **.NET SDK** | 10+ | [dotnet.microsoft.com](https://dotnet.microsoft.com/download) |
@@ -49,7 +50,7 @@ docker --version  # Should show Docker version
 Choose the method that best fits your workflow:
 
 | Method | Best For | Setup Effort |
-|--------|----------|--------------|
+| ------ | -------- | ------------ |
 | **Dev Script** | Quick start, background services | ⭐ Easiest |
 | **VS Code Tasks** | Integrated IDE experience | ⭐ Easy |
 | **Manual** | Full control, debugging | Moderate |
@@ -80,7 +81,8 @@ The `dev.ps1` (Windows) / `dev.sh` (Linux/macOS) scripts manage all services as 
 ```
 
 Output:
-```
+
+```text
 Mosaic Development Environment Status
 
   Database:  Running (port 5432)
@@ -91,6 +93,7 @@ Mosaic Development Environment Status
     Frontend: http://localhost:5173
     Backend:  http://localhost:5000
     Swagger:  http://localhost:5000/openapi/v1.json
+
 ```
 
 ### Viewing Logs
@@ -169,7 +172,7 @@ VS Code has preconfigured tasks for common operations.
 3. Select a task:
 
 | Task | Description |
-|------|-------------|
+| ---- | ----------- |
 | **start-all** | Start crypto → backend → frontend (sequence) |
 | **watch-backend** | Backend with hot reload |
 | **watch-frontend** | Vite dev server with weak keys (for E2E) |
@@ -186,7 +189,7 @@ VS Code has preconfigured tasks for common operations.
 For debugging, use launch configurations:
 
 | Configuration | Description |
-|---------------|-------------|
+| ------------- | ----------- |
 | **Backend + Frontend** | Start both, opens browser |
 | **Full Stack (Debug Both)** | Debug both simultaneously |
 | **Backend (.NET)** | API only with Swagger |
@@ -195,6 +198,7 @@ For debugging, use launch configurations:
 
 1. Docker Desktop must be running (for PostgreSQL)
 2. The crypto library must be built first:
+
    ```bash
    cd libs/crypto && npm install && npm run build
    ```
@@ -212,6 +216,7 @@ docker compose -f docker-compose.dev.yml up -d postgres
 ```
 
 Optionally add pgAdmin:
+
 ```bash
 docker compose -f docker-compose.dev.yml --profile tools up -d
 ```
@@ -259,6 +264,7 @@ For .NET-focused development:
 2. Set **Mosaic.Backend** as startup project
 3. Press **F5** to run
 4. For frontend, open a terminal and run:
+
    ```bash
    cd apps/admin && npm install && npm run dev
    ```
@@ -270,11 +276,11 @@ For .NET-focused development:
 When running, services are available at:
 
 | Service | URL | Purpose |
-|---------|-----|---------|
-| Frontend | http://localhost:5173 | Main application |
-| Backend | http://localhost:5000 | API endpoints |
-| OpenAPI Spec | http://localhost:5000/openapi/v1.json | API documentation |
-| pgAdmin | http://localhost:5050 | Database management (if started with `--profile tools`) |
+| ------- | --- | ------- |
+| Frontend | <http://localhost:5173> | Main application |
+| Backend | <http://localhost:5000> | API endpoints |
+| OpenAPI Spec | <http://localhost:5000/openapi/v1.json> | API documentation |
+| pgAdmin | <http://localhost:5050> | Database management (if started with `--profile tools`) |
 
 ---
 
@@ -298,6 +304,7 @@ For testing SSO integration:
 ```
 
 Or set environment variable:
+
 ```bash
 export Auth__ProxyAuthEnabled=true
 export Auth__TrustedProxies__0="127.0.0.0/8"
@@ -315,7 +322,7 @@ docker exec -it mosaic-postgres-dev psql -U mosaic -d mosaic
 
 # Or use pgAdmin
 docker compose -f docker-compose.dev.yml --profile tools up -d
-# Open http://localhost:5050 (admin@admin.com / admin)
+# Open <http://localhost:5050> (admin@admin.com / admin)
 ```
 
 ### Resetting the Database
@@ -377,7 +384,7 @@ taskkill /PID <pid> /F
 
 ### Docker Not Running
 
-```
+```text
 ❌ Docker is not running!
 ```
 
@@ -414,12 +421,14 @@ npm run build
 ### Hot Reload Not Working
 
 Backend:
+
 ```bash
 # Ensure you're using dotnet watch
 dotnet watch run
 ```
 
 Frontend:
+
 ```bash
 # Vite HMR should work automatically
 # Check browser console for WebSocket errors
@@ -432,29 +441,30 @@ Frontend:
 ### Backend
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| -------- | ------- | ----------- |
 | `ASPNETCORE_ENVIRONMENT` | Development | Environment mode |
-| `ASPNETCORE_URLS` | http://localhost:5000 | Listen URL |
+| `ASPNETCORE_URLS` | <http://localhost:5000> | Listen URL |
 | `ConnectionStrings__Default` | (see below) | PostgreSQL connection |
 | `Storage__Path` | ./data/blobs | Blob storage path |
 | `Auth__LocalAuthEnabled` | true | Enable local auth |
 | `Auth__ProxyAuthEnabled` | false | Enable proxy auth |
 
 Default connection string:
-```
+
+```text
 Host=localhost;Database=mosaic;Username=mosaic;Password=dev
 ```
 
 ### Frontend
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `VITE_API_URL` | http://localhost:5000 | Backend API URL |
+| -------- | ------- | ----------- |
+| `VITE_API_URL` | <http://localhost:5000> | Backend API URL |
 | `VITE_E2E_WEAK_KEYS` | false | Use weak keys for E2E testing |
 
 ---
 
-## Running Tests
+## Tests
 
 ### Unit Tests
 

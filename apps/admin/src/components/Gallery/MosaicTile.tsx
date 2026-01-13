@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { MosaicItem } from '../../lib/mosaic-layout';
 import type { PhotoMeta } from '../../workers/types';
 
@@ -13,7 +14,7 @@ interface MosaicTileProps {
   }) => React.ReactNode;
 }
 
-export function MosaicTile({
+export const MosaicTile = memo(function MosaicTile({
   item,
   photo,
   onClick,
@@ -99,4 +100,4 @@ export function MosaicTile({
       })}
     </div>
   );
-}
+});

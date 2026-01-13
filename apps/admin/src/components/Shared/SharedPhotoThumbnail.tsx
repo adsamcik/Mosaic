@@ -11,7 +11,7 @@
  * 4. Loading/error states
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { getCachedBlurhashDataURL, isValidBlurhash } from '../../lib/blurhash-decoder';
 import type { PhotoMeta } from '../../workers/types';
@@ -38,7 +38,7 @@ type ThumbnailState =
  * Shared Photo Thumbnail
  * Displays embedded base64 thumbnail or placeholder
  */
-export function SharedPhotoThumbnail({
+export const SharedPhotoThumbnail = memo(function SharedPhotoThumbnail({
   photo,
   tierKey,
   onClick,
@@ -161,4 +161,4 @@ export function SharedPhotoThumbnail({
       {renderContent()}
     </div>
   );
-}
+});

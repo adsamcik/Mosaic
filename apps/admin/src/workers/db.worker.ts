@@ -280,6 +280,53 @@ class DbWorker implements DbWorkerApi {
       }
     }
 
+    // Version 2 -> 3: Add thumbnail columns
+    if (currentVersion < 3) {
+      log.info('Running migration: v2 -> v3 (thumbnail columns)');
+
+      try {
+        this.db.run(`
+          ALTER TABLE photos ADD COLUMN thumbnail TEXT;
+        `);
+        this.db.run(`
+          ALTER TABLE photos ADD COLUMN thumb_width INTEGER;
+        `);
+        this.db.run(`
+          ALTER TABLE photos ADD COLUMN thumb_height INTEGER;
+        `);
+        this.db.run(`
+          ALTER TABLE photos ADD COLUMN blurhash TEXT;
+        `);
+
+        this.setSchemaVersion(3);
+        log.info('Thumbnail columns migration complete');
+      } catch (error) {
+        log.error('Failed to add thumbnail columns', error);
+        // Don't update version - will retry on next init
+        throw error;
+      }
+    }
+
+    // Version 3 -> 4: Add tier-specific shard ID columns
+    if (currentVersion < 4) {
+      log.info('Running migration: v3 -> v4 (tier shard columns)');
+
+      try {
+        this.db.run(`ALTER TABLE photos ADD COLUMN thumbnail_shard_id TEXT;`);
+        this.db.run(`ALTER TABLE photos ADD COLUMN thumbnail_shard_hash TEXT;`);
+        this.db.run(`ALTER TABLE photos ADD COLUMN preview_shard_id TEXT;`);
+        this.db.run(`ALTER TABLE photos ADD COLUMN preview_shard_hash TEXT;`);
+        this.db.run(`ALTER TABLE photos ADD COLUMN original_shard_ids TEXT;`); // JSON array
+        this.db.run(`ALTER TABLE photos ADD COLUMN original_shard_hashes TEXT;`); // JSON array
+
+        this.setSchemaVersion(4);
+        log.info('Tier shard columns migration complete');
+      } catch (error) {
+        log.error('Failed to add tier shard columns', error);
+        throw error;
+      }
+    }
+
     // Ensure FTS table exists (safety check for corrupted state)
     if (!this.ftsTableExists()) {
       log.warn('FTS table missing despite schema version, recreating...');
@@ -321,14 +368,22 @@ class DbWorker implements DbWorkerApi {
 
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO photos 
-      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description, thumbnail, thumb_width, thumb_height, blurhash, thumbnail_shard_id, thumbnail_shard_hash, preview_shard_id, preview_shard_hash, original_shard_ids, original_shard_hashes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const m of manifests) {
       if (m.isDeleted) {
         this.db.run('DELETE FROM photos WHERE id = ?', [m.id]);
       } else {
+        log.debug('insertManifest', {
+          id: m.id,
+          hasThumbnail: !!m.meta.thumbnail,
+          hasBlurhash: !!m.meta.blurhash,
+          shardCount: m.meta.shardIds?.length ?? 0,
+          hasTierShards: !!(m.meta.thumbnailShardId || m.meta.previewShardId || m.meta.originalShardIds?.length),
+        });
+        
         // Ensure all values are either defined or null - SQLite cannot bind undefined
         // Use m.meta.shardIds and m.meta.epochId (from decrypted metadata) for storage
         stmt.run([
@@ -348,6 +403,17 @@ class DbWorker implements DbWorkerApi {
           JSON.stringify(m.meta.shardIds ?? []),
           m.meta.epochId ?? 0,
           m.meta.description ?? null,
+          m.meta.thumbnail ?? null,
+          m.meta.thumbWidth ?? null,
+          m.meta.thumbHeight ?? null,
+          m.meta.blurhash ?? null,
+          // Tier-specific shard IDs (v4)
+          m.meta.thumbnailShardId ?? null,
+          m.meta.thumbnailShardHash ?? null,
+          m.meta.previewShardId ?? null,
+          m.meta.previewShardHash ?? null,
+          JSON.stringify(m.meta.originalShardIds ?? []),
+          JSON.stringify(m.meta.originalShardHashes ?? []),
         ]);
       }
     }
@@ -379,7 +445,19 @@ class DbWorker implements DbWorkerApi {
       [albumId, limit, offset]
     );
 
-    return this.rowsToPhotos(result);
+    const photos = this.rowsToPhotos(result);
+    
+    log.debug('getPhotos', {
+      albumId,
+      count: photos.length,
+      firstFew: photos.slice(0, 3).map(p => ({
+        id: p.id,
+        hasThumbnail: !!p.thumbnail,
+        shardCount: p.shardIds?.length ?? 0,
+      })),
+    });
+    
+    return photos;
   }
 
   async getPhotoCount(albumId: string): Promise<number> {
@@ -470,6 +548,13 @@ class DbWorker implements DbWorkerApi {
       obj['tags'] = JSON.parse((obj['tags'] as string) || '[]') as string[];
       // Parse shardIds from JSON string
       obj['shardIds'] = JSON.parse((obj['shardIds'] as string) || '[]') as string[];
+      // Parse tier-specific shard IDs from JSON strings (v4)
+      if (obj['originalShardIds']) {
+        obj['originalShardIds'] = JSON.parse((obj['originalShardIds'] as string) || '[]') as string[];
+      }
+      if (obj['originalShardHashes']) {
+        obj['originalShardHashes'] = JSON.parse((obj['originalShardHashes'] as string) || '[]') as string[];
+      }
       return obj as unknown as PhotoMeta;
     });
   }

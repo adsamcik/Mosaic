@@ -203,7 +203,7 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
     count: virtualRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (i) => virtualRows[i]?.height ?? 0,
-    overscan: 500,
+    overscan: 3, // Number of extra rows to render above/below viewport
   });
 
   // Handlers (copied/adapted from PhotoGrid)

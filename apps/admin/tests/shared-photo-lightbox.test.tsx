@@ -437,4 +437,217 @@ describe('SharedPhotoLightbox', () => {
     const callArgs = mockDecryptShardWithTierKey.mock.calls[0];
     expect(callArgs![1]).toEqual(new Uint8Array(32).fill(3));
   });
+
+  describe('Tier-Specific Shard ID Selection', () => {
+    it('uses originalShardIds when access tier is 3 and original shards available', async () => {
+      const photoWithTierShards: PhotoMeta = {
+        ...mockPhotoWithThumbnail,
+        shardIds: ['legacy-shard'], // Legacy field still populated
+        thumbnailShardId: 'tier-thumb-shard',
+        previewShardId: 'tier-preview-shard',
+        originalShardIds: ['tier-original-shard'],
+      };
+
+      // Mock peekHeader to return tier 3 for the original shard
+      mockPeekHeader.mockResolvedValue({ epochId: 1, shardId: 0, tier: 3 });
+
+      container = document.createElement('div');
+      document.body.appendChild(container);
+
+      await act(async () => {
+        root = createRoot(container!);
+        root!.render(
+          createElement(SharedPhotoLightbox, {
+            photo: photoWithTierShards,
+            linkId: 'link-1',
+            tierKey: new Uint8Array(32),
+            accessTier: 3, // Full access
+            onClose: vi.fn(),
+            hasNext: false,
+            hasPrevious: false,
+          })
+        );
+        await new Promise(resolve => setTimeout(resolve, 150));
+      });
+
+      // Should download the tier-specific original shard, NOT the legacy shard
+      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'tier-original-shard');
+      expect(mockDownloadShard).not.toHaveBeenCalledWith('link-1', 'legacy-shard');
+    });
+
+    it('falls back to previewShardId when access tier is 2', async () => {
+      const photoWithTierShards: PhotoMeta = {
+        ...mockPhotoWithThumbnail,
+        shardIds: ['legacy-shard'],
+        thumbnailShardId: 'tier-thumb-shard',
+        previewShardId: 'tier-preview-shard',
+        originalShardIds: ['tier-original-shard'],
+      };
+
+      mockPeekHeader.mockResolvedValue({ epochId: 1, shardId: 0, tier: 2 });
+
+      container = document.createElement('div');
+      document.body.appendChild(container);
+
+      await act(async () => {
+        root = createRoot(container!);
+        root!.render(
+          createElement(SharedPhotoLightbox, {
+            photo: photoWithTierShards,
+            linkId: 'link-1',
+            tierKey: new Uint8Array(32),
+            accessTier: 2, // Preview access only
+            onClose: vi.fn(),
+            hasNext: false,
+            hasPrevious: false,
+          })
+        );
+        await new Promise(resolve => setTimeout(resolve, 150));
+      });
+
+      // Should download the preview shard, not original
+      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'tier-preview-shard');
+      expect(mockDownloadShard).not.toHaveBeenCalledWith('link-1', 'tier-original-shard');
+    });
+
+    it('falls back to thumbnailShardId when access tier is 1', async () => {
+      const photoWithTierShards: PhotoMeta = {
+        ...mockPhotoWithThumbnail,
+        shardIds: ['legacy-shard'],
+        thumbnailShardId: 'tier-thumb-shard',
+        previewShardId: 'tier-preview-shard',
+        originalShardIds: ['tier-original-shard'],
+      };
+
+      mockPeekHeader.mockResolvedValue({ epochId: 1, shardId: 0, tier: 1 });
+
+      container = document.createElement('div');
+      document.body.appendChild(container);
+
+      await act(async () => {
+        root = createRoot(container!);
+        root!.render(
+          createElement(SharedPhotoLightbox, {
+            photo: photoWithTierShards,
+            linkId: 'link-1',
+            tierKey: new Uint8Array(32),
+            accessTier: 1, // Thumbnail access only
+            onClose: vi.fn(),
+            hasNext: false,
+            hasPrevious: false,
+          })
+        );
+        await new Promise(resolve => setTimeout(resolve, 150));
+      });
+
+      // Should download the thumbnail shard
+      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'tier-thumb-shard');
+    });
+
+    it('uses preview when access tier is 2 but original is available (respects tier limit)', async () => {
+      const photoWithTierShards: PhotoMeta = {
+        ...mockPhotoWithThumbnail,
+        shardIds: ['legacy-shard'],
+        thumbnailShardId: 'tier-thumb-shard',
+        previewShardId: 'tier-preview-shard',
+        originalShardIds: ['tier-original-shard'],
+      };
+
+      mockPeekHeader.mockResolvedValue({ epochId: 1, shardId: 0, tier: 2 });
+
+      container = document.createElement('div');
+      document.body.appendChild(container);
+
+      await act(async () => {
+        root = createRoot(container!);
+        root!.render(
+          createElement(SharedPhotoLightbox, {
+            photo: photoWithTierShards,
+            linkId: 'link-1',
+            tierKey: new Uint8Array(32),
+            accessTier: 2, // Preview - should NOT access original even though it exists
+            onClose: vi.fn(),
+            hasNext: false,
+            hasPrevious: false,
+          })
+        );
+        await new Promise(resolve => setTimeout(resolve, 150));
+      });
+
+      // Should download preview, NOT original
+      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'tier-preview-shard');
+      expect(mockDownloadShard).not.toHaveBeenCalledWith('link-1', 'tier-original-shard');
+    });
+
+    it('falls back to legacy shardIds when no tier-specific fields', async () => {
+      const photoLegacy: PhotoMeta = {
+        ...mockPhotoWithThumbnail,
+        shardIds: ['legacy-shard-1', 'legacy-shard-2', 'legacy-shard-3'],
+        // No tier-specific fields
+      };
+
+      mockPeekHeader
+        .mockResolvedValueOnce({ epochId: 1, shardId: 0, tier: 1 })
+        .mockResolvedValueOnce({ epochId: 1, shardId: 1, tier: 2 })
+        .mockResolvedValueOnce({ epochId: 1, shardId: 2, tier: 3 });
+
+      container = document.createElement('div');
+      document.body.appendChild(container);
+
+      await act(async () => {
+        root = createRoot(container!);
+        root!.render(
+          createElement(SharedPhotoLightbox, {
+            photo: photoLegacy,
+            linkId: 'link-1',
+            tierKey: new Uint8Array(32),
+            accessTier: 3,
+            onClose: vi.fn(),
+            hasNext: false,
+            hasPrevious: false,
+          })
+        );
+        await new Promise(resolve => setTimeout(resolve, 150));
+      });
+
+      // Should download legacy shards
+      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'legacy-shard-1');
+      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'legacy-shard-2');
+      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'legacy-shard-3');
+    });
+
+    it('handles missing higher tier shards gracefully (falls back to lower tier)', async () => {
+      const photoPartialTiers: PhotoMeta = {
+        ...mockPhotoWithThumbnail,
+        shardIds: [],
+        thumbnailShardId: 'tier-thumb-shard',
+        previewShardId: 'tier-preview-shard',
+        // No originalShardIds - simulate a photo that wasn't fully uploaded
+      };
+
+      mockPeekHeader.mockResolvedValue({ epochId: 1, shardId: 0, tier: 2 });
+
+      container = document.createElement('div');
+      document.body.appendChild(container);
+
+      await act(async () => {
+        root = createRoot(container!);
+        root!.render(
+          createElement(SharedPhotoLightbox, {
+            photo: photoPartialTiers,
+            linkId: 'link-1',
+            tierKey: new Uint8Array(32),
+            accessTier: 3, // Full access, but no original shards
+            onClose: vi.fn(),
+            hasNext: false,
+            hasPrevious: false,
+          })
+        );
+        await new Promise(resolve => setTimeout(resolve, 150));
+      });
+
+      // Should fall back to preview shard since original is missing
+      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'tier-preview-shard');
+    });
+  });
 });

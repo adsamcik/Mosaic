@@ -43,6 +43,41 @@ public class ShardsControllerTests
     }
 
     [Fact]
+    public async Task Download_SetsCacheControlHeaders_WhenSuccessful()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var uploader = await builder.CreateUserAsync(UploaderAuthSub);
+        var album = await builder.CreateAlbumAsync(uploader);
+        var shard = await builder.CreateShardAsync(uploader, ShardStatus.ACTIVE);
+        await builder.CreateManifestAsync(album, [shard]);
+
+        storage.AddFile(shard.StorageKey, new byte[] { 0x01, 0x02, 0x03, 0x04 });
+
+        var httpContext = TestHttpContext.Create(UploaderAuthSub);
+        var controller = new ShardsController(db, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = httpContext
+            }
+        };
+
+        // Act
+        var result = await controller.Download(shard.Id);
+
+        // Assert
+        Assert.IsType<FileStreamResult>(result);
+        
+        // Verify caching headers are set (shards are immutable)
+        Assert.Equal("public, max-age=31536000, immutable", httpContext.Response.Headers.CacheControl.ToString());
+        Assert.Equal($"\"{shard.Id}\"", httpContext.Response.Headers.ETag.ToString());
+    }
+
+    [Fact]
     public async Task Download_ReturnsUnauthorized_WhenNotAuthenticated()
     {
         // Arrange
