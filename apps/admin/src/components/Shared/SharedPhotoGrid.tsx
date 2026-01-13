@@ -7,8 +7,8 @@
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import type { NavigationDirection } from '../../hooks/useLightbox';
+import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import type { PhotoMeta } from '../../workers/types';
 import { SharedPhotoLightbox } from './SharedPhotoLightbox';
 import { SharedPhotoThumbnail } from './SharedPhotoThumbnail';
@@ -79,11 +79,11 @@ export function SharedPhotoGrid({
 
   // Calculate responsive columns based on container width
   const columns = useMemo(() => {
-    if (containerWidth <= 0) return 4; // Default/SSR
-    if (containerWidth < 600) return 2; // Mobile
-    if (containerWidth < 900) return 3; // Tablet
-    if (containerWidth < 1500) return 4; // Desktop
-    return 5; // Large screens
+    if (containerWidth <= 0) return 6; // Default/SSR - increased from 4
+    if (containerWidth < 600) return 3; // Mobile - increased from 2
+    if (containerWidth < 900) return 4; // Tablet - increased from 3
+    if (containerWidth < 1500) return 6; // Desktop - increased from 4
+    return 8; // Large screens - increased from 5
   }, [containerWidth]);
 
   const rowCount = Math.ceil(photos.length / columns);
@@ -91,13 +91,18 @@ export function SharedPhotoGrid({
   // Calculate row height based on column width to ensure squares
   // Subtracting gap from width to get accurate cell size
   const gap = 8;
+  const paddingX = 16; // 8px padding on both sides
   const cellWidth = containerWidth > 0 
-    ? (containerWidth - (columns - 1) * gap) / columns 
+    ? (containerWidth - paddingX - (columns - 1) * gap) / columns 
     : ROW_HEIGHT;
-  const rowHeight = cellWidth; 
+  
+  // Add gap to row height so rows are spaced out vertically
+  const rowHeight = cellWidth + gap;
+
+  const isWidthMeasured = containerWidth > 0;
 
   const virtualizer = useVirtualizer({
-    count: rowCount,
+    count: isWidthMeasured ? rowCount : 0,
     getScrollElement: () => parentRef.current,
     estimateSize: () => rowHeight,
     overscan: 5,
@@ -223,7 +228,7 @@ export function SharedPhotoGrid({
                   top: 0,
                   left: 0,
                   width: '100%',
-                  height: virtualRow.size,
+                  height: cellWidth,
                   transform: `translateY(${virtualRow.start}px)`,
                   display: 'grid',
                   gridTemplateColumns: `repeat(${columns}, 1fr)`,
