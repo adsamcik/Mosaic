@@ -1,25 +1,29 @@
 # Thumbnail Size & Fourth Tier Analysis
 
 **Date:** January 2026  
-**Status:** Investigation Complete
+**Status:** ✅ **Implemented** (Option D - Adaptive Thumbnails)
 
 ## Executive Summary
 
-This analysis evaluates whether to increase thumbnail sizes and/or introduce a fourth tier to the current 3-tier system. The current system works well for most use cases, but there are opportunities for optimization—particularly around HiDPI displays and manifest size reduction.
+This analysis evaluated whether to increase thumbnail sizes and/or introduce a fourth tier to the current 3-tier system. **Option D (Adaptive Thumbnails) was implemented**, providing:
+- **70% manifest size reduction** (embedded thumbnails: 300px → 150px)
+- **HiDPI quality improvement** (shard thumbnails: 300px → 450px)
+- **No breaking changes** to existing photos
 
 ---
 
-## Current System Overview
+## Current System (After Implementation)
 
 ### Three-Tier Architecture
 
 | Tier | Name | Max Dimension | Quality | Max Size | Purpose |
 |------|------|---------------|---------|----------|---------|
-| 1 | **Thumbnail** | 300px | 80% | 50KB | Grid gallery view |
+| — | **Embedded** | 150px | 80% | 10KB | Manifest (instant gallery) |
+| 1 | **Thumbnail** | 450px | 80% | 80KB | Grid gallery view (HiDPI) |
 | 2 | **Preview** | 1200px | 85% | 500KB | Lightbox/detail view |
 | 3 | **Original** | Unchanged | Original | 6MB/chunk | Download/full resolution |
 
-### Current Display Characteristics
+### Display Characteristics
 
 - **Target row height:** 220px (configurable)
 - **Maximum row height:** ~330px (1.5× multiplier)

@@ -2,9 +2,12 @@
  * Thumbnail Generator Service
  *
  * Generates three-tier images from photos using the Canvas API:
- * - Thumbnail: 300px max dimension, ~80% quality WebP/JPEG
+ * - Thumbnail: 450px max dimension, ~80% quality WebP/JPEG (for shard)
  * - Preview: 1200px max dimension, ~85% quality WebP/JPEG
  * - Original: unchanged source file
+ *
+ * Additionally generates a smaller embedded thumbnail (150px) for manifest
+ * to reduce manifest size while maintaining HiDPI quality in gallery view.
  *
  * Each tier is encrypted with its corresponding key (thumbKey, previewKey, fullKey).
  * Handles EXIF orientation, maintains aspect ratio, and outputs
@@ -16,8 +19,11 @@
 import { encode as encodeBlurhash } from 'blurhash';
 import { encryptShard, ShardTier, type EncryptedShard, type EpochKey } from '@mosaic/crypto';
 
-/** Default max dimension for thumbnails (300px) */
-const THUMB_MAX_SIZE = 300;
+/** Max dimension for embedded thumbnails in manifest (150px) - small for bandwidth */
+const EMBEDDED_MAX_SIZE = 150;
+
+/** Default max dimension for thumbnail shards (450px) - HiDPI quality */
+const THUMB_MAX_SIZE = 450;
 
 /** Default max dimension for previews (1200px) */
 const PREVIEW_MAX_SIZE = 1200;
@@ -28,8 +34,11 @@ const THUMB_QUALITY = 0.8;
 /** Default JPEG quality for previews (0-1) */
 const PREVIEW_QUALITY = 0.85;
 
-/** Maximum thumbnail size in bytes (50KB) */
-const MAX_THUMBNAIL_BYTES = 50 * 1024;
+/** Maximum embedded thumbnail size in bytes (10KB) - for manifest */
+const MAX_EMBEDDED_BYTES = 10 * 1024;
+
+/** Maximum thumbnail shard size in bytes (80KB) - for HiDPI shards */
+const MAX_THUMBNAIL_BYTES = 80 * 1024;
 
 /** Maximum preview size in bytes (500KB) */
 const MAX_PREVIEW_BYTES = 500 * 1024;
@@ -134,13 +143,17 @@ export function getPreferredImageFormat(): 'image/avif' | 'image/webp' | 'image/
 }
 
 /**
- * Options for thumbnail generation (legacy single-tier)
+ * Options for thumbnail generation
+ * Default settings are optimized for embedded manifest thumbnails (150px, 10KB max).
+ * For larger thumbnail shards, use maxSize: 450 and maxBytes: 80*1024.
  */
 export interface ThumbnailOptions {
-  /** Maximum dimension (width or height) in pixels */
+  /** Maximum dimension (width or height) in pixels. Default: 150 (for manifest) */
   maxSize?: number;
   /** JPEG quality (0-1), default 0.8 */
   quality?: number;
+  /** Maximum output size in bytes. Default: 10KB (for manifest) */
+  maxBytes?: number;
 }
 
 /**
@@ -399,10 +412,13 @@ function orientationSwapsDimensions(orientation: number): boolean {
 }
 
 /**
- * Generate a thumbnail from an image file (legacy single-tier)
+ * Generate a thumbnail from an image file
  *
  * Uses createImageBitmap for efficient image decoding and Canvas API
  * for resizing. Handles EXIF orientation for rotated photos.
+ * 
+ * Default settings are optimized for embedded manifest thumbnails (150px, 10KB).
+ * For larger thumbnail shards, the tiered generation uses THUMB_MAX_SIZE (450px).
  *
  * @param file - Image file to generate thumbnail from
  * @param options - Thumbnail options
@@ -413,7 +429,7 @@ export async function generateThumbnail(
   file: File,
   options: ThumbnailOptions = {}
 ): Promise<ThumbnailResult> {
-  const { maxSize = THUMB_MAX_SIZE, quality = THUMB_QUALITY } = options;
+  const { maxSize = EMBEDDED_MAX_SIZE, quality = THUMB_QUALITY, maxBytes = MAX_EMBEDDED_BYTES } = options;
 
   // Validate file type
   if (!isSupportedImageType(file.type)) {
@@ -519,7 +535,7 @@ export async function generateThumbnail(
 
     // If thumbnail is too large, reduce quality
     let currentQuality = quality;
-    while (blob.size > MAX_THUMBNAIL_BYTES && currentQuality > 0.3) {
+    while (blob.size > maxBytes && currentQuality > 0.3) {
       currentQuality -= 0.1;
       blob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, outputFormat, currentQuality)
