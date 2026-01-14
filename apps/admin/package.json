@@ -18,6 +18,7 @@
     "blurhash": "^2.0.5",
     "comlink": "^4.4.2",
     "fts5-sql-bundle": "^1.0.2",
+    "heic2any": "^0.0.4",
     "i18next": "^25.7.3",
     "i18next-browser-languagedetector": "^8.2.0",
     "idb": "^8.0.3",

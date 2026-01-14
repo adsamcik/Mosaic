@@ -7,9 +7,8 @@
  * Test IDs: P1-SHARE-1 through P1-SHARE-8
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 import {
-  LoginPage,
   AppShell,
   CreateAlbumDialog,
   GalleryPage,
@@ -19,7 +18,6 @@ import {
 import { waitForCondition } from '../framework';
 
 test.describe('Share Links Workflow @p1 @sharing', () => {
-  let loginPage: LoginPage;
   let appShell: AppShell;
   let createAlbumDialog: CreateAlbumDialog;
   let gallery: GalleryPage;
@@ -27,23 +25,17 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
   let createShareLinkDialog: CreateShareLinkDialog;
   let albumName: string;
 
-  test.beforeEach(async ({ page }) => {
-    loginPage = new LoginPage(page);
-    appShell = new AppShell(page);
-    createAlbumDialog = new CreateAlbumDialog(page);
-    gallery = new GalleryPage(page);
-    shareLinksPanel = new ShareLinksPanel(page);
-    createShareLinkDialog = new CreateShareLinkDialog(page);
+  test.beforeEach(async ({ loggedInPage }) => {
+    appShell = new AppShell(loggedInPage);
+    createAlbumDialog = new CreateAlbumDialog(loggedInPage);
+    gallery = new GalleryPage(loggedInPage);
+    shareLinksPanel = new ShareLinksPanel(loggedInPage);
+    createShareLinkDialog = new CreateShareLinkDialog(loggedInPage);
 
     // Generate unique album name to avoid collisions in parallel tests
     albumName = `ShareTest-${crypto.randomUUID().slice(0, 8)}`;
 
-    // Login and create a test album
-    await loginPage.goto();
-    await loginPage.waitForForm();
-    await loginPage.login();
-    await loginPage.expectLoginSuccess();
-
+    // loggedInPage is already authenticated, just create album
     // Create album
     await appShell.openCreateAlbumDialog();
     await createAlbumDialog.createAlbum(albumName);
@@ -53,12 +45,15 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     await gallery.waitForLoad();
   });
 
-  test('P1-SHARE-1: can open share links panel from gallery header', async ({ page }) => {
-    // The share links button should be visible for album owners
+  test('P1-SHARE-1: can open share links panel from gallery header', async ({ loggedInPage: page }) => {
+    // Open the album settings menu to access share links
+    await gallery.openAlbumSettings();
+    
+    // The share links button should be visible for album owners in the menu
     await expect(gallery.shareButton).toBeVisible({ timeout: 5000 });
 
     // Click to open the panel
-    await gallery.openShareLinks();
+    await gallery.shareButton.click();
     await shareLinksPanel.waitForOpen();
 
     // Verify panel is visible with empty state
@@ -69,7 +64,7 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     await shareLinksPanel.close();
   });
 
-  test('P1-SHARE-2: can create a view-only share link with expiration', async ({ page }) => {
+  test('P1-SHARE-2: can create a view-only share link with expiration', async ({ loggedInPage: page }) => {
     await gallery.openShareLinks();
     await shareLinksPanel.waitForOpen();
 
@@ -83,9 +78,9 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     // Generate the link
     await createShareLinkDialog.generate();
 
-    // Verify URL is generated
+    // Verify URL is generated (format: /s/{linkId}#k=...)
     const url = await createShareLinkDialog.getGeneratedUrl();
-    expect(url).toMatch(/^https?:\/\/.+\/share\/.+/);
+    expect(url).toMatch(/^https?:\/\/.+\/s\/.+#k=.+/);
 
     // Complete the dialog
     await createShareLinkDialog.done();
@@ -95,7 +90,7 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     expect(linkCount).toBe(1);
   });
 
-  test('P1-SHARE-3: can create a share link with max uses limit', async ({ page }) => {
+  test('P1-SHARE-3: can create a share link with max uses limit', async ({ loggedInPage: page }) => {
     await gallery.openShareLinks();
     await shareLinksPanel.waitForOpen();
     await shareLinksPanel.openCreateDialog();
@@ -121,7 +116,7 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     expect(linkCount).toBe(1);
   });
 
-  test('P1-SHARE-4: shows warning for never-expiring links', async ({ page }) => {
+  test('P1-SHARE-4: shows warning for never-expiring links', async ({ loggedInPage: page }) => {
     await gallery.openShareLinks();
     await shareLinksPanel.waitForOpen();
     await shareLinksPanel.openCreateDialog();
@@ -137,9 +132,9 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     await createShareLinkDialog.cancel();
   });
 
-  test('P1-SHARE-5: can copy share link to clipboard', async ({ page, context }) => {
+  test('P1-SHARE-5: can copy share link to clipboard', async ({ loggedInPage: page, browser }) => {
     // Grant clipboard permissions
-    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 
     await gallery.openShareLinks();
     await shareLinksPanel.waitForOpen();
@@ -160,7 +155,7 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     await createShareLinkDialog.done();
   });
 
-  test('P1-SHARE-6: can revoke an existing share link', async ({ page }) => {
+  test('P1-SHARE-6: can revoke an existing share link', async ({ loggedInPage: page }) => {
     // First create a share link
     await gallery.openShareLinks();
     await shareLinksPanel.waitForOpen();
@@ -198,7 +193,7 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     }
   });
 
-  test('P1-SHARE-7: can cancel share link creation', async ({ page }) => {
+  test('P1-SHARE-7: can cancel share link creation', async ({ loggedInPage: page }) => {
     await gallery.openShareLinks();
     await shareLinksPanel.waitForOpen();
 
@@ -216,7 +211,7 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     await expect(shareLinksPanel.emptyState).toBeVisible({ timeout: 5000 });
   });
 
-  test('P1-SHARE-8: multiple share links can coexist', async ({ page }) => {
+  test('P1-SHARE-8: multiple share links can coexist', async ({ loggedInPage: page }) => {
     await gallery.openShareLinks();
     await shareLinksPanel.waitForOpen();
 
@@ -241,7 +236,6 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
 });
 
 test.describe('Share Link Access @p2 @sharing', () => {
-  let loginPage: LoginPage;
   let appShell: AppShell;
   let createAlbumDialog: CreateAlbumDialog;
   let gallery: GalleryPage;
@@ -250,23 +244,17 @@ test.describe('Share Link Access @p2 @sharing', () => {
   let albumName: string;
   let generatedShareUrl: string;
 
-  test.beforeEach(async ({ page }) => {
-    loginPage = new LoginPage(page);
-    appShell = new AppShell(page);
-    createAlbumDialog = new CreateAlbumDialog(page);
-    gallery = new GalleryPage(page);
-    shareLinksPanel = new ShareLinksPanel(page);
-    createShareLinkDialog = new CreateShareLinkDialog(page);
+  test.beforeEach(async ({ loggedInPage }) => {
+    appShell = new AppShell(loggedInPage);
+    createAlbumDialog = new CreateAlbumDialog(loggedInPage);
+    gallery = new GalleryPage(loggedInPage);
+    shareLinksPanel = new ShareLinksPanel(loggedInPage);
+    createShareLinkDialog = new CreateShareLinkDialog(loggedInPage);
 
     // Generate unique album name
     albumName = `PublicShareTest-${crypto.randomUUID().slice(0, 8)}`;
 
-    // Login and create a test album
-    await loginPage.goto();
-    await loginPage.waitForForm();
-    await loginPage.login();
-    await loginPage.expectLoginSuccess();
-
+    // loggedInPage is already authenticated, just create album
     // Create album
     await appShell.openCreateAlbumDialog();
     await createAlbumDialog.createAlbum(albumName);
@@ -288,7 +276,7 @@ test.describe('Share Link Access @p2 @sharing', () => {
   });
 
   test('P2-SHARE-9: accessing share link without login shows public view', async ({
-    page,
+    loggedInPage: page,
     browser,
   }) => {
     // Open the share link in a fresh browser context (no cookies, no auth)
@@ -315,7 +303,7 @@ test.describe('Share Link Access @p2 @sharing', () => {
     }
   });
 
-  test('P2-SHARE-10: expired share link shows appropriate error', async ({ page, browser }) => {
+  test('P2-SHARE-10: expired share link shows appropriate error', async ({ loggedInPage: page, browser }) => {
     // Extract linkId from the generated URL (format: /s/{linkId}#k=...)
     const urlPath = new URL(generatedShareUrl).pathname;
     const linkIdMatch = urlPath.match(/\/s\/([A-Za-z0-9_-]+)$/);

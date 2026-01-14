@@ -2,22 +2,32 @@
  * Thumbnail Generator Service
  *
  * Generates three-tier images from photos using the Canvas API:
- * - Thumbnail: 450px max dimension, ~80% quality WebP/JPEG (for shard)
- * - Preview: 1200px max dimension, ~85% quality WebP/JPEG
- * - Original: unchanged source file
+ * - Thumbnail: 450px max dimension, AVIF output (for shard)
+ * - Preview: 1200px max dimension, AVIF output
+ * - Original: AVIF (default) or preserved original format (configurable)
  *
  * Additionally generates a smaller embedded thumbnail (150px) for manifest
  * to reduce manifest size while maintaining HiDPI quality in gallery view.
  *
  * Each tier is encrypted with its corresponding key (thumbKey, previewKey, fullKey).
- * Handles EXIF orientation, maintains aspect ratio, and outputs
- * compressed WebP (with JPEG fallback) for efficient storage.
- * 
- * WebP provides 30-40% smaller files at equivalent quality.
+ * Handles EXIF orientation, maintains aspect ratio, and outputs AVIF for
+ * optimal compression (~50% smaller than JPEG at equivalent quality).
+ *
+ * HEIC/HEIF input: Files in HEIC/HEIF format are automatically decoded
+ * to JPEG before processing using the heic2any library.
+ *
+ * AVIF output: All tiers are encoded as AVIF. Browsers that don't support
+ * AVIF will use a fallback decoder at display time.
  */
 
 import { encode as encodeBlurhash } from 'blurhash';
 import { encryptShard, ShardTier, type EncryptedShard, type EpochKey } from '@mosaic/crypto';
+import { prepareForBitmap } from './image-decoder';
+import { getMimeType } from './mime-type-detection';
+import { shouldStoreOriginalsAsAvif } from './settings-service';
+import { createLogger } from './logger';
+
+const log = createLogger('thumbnail-generator');
 
 /** Max dimension for embedded thumbnails in manifest (150px) - small for bandwidth */
 const EMBEDDED_MAX_SIZE = 150;
@@ -43,13 +53,16 @@ const MAX_THUMBNAIL_BYTES = 80 * 1024;
 /** Maximum preview size in bytes (500KB) */
 const MAX_PREVIEW_BYTES = 500 * 1024;
 
-/** Supported image MIME types */
+/** Supported image MIME types for upload and processing */
 const SUPPORTED_TYPES = [
   'image/jpeg',
   'image/png',
   'image/webp',
   'image/heic',
   'image/heif',
+  'image/avif',
+  'image/gif',
+  'image/bmp',
 ];
 
 // =============================================================================
@@ -419,6 +432,8 @@ function orientationSwapsDimensions(orientation: number): boolean {
  * 
  * Default settings are optimized for embedded manifest thumbnails (150px, 10KB).
  * For larger thumbnail shards, the tiered generation uses THUMB_MAX_SIZE (450px).
+ * 
+ * HEIC/HEIF files are automatically decoded to JPEG before processing.
  *
  * @param file - Image file to generate thumbnail from
  * @param options - Thumbnail options
@@ -431,9 +446,13 @@ export async function generateThumbnail(
 ): Promise<ThumbnailResult> {
   const { maxSize = EMBEDDED_MAX_SIZE, quality = THUMB_QUALITY, maxBytes = MAX_EMBEDDED_BYTES } = options;
 
-  // Validate file type
-  if (!isSupportedImageType(file.type)) {
-    throw new ThumbnailError(`Unsupported image type: ${file.type}`);
+  // Detect actual MIME type from magic bytes
+  const detectedMimeType = await getMimeType(file);
+  log.debug('Detected MIME type', { filename: file.name, browserType: file.type, detected: detectedMimeType });
+
+  // Validate file type using detected MIME
+  if (!isSupportedImageType(detectedMimeType)) {
+    throw new ThumbnailError(`Unsupported image type: ${detectedMimeType}`);
   }
 
   // Validate maxSize
@@ -447,14 +466,18 @@ export async function generateThumbnail(
   }
 
   try {
+    // Prepare file for bitmap creation (decode HEIC if necessary)
+    const processableBlob = await prepareForBitmap(file, detectedMimeType);
+
     // Get EXIF orientation before creating bitmap
+    // Note: For HEIC files, EXIF may be lost after conversion, but heic2any preserves it
     const orientation = await getExifOrientation(file);
 
     // Create bitmap for efficient decoding
     // Note: createImageBitmap automatically handles most image formats
     let bitmap: ImageBitmap;
     try {
-      bitmap = await createImageBitmap(file);
+      bitmap = await createImageBitmap(processableBlob);
     } catch (error) {
       throw new ThumbnailError('Failed to decode image', error);
     }
@@ -690,25 +713,35 @@ async function resizeImage(
  *
  * Creates thumbnail (300px), preview (1200px), and keeps original.
  * Each tier is prepared for encryption with its corresponding key.
+ * 
+ * HEIC/HEIF files are automatically decoded to JPEG before processing.
  *
  * @param file - Image file to process
  * @returns Three-tier image data with dimensions
  * @throws ThumbnailError if generation fails
  */
 export async function generateTieredImages(file: File): Promise<TieredImageResult> {
-  // Validate file type
-  if (!isSupportedImageType(file.type)) {
-    throw new ThumbnailError(`Unsupported image type: ${file.type}`);
+  // Detect actual MIME type from magic bytes
+  const detectedMimeType = await getMimeType(file);
+  log.debug('Detected MIME type for tiered generation', { filename: file.name, browserType: file.type, detected: detectedMimeType });
+
+  // Validate file type using detected MIME
+  if (!isSupportedImageType(detectedMimeType)) {
+    throw new ThumbnailError(`Unsupported image type: ${detectedMimeType}`);
   }
 
   try {
+    // Prepare file for bitmap creation (decode HEIC if necessary)
+    const processableBlob = await prepareForBitmap(file, detectedMimeType);
+
     // Get EXIF orientation before creating bitmap
+    // Note: For HEIC files, EXIF may be lost after conversion, but heic2any preserves it
     const orientation = await getExifOrientation(file);
 
     // Create bitmap for efficient decoding
     let bitmap: ImageBitmap;
     try {
-      bitmap = await createImageBitmap(file);
+      bitmap = await createImageBitmap(processableBlob);
     } catch (error) {
       throw new ThumbnailError('Failed to decode image', error);
     }
@@ -736,12 +769,39 @@ export async function generateTieredImages(file: File): Promise<TieredImageResul
       orientation
     );
 
+    // Handle original tier - either convert to AVIF or preserve original format
+    let originalData: Uint8Array;
+    let originalMimeType: string;
+    
+    if (shouldStoreOriginalsAsAvif()) {
+      // Convert to AVIF at full resolution with high quality
+      const ORIGINAL_QUALITY = 0.92; // High quality for "original" tier
+      const MAX_ORIGINAL_BYTES = 15 * 1024 * 1024; // 15MB max for original AVIF
+      
+      const originalAvifData = await resizeImage(
+        bitmap,
+        Math.max(logicalWidth, logicalHeight), // Keep full resolution
+        ORIGINAL_QUALITY,
+        MAX_ORIGINAL_BYTES,
+        orientation
+      );
+      originalData = originalAvifData.data;
+      originalMimeType = 'image/avif';
+      log.debug('Converted original to AVIF', { 
+        inputSize: file.size,
+        avifSize: originalData.byteLength,
+        savings: `${Math.round((1 - originalData.byteLength / file.size) * 100)}%`
+      });
+    } else {
+      // Preserve original file format
+      const originalArrayBuffer = await file.arrayBuffer();
+      originalData = new Uint8Array(originalArrayBuffer);
+      originalMimeType = await getMimeType(file);
+      log.debug('Preserved original format', { mimeType: originalMimeType, size: originalData.byteLength });
+    }
+
     // Clean up bitmap
     bitmap.close();
-
-    // Get original file data
-    const originalArrayBuffer = await file.arrayBuffer();
-    const originalData = new Uint8Array(originalArrayBuffer);
 
     return {
       thumbnail: {

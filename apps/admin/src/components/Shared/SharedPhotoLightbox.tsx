@@ -3,6 +3,9 @@
  *
  * Full-screen photo viewer for anonymous share link viewers.
  * Displays photos based on available tier access.
+ * 
+ * HEIC/HEIF and AVIF images are automatically decoded for display
+ * on browsers that don't natively support them.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -11,6 +14,7 @@ import { createLogger } from '../../lib/logger';
 import type { PhotoMeta } from '../../workers/types';
 import { downloadShardViaShareLink } from '../../lib/shard-service';
 import { getCryptoClient } from '../../lib/crypto-client';
+import { createDisplayableUrl } from '../../lib/image-decoder';
 
 const log = createLogger('SharedPhotoLightbox');
 
@@ -291,13 +295,26 @@ export function SharedPhotoLightbox({
           }
 
           // Create blob URL for full-res image
-          const blob = new Blob([photoData], { type: photo.mimeType });
-          fullResBlobUrl = URL.createObjectURL(blob);
+          // Use createDisplayableUrl to handle AVIF fallback for browsers that don't support it
+          // and HEIC/HEIF decoding for legacy formats
+          try {
+            const decoded = await createDisplayableUrl(photoData, photo.mimeType);
+            fullResBlobUrl = decoded.url;
+            log.debug('Created displayable URL', { 
+              photoId: photo.id, 
+              originalMimeType: photo.mimeType,
+              displayMimeType: decoded.mimeType 
+            });
+          } catch (decodeErr) {
+            log.error('Failed to create displayable URL', { photoId: photo.id, error: decodeErr });
+            // Fall back to creating blob directly (may fail for HEIC or unsupported AVIF)
+            const blob = new Blob([photoData], { type: photo.mimeType });
+            fullResBlobUrl = URL.createObjectURL(blob);
+          }
 
           log.debug('Full-res photo loaded', {
             photoId: photo.id,
             size: totalSize,
-            mimeType: photo.mimeType,
           });
 
           if (!cancelled) {

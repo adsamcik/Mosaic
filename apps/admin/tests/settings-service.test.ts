@@ -49,6 +49,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'medium',
         autoSync: true,
         keyCacheDuration: 30,
+        originalStorageFormat: 'avif',
       });
     });
 
@@ -59,6 +60,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'high',
         autoSync: false,
         keyCacheDuration: 60,
+        originalStorageFormat: 'preserve',
       });
 
       const settings = getSettings();
@@ -69,6 +71,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'high',
         autoSync: false,
         keyCacheDuration: 60,
+        originalStorageFormat: 'preserve',
       });
     });
 
@@ -79,6 +82,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'ultra', // Invalid
         autoSync: 'yes', // Invalid (not boolean)
         keyCacheDuration: 999, // Invalid
+        originalStorageFormat: 'invalid', // Invalid
       });
 
       const settings = getSettings();
@@ -89,6 +93,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'medium',
         autoSync: true,
         keyCacheDuration: 30,
+        originalStorageFormat: 'avif',
       });
     });
 
@@ -103,6 +108,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'medium',
         autoSync: true,
         keyCacheDuration: 30,
+        originalStorageFormat: 'avif',
       });
     });
 
@@ -139,6 +145,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'high',
         autoSync: false,
         keyCacheDuration: 60,
+        originalStorageFormat: 'preserve',
       };
 
       saveSettings(settings);
@@ -153,6 +160,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'ultra',
         autoSync: 'yes',
         keyCacheDuration: 999,
+        originalStorageFormat: 'invalid',
       } as unknown as UserSettings;
 
       saveSettings(invalidSettings);
@@ -163,6 +171,7 @@ describe('settings-service', () => {
       expect(saved.thumbnailQuality).toBe('medium');
       expect(saved.autoSync).toBe(true);
       expect(saved.keyCacheDuration).toBe(30);
+      expect(saved.originalStorageFormat).toBe('avif');
     });
 
     it('notifies subscribers when settings are saved', () => {
@@ -175,6 +184,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'high',
         autoSync: true,
         keyCacheDuration: 240,
+        originalStorageFormat: 'preserve',
       });
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -184,6 +194,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'high',
         autoSync: true,
         keyCacheDuration: 240,
+        originalStorageFormat: 'preserve',
       });
 
       unsubscribe();
@@ -198,6 +209,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'medium',
         autoSync: true,
         keyCacheDuration: 30,
+        originalStorageFormat: 'avif',
       });
 
       updateSettings({ idleTimeout: 60 });
@@ -230,6 +242,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'high',
         autoSync: false,
         keyCacheDuration: -1,
+        originalStorageFormat: 'preserve',
       });
 
       expect(getSetting('idleTimeout')).toBe(60);
@@ -237,6 +250,7 @@ describe('settings-service', () => {
       expect(getSetting('thumbnailQuality')).toBe('high');
       expect(getSetting('autoSync')).toBe(false);
       expect(getSetting('keyCacheDuration')).toBe(-1);
+      expect(getSetting('originalStorageFormat')).toBe('preserve');
     });
   });
 
@@ -258,6 +272,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'high',
         autoSync: false,
         keyCacheDuration: 60,
+        originalStorageFormat: 'preserve',
       });
 
       resetSettings();
@@ -287,6 +302,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'medium',
         autoSync: true,
         keyCacheDuration: 30,
+        originalStorageFormat: 'avif',
       });
     });
 
@@ -307,6 +323,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'medium',
         autoSync: true,
         keyCacheDuration: 30,
+        originalStorageFormat: 'avif',
       });
 
       expect(getIdleTimeoutMs()).toBe(15 * 60 * 1000);
@@ -328,6 +345,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'high',
         autoSync: true,
         keyCacheDuration: 30,
+        originalStorageFormat: 'avif',
       });
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -347,6 +365,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'high',
         autoSync: true,
         keyCacheDuration: 30,
+        originalStorageFormat: 'avif',
       });
 
       expect(callback).not.toHaveBeenCalled();
@@ -364,6 +383,7 @@ describe('settings-service', () => {
         thumbnailQuality: 'high',
         autoSync: true,
         keyCacheDuration: 30,
+        originalStorageFormat: 'avif',
       });
 
       expect(callback1).toHaveBeenCalledTimes(1);

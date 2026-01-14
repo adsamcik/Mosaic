@@ -21,6 +21,9 @@ export type KeyCacheDuration = 0 | 15 | 30 | 60 | 240 | -1;
 /** Thumbnail quality options */
 export type ThumbnailQuality = 'low' | 'medium' | 'high';
 
+/** Original image storage format options */
+export type OriginalStorageFormat = 'avif' | 'preserve';
+
 /** User settings interface */
 export interface UserSettings {
   /** Idle timeout in minutes before auto-logout */
@@ -33,6 +36,8 @@ export interface UserSettings {
   autoSync: boolean;
   /** Key cache duration: 0=off, -1=until tab close, positive=minutes */
   keyCacheDuration: KeyCacheDuration;
+  /** Store original images as AVIF for better compression (default: true) */
+  originalStorageFormat: OriginalStorageFormat;
 }
 
 // =============================================================================
@@ -49,6 +54,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   thumbnailQuality: 'medium',
   autoSync: true,
   keyCacheDuration: 30, // 30 minutes by default
+  originalStorageFormat: 'avif', // Convert originals to AVIF for better compression
 };
 
 /** Valid idle timeout values */
@@ -62,6 +68,9 @@ const VALID_THEMES: Theme[] = ['dark', 'light', 'system'];
 
 /** Valid thumbnail quality values */
 const VALID_THUMBNAIL_QUALITIES: ThumbnailQuality[] = ['low', 'medium', 'high'];
+
+/** Valid original storage format values */
+const VALID_ORIGINAL_FORMATS: OriginalStorageFormat[] = ['avif', 'preserve'];
 
 // =============================================================================
 // Settings Listeners
@@ -116,6 +125,9 @@ function validateSettings(settings: unknown): UserSettings {
     keyCacheDuration: VALID_KEY_CACHE_DURATIONS.includes(s.keyCacheDuration as KeyCacheDuration)
       ? (s.keyCacheDuration as KeyCacheDuration)
       : DEFAULT_SETTINGS.keyCacheDuration,
+    originalStorageFormat: VALID_ORIGINAL_FORMATS.includes(s.originalStorageFormat as OriginalStorageFormat)
+      ? (s.originalStorageFormat as OriginalStorageFormat)
+      : DEFAULT_SETTINGS.originalStorageFormat,
   };
 }
 
@@ -225,4 +237,13 @@ export function getThumbnailQualityValue(): number {
     default:
       return 0.8; // Default to medium
   }
+}
+
+/**
+ * Check if original images should be stored as AVIF.
+ * When true, originals are converted to AVIF for better compression.
+ * When false, original file format is preserved.
+ */
+export function shouldStoreOriginalsAsAvif(): boolean {
+  return getSettings().originalStorageFormat === 'avif';
 }

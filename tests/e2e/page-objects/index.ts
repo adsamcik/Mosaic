@@ -607,8 +607,18 @@ export class GalleryPage {
   }
 
   async openShareLinks(): Promise<void> {
-    await this.openAlbumSettings();
-    await this.shareButton.click();
+    // The menu can be detached during React re-renders, so use a retry pattern
+    await expect(async () => {
+      // Ensure the settings menu is open (will skip if already open)
+      const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
+      if (!isMenuVisible) {
+        await this.albumSettingsButton.click();
+        await expect(this.albumSettingsMenu).toBeVisible({ timeout: 2000 });
+      }
+      // Wait for share button to be visible and click it
+      await expect(this.shareButton).toBeVisible({ timeout: 2000 });
+      await this.shareButton.click();
+    }).toPass({ timeout: 15000, intervals: [100, 500, 1000] });
   }
 
   async openAlbumSettings(): Promise<void> {

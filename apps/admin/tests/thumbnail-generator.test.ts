@@ -25,6 +25,11 @@ import {
     type EpochKey,
 } from '../../../libs/crypto/src';
 
+// Mock settings service - default to preserving original format in tests for predictable behavior
+vi.mock('../src/lib/settings-service', () => ({
+  shouldStoreOriginalsAsAvif: vi.fn(() => false),
+}));
+
 beforeAll(async () => {
   await sodium.ready;
 });
@@ -54,8 +59,19 @@ describe('isSupportedImageType', () => {
     expect(isSupportedImageType('image/heif')).toBe(true);
   });
 
+  it('returns true for AVIF', () => {
+    expect(isSupportedImageType('image/avif')).toBe(true);
+  });
+
+  it('returns true for GIF', () => {
+    expect(isSupportedImageType('image/gif')).toBe(true);
+  });
+
+  it('returns true for BMP', () => {
+    expect(isSupportedImageType('image/bmp')).toBe(true);
+  });
+
   it('returns false for unsupported types', () => {
-    expect(isSupportedImageType('image/gif')).toBe(false);
     expect(isSupportedImageType('image/svg+xml')).toBe(false);
     expect(isSupportedImageType('text/plain')).toBe(false);
     expect(isSupportedImageType('application/pdf')).toBe(false);
@@ -321,13 +337,13 @@ describe('generateThumbnail', () => {
   });
 
   it('throws ThumbnailError for unsupported file type', async () => {
-    const file = new File(['fake-image-data'], 'test.gif', {
-      type: 'image/gif',
+    const file = new File(['fake-image-data'], 'test.svg', {
+      type: 'image/svg+xml',
     });
 
     await expect(generateThumbnail(file)).rejects.toThrow(ThumbnailError);
     await expect(generateThumbnail(file)).rejects.toThrow(
-      'Unsupported image type: image/gif'
+      'Unsupported image type: image/svg+xml'
     );
   });
 
@@ -731,11 +747,14 @@ describe('generateTieredImages', () => {
   });
 
   it('throws ThumbnailError for unsupported file type', async () => {
-    const file = createTestFile(mockFileData, 'test.gif', 'image/gif');
+    // Create actual SVG content that will be detected as SVG by magic bytes
+    const svgContent = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
+    const svgData = new TextEncoder().encode(svgContent);
+    const file = createTestFile(svgData, 'test.svg', 'image/svg+xml');
 
     await expect(generateTieredImages(file)).rejects.toThrow(ThumbnailError);
     await expect(generateTieredImages(file)).rejects.toThrow(
-      'Unsupported image type: image/gif'
+      'Unsupported image type: image/svg+xml'
     );
   });
 
@@ -983,7 +1002,10 @@ describe('generateTieredShards', () => {
   });
 
   it('throws ThumbnailError for unsupported file type', async () => {
-    const file = createTestFile(mockFileData, 'test.gif', 'image/gif');
+    // Create actual SVG content that will be detected as SVG by magic bytes
+    const svgContent = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
+    const svgData = new TextEncoder().encode(svgContent);
+    const file = createTestFile(svgData, 'test.svg', 'image/svg+xml');
 
     await expect(generateTieredShards(file, epochKey)).rejects.toThrow(
       ThumbnailError

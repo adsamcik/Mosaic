@@ -68,6 +68,10 @@ async function createManifestForUpload(
   const sortedShards = [...task.completedShards].sort((a, b) => a.index - b.index);
   const shardHashes = sortedShards.map((s) => s.sha256);
 
+  // Use detected MIME type (from magic bytes) over browser-reported type
+  // This is more reliable for formats like HEIC
+  const mimeType = task.detectedMimeType || task.file.type || 'application/octet-stream';
+
   // Build photo metadata with tier-specific shard IDs
   const now = new Date().toISOString();
   const photoMeta: PhotoMeta = {
@@ -75,7 +79,7 @@ async function createManifestForUpload(
     assetId: task.id,
     albumId: task.albumId,
     filename: task.file.name,
-    mimeType: task.file.type || 'application/octet-stream',
+    mimeType,
     width: task.originalWidth ?? 0,
     height: task.originalHeight ?? 0,
     tags: [],

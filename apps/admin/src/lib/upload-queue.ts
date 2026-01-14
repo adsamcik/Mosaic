@@ -3,6 +3,7 @@ import * as tus from 'tus-js-client';
 import { TUS_ENDPOINT } from './api';
 import { getCryptoClient } from './crypto-client';
 import { createLogger } from './logger';
+import { getMimeType } from './mime-type-detection';
 import { getThumbnailQualityValue } from './settings-service';
 import {
     generateThumbnail,
@@ -96,6 +97,8 @@ export interface UploadTask {
   blurhash?: string;
   /** Tiered shard IDs for the completed upload */
   tieredShards?: TieredShardIds;
+  /** Detected MIME type from magic bytes (more reliable than file.type) */
+  detectedMimeType?: string;
 }
 
 /** Persisted task state (for resume after reload) */
@@ -298,8 +301,14 @@ class UploadQueue {
       task.currentAction = 'pending';
       await this.updatePersistedTask(task.id, { status: 'uploading' });
 
+      // Detect actual MIME type from file magic bytes
+      // This is more reliable than file.type for formats like HEIC
+      const detectedMimeType = await getMimeType(task.file);
+      task.detectedMimeType = detectedMimeType;
+      log.info(`Detected MIME type: ${detectedMimeType} (browser reported: ${task.file.type})`);
+
       // Check if this is a supported image type for tiered upload
-      if (isSupportedImageType(task.file.type)) {
+      if (isSupportedImageType(detectedMimeType)) {
         // New tiered upload flow - generates thumb, preview, and original shards
         log.info(`Using tiered upload for image: ${task.file.name}`);
         await this.processTieredUpload(task);

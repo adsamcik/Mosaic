@@ -9,9 +9,11 @@
  * - Blob URL lifecycle management
  * - Parallel shard downloads
  * - Embedded thumbnail support for fast gallery loading
+ * - HEIC/HEIF decoding for browser display
  */
 
 import { getCryptoClient } from './crypto-client';
+import { createDisplayableUrl } from './image-decoder';
 import { downloadShards, type ProgressCallback } from './shard-service';
 import { base64ToUint8Array } from './thumbnail-generator';
 import { createLogger } from './logger';
@@ -325,9 +327,9 @@ export async function loadPhoto(
         offset += chunk.length;
       }
 
-      // Create blob and URL
-      const blob = new Blob([photoData], { type: mimeType });
-      const blobUrl = URL.createObjectURL(blob);
+      // Create displayable URL (handles AVIF fallback for legacy browsers)
+      const { url: blobUrl, mimeType: displayMimeType } = await createDisplayableUrl(photoData, mimeType);
+      const blob = new Blob([photoData], { type: displayMimeType });
 
       // Cache the result
       if (!skipCache) {
@@ -336,7 +338,7 @@ export async function loadPhoto(
 
       return {
         blobUrl,
-        mimeType,
+        mimeType: displayMimeType,
         size: blob.size,
       };
     } finally {
