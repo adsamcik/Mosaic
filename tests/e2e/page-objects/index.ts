@@ -510,13 +510,72 @@ export class GalleryPage {
     );
   }
 
-  async selectPhoto(index: number): Promise<void> {
-    const photos = await this.getPhotos().all();
-    if (photos[index]) {
-      await photos[index].click();
-    } else {
-      throw new Error(`Photo at index ${index} not found`);
+  /**
+   * Wait for all photos to finish syncing.
+   * In Grid view: pending photos have data-testid="pending-photo-thumbnail".
+   * In Justified view: pending photos have data-testid="photo-pending-overlay" inside them.
+   * 
+   * We also verify that after pending state clears, the photos remain visible as non-pending.
+   */
+  async waitForSync(timeout = 60000): Promise<void> {
+    const startTime = Date.now();
+    
+    // Grid view uses a separate testid for pending photos
+    const pendingGridPhotos = this.page.getByTestId('pending-photo-thumbnail');
+    // Justified view uses an overlay inside the same photo testid
+    const pendingOverlays = this.page.getByTestId('photo-pending-overlay');
+    
+    const initialGridCount = await pendingGridPhotos.count();
+    const initialOverlayCount = await pendingOverlays.count();
+    
+    // Total expected photos = pending overlays (justified view) + any already stable photos
+    // We use initialOverlayCount as minimum photos to expect after sync
+    const minExpectedPhotos = initialOverlayCount > 0 ? initialOverlayCount : 0;
+    
+    console.log(`[GalleryPage PO] waitForSync started: ${initialGridCount} pending grid photos, ${initialOverlayCount} pending overlays, expecting at least ${minExpectedPhotos} photos after sync`);
+    
+    if (initialGridCount + initialOverlayCount === 0) {
+      // Nothing pending, we're done
+      console.log(`[GalleryPage PO] waitForSync complete after ${Date.now() - startTime}ms (no pending photos)`);
+      return;
     }
+    
+    // Wait for pending state to clear AND photos to be visible
+    await expect(async () => {
+      const gridCount = await pendingGridPhotos.count();
+      const overlayCount = await pendingOverlays.count();
+      const stablePhotoCount = await this.getPhotos().count();
+      
+      // All pending states must be gone
+      expect(gridCount + overlayCount).toBe(0);
+      
+      // And we must have at least as many stable photos as we had pending overlays
+      if (minExpectedPhotos > 0) {
+        expect(stablePhotoCount).toBeGreaterThanOrEqual(minExpectedPhotos);
+      }
+    }).toPass({ timeout, intervals: [100, 250, 500, 1000] });
+    
+    console.log(`[GalleryPage PO] waitForSync complete after ${Date.now() - startTime}ms`);
+  }
+
+  async selectPhoto(index: number): Promise<void> {
+    // Wait for any pending photos to finish syncing first
+    await this.waitForSync();
+    
+    // Wait for photos to be stable and click atomically
+    let clicked = false;
+    await expect(async () => {
+      const photos = await this.getPhotos().all();
+      console.log(`[GalleryPage PO] selectPhoto(${index}): found ${photos.length} photos`);
+      if (!photos[index]) {
+        throw new Error(`Photo at index ${index} not found, have ${photos.length} photos`);
+      }
+      if (!clicked) {
+        await photos[index].click();
+        clicked = true;
+        console.log(`[GalleryPage PO] selectPhoto(${index}): clicked`);
+      }
+    }).toPass({ timeout: 30000, intervals: [100, 250, 500] });
   }
 
   async openMembers(): Promise<void> {
@@ -1196,7 +1255,9 @@ export class CreateShareLinkDialog {
 
   constructor(page: Page) {
     this.page = page;
-    this.dialog = page.getByTestId('share-link-dialog');
+    // Use 'create-share-link-view' which is the actual test ID in the component
+    // This view appears when creating a share link within ShareLinksPanel
+    this.dialog = page.getByTestId('create-share-link-view');
     this.tierSelector = page.getByTestId('tier-selector');
     this.expiryPresets = page.getByTestId('expiry-presets');
     this.maxUsesCheckbox = page.getByTestId('max-uses-checkbox');
