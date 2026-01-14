@@ -18,6 +18,7 @@ import {
 import { localAuthLogin, localAuthRegister } from './local-auth';
 import { createLogger } from './logger';
 import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
+import { syncCoordinator } from './sync-coordinator';
 
 const log = createLogger('session');
 
@@ -723,6 +724,9 @@ class SessionManager {
 
     // Clear photo cache (revokes decrypted blob URLs)
     clearPhotoCache();
+
+    // Dispose sync coordinator (clears pending syncs and timers)
+    syncCoordinator.dispose();
 
     // Clear epoch keys from memory
     clearAllEpochKeys();

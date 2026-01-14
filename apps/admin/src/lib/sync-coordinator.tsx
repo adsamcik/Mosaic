@@ -206,6 +206,8 @@ class SyncCoordinator {
    * This is THE ONLY handler for sync-complete events.
    */
   private async handleSyncComplete(albumId: string): Promise<void> {
+    log.info(`handleSyncComplete called for album ${albumId}`);
+    
     try {
       const db = await getDbClient();
       const store = usePhotoStore.getState();
@@ -216,6 +218,7 @@ class SyncCoordinator {
       // Fetch all photos from local DB
       // Using a large limit - in production, implement pagination
       const photos = await db.getPhotos(albumId, 10000, 0);
+      log.info(`Found ${photos.length} photos in local DB for album ${albumId}`);
       
       // Get current album state
       const albumState = store.albums.get(albumId);
@@ -224,13 +227,18 @@ class SyncCoordinator {
         return;
       }
       
+      // Log pending items
+      const pendingItems = Array.from(albumState.items.values())
+        .filter(i => i.status === 'pending' || i.status === 'syncing');
+      log.info(`Album ${albumId} has ${pendingItems.length} pending/syncing items`);
+      
       // Compute delta and find promotions
       const delta = this.computeDelta(albumId, albumState.items, photos);
       
       // Apply incremental updates
       this.applyDelta(albumId, delta, store);
-      
-      log.debug(
+
+      log.info(
         `Processed sync-complete for album ${albumId}: ` +
         `${delta.added.length} added, ${delta.removed.length} removed, ` +
         `${delta.updated.length} updated, ${delta.promoted.length} promoted`
@@ -264,6 +272,14 @@ class SyncCoordinator {
       }
     }
     
+    log.info(`computeDelta: ${pendingAssetIds.size} pending items, ${newPhotos.length} photos from DB`);
+    if (pendingAssetIds.size > 0) {
+      log.info(`Pending assetIds: ${Array.from(pendingAssetIds.keys()).join(', ')}`);
+    }
+    if (newPhotos.length > 0) {
+      log.info(`DB photo assetIds: ${newPhotos.map(p => p.assetId ?? 'null').join(', ')}`);
+    }
+    
     // Process new photos
     for (const photo of newPhotos) {
       const existing = currentItems.get(photo.id);
@@ -272,6 +288,7 @@ class SyncCoordinator {
       const pendingItem = pendingAssetIds.get(photo.assetId);
       if (pendingItem) {
         // This is a promotion - pending item confirmed by server
+        log.info(`PROMOTION MATCH: assetId=${photo.assetId} matched pending item`);
         promoted.push({ assetId: photo.assetId, photo });
         
         // Clear the sync timeout for this item
@@ -408,16 +425,18 @@ interface SyncCoordinatorProviderProps {
 
 /**
  * React Provider for SyncCoordinator.
- * Initializes the coordinator on mount and disposes on unmount.
- * Use this at the app root to ensure single initialization.
+ * Initializes the coordinator on mount.
+ * Note: We do NOT dispose on unmount because:
+ * 1. SyncCoordinator is a singleton that survives navigation
+ * 2. Debounce timers must complete even if user navigates away
+ * 3. Dispose is only called on logout via session.logout()
  */
 export function SyncCoordinatorProvider({ children }: SyncCoordinatorProviderProps): ReactNode {
   useEffect(() => {
     syncCoordinator.init();
     
-    return () => {
-      syncCoordinator.dispose();
-    };
+    // Note: No cleanup - singleton survives navigation
+    // Dispose is called explicitly on logout
   }, []);
   
   const value: SyncCoordinatorContextValue = {
