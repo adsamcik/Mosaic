@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { getApi, toBase64 } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
@@ -147,30 +147,19 @@ export function UploadProvider({ children }: UploadProviderProps) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<UploadError | null>(null);
   const [, setActiveTasks] = useState<UploadTask[]>([]);
-  
-  // Track whether callbacks have been set up to avoid re-chaining
-  const callbacksInitialized = useRef(false);
 
-  // Initialize upload-store bridge on mount
+  // Initialize upload-store bridge AND set up upload queue callbacks together
+  // This ensures proper cleanup/re-initialization on StrictMode remounts
   useEffect(() => {
-    const cleanup = initUploadStoreBridge();
-    return cleanup;
-  }, []);
-
-  // Set up upload queue callbacks ONCE on mount
-  // This avoids the bug where callbacks chain on each upload() call
-  useEffect(() => {
-    if (callbacksInitialized.current) {
-      return;
-    }
-    callbacksInitialized.current = true;
-
-    // Capture the bridge handlers that were set by initUploadStoreBridge
+    // 1. Initialize the bridge first (sets up PhotoStore integration)
+    const bridgeCleanup = initUploadStoreBridge();
+    
+    // 2. Capture the bridge handlers that were just set up
     const bridgeOnProgress = uploadQueue.onProgress;
     const bridgeOnComplete = uploadQueue.onComplete;
     const bridgeOnError = uploadQueue.onError;
 
-    // Set up progress callback
+    // 3. Set up progress callback
     uploadQueue.onProgress = (task) => {
       // Call bridge handler first (adds to PhotoStore)
       bridgeOnProgress?.(task);
@@ -185,7 +174,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
       });
     };
 
-    // Set up complete callback
+    // 4. Set up complete callback
     uploadQueue.onComplete = async (task, shardIds, tieredShards) => {
       // Call bridge handler first (transitions to syncing in PhotoStore)
       await bridgeOnComplete?.(task, shardIds, tieredShards);
@@ -229,7 +218,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
       }
     };
 
-    // Set up error callback
+    // 5. Set up error callback
     uploadQueue.onError = (task, uploadErr) => {
       // Call bridge handler first (marks as failed in PhotoStore)
       bridgeOnError?.(task, uploadErr);
@@ -247,6 +236,9 @@ export function UploadProvider({ children }: UploadProviderProps) {
       );
       setIsUploading(false);
     };
+
+    // Cleanup: bridge cleanup will restore original callbacks
+    return bridgeCleanup;
   }, []);
 
   // Warn user before leaving page during upload

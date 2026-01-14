@@ -81,6 +81,8 @@ class SyncEngine extends EventTarget {
    * @param readKey - Epoch read key for decryption (optional if using cached keys)
    */
   async sync(albumId: string, readKey?: Uint8Array): Promise<void> {
+    log.info(`Sync requested for album ${albumId}`, { hasReadKey: !!readKey });
+    
     if (this.syncing) {
       // Queue this sync request - it will run after current sync completes
       // If same album is already queued, this updates the readKey

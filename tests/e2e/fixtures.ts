@@ -649,6 +649,14 @@ export class LoginPage {
   }
 
   /**
+   * Login with username and password (username first signature).
+   * Convenience wrapper around login() for tests that prefer username-first.
+   */
+  async loginWithUsername(username: string, password: string = TEST_PASSWORD) {
+    await this.login(password, username);
+  }
+
+  /**
    * Login or register based on auth mode.
    * - In LocalAuth mode: tries to register, falls back to login if user exists
    * - In ProxyAuth mode: just enters the password

@@ -116,6 +116,12 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       expect(photoCountBefore).toBeGreaterThanOrEqual(1);
 
       console.log(`[TEST] Photo uploaded successfully. Count: ${photoCountBefore}`);
+      
+      // Wait for all API calls to complete (manifest creation, sync)
+      await waitForNetworkIdle(page, { timeout: 30000, urlPattern: /\/api\// });
+      
+      // Additional wait to ensure sync-complete has fired and DB is updated
+      await page.waitForTimeout(500);
 
       // ========== PHASE 3: Reload page and re-authenticate ==========
       console.log('[TEST] Phase 3: Reloading page and re-authenticating');
@@ -128,7 +134,8 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       
       if (needsLogin) {
         console.log('[TEST] Re-login required after reload');
-        await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
+        // Use loginWithUsername directly since user was just logged in and definitely exists
+        await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
         await loginPage.expectLoginSuccess();
       } else {
         console.log('[TEST] Session persisted, no re-login needed');
@@ -373,7 +380,10 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       await appShell.logout();
       await loginPage.expectLoginFormVisible();
 
-      await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
+      // Use loginWithUsername directly since user definitely exists after first login
+      // Using loginOrRegister would try registration first, sending wrappedAccountKey
+      // in the request even though registration fails with 409
+      await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
       await loginPage.expectLoginSuccess();
 
       // Wait for wrapped key to be returned from /api/users/me response

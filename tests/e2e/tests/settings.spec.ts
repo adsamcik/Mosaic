@@ -12,34 +12,23 @@ import { LoginPage, AppShell, SettingsPage } from '../page-objects';
 import { TEST_CONSTANTS } from '../fixtures';
 
 test.describe('Settings Page @p2 @ui', () => {
-  let loginPage: LoginPage;
-  let appShell: AppShell;
-  let settingsPage: SettingsPage;
+  test.beforeEach(async ({ loggedInPage }) => {
+    const appShell = new AppShell(loggedInPage);
+    const settingsPage = new SettingsPage(loggedInPage);
 
-  test.beforeEach(async ({ page }) => {
-    loginPage = new LoginPage(page);
-    appShell = new AppShell(page);
-    settingsPage = new SettingsPage(page);
-
-    // Login
-    await loginPage.goto();
-    await loginPage.waitForForm();
-    await loginPage.login();
-    await loginPage.expectLoginSuccess();
-
-    // Navigate to settings
+    // Navigate to settings (loggedInPage is already authenticated)
     await appShell.openSettings();
     await settingsPage.waitForLoad();
   });
 
-  test('P1-SETTINGS-1: settings page is accessible after login', async ({ page }) => {
+  test('P1-SETTINGS-1: settings page is accessible after login', async ({ loggedInPage: page }) => {
     // Verify settings sections are visible
     await expect(page.getByTestId('account-section')).toBeVisible();
     await expect(page.getByTestId('session-section')).toBeVisible();
     await expect(page.getByTestId('security-section')).toBeVisible();
   });
 
-  test('P1-SETTINGS-2: can change theme setting', async ({ page }) => {
+  test('P1-SETTINGS-2: can change theme setting', async ({ loggedInPage: page }) => {
     const themeSelect = page.getByTestId('theme-select');
     await expect(themeSelect).toBeVisible();
 
@@ -58,7 +47,7 @@ test.describe('Settings Page @p2 @ui', () => {
     await expect(htmlElement).toHaveAttribute('data-theme', newTheme, { timeout: 2000 });
   });
 
-  test('P1-SETTINGS-3: can change idle timeout setting', async ({ page }) => {
+  test('P1-SETTINGS-3: can change idle timeout setting', async ({ loggedInPage: page }) => {
     const idleTimeoutSelect = page.getByTestId('idle-timeout-select');
     await expect(idleTimeoutSelect).toBeVisible();
 
@@ -69,7 +58,7 @@ test.describe('Settings Page @p2 @ui', () => {
     await expect(idleTimeoutSelect).toHaveValue('30');
   });
 
-  test('P1-SETTINGS-4: can change key cache duration', async ({ page }) => {
+  test('P1-SETTINGS-4: can change key cache duration', async ({ loggedInPage: page }) => {
     const keyCacheSelect = page.getByTestId('key-cache-duration-select');
     await expect(keyCacheSelect).toBeVisible();
 
@@ -83,7 +72,7 @@ test.describe('Settings Page @p2 @ui', () => {
     }
   });
 
-  test('P1-SETTINGS-5: can change thumbnail quality setting', async ({ page }) => {
+  test('P1-SETTINGS-5: can change thumbnail quality setting', async ({ loggedInPage: page }) => {
     const qualitySelect = page.getByTestId('thumbnail-quality-select');
     await expect(qualitySelect).toBeVisible();
 
@@ -96,7 +85,7 @@ test.describe('Settings Page @p2 @ui', () => {
     await expect(qualitySelect).toHaveValue('medium');
   });
 
-  test('P1-SETTINGS-6: can toggle auto-sync setting', async ({ page }) => {
+  test('P1-SETTINGS-6: can toggle auto-sync setting', async ({ loggedInPage: page }) => {
     const autoSyncToggle = page.getByTestId('auto-sync-toggle');
     await expect(autoSyncToggle).toBeVisible();
 
@@ -114,24 +103,24 @@ test.describe('Settings Page @p2 @ui', () => {
     await expect(autoSyncToggle).toBeChecked({ checked: isChecked });
   });
 
-  test('P1-SETTINGS-7: storage usage is displayed', async ({ page }) => {
+  test('P1-SETTINGS-7: storage usage is displayed', async ({ loggedInPage: page }) => {
     // Storage section should show usage information
     const storageSection = page.getByTestId('storage-section');
     await expect(storageSection).toBeVisible();
 
-    // Storage bar should be visible
+    // Storage bar fill element should exist (may be 0 width if no storage used)
     const storageBar = page.getByTestId('storage-bar-fill');
-    await expect(storageBar).toBeVisible();
+    await expect(storageBar).toBeAttached();
 
-    // Should show some storage text
+    // Should show some storage text (e.g., "0 B used" or "10 MB used")
     const storageText = storageSection.locator('.storage-info, .storage-text').first();
     if (await storageText.isVisible()) {
       const text = await storageText.textContent();
-      expect(text).toMatch(/\d+.*(?:KB|MB|GB|bytes)/i);
+      expect(text).toMatch(/\d+.*(?:KB|MB|GB|bytes|B)/i);
     }
   });
 
-  test('P1-SETTINGS-8: about section shows version information', async ({ page }) => {
+  test('P1-SETTINGS-8: about section shows version information', async ({ loggedInPage: page }) => {
     const aboutSection = page.getByTestId('about-section');
     await expect(aboutSection).toBeVisible();
 
@@ -142,15 +131,10 @@ test.describe('Settings Page @p2 @ui', () => {
 });
 
 test.describe('Clear Data Functionality', () => {
-  test('P1-SETTINGS-9: clear data requires confirmation', async ({ page }) => {
-    const loginPage = new LoginPage(page);
+  test('P1-SETTINGS-9: clear data requires confirmation', async ({ loggedInPage: page }) => {
     const appShell = new AppShell(page);
     const settingsPage = new SettingsPage(page);
 
-    await loginPage.goto();
-    await loginPage.waitForForm();
-    await loginPage.login();
-    await loginPage.expectLoginSuccess();
     await appShell.openSettings();
     await settingsPage.waitForLoad();
 
@@ -177,14 +161,20 @@ test.describe('Clear Data Functionality', () => {
 });
 
 test.describe('Settings Persistence', () => {
-  test('P1-SETTINGS-11: theme preference persists after logout/login', async ({ page, testUser }) => {
+  test('P1-SETTINGS-11: theme preference persists after logout/login', async ({ browser, testUser }) => {
+    // Create a fresh context for this test
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    
     const loginPage = new LoginPage(page);
     const appShell = new AppShell(page);
     const settingsPage = new SettingsPage(page);
 
     await page.goto('/');
     await loginPage.waitForForm();
-    await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
+    
+    // Register the user (first time login in LocalAuth mode)
+    await loginPage.register(testUser, TEST_CONSTANTS.PASSWORD);
     await loginPage.expectLoginSuccess();
     await appShell.openSettings();
     await settingsPage.waitForLoad();
@@ -202,7 +192,7 @@ test.describe('Settings Persistence', () => {
     await appShell.logout();
     await loginPage.waitForForm();
 
-    // Login again
+    // Login again (user now exists)
     await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
     await loginPage.expectLoginSuccess();
 
@@ -212,6 +202,8 @@ test.describe('Settings Persistence', () => {
 
     // Theme should still be dark
     await expect(page.getByTestId('theme-select')).toHaveValue('dark');
+    
+    await context.close();
   });
 });
 

@@ -24,7 +24,9 @@ test.describe('App Loading @p1 @fast', () => {
 
     // Check COOP/COEP headers required for SharedArrayBuffer
     expect(headers['cross-origin-opener-policy']).toBe('same-origin');
-    expect(headers['cross-origin-embedder-policy']).toBe('require-corp');
+    // 'credentialless' is a valid alternative to 'require-corp' that enables SharedArrayBuffer
+    // while allowing cross-origin resources that don't require credentials
+    expect(headers['cross-origin-embedder-policy']).toBe('credentialless');
   });
 
   test('loads static assets without critical errors', async ({ page }) => {

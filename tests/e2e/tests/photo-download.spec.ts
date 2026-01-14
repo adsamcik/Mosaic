@@ -203,6 +203,14 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       testContext,
     }) => {
       const user = await testContext.createAuthenticatedUser('owner-download');
+      
+      // Forward browser console logs to test output for debugging
+      user.page.on('console', msg => {
+        if (msg.text().includes('SYNC-DEBUG')) {
+          console.log(`[Browser] ${msg.text()}`);
+        }
+      });
+      
       await loginUser(user, TEST_PASSWORD);
 
       // Use createAlbumViaUI for real crypto setup (required for photo operations)

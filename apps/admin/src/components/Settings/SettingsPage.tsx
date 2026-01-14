@@ -135,9 +135,17 @@ export function SettingsPage() {
   }, []);
 
   // Handle settings change
+  // For visual settings (theme, language), apply immediately for instant feedback
   const handleSettingsChange = useCallback(
     <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
-      setSettings((prev) => ({ ...prev, [key]: value }));
+      setSettings((prev) => {
+        const newSettings = { ...prev, [key]: value };
+        // Auto-save visual settings immediately for instant feedback
+        if (key === 'theme') {
+          saveSettings(newSettings);
+        }
+        return newSettings;
+      });
     },
     []
   );

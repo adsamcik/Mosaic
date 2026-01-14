@@ -32,6 +32,10 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
 
       const gallery = new GalleryPage(user.page);
 
+      // Wait for gallery initial load to complete (animation system marks first render items as "seen")
+      // The gallery needs ~50ms after first render before new items will animate
+      await user.page.waitForTimeout(200);
+      
       // Upload a photo
       const testImage = generateTestImage('tiny');
       await gallery.uploadPhoto(testImage, 'animation-test.png');
@@ -62,6 +66,9 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
       await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
+
+      // Wait for gallery initial load to complete before uploading
+      await user.page.waitForTimeout(200);
 
       // Upload multiple photos
       const images = [
@@ -96,6 +103,9 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
       const gallery = new GalleryPage(user.page);
       const appShell = new AppShell(user.page);
 
+      // Wait for gallery initial load to complete before uploading
+      await user.page.waitForTimeout(200);
+
       // Upload photo
       const testImage = generateTestImage('tiny');
       await gallery.uploadPhoto(testImage, 'skip-anim.png');
@@ -128,6 +138,9 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
       await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
+
+      // Wait for gallery initial load to complete before uploading
+      await user.page.waitForTimeout(200);
 
       // Upload a photo
       const testImage = generateTestImage('tiny');
@@ -171,6 +184,9 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
       await createAlbumViaUI(user.page, albumName);
 
       const gallery = new GalleryPage(user.page);
+
+      // Wait for gallery initial load to complete before uploading
+      await user.page.waitForTimeout(200);
 
       // Upload a photo
       const testImage = generateTestImage('tiny');

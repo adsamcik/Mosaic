@@ -105,8 +105,8 @@ test.describe('Registration @p1 @auth @crypto', () => {
       // Submit
       await loginPage.createAccountButton.click();
 
-      // Should show error for empty username
-      await loginPage.expectErrorMessage(/please enter a username/i);
+      // Should show error for empty username (i18n: 'Username is required')
+      await loginPage.expectErrorMessage(/username.*required|required.*username/i);
     });
 
     test('shows error for empty password', async ({ page }) => {
@@ -126,8 +126,8 @@ test.describe('Registration @p1 @auth @crypto', () => {
       // Submit
       await loginPage.createAccountButton.click();
 
-      // Should show error for empty password
-      await loginPage.expectErrorMessage(/please enter a password/i);
+      // Should show error for empty password (i18n: 'Password is required')
+      await loginPage.expectErrorMessage(/password.*required|required.*password/i);
     });
 
     test('shows error for password less than 8 characters', async ({ page }) => {

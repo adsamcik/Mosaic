@@ -31,11 +31,17 @@ test.describe('Security: Authentication @p1 @security @auth', () => {
     const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
 
+    // In LocalAuth mode, fill username first to test password validation
+    const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    if (isLocalAuth) {
+      await loginPage.usernameInput.fill('testuser');
+    }
+
     // Try empty password
     await loginPage.loginButton.click();
 
-    // Should show error
-    await loginPage.expectErrorMessage(/please enter a password/i);
+    // Should show error (i18n: 'Password is required')
+    await loginPage.expectErrorMessage(/password.*required|required.*password/i);
 
     // Should still be on login form
     await expect(loginPage.loginForm).toBeVisible();
@@ -47,12 +53,18 @@ test.describe('Security: Authentication @p1 @security @auth', () => {
     const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
 
+    // In LocalAuth mode, fill username first to test password validation
+    const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    if (isLocalAuth) {
+      await loginPage.usernameInput.fill('testuser');
+    }
+
     // Enter whitespace
     await loginPage.passwordInput.fill('   ');
     await loginPage.loginButton.click();
 
-    // Should show error
-    await loginPage.expectErrorMessage(/please enter a password/i);
+    // Should show error (i18n: 'Password is required')
+    await loginPage.expectErrorMessage(/password.*required|required.*password/i);
   });
 
   test('password field is type password (not visible)', async ({ page }) => {
@@ -75,6 +87,11 @@ test.describe('Security: Authentication @p1 @security @auth', () => {
     const loginPage = new LoginPage(page);
     await loginPage.waitForForm();
 
+    // LocalAuth mode requires username registration
+    const isLocalAuth = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    if (isLocalAuth) {
+      await loginPage.usernameInput.fill(testUser);
+    }
     await loginPage.passwordInput.fill(TEST_CONSTANTS.PASSWORD);
 
     // Click login
@@ -84,8 +101,8 @@ test.describe('Security: Authentication @p1 @security @auth', () => {
     // (May happen too fast to catch, so we check if it shows loading state)
     const buttonText = await loginPage.loginButton.textContent();
     
-    // Either button is disabled or shows loading text
-    const isLoading = buttonText?.toLowerCase().includes('unlocking');
+    // Either button is disabled or shows loading text (i18n: 'Signing In...' or 'Creating Account...')
+    const isLoading = buttonText?.toLowerCase().includes('signing') || buttonText?.toLowerCase().includes('creating');
     const isDisabled = await loginPage.loginButton.isDisabled().catch(() => false);
     
     // At least one of these should be true
@@ -475,7 +492,7 @@ test.describe('Error Handling: Crypto Failures @p2 @security @crypto', () => {
 
     // Wait for decryption attempt - error message or lightbox should appear
     const errorMessage = page.getByText(/error|corrupt|decrypt|failed/i);
-    const lightbox = page.getByTestId('photo-lightbox');
+    const lightbox = page.getByTestId('lightbox'); // Actual testid in PhotoLightbox component
     await waitForCondition(
       async () => {
         const hasError = await errorMessage.first().isVisible().catch(() => false);
