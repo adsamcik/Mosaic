@@ -1,6 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
+import { useAnimatedItems } from '../../hooks/useAnimatedItems';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoDelete } from '../../hooks/usePhotoDelete';
@@ -9,6 +10,7 @@ import { computeMosaicLayout, type MosaicItem } from '../../lib/mosaic-layout';
 import { usePhotoStore, type PhotoItem } from '../../stores/photo-store';
 import '../../styles/upload.css';
 import type { PhotoMeta } from '../../workers/types';
+import { AnimatedTile } from './AnimatedTile';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
 import { JustifiedPhotoThumbnail } from './JustifiedPhotoThumbnail';
 import { MosaicTile } from './MosaicTile';
@@ -113,6 +115,33 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
     ),
     [photos]
   );
+
+  // Animation system for photo tiles
+  const {
+    animatedItems,
+    handleExitComplete,
+    getStaggerDelay,
+    hasBeenSeen,
+    isInitialLoad,
+  } = useAnimatedItems(sortedPhotos, {
+    getKey: (photo) => photo.id,
+    onRemoveComplete: () => {
+      // Photo removed from animation system
+    },
+  });
+
+  // Create animation lookup map for quick access during render
+  const animationLookup = useMemo(() => {
+    const lookup = new Map<string, { isExiting: boolean; staggerDelay: number; hasBeenSeen: boolean }>();
+    for (const item of animatedItems) {
+      lookup.set(item.key, {
+        isExiting: item.isExiting,
+        staggerDelay: getStaggerDelay(item.key),
+        hasBeenSeen: hasBeenSeen(item.key),
+      });
+    }
+    return lookup;
+  }, [animatedItems, getStaggerDelay, hasBeenSeen]);
   
   const lightbox = useLightbox(sortedPhotos);
   const permissions = useAlbumPermissions();
@@ -375,28 +404,49 @@ export function MosaicPhotoGrid({ albumId, photos, isLoading, error, refetch, on
                            const epochKey = epochKeys.get(photo.epochId);
                            const isSelected = selectedIds.has(photo.id);
 
+                           // Get animation state for this photo
+                           const animState = animationLookup.get(photo.id);
+                           const skipAnimation = isInitialLoad || !animState;
+
                            return (
-                               <MosaicTile 
+                               <AnimatedTile
                                    key={photo.id}
-                                   item={mosaicItem}
-                                   photo={photo}
-                                   onClick={() => handlePhotoClick(photo)}
-                                    renderThumbnail={({ photo, width, height, onClick }) => (
-                                        <div style={{ width: '100%', height: '100%' }}>
-                                            <JustifiedPhotoThumbnail
-                                                photo={photo}
-                                                epochReadKey={epochKey}
-                                                isSelected={isSelected}
-                                                selectionMode={isSelectionMode}
-                                                onSelectionChange={(selected) => handleSelectionChange(photo.id, selected)}
-                                                onClick={() => onClick?.()}
-                                                width={width}
-                                                height={height}
-                                                onDelete={(url) => handleDeletePhoto(photo, url)}
-                                            />
-                                        </div>
-                                    )}
-                               />
+                                   itemKey={photo.id}
+                                   skipAnimation={skipAnimation}
+                                   isExiting={animState?.isExiting ?? false}
+                                   onExitComplete={() => handleExitComplete(photo.id)}
+                                   staggerDelay={animState?.staggerDelay ?? 0}
+                                   hasBeenSeen={animState?.hasBeenSeen ?? false}
+                                   style={{
+                                       position: 'absolute',
+                                       top: mosaicItem.rect.top,
+                                       left: mosaicItem.rect.left,
+                                       width: mosaicItem.rect.width,
+                                       height: mosaicItem.rect.height,
+                                   }}
+                               >
+                                   <MosaicTile 
+                                       item={mosaicItem}
+                                       photo={photo}
+                                       onClick={() => handlePhotoClick(photo)}
+                                        renderThumbnail={({ photo, width, height, onClick }) => (
+                                            <div style={{ width: '100%', height: '100%' }}>
+                                                <JustifiedPhotoThumbnail
+                                                    photo={photo}
+                                                    epochReadKey={epochKey}
+                                                    isSelected={isSelected}
+                                                    selectionMode={isSelectionMode}
+                                                    onSelectionChange={(selected) => handleSelectionChange(photo.id, selected)}
+                                                    onClick={() => onClick?.()}
+                                                    width={width}
+                                                    height={height}
+                                                    onDelete={(url) => handleDeletePhoto(photo, url)}
+                                                />
+                                            </div>
+                                        )}
+                                        skipPositioning
+                                   />
+                               </AnimatedTile>
                            );
                         })}
                     </div>

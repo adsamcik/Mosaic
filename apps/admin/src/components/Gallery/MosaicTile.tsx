@@ -12,25 +12,39 @@ interface MosaicTileProps {
     height: number;
     onClick?: () => void;
   }) => React.ReactNode;
+  /**
+   * When true, skip absolute positioning (used when wrapped by AnimatedTile).
+   */
+  skipPositioning?: boolean;
 }
 
 export const MosaicTile = memo(function MosaicTile({
   item,
   photo,
   onClick,
-  renderThumbnail
+  renderThumbnail,
+  skipPositioning = false
 }: MosaicTileProps) {
+  
+  // Base style with optional positioning
+  const positionStyle = skipPositioning ? {} : {
+    position: 'absolute' as const,
+    top: item.rect.top,
+    left: item.rect.left,
+  };
+  
+  const sizeStyle = {
+    width: item.rect.width,
+    height: item.rect.height,
+  };
   
   if (item.type === 'story') {
     return (
       <div 
         className="mosaic-tile mosaic-story-tile"
         style={{
-          position: 'absolute',
-          top: item.rect.top,
-          left: item.rect.left,
-          width: item.rect.width,
-          height: item.rect.height,
+          ...positionStyle,
+          ...sizeStyle,
           display: 'flex',
           backgroundColor: 'var(--bg-secondary)',
           borderRadius: '8px',
@@ -85,11 +99,8 @@ export const MosaicTile = memo(function MosaicTile({
     <div 
       className={`mosaic-tile mosaic-${item.type}-tile`}
       style={{
-        position: 'absolute',
-        top: item.rect.top,
-        left: item.rect.left,
-        width: item.rect.width,
-        height: item.rect.height,
+        ...positionStyle,
+        ...sizeStyle,
       }}
     >
       {renderThumbnail({

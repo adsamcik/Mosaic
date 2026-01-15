@@ -107,11 +107,17 @@ test.describe('Error Handling @p1 @security', () => {
       // Reload to see the album
       await user.page.reload();
 
-      // Re-login
+      // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      await loginPage.waitForForm();
-      await loginPage.login(TEST_PASSWORD);
-      await loginPage.expectLoginSuccess();
+      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (needsLogin) {
+        // Re-login using loginOrRegister to handle LocalAuth mode (which requires username)
+        await loginPage.loginOrRegister(TEST_PASSWORD, user.username);
+        await loginPage.expectLoginSuccess();
+      } else {
+        await appShell.waitForLoad();
+      }
 
       // Should be able to see album
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });

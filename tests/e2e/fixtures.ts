@@ -320,11 +320,24 @@ export const test = base.extend<{
    * workers run in separate processes. This ensures each parallel worker gets
    * a unique pool user, preventing session conflicts.
    * 
-   * UPDATED: Now uses the test API to create users server-side, then only
-   * requires password entry to unlock the crypto vault. This avoids the
-   * Argon2 parameter mismatch between different browser types (chromium vs mobile-chrome).
+   * NOTE: Pool users are only supported on chromium project. Mobile-chrome has
+   * Argon2 key derivation differences that prevent decrypting keys created by
+   * chromium. Tests using poolUser will be skipped on mobile-chrome.
    */
   poolUser: async ({ browser }, use, workerInfo) => {
+    // Skip pool users on mobile-chrome - Argon2 WASM produces different key derivation
+    // results on mobile viewport, causing "Invalid username or password" errors.
+    // See investigation: Pool users are registered via chromium in global-setup,
+    // but mobile-chrome's Argon2 derives different keys, so decryption fails.
+    const projectName = workerInfo.project.name;
+    if (projectName === 'mobile-chrome') {
+      throw new Error(
+        `Pool users are not supported on ${projectName}. ` +
+        'Use testUser fixture instead, or skip this test on mobile-chrome. ' +
+        'Root cause: Argon2 key derivation differs between browser types.'
+      );
+    }
+    
     const user = getPoolUserByWorkerIndex(workerInfo.workerIndex);
     console.log(`[Fixture] Worker ${workerInfo.workerIndex} using pool user: ${user.username}`);
     
@@ -921,7 +934,7 @@ export class GalleryPage {
     // isUploading state is set, causing false negatives.
     await this.page.waitForTimeout(50);
     
-    // First, wait for upload to start (button text changes to "Uploading")
+    // First, wait for upload to start (button text changes to "Uploading" or shows percentage)
     // OR if upload is already complete (photo count increased)
     // Use expect().toPass() for robustness against DOM changes
     let pollCount = 0;
@@ -929,7 +942,8 @@ export class GalleryPage {
       pollCount++;
       const buttonText = await uploadButton.textContent();
       const currentCount = await this.photos.count();
-      const isUploading = buttonText?.includes('Uploading');
+      // Button shows "Uploading..." or a percentage like "33%", "66%" during upload
+      const isUploading = buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
       const hasNewPhoto = currentCount >= expectedCount;
       
       // Log every poll to help debug timing issues
@@ -941,13 +955,14 @@ export class GalleryPage {
     }).toPass({ timeout: 30000, intervals: [100, 200, 500, 1000] });
     console.log(`[GalleryPage] Upload started or photo appeared at T+${Date.now() - startTime}ms (after ${pollCount} polls)`);
     
-    // Now wait for upload to complete - button NOT showing "Uploading" AND photo count reached
+    // Now wait for upload to complete - button NOT showing "Uploading" or percentage AND photo count reached
     // Use expect().toPass() which is resilient to temporary DOM changes during sync
     let completePollCount = 0;
     await expect(async () => {
       completePollCount++;
       const buttonText = await uploadButton.textContent();
-      const isUploading = buttonText?.includes('Uploading');
+      // Button shows "Uploading..." or a percentage like "33%", "66%" during upload
+      const isUploading = buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
       const currentCount = await this.photos.count();
       
       // Log completion polls

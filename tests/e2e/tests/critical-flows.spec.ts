@@ -214,6 +214,9 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
 test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @crypto @slow', () => {
   // Triple the timeout for slow critical photo upload tests
   test.slow();
+  
+  // Note: mobile-chrome is excluded via testIgnore in playwright.config.ts
+  // because pool users have Argon2 key derivation differences.
 
   test('P0-3: upload photo encrypts locally and appears in gallery after sync', async ({
     poolUser,
@@ -517,6 +520,8 @@ test.describe('Critical Flow: Album Sharing @p0 @critical @sharing @multi-user @
 });
 
 test.describe('Critical Flow: Album CRUD @p0 @critical @album', () => {
+  // Note: mobile-chrome is excluded via testIgnore in playwright.config.ts
+
   test('P1-1a: create album via UI appears in list', async ({
     poolUser,
   }) => {
@@ -640,6 +645,7 @@ test.describe('Critical Flow: Error Handling @p0 @critical @security', () => {
   test('P1-7b: network failure shows error gracefully', async ({
     poolUser,
   }) => {
+    // Note: mobile-chrome is excluded via testIgnore in playwright.config.ts
     const { page } = poolUser;
 
     await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });

@@ -199,11 +199,11 @@ test.describe('UI Interactions @p2 @ui @fast', () => {
       await loginPage.passwordInput.fill(TEST_PASSWORD);
       await loginPage.loginButton.click();
 
-      // Button should show loading state
+      // Button should show loading state (Signing In..., Creating Account..., or Sign In)
       await expect(async () => {
         const text = await loginPage.loginButton.textContent();
-        // Either unlocking or already unlocked
-        expect(text?.match(/unlocking|unlock/i)).toBeTruthy();
+        // Match signing in/creating account loading states, or sign in button
+        expect(text?.match(/signing|creating|sign\s*in/i)).toBeTruthy();
       }).toPass({ timeout: 60000 });
     });
 

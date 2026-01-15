@@ -186,8 +186,11 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
     expect(linkCount).toBe(0);
 
     // Revoked link should appear in revoked section
+    // The revoked section uses <details> and is collapsed by default
     const revokedSection = page.getByTestId('revoked-links-section');
     if (await revokedSection.isVisible()) {
+      // Expand the revoked section by clicking the summary
+      await revokedSection.locator('summary').click();
       const revokedLinks = page.getByTestId('revoked-link-item');
       await expect(revokedLinks.first()).toBeVisible({ timeout: 5000 });
     }

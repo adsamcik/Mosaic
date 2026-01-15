@@ -8,6 +8,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
+import { useAnimatedItems } from '../../hooks/useAnimatedItems';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoDelete } from '../../hooks/usePhotoDelete';
@@ -18,6 +19,7 @@ import {
 } from '../../lib/justified-layout';
 import '../../styles/upload.css';
 import type { PhotoMeta } from '../../workers/types';
+import { AnimatedTile } from './AnimatedTile';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
 import { JustifiedPhotoThumbnail } from './JustifiedPhotoThumbnail';
 import { PhotoLightbox } from './PhotoLightbox';
@@ -159,6 +161,33 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
     ),
     [photos]
   );
+
+  // Animation system for photo tiles
+  const {
+    animatedItems,
+    handleExitComplete,
+    getStaggerDelay,
+    hasBeenSeen,
+    isInitialLoad,
+  } = useAnimatedItems(sortedPhotos, {
+    getKey: (photo) => photo.id,
+    onRemoveComplete: () => {
+      // Photo removed from animation system
+    },
+  });
+
+  // Create animation lookup map for quick access during render
+  const animationLookup = useMemo(() => {
+    const lookup = new Map<string, { isExiting: boolean; staggerDelay: number; hasBeenSeen: boolean }>();
+    for (const item of animatedItems) {
+      lookup.set(item.key, {
+        isExiting: item.isExiting,
+        staggerDelay: getStaggerDelay(item.key),
+        hasBeenSeen: hasBeenSeen(item.key),
+      });
+    }
+    return lookup;
+  }, [animatedItems, getStaggerDelay, hasBeenSeen]);
   
   const lightbox = useLightbox(sortedPhotos);
   const permissions = useAlbumPermissions();
@@ -421,23 +450,41 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
                 {item.row.photos.map(({ photo, width, height }) => {
                   const epochReadKey = epochKeys.get(photo.epochId);
                   const isSelected = selectedIds.has(photo.id);
+                  
+                  // Get animation state for this photo
+                  const animState = animationLookup.get(photo.id);
+                  const skipAnimation = isInitialLoad || !animState;
 
                   return (
-                    <JustifiedPhotoThumbnail
+                    <AnimatedTile
                       key={photo.id}
-                      photo={photo}
-                      width={width}
-                      height={height}
-                      epochReadKey={epochReadKey}
-                      isSelected={isSelected}
-                      selectionMode={isSelectionMode}
-                      showDelete={permissions.canDelete && !photo.isPending}
-                      onClick={() => handlePhotoClick(photo)}
-                      onSelectionChange={(selected: boolean) =>
-                        handleSelectionChange(photo.id, selected)
-                      }
-                      onDelete={(thumbnailUrl) => handleDeletePhoto(photo, thumbnailUrl)}
-                    />
+                      itemKey={photo.id}
+                      skipAnimation={skipAnimation}
+                      isExiting={animState?.isExiting ?? false}
+                      onExitComplete={() => handleExitComplete(photo.id)}
+                      staggerDelay={animState?.staggerDelay ?? 0}
+                      hasBeenSeen={animState?.hasBeenSeen ?? false}
+                      style={{
+                        width,
+                        height,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <JustifiedPhotoThumbnail
+                        photo={photo}
+                        width={width}
+                        height={height}
+                        epochReadKey={epochReadKey}
+                        isSelected={isSelected}
+                        selectionMode={isSelectionMode}
+                        showDelete={permissions.canDelete && !photo.isPending}
+                        onClick={() => handlePhotoClick(photo)}
+                        onSelectionChange={(selected: boolean) =>
+                          handleSelectionChange(photo.id, selected)
+                        }
+                        onDelete={(thumbnailUrl) => handleDeletePhoto(photo, thumbnailUrl)}
+                      />
+                    </AnimatedTile>
                   );
                 })}
               </div>

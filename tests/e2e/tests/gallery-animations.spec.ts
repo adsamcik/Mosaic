@@ -154,12 +154,12 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
       const lightbox = user.page.locator('[data-testid="lightbox"]');
       await expect(lightbox).toBeVisible({ timeout: 10000 });
 
-      // Click delete button
-      const deleteButton = user.page.getByRole('button', { name: /delete|smazat/i });
+      // Click delete button in lightbox
+      const deleteButton = user.page.getByTestId('lightbox-delete');
       await deleteButton.click();
 
-      // Confirm deletion
-      const confirmButton = user.page.getByRole('button', { name: /confirm|potvrdit|delete/i });
+      // Confirm deletion in dialog
+      const confirmButton = user.page.getByTestId('delete-confirm-button');
       await confirmButton.click();
 
       // Wait for photo to be removed from gallery

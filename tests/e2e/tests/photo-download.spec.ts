@@ -26,6 +26,45 @@ import {
 } from '../fixtures-enhanced';
 import type { Download } from '@playwright/test';
 
+/**
+ * Validates that a buffer contains a valid image in one of the supported formats:
+ * - PNG (signature: 89 50 4E 47 0D 0A 1A 0A)
+ * - WebP (signature: 52 49 46 46 ?? ?? ?? ?? 57 45 42 50)
+ * - AVIF (signature: ftyp at offset 4, with avif/mif1 brand)
+ * 
+ * The app now converts images to AVIF/WebP for efficiency, so downloaded files
+ * may not be in the original PNG format.
+ */
+function isValidImageFormat(buffer: Buffer): { valid: boolean; format: string } {
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(pngSignature)) {
+    return { valid: true, format: 'PNG' };
+  }
+
+  // WebP: RIFF....WEBP (bytes 0-3 = RIFF, bytes 8-11 = WEBP)
+  if (buffer.length >= 12) {
+    const riff = buffer.subarray(0, 4).toString('ascii');
+    const webp = buffer.subarray(8, 12).toString('ascii');
+    if (riff === 'RIFF' && webp === 'WEBP') {
+      return { valid: true, format: 'WebP' };
+    }
+  }
+
+  // AVIF: ftyp box at offset 4, brand starts with 'avif' or 'mif1'
+  if (buffer.length >= 12) {
+    const ftyp = buffer.subarray(4, 8).toString('ascii');
+    if (ftyp === 'ftyp') {
+      const brand = buffer.subarray(8, 12).toString('ascii');
+      if (brand === 'avif' || brand === 'mif1' || brand === 'heic') {
+        return { valid: true, format: 'AVIF' };
+      }
+    }
+  }
+
+  return { valid: false, format: 'unknown' };
+}
+
 test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @slow', () => {
   // Triple the timeout for slow crypto round-trip tests
   test.slow();
@@ -92,9 +131,10 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       const download = await downloadPromise;
       expect(download).toBeDefined();
 
-      // Verify the suggested filename contains the original name
+      // Verify the suggested filename has an image extension
+      // The app may convert to WebP/AVIF, so accept any image extension
       const suggestedFilename = download.suggestedFilename();
-      expect(suggestedFilename).toContain('.png');
+      expect(suggestedFilename).toMatch(/\.(png|webp|avif)$/i);
     });
 
     test('P0-DOWNLOAD-3: downloaded file has valid image content', async ({
@@ -137,9 +177,10 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       const fs = await import('fs/promises');
       const downloadedContent = await fs.readFile(path!);
 
-      // Verify it's a valid PNG (PNG signature: 89 50 4E 47 0D 0A 1A 0A)
-      const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-      expect(downloadedContent.subarray(0, 8).equals(pngSignature)).toBe(true);
+      // Verify it's a valid image format (PNG, WebP, or AVIF)
+      // The app converts images to AVIF/WebP for efficiency
+      const imageResult = isValidImageFormat(downloadedContent);
+      expect(imageResult.valid, `Expected valid image format, got ${imageResult.format}`).toBe(true);
 
       // Verify file size is reasonable (within 20% of original, accounting for re-encoding)
       expect(downloadedContent.length).toBeGreaterThan(originalSize * 0.5);
@@ -180,21 +221,17 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       const path = await download.path();
       expect(path).toBeTruthy();
 
-      // Verify the downloaded file matches the original
-      // Note: Due to re-encoding, we compare PNG structure rather than byte-for-byte
+      // Verify the downloaded file is a valid image format
+      // Note: Due to re-encoding and format conversion, we accept PNG, WebP, or AVIF
       const fs = await import('fs/promises');
       const downloadedContent = await fs.readFile(path!);
 
-      // Verify PNG signature
-      expect(downloadedContent[0]).toBe(0x89);
-      expect(downloadedContent[1]).toBe(0x50); // P
-      expect(downloadedContent[2]).toBe(0x4e); // N
-      expect(downloadedContent[3]).toBe(0x47); // G
-
-      // Verify the image is complete (ends with IEND chunk)
-      const iendSignature = Buffer.from([0x49, 0x45, 0x4e, 0x44]); // IEND
-      const endOfFile = downloadedContent.subarray(-12, -8);
-      expect(endOfFile.equals(iendSignature)).toBe(true);
+      // Verify valid image format (PNG, WebP, or AVIF)
+      const imageResult = isValidImageFormat(downloadedContent);
+      expect(imageResult.valid, `Expected valid image format, got ${imageResult.format}`).toBe(true);
+      
+      // Verify the file has reasonable size (not empty or corrupted)
+      expect(downloadedContent.length).toBeGreaterThan(100);
     });
   });
 

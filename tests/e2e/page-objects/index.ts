@@ -429,7 +429,8 @@ export class GalleryPage {
       const btn = this.page.getByTestId('upload-button');
       const buttonText = await btn.textContent().catch(() => '');
       const currentCount = await this.getPhotos().count();
-      const isUploading = buttonText?.includes('Uploading') || false;
+      // Button shows "Uploading..." or a percentage like "33%", "66%" during upload
+      const isUploading = buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
       const hasNewPhoto = currentCount >= expectedCount;
       
       console.log(`[GalleryPage PO] Quick check at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}, uploading=${isUploading}, hasNew=${hasNewPhoto}`);
@@ -443,7 +444,8 @@ export class GalleryPage {
       await this.page.waitForTimeout(500);
       const buttonText2 = await btn.textContent().catch(() => '');
       const currentCount2 = await this.getPhotos().count();
-      const isUploading2 = buttonText2?.includes('Uploading') || false;
+      // Button shows "Uploading..." or a percentage like "33%", "66%" during upload
+      const isUploading2 = buttonText2?.includes('Uploading') || /\d+%/.test(buttonText2 || '');
       const hasNewPhoto2 = currentCount2 >= expectedCount;
       
       if (isUploading2 || hasNewPhoto2) {
@@ -458,7 +460,7 @@ export class GalleryPage {
       }
     }
 
-    // Wait for upload to fully start (button text changes to "Uploading")
+    // Wait for upload to fully start (button text changes to "Uploading" or shows percentage)
     // OR if upload is already complete (photo count increased)
     let pollCount = 0;
     await expect(async () => {
@@ -466,7 +468,8 @@ export class GalleryPage {
       const btn = this.page.getByTestId('upload-button');
       const buttonText = await btn.textContent().catch(() => '');
       const currentCount = await this.getPhotos().count();
-      const isUploading = buttonText?.includes('Uploading') || false;
+      // Button shows "Uploading..." or a percentage like "33%", "66%" during upload
+      const isUploading = buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
       const hasNewPhoto = currentCount >= expectedCount;
       
       if (pollCount <= 5 || pollCount % 10 === 0) {
@@ -484,7 +487,8 @@ export class GalleryPage {
       const btn = this.page.getByTestId('upload-button');
       const buttonText = await btn.textContent().catch(() => '');
       const currentCount = await this.getPhotos().count();
-      const isUploading = buttonText?.includes('Uploading') || false;
+      // Button shows "Uploading..." or a percentage like "33%", "66%" during upload
+      const isUploading = buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
       
       if (completePollCount <= 3 || completePollCount % 5 === 0) {
         console.log(`[GalleryPage PO] Complete poll #${completePollCount} at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}`);
@@ -588,8 +592,18 @@ export class GalleryPage {
       await expect(membersPanel).toBeHidden({ timeout: 5000 });
     }
     
-    await this.openAlbumSettings();
-    await this.membersButton.click();
+    // The menu can be detached during React re-renders, so use a retry pattern
+    await expect(async () => {
+      // Ensure the settings menu is open (will skip if already open)
+      const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
+      if (!isMenuVisible) {
+        await this.albumSettingsButton.click();
+        await expect(this.albumSettingsMenu).toBeVisible({ timeout: 2000 });
+      }
+      // Wait for members button to be visible and click it
+      await expect(this.membersButton).toBeVisible({ timeout: 2000 });
+      await this.membersButton.click();
+    }).toPass({ timeout: 15000, intervals: [100, 500, 1000] });
   }
 
   async setViewMode(mode: 'justified' | 'grid' | 'map'): Promise<void> {
@@ -622,18 +636,66 @@ export class GalleryPage {
   }
 
   async openAlbumSettings(): Promise<void> {
-    // Only open if not already open
-    const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
-    if (!isMenuVisible) {
-      await this.albumSettingsButton.click();
-      await expect(this.albumSettingsMenu).toBeVisible({ timeout: 5000 });
-    }
+    // Use a retry pattern since menu can be detached during React re-renders
+    await expect(async () => {
+      const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
+      if (!isMenuVisible) {
+        await this.albumSettingsButton.click();
+        await expect(this.albumSettingsMenu).toBeVisible({ timeout: 2000 });
+      }
+    }).toPass({ timeout: 15000, intervals: [100, 500, 1000] });
+  }
+
+  async openRenameDialog(): Promise<void> {
+    // The menu can be detached during React re-renders, so use a retry pattern
+    // Also, permissions may take time to load, so the button may not be visible initially
+    await expect(async () => {
+      // Close menu if open but button isn't visible (permissions not loaded yet)
+      const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
+      const isRenameButtonVisible = isMenuVisible && await this.renameAlbumButton.isVisible().catch(() => false);
+      
+      if (isMenuVisible && !isRenameButtonVisible) {
+        // Close menu by pressing Escape, then retry
+        await this.page.keyboard.press('Escape');
+        await expect(this.albumSettingsMenu).toBeHidden({ timeout: 1000 }).catch(() => {});
+      }
+      
+      // Ensure the settings menu is open
+      if (!await this.albumSettingsMenu.isVisible().catch(() => false)) {
+        await this.albumSettingsButton.click();
+        await expect(this.albumSettingsMenu).toBeVisible({ timeout: 2000 });
+      }
+      
+      // Wait for rename button to be visible and click it
+      await expect(this.renameAlbumButton).toBeVisible({ timeout: 2000 });
+      await this.renameAlbumButton.click();
+    }).toPass({ timeout: 15000, intervals: [100, 500, 1000] });
   }
 
   async clickDeleteAlbum(): Promise<void> {
-    // Delete button is inside the album settings dropdown, need to open it first
-    await this.openAlbumSettings();
-    await this.deleteAlbumButton.click();
+    // The menu can be detached during React re-renders, so use a retry pattern
+    // Also, permissions may take time to load, so the button may not be visible initially
+    await expect(async () => {
+      // Close menu if open but button isn't visible (permissions not loaded yet)
+      const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
+      const isDeleteButtonVisible = isMenuVisible && await this.deleteAlbumButton.isVisible().catch(() => false);
+      
+      if (isMenuVisible && !isDeleteButtonVisible) {
+        // Close menu by pressing Escape, then retry
+        await this.page.keyboard.press('Escape');
+        await expect(this.albumSettingsMenu).toBeHidden({ timeout: 1000 }).catch(() => {});
+      }
+      
+      // Ensure the settings menu is open
+      if (!await this.albumSettingsMenu.isVisible().catch(() => false)) {
+        await this.albumSettingsButton.click();
+        await expect(this.albumSettingsMenu).toBeVisible({ timeout: 2000 });
+      }
+      
+      // Wait for delete button to be visible and click it
+      await expect(this.deleteAlbumButton).toBeVisible({ timeout: 2000 });
+      await this.deleteAlbumButton.click();
+    }).toPass({ timeout: 15000, intervals: [100, 500, 1000] });
   }
 
   async expectDeleteButtonVisible(): Promise<void> {
@@ -1234,6 +1296,10 @@ export class ShareLinksPanel {
     const links = await this.getLinkItems();
     if (links[index]) {
       await links[index].getByTestId('revoke-link-button').click();
+      // Wait for and click the confirmation button in the revoke dialog
+      await this.page.getByTestId('confirm-revoke-button').click();
+      // Wait for the link to be removed from the list
+      await this.page.waitForTimeout(500);
     }
   }
 
@@ -1318,6 +1384,9 @@ export class CreateShareLinkDialog {
   async done(): Promise<void> {
     await this.doneButton.click();
     await this.waitForClose();
+    // Wait for the share link list to refresh - the list is refetched asynchronously after dialog closes
+    // We need at least one share-link-item to appear before returning
+    await expect(this.page.getByTestId('share-link-item').first()).toBeVisible({ timeout: 10000 });
   }
 
   async copyLink(): Promise<string> {

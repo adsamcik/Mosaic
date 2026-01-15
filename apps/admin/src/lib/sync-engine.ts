@@ -58,6 +58,12 @@ interface SyncEventDetail {
   error?: Error;
 }
 
+/** Queued sync request with deferred promise */
+interface QueuedSyncRequest {
+  readKey: Uint8Array | undefined;
+  resolvers: Array<{ resolve: () => void; reject: (err: Error) => void }>;
+}
+
 /**
  * Sync Engine
  * Handles synchronization between local database and server
@@ -67,7 +73,7 @@ class SyncEngine extends EventTarget {
   private syncAbortController: AbortController | null = null;
   
   /** Queued sync requests - album IDs that need sync after current sync completes */
-  private pendingSyncQueue = new Map<string, Uint8Array | undefined>();
+  private pendingSyncQueue = new Map<string, QueuedSyncRequest>();
 
   /** Whether sync is currently in progress */
   get isSyncing(): boolean {
@@ -76,7 +82,8 @@ class SyncEngine extends EventTarget {
 
   /**
    * Sync an album from the server.
-   * If sync is already in progress, queues the request for after completion.
+   * If sync is already in progress, queues the request and returns a promise
+   * that resolves when the queued sync completes.
    * @param albumId - Album ID to sync
    * @param readKey - Epoch read key for decryption (optional if using cached keys)
    */
@@ -85,10 +92,24 @@ class SyncEngine extends EventTarget {
     
     if (this.syncing) {
       // Queue this sync request - it will run after current sync completes
-      // If same album is already queued, this updates the readKey
+      // Return a promise that resolves when the queued sync actually completes
       log.debug(`Sync in progress, queueing sync for album ${albumId}`);
-      this.pendingSyncQueue.set(albumId, readKey);
-      return;
+      
+      return new Promise<void>((resolve, reject) => {
+        const existing = this.pendingSyncQueue.get(albumId);
+        if (existing) {
+          // Album already queued - add this resolver to the list
+          // Update readKey if provided (latest key takes precedence)
+          if (readKey) existing.readKey = readKey;
+          existing.resolvers.push({ resolve, reject });
+        } else {
+          // New queue entry
+          this.pendingSyncQueue.set(albumId, {
+            readKey,
+            resolvers: [{ resolve, reject }],
+          });
+        }
+      });
     }
 
     this.syncing = true;
@@ -207,6 +228,7 @@ class SyncEngine extends EventTarget {
   /**
    * Process any queued sync requests after current sync completes.
    * This ensures uploads that completed during a sync still get synced.
+   * Resolves all pending promises for each queued album.
    */
   private async processQueuedSyncs(): Promise<void> {
     if (this.pendingSyncQueue.size === 0) {
@@ -220,11 +242,20 @@ class SyncEngine extends EventTarget {
     log.info(`Processing ${queuedSyncs.length} queued sync request(s)`);
     
     // Process each queued album (they will queue themselves if another is in progress)
-    for (const [queuedAlbumId, queuedReadKey] of queuedSyncs) {
+    for (const [queuedAlbumId, request] of queuedSyncs) {
       try {
-        await this.sync(queuedAlbumId, queuedReadKey);
+        await this.sync(queuedAlbumId, request.readKey);
+        // Resolve all waiting promises for this album
+        for (const { resolve } of request.resolvers) {
+          resolve();
+        }
       } catch (err) {
         log.error(`Queued sync failed for album ${queuedAlbumId}`, err);
+        // Reject all waiting promises for this album
+        const error = err instanceof Error ? err : new Error(String(err));
+        for (const { reject } of request.resolvers) {
+          reject(error);
+        }
       }
     }
   }

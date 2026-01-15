@@ -69,9 +69,8 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
-      // Open rename dialog (must open settings menu first)
-      await gallery.openAlbumSettings();
-      await gallery.renameAlbumButton.click();
+      // Open rename dialog using retry pattern to handle menu detachment
+      await gallery.openRenameDialog();
 
       const renameDialog = new RenameAlbumDialog(user.page);
       await renameDialog.waitForOpen();
@@ -103,9 +102,8 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
-      // Open rename dialog and cancel (must open settings menu first)
-      await gallery.openAlbumSettings();
-      await gallery.renameAlbumButton.click();
+      // Open rename dialog using retry pattern to handle menu detachment
+      await gallery.openRenameDialog();
 
       const renameDialog = new RenameAlbumDialog(user.page);
       await renameDialog.waitForOpen();
@@ -144,8 +142,7 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
-      await gallery.openAlbumSettings();
-      await gallery.renameAlbumButton.click();
+      await gallery.openRenameDialog();
 
       const renameDialog = new RenameAlbumDialog(user.page);
       await renameDialog.waitForOpen();
@@ -177,8 +174,7 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
-      await gallery.openAlbumSettings();
-      await gallery.renameAlbumButton.click();
+      await gallery.openRenameDialog();
 
       const renameDialog = new RenameAlbumDialog(user.page);
       await renameDialog.waitForOpen();
@@ -218,9 +214,8 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
-      // Rename (must open settings menu first)
-      await gallery.openAlbumSettings();
-      await gallery.renameAlbumButton.click();
+      // Rename using retry pattern to handle menu detachment
+      await gallery.openRenameDialog();
 
       const renameDialog = new RenameAlbumDialog(user.page);
       await renameDialog.waitForOpen();
@@ -261,9 +256,8 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
-      // Open settings menu first
-      await gallery.openAlbumSettings();
-      await gallery.renameAlbumButton.click();
+      // Open rename dialog using retry pattern
+      await gallery.openRenameDialog();
 
       const renameDialog = new RenameAlbumDialog(user.page);
       await renameDialog.waitForOpen();
@@ -317,8 +311,7 @@ test.describe('Album Rename @p1 @album', () => {
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
 
-      await gallery.openAlbumSettings();
-      await gallery.renameAlbumButton.click();
+      await gallery.openRenameDialog();
 
       const renameDialog = new RenameAlbumDialog(user.page);
       await renameDialog.waitForOpen();

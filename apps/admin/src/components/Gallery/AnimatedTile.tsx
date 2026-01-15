@@ -108,6 +108,7 @@ export const AnimatedTile = memo(function AnimatedTile({
   const [isSettled, setIsSettled] = useState(phase === 'entered');
   const ref = useRef<HTMLDivElement>(null);
   const entryTimeRef = useRef(appearedAt ?? Date.now());
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Handle enter animation
   useEffect(() => {
@@ -126,13 +127,17 @@ export const AnimatedTile = memo(function AnimatedTile({
       });
 
       // After animation completes + settle delay, remove will-change
-      const settleTimer = setTimeout(() => {
-        setIsSettled(true);
-      }, staggerDelay + ENTER_DURATION + SETTLE_DELAY);
+      // Use a ref to prevent cleanup from cancelling the timer when phase changes
+      if (!settleTimerRef.current) {
+        settleTimerRef.current = setTimeout(() => {
+          setIsSettled(true);
+          settleTimerRef.current = null;
+        }, staggerDelay + ENTER_DURATION + SETTLE_DELAY);
+      }
 
       return () => {
         cancelAnimationFrame(frameDelay);
-        clearTimeout(settleTimer);
+        // Don't cancel settle timer here - let it complete
       };
     } else if (!isNew && phase === 'entering') {
       // Item is old, skip to entered
@@ -140,6 +145,16 @@ export const AnimatedTile = memo(function AnimatedTile({
       setIsSettled(true);
     }
   }, [itemKey, staggerDelay, skipAnimation, hasBeenSeen, phase]);
+
+  // Cleanup settle timer on unmount only
+  useEffect(() => {
+    return () => {
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Handle exit animation
   useEffect(() => {

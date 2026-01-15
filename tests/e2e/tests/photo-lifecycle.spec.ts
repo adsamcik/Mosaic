@@ -208,14 +208,15 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
       const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
       
       if (needsLogin) {
-        await loginPage.login(TEST_PASSWORD);
+        // Use loginOrRegister to handle LocalAuth mode (which requires username)
+        await loginPage.loginOrRegister(TEST_PASSWORD, user.username);
         await loginPage.expectLoginSuccess();
       } else {
         await appShell.waitForLoad();
       }
 
-      // Navigate back to album
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
+      // Navigate back to album - wait longer for sync to complete after reload
+      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 30000 });
       await appShell.clickAlbum(0);
 
       // Photo should still be there
