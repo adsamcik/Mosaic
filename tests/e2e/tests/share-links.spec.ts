@@ -46,14 +46,8 @@ test.describe('Share Links Workflow @p1 @sharing', () => {
   });
 
   test('P1-SHARE-1: can open share links panel from gallery header', async ({ loggedInPage: page }) => {
-    // Open the album settings menu to access share links
-    await gallery.openAlbumSettings();
-    
-    // The share links button should be visible for album owners in the menu
-    await expect(gallery.shareButton).toBeVisible({ timeout: 5000 });
-
-    // Click to open the panel
-    await gallery.shareButton.click();
+    // Open share links panel (uses retry pattern for menu stability)
+    await gallery.openShareLinks();
     await shareLinksPanel.waitForOpen();
 
     // Verify panel is visible with empty state
