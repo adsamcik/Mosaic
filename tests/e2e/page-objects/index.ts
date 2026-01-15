@@ -189,6 +189,57 @@ export class LoginPage {
     await expect(this.createAccountButton).toBeVisible({ timeout: 5000 });
     await this.createAccountButton.click();
   }
+
+  /**
+   * Smart login/register that handles both LocalAuth and ProxyAuth modes.
+   * - In LocalAuth mode: attempts registration first, falls back to login if user exists
+   * - In ProxyAuth mode: just enters the password
+   * This is the recommended method for tests that need to complete login.
+   */
+  async loginOrRegister(password: string, username: string): Promise<void> {
+    console.log('[LoginPage] loginOrRegister() called');
+    
+    // Check if LocalAuth mode (username field visible)
+    const isLocalAuth = await this.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+    
+    if (isLocalAuth) {
+      console.log('[LoginPage] LocalAuth mode detected, attempting registration');
+      await this.register(username, password);
+      
+      // Wait for either success (app-shell) or error (alert)
+      const appShell = this.page.getByTestId('app-shell');
+      const errorAlert = this.errorMessage;
+      
+      // Race: wait for either app-shell or error to appear
+      const result = await Promise.race([
+        appShell.waitFor({ state: 'visible', timeout: 15000 }).then(() => 'success'),
+        errorAlert.waitFor({ state: 'visible', timeout: 15000 }).then(() => 'error'),
+      ]).catch(() => 'timeout');
+      
+      console.log(`[LoginPage] Registration result: ${result}`);
+      
+      if (result === 'error') {
+        const errorText = await this.errorMessage.textContent();
+        console.log(`[LoginPage] Error text: ${errorText}`);
+        if (errorText?.toLowerCase().includes('already taken') || errorText?.toLowerCase().includes('already exists')) {
+          console.log('[LoginPage] User already exists, switching to login');
+          await this.switchToLoginMode();
+          await this.usernameInput.clear();
+          await this.usernameInput.fill(username);
+          await this.passwordInput.fill(password);
+          await expect(this.loginButton).toBeVisible({ timeout: 10000 });
+          await this.loginButton.click();
+        }
+      }
+      // If 'success', registration worked, nothing more to do
+      // If 'timeout', let the caller handle it
+    } else {
+      console.log('[LoginPage] ProxyAuth mode detected, logging in');
+      await this.passwordInput.fill(password);
+      await expect(this.loginButton).toBeVisible({ timeout: 10000 });
+      await this.loginButton.click();
+    }
+  }
 }
 
 /**
@@ -1032,6 +1083,7 @@ export class SettingsPage {
   readonly themeSelect: Locator;
   readonly autoSyncToggle: Locator;
   readonly keyCacheDurationSelect: Locator;
+  readonly idleTimeoutSelect: Locator;
   readonly saveButton: Locator;
   readonly closeButton: Locator;
 
@@ -1041,6 +1093,7 @@ export class SettingsPage {
     this.themeSelect = page.getByLabel(/theme/i);
     this.autoSyncToggle = page.getByLabel(/auto.*sync/i);
     this.keyCacheDurationSelect = page.getByLabel(/remember|cache|session/i);
+    this.idleTimeoutSelect = page.getByTestId('idle-timeout-select');
     this.saveButton = page.getByRole('button', { name: /save/i });
     this.closeButton = page.getByRole('button', { name: /close|back/i });
   }
@@ -1062,6 +1115,10 @@ export class SettingsPage {
 
   async setKeyCacheDuration(value: string): Promise<void> {
     await this.keyCacheDurationSelect.selectOption(value);
+  }
+
+  async setIdleTimeout(minutes: '15' | '30' | '60'): Promise<void> {
+    await this.idleTimeoutSelect.selectOption(minutes);
   }
 
   async save(): Promise<void> {

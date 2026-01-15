@@ -179,6 +179,9 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
   });
 
   test.describe('Photo Persistence', () => {
+    // Mark as slow - page reload and sync can take extra time
+    test.slow();
+    
     test('P1-PHOTO-7: uploaded photos persist after page reload', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('persister');
 
@@ -186,11 +189,8 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
       await loginUser(user, TEST_PASSWORD);
 
       // Create album through browser UI (generates real epoch keys)
+      // Note: createAlbumViaUI navigates INTO the album after creation
       await createAlbumViaUI(user.page, 'Persistence Test Album');
-
-      const appShell = new AppShell(user.page);
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
-      await appShell.clickAlbum(0);
 
       const gallery = new GalleryPage(user.page);
       await gallery.waitForLoad();
@@ -199,29 +199,43 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
       const testImage = generateTestImage('tiny');
       await gallery.uploadPhoto(testImage, testContext.generatePhotoName(1));
       await gallery.expectPhotoCount(1);
+      
+      // Wait for upload to be fully synced before reloading
+      // The sync engine needs time to finalize the upload
+      await user.page.waitForTimeout(2000);
 
       // Reload page
       await user.page.reload();
 
       // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
+      const needsLogin = await loginPage.form.isVisible({ timeout: 10000 }).catch(() => false);
       
       if (needsLogin) {
         // Use loginOrRegister to handle LocalAuth mode (which requires username)
-        await loginPage.loginOrRegister(TEST_PASSWORD, user.username);
+        // Note: AuthenticatedUser uses 'email' as the username (it's also the unique identifier)
+        await loginPage.loginOrRegister(TEST_PASSWORD, user.email);
         await loginPage.expectLoginSuccess();
-      } else {
-        await appShell.waitForLoad();
+      }
+      
+      const appShell = new AppShell(user.page);
+      await appShell.waitForLoad();
+
+      // After reload, the app may:
+      // 1. Restore directly into the album (URL persists) -> gallery view visible
+      // 2. Go to album list -> we need to click the album
+      // Check which state we're in
+      const isInGallery = await gallery.gallery.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (!isInGallery) {
+        // We're at the album list - navigate into the album
+        await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 30000 });
+        await appShell.clickAlbum(0);
+        await gallery.waitForLoad();
       }
 
-      // Navigate back to album - wait longer for sync to complete after reload
-      await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 30000 });
-      await appShell.clickAlbum(0);
-
       // Photo should still be there
-      await gallery.waitForLoad();
-      await gallery.expectPhotoCount(1);
+      await gallery.expectPhotoCount(1, 30000);
     });
   });
 });
