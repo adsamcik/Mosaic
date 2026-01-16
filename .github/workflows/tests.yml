@@ -78,17 +78,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      # Build and start services in Docker with port forwarding
+      # Frontend: localhost:8080, Backend: localhost:5000
       - name: Build and start services
         run: |
-          docker compose -f docker-compose.test.yml build
+          docker compose -f docker-compose.test.yml build postgres backend frontend
           docker compose -f docker-compose.test.yml up -d postgres backend frontend
       
-      - name: Wait for services
+      - name: Wait for services to be healthy
         run: |
+          echo "Waiting for services to be healthy..."
           timeout 120 bash -c 'until docker compose -f docker-compose.test.yml ps | grep -q "healthy"; do sleep 2; done'
+          echo "Services are healthy!"
+          
+          # Verify services are accessible on localhost
+          echo "Verifying frontend on localhost:8080..."
+          curl -sf http://localhost:8080/health || (echo "Frontend not accessible" && exit 1)
+          echo "Verifying backend on localhost:5000..."
+          curl -sf http://localhost:5000/health || (echo "Backend not accessible" && exit 1)
+          echo "All services verified!"
       
+      # Setup Node.js for Playwright
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: tests/e2e/package-lock.json
+      
+      # Install Playwright and dependencies directly on runner
+      - name: Install Playwright dependencies
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      
+      # Run tests on the runner (accessing localhost - secure context!)
       - name: Run E2E tests
-        run: docker compose -f docker-compose.test.yml run --rm e2e-tests
+        working-directory: tests/e2e
+        env:
+          BASE_URL: http://localhost:8080
+          API_URL: http://localhost:5000
+          CI: "true"
+        run: npx playwright test
       
       - name: Upload test results
         uses: actions/upload-artifact@v4

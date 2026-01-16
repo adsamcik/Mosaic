@@ -36,6 +36,8 @@ services:
       Auth__TrustedProxies__1: "::/0"       # Trust all IPv6 for testing
       Quota__DefaultMaxBytes: "10737418240"
       RUN_MIGRATIONS: "true"                # Run database migrations on startup
+    ports:
+      - "5000:8080"  # Expose for E2E tests running on host (localhost is secure context)
     volumes:
       - test_blobs:/app/data/blobs
     networks:
@@ -86,18 +88,16 @@ services:
     profiles:
       - api-tests
 
-  # E2E Tests with Playwright
-  # Uses socat proxies to make frontend/backend accessible via localhost,
-  # which browsers treat as a secure context, enabling crypto.subtle.
+  # E2E Tests with Playwright (for local Docker-based testing)
+  # In CI, tests run directly on the runner for secure context (localhost)
+  # For local use: docker compose -f docker-compose.test.yml --profile e2e-tests run --rm e2e-tests
   e2e-tests:
     build:
       context: .
       dockerfile: tests/e2e/Dockerfile
     container_name: mosaic-test-e2e
     environment:
-      # The docker-entrypoint.sh starts socat proxies:
-      # - localhost:8080 -> frontend:8080 (for browser secure context)
-      # - localhost:5000 -> backend:8080 (for API calls)
+      # Uses socat proxies to make services accessible via localhost
       BASE_URL: http://localhost:8080
       API_URL: http://localhost:5000
       FRONTEND_HOST: frontend
