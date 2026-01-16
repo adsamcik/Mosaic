@@ -87,29 +87,24 @@ services:
       - api-tests
 
   # E2E Tests with Playwright
+  # Uses host network mode so Chrome can access localhost:8080 (frontend)
+  # which browsers treat as a secure context, enabling crypto.subtle.
   e2e-tests:
     build:
       context: .
       dockerfile: tests/e2e/Dockerfile
     container_name: mosaic-test-e2e
+    network_mode: host
     environment:
-      # Use localhost for BASE_URL - browsers treat it as a secure context,
-      # enabling crypto.subtle without Chrome flag workarounds.
-      # The docker-entrypoint.sh starts a socat proxy: localhost:8080 -> frontend:8080
+      # localhost:8080 is the frontend (exposed via ports: 8080:8080)
+      # localhost is a secure context, so crypto.subtle works without flags
       BASE_URL: http://localhost:8080
-      FRONTEND_HOST: frontend
-      API_URL: http://backend:8080
       CI: "true"
     volumes:
       - ./tests/e2e/results:/app/test-results
       - ./tests/e2e/playwright-report:/app/playwright-report
-    networks:
-      - mosaic-test
-    depends_on:
-      frontend:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
+    # Note: depends_on doesn't work with network_mode: host
+    # The workflow waits for services to be healthy before running e2e-tests
     profiles:
       - e2e-tests
 
