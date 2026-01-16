@@ -6,7 +6,8 @@ FROM mcr.microsoft.com/playwright:v1.49.0-noble
 WORKDIR /app
 
 # Install socat for localhost proxy (enables crypto.subtle in secure context)
-RUN apt-get update && apt-get install -y socat && rm -rf /var/lib/apt/lists/*
+# Also install curl for health check in entrypoint
+RUN apt-get update && apt-get install -y socat curl && rm -rf /var/lib/apt/lists/*
 
 # Copy test files
 COPY tests/e2e/package*.json ./
