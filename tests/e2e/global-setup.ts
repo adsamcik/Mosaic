@@ -149,6 +149,58 @@ async function verifyCOOPCOEPHeaders(): Promise<void> {
 }
 
 /**
+ * Verify that the browser environment supports required crypto APIs.
+ * Uses Playwright to launch a browser and check isSecureContext and crypto.subtle.
+ */
+async function verifyBrowserCryptoSupport(): Promise<void> {
+  const FRONTEND_URL = process.env.BASE_URL || 'http://localhost:5173';
+  console.log(`[Global Setup] Verifying browser crypto support at ${FRONTEND_URL}...`);
+
+  const { chromium } = await import('@playwright/test');
+  
+  const browser = await chromium.launch({
+    args: ['--enable-features=SharedArrayBuffer'],
+  });
+  
+  try {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    
+    const diagnostics = await page.evaluate(() => ({
+      isSecureContext: window.isSecureContext,
+      hasCrypto: typeof crypto !== 'undefined',
+      hasCryptoSubtle: typeof crypto !== 'undefined' && typeof crypto.subtle !== 'undefined',
+      location: window.location.href,
+      protocol: window.location.protocol,
+    }));
+    
+    console.log(`[Global Setup] Browser diagnostics:
+  - URL: ${diagnostics.location}
+  - Protocol: ${diagnostics.protocol}
+  - isSecureContext: ${diagnostics.isSecureContext}
+  - crypto available: ${diagnostics.hasCrypto}
+  - crypto.subtle available: ${diagnostics.hasCryptoSubtle}`);
+    
+    if (!diagnostics.isSecureContext) {
+      console.error('[Global Setup] ERROR: Browser is NOT in a secure context!');
+      console.error('[Global Setup] crypto.subtle will be undefined. Tests will fail.');
+      throw new Error(`Browser is not in a secure context at ${FRONTEND_URL}`);
+    }
+    
+    if (!diagnostics.hasCryptoSubtle) {
+      console.error('[Global Setup] ERROR: crypto.subtle is not available!');
+      throw new Error('crypto.subtle is not available');
+    }
+    
+    console.log('[Global Setup] Browser crypto support verified ✓');
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
  * Global setup function
  */
 async function globalSetup(): Promise<void> {
@@ -165,6 +217,10 @@ async function globalSetup(): Promise<void> {
   await seedUserPool();
   await verifyEndpoints();
   await verifyCOOPCOEPHeaders();
+  
+  // Verify browser crypto support BEFORE running tests
+  // This catches secure context issues early with a clear error message
+  await verifyBrowserCryptoSupport();
   
   // Pre-authenticate pool users (saves browser state for fast test startup)
   // This is optional - the poolUser fixture will register/login fresh if needed
