@@ -1,20 +1,25 @@
 import { defineConfig, devices } from '@playwright/test';
+import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Chrome launch arguments for secure context and SharedArrayBuffer.
  * In CI, we access frontend via http://frontend:8080 which is NOT a secure context.
  * crypto.subtle (Web Crypto API) requires a secure context (HTTPS or localhost).
  * 
- * The --headless=new flag uses Chrome's "new headless mode" which is a full browser
- * that properly respects the --unsafely-treat-insecure-origin-as-secure flag.
- * See: https://github.com/microsoft/playwright/issues/22944
+ * The --unsafely-treat-insecure-origin-as-secure flag requires:
+ * 1. A custom --user-data-dir (the flag is ignored without it)
+ * 2. The origin URL to be specified exactly as accessed
+ * 
+ * See: https://stackoverflow.com/questions/40696280/unsafely-treat-insecure-origin-as-secure-flag-is-not-working-on-chrome
  */
 function getChromeArgs(): string[] {
   const args = ['--enable-features=SharedArrayBuffer'];
   if (process.env.CI && process.env.BASE_URL) {
+    // Custom user-data-dir is required for the insecure-origin flag to work
+    const userDataDir = path.join(os.tmpdir(), `playwright-chrome-${process.pid}`);
+    args.push(`--user-data-dir=${userDataDir}`);
     args.push(`--unsafely-treat-insecure-origin-as-secure=${process.env.BASE_URL}`);
-    // New headless mode is required for the insecure-origin flag to work
-    args.push('--headless=new');
   }
   return args;
 }
