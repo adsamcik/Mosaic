@@ -93,7 +93,11 @@ services:
       dockerfile: tests/e2e/Dockerfile
     container_name: mosaic-test-e2e
     environment:
-      BASE_URL: http://frontend:8080
+      # Use localhost for BASE_URL - browsers treat it as a secure context,
+      # enabling crypto.subtle without Chrome flag workarounds.
+      # The docker-entrypoint.sh starts a socat proxy: localhost:8080 -> frontend:8080
+      BASE_URL: http://localhost:8080
+      FRONTEND_HOST: frontend
       API_URL: http://backend:8080
       CI: "true"
     volumes:

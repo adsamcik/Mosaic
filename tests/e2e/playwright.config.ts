@@ -1,28 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
-import * as path from 'path';
-import * as os from 'os';
 
 /**
- * Chrome launch arguments for secure context and SharedArrayBuffer.
- * In CI, we access frontend via http://frontend:8080 which is NOT a secure context.
- * crypto.subtle (Web Crypto API) requires a secure context (HTTPS or localhost).
+ * Chrome launch arguments for SharedArrayBuffer.
  * 
- * The --unsafely-treat-insecure-origin-as-secure flag requires:
- * 1. A custom --user-data-dir (the flag is ignored without it)
- * 2. The origin URL to be specified exactly as accessed
+ * SharedArrayBuffer requires Cross-Origin-Isolation headers, but Chrome's
+ * --enable-features=SharedArrayBuffer flag bypasses this for testing.
  * 
- * See: https://stackoverflow.com/questions/40696280/unsafely-treat-insecure-origin-as-secure-flag-is-not-working-on-chrome
+ * Note: crypto.subtle requires a secure context (HTTPS or localhost).
+ * In CI, the docker-entrypoint.sh starts a socat proxy so tests access
+ * the frontend via localhost, which browsers treat as inherently secure.
  */
-function getChromeArgs(): string[] {
-  const args = ['--enable-features=SharedArrayBuffer'];
-  if (process.env.CI && process.env.BASE_URL) {
-    // Custom user-data-dir is required for the insecure-origin flag to work
-    const userDataDir = path.join(os.tmpdir(), `playwright-chrome-${process.pid}`);
-    args.push(`--user-data-dir=${userDataDir}`);
-    args.push(`--unsafely-treat-insecure-origin-as-secure=${process.env.BASE_URL}`);
-  }
-  return args;
-}
+const CHROME_ARGS = ['--enable-features=SharedArrayBuffer'];
 
 /**
  * Playwright configuration for Mosaic E2E tests.
@@ -185,7 +173,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
-          args: getChromeArgs(),
+          args: CHROME_ARGS,
         },
         // Faster settings for smoke tests
         trace: 'off',
@@ -200,7 +188,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         // Required for SharedArrayBuffer
         launchOptions: {
-          args: getChromeArgs(),
+          args: CHROME_ARGS,
         },
       },
     },
@@ -229,7 +217,7 @@ export default defineConfig({
       use: {
         ...devices['Pixel 5'],
         launchOptions: {
-          args: getChromeArgs(),
+          args: CHROME_ARGS,
         },
       },
     },

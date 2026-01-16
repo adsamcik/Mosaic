@@ -5,6 +5,9 @@ FROM mcr.microsoft.com/playwright:v1.49.0-noble
 
 WORKDIR /app
 
+# Install socat for localhost proxy (enables crypto.subtle in secure context)
+RUN apt-get update && apt-get install -y socat && rm -rf /var/lib/apt/lists/*
+
 # Copy test files
 COPY tests/e2e/package*.json ./
 RUN npm ci
@@ -14,6 +17,10 @@ COPY tests/e2e/ ./
 # Install Playwright browsers
 RUN npx playwright install --with-deps chromium firefox
 
-# Use the config's reporter settings instead of CLI override
-# This ensures JSON reporter runs for programmatic access
+# Copy entrypoint script
+COPY tests/e2e/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# Use entrypoint to start socat proxy before running tests
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["npx", "playwright", "test"]
