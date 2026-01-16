@@ -9,6 +9,26 @@ import { session } from './lib/session';
 import './styles/globals.css';
 
 /**
+ * Check if the browser supports required crypto APIs.
+ * crypto.subtle requires a secure context (HTTPS or localhost).
+ */
+function checkCryptoSupport(): { supported: boolean; reason?: string } {
+  if (typeof crypto === 'undefined') {
+    return { supported: false, reason: 'crypto API is not available' };
+  }
+  if (typeof crypto.subtle === 'undefined') {
+    if (!window.isSecureContext) {
+      return {
+        supported: false,
+        reason: `crypto.subtle requires a secure context. Current URL (${window.location.origin}) is not secure. Use HTTPS or localhost.`,
+      };
+    }
+    return { supported: false, reason: 'crypto.subtle is not available' };
+  }
+  return { supported: true };
+}
+
+/**
  * Check if the current URL is a share link route
  * Share links have format: /s/{linkId}#k={linkSecret}
  */
@@ -40,14 +60,32 @@ export function App() {
   // Session restore state
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [pendingSessionUser, setPendingSessionUser] = useState<User | null>(null);
+  // Crypto support state
+  const [cryptoError, setCryptoError] = useState<string | null>(null);
 
   // Apply theme to document
   useTheme();
+
+  // Check crypto support on mount (before any crypto operations)
+  useEffect(() => {
+    const cryptoCheck = checkCryptoSupport();
+    if (!cryptoCheck.supported) {
+      console.error('[App] Crypto not supported:', cryptoCheck.reason);
+      setCryptoError(cryptoCheck.reason || 'Crypto APIs not available');
+      setIsCheckingSession(false);
+    }
+  }, []);
 
   // Check for existing session on mount (handles page reload)
   useEffect(() => {
     // Skip session check for share links
     if (isShareLinkRoute()) {
+      setIsCheckingSession(false);
+      return;
+    }
+
+    // Skip if crypto is not available (will show error)
+    if (cryptoError !== null) {
       setIsCheckingSession(false);
       return;
     }
@@ -93,7 +131,7 @@ export function App() {
     } else {
       setIsCheckingSession(false);
     }
-  }, []);
+  }, [cryptoError]);
 
   useEffect(() => {
     // Subscribe to session state changes
@@ -116,6 +154,30 @@ export function App() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  // Crypto error - show error message instead of app
+  if (cryptoError) {
+    return (
+      <div className="login-container" data-testid="crypto-error">
+        <div className="login-card">
+          <h1 className="login-title" style={{ color: 'var(--color-error, #dc2626)' }}>
+            {t('errors.cryptoNotSupported', 'Crypto Not Supported')}
+          </h1>
+          <p className="login-subtitle" style={{ marginBottom: '1rem' }}>
+            {t('errors.cryptoNotSupportedMessage', 'This application requires a secure context (HTTPS or localhost) to function.')}
+          </p>
+          <details style={{ textAlign: 'left', fontSize: '0.875rem' }}>
+            <summary style={{ cursor: 'pointer', marginBottom: '0.5rem' }}>
+              {t('errors.technicalDetails', 'Technical Details')}
+            </summary>
+            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: 'var(--color-surface, #f5f5f5)', padding: '0.5rem', borderRadius: '4px' }}>
+              {cryptoError}
+            </pre>
+          </details>
+        </div>
+      </div>
+    );
+  }
 
   // Share link route - no authentication required
   if (isShareLink && shareLinkId) {
