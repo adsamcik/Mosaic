@@ -5,8 +5,9 @@ FROM mcr.microsoft.com/playwright:v1.49.0-noble
 
 WORKDIR /app
 
-# Install curl for health check in entrypoint
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install socat for localhost proxies and curl for health checks
+# socat forwards localhost:8080 -> frontend:8080 to enable crypto.subtle (secure context)
+RUN apt-get update && apt-get install -y socat curl && rm -rf /var/lib/apt/lists/*
 
 # Copy test files
 COPY tests/e2e/package*.json ./

@@ -1,9 +1,8 @@
 #!/bin/bash
 # E2E Tests Docker Entrypoint
 #
-# With network_mode: host, the container shares the host's network stack.
-# Chrome can directly access localhost:8080 (the frontend exposed port),
-# which browsers treat as a secure context, enabling crypto.subtle.
+# This script starts socat proxies to make frontend and backend accessible
+# via localhost, which browsers treat as a secure context for crypto.subtle.
 #
 # See: https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts
 
@@ -11,24 +10,57 @@ set -e
 
 echo "[Entrypoint] Starting E2E test environment..."
 echo "[Entrypoint] BASE_URL=$BASE_URL"
+echo "[Entrypoint] API_URL=$API_URL"
+echo "[Entrypoint] FRONTEND_HOST=$FRONTEND_HOST"
+echo "[Entrypoint] BACKEND_HOST=$BACKEND_HOST"
 
-# Verify frontend is accessible
-echo "[Entrypoint] Checking frontend health..."
-MAX_RETRIES=30
-RETRY=0
-while [ $RETRY -lt $MAX_RETRIES ]; do
-    if curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8080/health 2>/dev/null | grep -q "200"; then
-        echo "[Entrypoint] Frontend is healthy at localhost:8080"
-        break
+# Start socat proxy for frontend (localhost:8080 -> frontend:8080)
+if [ -n "$FRONTEND_HOST" ]; then
+    echo "[Entrypoint] Starting frontend proxy: localhost:8080 -> $FRONTEND_HOST:8080"
+    socat TCP-LISTEN:8080,fork,reuseaddr TCP:$FRONTEND_HOST:8080 &
+    FRONTEND_PID=$!
+    sleep 1
+    
+    if kill -0 $FRONTEND_PID 2>/dev/null; then
+        echo "[Entrypoint] Frontend proxy started (PID: $FRONTEND_PID)"
+    else
+        echo "[Entrypoint] ERROR: Frontend proxy failed to start!"
+        exit 1
     fi
-    RETRY=$((RETRY + 1))
-    echo "[Entrypoint] Waiting for frontend... ($RETRY/$MAX_RETRIES)"
-    sleep 2
-done
+fi
 
-if [ $RETRY -eq $MAX_RETRIES ]; then
-    echo "[Entrypoint] ERROR: Frontend not accessible after $MAX_RETRIES retries"
-    exit 1
+# Start socat proxy for backend (localhost:5000 -> backend:8080)
+if [ -n "$BACKEND_HOST" ]; then
+    echo "[Entrypoint] Starting backend proxy: localhost:5000 -> $BACKEND_HOST:8080"
+    socat TCP-LISTEN:5000,fork,reuseaddr TCP:$BACKEND_HOST:8080 &
+    BACKEND_PID=$!
+    sleep 1
+    
+    if kill -0 $BACKEND_PID 2>/dev/null; then
+        echo "[Entrypoint] Backend proxy started (PID: $BACKEND_PID)"
+    else
+        echo "[Entrypoint] ERROR: Backend proxy failed to start!"
+        exit 1
+    fi
+fi
+
+# Verify proxies are working
+echo "[Entrypoint] Verifying proxy connections..."
+
+if [ -n "$FRONTEND_HOST" ]; then
+    if curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8080/health 2>/dev/null | grep -q "200"; then
+        echo "[Entrypoint] Frontend proxy verified ✓"
+    else
+        echo "[Entrypoint] WARNING: Frontend not responding on localhost:8080"
+    fi
+fi
+
+if [ -n "$BACKEND_HOST" ]; then
+    if curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:5000/health 2>/dev/null | grep -q "200"; then
+        echo "[Entrypoint] Backend proxy verified ✓"
+    else
+        echo "[Entrypoint] WARNING: Backend not responding on localhost:5000"
+    fi
 fi
 
 # Execute the main command (npx playwright test)
