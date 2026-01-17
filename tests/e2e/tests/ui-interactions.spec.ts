@@ -5,17 +5,16 @@
  */
 
 import {
-  test,
-  expect,
-  LoginPage,
-  AppShell,
-  GalleryPage,
-  Lightbox,
-  CreateAlbumDialog,
-  loginUser,
-  createAlbumViaUI,
-  generateTestImage,
-  TEST_PASSWORD,
+    AppShell,
+    CreateAlbumDialog,
+    createAlbumViaUI,
+    expect,
+    GalleryPage,
+    generateTestImage,
+    LoginPage,
+    loginUser,
+    test,
+    TEST_PASSWORD
 } from '../fixtures-enhanced';
 
 test.describe('UI Interactions @p2 @ui @fast', () => {

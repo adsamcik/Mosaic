@@ -8,7 +8,7 @@
  * 3. Pre-authenticating pool users for fast test execution
  */
 
-import { setupPoolUsers, clearAuthStates } from './auth-setup';
+import { clearAuthStates, setupPoolUsers } from './auth-setup';
 
 const API_URL = process.env.API_URL || 'http://localhost:5000';
 const MAX_WAIT_MS = 60000;
@@ -224,11 +224,13 @@ async function globalSetup(): Promise<void> {
   
   // Pre-authenticate pool users (saves browser state for fast test startup)
   // This is optional - the poolUser fixture will register/login fresh if needed
-  console.log('[Global Setup] Pre-authenticating pool users (optional, 30s timeout)...');
+  // Timeout is generous to accommodate crypto operations and potential rate limit retries
+  const authSetupTimeout = process.env.CI ? 120000 : 60000; // 2 min in CI, 1 min locally
+  console.log(`[Global Setup] Pre-authenticating pool users (optional, ${authSetupTimeout / 1000}s timeout)...`);
   try {
     await Promise.race([
       setupPoolUsers(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth setup timeout')), 30000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Auth setup timeout')), authSetupTimeout))
     ]);
   } catch (error) {
     console.warn(`[Global Setup] Auth setup skipped: ${error instanceof Error ? error.message : error}`);

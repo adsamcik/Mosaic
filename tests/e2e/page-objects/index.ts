@@ -221,7 +221,19 @@ export class LoginPage {
       if (result === 'error') {
         const errorText = await this.errorMessage.textContent();
         console.log(`[LoginPage] Error text: ${errorText}`);
-        if (errorText?.toLowerCase().includes('already taken') || errorText?.toLowerCase().includes('already exists')) {
+        
+        // Handle rate limiting - wait and retry
+        if (errorText?.toLowerCase().includes('too many requests')) {
+          console.log('[LoginPage] Rate limited, waiting 5s and retrying with login');
+          await this.page.waitForTimeout(5000);
+          // After rate limit, user may already exist, try login
+          await this.switchToLoginMode();
+          await this.usernameInput.clear();
+          await this.usernameInput.fill(username);
+          await this.passwordInput.fill(password);
+          await expect(this.loginButton).toBeVisible({ timeout: 10000 });
+          await this.loginButton.click();
+        } else if (errorText?.toLowerCase().includes('already taken') || errorText?.toLowerCase().includes('already exists')) {
           console.log('[LoginPage] User already exists, switching to login');
           await this.switchToLoginMode();
           await this.usernameInput.clear();

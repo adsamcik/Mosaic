@@ -11,14 +11,14 @@
  */
 
 import {
-  AppShell,
-  CreateAlbumDialogPage,
-  expect,
-  GalleryPage,
-  generateTestImage,
-  LoginPage,
-  test,
-  TEST_CONSTANTS,
+    AppShell,
+    CreateAlbumDialogPage,
+    expect,
+    GalleryPage,
+    generateTestImage,
+    LoginPage,
+    test,
+    TEST_CONSTANTS,
 } from '../fixtures';
 
 test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypto', () => {

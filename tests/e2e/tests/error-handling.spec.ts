@@ -5,17 +5,16 @@
  */
 
 import {
-  test,
-  expect,
-  LoginPage,
-  AppShell,
-  GalleryPage,
-  loginUser,
-  createAlbumViaAPI,
-  mockApiError,
-  goOffline,
-  goOnline,
-  TEST_PASSWORD,
+    AppShell,
+    createAlbumViaAPI,
+    expect,
+    goOffline,
+    goOnline,
+    LoginPage,
+    loginUser,
+    mockApiError,
+    test,
+    TEST_PASSWORD
 } from '../fixtures-enhanced';
 import { waitForCondition } from '../framework';
 

@@ -6,17 +6,16 @@
  */
 
 import {
-  test,
-  expect,
-  LoginPage,
-  AppShell,
-  GalleryPage,
-  Lightbox,
-  loginUser,
-  createAlbumViaAPI,
-  createAlbumViaUI,
-  generateTestImage,
-  TEST_PASSWORD,
+    AppShell,
+    createAlbumViaUI,
+    expect,
+    GalleryPage,
+    generateTestImage,
+    Lightbox,
+    LoginPage,
+    loginUser,
+    test,
+    TEST_PASSWORD
 } from '../fixtures-enhanced';
 
 test.describe('Photo Lifecycle @p1 @photo @crypto', () => {

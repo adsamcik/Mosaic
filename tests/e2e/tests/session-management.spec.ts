@@ -5,14 +5,14 @@
  */
 
 import {
-  test,
-  expect,
-  LoginPage,
-  AppShell,
-  SettingsPage,
-  loginUser,
-  createAlbumViaAPI,
-  TEST_PASSWORD,
+    AppShell,
+    createAlbumViaAPI,
+    expect,
+    LoginPage,
+    loginUser,
+    SettingsPage,
+    test,
+    TEST_PASSWORD,
 } from '../fixtures-enhanced';
 
 test.describe('Session Management @p1 @auth', () => {

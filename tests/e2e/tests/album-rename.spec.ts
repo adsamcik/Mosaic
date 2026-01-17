@@ -6,15 +6,15 @@
  */
 
 import {
-  test,
-  expect,
-  LoginPage,
-  AppShell,
-  GalleryPage,
-  RenameAlbumDialog,
-  loginUser,
-  createAlbumViaAPI,
-  TEST_PASSWORD,
+    AppShell,
+    createAlbumViaAPI,
+    expect,
+    GalleryPage,
+    LoginPage,
+    loginUser,
+    RenameAlbumDialog,
+    test,
+    TEST_PASSWORD,
 } from '../fixtures-enhanced';
 
 test.describe('Album Rename @p1 @album', () => {

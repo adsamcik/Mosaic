@@ -114,7 +114,7 @@ class LoginPageSetup {
     }
   }
 
-  async register(username: string, password: string): Promise<'success' | 'exists' | 'error'> {
+  async register(username: string, password: string): Promise<'success' | 'exists' | 'rate_limited' | 'error'> {
     await this.switchToRegisterMode();
     
     await this.usernameInput.fill(username);
@@ -133,6 +133,10 @@ class LoginPageSetup {
         if (text?.toLowerCase().includes('already taken') || text?.toLowerCase().includes('already exists')) {
           return 'exists' as const;
         }
+        if (text?.toLowerCase().includes('too many requests')) {
+          return 'rate_limited' as const;
+        }
+        console.log(`[Auth Setup] Unknown error text: ${text}`);
         return 'error' as const;
       }),
     ]).catch(() => 'error' as const);
@@ -182,8 +186,18 @@ async function authenticateUser(
       return;
     }
     
-    // Try to register first
-    const registerResult = await loginPage.register(username, password);
+    // Try to register first, with retry for rate limiting
+    let registerResult = await loginPage.register(username, password);
+    
+    // Handle rate limiting with exponential backoff
+    if (registerResult === 'rate_limited') {
+      console.log(`[Auth Setup] Rate limited for ${username}, waiting 5s and retrying...`);
+      await page.waitForTimeout(5000);
+      // Reload and try login instead (user may have been created)
+      await page.reload();
+      await loginPage.waitForForm();
+      registerResult = 'exists'; // Assume user exists, try login
+    }
     
     if (registerResult === 'exists') {
       console.log(`[Auth Setup] User ${username} exists, logging in instead`);
@@ -219,9 +233,16 @@ export async function setupPoolUsers(): Promise<void> {
   const browser = await chromium.launch();
   
   try {
-    for (const user of POOL_USERS) {
+    for (let i = 0; i < POOL_USERS.length; i++) {
+      const user = POOL_USERS[i];
       try {
         await authenticateUser(browser, user.username, TEST_PASSWORD, user.stateFile);
+        
+        // Small delay between users to avoid rate limiting
+        // Only delay if there are more users to process
+        if (i < POOL_USERS.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
       } catch (error) {
         console.error(`[Auth Setup] Failed to authenticate ${user.username}:`, error);
         // Continue with other users
