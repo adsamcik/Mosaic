@@ -218,6 +218,15 @@ export async function deriveAuthKeypair(
   // Ensure libsodium WASM is fully initialized before using crypto_pwhash
   await sodium.ready;
 
+  // Verify crypto_pwhash is actually bound (race condition guard)
+  // In rare cases, sodium.ready can resolve before all WASM bindings complete
+  if (typeof sodium.crypto_pwhash !== 'function') {
+    throw new CryptoError(
+      'libsodium WASM not fully initialized - crypto_pwhash not available',
+      CryptoErrorCode.NOT_INITIALIZED,
+    );
+  }
+
   if (userSalt.length !== 16) {
     throw new CryptoError(
       'User salt must be 16 bytes',

@@ -66,13 +66,31 @@ class CryptoWorker implements CryptoWorkerApi {
 
   /**
    * Ensure libsodium is initialized before crypto operations.
+   * Verifies that critical WASM functions are actually bound.
    */
   private async ensureSodiumReady(): Promise<void> {
     if (!this.sodiumReady) {
       const timer = log.startTimer('libsodium initialization');
       await sodium.ready;
-      this.sodiumReady = true;
-      timer.end();
+      
+      // Verify critical functions are actually bound (race condition guard)
+      // In some cases, sodium.ready can resolve before all WASM bindings complete
+      const maxRetries = 10;
+      for (let i = 0; i < maxRetries; i++) {
+        if (typeof sodium.crypto_pwhash === 'function' &&
+            typeof sodium.crypto_sign_detached === 'function' &&
+            typeof sodium.crypto_secretbox_easy === 'function') {
+          this.sodiumReady = true;
+          timer.end();
+          return;
+        }
+        // Small delay to allow Emscripten to complete binding
+        log.warn(`libsodium functions not ready, retry ${i + 1}/${maxRetries}`);
+        await new Promise(resolve => setTimeout(resolve, 50 * (i + 1)));
+      }
+      
+      // If we get here, something is seriously wrong
+      throw new Error('libsodium WASM failed to initialize - critical functions not bound');
     }
   }
 

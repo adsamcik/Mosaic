@@ -44,6 +44,14 @@ export async function deriveKeysInternal(
 ): Promise<DerivedKeys> {
   await sodium.ready;
 
+  // Verify crypto_pwhash is actually bound (race condition guard)
+  if (typeof sodium.crypto_pwhash !== 'function') {
+    throw new CryptoError(
+      'libsodium WASM not fully initialized - crypto_pwhash not available',
+      CryptoErrorCode.NOT_INITIALIZED,
+    );
+  }
+
   if (userSalt.length !== 16) {
     throw new CryptoError(
       'User salt must be 16 bytes',
@@ -168,6 +176,14 @@ export async function unwrapAccountKey(
 ): Promise<Uint8Array> {
   await sodium.ready;
 
+  // Verify crypto_pwhash is actually bound (race condition guard)
+  if (typeof sodium.crypto_pwhash !== 'function') {
+    throw new CryptoError(
+      'libsodium WASM not fully initialized - crypto_pwhash not available',
+      CryptoErrorCode.NOT_INITIALIZED,
+    );
+  }
+
   if (userSalt.length !== 16) {
     throw new CryptoError(
       'User salt must be 16 bytes',
@@ -257,6 +273,14 @@ export async function rewrapAccountKey(
   params?: Argon2Params,
 ): Promise<Uint8Array> {
   await sodium.ready;
+
+  // Verify crypto_pwhash is actually bound (race condition guard)
+  if (typeof sodium.crypto_pwhash !== 'function') {
+    throw new CryptoError(
+      'libsodium WASM not fully initialized - crypto_pwhash not available',
+      CryptoErrorCode.NOT_INITIALIZED,
+    );
+  }
 
   if (accountKey.length !== 32) {
     throw new CryptoError(
