@@ -57,6 +57,8 @@ services:
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
+      args:
+        VITE_E2E_WEAK_KEYS: "true"
     container_name: mosaic-test-frontend
     ports:
       - "8080:8080"
