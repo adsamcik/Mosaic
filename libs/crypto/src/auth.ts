@@ -215,6 +215,9 @@ export async function deriveAuthKeypair(
     parallelism: number;
   },
 ): Promise<{ publicKey: Uint8Array; secretKey: Uint8Array }> {
+  // Ensure libsodium WASM is fully initialized before using crypto_pwhash
+  await sodium.ready;
+
   if (userSalt.length !== 16) {
     throw new CryptoError(
       'User salt must be 16 bytes',
