@@ -1,15 +1,15 @@
 /**
  * useAnimatedItems Hook
- * 
+ *
  * Tracks item enter/exit state for animations in virtualized lists.
  * Maintains "phantom" entries for items being removed so they can animate out.
- * 
+ *
  * Key Features:
  * - Tracks which items are "new" (just appeared) vs "existing"
  * - Maintains exiting items in the list until animation completes
  * - Calculates stagger delays for batch operations
  * - Prevents re-animation when items re-enter viewport
- * 
+ *
  * @module useAnimatedItems
  */
 
@@ -65,20 +65,20 @@ export interface UseAnimatedItemsReturn<T> {
 
 /**
  * Hook to track animation state for items in a list.
- * 
+ *
  * Handles:
  * - New item detection (fade in)
  * - Removed item tracking (fade out with phantom entries)
  * - Batch staggering (cascading reveal)
  * - Viewport re-entry (no re-animation)
- * 
+ *
  * @example
  * ```tsx
  * const { animatedItems, handleExitComplete, getStaggerDelay } = useAnimatedItems(
  *   photos,
  *   { getKey: (p) => p.id }
  * );
- * 
+ *
  * return animatedItems.map(({ item, key, isExiting }) => (
  *   <AnimatedTile
  *     key={key}
@@ -94,7 +94,7 @@ export interface UseAnimatedItemsReturn<T> {
  */
 export function useAnimatedItems<T>(
   items: T[],
-  options: UseAnimatedItemsOptions<T>
+  options: UseAnimatedItemsOptions<T>,
 ): UseAnimatedItemsReturn<T> {
   const {
     getKey,
@@ -106,10 +106,10 @@ export function useAnimatedItems<T>(
 
   // Track when items first appeared (survives re-renders)
   const seenKeys = useRef(new Map<string, number>());
-  
+
   // Track items that have been "seen" in viewport (no re-animation)
   const viewedKeys = useRef(new Set<string>());
-  
+
   // Track whether this is the initial load
   const isFirstRender = useRef(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -210,7 +210,7 @@ export function useAnimatedItems<T>(
       viewedKeys.current.delete(key);
       onRemoveComplete?.(key);
     },
-    [onRemoveComplete]
+    [onRemoveComplete],
   );
 
   // Calculate stagger delays for batch entries
@@ -231,13 +231,13 @@ export function useAnimatedItems<T>(
         .sort((a, b) => a[1] - b[1]);
 
       const index = batchItems.findIndex(([k]) => k === key);
-      
+
       // Cap stagger to prevent extremely long delays
       const cappedIndex = Math.min(index, maxStaggerCount - 1);
-      
+
       return cappedIndex * staggerInterval;
     },
-    [batchWindow, staggerInterval, maxStaggerCount]
+    [batchWindow, staggerInterval, maxStaggerCount],
   );
 
   // Check if an item has been seen before (to skip re-animation on viewport re-entry)

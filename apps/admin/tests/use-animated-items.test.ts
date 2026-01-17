@@ -12,7 +12,10 @@
 import { act, createElement, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAnimatedItems, type UseAnimatedItemsReturn } from '../src/hooks/useAnimatedItems';
+import {
+  useAnimatedItems,
+  type UseAnimatedItemsReturn,
+} from '../src/hooks/useAnimatedItems';
 
 interface TestItem {
   id: string;
@@ -22,7 +25,7 @@ interface TestItem {
 // Helper to test hook in a component context
 function createHookTester<T>(
   initialItems: T[],
-  options: Parameters<typeof useAnimatedItems<T>>[1]
+  options: Parameters<typeof useAnimatedItems<T>>[1],
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -312,7 +315,9 @@ describe('useAnimatedItems', () => {
     updateItems(manyItems);
 
     // All stagger delays should be capped
-    const delays = manyItems.map((item) => getResult().getStaggerDelay(item.id));
+    const delays = manyItems.map((item) =>
+      getResult().getStaggerDelay(item.id),
+    );
     const maxDelay = Math.max(...delays);
 
     // Max delay should be (maxStaggerCount - 1) * staggerInterval = 4 * 50 = 200

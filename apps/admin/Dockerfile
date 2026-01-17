@@ -29,6 +29,10 @@ COPY apps/admin/ ./
 # Install dependencies (postinstall copies sql.js files to public/)
 RUN npm ci
 
+# Build arg for E2E weak crypto keys (for faster tests)
+ARG VITE_E2E_WEAK_KEYS
+ENV VITE_E2E_WEAK_KEYS=${VITE_E2E_WEAK_KEYS}
+
 # Build frontend
 RUN npm run build
 

@@ -22,11 +22,31 @@ vi.mock('../src/hooks/useLinkKeys', () => ({
 
 // Mock SharedGallery component
 vi.mock('../src/components/Shared/SharedGallery', () => ({
-  SharedGallery: ({ linkId, albumId, accessTier }: { linkId: string; albumId: string; accessTier: number }) => 
+  SharedGallery: ({
+    linkId,
+    albumId,
+    accessTier,
+  }: {
+    linkId: string;
+    albumId: string;
+    accessTier: number;
+  }) =>
     createElement('div', { 'data-testid': 'shared-gallery' }, [
-      createElement('span', { key: 'link', 'data-testid': 'gallery-link-id' }, linkId),
-      createElement('span', { key: 'album', 'data-testid': 'gallery-album-id' }, albumId),
-      createElement('span', { key: 'tier', 'data-testid': 'gallery-access-tier' }, String(accessTier)),
+      createElement(
+        'span',
+        { key: 'link', 'data-testid': 'gallery-link-id' },
+        linkId,
+      ),
+      createElement(
+        'span',
+        { key: 'album', 'data-testid': 'gallery-album-id' },
+        albumId,
+      ),
+      createElement(
+        'span',
+        { key: 'tier', 'data-testid': 'gallery-access-tier' },
+        String(accessTier),
+      ),
     ]),
 }));
 
@@ -90,7 +110,9 @@ function renderComponent(props: { linkId: string }) {
     getByText,
     queryAllByText,
     cleanup: () => {
-      act(() => { root.unmount(); });
+      act(() => {
+        root.unmount();
+      });
       container.remove();
     },
   };
@@ -121,7 +143,9 @@ describe('SharedAlbumViewer', () => {
       linkId: 'test-link-id',
       accessTier: 2,
       albumId: 'album-123',
-      tierKeys: new Map([[1, new Map([[2, { epochId: 1, tier: 2, key: new Uint8Array(32) }]])]]),
+      tierKeys: new Map([
+        [1, new Map([[2, { epochId: 1, tier: 2, key: new Uint8Array(32) }]])],
+      ]),
       isValid: true,
       getReadKey: vi.fn(),
       getSignPubkey: vi.fn(),
@@ -149,7 +173,9 @@ describe('SharedAlbumViewer', () => {
         refresh: vi.fn(),
       });
 
-      const { getByText, getByTestId, cleanup } = renderComponent({ linkId: 'test-link-id' });
+      const { getByText, getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+      });
 
       expect(getByText('Validating share link...')).not.toBeNull();
       expect(getByTestId('shared-album-viewer')).not.toBeNull();
@@ -168,7 +194,9 @@ describe('SharedAlbumViewer', () => {
         configurable: true,
       });
 
-      const { getByText, cleanup } = renderComponent({ linkId: 'test-link-id' });
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+      });
 
       expect(getByText('Invalid Share Link')).not.toBeNull();
       expect(getByText(/secret key is missing/i)).not.toBeNull();
@@ -190,7 +218,9 @@ describe('SharedAlbumViewer', () => {
         refresh: vi.fn(),
       });
 
-      const { getByText, cleanup } = renderComponent({ linkId: 'test-link-id' });
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+      });
 
       expect(getByText('Unable to Access Album')).not.toBeNull();
       expect(getByText('This link has expired')).not.toBeNull();
@@ -199,7 +229,9 @@ describe('SharedAlbumViewer', () => {
     });
 
     it('should show gallery when link is valid', () => {
-      const { getByTestId, cleanup } = renderComponent({ linkId: 'test-link-id' });
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+      });
 
       expect(getByTestId('shared-gallery')).not.toBeNull();
       expect(getByTestId('gallery-album-id')?.textContent).toBe('album-123');
@@ -222,7 +254,9 @@ describe('SharedAlbumViewer', () => {
         refresh: vi.fn(),
       });
 
-      const { getByText, cleanup } = renderComponent({ linkId: 'test-link-id' });
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+      });
 
       expect(getByText('Full Access')).not.toBeNull();
 
@@ -232,7 +266,9 @@ describe('SharedAlbumViewer', () => {
 
   describe('header elements', () => {
     it('should display app title', () => {
-      const { getByText, cleanup } = renderComponent({ linkId: 'test-link-id' });
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+      });
 
       expect(getByText('🖼️ Mosaic')).not.toBeNull();
 
@@ -240,7 +276,9 @@ describe('SharedAlbumViewer', () => {
     });
 
     it('should display shared album badge', () => {
-      const { getByText, cleanup } = renderComponent({ linkId: 'test-link-id' });
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+      });
 
       expect(getByText('Shared Album')).not.toBeNull();
 
@@ -250,7 +288,9 @@ describe('SharedAlbumViewer', () => {
 
   describe('footer', () => {
     it('should display footer with branding', () => {
-      const { getByText, cleanup } = renderComponent({ linkId: 'test-link-id' });
+      const { getByText, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+      });
 
       expect(getByText(/Powered by/i)).not.toBeNull();
       expect(getByText(/Zero-knowledge encrypted/i)).not.toBeNull();
@@ -264,7 +304,10 @@ describe('SharedAlbumViewer', () => {
       const { cleanup } = renderComponent({ linkId: 'prop-link-id' });
 
       // useLinkKeys should be called with the prop linkId
-      expect(mocks.useLinkKeys).toHaveBeenCalledWith('prop-link-id', 'test-secret');
+      expect(mocks.useLinkKeys).toHaveBeenCalledWith(
+        'prop-link-id',
+        'test-secret',
+      );
 
       cleanup();
     });

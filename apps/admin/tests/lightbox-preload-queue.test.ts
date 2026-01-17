@@ -32,7 +32,7 @@ const PRELOAD_COUNT = 2;
 function generatePreloadQueue(
   sortedPhotos: PhotoMeta[],
   currentIdx: number,
-  direction: NavigationDirection
+  direction: NavigationDirection,
 ): PhotoMeta[] {
   const queue: PhotoMeta[] = [];
 

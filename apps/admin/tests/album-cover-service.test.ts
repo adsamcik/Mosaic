@@ -6,14 +6,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    AlbumCoverError,
-    clearAllCovers,
-    getAlbumCover,
-    getCachedCover,
-    getCoverCacheSize,
-    getFirstPhotoForAlbum,
-    hasCachedCover,
-    releaseCover,
+  AlbumCoverError,
+  clearAllCovers,
+  getAlbumCover,
+  getCachedCover,
+  getCoverCacheSize,
+  getFirstPhotoForAlbum,
+  hasCachedCover,
+  releaseCover,
 } from '../src/lib/album-cover-service';
 import type { PhotoMeta } from '../src/workers/types';
 
@@ -109,7 +109,7 @@ describe('Album Cover Service', () => {
       mockDbClient.getPhotos.mockRejectedValue(new Error('DB error'));
 
       await expect(getFirstPhotoForAlbum('album-1')).rejects.toThrow(
-        AlbumCoverError
+        AlbumCoverError,
       );
     });
   });
@@ -137,7 +137,7 @@ describe('Album Cover Service', () => {
         'photo-1',
         ['shard-1', 'shard-2'],
         mockReadKey,
-        'image/jpeg'
+        'image/jpeg',
       );
     });
 
@@ -174,7 +174,7 @@ describe('Album Cover Service', () => {
       mockDbClient.getPhotos.mockResolvedValue([mockPhoto]);
 
       await expect(getAlbumCover('album-1', mockReadKey)).rejects.toThrow(
-        'First photo has no shard IDs'
+        'First photo has no shard IDs',
       );
     });
 

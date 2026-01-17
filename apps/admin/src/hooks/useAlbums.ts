@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Album } from '../components/Albums/AlbumCard';
 import {
-    getDecryptedAlbumName,
-    getStoredEncryptedName,
-    setStoredEncryptedName,
+  getDecryptedAlbumName,
+  getStoredEncryptedName,
+  setStoredEncryptedName,
 } from '../lib/album-metadata-service';
 import { getApi, toBase64 } from '../lib/api';
 import type { Album as ApiAlbum } from '../lib/api-types';
@@ -24,7 +24,10 @@ const log = createLogger('useAlbums');
  * @param epochSeed - Epoch seed key (32 bytes)
  * @returns Base64-encoded encrypted name
  */
-async function encryptAlbumName(name: string, epochSeed: Uint8Array): Promise<string> {
+async function encryptAlbumName(
+  name: string,
+  epochSeed: Uint8Array,
+): Promise<string> {
   const crypto = await getCryptoClient();
   const nameBytes = new TextEncoder().encode(name);
 
@@ -38,17 +41,19 @@ async function encryptAlbumName(name: string, epochSeed: Uint8Array): Promise<st
  * Load photo counts from local SQLite database for all albums.
  * Returns a map of albumId -> count.
  */
-async function fetchPhotoCountsFromDb(albumIds: string[]): Promise<Map<string, number>> {
+async function fetchPhotoCountsFromDb(
+  albumIds: string[],
+): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   try {
     const db = await getDbClient();
-    
+
     // Fetch photo counts for all albums in parallel
     const results = await Promise.all(
       albumIds.map(async (albumId) => ({
         albumId,
         count: await db.getPhotoCount(albumId),
-      }))
+      })),
     );
 
     for (const { albumId, count } of results) {
@@ -101,13 +106,13 @@ export function useAlbums() {
       // Load photo counts from local database (non-blocking)
       const albumIds = transformedAlbums.map((a) => a.id);
       const photoCounts = await fetchPhotoCountsFromDb(albumIds);
-      
+
       // Update albums with photo counts
       setAlbums((prev) =>
         prev.map((album) => ({
           ...album,
           photoCount: photoCounts.get(album.id) ?? album.photoCount,
-        }))
+        })),
       );
 
       // Decrypt album names asynchronously
@@ -116,7 +121,7 @@ export function useAlbums() {
       setError(err instanceof Error ? err : new Error(String(err)));
       setIsLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -129,15 +134,16 @@ export function useAlbums() {
       try {
         // Try to get encrypted name from server response first,
         // then fallback to localStorage (for backwards compatibility)
-        const encryptedName = album.encryptedName ?? getStoredEncryptedName(album.id);
+        const encryptedName =
+          album.encryptedName ?? getStoredEncryptedName(album.id);
 
         if (!encryptedName) {
           // No encrypted name available - keep placeholder
           // This happens for albums created by other users or before encryption was added
           setAlbums((prev) =>
             prev.map((a) =>
-              a.id === album.id ? { ...a, isDecrypting: false } : a
-            )
+              a.id === album.id ? { ...a, isDecrypting: false } : a,
+            ),
           );
           return;
         }
@@ -151,8 +157,8 @@ export function useAlbums() {
             prev.map((a) =>
               a.id === album.id
                 ? { ...a, isDecrypting: false, decryptionFailed: true }
-                : a
-            )
+                : a,
+            ),
           );
           return;
         }
@@ -166,8 +172,8 @@ export function useAlbums() {
             prev.map((a) =>
               a.id === album.id
                 ? { ...a, isDecrypting: false, decryptionFailed: true }
-                : a
-            )
+                : a,
+            ),
           );
           return;
         }
@@ -176,7 +182,7 @@ export function useAlbums() {
         const decryptedName = await getDecryptedAlbumName(
           album.id,
           encryptedName,
-          epochKey.epochSeed
+          epochKey.epochSeed,
         );
 
         // Update state with decrypted name
@@ -190,8 +196,8 @@ export function useAlbums() {
                   isDecrypting: false,
                   decryptionFailed: false,
                 }
-              : a
-          )
+              : a,
+          ),
         );
       } catch (err) {
         log.error(`Failed to decrypt album name for ${album.id}:`, err);
@@ -200,8 +206,8 @@ export function useAlbums() {
           prev.map((a) =>
             a.id === album.id
               ? { ...a, isDecrypting: false, decryptionFailed: true }
-              : a
-          )
+              : a,
+          ),
         );
       }
     });
@@ -218,11 +224,11 @@ export function useAlbums() {
     try {
       const db = await getDbClient();
       const count = await db.getPhotoCount(albumId);
-      
+
       setAlbums((prev) =>
         prev.map((album) =>
-          album.id === albumId ? { ...album, photoCount: count } : album
-        )
+          album.id === albumId ? { ...album, photoCount: count } : album,
+        ),
       );
     } catch (err) {
       log.error(`Failed to update photo count for album ${albumId}:`, err);
@@ -240,28 +246,25 @@ export function useAlbums() {
    * @param albumId - ID of the album to delete
    * @returns true if deletion succeeded, false otherwise
    */
-  const deleteAlbum = useCallback(
-    async (albumId: string): Promise<boolean> => {
-      try {
-        const api = getApi();
-        await api.deleteAlbum(albumId);
+  const deleteAlbum = useCallback(async (albumId: string): Promise<boolean> => {
+    try {
+      const api = getApi();
+      await api.deleteAlbum(albumId);
 
-        // Remove from local state
-        setAlbums((prev) => prev.filter((a) => a.id !== albumId));
+      // Remove from local state
+      setAlbums((prev) => prev.filter((a) => a.id !== albumId));
 
-        // Clear cached epoch keys for this album
-        // Note: The epoch key store doesn't have a clear function yet,
-        // so we just let it expire naturally
+      // Clear cached epoch keys for this album
+      // Note: The epoch key store doesn't have a clear function yet,
+      // so we just let it expire naturally
 
-        log.info(`Album ${albumId} deleted successfully`);
-        return true;
-      } catch (err) {
-        log.error(`Failed to delete album ${albumId}:`, err);
-        return false;
-      }
-    },
-    []
-  );
+      log.info(`Album ${albumId} deleted successfully`);
+      return true;
+    } catch (err) {
+      log.error(`Failed to delete album ${albumId}:`, err);
+      return false;
+    }
+  }, []);
 
   /**
    * Rename an album with encrypted name.
@@ -294,7 +297,10 @@ export function useAlbums() {
         }
 
         // Encrypt the new album name
-        const encryptedName = await encryptAlbumName(newName, epochKey.epochSeed);
+        const encryptedName = await encryptAlbumName(
+          newName,
+          epochKey.epochSeed,
+        );
 
         // Call API to update the encrypted name
         const api = getApi();
@@ -313,8 +319,8 @@ export function useAlbums() {
                   decryptedName: newName,
                   encryptedName,
                 }
-              : a
-          )
+              : a,
+          ),
         );
 
         log.info(`Album ${albumId} renamed successfully`);
@@ -324,7 +330,7 @@ export function useAlbums() {
         throw err;
       }
     },
-    []
+    [],
   );
 
   /**
@@ -374,7 +380,7 @@ export function useAlbums() {
           epochKey.epochSeed,
           epochKey.signPublicKey,
           epochKey.signSecretKey,
-          identityPubkey // Seal to self
+          identityPubkey, // Seal to self
         );
 
         // Create album with initial epoch key and encrypted name
@@ -383,7 +389,7 @@ export function useAlbums() {
             recipientId: currentUser.id,
             epochId,
             encryptedKeyBundle: toBase64(
-              new Uint8Array([...bundle.signature, ...bundle.encryptedBundle])
+              new Uint8Array([...bundle.signature, ...bundle.encryptedBundle]),
             ),
             ownerSignature: toBase64(bundle.signature),
             sharerPubkey: toBase64(identityPubkey),
@@ -423,14 +429,15 @@ export function useAlbums() {
 
         return album;
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to create album';
+        const message =
+          err instanceof Error ? err.message : 'Failed to create album';
         setCreateError(message);
         return null;
       } finally {
         setIsCreating(false);
       }
     },
-    []
+    [],
   );
 
   // Load albums on mount

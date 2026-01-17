@@ -66,8 +66,10 @@ describe('useLightbox', () => {
       root.render(
         createElement(TestHarness, {
           photos,
-          onResult: (result) => { hookResult = result; },
-        })
+          onResult: (result) => {
+            hookResult = result;
+          },
+        }),
       );
     });
     return hookResult;

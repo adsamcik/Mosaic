@@ -27,8 +27,15 @@ vi.mock('leaflet', () => ({
   default: {
     map: vi.fn(() => mockMap),
     tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
-    layerGroup: vi.fn(() => ({ addTo: vi.fn(), addLayer: vi.fn(), clearLayers: vi.fn() })),
-    marker: vi.fn(() => ({ on: vi.fn().mockReturnThis(), bindTooltip: vi.fn().mockReturnThis() })),
+    layerGroup: vi.fn(() => ({
+      addTo: vi.fn(),
+      addLayer: vi.fn(),
+      clearLayers: vi.fn(),
+    })),
+    marker: vi.fn(() => ({
+      on: vi.fn().mockReturnThis(),
+      bindTooltip: vi.fn().mockReturnThis(),
+    })),
     divIcon: vi.fn((opts) => opts),
     latLng: vi.fn((lat, lng) => ({ lat, lng })),
     latLngBounds: vi.fn(),
@@ -108,7 +115,9 @@ vi.mock('../src/hooks/useAlbumMembers', () => ({
     error: null,
     refetch: vi.fn(),
     isOwner: mockState.isOwner,
-    canEdit: mockState.isOwner || ['owner', 'editor'].includes(mockState.currentUserRole),
+    canEdit:
+      mockState.isOwner ||
+      ['owner', 'editor'].includes(mockState.currentUserRole),
     currentUserRole: mockState.currentUserRole,
   })),
 }));
@@ -194,22 +203,28 @@ vi.mock('../src/contexts/SyncContext', () => ({
 
 // Mock geo client
 vi.mock('../src/lib/geo-client', () => ({
-  getGeoClient: vi.fn(() => Promise.resolve({
-    load: vi.fn(),
-    getClusters: vi.fn().mockResolvedValue([]),
-    getLeaves: vi.fn().mockResolvedValue([]),
-  })),
+  getGeoClient: vi.fn(() =>
+    Promise.resolve({
+      load: vi.fn(),
+      getClusters: vi.fn().mockResolvedValue([]),
+      getLeaves: vi.fn().mockResolvedValue([]),
+    }),
+  ),
 }));
 
 // Mock db client
 vi.mock('../src/lib/db-client', () => ({
-  getDbClient: vi.fn(() => Promise.resolve({
-    getPhotos: vi.fn().mockResolvedValue([]),
-  })),
+  getDbClient: vi.fn(() =>
+    Promise.resolve({
+      getPhotos: vi.fn().mockResolvedValue([]),
+    }),
+  ),
 }));
 
 // Helper to render component and get elements
-function renderGallery(props: { albumId: string } = { albumId: 'test-album-123' }) {
+function renderGallery(
+  props: { albumId: string } = { albumId: 'test-album-123' },
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
 

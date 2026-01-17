@@ -47,7 +47,7 @@ export interface RowDef {
  */
 export function computeMosaicLayout(
   photos: PhotoMeta[],
-  config: MosaicConfig
+  config: MosaicConfig,
 ): RowDef[] {
   const { containerWidth, gap, targetRowHeight } = config;
   const rows: RowDef[] = [];
@@ -55,44 +55,74 @@ export function computeMosaicLayout(
 
   // We process photos in batches to form "rows"
   let cursor = 0;
-  
+
   while (cursor < photos.length) {
     // Look ahead to decide the next row template
     const remaining = photos.length - cursor;
     const currentPhoto = photos[cursor];
-    if (!currentPhoto) break; 
-    
+    if (!currentPhoto) break;
+
     // Check if current photo has a long description -> Story Tile
     // Criteria: Description exists and is longer than 20 chars
-    const hasStory = !!currentPhoto.description && currentPhoto.description.length > 20;
-    
+    const hasStory =
+      !!currentPhoto.description && currentPhoto.description.length > 20;
+
     // Check next few photos for shape
     const p1 = currentPhoto;
     const p2 = photos[cursor + 1];
     const p3 = photos[cursor + 2];
-    
+
     let row: RowDef;
 
     if (hasStory) {
       // TEMPLATE: Story Row
-      row = createStoryRow(p1, containerWidth, targetRowHeight * 1.5, gap, currentTop);
+      row = createStoryRow(
+        p1,
+        containerWidth,
+        targetRowHeight * 1.5,
+        gap,
+        currentTop,
+      );
       cursor += 1;
-    } 
-    else if (remaining >= 3 && p1 && p2 && p3 && isPortrait(p1) && !isPortrait(p2) && !isPortrait(p3)) {
+    } else if (
+      remaining >= 3 &&
+      p1 &&
+      p2 &&
+      p3 &&
+      isPortrait(p1) &&
+      !isPortrait(p2) &&
+      !isPortrait(p3)
+    ) {
       // TEMPLATE: Portrait Focus (Left)
-      row = createHeroLeftRow([p1, p2, p3], containerWidth, targetRowHeight * 2, gap, currentTop);
+      row = createHeroLeftRow(
+        [p1, p2, p3],
+        containerWidth,
+        targetRowHeight * 2,
+        gap,
+        currentTop,
+      );
       cursor += 3;
-    }
-    else if (remaining >= 2 && p1 && p2 && isPortrait(p1) && isPortrait(p2)) {
+    } else if (remaining >= 2 && p1 && p2 && isPortrait(p1) && isPortrait(p2)) {
       // TEMPLATE: Dual Portrait
-      row = createDualPortraitRow([p1, p2], containerWidth, targetRowHeight * 1.5, gap, currentTop);
+      row = createDualPortraitRow(
+        [p1, p2],
+        containerWidth,
+        targetRowHeight * 1.5,
+        gap,
+        currentTop,
+      );
       cursor += 2;
-    }
-    else {
+    } else {
       // DEFAULT: Justified Row (fallback)
       const count = Math.min(remaining, 3);
       const rowPhotos = photos.slice(cursor, cursor + count);
-      row = createStandardRow(rowPhotos, containerWidth, targetRowHeight, gap, currentTop);
+      row = createStandardRow(
+        rowPhotos,
+        containerWidth,
+        targetRowHeight,
+        gap,
+        currentTop,
+      );
       cursor += count;
     }
 
@@ -103,7 +133,6 @@ export function computeMosaicLayout(
 
   return rows;
 }
-
 
 // --- Helper Functions to Create Rows ---
 
@@ -117,7 +146,7 @@ function createStoryRow(
   width: number,
   height: number,
   _gap: number,
-  top: number
+  top: number,
 ): RowDef {
   return {
     height,
@@ -127,9 +156,9 @@ function createStoryRow(
         photoId: photo.id,
         type: 'story',
         description: photo.description || '', // Ensure string
-        rect: { top, left: 0, width, height }
-      }
-    ]
+        rect: { top, left: 0, width, height },
+      },
+    ],
   };
 }
 
@@ -138,7 +167,7 @@ function createHeroLeftRow(
   width: number,
   height: number,
   gap: number,
-  top: number
+  top: number,
 ): RowDef {
   const col2Width = (width - gap) / 3;
   const col1Width = width - col2Width - gap;
@@ -154,21 +183,31 @@ function createHeroLeftRow(
         id: p1.id,
         photoId: p1.id,
         type: 'hero',
-        rect: { top, left: 0, width: col1Width, height }
+        rect: { top, left: 0, width: col1Width, height },
       },
       {
         id: p2.id,
         photoId: p2.id,
         type: 'standard',
-        rect: { top, left: col1Width + gap, width: col2Width, height: halfHeight }
+        rect: {
+          top,
+          left: col1Width + gap,
+          width: col2Width,
+          height: halfHeight,
+        },
       },
       {
         id: p3.id,
         photoId: p3.id,
         type: 'standard',
-        rect: { top: top + halfHeight + gap, left: col1Width + gap, width: col2Width, height: halfHeight }
-      }
-    ]
+        rect: {
+          top: top + halfHeight + gap,
+          left: col1Width + gap,
+          width: col2Width,
+          height: halfHeight,
+        },
+      },
+    ],
   };
 }
 
@@ -177,7 +216,7 @@ function createDualPortraitRow(
   width: number,
   height: number,
   gap: number,
-  top: number
+  top: number,
 ): RowDef {
   const itemWidth = (width - gap) / 2;
   return {
@@ -185,15 +224,15 @@ function createDualPortraitRow(
     items: photos.map((p, i) => ({
       id: p.id,
       photoId: p.id,
-      type: 'standard', 
+      type: 'standard',
       isPortrait: true,
       rect: {
         top,
         left: i * (itemWidth + gap),
         width: itemWidth,
-        height
-      }
-    }))
+        height,
+      },
+    })),
   };
 }
 
@@ -202,15 +241,18 @@ function createStandardRow(
   width: number,
   targetHeight: number,
   gap: number,
-  top: number
+  top: number,
 ): RowDef {
   // Simple aspect ratio packing
-  const ratios = photos.map(p => (p.width && p.height) ? p.width / p.height : 1);
+  const ratios = photos.map((p) =>
+    p.width && p.height ? p.width / p.height : 1,
+  );
   const totalRatio = ratios.reduce((sum, r) => sum + r, 0);
-  
+
   const totalGap = (photos.length - 1) * gap;
-  const height = totalRatio > 0 ? (width - totalGap) / totalRatio : targetHeight;
-  
+  const height =
+    totalRatio > 0 ? (width - totalGap) / totalRatio : targetHeight;
+
   let currentLeft = 0;
   const items: MosaicItem[] = photos.map((p, i) => {
     const r = ratios[i]!;
@@ -222,9 +264,9 @@ function createStandardRow(
       rect: {
         top,
         left: currentLeft,
-        width: itemWidth, 
-        height
-      }
+        width: itemWidth,
+        height,
+      },
     } as MosaicItem;
     currentLeft += itemWidth + gap;
     return item;

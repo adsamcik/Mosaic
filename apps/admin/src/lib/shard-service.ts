@@ -20,7 +20,7 @@ export type ProgressCallback = (loaded: number, total: number) => void;
 export class ShardDownloadError extends Error {
   constructor(
     public readonly shardId: string,
-    public readonly cause: Error
+    public readonly cause: Error,
   ) {
     super(`Failed to download shard ${shardId}: ${cause.message}`);
     this.name = 'ShardDownloadError';
@@ -37,7 +37,7 @@ export class ShardDownloadError extends Error {
  */
 export async function downloadShard(
   shardId: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
 ): Promise<Uint8Array> {
   try {
     // Use the API client for simple downloads
@@ -96,7 +96,7 @@ export async function downloadShard(
     }
     throw new ShardDownloadError(
       shardId,
-      error instanceof Error ? error : new Error(String(error))
+      error instanceof Error ? error : new Error(String(error)),
     );
   }
 }
@@ -113,7 +113,7 @@ export async function downloadShard(
 export async function downloadShards(
   shardIds: string[],
   onProgress?: ProgressCallback,
-  maxConcurrent = 4
+  maxConcurrent = 4,
 ): Promise<Uint8Array[]> {
   if (shardIds.length === 0) {
     return [];
@@ -148,7 +148,7 @@ export async function downloadShards(
   for (let i = 0; i < shardIds.length; i += maxConcurrent) {
     const batch = shardIds.slice(i, i + maxConcurrent);
     const batchResults = await Promise.all(
-      batch.map((shardId) => downloadWithProgress(shardId))
+      batch.map((shardId) => downloadWithProgress(shardId)),
     );
     results.push(...batchResults);
   }
@@ -167,7 +167,7 @@ export async function downloadShards(
 export async function downloadShardViaShareLink(
   linkId: string,
   shardId: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
 ): Promise<Uint8Array> {
   try {
     const response = await fetch(`/api/s/${linkId}/shards/${shardId}`, {
@@ -219,7 +219,7 @@ export async function downloadShardViaShareLink(
     }
     throw new ShardDownloadError(
       shardId,
-      error instanceof Error ? error : new Error(String(error))
+      error instanceof Error ? error : new Error(String(error)),
     );
   }
 }

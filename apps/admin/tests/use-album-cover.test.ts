@@ -8,9 +8,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    clearAllCovers,
-    getAlbumCover,
-    getCachedCover
+  clearAllCovers,
+  getAlbumCover,
+  getCachedCover,
 } from '../src/lib/album-cover-service';
 import { getCurrentOrFetchEpochKey } from '../src/lib/epoch-key-service';
 
@@ -136,28 +136,32 @@ describe('useAlbumCover integration', () => {
       mockDbClient.getPhotos.mockResolvedValue([mockPhoto]);
 
       await expect(getAlbumCover('album-1', mockReadKey)).rejects.toThrow(
-        'First photo has no shard IDs'
+        'First photo has no shard IDs',
       );
     });
   });
 
   describe('epoch key fetching', () => {
     it('getCurrentOrFetchEpochKey returns epoch key bundle', async () => {
-      mockEpochKeyService.getCurrentOrFetchEpochKey.mockResolvedValue(mockEpochKey);
+      mockEpochKeyService.getCurrentOrFetchEpochKey.mockResolvedValue(
+        mockEpochKey,
+      );
 
       const result = await getCurrentOrFetchEpochKey('album-1');
 
       expect(result).toEqual(mockEpochKey);
-      expect(mockEpochKeyService.getCurrentOrFetchEpochKey).toHaveBeenCalledWith('album-1');
+      expect(
+        mockEpochKeyService.getCurrentOrFetchEpochKey,
+      ).toHaveBeenCalledWith('album-1');
     });
 
     it('getCurrentOrFetchEpochKey throws on error', async () => {
       mockEpochKeyService.getCurrentOrFetchEpochKey.mockRejectedValue(
-        new Error('No keys available')
+        new Error('No keys available'),
       );
 
       await expect(getCurrentOrFetchEpochKey('album-1')).rejects.toThrow(
-        'No keys available'
+        'No keys available',
       );
     });
   });

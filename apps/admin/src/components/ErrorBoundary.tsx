@@ -10,21 +10,22 @@ interface ErrorBoundaryProps {
 /**
  * Default fallback UI component with i18n support
  */
-function DefaultErrorFallback({ error, onReset }: { error: Error; onReset: () => void }) {
+function DefaultErrorFallback({
+  error,
+  onReset,
+}: {
+  error: Error;
+  onReset: () => void;
+}) {
   const { t } = useTranslation();
-  
+
   return (
     <div className="error-boundary-fallback" style={defaultStyles.container}>
       <div style={defaultStyles.content}>
         <h2 style={defaultStyles.heading}>{t('error.somethingWentWrong')}</h2>
-        <p style={defaultStyles.message}>
-          {t('error.unexpectedError')}
-        </p>
+        <p style={defaultStyles.message}>{t('error.unexpectedError')}</p>
         <div style={defaultStyles.actions}>
-          <button
-            onClick={onReset}
-            style={defaultStyles.button}
-          >
+          <button onClick={onReset} style={defaultStyles.button}>
             {t('common.tryAgain')}
           </button>
           <button
@@ -36,7 +37,9 @@ function DefaultErrorFallback({ error, onReset }: { error: Error; onReset: () =>
         </div>
         {import.meta.env.DEV && (
           <details style={defaultStyles.details}>
-            <summary style={defaultStyles.summary}>{t('error.technicalDetails')}</summary>
+            <summary style={defaultStyles.summary}>
+              {t('error.technicalDetails')}
+            </summary>
             <pre style={defaultStyles.pre}>
               {error.name}: {error.message}
               {'\n\n'}
@@ -57,17 +60,17 @@ interface ErrorBoundaryState {
 /**
  * Error boundary component that catches JavaScript errors in child components,
  * logs them, and displays a fallback UI instead of crashing the entire app.
- * 
+ *
  * Usage:
  *   <ErrorBoundary>
  *     <MyComponent />
  *   </ErrorBoundary>
- * 
+ *
  * With custom fallback:
  *   <ErrorBoundary fallback={<ErrorPage />}>
  *     <MyComponent />
  *   </ErrorBoundary>
- * 
+ *
  * With reset capability:
  *   <ErrorBoundary fallback={(error, reset) => (
  *     <div>
@@ -78,7 +81,10 @@ interface ErrorBoundaryState {
  *     <MyComponent />
  *   </ErrorBoundary>
  */
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ErrorBoundary extends Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };

@@ -112,20 +112,29 @@ function validateSettings(settings: unknown): UserSettings {
   const s = settings as Record<string, unknown>;
 
   return {
-    idleTimeout: VALID_IDLE_TIMEOUTS.includes(s.idleTimeout as IdleTimeoutMinutes)
+    idleTimeout: VALID_IDLE_TIMEOUTS.includes(
+      s.idleTimeout as IdleTimeoutMinutes,
+    )
       ? (s.idleTimeout as IdleTimeoutMinutes)
       : DEFAULT_SETTINGS.idleTimeout,
     theme: VALID_THEMES.includes(s.theme as Theme)
       ? (s.theme as Theme)
       : DEFAULT_SETTINGS.theme,
-    thumbnailQuality: VALID_THUMBNAIL_QUALITIES.includes(s.thumbnailQuality as ThumbnailQuality)
+    thumbnailQuality: VALID_THUMBNAIL_QUALITIES.includes(
+      s.thumbnailQuality as ThumbnailQuality,
+    )
       ? (s.thumbnailQuality as ThumbnailQuality)
       : DEFAULT_SETTINGS.thumbnailQuality,
-    autoSync: typeof s.autoSync === 'boolean' ? s.autoSync : DEFAULT_SETTINGS.autoSync,
-    keyCacheDuration: VALID_KEY_CACHE_DURATIONS.includes(s.keyCacheDuration as KeyCacheDuration)
+    autoSync:
+      typeof s.autoSync === 'boolean' ? s.autoSync : DEFAULT_SETTINGS.autoSync,
+    keyCacheDuration: VALID_KEY_CACHE_DURATIONS.includes(
+      s.keyCacheDuration as KeyCacheDuration,
+    )
       ? (s.keyCacheDuration as KeyCacheDuration)
       : DEFAULT_SETTINGS.keyCacheDuration,
-    originalStorageFormat: VALID_ORIGINAL_FORMATS.includes(s.originalStorageFormat as OriginalStorageFormat)
+    originalStorageFormat: VALID_ORIGINAL_FORMATS.includes(
+      s.originalStorageFormat as OriginalStorageFormat,
+    )
       ? (s.originalStorageFormat as OriginalStorageFormat)
       : DEFAULT_SETTINGS.originalStorageFormat,
   };
@@ -174,7 +183,9 @@ export function updateSettings(updates: Partial<UserSettings>): void {
 /**
  * Get a specific setting value.
  */
-export function getSetting<K extends keyof UserSettings>(key: K): UserSettings[K] {
+export function getSetting<K extends keyof UserSettings>(
+  key: K,
+): UserSettings[K] {
   return getSettings()[key];
 }
 
@@ -183,7 +194,7 @@ export function getSetting<K extends keyof UserSettings>(key: K): UserSettings[K
  */
 export function setSetting<K extends keyof UserSettings>(
   key: K,
-  value: UserSettings[K]
+  value: UserSettings[K],
 ): void {
   updateSettings({ [key]: value });
 }

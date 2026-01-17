@@ -1,6 +1,6 @@
 /**
  * Virtualization Configuration Tests
- * 
+ *
  * These tests verify that the virtualization is correctly configured
  * to prevent performance issues from excessive DOM rendering.
  */
@@ -13,7 +13,9 @@ import { describe, expect, it } from 'vitest';
  */
 function extractOverscanValue(fileContent: string): number | null {
   // Match useVirtualizer({ ... overscan: <number> ... })
-  const virtualizerMatch = fileContent.match(/useVirtualizer\s*\(\s*\{[^}]*overscan\s*:\s*(\d+)/s);
+  const virtualizerMatch = fileContent.match(
+    /useVirtualizer\s*\(\s*\{[^}]*overscan\s*:\s*(\d+)/s,
+  );
   if (virtualizerMatch) {
     return parseInt(virtualizerMatch[1], 10);
   }
@@ -25,9 +27,12 @@ function extractOverscanValue(fileContent: string): number | null {
  */
 function usesReactMemo(fileContent: string): boolean {
   // Check for memo import
-  const hasMemoImport = /import\s*\{[^}]*\bmemo\b[^}]*\}\s*from\s*['"]react['"]/.test(fileContent);
+  const hasMemoImport =
+    /import\s*\{[^}]*\bmemo\b[^}]*\}\s*from\s*['"]react['"]/.test(fileContent);
   // Check for memo() usage in export
-  const hasMemoExport = /export\s+(const|function)\s+\w+\s*=\s*memo\s*\(/.test(fileContent);
+  const hasMemoExport = /export\s+(const|function)\s+\w+\s*=\s*memo\s*\(/.test(
+    fileContent,
+  );
   return hasMemoImport && hasMemoExport;
 }
 
@@ -37,8 +42,14 @@ describe('Virtualization Configuration', () => {
   describe('overscan values', () => {
     const mosaicGridFiles = [
       { name: 'MosaicPhotoGrid', path: 'Gallery/MosaicPhotoGrid.tsx' },
-      { name: 'EnhancedMosaicPhotoGrid', path: 'Gallery/EnhancedMosaicPhotoGrid.tsx' },
-      { name: 'SharedMosaicPhotoGrid', path: 'Shared/SharedMosaicPhotoGrid.tsx' },
+      {
+        name: 'EnhancedMosaicPhotoGrid',
+        path: 'Gallery/EnhancedMosaicPhotoGrid.tsx',
+      },
+      {
+        name: 'SharedMosaicPhotoGrid',
+        path: 'Shared/SharedMosaicPhotoGrid.tsx',
+      },
     ];
 
     for (const { name, path: filePath } of mosaicGridFiles) {

@@ -1,6 +1,6 @@
 /**
  * Enhanced Mosaic Photo Grid (v2)
- * 
+ *
  * An improved photo grid that uses the enhanced mosaic layout algorithm with:
  * - Proper justified rows that fill container width exactly
  * - Smart map tile insertion for GPS-tagged photo clusters
@@ -18,9 +18,9 @@ import { usePhotoActions } from '../../hooks/usePhotoActions';
 import { usePhotos } from '../../hooks/usePhotos';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
 import {
-    computeEnhancedMosaicLayout,
-    type EnhancedMosaicItem,
-    type MosaicLayoutConfig
+  computeEnhancedMosaicLayout,
+  type EnhancedMosaicItem,
+  type MosaicLayoutConfig,
 } from '../../lib/mosaic-layout-v2';
 import '../../styles/upload.css';
 import type { PhotoMeta } from '../../workers/types';
@@ -53,18 +53,26 @@ interface EnhancedMosaicPhotoGridProps {
   /** Enable smart story tile insertion for photos with descriptions */
   enableDescriptionTiles?: boolean;
   /** Handler for when a map cluster is clicked */
-  onMapClick?: (coordinates: Array<{ lat: number; lng: number; photoId: string }>) => void;
+  onMapClick?: (
+    coordinates: Array<{ lat: number; lng: number; photoId: string }>,
+  ) => void;
 }
 
 // Virtual item types
-type VirtualItem = 
+type VirtualItem =
   | { type: 'header'; date: string; id: string; height: number }
-  | { type: 'mosaic-row'; items: EnhancedMosaicItem[]; height: number; id: string; top: number };
+  | {
+      type: 'mosaic-row';
+      items: EnhancedMosaicItem[];
+      height: number;
+      id: string;
+      top: number;
+    };
 
 function formatDateHeader(dateString: string): string {
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return 'Unknown Date';
-  
+
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
@@ -72,18 +80,18 @@ function formatDateHeader(dateString: string): string {
   if (date.toDateString() === today.toDateString()) return 'Today';
   if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
 
-  return new Intl.DateTimeFormat('en-US', { 
-    weekday: 'long', 
-    month: 'short', 
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'short',
     day: 'numeric',
-    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
+    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
   }).format(date);
 }
 
 function groupPhotosByDate(photos: PhotoMeta[]) {
   const groups: Record<string, PhotoMeta[]> = {};
-  const sorted = [...photos].sort((a, b) => 
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  const sorted = [...photos].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 
   for (const photo of sorted) {
@@ -93,16 +101,16 @@ function groupPhotosByDate(photos: PhotoMeta[]) {
     }
     groups[dateKey].push(photo);
   }
-  
-  return Object.entries(groups).sort((a, b) => 
-    new Date(b[0]).getTime() - new Date(a[0]).getTime()
+
+  return Object.entries(groups).sort(
+    (a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime(),
   );
 }
 
-export function EnhancedMosaicPhotoGrid({ 
-  albumId, 
-  searchQuery, 
-  onPhotosDeleted, 
+export function EnhancedMosaicPhotoGrid({
+  albumId,
+  searchQuery,
+  onPhotosDeleted,
   selection,
   enableMapTiles = true,
   enableDescriptionTiles = true,
@@ -110,34 +118,36 @@ export function EnhancedMosaicPhotoGrid({
 }: EnhancedMosaicPhotoGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  
+
   // Resize observer
   useEffect(() => {
     const node = parentRef.current;
     if (!node) return;
-    
+
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setContainerWidth(entry.contentRect.width);
       }
     });
-    
+
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
 
   const { photos, isLoading, error, refetch } = usePhotos(albumId, searchQuery);
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
-  
+
   // Sort photos by createdAt descending to match display order
   // This ensures lightbox navigation follows the visual order
-  const sortedPhotos = useMemo(() => 
-    [...photos].sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    ),
-    [photos]
+  const sortedPhotos = useMemo(
+    () =>
+      [...photos].sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [photos],
   );
-  
+
   const lightbox = useLightbox(sortedPhotos);
   const photoActions = usePhotoActions();
   const permissions = useAlbumPermissions();
@@ -168,7 +178,10 @@ export function EnhancedMosaicPhotoGrid({
 
   // Create animation lookup map for quick access during render
   const animationLookup = useMemo(() => {
-    const lookup = new Map<string, { isExiting: boolean; staggerDelay: number; hasBeenSeen: boolean }>();
+    const lookup = new Map<
+      string,
+      { isExiting: boolean; staggerDelay: number; hasBeenSeen: boolean }
+    >();
     for (const item of animatedItems) {
       lookup.set(item.key, {
         isExiting: item.isExiting,
@@ -182,15 +195,17 @@ export function EnhancedMosaicPhotoGrid({
   const isSelectionMode = selection?.isSelectionMode ?? false;
   const selectedIds = selection?.selectedIds ?? new Set<string>();
   const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
-  const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<string | undefined>();
+  const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<
+    string | undefined
+  >();
 
   // Compute layout using the enhanced algorithm
   const virtualRows = useMemo(() => {
     if (containerWidth <= 0 || photos.length === 0) return [];
-    
+
     const grouped = groupPhotosByDate(photos);
     const rows: VirtualItem[] = [];
-    
+
     const layoutConfig: MosaicLayoutConfig = {
       containerWidth,
       gap: PHOTO_GAP,
@@ -200,18 +215,21 @@ export function EnhancedMosaicPhotoGrid({
       minDescriptionLength: 20,
       minPhotosForMapTile: 3,
     };
-    
+
     for (const [dateString, groupPhotos] of grouped) {
       // Add date header
       rows.push({
         type: 'header',
         date: formatDateHeader(dateString),
         id: `header-${dateString}`,
-        height: HEADER_HEIGHT
+        height: HEADER_HEIGHT,
       });
 
       // Compute enhanced mosaic layout for this date group
-      const mosaicItems = computeEnhancedMosaicLayout(groupPhotos, layoutConfig);
+      const mosaicItems = computeEnhancedMosaicLayout(
+        groupPhotos,
+        layoutConfig,
+      );
 
       // Group mosaic items by their top coordinate to form virtual rows
       const byTop = new Map<number, EnhancedMosaicItem[]>();
@@ -223,10 +241,10 @@ export function EnhancedMosaicPhotoGrid({
 
       // Sort by top and create row entries
       const sortedTops = Array.from(byTop.keys()).sort((a, b) => a - b);
-      
+
       for (const top of sortedTops) {
         const items = byTop.get(top)!;
-        
+
         // Calculate row height from items
         let maxBottom = 0;
         for (const item of items) {
@@ -234,20 +252,20 @@ export function EnhancedMosaicPhotoGrid({
           if (bottom > maxBottom) maxBottom = bottom;
         }
         const rowHeight = maxBottom - top;
-        
+
         rows.push({
           type: 'mosaic-row',
-          items: items.map(it => ({
+          items: items.map((it) => ({
             ...it,
-            rect: { ...it.rect, top: it.rect.top - top } // Relative to this row
+            rect: { ...it.rect, top: it.rect.top - top }, // Relative to this row
           })),
           height: rowHeight + PHOTO_GAP,
           id: `row-${dateString}-${top}`,
-          top: 0
+          top: 0,
         });
       }
     }
-    
+
     return rows;
   }, [photos, containerWidth, enableMapTiles, enableDescriptionTiles]);
 
@@ -267,20 +285,26 @@ export function EnhancedMosaicPhotoGrid({
         if (index >= 0) lightbox.open(index);
       }
     },
-    [isSelectionMode, lightbox, sortedPhotos]
+    [isSelectionMode, lightbox, sortedPhotos],
   );
 
-  const handleSelectionChange = useCallback((photoId: string, selected: boolean) => {
-    if (selection) {
-      if (selected) selection.selectPhoto(photoId);
-      else selection.deselectPhoto(photoId);
-    }
-  }, [selection]);
+  const handleSelectionChange = useCallback(
+    (photoId: string, selected: boolean) => {
+      if (selection) {
+        if (selected) selection.selectPhoto(photoId);
+        else selection.deselectPhoto(photoId);
+      }
+    },
+    [selection],
+  );
 
-  const handleDeletePhoto = useCallback((photo: PhotoMeta, thumbnailUrl?: string) => {
-    setDeleteTarget([photo]);
-    setDeleteThumbnailUrl(thumbnailUrl);
-  }, []);
+  const handleDeletePhoto = useCallback(
+    (photo: PhotoMeta, thumbnailUrl?: string) => {
+      setDeleteTarget([photo]);
+      setDeleteThumbnailUrl(thumbnailUrl);
+    },
+    [],
+  );
 
   const handleDeleteFromLightbox = useCallback(() => {
     if (lightbox.currentPhoto) {
@@ -296,21 +320,37 @@ export function EnhancedMosaicPhotoGrid({
       if (deleteTarget.length === 1 && firstPhoto) {
         await photoActions.deletePhoto(firstPhoto.id, albumId);
       } else {
-        await photoActions.deletePhotos(deleteTarget.map(p => p.id), albumId);
+        await photoActions.deletePhotos(
+          deleteTarget.map((p) => p.id),
+          albumId,
+        );
       }
       setDeleteTarget(null);
       selection?.clearSelection();
       lightbox.close();
       refetch();
       onPhotosDeleted?.();
-    } catch { /* Error handled in hook */ }
-  }, [deleteTarget, photoActions, albumId, lightbox, refetch, onPhotosDeleted, selection]);
-
-  const handleMapClick = useCallback((coordinates: Array<{ lat: number; lng: number; photoId: string }>) => {
-    if (onMapClick) {
-      onMapClick(coordinates);
+    } catch {
+      /* Error handled in hook */
     }
-  }, [onMapClick]);
+  }, [
+    deleteTarget,
+    photoActions,
+    albumId,
+    lightbox,
+    refetch,
+    onPhotosDeleted,
+    selection,
+  ]);
+
+  const handleMapClick = useCallback(
+    (coordinates: Array<{ lat: number; lng: number; photoId: string }>) => {
+      if (onMapClick) {
+        onMapClick(coordinates);
+      }
+    },
+    [onMapClick],
+  );
 
   // Preload queue for lightbox - direction-aware for smarter preloading
   // When navigating forward: prioritize N+1, N+2, then N-1
@@ -318,11 +358,11 @@ export function EnhancedMosaicPhotoGrid({
   // When initial (just opened): preload equally in both directions
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
-    
+
     const queue: PhotoMeta[] = [];
     const currentIdx = lightbox.currentIndex;
     const direction = lightbox.navigationDirection;
-    
+
     if (direction === 'forward') {
       // Moving forward: prioritize ahead, then add one behind
       for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
@@ -350,9 +390,15 @@ export function EnhancedMosaicPhotoGrid({
         if (prev?.shardIds?.length) queue.push(prev);
       }
     }
-    
+
     return queue;
-  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, lightbox.navigationDirection, sortedPhotos]);
+  }, [
+    lightbox.isOpen,
+    lightbox.currentIndex,
+    lightbox.currentPhoto,
+    lightbox.navigationDirection,
+    sortedPhotos,
+  ]);
 
   const currentEpochReadKey = lightbox.currentPhoto
     ? epochKeys.get(lightbox.currentPhoto.epochId)
@@ -361,7 +407,10 @@ export function EnhancedMosaicPhotoGrid({
   // Loading state - show skeleton
   if (isLoading || keysLoading) {
     return (
-      <div className="photo-grid-container" data-testid="enhanced-mosaic-photo-grid-loading">
+      <div
+        className="photo-grid-container"
+        data-testid="enhanced-mosaic-photo-grid-loading"
+      >
         <PhotoGridSkeleton count={12} columns={4} />
       </div>
     );
@@ -371,10 +420,15 @@ export function EnhancedMosaicPhotoGrid({
   if (error) return <div className="photo-grid-error">{error.message}</div>;
 
   // Render thumbnail helper
-  const renderThumbnail = (photo: PhotoMeta, width: number, height: number, onClick?: () => void) => {
+  const renderThumbnail = (
+    photo: PhotoMeta,
+    width: number,
+    height: number,
+    onClick?: () => void,
+  ) => {
     const epochKey = epochKeys.get(photo.epochId);
     const isSelected = selectedIds.has(photo.id);
-    
+
     return (
       <div style={{ width: '100%', height: '100%' }}>
         <JustifiedPhotoThumbnail
@@ -383,7 +437,9 @@ export function EnhancedMosaicPhotoGrid({
           isSelected={isSelected}
           selectionMode={isSelectionMode}
           showDelete={!photo.isPending}
-          onSelectionChange={(selected) => handleSelectionChange(photo.id, selected)}
+          onSelectionChange={(selected) =>
+            handleSelectionChange(photo.id, selected)
+          }
           onClick={() => onClick?.()}
           width={width}
           height={height}
@@ -411,7 +467,7 @@ export function EnhancedMosaicPhotoGrid({
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const item = virtualRows[virtualRow.index];
             if (!item) return null;
-            
+
             // Render date header
             if (item.type === 'header') {
               return (
@@ -430,7 +486,7 @@ export function EnhancedMosaicPhotoGrid({
                     alignItems: 'center',
                     fontWeight: 600,
                     color: 'var(--text-secondary)',
-                    zIndex: 1
+                    zIndex: 1,
                   }}
                 >
                   {item.date}
@@ -454,21 +510,32 @@ export function EnhancedMosaicPhotoGrid({
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
               >
-                {item.items.map(mosaicItem => {
-                  const photo = mosaicItem.photoId 
+                {item.items.map((mosaicItem) => {
+                  const photo = mosaicItem.photoId
                     ? photosMap.get(mosaicItem.photoId)
                     : undefined;
 
                   // Get animation state for this photo
-                  const animState = photo ? animationLookup.get(photo.id) : undefined;
+                  const animState = photo
+                    ? animationLookup.get(photo.id)
+                    : undefined;
                   const skipAnimation = isInitialLoad || !animState;
 
                   const tileProps = {
                     item: mosaicItem,
                     photos: photosMap,
                     onMapClick: handleMapClick,
-                    renderThumbnail: ({ photo: p, width, height, onClick }: { photo: PhotoMeta; width: number; height: number; onClick?: () => void }) => 
-                      renderThumbnail(p, width, height, onClick),
+                    renderThumbnail: ({
+                      photo: p,
+                      width,
+                      height,
+                      onClick,
+                    }: {
+                      photo: PhotoMeta;
+                      width: number;
+                      height: number;
+                      onClick?: () => void;
+                    }) => renderThumbnail(p, width, height, onClick),
                   };
 
                   // Wrap photo tiles with animation, but not map/story tiles
@@ -502,10 +569,7 @@ export function EnhancedMosaicPhotoGrid({
 
                   // Non-photo tiles (map, story) don't need animation wrapper
                   return (
-                    <EnhancedMosaicTile
-                      key={mosaicItem.id}
-                      {...tileProps}
-                    />
+                    <EnhancedMosaicTile key={mosaicItem.id} {...tileProps} />
                   );
                 })}
               </div>
@@ -536,7 +600,10 @@ export function EnhancedMosaicPhotoGrid({
           thumbnailUrl={deleteThumbnailUrl}
           isDeleting={photoActions.isDeleting}
           onConfirm={handleConfirmDelete}
-          onCancel={() => { setDeleteTarget(null); photoActions.clearError(); }}
+          onCancel={() => {
+            setDeleteTarget(null);
+            photoActions.clearError();
+          }}
           error={photoActions.error}
         />
       )}

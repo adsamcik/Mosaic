@@ -90,8 +90,8 @@ describe('UploadContext', () => {
             onContext: (ctx) => {
               contextValue = ctx;
             },
-          })
-        )
+          }),
+        ),
       );
     });
 
@@ -106,9 +106,7 @@ describe('UploadContext', () => {
   it('throws error when used outside provider', () => {
     expect(() => {
       act(() => {
-        root.render(
-          createElement(TestConsumer, { onContext: () => {} })
-        );
+        root.render(createElement(TestConsumer, { onContext: () => {} }));
       });
     }).toThrow('useUploadContext must be used within an UploadProvider');
   });
@@ -120,7 +118,7 @@ describe('UploadError', () => {
     const error = new UploadError(
       'Upload failed',
       UploadErrorCode.UPLOAD_FAILED,
-      cause
+      cause,
     );
 
     expect(error.message).toBe('Upload failed');
@@ -132,7 +130,7 @@ describe('UploadError', () => {
   it('works without cause', () => {
     const error = new UploadError(
       'Epoch key failed',
-      UploadErrorCode.EPOCH_KEY_FAILED
+      UploadErrorCode.EPOCH_KEY_FAILED,
     );
 
     expect(error.message).toBe('Epoch key failed');
@@ -164,25 +162,26 @@ describe('UploadErrorToast', () => {
   it('does not render when no error', () => {
     act(() => {
       root.render(
-        createElement(UploadProvider, null, createElement(UploadErrorToast))
+        createElement(UploadProvider, null, createElement(UploadErrorToast)),
       );
     });
 
-    expect(container.querySelector('[data-testid="upload-error-toast"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="upload-error-toast"]'),
+    ).toBeNull();
   });
 
   it('has correct accessibility attributes', () => {
     // Create a mock provider with error
     const MockProvider = ({ children }: { children: React.ReactNode }) => {
-      return createElement(
-        'div',
-        null,
-        children
-      );
+      return createElement('div', null, children);
     };
 
     // Mock the context to have an error
-    const mockError = new UploadError('Test error', UploadErrorCode.UPLOAD_FAILED);
+    const mockError = new UploadError(
+      'Test error',
+      UploadErrorCode.UPLOAD_FAILED,
+    );
     vi.doMock('../src/contexts/UploadContext', () => ({
       useUploadContext: () => ({
         error: mockError,
@@ -194,12 +193,14 @@ describe('UploadErrorToast', () => {
     // The component should have proper ARIA attributes when rendered
     act(() => {
       root.render(
-        createElement(UploadProvider, null, createElement(UploadErrorToast))
+        createElement(UploadProvider, null, createElement(UploadErrorToast)),
       );
     });
 
     // Without error, toast is not rendered, which is correct behavior
-    expect(container.querySelector('[data-testid="upload-error-toast"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="upload-error-toast"]'),
+    ).toBeNull();
   });
 });
 

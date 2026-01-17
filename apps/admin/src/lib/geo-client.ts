@@ -11,10 +11,10 @@ let api: Comlink.Remote<GeoWorkerApi> | null = null;
 export async function getGeoClient(): Promise<Comlink.Remote<GeoWorkerApi>> {
   if (api) return api;
 
-  worker = new Worker(
-    new URL('../workers/geo.worker.ts', import.meta.url),
-    { type: 'module', name: 'mosaic-geo-worker' }
-  );
+  worker = new Worker(new URL('../workers/geo.worker.ts', import.meta.url), {
+    type: 'module',
+    name: 'mosaic-geo-worker',
+  });
 
   api = Comlink.wrap<GeoWorkerApi>(worker);
   return api;

@@ -7,13 +7,17 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { fromBase64, getApi, toBase64 } from '../lib/api';
-import type { AlbumMember, CreateEpochKeyRequest, UserPublic } from '../lib/api-types';
+import type {
+  AlbumMember,
+  CreateEpochKeyRequest,
+  UserPublic,
+} from '../lib/api-types';
 import { getCryptoClient } from '../lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
 import {
-    clearPhotoCaches,
-    EpochRotationError,
-    rotateEpoch,
+  clearPhotoCaches,
+  EpochRotationError,
+  rotateEpoch,
 } from '../lib/epoch-rotation-service';
 
 /** Error thrown by member management operations */
@@ -21,7 +25,7 @@ export class MemberManagementError extends Error {
   constructor(
     message: string,
     public readonly code: MemberManagementErrorCode,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'MemberManagementError';
@@ -60,11 +64,11 @@ export interface MemberInfo extends AlbumMember {
 }
 
 /** Removal progress step for UI feedback */
-export type RemovalProgressStep = 
-  | 'removing'       // Removing member from server
-  | 'rotating'       // Rotating epoch keys
-  | 'clearing'       // Clearing caches
-  | 'complete';      // Operation complete
+export type RemovalProgressStep =
+  | 'removing' // Removing member from server
+  | 'rotating' // Rotating epoch keys
+  | 'clearing' // Clearing caches
+  | 'complete'; // Operation complete
 
 /** Hook return type */
 export interface UseMemberManagementReturn {
@@ -79,7 +83,7 @@ export interface UseMemberManagementReturn {
   /** Invite a new member */
   inviteMember: (
     recipientId: string,
-    role: 'editor' | 'viewer'
+    role: 'editor' | 'viewer',
   ) => Promise<MemberInfo>;
   /** Whether invite is in progress */
   isInviting: boolean;
@@ -90,7 +94,7 @@ export interface UseMemberManagementReturn {
   /** Remove a member and rotate epoch keys */
   removeMemberWithRotation: (
     userId: string,
-    onProgress?: (step: RemovalProgressStep) => void
+    onProgress?: (step: RemovalProgressStep) => void,
   ) => Promise<void>;
   /** Whether remove is in progress */
   isRemoving: boolean;
@@ -110,14 +114,18 @@ export interface UseMemberManagementReturn {
  * @param albumId - Album ID
  * @returns Member management functions and state
  */
-export function useMemberManagement(albumId: string): UseMemberManagementReturn {
+export function useMemberManagement(
+  albumId: string,
+): UseMemberManagementReturn {
   const [members, setMembers] = useState<MemberInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [isInviting, setIsInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
-  const [removalStep, setRemovalStep] = useState<RemovalProgressStep | null>(null);
+  const [removalStep, setRemovalStep] = useState<RemovalProgressStep | null>(
+    null,
+  );
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -162,8 +170,8 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
         new MemberManagementError(
           `Failed to fetch members: ${error.message}`,
           MemberManagementErrorCode.FETCH_FAILED,
-          error
-        )
+          error,
+        ),
       );
     } finally {
       setIsLoading(false);
@@ -180,7 +188,11 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
 
       // Try to determine if query is a pubkey (base64) or user ID (UUID)
       // UUIDs are 36 chars with dashes, base64 pubkeys are 43-44 chars
-      const isLikelyPubkey = query.length > 36 || query.includes('+') || query.includes('/') || query.includes('=');
+      const isLikelyPubkey =
+        query.length > 36 ||
+        query.includes('+') ||
+        query.includes('/') ||
+        query.includes('=');
 
       if (isLikelyPubkey) {
         return await api.getUserByPubkey(query);
@@ -189,17 +201,20 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      if (error.message.includes('404') || error.message.includes('not found')) {
+      if (
+        error.message.includes('404') ||
+        error.message.includes('not found')
+      ) {
         throw new MemberManagementError(
           'User not found',
           MemberManagementErrorCode.USER_NOT_FOUND,
-          error
+          error,
         );
       }
       throw new MemberManagementError(
         `Failed to lookup user: ${error.message}`,
         MemberManagementErrorCode.USER_LOOKUP_FAILED,
-        error
+        error,
       );
     } finally {
       setIsLookingUp(false);
@@ -216,7 +231,10 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
    * 4. Sends invite request to API
    */
   const inviteMember = useCallback(
-    async (recipientId: string, role: 'editor' | 'viewer'): Promise<MemberInfo> => {
+    async (
+      recipientId: string,
+      role: 'editor' | 'viewer',
+    ): Promise<MemberInfo> => {
       setIsInviting(true);
       setInviteError(null);
 
@@ -229,7 +247,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
         if (existingMember) {
           throw new MemberManagementError(
             'User is already a member of this album',
-            MemberManagementErrorCode.ALREADY_MEMBER
+            MemberManagementErrorCode.ALREADY_MEMBER,
           );
         }
 
@@ -237,7 +255,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
         if (recipientId === currentUserId) {
           throw new MemberManagementError(
             'Cannot invite yourself',
-            MemberManagementErrorCode.CANNOT_INVITE_SELF
+            MemberManagementErrorCode.CANNOT_INVITE_SELF,
           );
         }
 
@@ -246,7 +264,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
         if (!recipient.identityPubkey) {
           throw new MemberManagementError(
             'Recipient has not set up their identity keypair',
-            MemberManagementErrorCode.USER_LOOKUP_FAILED
+            MemberManagementErrorCode.USER_LOOKUP_FAILED,
           );
         }
         const recipientPubkey = fromBase64(recipient.identityPubkey);
@@ -256,7 +274,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
         if (!identityPubkey) {
           throw new MemberManagementError(
             'Identity not derived - please log in again',
-            MemberManagementErrorCode.IDENTITY_NOT_DERIVED
+            MemberManagementErrorCode.IDENTITY_NOT_DERIVED,
           );
         }
 
@@ -265,7 +283,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
         if (epochBundles.length === 0) {
           throw new MemberManagementError(
             'No epoch keys available for this album',
-            MemberManagementErrorCode.NO_EPOCH_KEYS
+            MemberManagementErrorCode.NO_EPOCH_KEYS,
           );
         }
 
@@ -280,14 +298,17 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
               bundle.epochSeed,
               bundle.signKeypair.publicKey,
               bundle.signKeypair.secretKey,
-              recipientPubkey
+              recipientPubkey,
             );
 
             epochKeys.push({
               recipientId,
               epochId: bundle.epochId,
               encryptedKeyBundle: toBase64(
-                new Uint8Array([...sealed.signature, ...sealed.encryptedBundle])
+                new Uint8Array([
+                  ...sealed.signature,
+                  ...sealed.encryptedBundle,
+                ]),
               ),
               ownerSignature: toBase64(sealed.signature),
               sharerPubkey: toBase64(identityPubkey),
@@ -298,7 +319,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
             throw new MemberManagementError(
               `Failed to create key bundle for epoch ${bundle.epochId}: ${error.message}`,
               MemberManagementErrorCode.BUNDLE_CREATION_FAILED,
-              error
+              error,
             );
           }
         }
@@ -329,7 +350,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
         setIsInviting(false);
       }
     },
-    [albumId, currentUserId, members, toMemberInfo]
+    [albumId, currentUserId, members, toMemberInfo],
   );
 
   /**
@@ -350,14 +371,14 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
         throw new MemberManagementError(
           `Failed to remove member: ${error.message}`,
           MemberManagementErrorCode.REMOVE_FAILED,
-          error
+          error,
         );
       } finally {
         setIsRemoving(false);
         setRemovalStep(null);
       }
     },
-    [albumId]
+    [albumId],
   );
 
   /**
@@ -375,7 +396,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
   const removeMemberWithRotation = useCallback(
     async (
       userId: string,
-      onProgress?: (step: RemovalProgressStep) => void
+      onProgress?: (step: RemovalProgressStep) => void,
     ) => {
       setIsRemoving(true);
       setRemovalStep('removing');
@@ -407,7 +428,7 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
           throw new MemberManagementError(
             `Failed to rotate keys: ${err.message}`,
             MemberManagementErrorCode.ROTATION_FAILED,
-            err
+            err,
           );
         }
 
@@ -415,14 +436,14 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
         throw new MemberManagementError(
           `Failed to remove member: ${error.message}`,
           MemberManagementErrorCode.REMOVE_FAILED,
-          error
+          error,
         );
       } finally {
         setIsRemoving(false);
         setRemovalStep(null);
       }
     },
-    [albumId]
+    [albumId],
   );
 
   // Determine if current user is owner
@@ -460,13 +481,8 @@ export function useMemberManagement(albumId: string): UseMemberManagementReturn 
  * @returns Member list state
  */
 export function useAlbumMembers(albumId: string) {
-  const {
-    members,
-    isLoading,
-    error,
-    refetch,
-    isOwner,
-  } = useMemberManagement(albumId);
+  const { members, isLoading, error, refetch, isOwner } =
+    useMemberManagement(albumId);
 
   return {
     members,

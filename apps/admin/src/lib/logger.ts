@@ -1,6 +1,6 @@
 /**
  * Centralized logging utility for the Mosaic frontend.
- * 
+ *
  * Features:
  * - Log level filtering based on environment (production vs development)
  * - Structured logging with consistent prefixes and optional JSON output
@@ -9,25 +9,25 @@
  * - Child loggers with bound context (scope, correlationId, extra data)
  * - Never logs sensitive data (keys, passwords, decrypted content)
  * - Safe error serialization
- * 
+ *
  * Usage:
  *   import { logger, createLogger } from '@/lib/logger';
- *   
+ *
  *   // Basic logging
  *   logger.debug('Processing started');
  *   logger.info('Upload complete', { photoId });
  *   logger.warn('Retrying operation', { attempt: 2 });
  *   logger.error('Failed to decrypt', error);
- *   
+ *
  *   // Scoped logger for a module
  *   const log = createLogger('UploadService');
  *   log.info('Starting upload', { filename: 'photo.jpg' });
- *   
+ *
  *   // Performance timing
  *   const timer = log.startTimer('encryptShard');
  *   await encryptShard(data);
  *   timer.end({ shardIndex: 0 }); // Logs duration automatically
- *   
+ *
  *   // Child logger with bound context
  *   const uploadLog = log.child({ uploadId: '123', albumId: 'abc' });
  *   uploadLog.info('Shard 1 complete'); // Includes uploadId and albumId
@@ -49,11 +49,13 @@ export interface LogEntry {
   correlationId?: string | undefined;
   message: string;
   context?: Record<string, unknown> | undefined;
-  error?: {
-    name: string;
-    message: string;
-    stack?: string | undefined;
-  } | undefined;
+  error?:
+    | {
+        name: string;
+        message: string;
+        stack?: string | undefined;
+      }
+    | undefined;
   durationMs?: number | undefined;
 }
 
@@ -70,7 +72,11 @@ export interface ScopedLogger {
   debug: (message: string, context?: Record<string, unknown>) => void;
   info: (message: string, context?: Record<string, unknown>) => void;
   warn: (message: string, context?: Record<string, unknown>) => void;
-  error: (message: string, errorOrContext?: unknown, context?: Record<string, unknown>) => void;
+  error: (
+    message: string,
+    errorOrContext?: unknown,
+    context?: Record<string, unknown>,
+  ) => void;
   /** Start a performance timer */
   startTimer: (operation: string) => LogTimer;
   /** Create a child logger with additional bound context */
@@ -80,7 +86,9 @@ export interface ScopedLogger {
 }
 
 // Production only logs warnings and errors; development logs everything
-let currentLevel: LogLevel = import.meta.env.PROD ? LogLevel.WARN : LogLevel.DEBUG;
+let currentLevel: LogLevel = import.meta.env.PROD
+  ? LogLevel.WARN
+  : LogLevel.DEBUG;
 
 // Global correlation ID for the current request/operation
 let globalCorrelationId: string | undefined;
@@ -164,21 +172,21 @@ function timestamp(): string {
  */
 function formatConsoleOutput(entry: LogEntry): string[] {
   const parts: string[] = [`[${entry.timestamp}]`, `[${entry.level}]`];
-  
+
   if (entry.correlationId) {
     parts.push(`[${entry.correlationId}]`);
   }
-  
+
   if (entry.scope) {
     parts.push(`[${entry.scope}]`);
   }
-  
+
   parts.push(entry.message);
-  
+
   if (entry.durationMs !== undefined) {
     parts.push(`(${entry.durationMs.toFixed(2)}ms)`);
   }
-  
+
   return parts;
 }
 
@@ -193,7 +201,7 @@ function outputLog(
   correlationId?: string,
   context?: Record<string, unknown>,
   error?: unknown,
-  durationMs?: number
+  durationMs?: number,
 ): void {
   if (currentLevel > level) return;
 
@@ -227,11 +235,11 @@ function outputLog(
     // Human-readable output for development
     const parts = formatConsoleOutput(entry);
     const args: unknown[] = [...parts];
-    
+
     if (entry.context) {
       args.push(entry.context);
     }
-    
+
     if (entry.error) {
       args.push(entry.error);
     }
@@ -282,7 +290,11 @@ export const logger = {
    * Error level logging - failures and exceptions
    * Always shown
    */
-  error: (message: string, errorOrContext?: unknown, context?: Record<string, unknown>): void => {
+  error: (
+    message: string,
+    errorOrContext?: unknown,
+    context?: Record<string, unknown>,
+  ): void => {
     // Handle different call signatures:
     // error('message')
     // error('message', error)
@@ -290,10 +302,14 @@ export const logger = {
     // error('message', error, { context })
     let error: unknown;
     let ctx: Record<string, unknown> | undefined = context;
-    
+
     if (errorOrContext instanceof Error) {
       error = errorOrContext;
-    } else if (errorOrContext && typeof errorOrContext === 'object' && !Array.isArray(errorOrContext)) {
+    } else if (
+      errorOrContext &&
+      typeof errorOrContext === 'object' &&
+      !Array.isArray(errorOrContext)
+    ) {
       if (!context) {
         ctx = errorOrContext as Record<string, unknown>;
       } else {
@@ -302,8 +318,16 @@ export const logger = {
     } else if (errorOrContext !== undefined) {
       error = errorOrContext;
     }
-    
-    outputLog(LogLevel.ERROR, 'ERROR', message, undefined, undefined, ctx, error);
+
+    outputLog(
+      LogLevel.ERROR,
+      'ERROR',
+      message,
+      undefined,
+      undefined,
+      ctx,
+      error,
+    );
   },
 
   /**
@@ -324,7 +348,16 @@ export const logger = {
     return {
       end: (context?: Record<string, unknown>) => {
         const durationMs = performance.now() - start;
-        outputLog(LogLevel.DEBUG, 'DEBUG', `${operation} completed`, undefined, undefined, context, undefined, durationMs);
+        outputLog(
+          LogLevel.DEBUG,
+          'DEBUG',
+          `${operation} completed`,
+          undefined,
+          undefined,
+          context,
+          undefined,
+          durationMs,
+        );
       },
       elapsed: () => performance.now() - start,
     };
@@ -335,8 +368,13 @@ export const logger = {
  * Create a scoped logger with a prefix for a specific module/component.
  * Returns a full ScopedLogger with timing and child logger support.
  */
-export function createLogger(scope: string, boundContext?: Record<string, unknown>): ScopedLogger {
-  const mergeContext = (ctx?: Record<string, unknown>): Record<string, unknown> | undefined => {
+export function createLogger(
+  scope: string,
+  boundContext?: Record<string, unknown>,
+): ScopedLogger {
+  const mergeContext = (
+    ctx?: Record<string, unknown>,
+  ): Record<string, unknown> | undefined => {
     if (!boundContext && !ctx) return undefined;
     if (!boundContext) return ctx;
     if (!ctx) return boundContext;
@@ -345,26 +383,55 @@ export function createLogger(scope: string, boundContext?: Record<string, unknow
 
   const scopedLogger: ScopedLogger = {
     scope,
-    
+
     debug: (message: string, context?: Record<string, unknown>): void => {
-      outputLog(LogLevel.DEBUG, 'DEBUG', message, scope, undefined, mergeContext(context));
+      outputLog(
+        LogLevel.DEBUG,
+        'DEBUG',
+        message,
+        scope,
+        undefined,
+        mergeContext(context),
+      );
     },
-    
+
     info: (message: string, context?: Record<string, unknown>): void => {
-      outputLog(LogLevel.INFO, 'INFO', message, scope, undefined, mergeContext(context));
+      outputLog(
+        LogLevel.INFO,
+        'INFO',
+        message,
+        scope,
+        undefined,
+        mergeContext(context),
+      );
     },
-    
+
     warn: (message: string, context?: Record<string, unknown>): void => {
-      outputLog(LogLevel.WARN, 'WARN', message, scope, undefined, mergeContext(context));
+      outputLog(
+        LogLevel.WARN,
+        'WARN',
+        message,
+        scope,
+        undefined,
+        mergeContext(context),
+      );
     },
-    
-    error: (message: string, errorOrContext?: unknown, context?: Record<string, unknown>): void => {
+
+    error: (
+      message: string,
+      errorOrContext?: unknown,
+      context?: Record<string, unknown>,
+    ): void => {
       let error: unknown;
       let ctx: Record<string, unknown> | undefined = context;
-      
+
       if (errorOrContext instanceof Error) {
         error = errorOrContext;
-      } else if (errorOrContext && typeof errorOrContext === 'object' && !Array.isArray(errorOrContext)) {
+      } else if (
+        errorOrContext &&
+        typeof errorOrContext === 'object' &&
+        !Array.isArray(errorOrContext)
+      ) {
         if (!context) {
           ctx = errorOrContext as Record<string, unknown>;
         } else {
@@ -373,26 +440,43 @@ export function createLogger(scope: string, boundContext?: Record<string, unknow
       } else if (errorOrContext !== undefined) {
         error = errorOrContext;
       }
-      
-      outputLog(LogLevel.ERROR, 'ERROR', message, scope, undefined, mergeContext(ctx), error);
+
+      outputLog(
+        LogLevel.ERROR,
+        'ERROR',
+        message,
+        scope,
+        undefined,
+        mergeContext(ctx),
+        error,
+      );
     },
-    
+
     startTimer: (operation: string): LogTimer => {
       const start = performance.now();
       return {
         end: (context?: Record<string, unknown>) => {
           const durationMs = performance.now() - start;
-          outputLog(LogLevel.DEBUG, 'DEBUG', `${operation} completed`, scope, undefined, mergeContext(context), undefined, durationMs);
+          outputLog(
+            LogLevel.DEBUG,
+            'DEBUG',
+            `${operation} completed`,
+            scope,
+            undefined,
+            mergeContext(context),
+            undefined,
+            durationMs,
+          );
         },
         elapsed: () => performance.now() - start,
       };
     },
-    
+
     child: (childContext: Record<string, unknown>): ScopedLogger => {
       return createLogger(scope, { ...boundContext, ...childContext });
     },
   };
-  
+
   return scopedLogger;
 }
 

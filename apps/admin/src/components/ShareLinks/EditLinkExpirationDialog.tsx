@@ -23,7 +23,7 @@ export interface EditShareLinkViewProps {
   onUpdate: (
     linkId: string,
     expiresAt: Date | null,
-    maxUses: number | null
+    maxUses: number | null,
   ) => Promise<void>;
   /** Whether update is in progress */
   isUpdating: boolean;
@@ -68,11 +68,15 @@ export function EditShareLinkView({
   error,
 }: EditShareLinkViewProps) {
   const [expiryEnabled, setExpiryEnabled] = useState(!!link.expiresAt);
-  const [expiryHours, setExpiryHours] = useState(() => getRemainingHours(link.expiresAt));
-  const [selectedPresetIndex, setSelectedPresetIndex] = useState(() =>
-    getInitialPresetIndex(link.expiresAt)
+  const [expiryHours, setExpiryHours] = useState(() =>
+    getRemainingHours(link.expiresAt),
   );
-  const [maxUsesEnabled, setMaxUsesEnabled] = useState(link.maxUses !== undefined && link.maxUses !== null);
+  const [selectedPresetIndex, setSelectedPresetIndex] = useState(() =>
+    getInitialPresetIndex(link.expiresAt),
+  );
+  const [maxUsesEnabled, setMaxUsesEnabled] = useState(
+    link.maxUses !== undefined && link.maxUses !== null,
+  );
   const [maxUses, setMaxUses] = useState(link.maxUses ?? 10);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -239,4 +243,3 @@ export function EditShareLinkView({
     </div>
   );
 }
-

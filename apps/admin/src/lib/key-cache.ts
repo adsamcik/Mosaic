@@ -95,12 +95,15 @@ async function getCacheEncryptionKey(): Promise<CryptoKey> {
         keyBytes as Uint8Array<ArrayBuffer>,
         { name: 'AES-GCM', length: 256 },
         true, // Extractable so we can persist it
-        ['encrypt', 'decrypt']
+        ['encrypt', 'decrypt'],
       );
       log.debug('Restored cache encryption key from sessionStorage');
       return cacheEncryptionKey;
     } catch (error) {
-      log.error('Failed to restore cache encryption key, generating new one', error);
+      log.error(
+        'Failed to restore cache encryption key, generating new one',
+        error,
+      );
       sessionStorage.removeItem(CACHE_KEY_STORAGE_KEY);
     }
   }
@@ -109,13 +112,16 @@ async function getCacheEncryptionKey(): Promise<CryptoKey> {
   cacheEncryptionKey = await crypto.subtle.generateKey(
     { name: 'AES-GCM', length: 256 },
     true, // Extractable so we can persist it
-    ['encrypt', 'decrypt']
+    ['encrypt', 'decrypt'],
   );
 
   // Persist to sessionStorage for page reloads
   try {
     const keyBytes = await crypto.subtle.exportKey('raw', cacheEncryptionKey);
-    sessionStorage.setItem(CACHE_KEY_STORAGE_KEY, toBase64(new Uint8Array(keyBytes)));
+    sessionStorage.setItem(
+      CACHE_KEY_STORAGE_KEY,
+      toBase64(new Uint8Array(keyBytes)),
+    );
     log.debug('Generated and persisted new cache encryption key');
   } catch (error) {
     log.error('Failed to persist cache encryption key', error);
@@ -155,7 +161,7 @@ export async function cacheKeys(keys: CachedKeys): Promise<void> {
     const ciphertext = await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
       encKey,
-      plaintext as Uint8Array<ArrayBuffer>
+      plaintext as Uint8Array<ArrayBuffer>,
     );
 
     // Calculate expiration (0 = no expiry for "until tab close")
@@ -169,7 +175,8 @@ export async function cacheKeys(keys: CachedKeys): Promise<void> {
 
     sessionStorage.setItem(KEY_CACHE_STORAGE_KEY, JSON.stringify(envelope));
     log.debug('Keys cached successfully, expires:', {
-      expiresAt: expiresAt === 0 ? 'on tab close' : new Date(expiresAt).toISOString(),
+      expiresAt:
+        expiresAt === 0 ? 'on tab close' : new Date(expiresAt).toISOString(),
     });
   } catch (error) {
     log.error('Failed to cache keys:', {
@@ -215,7 +222,7 @@ export async function getCachedKeys(): Promise<CachedKeys | null> {
     const plaintext = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
       encKey,
-      ciphertext as Uint8Array<ArrayBuffer>
+      ciphertext as Uint8Array<ArrayBuffer>,
     );
 
     const keys: CachedKeys = JSON.parse(new TextDecoder().decode(plaintext));

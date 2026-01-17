@@ -30,7 +30,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
 
   // Whether we're restoring an existing session (page reload case)
   const isSessionRestore = !!pendingSessionUser;
-  
+
   // Show ProxyAuth-only mode when proxy auth is enabled but local auth is not
   // When both are enabled, prefer LocalAuth (user enters username/password)
   const isProxyAuthOnly = isProxyAuth && !isLocalAuth;
@@ -42,13 +42,15 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
       const status = await checkServerStatus();
       setIsLocalAuth(status.isLocalAuth);
       setIsProxyAuth(status.isProxyAuth);
-      
+
       if (!status.isOnline) {
         setError(t('auth.error.serverUnreachable'));
         setIsServerUnreachable(true);
       } else if (status.statusCode && status.statusCode >= 500) {
         // Use the detailed error from the server if available, otherwise a friendly message
-        const detail = status.error?.startsWith('Server error:') ? status.error : `System error (${status.statusCode})`;
+        const detail = status.error?.startsWith('Server error:')
+          ? status.error
+          : `System error (${status.statusCode})`;
         setError(t('auth.error.serverUnavailable', { status: detail }));
         setIsServerUnreachable(true);
       } else {
@@ -133,7 +135,8 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
         return;
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Operation failed';
+      const errorMessage =
+        err instanceof Error ? err.message : 'Operation failed';
       // Provide helpful error messages
       if (errorMessage.includes('Invalid credentials')) {
         setError(t('auth.error.invalidCredentials'));
@@ -175,8 +178,26 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
         )}
 
         {isSessionRestore && (
-          <div className="session-restore-badge" data-testid="session-restore-badge">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <div
+            className="session-restore-badge"
+            data-testid="session-restore-badge"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ marginRight: 6 }}
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
             {t('auth.sessionRestore')}
           </div>
         )}
@@ -192,21 +213,72 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
             className="clear-session-button"
             data-testid="clear-session-button"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ marginRight: 6 }}
+            >
+              <path d="M3 6h18" />
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+            </svg>
             {t('auth.clearSession')}
           </button>
         )}
 
         {isLocalAuth && !isSessionRestore && !isServerUnreachable && (
           <div className="dev-mode-badge" data-testid="local-auth-badge">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            {isRegisterMode ? t('auth.createAccount') : t('auth.localAuthentication')}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ marginRight: 6 }}
+            >
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            {isRegisterMode
+              ? t('auth.createAccount')
+              : t('auth.localAuthentication')}
           </div>
         )}
 
         {isProxyAuthOnly && !isSessionRestore && !isServerUnreachable && (
-          <div className="dev-mode-badge" data-testid="proxy-auth-badge" style={{ backgroundColor: 'var(--color-info-bg, #e3f2fd)', color: 'var(--color-info, #1976d2)' }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <div
+            className="dev-mode-badge"
+            data-testid="proxy-auth-badge"
+            style={{
+              backgroundColor: 'var(--color-info-bg, #e3f2fd)',
+              color: 'var(--color-info, #1976d2)',
+            }}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ marginRight: 6 }}
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
             {t('auth.proxyAuthentication')}
           </div>
         )}
@@ -241,7 +313,11 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={isRegisterMode ? t('auth.createPasswordPlaceholder') : t('auth.passwordPlaceholder')}
+                  placeholder={
+                    isRegisterMode
+                      ? t('auth.createPasswordPlaceholder')
+                      : t('auth.passwordPlaceholder')
+                  }
                   disabled={loading}
                   className="form-input"
                   autoFocus
@@ -268,22 +344,44 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           )}
 
           {error && (
-            <div className={`form-error ${isServerUnreachable ? 'server-error' : ''}`} role="alert">
+            <div
+              className={`form-error ${isServerUnreachable ? 'server-error' : ''}`}
+              role="alert"
+            >
               {isServerUnreachable && (
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ marginRight: 8, flexShrink: 0 }}
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
               )}
               {error}
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="login-button"
-          >
-            {loading 
-              ? (isServerUnreachable ? t('auth.checkingConnection') : (isRegisterMode ? t('auth.creatingAccount') : t('auth.signingIn'))) 
-              : (isServerUnreachable ? t('auth.retryConnection') : (isRegisterMode ? t('auth.createAccountButton') : t('auth.signInButton')))}
+          <button type="submit" disabled={loading} className="login-button">
+            {loading
+              ? isServerUnreachable
+                ? t('auth.checkingConnection')
+                : isRegisterMode
+                  ? t('auth.creatingAccount')
+                  : t('auth.signingIn')
+              : isServerUnreachable
+                ? t('auth.retryConnection')
+                : isRegisterMode
+                  ? t('auth.createAccountButton')
+                  : t('auth.signInButton')}
           </button>
         </form>
 
@@ -294,8 +392,8 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
             className="mode-toggle-button"
             disabled={loading}
           >
-            {isRegisterMode 
-              ? t('auth.haveAccountSignIn') 
+            {isRegisterMode
+              ? t('auth.haveAccountSignIn')
               : t('auth.noAccountCreate')}
           </button>
         )}
@@ -305,9 +403,9 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
             {isSessionRestore
               ? t('auth.sessionRestoreHelp')
               : isLocalAuth
-                ? (isRegisterMode 
-                    ? t('auth.registerHelp')
-                    : t('auth.loginHelp'))
+                ? isRegisterMode
+                  ? t('auth.registerHelp')
+                  : t('auth.loginHelp')
                 : isProxyAuthOnly
                   ? t('auth.proxyAuthHelp')
                   : t('auth.encryptionHelp')}

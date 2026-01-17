@@ -27,8 +27,14 @@ interface SharedAlbumViewerProps {
 /**
  * Parse the current URL to extract linkId and linkSecret
  */
-function useShareLinkParams(): { linkId: string | null; linkSecret: string | null } {
-  const [params, setParams] = useState<{ linkId: string | null; linkSecret: string | null }>({
+function useShareLinkParams(): {
+  linkId: string | null;
+  linkSecret: string | null;
+} {
+  const [params, setParams] = useState<{
+    linkId: string | null;
+    linkSecret: string | null;
+  }>({
     linkId: null,
     linkSecret: null,
   });
@@ -74,7 +80,9 @@ function getAccessTierName(tier: 1 | 2 | 3): string {
  * Shared Album Viewer
  * Main entry point for anonymous share link access
  */
-export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps) {
+export function SharedAlbumViewer({
+  linkId: propLinkId,
+}: SharedAlbumViewerProps) {
   // Parse URL params (use prop if provided, otherwise parse from URL)
   const urlParams = useShareLinkParams();
   const linkId = propLinkId || urlParams.linkId;
@@ -96,7 +104,7 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
 
   // Decrypt album name
   const [albumName, setAlbumName] = useState<string | null>(null);
-  
+
   useEffect(() => {
     if (!encryptedName || tierKeys.size === 0) {
       setAlbumName(null);
@@ -113,15 +121,15 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
           tierKeyCount: tierKeys.size,
           availableEpochs: Array.from(tierKeys.keys()),
         });
-        
+
         // Get the highest tier key from any epoch
         // In share link context, these are already unwrapped tier keys (not epoch seeds)
         let tierKey: Uint8Array | undefined;
         let usedTier: AccessTierType | undefined;
         let usedEpoch: number | undefined;
-        
+
         for (const [epochId, epochTiers] of tierKeys) {
-          for (const tier of [3, 2, 1] as AccessTierType[]) { 
+          for (const tier of [3, 2, 1] as AccessTierType[]) {
             const key = epochTiers.get(tier);
             if (key) {
               tierKey = key.key;
@@ -141,31 +149,38 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
         log.debug('Using tier key for album name', {
           epochId: usedEpoch,
           tier: usedTier,
-          keyPrefix: Array.from(tierKey.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
+          keyPrefix: Array.from(tierKey.slice(0, 4))
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join(''),
         });
 
         // Use decryptAlbumNameWithTierKey for share links since we have
         // the tier key directly (not an epochSeed that needs derivation)
-        const name = await decryptAlbumNameWithTierKey(encryptedName!, tierKey, albumId ?? 'shared');
-        
+        const name = await decryptAlbumNameWithTierKey(
+          encryptedName!,
+          tierKey,
+          albumId ?? 'shared',
+        );
+
         log.info('Album name decrypted successfully', { name });
-        
+
         if (!cancelled) {
           setAlbumName(name);
         }
       } catch (err) {
         // Failed to decrypt - album name stays null (shows "Shared Album")
-        log.error('Failed to decrypt album name', { error: err instanceof Error ? err.message : String(err) });
+        log.error('Failed to decrypt album name', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
     decryptName();
-    
+
     return () => {
       cancelled = true;
     };
   }, [encryptedName, tierKeys, albumId]);
-
 
   // Missing secret error
   if (!linkSecret) {
@@ -176,7 +191,8 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
             <span className="error-icon">🔗</span>
             <h2>Invalid Share Link</h2>
             <p>
-              This link appears to be incomplete. The secret key is missing from the URL.
+              This link appears to be incomplete. The secret key is missing from
+              the URL.
             </p>
             <p className="error-hint">
               Share links should end with <code>#k=...</code>
@@ -209,7 +225,9 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
           <div className="shared-viewer-error">
             <span className="error-icon">⚠️</span>
             <h2>Unable to Access Album</h2>
-            <p>{error?.message || 'This share link is invalid or has expired.'}</p>
+            <p>
+              {error?.message || 'This share link is invalid or has expired.'}
+            </p>
           </div>
         </div>
       </div>
@@ -221,7 +239,9 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
     <div className="shared-viewer" data-testid="shared-album-viewer">
       <header className="shared-viewer-header">
         <div className="header-left">
-          <h1 className="app-title">{albumName ? `🖼️ ${albumName}` : '🖼️ Mosaic'}</h1>
+          <h1 className="app-title">
+            {albumName ? `🖼️ ${albumName}` : '🖼️ Mosaic'}
+          </h1>
           <span className="shared-badge">Shared Album</span>
         </div>
         <div className="header-right">
@@ -247,7 +267,8 @@ export function SharedAlbumViewer({ linkId: propLinkId }: SharedAlbumViewerProps
 
       <footer className="shared-viewer-footer">
         <p>
-          Powered by <strong>Mosaic</strong> — Zero-knowledge encrypted photo gallery
+          Powered by <strong>Mosaic</strong> — Zero-knowledge encrypted photo
+          gallery
         </p>
       </footer>
     </div>

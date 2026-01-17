@@ -67,9 +67,15 @@ vi.mock('leaflet', () => ({
 vi.mock('leaflet/dist/leaflet.css', () => ({}));
 
 // Mock marker images
-vi.mock('leaflet/dist/images/marker-icon-2x.png', () => ({ default: 'marker-icon-2x.png' }));
-vi.mock('leaflet/dist/images/marker-icon.png', () => ({ default: 'marker-icon.png' }));
-vi.mock('leaflet/dist/images/marker-shadow.png', () => ({ default: 'marker-shadow.png' }));
+vi.mock('leaflet/dist/images/marker-icon-2x.png', () => ({
+  default: 'marker-icon-2x.png',
+}));
+vi.mock('leaflet/dist/images/marker-icon.png', () => ({
+  default: 'marker-icon.png',
+}));
+vi.mock('leaflet/dist/images/marker-shadow.png', () => ({
+  default: 'marker-shadow.png',
+}));
 
 // Mock geo client
 const mockGeoClient = {
@@ -116,7 +122,9 @@ function renderMapView(props: Partial<Parameters<typeof MapView>[0]> = {}) {
 
   const rerender = (newProps: Partial<Parameters<typeof MapView>[0]>) => {
     act(() => {
-      root.render(createElement(MapView, { ...defaultProps, ...props, ...newProps }));
+      root.render(
+        createElement(MapView, { ...defaultProps, ...props, ...newProps }),
+      );
     });
   };
 
@@ -171,7 +179,9 @@ describe('MapView', () => {
     });
 
     it('applies custom className', () => {
-      const { getByTestId, cleanup } = renderMapView({ className: 'custom-map' });
+      const { getByTestId, cleanup } = renderMapView({
+        className: 'custom-map',
+      });
 
       const mapView = getByTestId('map-view');
       expect(mapView?.className).toContain('custom-map');
@@ -371,7 +381,9 @@ describe('MapView', () => {
 
   describe('Error Handling', () => {
     it('displays error state when geo worker fails', async () => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
       mockGeoClient.load.mockRejectedValueOnce(new Error('Worker error'));
 
       const points: GeoFeature[] = [

@@ -75,7 +75,7 @@ export async function verifyAuth(
   username: string,
   challengeId: string,
   signature: string,
-  timestamp?: number
+  timestamp?: number,
 ): Promise<AuthVerifyResponse> {
   const response = await fetch('/api/auth/verify', {
     method: 'POST',
@@ -136,20 +136,20 @@ export async function registerUser(params: {
 
 /**
  * Perform LocalAuth login with Ed25519 challenge-response.
- * 
+ *
  * Flow:
  * 1. Get challenge from server (with user salt)
  * 2. Initialize crypto with password + salt
  * 3. Sign challenge with identity key
  * 4. Verify signature on server, get session
- * 
+ *
  * @param username - Username to login as
  * @param password - User's password
  * @returns User salt and account salt for crypto initialization
  */
 export async function localAuthLogin(
   username: string,
-  password: string
+  password: string,
 ): Promise<{
   userId: string;
   userSalt: Uint8Array;
@@ -158,39 +158,49 @@ export async function localAuthLogin(
   wrappedAccountKey: Uint8Array | null;
 }> {
   // Step 1: Get challenge from server
-  const { challengeId, challenge, userSalt, timestamp } = await initAuth(username);
-  
+  const { challengeId, challenge, userSalt, timestamp } =
+    await initAuth(username);
+
   const userSaltBytes = fromBase64(userSalt);
-  
+
   // Step 2: Derive the deterministic auth keypair from password + userSalt
   // This is separate from the random account key - it's derived directly from password+salt
   // so we can authenticate before getting the wrapped account key from the server
   const cryptoClient = await getCryptoClient();
   await cryptoClient.deriveAuthKey(password, userSaltBytes);
-  
+
   // Step 3: Sign challenge with the derived auth key
   const challengeBytes = fromBase64(challenge);
-  const signature = await cryptoClient.signAuthChallenge(challengeBytes, username, timestamp);
+  const signature = await cryptoClient.signAuthChallenge(
+    challengeBytes,
+    username,
+    timestamp,
+  );
   const signatureBase64 = toBase64(signature);
-  
+
   // Derive account salt for later use
   const accountSaltBytes = await deriveAccountSalt(userSaltBytes);
-  
+
   // Step 4: Verify with server
   try {
-    const verifyResult = await verifyAuth(username, challengeId, signatureBase64, timestamp);
-    
+    const verifyResult = await verifyAuth(
+      username,
+      challengeId,
+      signatureBase64,
+      timestamp,
+    );
+
     // If server has a wrapped account key, we need to re-init with it
     // to get the correct identity for epoch key operations
-    const serverAccountSalt = verifyResult.accountSalt 
-      ? fromBase64(verifyResult.accountSalt) 
+    const serverAccountSalt = verifyResult.accountSalt
+      ? fromBase64(verifyResult.accountSalt)
       : accountSaltBytes;
-    
+
     // Return wrapped key so caller can re-init if needed
     const wrappedAccountKey = verifyResult.wrappedAccountKey
       ? fromBase64(verifyResult.wrappedAccountKey)
       : null;
-    
+
     return {
       userId: verifyResult.userId,
       userSalt: userSaltBytes,
@@ -211,14 +221,14 @@ export async function localAuthLogin(
 /**
  * Register a new user with LocalAuth.
  * This is the explicit registration flow - user must choose to register.
- * 
+ *
  * @param username - Username to register
  * @param password - User's password
  * @returns User credentials after successful registration and login
  */
 export async function localAuthRegister(
   username: string,
-  password: string
+  password: string,
 ): Promise<{
   userId: string;
   userSalt: Uint8Array;
@@ -230,7 +240,7 @@ export async function localAuthRegister(
   // (server returns deterministic fake salt for non-existent users)
   const { userSalt } = await initAuth(username);
   const userSaltBytes = fromBase64(userSalt);
-  
+
   // Step 2: Register the new user
   return await registerNewUser(username, password, userSaltBytes);
 }
@@ -243,7 +253,7 @@ export async function localAuthRegister(
 async function registerNewUser(
   username: string,
   password: string,
-  userSalt: Uint8Array
+  userSalt: Uint8Array,
 ): Promise<{
   userId: string;
   userSalt: Uint8Array;
@@ -253,35 +263,35 @@ async function registerNewUser(
 }> {
   // Generate account salt
   const accountSalt = await deriveAccountSalt(userSalt);
-  
+
   const cryptoClient = await getCryptoClient();
-  
+
   // Step 1: Derive the deterministic auth keypair from password + userSalt
   // This is used for challenge-response authentication
   await cryptoClient.deriveAuthKey(password, userSalt);
-  
+
   // Get the auth public key (deterministically derived from password+salt)
   const authPubkey = await cryptoClient.getAuthPublicKey();
   if (!authPubkey) {
     throw new Error('Failed to derive auth key');
   }
-  
+
   // Step 2: Initialize crypto with random account key for identity operations
   await cryptoClient.init(password, userSalt, accountSalt);
   await cryptoClient.deriveIdentity();
-  
+
   // Get identity public key (derived from random account key, used for epoch key encryption)
   const identityPubkey = await cryptoClient.getIdentityPublicKey();
   if (!identityPubkey) {
     throw new Error('Failed to derive identity key');
   }
-  
+
   // Get wrapped account key for server storage (CRITICAL for identity persistence)
   const wrappedAccountKey = await cryptoClient.getWrappedAccountKey();
   if (!wrappedAccountKey) {
     throw new Error('Failed to get wrapped account key');
   }
-  
+
   // Register with server (include wrapped account key for future logins)
   await registerUser({
     username,
@@ -291,18 +301,27 @@ async function registerNewUser(
     accountSalt: toBase64(accountSalt),
     wrappedAccountKey: toBase64(wrappedAccountKey),
   });
-  
+
   // Now login to get session cookie (user exists now)
   const { challengeId, challenge, timestamp } = await initAuth(username);
-  
+
   // Sign the new challenge (authKeypair still available from deriveAuthKey above)
   const challengeBytes = fromBase64(challenge);
-  const signature = await cryptoClient.signAuthChallenge(challengeBytes, username, timestamp);
+  const signature = await cryptoClient.signAuthChallenge(
+    challengeBytes,
+    username,
+    timestamp,
+  );
   const signatureBase64 = toBase64(signature);
-  
+
   // Verify and get session
-  const verifyResult = await verifyAuth(username, challengeId, signatureBase64, timestamp);
-  
+  const verifyResult = await verifyAuth(
+    username,
+    challengeId,
+    signatureBase64,
+    timestamp,
+  );
+
   return {
     userId: verifyResult.userId,
     userSalt,
@@ -325,15 +344,15 @@ async function deriveAccountSalt(userSalt: Uint8Array): Promise<Uint8Array> {
     saltBuffer,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign']
+    ['sign'],
   );
-  
+
   const signature = await crypto.subtle.sign(
     'HMAC',
     key,
-    new TextEncoder().encode('mosaic_account_salt')
+    new TextEncoder().encode('mosaic_account_salt'),
   );
-  
+
   // Take first 16 bytes as account salt
   return new Uint8Array(signature).slice(0, 16);
 }
@@ -367,7 +386,7 @@ export async function checkServerStatus(): Promise<ServerStatus> {
   try {
     // First try the new /api/auth/config endpoint
     const configResponse = await fetch('/api/auth/config');
-    
+
     if (configResponse.ok) {
       const config = await configResponse.json();
       return {
@@ -377,7 +396,7 @@ export async function checkServerStatus(): Promise<ServerStatus> {
         statusCode: configResponse.status,
       };
     }
-    
+
     // Fallback for older backends: probe /api/auth/init
     const response = await fetch('/api/auth/init', {
       method: 'POST',
@@ -387,7 +406,12 @@ export async function checkServerStatus(): Promise<ServerStatus> {
 
     // 404 means the endpoint doesn't exist -> ProxyAuth mode (but server is online)
     if (response.status === 404) {
-      return { isOnline: true, isLocalAuth: false, isProxyAuth: true, statusCode: 404 };
+      return {
+        isOnline: true,
+        isLocalAuth: false,
+        isProxyAuth: true,
+        statusCode: 404,
+      };
     }
 
     // 5xx means server error
@@ -407,28 +431,32 @@ export async function checkServerStatus(): Promise<ServerStatus> {
         // Ignore body read errors
       }
 
-      return { 
-        isOnline: true, 
-        isLocalAuth: true, 
+      return {
+        isOnline: true,
+        isLocalAuth: true,
         isProxyAuth: false,
         statusCode: response.status,
-        error: errorDetail
+        error: errorDetail,
       };
     }
 
     // 200-499 (except 404) usually means the endpoint exists -> LocalAuth mode
-    return { isOnline: true, isLocalAuth: true, isProxyAuth: false, statusCode: response.status };
+    return {
+      isOnline: true,
+      isLocalAuth: true,
+      isProxyAuth: false,
+      statusCode: response.status,
+    };
   } catch (err) {
     // Network error (fetch failed completely)
-    return { 
-      isOnline: false, 
-      isLocalAuth: false, 
+    return {
+      isOnline: false,
+      isLocalAuth: false,
       isProxyAuth: false,
-      error: err instanceof Error ? err.message : 'Connection failed' 
+      error: err instanceof Error ? err.message : 'Connection failed',
     };
   }
 }
-
 
 // =============================================================================
 // Development Authentication (Dev Mode Only)
@@ -485,4 +513,3 @@ export async function devUpdateKeys(keys: {
     throw new Error(error.error || `Dev key update failed: ${response.status}`);
   }
 }
-

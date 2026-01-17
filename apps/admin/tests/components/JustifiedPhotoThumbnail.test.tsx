@@ -15,14 +15,24 @@ import * as photoService from '../../src/lib/photo-service';
 
 // Mock the photo-service
 vi.mock('../../src/lib/photo-service', () => ({
-  loadPhoto: vi.fn().mockResolvedValue({ blobUrl: 'blob:test', mimeType: 'image/jpeg', size: 1024 }),
+  loadPhoto: vi
+    .fn()
+    .mockResolvedValue({
+      blobUrl: 'blob:test',
+      mimeType: 'image/jpeg',
+      size: 1024,
+    }),
   releasePhoto: vi.fn(),
 }));
 
 // Mock the blurhash-decoder
 vi.mock('../../src/lib/blurhash-decoder', () => ({
-  getCachedBlurhashDataURL: vi.fn().mockReturnValue('data:image/png;base64,blurhashMockData'),
-  isValidBlurhash: vi.fn().mockImplementation((hash: string) => hash && hash.length > 4),
+  getCachedBlurhashDataURL: vi
+    .fn()
+    .mockReturnValue('data:image/png;base64,blurhashMockData'),
+  isValidBlurhash: vi
+    .fn()
+    .mockImplementation((hash: string) => hash && hash.length > 4),
 }));
 
 /**
@@ -78,13 +88,17 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
-      const embeddedImg = container.querySelector('[data-testid="photo-image-embedded"]');
+      const embeddedImg = container.querySelector(
+        '[data-testid="photo-image-embedded"]',
+      );
       expect(embeddedImg).not.toBeNull();
-      expect(embeddedImg?.getAttribute('src')).toBe('data:image/jpeg;base64,base64EncodedThumbnailData');
+      expect(embeddedImg?.getAttribute('src')).toBe(
+        'data:image/jpeg;base64,base64EncodedThumbnailData',
+      );
     });
 
     it('does NOT show loading spinner when embedded thumbnail exists', () => {
@@ -99,7 +113,7 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
@@ -119,10 +133,10 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Wait for any potential async effects
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       expect(photoService.loadPhoto).not.toHaveBeenCalled();
@@ -142,10 +156,10 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Wait for the effect to trigger
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       expect(photoService.loadPhoto).toHaveBeenCalledWith(
@@ -153,7 +167,7 @@ describe('JustifiedPhotoThumbnail', () => {
         photo.shardIds,
         mockEpochKey,
         photo.mimeType,
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -169,10 +183,10 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Wait for the effect to trigger
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       expect(photoService.loadPhoto).toHaveBeenCalled();
@@ -199,10 +213,10 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Allow effect to run
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
       const loading = container.querySelector('[data-testid="photo-loading"]');
@@ -210,7 +224,11 @@ describe('JustifiedPhotoThumbnail', () => {
 
       // Cleanup
       await act(async () => {
-        resolveLoad!({ blobUrl: 'blob:test', mimeType: 'image/jpeg', size: 1024 });
+        resolveLoad!({
+          blobUrl: 'blob:test',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
       });
     });
   });
@@ -229,10 +247,10 @@ describe('JustifiedPhotoThumbnail', () => {
             height: 150,
             epochReadKey: mockEpochKey,
             loadFullResolution: true,
-          })
+          }),
         );
         // Wait for the effect to trigger
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       expect(photoService.loadPhoto).toHaveBeenCalledWith(
@@ -240,7 +258,7 @@ describe('JustifiedPhotoThumbnail', () => {
         photo.shardIds,
         mockEpochKey,
         photo.mimeType,
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -265,18 +283,24 @@ describe('JustifiedPhotoThumbnail', () => {
             height: 150,
             epochReadKey: mockEpochKey,
             loadFullResolution: true,
-          })
+          }),
         );
         // Allow effect to run
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      const upgrading = container.querySelector('[data-testid="photo-upgrading"]');
+      const upgrading = container.querySelector(
+        '[data-testid="photo-upgrading"]',
+      );
       expect(upgrading).not.toBeNull();
 
       // Cleanup
       await act(async () => {
-        resolveLoad!({ blobUrl: 'blob:test', mimeType: 'image/jpeg', size: 1024 });
+        resolveLoad!({
+          blobUrl: 'blob:test',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
       });
     });
 
@@ -299,10 +323,10 @@ describe('JustifiedPhotoThumbnail', () => {
             height: 150,
             epochReadKey: mockEpochKey,
             loadFullResolution: true,
-          })
+          }),
         );
         // Wait for loading to complete
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       const fullResImg = container.querySelector('[data-testid="photo-image"]');
@@ -326,11 +350,13 @@ describe('JustifiedPhotoThumbnail', () => {
             height: 150,
             epochReadKey: mockEpochKey,
             onClick,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="justified-photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="justified-photo-thumbnail"]',
+      );
       expect(thumbnail?.getAttribute('tabIndex')).toBe('0');
 
       act(() => {
@@ -354,11 +380,13 @@ describe('JustifiedPhotoThumbnail', () => {
             height: 150,
             epochReadKey: mockEpochKey,
             onClick,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="justified-photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="justified-photo-thumbnail"]',
+      );
       act(() => {
         thumbnail?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
@@ -380,14 +408,16 @@ describe('JustifiedPhotoThumbnail', () => {
             height: 150,
             epochReadKey: mockEpochKey,
             onClick,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="justified-photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="justified-photo-thumbnail"]',
+      );
       act(() => {
         thumbnail?.dispatchEvent(
-          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
         );
       });
 
@@ -412,11 +442,13 @@ describe('JustifiedPhotoThumbnail', () => {
             selectionMode: true,
             isSelected: false,
             onSelectionChange,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="justified-photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="justified-photo-thumbnail"]',
+      );
       act(() => {
         thumbnail?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
@@ -438,11 +470,13 @@ describe('JustifiedPhotoThumbnail', () => {
             epochReadKey: mockEpochKey,
             selectionMode: true,
             onSelectionChange: vi.fn(),
-          })
+          }),
         );
       });
 
-      const checkbox = container.querySelector('[data-testid="photo-checkbox"]');
+      const checkbox = container.querySelector(
+        '[data-testid="photo-checkbox"]',
+      );
       expect(checkbox).not.toBeNull();
     });
   });
@@ -460,9 +494,9 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: undefined,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       expect(photoService.loadPhoto).not.toHaveBeenCalled();
@@ -481,11 +515,13 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: undefined,
-          })
+          }),
         );
       });
 
-      const placeholder = container.querySelector('[data-testid="photo-placeholder"]');
+      const placeholder = container.querySelector(
+        '[data-testid="photo-placeholder"]',
+      );
       expect(placeholder).not.toBeNull();
     });
 
@@ -501,11 +537,13 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: undefined,
-          })
+          }),
         );
       });
 
-      const embeddedImg = container.querySelector('[data-testid="photo-image-embedded"]');
+      const embeddedImg = container.querySelector(
+        '[data-testid="photo-image-embedded"]',
+      );
       expect(embeddedImg).not.toBeNull();
     });
   });
@@ -532,18 +570,24 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Allow effect to run
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      const blurhash = container.querySelector('[data-testid="photo-blurhash"]');
+      const blurhash = container.querySelector(
+        '[data-testid="photo-blurhash"]',
+      );
       expect(blurhash).not.toBeNull();
 
       // Cleanup
       await act(async () => {
-        resolveLoad!({ blobUrl: 'blob:test', mimeType: 'image/jpeg', size: 1024 });
+        resolveLoad!({
+          blobUrl: 'blob:test',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
       });
     });
 
@@ -560,13 +604,17 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
       // Should show embedded thumbnail, not blurhash
-      const embeddedImg = container.querySelector('[data-testid="photo-image-embedded"]');
-      const blurhash = container.querySelector('[data-testid="photo-blurhash"]');
+      const embeddedImg = container.querySelector(
+        '[data-testid="photo-image-embedded"]',
+      );
+      const blurhash = container.querySelector(
+        '[data-testid="photo-blurhash"]',
+      );
       expect(embeddedImg).not.toBeNull();
       expect(blurhash).toBeNull();
     });
@@ -585,11 +633,13 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 250,
             height: 180,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="justified-photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="justified-photo-thumbnail"]',
+      );
       expect(thumbnail).not.toBeNull();
       const style = (thumbnail as HTMLElement).style;
       expect(style.width).toBe('250px');
@@ -609,11 +659,13 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="justified-photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="justified-photo-thumbnail"]',
+      );
       expect(thumbnail?.getAttribute('data-photo-id')).toBe('unique-photo-id');
     });
   });
@@ -631,9 +683,9 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       act(() => {
@@ -655,9 +707,9 @@ describe('JustifiedPhotoThumbnail', () => {
             width: 200,
             height: 150,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       vi.clearAllMocks();

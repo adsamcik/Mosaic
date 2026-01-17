@@ -7,7 +7,10 @@
  */
 
 import { useRef, useState } from 'react';
-import type { CreateShareLinkOptions, CreateShareLinkResult } from '../../hooks/useShareLinks';
+import type {
+  CreateShareLinkOptions,
+  CreateShareLinkResult,
+} from '../../hooks/useShareLinks';
 import type { AccessTier } from '../../lib/api-types';
 
 interface CreateShareLinkViewProps {
@@ -155,7 +158,10 @@ export function CreateShareLinkView({
   // Show result view after successful creation
   if (result) {
     return (
-      <div className="panel-content-view" data-testid="create-share-link-success">
+      <div
+        className="panel-content-view"
+        data-testid="create-share-link-success"
+      >
         <div className="share-link-success-header">
           <div className="success-icon-circle">✓</div>
           <h3>Link Created</h3>
@@ -194,12 +200,16 @@ export function CreateShareLinkView({
         <div className="share-link-info-card" data-testid="share-link-info">
           <div className="info-item">
             <span className="info-label">Access</span>
-            <span className="info-value">{result.shareLink.accessTierDisplay}</span>
+            <span className="info-value">
+              {result.shareLink.accessTierDisplay}
+            </span>
           </div>
           {result.shareLink.expiryDisplay && (
             <div className="info-item">
               <span className="info-label">Expires</span>
-              <span className="info-value">{result.shareLink.expiryDisplay}</span>
+              <span className="info-value">
+                {result.shareLink.expiryDisplay}
+              </span>
             </div>
           )}
           {result.shareLink.maxUses && (
@@ -235,7 +245,10 @@ export function CreateShareLinkView({
           <label className="form-label">Access Level</label>
           <div className="tier-selector vertical" data-testid="tier-selector">
             {TIER_OPTIONS.map((option) => (
-              <label key={option.value} className={`tier-option ${accessTier === option.value ? 'selected' : ''}`}>
+              <label
+                key={option.value}
+                className={`tier-option ${accessTier === option.value ? 'selected' : ''}`}
+              >
                 <input
                   type="radio"
                   name="accessTier"
@@ -246,7 +259,9 @@ export function CreateShareLinkView({
                 />
                 <div className="tier-option-content">
                   <span className="tier-option-label">{option.label}</span>
-                  <span className="tier-option-description">{option.description}</span>
+                  <span className="tier-option-description">
+                    {option.description}
+                  </span>
                 </div>
               </label>
             ))}
@@ -338,4 +353,3 @@ export function CreateShareLinkView({
     </div>
   );
 }
-

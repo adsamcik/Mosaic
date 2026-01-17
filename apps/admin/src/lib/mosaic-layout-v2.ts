@@ -1,12 +1,12 @@
 /**
  * Enhanced Mosaic Layout Algorithm (v2)
- * 
+ *
  * A "Justified" or "Row-Based" photo gallery layout that:
  * 1. Distributes images into rows where every row fills container width exactly
  * 2. Preserves aspect ratios without cropping
  * 3. Intelligently inserts map tiles when photos have GPS clusters
  * 4. Intelligently inserts description panels for photos with meaningful descriptions
- * 
+ *
  * Algorithm Overview:
  * 1. Normalization: Calculate aspect ratio for each image, scale to target height
  * 2. Row Building: Add images until sum of tentative widths exceeds container
@@ -45,11 +45,11 @@ export interface MosaicLayoutConfig {
 }
 
 /** Types of tiles in the mosaic */
-export type EnhancedTileType = 
-  | 'standard'      // Regular photo tile
-  | 'hero'          // Larger prominent photo
-  | 'story'         // Photo + description side by side
-  | 'map-cluster'   // Map showing photo locations
+export type EnhancedTileType =
+  | 'standard' // Regular photo tile
+  | 'hero' // Larger prominent photo
+  | 'story' // Photo + description side by side
+  | 'map-cluster' // Map showing photo locations
   | 'description-panel'; // Standalone description panel
 
 /** A calculated item in the layout */
@@ -144,7 +144,10 @@ function hasGpsCoordinates(photo: PhotoMeta): boolean {
 /**
  * Check if a photo has a meaningful description
  */
-function hasMeaningfulDescription(photo: PhotoMeta, minLength: number): boolean {
+function hasMeaningfulDescription(
+  photo: PhotoMeta,
+  minLength: number,
+): boolean {
   return !!photo.description && photo.description.trim().length >= minLength;
 }
 
@@ -154,9 +157,9 @@ function hasMeaningfulDescription(photo: PhotoMeta, minLength: number): boolean 
 function normalizePhotos(
   photos: PhotoMeta[],
   targetRowHeight: number,
-  minDescriptionLength: number
+  minDescriptionLength: number,
 ): NormalizedPhoto[] {
-  return photos.map(photo => {
+  return photos.map((photo) => {
     const aspectRatio = getAspectRatio(photo);
     return {
       photo,
@@ -171,20 +174,20 @@ function normalizePhotos(
 
 /**
  * Calculate the exact row height that makes photos fit the container width
- * 
+ *
  * Formula: NewHeight = (ContainerWidth - TotalGaps) / SumOfAspectRatios
  */
 function calculateJustifiedRowHeight(
   aspectRatios: number[],
   containerWidth: number,
-  gap: number
+  gap: number,
 ): number {
   const sumOfAspectRatios = aspectRatios.reduce((sum, ar) => sum + ar, 0);
   if (sumOfAspectRatios === 0) return 0;
-  
+
   const totalGaps = (aspectRatios.length - 1) * gap;
   const availableWidth = containerWidth - totalGaps;
-  
+
   return availableWidth / sumOfAspectRatios;
 }
 
@@ -192,16 +195,16 @@ function calculateJustifiedRowHeight(
  * Check if a GPS cluster is meaningful (photos are geographically close enough)
  */
 function isGpsClusterMeaningful(
-  coordinates: Array<{ lat: number; lng: number; photoId: string }>
+  coordinates: Array<{ lat: number; lng: number; photoId: string }>,
 ): boolean {
   if (coordinates.length < 2) return true; // Single point is always "clustered"
-  
+
   // Calculate bounding box
-  const lats = coordinates.map(c => c.lat);
-  const lngs = coordinates.map(c => c.lng);
+  const lats = coordinates.map((c) => c.lat);
+  const lngs = coordinates.map((c) => c.lng);
   const latSpread = Math.max(...lats) - Math.min(...lats);
   const lngSpread = Math.max(...lngs) - Math.min(...lngs);
-  
+
   // If spread is less than ~50km in any direction, consider it a meaningful cluster
   // Rough approximation: 1 degree ≈ 111km
   const maxSpreadDegrees = 0.5; // ~55km
@@ -223,14 +226,14 @@ function buildJustifiedRow(
   maxHeightMultiplier: number,
   minHeightMultiplier: number,
   top: number,
-  isOrphan: boolean = false
+  isOrphan: boolean = false,
 ): LayoutRow {
   if (photos.length === 0) {
     return { height: 0, items: [], top, isOrphan };
   }
 
-  const aspectRatios = photos.map(p => p.aspectRatio);
-  
+  const aspectRatios = photos.map((p) => p.aspectRatio);
+
   let rowHeight: number;
   if (isOrphan) {
     // Orphan row: keep target height, don't stretch
@@ -238,7 +241,7 @@ function buildJustifiedRow(
   } else {
     // Justified row: calculate exact height to fill width
     rowHeight = calculateJustifiedRowHeight(aspectRatios, containerWidth, gap);
-    
+
     // Clamp to reasonable bounds
     const maxHeight = targetRowHeight * maxHeightMultiplier;
     const minHeight = targetRowHeight * minHeightMultiplier;
@@ -252,10 +255,10 @@ function buildJustifiedRow(
   for (let i = 0; i < photos.length; i++) {
     const normalizedPhoto = photos[i];
     if (!normalizedPhoto) continue;
-    
+
     const { photo, aspectRatio } = normalizedPhoto;
     let itemWidth = Math.floor(aspectRatio * rowHeight);
-    
+
     // For non-orphan rows, adjust last photo to fill remaining space exactly
     if (!isOrphan && i === photos.length - 1) {
       const usedWidth = currentLeft;
@@ -294,24 +297,26 @@ function buildStoryRow(
   normalizedPhoto: NormalizedPhoto,
   containerWidth: number,
   targetRowHeight: number,
-  top: number
+  top: number,
 ): LayoutRow {
   const height = Math.floor(targetRowHeight * 1.5);
-  
+
   return {
     height,
-    items: [{
-      id: normalizedPhoto.photo.id,
-      photoId: normalizedPhoto.photo.id,
-      type: 'story',
-      description: normalizedPhoto.photo.description || '',
-      rect: {
-        top,
-        left: 0,
-        width: containerWidth,
-        height,
+    items: [
+      {
+        id: normalizedPhoto.photo.id,
+        photoId: normalizedPhoto.photo.id,
+        type: 'story',
+        description: normalizedPhoto.photo.description || '',
+        rect: {
+          top,
+          left: 0,
+          width: containerWidth,
+          height,
+        },
       },
-    }],
+    ],
     top,
   };
 }
@@ -324,11 +329,11 @@ function buildMapRow(
   containerWidth: number,
   targetRowHeight: number,
   gap: number,
-  top: number
+  top: number,
 ): LayoutRow {
   const coordinates = photosWithGps
-    .filter(p => p.hasGps)
-    .map(p => ({
+    .filter((p) => p.hasGps)
+    .map((p) => ({
       lat: p.photo.lat!,
       lng: p.photo.lng!,
       photoId: p.photo.id,
@@ -350,7 +355,7 @@ function buildMapRow(
     id: `map-${photosWithGps[0]?.photo.id || 'unknown'}`,
     type: 'map-cluster',
     coordinates,
-    associatedPhotoIds: photosWithGps.map(p => p.photo.id),
+    associatedPhotoIds: photosWithGps.map((p) => p.photo.id),
     rect: {
       top,
       left: 0,
@@ -361,23 +366,25 @@ function buildMapRow(
 
   // Add photos on the right side
   // Calculate justified layout for the remaining photos in the smaller space
-  const photoAspectRatios = photosWithGps.map(p => p.aspectRatio);
+  const photoAspectRatios = photosWithGps.map((p) => p.aspectRatio);
   const availablePhotoWidth = photosWidth;
   const numPhotos = photosWithGps.length;
-  
+
   // Stack photos vertically if more than 2
   if (numPhotos <= 2) {
     // Horizontal layout
     const photoHeight = calculateJustifiedRowHeight(
       photoAspectRatios,
       availablePhotoWidth,
-      gap
+      gap,
     );
     const clampedHeight = Math.min(photoHeight, height);
-    
+
     let currentLeft = mapWidth + gap;
     for (const normalizedPhoto of photosWithGps) {
-      const photoWidth = Math.floor(normalizedPhoto.aspectRatio * clampedHeight);
+      const photoWidth = Math.floor(
+        normalizedPhoto.aspectRatio * clampedHeight,
+      );
       items.push({
         id: normalizedPhoto.photo.id,
         photoId: normalizedPhoto.photo.id,
@@ -395,16 +402,18 @@ function buildMapRow(
     // 2-column grid for more photos
     const cols = 2;
     const rows = Math.ceil(numPhotos / cols);
-    const cellWidth = Math.floor((availablePhotoWidth - (cols - 1) * gap) / cols);
+    const cellWidth = Math.floor(
+      (availablePhotoWidth - (cols - 1) * gap) / cols,
+    );
     const cellHeight = Math.floor((height - (rows - 1) * gap) / rows);
 
     for (let i = 0; i < photosWithGps.length; i++) {
       const normalizedPhoto = photosWithGps[i];
       if (!normalizedPhoto) continue;
-      
+
       const col = i % cols;
       const row = Math.floor(i / cols);
-      
+
       items.push({
         id: normalizedPhoto.photo.id,
         photoId: normalizedPhoto.photo.id,
@@ -428,7 +437,7 @@ function buildMapRow(
 
 /**
  * Compute the enhanced mosaic layout for a list of photos
- * 
+ *
  * The algorithm:
  * 1. Normalize all photos with aspect ratios and metadata
  * 2. Process photos in batches to form rows
@@ -438,7 +447,7 @@ function buildMapRow(
  */
 export function computeEnhancedMosaicLayout(
   photos: PhotoMeta[],
-  config: MosaicLayoutConfig
+  config: MosaicLayoutConfig,
 ): EnhancedMosaicItem[] {
   const {
     containerWidth,
@@ -458,8 +467,12 @@ export function computeEnhancedMosaicLayout(
   }
 
   // Step 1: Normalize photos
-  const normalized = normalizePhotos(photos, targetRowHeight, minDescriptionLength);
-  
+  const normalized = normalizePhotos(
+    photos,
+    targetRowHeight,
+    minDescriptionLength,
+  );
+
   const allItems: EnhancedMosaicItem[] = [];
   let currentTop = 0;
   let cursor = 0;
@@ -467,33 +480,44 @@ export function computeEnhancedMosaicLayout(
   while (cursor < normalized.length) {
     const currentPhoto = normalized[cursor];
     if (!currentPhoto) break;
-    
+
     const remaining = normalized.length - cursor;
-    
+
     // Strategy 1: Check for description tile opportunity
     if (enableDescriptionTiles && currentPhoto.hasDescription) {
-      const row = buildStoryRow(currentPhoto, containerWidth, targetRowHeight, currentTop);
+      const row = buildStoryRow(
+        currentPhoto,
+        containerWidth,
+        targetRowHeight,
+        currentTop,
+      );
       allItems.push(...row.items);
       currentTop += row.height + gap;
       cursor += 1;
       continue;
     }
-    
+
     // Strategy 2: Check for map cluster opportunity
     // Look ahead to see if we have enough GPS-tagged photos
     if (enableMapTiles) {
       const lookahead = Math.min(remaining, 6);
       const gpsPhotos: NormalizedPhoto[] = [];
-      
+
       for (let i = 0; i < lookahead; i++) {
         const photo = normalized[cursor + i];
         if (photo?.hasGps) {
           gpsPhotos.push(photo);
         }
       }
-      
+
       if (gpsPhotos.length >= minPhotosForMapTile) {
-        const row = buildMapRow(gpsPhotos, containerWidth, targetRowHeight, gap, currentTop);
+        const row = buildMapRow(
+          gpsPhotos,
+          containerWidth,
+          targetRowHeight,
+          gap,
+          currentTop,
+        );
         if (row.items.length > 0) {
           allItems.push(...row.items);
           currentTop += row.height + gap;
@@ -502,40 +526,40 @@ export function computeEnhancedMosaicLayout(
         }
       }
     }
-    
+
     // Strategy 3: Build a standard justified row
     // Add photos until we exceed container width
     const rowPhotos: NormalizedPhoto[] = [];
     let tentativeWidthSum = 0;
-    
+
     while (cursor + rowPhotos.length < normalized.length) {
       const photo = normalized[cursor + rowPhotos.length];
       if (!photo) break;
-      
+
       // Skip photos with descriptions (they get their own rows)
       if (enableDescriptionTiles && photo.hasDescription) break;
-      
+
       tentativeWidthSum += photo.tentativeWidth;
       rowPhotos.push(photo);
-      
+
       // Account for gaps
       const totalGaps = (rowPhotos.length - 1) * gap;
-      
+
       // Check if we've filled the row
       if (tentativeWidthSum + totalGaps >= containerWidth) {
         break;
       }
-      
+
       // Don't add too many photos to a single row
       if (rowPhotos.length >= 6) break;
     }
-    
+
     // Determine if this is an orphan row (last row that won't fill width)
     const isLastRow = cursor + rowPhotos.length >= normalized.length;
     const totalGaps = (rowPhotos.length - 1) * gap;
     const fillRatio = (tentativeWidthSum + totalGaps) / containerWidth;
     const isOrphan = isLastRow && fillRatio < 0.8;
-    
+
     const row = buildJustifiedRow(
       rowPhotos,
       containerWidth,
@@ -544,9 +568,9 @@ export function computeEnhancedMosaicLayout(
       maxRowHeightMultiplier,
       minRowHeightMultiplier,
       currentTop,
-      isOrphan
+      isOrphan,
     );
-    
+
     allItems.push(...row.items);
     currentTop += row.height + gap;
     cursor += rowPhotos.length;
@@ -560,10 +584,10 @@ export function computeEnhancedMosaicLayout(
  */
 export function computeEnhancedMosaicRows(
   photos: PhotoMeta[],
-  config: MosaicLayoutConfig
+  config: MosaicLayoutConfig,
 ): LayoutRow[] {
   const items = computeEnhancedMosaicLayout(photos, config);
-  
+
   // Group items by their top coordinate
   const byTop = new Map<number, EnhancedMosaicItem[]>();
   for (const item of items) {
@@ -573,25 +597,25 @@ export function computeEnhancedMosaicRows(
     }
     byTop.get(top)!.push(item);
   }
-  
+
   // Convert to rows
   const rows: LayoutRow[] = [];
   const sortedTops = Array.from(byTop.keys()).sort((a, b) => a - b);
-  
+
   for (const top of sortedTops) {
     const rowItems = byTop.get(top)!;
     let maxHeight = 0;
-    
+
     for (const item of rowItems) {
       const itemBottom = item.rect.top + item.rect.height - top;
       if (itemBottom > maxHeight) {
         maxHeight = itemBottom;
       }
     }
-    
+
     rows.push({
       height: maxHeight,
-      items: rowItems.map(item => ({
+      items: rowItems.map((item) => ({
         ...item,
         rect: {
           ...item.rect,
@@ -601,16 +625,19 @@ export function computeEnhancedMosaicRows(
       top,
     });
   }
-  
+
   return rows;
 }
 
 /**
  * Calculate total height of the layout
  */
-export function getTotalLayoutHeight(items: EnhancedMosaicItem[], _gap: number = DEFAULT_GAP): number {
+export function getTotalLayoutHeight(
+  items: EnhancedMosaicItem[],
+  _gap: number = DEFAULT_GAP,
+): number {
   if (items.length === 0) return 0;
-  
+
   let maxBottom = 0;
   for (const item of items) {
     const bottom = item.rect.top + item.rect.height;
@@ -618,6 +645,6 @@ export function getTotalLayoutHeight(items: EnhancedMosaicItem[], _gap: number =
       maxBottom = bottom;
     }
   }
-  
+
   return maxBottom;
 }

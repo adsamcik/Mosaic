@@ -16,20 +16,23 @@ describe('i18n configuration', () => {
   describe('supportedLanguages', () => {
     it('should export supported languages list', async () => {
       // We need to dynamically import to get the actual module (bypassing the mock)
-      const { supportedLanguages } = await vi.importActual<typeof import('../src/lib/i18n')>('../src/lib/i18n');
-      
+      const { supportedLanguages } =
+        await vi.importActual<typeof import('../src/lib/i18n')>(
+          '../src/lib/i18n',
+        );
+
       expect(supportedLanguages).toBeDefined();
       expect(Array.isArray(supportedLanguages)).toBe(true);
       expect(supportedLanguages.length).toBeGreaterThanOrEqual(2);
-      
+
       // Check English is present
-      const english = supportedLanguages.find(l => l.code === 'en');
+      const english = supportedLanguages.find((l) => l.code === 'en');
       expect(english).toBeDefined();
       expect(english?.name).toBe('English');
       expect(english?.nativeName).toBe('English');
-      
+
       // Check Czech is present
-      const czech = supportedLanguages.find(l => l.code === 'cs');
+      const czech = supportedLanguages.find((l) => l.code === 'cs');
       expect(czech).toBeDefined();
       expect(czech?.name).toBe('Czech');
       expect(czech?.nativeName).toBe('Čeština');
@@ -38,8 +41,11 @@ describe('i18n configuration', () => {
 
   describe('getCurrentLanguage', () => {
     it('should return current language', async () => {
-      const { getCurrentLanguage } = await vi.importActual<typeof import('../src/lib/i18n')>('../src/lib/i18n');
-      
+      const { getCurrentLanguage } =
+        await vi.importActual<typeof import('../src/lib/i18n')>(
+          '../src/lib/i18n',
+        );
+
       const lang = getCurrentLanguage();
       expect(typeof lang).toBe('string');
       expect(['en', 'cs']).toContain(lang);
@@ -48,17 +54,23 @@ describe('i18n configuration', () => {
 
   describe('changeLanguage', () => {
     it('should be a function', async () => {
-      const { changeLanguage } = await vi.importActual<typeof import('../src/lib/i18n')>('../src/lib/i18n');
-      
+      const { changeLanguage } =
+        await vi.importActual<typeof import('../src/lib/i18n')>(
+          '../src/lib/i18n',
+        );
+
       expect(typeof changeLanguage).toBe('function');
     });
 
     it('should store language preference in localStorage', async () => {
-      const { changeLanguage } = await vi.importActual<typeof import('../src/lib/i18n')>('../src/lib/i18n');
-      
+      const { changeLanguage } =
+        await vi.importActual<typeof import('../src/lib/i18n')>(
+          '../src/lib/i18n',
+        );
+
       await changeLanguage('cs');
       expect(localStorage.getItem('mosaic-language')).toBe('cs');
-      
+
       await changeLanguage('en');
       expect(localStorage.getItem('mosaic-language')).toBe('en');
     });
@@ -68,7 +80,7 @@ describe('i18n configuration', () => {
 describe('translation files', () => {
   it('English translations should have all required namespaces', async () => {
     const en = await import('../src/locales/en.json');
-    
+
     expect(en.common).toBeDefined();
     expect(en.auth).toBeDefined();
     expect(en.navigation).toBeDefined();
@@ -86,7 +98,7 @@ describe('translation files', () => {
 
   it('Czech translations should have all required namespaces', async () => {
     const cs = await import('../src/locales/cs.json');
-    
+
     expect(cs.common).toBeDefined();
     expect(cs.auth).toBeDefined();
     expect(cs.navigation).toBeDefined();
@@ -105,16 +117,16 @@ describe('translation files', () => {
   it('Czech translations should have same top-level keys as English', async () => {
     const en = await import('../src/locales/en.json');
     const cs = await import('../src/locales/cs.json');
-    
+
     const enKeys = Object.keys(en.default ?? en);
     const csKeys = Object.keys(cs.default ?? cs);
-    
+
     expect(csKeys.sort()).toEqual(enKeys.sort());
   });
 
   it('common namespace should have essential keys', async () => {
     const en = await import('../src/locales/en.json');
-    
+
     // Check for essential common keys
     expect(en.common.cancel).toBe('Cancel');
     expect(en.common.save).toBe('Save');
@@ -126,7 +138,7 @@ describe('translation files', () => {
 
   it('auth namespace should have login-related keys', async () => {
     const en = await import('../src/locales/en.json');
-    
+
     expect(en.auth.signInButton).toBe('Sign In');
     expect(en.auth.createAccountButton).toBe('Create Account');
     expect(en.auth.usernameLabel).toBe('Username');
@@ -136,10 +148,12 @@ describe('translation files', () => {
 
   it('settings namespace should have language section', async () => {
     const en = await import('../src/locales/en.json');
-    
+
     expect(en.settings.language).toBeDefined();
     expect(en.settings.language.title).toBe('Language');
-    expect(en.settings.language.description).toBe('Choose your preferred language');
+    expect(en.settings.language.description).toBe(
+      'Choose your preferred language',
+    );
   });
 });
 

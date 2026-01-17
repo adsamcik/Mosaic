@@ -4,25 +4,33 @@
  * Tests for the thumbnail generation service including three-tier image generation.
  */
 
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
 import {
-    base64ToUint8Array,
-    calculateDimensions,
-    generateThumbnail,
-    generateThumbnailBase64,
-    generateTieredImages,
-    generateTieredShards,
-    isSupportedImageType,
-    ThumbnailError,
-    type TieredImageResult,
-    type TieredShardResult,
+  base64ToUint8Array,
+  calculateDimensions,
+  generateThumbnail,
+  generateThumbnailBase64,
+  generateTieredImages,
+  generateTieredShards,
+  isSupportedImageType,
+  ThumbnailError,
+  type TieredImageResult,
+  type TieredShardResult,
 } from '../src/lib/thumbnail-generator';
 import {
-    ShardTier,
-    generateEpochKey,
-    decryptShard,
-    type EpochKey,
+  ShardTier,
+  generateEpochKey,
+  decryptShard,
+  type EpochKey,
 } from '../../../libs/crypto/src';
 
 // Mock settings service - default to preserving original format in tests for predictable behavior
@@ -211,9 +219,9 @@ describe('generateThumbnail', () => {
     mockBitmapWidth = 800;
     mockBitmapHeight = 600;
 
-    globalThis.createImageBitmap = vi.fn().mockImplementation(() => 
-      Promise.resolve(createMockBitmap())
-    );
+    globalThis.createImageBitmap = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(createMockBitmap()));
 
     // Mock canvas context
     mockContext = {
@@ -224,11 +232,13 @@ describe('generateThumbnail', () => {
         width: 32,
         height: 32,
       }),
-      createImageData: vi.fn().mockImplementation((width: number, height: number) => ({
-        data: new Uint8ClampedArray(width * height * 4),
-        width,
-        height,
-      })),
+      createImageData: vi
+        .fn()
+        .mockImplementation((width: number, height: number) => ({
+          data: new Uint8ClampedArray(width * height * 4),
+          width,
+          height,
+        })),
       putImageData: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
@@ -288,7 +298,8 @@ describe('generateThumbnail', () => {
     expect(result.blurhash.length).toBeLessThanOrEqual(100);
 
     // BlurHash uses base83 encoding with specific characters
-    const validChars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~';
+    const validChars =
+      '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~';
     for (const char of result.blurhash) {
       expect(validChars).toContain(char);
     }
@@ -343,7 +354,7 @@ describe('generateThumbnail', () => {
 
     await expect(generateThumbnail(file)).rejects.toThrow(ThumbnailError);
     await expect(generateThumbnail(file)).rejects.toThrow(
-      'Unsupported image type: image/svg+xml'
+      'Unsupported image type: image/svg+xml',
     );
   });
 
@@ -353,10 +364,10 @@ describe('generateThumbnail', () => {
     });
 
     await expect(generateThumbnail(file, { maxSize: 0 })).rejects.toThrow(
-      ThumbnailError
+      ThumbnailError,
     );
     await expect(generateThumbnail(file, { maxSize: -1 })).rejects.toThrow(
-      'Invalid maxSize: -1'
+      'Invalid maxSize: -1',
     );
   });
 
@@ -366,10 +377,10 @@ describe('generateThumbnail', () => {
     });
 
     await expect(generateThumbnail(file, { quality: 0 })).rejects.toThrow(
-      ThumbnailError
+      ThumbnailError,
     );
     await expect(generateThumbnail(file, { quality: 1.5 })).rejects.toThrow(
-      'Invalid quality: 1.5'
+      'Invalid quality: 1.5',
     );
   });
 
@@ -384,7 +395,7 @@ describe('generateThumbnail', () => {
 
     await expect(generateThumbnail(file)).rejects.toThrow(ThumbnailError);
     await expect(generateThumbnail(file)).rejects.toThrow(
-      'Failed to decode image'
+      'Failed to decode image',
     );
   });
 
@@ -397,7 +408,7 @@ describe('generateThumbnail', () => {
 
     await expect(generateThumbnail(file)).rejects.toThrow(ThumbnailError);
     await expect(generateThumbnail(file)).rejects.toThrow(
-      'Failed to get canvas 2D context'
+      'Failed to get canvas 2D context',
     );
   });
 
@@ -412,7 +423,7 @@ describe('generateThumbnail', () => {
 
     await expect(generateThumbnail(file)).rejects.toThrow(ThumbnailError);
     await expect(generateThumbnail(file)).rejects.toThrow(
-      /Failed to encode thumbnail as image\/(jpeg|webp)/
+      /Failed to encode thumbnail as image\/(jpeg|webp)/,
     );
   });
 
@@ -512,11 +523,13 @@ describe('generateThumbnailBase64', () => {
         width: 32,
         height: 32,
       }),
-      createImageData: vi.fn().mockImplementation((width: number, height: number) => ({
-        data: new Uint8ClampedArray(width * height * 4),
-        width,
-        height,
-      })),
+      createImageData: vi
+        .fn()
+        .mockImplementation((width: number, height: number) => ({
+          data: new Uint8ClampedArray(width * height * 4),
+          width,
+          height,
+        })),
       putImageData: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
@@ -607,9 +620,9 @@ describe('generateTieredImages', () => {
     mockBitmapHeight = 1500;
     mockFileData = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 
-    globalThis.createImageBitmap = vi.fn().mockImplementation(() =>
-      Promise.resolve(createMockBitmap())
-    );
+    globalThis.createImageBitmap = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(createMockBitmap()));
 
     // Mock canvas context
     mockContext = {
@@ -620,11 +633,13 @@ describe('generateTieredImages', () => {
         width: 32,
         height: 32,
       }),
-      createImageData: vi.fn().mockImplementation((width: number, height: number) => ({
-        data: new Uint8ClampedArray(width * height * 4),
-        width,
-        height,
-      })),
+      createImageData: vi
+        .fn()
+        .mockImplementation((width: number, height: number) => ({
+          data: new Uint8ClampedArray(width * height * 4),
+          width,
+          height,
+        })),
       putImageData: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
@@ -754,7 +769,7 @@ describe('generateTieredImages', () => {
 
     await expect(generateTieredImages(file)).rejects.toThrow(ThumbnailError);
     await expect(generateTieredImages(file)).rejects.toThrow(
-      'Unsupported image type: image/svg+xml'
+      'Unsupported image type: image/svg+xml',
     );
   });
 
@@ -767,7 +782,7 @@ describe('generateTieredImages', () => {
 
     await expect(generateTieredImages(file)).rejects.toThrow(ThumbnailError);
     await expect(generateTieredImages(file)).rejects.toThrow(
-      'Failed to decode image'
+      'Failed to decode image',
     );
   });
 
@@ -778,7 +793,7 @@ describe('generateTieredImages', () => {
 
     await expect(generateTieredImages(file)).rejects.toThrow(ThumbnailError);
     await expect(generateTieredImages(file)).rejects.toThrow(
-      'Failed to get canvas 2D context'
+      'Failed to get canvas 2D context',
     );
   });
 
@@ -817,11 +832,13 @@ describe('generateTieredShards', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockFileData = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    mockFileData = new Uint8Array([
+      0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46,
+    ]);
 
-    globalThis.createImageBitmap = vi.fn().mockImplementation(() =>
-      Promise.resolve(createMockBitmap())
-    );
+    globalThis.createImageBitmap = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(createMockBitmap()));
 
     // Generate a real epoch key for encryption tests
     epochKey = generateEpochKey(1);
@@ -835,11 +852,13 @@ describe('generateTieredShards', () => {
         width: 32,
         height: 32,
       }),
-      createImageData: vi.fn().mockImplementation((width: number, height: number) => ({
-        data: new Uint8ClampedArray(width * height * 4),
-        width,
-        height,
-      })),
+      createImageData: vi
+        .fn()
+        .mockImplementation((width: number, height: number) => ({
+          data: new Uint8ClampedArray(width * height * 4),
+          width,
+          height,
+        })),
       putImageData: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
@@ -934,7 +953,7 @@ describe('generateTieredShards', () => {
     // Decrypt with thumbKey
     const decrypted = await decryptShard(
       result.thumbnail.encrypted.ciphertext,
-      epochKey.thumbKey
+      epochKey.thumbKey,
     );
 
     expect(decrypted).toBeInstanceOf(Uint8Array);
@@ -949,7 +968,7 @@ describe('generateTieredShards', () => {
     // Decrypt with previewKey
     const decrypted = await decryptShard(
       result.preview.encrypted.ciphertext,
-      epochKey.previewKey
+      epochKey.previewKey,
     );
 
     expect(decrypted).toBeInstanceOf(Uint8Array);
@@ -964,7 +983,7 @@ describe('generateTieredShards', () => {
     // Decrypt with fullKey
     const decrypted = await decryptShard(
       result.original.encrypted.ciphertext,
-      epochKey.fullKey
+      epochKey.fullKey,
     );
 
     expect(decrypted).toBeInstanceOf(Uint8Array);
@@ -979,7 +998,7 @@ describe('generateTieredShards', () => {
 
     // Try to decrypt thumbnail with fullKey (wrong key)
     await expect(
-      decryptShard(result.thumbnail.encrypted.ciphertext, epochKey.fullKey)
+      decryptShard(result.thumbnail.encrypted.ciphertext, epochKey.fullKey),
     ).rejects.toThrow();
   });
 
@@ -1008,7 +1027,7 @@ describe('generateTieredShards', () => {
     const file = createTestFile(svgData, 'test.svg', 'image/svg+xml');
 
     await expect(generateTieredShards(file, epochKey)).rejects.toThrow(
-      ThumbnailError
+      ThumbnailError,
     );
   });
 

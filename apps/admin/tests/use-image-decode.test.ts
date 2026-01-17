@@ -19,15 +19,15 @@ function createHookRenderer<T>(hook: () => T): {
 } {
   const result: HookResult<T> = { current: undefined as T };
   let unmounted = false;
-  
+
   const TestComponent = () => {
     result.current = hook();
     return null;
   };
-  
+
   // Initial render
   React.createElement(TestComponent);
-  
+
   return {
     result,
     rerender: () => {
@@ -98,21 +98,21 @@ describe('useImageDecode', () => {
 
   it('should create Image with correct src', async () => {
     const testUrl = 'blob:test-url-123';
-    
+
     // Directly test the Image creation behavior
     const img = new Image();
     img.src = testUrl;
-    
+
     expect(img.src).toBe(testUrl);
     await expect(img.decode()).resolves.toBeUndefined();
   });
 
   it('should reject decode when configured to fail', async () => {
     MockImage.setDecodeToFail(true);
-    
+
     const img = new Image();
     img.src = 'blob:test-url';
-    
+
     await expect(img.decode()).rejects.toThrow('Decode failed');
   });
 
@@ -120,18 +120,18 @@ describe('useImageDecode', () => {
     new Image();
     new Image();
     new Image();
-    
+
     expect(MockImage.instances.length).toBe(3);
   });
 
   it('should respect decode delay', async () => {
     MockImage.setDecodeDelay(10);
-    
+
     const img = new Image();
     const start = Date.now();
     await img.decode();
     const elapsed = Date.now() - start;
-    
+
     expect(elapsed).toBeGreaterThanOrEqual(9); // Allow 1ms tolerance
   });
 

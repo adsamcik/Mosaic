@@ -10,7 +10,11 @@ import {
 import { getApi } from '../lib/api';
 import { getOrFetchEpochKey } from '../lib/epoch-key-service';
 import { createLogger } from '../lib/logger';
-import { getSettings, subscribeToSettings, type UserSettings } from '../lib/settings-service';
+import {
+  getSettings,
+  subscribeToSettings,
+  type UserSettings,
+} from '../lib/settings-service';
 import { syncEngine } from '../lib/sync-engine';
 
 const log = createLogger('SyncContext');
@@ -45,14 +49,18 @@ interface SyncProviderProps {
  * When autoSync setting is enabled, periodically syncs registered albums.
  */
 export function SyncProvider({ children }: SyncProviderProps) {
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState(() => getSettings().autoSync);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(
+    () => getSettings().autoSync,
+  );
   const [syncingAlbums, setSyncingAlbums] = useState<Set<string>>(new Set());
-  const [lastSyncTime, setLastSyncTime] = useState<Map<string, Date>>(new Map());
-  
+  const [lastSyncTime, setLastSyncTime] = useState<Map<string, Date>>(
+    new Map(),
+  );
+
   // Track registered albums for auto-sync
   const registeredAlbums = useRef<Set<string>>(new Set());
   const intervalRef = useRef<number | null>(null);
-  
+
   // Synchronous lock to prevent race conditions in async sync operations.
   // Using a ref instead of state because:
   // 1. State updates are asynchronous - between check and update, another call can slip through
@@ -86,7 +94,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       // Get the current epoch key for this album
       const api = getApi();
       const album = await api.getAlbum(albumId);
-      
+
       if (!album) {
         log.warn(`Album ${albumId} not found`);
         return;
@@ -94,10 +102,10 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
       // Get the most recent epoch key
       const epochKey = await getOrFetchEpochKey(albumId, album.currentEpochId);
-      
+
       // Perform sync
       await syncEngine.sync(albumId, epochKey.epochSeed);
-      
+
       setLastSyncTime((prev) => new Map([...prev, [albumId, new Date()]]));
       log.info(`Auto-sync complete for album ${albumId}`);
     } catch (err) {
@@ -122,7 +130,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     }
 
     log.debug(`Auto-sync tick: syncing ${albums.length} album(s)`);
-    
+
     // Sync albums sequentially to avoid overwhelming the server
     for (const albumId of albums) {
       await syncAlbum(albumId);
@@ -168,9 +176,12 @@ export function SyncProvider({ children }: SyncProviderProps) {
   }, []);
 
   // Manually trigger sync for an album
-  const triggerSync = useCallback(async (albumId: string): Promise<void> => {
-    await syncAlbum(albumId);
-  }, [syncAlbum]);
+  const triggerSync = useCallback(
+    async (albumId: string): Promise<void> => {
+      await syncAlbum(albumId);
+    },
+    [syncAlbum],
+  );
 
   return (
     <SyncContext.Provider

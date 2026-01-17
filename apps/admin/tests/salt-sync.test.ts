@@ -7,12 +7,18 @@
 
 import { describe, expect, it } from 'vitest';
 import { fromBase64, toBase64 } from '../src/lib/api';
-import { decryptSalt, encryptSalt, SaltDecryptionError } from '../src/lib/session';
+import {
+  decryptSalt,
+  encryptSalt,
+  SaltDecryptionError,
+} from '../src/lib/session';
 
 describe('Salt Encryption/Decryption', () => {
   const testPassword = 'test-password-123';
   const testUsername = 'testuser@example.com';
-  const testSalt = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  const testSalt = new Uint8Array([
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+  ]);
 
   describe('encryptSalt', () => {
     it('returns base64-encoded encrypted salt and nonce', async () => {
@@ -66,30 +72,51 @@ describe('Salt Encryption/Decryption', () => {
 
   describe('decryptSalt', () => {
     it('decrypts salt encrypted with same password and username', async () => {
-      const { encryptedSalt, saltNonce } = await encryptSalt(testSalt, testPassword, testUsername);
-      const decrypted = await decryptSalt(encryptedSalt, saltNonce, testPassword, testUsername);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        testPassword,
+        testUsername,
+      );
+      const decrypted = await decryptSalt(
+        encryptedSalt,
+        saltNonce,
+        testPassword,
+        testUsername,
+      );
 
       expect(decrypted).toEqual(testSalt);
     });
 
     it('throws SaltDecryptionError for wrong password', async () => {
-      const { encryptedSalt, saltNonce } = await encryptSalt(testSalt, testPassword, testUsername);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        testPassword,
+        testUsername,
+      );
 
       await expect(
-        decryptSalt(encryptedSalt, saltNonce, 'wrong-password', testUsername)
+        decryptSalt(encryptedSalt, saltNonce, 'wrong-password', testUsername),
       ).rejects.toThrow(SaltDecryptionError);
     });
 
     it('throws SaltDecryptionError for wrong username', async () => {
-      const { encryptedSalt, saltNonce } = await encryptSalt(testSalt, testPassword, testUsername);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        testPassword,
+        testUsername,
+      );
 
       await expect(
-        decryptSalt(encryptedSalt, saltNonce, testPassword, 'wrong-username')
+        decryptSalt(encryptedSalt, saltNonce, testPassword, 'wrong-username'),
       ).rejects.toThrow(SaltDecryptionError);
     });
 
     it('throws SaltDecryptionError for corrupted ciphertext', async () => {
-      const { encryptedSalt, saltNonce } = await encryptSalt(testSalt, testPassword, testUsername);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        testPassword,
+        testUsername,
+      );
 
       // Corrupt the ciphertext
       const corrupted = fromBase64(encryptedSalt);
@@ -97,12 +124,16 @@ describe('Salt Encryption/Decryption', () => {
       const corruptedBase64 = toBase64(corrupted);
 
       await expect(
-        decryptSalt(corruptedBase64, saltNonce, testPassword, testUsername)
+        decryptSalt(corruptedBase64, saltNonce, testPassword, testUsername),
       ).rejects.toThrow(SaltDecryptionError);
     });
 
     it('throws SaltDecryptionError for corrupted nonce', async () => {
-      const { encryptedSalt, saltNonce } = await encryptSalt(testSalt, testPassword, testUsername);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        testPassword,
+        testUsername,
+      );
 
       // Corrupt the nonce
       const corrupted = fromBase64(saltNonce);
@@ -110,46 +141,91 @@ describe('Salt Encryption/Decryption', () => {
       const corruptedBase64 = toBase64(corrupted);
 
       await expect(
-        decryptSalt(encryptedSalt, corruptedBase64, testPassword, testUsername)
+        decryptSalt(encryptedSalt, corruptedBase64, testPassword, testUsername),
       ).rejects.toThrow(SaltDecryptionError);
     });
   });
 
   describe('round-trip encryption', () => {
     it('handles empty password', async () => {
-      const { encryptedSalt, saltNonce } = await encryptSalt(testSalt, '', testUsername);
-      const decrypted = await decryptSalt(encryptedSalt, saltNonce, '', testUsername);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        '',
+        testUsername,
+      );
+      const decrypted = await decryptSalt(
+        encryptedSalt,
+        saltNonce,
+        '',
+        testUsername,
+      );
 
       expect(decrypted).toEqual(testSalt);
     });
 
     it('handles empty username', async () => {
-      const { encryptedSalt, saltNonce } = await encryptSalt(testSalt, testPassword, '');
-      const decrypted = await decryptSalt(encryptedSalt, saltNonce, testPassword, '');
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        testPassword,
+        '',
+      );
+      const decrypted = await decryptSalt(
+        encryptedSalt,
+        saltNonce,
+        testPassword,
+        '',
+      );
 
       expect(decrypted).toEqual(testSalt);
     });
 
     it('handles unicode password', async () => {
       const unicodePassword = 'пароль-密码-🔐';
-      const { encryptedSalt, saltNonce } = await encryptSalt(testSalt, unicodePassword, testUsername);
-      const decrypted = await decryptSalt(encryptedSalt, saltNonce, unicodePassword, testUsername);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        unicodePassword,
+        testUsername,
+      );
+      const decrypted = await decryptSalt(
+        encryptedSalt,
+        saltNonce,
+        unicodePassword,
+        testUsername,
+      );
 
       expect(decrypted).toEqual(testSalt);
     });
 
     it('handles unicode username', async () => {
       const unicodeUsername = 'utilisateur@例え.com';
-      const { encryptedSalt, saltNonce } = await encryptSalt(testSalt, testPassword, unicodeUsername);
-      const decrypted = await decryptSalt(encryptedSalt, saltNonce, testPassword, unicodeUsername);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        testPassword,
+        unicodeUsername,
+      );
+      const decrypted = await decryptSalt(
+        encryptedSalt,
+        saltNonce,
+        testPassword,
+        unicodeUsername,
+      );
 
       expect(decrypted).toEqual(testSalt);
     });
 
     it('handles very long password', async () => {
       const longPassword = 'a'.repeat(10000);
-      const { encryptedSalt, saltNonce } = await encryptSalt(testSalt, longPassword, testUsername);
-      const decrypted = await decryptSalt(encryptedSalt, saltNonce, longPassword, testUsername);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        longPassword,
+        testUsername,
+      );
+      const decrypted = await decryptSalt(
+        encryptedSalt,
+        saltNonce,
+        longPassword,
+        testUsername,
+      );
 
       expect(decrypted).toEqual(testSalt);
     });
@@ -161,8 +237,17 @@ describe('Salt Encryption/Decryption', () => {
         const salt = new Uint8Array(size);
         crypto.getRandomValues(salt);
 
-        const { encryptedSalt, saltNonce } = await encryptSalt(salt, testPassword, testUsername);
-        const decrypted = await decryptSalt(encryptedSalt, saltNonce, testPassword, testUsername);
+        const { encryptedSalt, saltNonce } = await encryptSalt(
+          salt,
+          testPassword,
+          testUsername,
+        );
+        const decrypted = await decryptSalt(
+          encryptedSalt,
+          saltNonce,
+          testPassword,
+          testUsername,
+        );
 
         expect(decrypted).toEqual(salt);
       }
@@ -200,7 +285,11 @@ describe('Multi-device salt sync simulation', () => {
     const originalSalt = crypto.getRandomValues(new Uint8Array(16));
 
     // Device 1: Generate salt and encrypt for server storage
-    const { encryptedSalt, saltNonce } = await encryptSalt(originalSalt, password, username);
+    const { encryptedSalt, saltNonce } = await encryptSalt(
+      originalSalt,
+      password,
+      username,
+    );
 
     // Simulate server storage (base64 strings)
     const serverStoredSalt = encryptedSalt;
@@ -211,7 +300,7 @@ describe('Multi-device salt sync simulation', () => {
       serverStoredSalt,
       serverStoredNonce,
       password,
-      username
+      username,
     );
 
     // Both devices should have identical salt
@@ -225,26 +314,34 @@ describe('Multi-device salt sync simulation', () => {
     const originalSalt = crypto.getRandomValues(new Uint8Array(16));
 
     // Device 1: Encrypt salt with correct password
-    const { encryptedSalt, saltNonce } = await encryptSalt(originalSalt, password, username);
+    const { encryptedSalt, saltNonce } = await encryptSalt(
+      originalSalt,
+      password,
+      username,
+    );
 
     // Device 2: Try to decrypt with wrong password
     await expect(
-      decryptSalt(encryptedSalt, saltNonce, wrongPassword, username)
+      decryptSalt(encryptedSalt, saltNonce, wrongPassword, username),
     ).rejects.toThrow(SaltDecryptionError);
   });
 
   it('simulates different users cannot access each others salt', async () => {
-    const password = 'shared-password';  // Even if password is same
+    const password = 'shared-password'; // Even if password is same
     const user1 = 'alice@example.com';
     const user2 = 'bob@example.com';
     const salt1 = crypto.getRandomValues(new Uint8Array(16));
 
     // Alice encrypts her salt
-    const { encryptedSalt, saltNonce } = await encryptSalt(salt1, password, user1);
+    const { encryptedSalt, saltNonce } = await encryptSalt(
+      salt1,
+      password,
+      user1,
+    );
 
     // Bob cannot decrypt Alice's salt (even with same password)
     await expect(
-      decryptSalt(encryptedSalt, saltNonce, password, user2)
+      decryptSalt(encryptedSalt, saltNonce, password, user2),
     ).rejects.toThrow(SaltDecryptionError);
   });
 });

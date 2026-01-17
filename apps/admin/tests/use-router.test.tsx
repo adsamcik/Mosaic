@@ -13,8 +13,13 @@ function TestComponent({
 }: {
   onRouteChange?: (route: Route) => void;
 }) {
-  const { route, navigateToAlbums, navigateToGallery, navigateToSettings, navigateToAdmin } =
-    useRouter();
+  const {
+    route,
+    navigateToAlbums,
+    navigateToGallery,
+    navigateToSettings,
+    navigateToAdmin,
+  } = useRouter();
 
   // Report route changes to test
   if (onRouteChange) {
@@ -28,28 +33,31 @@ function TestComponent({
     createElement(
       'span',
       { 'data-testid': 'album-id' },
-      route.view === 'gallery' ? route.albumId : ''
+      route.view === 'gallery' ? route.albumId : '',
     ),
     createElement(
       'button',
       { 'data-testid': 'nav-albums', onClick: navigateToAlbums },
-      'Albums'
+      'Albums',
     ),
     createElement(
       'button',
-      { 'data-testid': 'nav-gallery', onClick: () => navigateToGallery('test-album-123') },
-      'Gallery'
+      {
+        'data-testid': 'nav-gallery',
+        onClick: () => navigateToGallery('test-album-123'),
+      },
+      'Gallery',
     ),
     createElement(
       'button',
       { 'data-testid': 'nav-settings', onClick: navigateToSettings },
-      'Settings'
+      'Settings',
     ),
     createElement(
       'button',
       { 'data-testid': 'nav-admin', onClick: navigateToAdmin },
-      'Admin'
-    )
+      'Admin',
+    ),
   );
 }
 
@@ -68,7 +76,9 @@ describe('useRouter', () => {
     originalPathname = window.location.pathname;
 
     // Mock history.pushState
-    pushStateSpy = vi.spyOn(window.history, 'pushState').mockImplementation(() => {});
+    pushStateSpy = vi
+      .spyOn(window.history, 'pushState')
+      .mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -93,7 +103,7 @@ describe('useRouter', () => {
             onRouteChange: (r) => {
               capturedRoute = r;
             },
-          })
+          }),
         );
       });
 
@@ -110,7 +120,7 @@ describe('useRouter', () => {
             onRouteChange: (r) => {
               capturedRoute = r;
             },
-          })
+          }),
         );
       });
 
@@ -127,7 +137,7 @@ describe('useRouter', () => {
             onRouteChange: (r) => {
               capturedRoute = r;
             },
-          })
+          }),
         );
       });
 
@@ -144,7 +154,7 @@ describe('useRouter', () => {
             onRouteChange: (r) => {
               capturedRoute = r;
             },
-          })
+          }),
         );
       });
 
@@ -164,7 +174,7 @@ describe('useRouter', () => {
             onRouteChange: (r) => {
               capturedRoute = r;
             },
-          })
+          }),
         );
       });
 
@@ -180,7 +190,9 @@ describe('useRouter', () => {
         root.render(createElement(TestComponent));
       });
 
-      const button = container.querySelector('[data-testid="nav-albums"]') as HTMLButtonElement;
+      const button = container.querySelector(
+        '[data-testid="nav-albums"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         button.click();
       });
@@ -195,12 +207,18 @@ describe('useRouter', () => {
         root.render(createElement(TestComponent));
       });
 
-      const button = container.querySelector('[data-testid="nav-gallery"]') as HTMLButtonElement;
+      const button = container.querySelector(
+        '[data-testid="nav-gallery"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         button.click();
       });
 
-      expect(pushStateSpy).toHaveBeenCalledWith(null, '', '/albums/test-album-123');
+      expect(pushStateSpy).toHaveBeenCalledWith(
+        null,
+        '',
+        '/albums/test-album-123',
+      );
     });
 
     it('navigateToSettings updates URL to /settings', async () => {
@@ -210,7 +228,9 @@ describe('useRouter', () => {
         root.render(createElement(TestComponent));
       });
 
-      const button = container.querySelector('[data-testid="nav-settings"]') as HTMLButtonElement;
+      const button = container.querySelector(
+        '[data-testid="nav-settings"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         button.click();
       });
@@ -225,7 +245,9 @@ describe('useRouter', () => {
         root.render(createElement(TestComponent));
       });
 
-      const button = container.querySelector('[data-testid="nav-admin"]') as HTMLButtonElement;
+      const button = container.querySelector(
+        '[data-testid="nav-admin"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         button.click();
       });
@@ -240,7 +262,9 @@ describe('useRouter', () => {
         root.render(createElement(TestComponent));
       });
 
-      const button = container.querySelector('[data-testid="nav-settings"]') as HTMLButtonElement;
+      const button = container.querySelector(
+        '[data-testid="nav-settings"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         button.click();
       });

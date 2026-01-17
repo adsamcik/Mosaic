@@ -2,32 +2,37 @@
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
 import { createLogger } from '../lib/logger';
-import type { CryptoWorkerApi, EncryptedShard, ExportedKeys, PhotoMeta } from './types';
+import type {
+  CryptoWorkerApi,
+  EncryptedShard,
+  ExportedKeys,
+  PhotoMeta,
+} from './types';
 
 // Import real crypto functions from @mosaic/crypto
 import {
-    AccessTier,
-    decryptShard as cryptoDecryptShard,
-    deriveLinkKeys as cryptoDeriveLinkKeys,
-    encryptShard as cryptoEncryptShard,
-    generateEpochKey as cryptoGenerateEpochKey,
-    generateLinkSecret as cryptoGenerateLinkSecret,
-    peekHeader as cryptoPeekHeader,
-    signManifest as cryptoSignManifest,
-    unwrapTierKeyFromLink as cryptoUnwrapTierKeyFromLink,
-    verifyManifest as cryptoVerifyManifest,
-    verifyShard as cryptoVerifyShard,
-    wrapTierKeyForLink as cryptoWrapTierKeyForLink,
-    deriveAuthKeypair,
-    deriveIdentityKeypair,
-    deriveKeys,
-    deriveTierKeys,
-    getArgon2Params,
-    memzero,
-    sealAndSignBundle,
-    unwrapAccountKey,
-    verifyAndOpenBundle,
-    type IdentityKeypair,
+  AccessTier,
+  decryptShard as cryptoDecryptShard,
+  deriveLinkKeys as cryptoDeriveLinkKeys,
+  encryptShard as cryptoEncryptShard,
+  generateEpochKey as cryptoGenerateEpochKey,
+  generateLinkSecret as cryptoGenerateLinkSecret,
+  peekHeader as cryptoPeekHeader,
+  signManifest as cryptoSignManifest,
+  unwrapTierKeyFromLink as cryptoUnwrapTierKeyFromLink,
+  verifyManifest as cryptoVerifyManifest,
+  verifyShard as cryptoVerifyShard,
+  wrapTierKeyForLink as cryptoWrapTierKeyForLink,
+  deriveAuthKeypair,
+  deriveIdentityKeypair,
+  deriveKeys,
+  deriveTierKeys,
+  getArgon2Params,
+  memzero,
+  sealAndSignBundle,
+  unwrapAccountKey,
+  verifyAndOpenBundle,
+  type IdentityKeypair,
 } from '@mosaic/crypto';
 
 // Create scoped logger for crypto worker
@@ -53,7 +58,8 @@ class CryptoWorker implements CryptoWorkerApi {
   private identityKeypair: IdentityKeypair | null = null;
 
   /** Auth keypair for LocalAuth challenge-response (derived deterministically from password+salt) */
-  private authKeypair: { publicKey: Uint8Array; secretKey: Uint8Array } | null = null;
+  private authKeypair: { publicKey: Uint8Array; secretKey: Uint8Array } | null =
+    null;
 
   /** Whether libsodium has been initialized */
   private sodiumReady = false;
@@ -82,7 +88,7 @@ class CryptoWorker implements CryptoWorkerApi {
   async init(
     password: string,
     userSalt: Uint8Array,
-    accountSalt: Uint8Array
+    accountSalt: Uint8Array,
   ): Promise<void> {
     await this.ensureSodiumReady();
 
@@ -119,7 +125,7 @@ class CryptoWorker implements CryptoWorkerApi {
     password: string,
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
-    wrappedAccountKey: Uint8Array
+    wrappedAccountKey: Uint8Array,
   ): Promise<void> {
     await this.ensureSodiumReady();
 
@@ -132,7 +138,7 @@ class CryptoWorker implements CryptoWorkerApi {
       userSalt,
       accountSalt,
       wrappedAccountKey,
-      params
+      params,
     );
 
     // Store account key for future operations
@@ -221,7 +227,7 @@ class CryptoWorker implements CryptoWorkerApi {
     data: Uint8Array,
     epochSeed: Uint8Array,
     epochId: number,
-    shardIndex: number
+    shardIndex: number,
   ): Promise<EncryptedShard> {
     await this.ensureSodiumReady();
     // Derive the fullKey (tier 3) from epochSeed for encryption
@@ -253,14 +259,14 @@ class CryptoWorker implements CryptoWorkerApi {
    */
   async decryptShard(
     envelope: Uint8Array,
-    epochSeed: Uint8Array
+    epochSeed: Uint8Array,
   ): Promise<Uint8Array> {
     await this.ensureSodiumReady();
-    
+
     // Peek at the envelope header to determine which tier key to use
     const header = cryptoPeekHeader(envelope);
     const { thumbKey, previewKey, fullKey } = deriveTierKeys(epochSeed);
-    
+
     // Select the appropriate tier key based on the envelope's tier byte
     let tierKey: Uint8Array;
     switch (header.tier) {
@@ -275,7 +281,7 @@ class CryptoWorker implements CryptoWorkerApi {
         tierKey = fullKey;
         break;
     }
-    
+
     try {
       return await cryptoDecryptShard(envelope, tierKey);
     } catch {
@@ -298,7 +304,7 @@ class CryptoWorker implements CryptoWorkerApi {
    */
   async decryptShardWithTierKey(
     envelope: Uint8Array,
-    tierKey: Uint8Array
+    tierKey: Uint8Array,
   ): Promise<Uint8Array> {
     await this.ensureSodiumReady();
     return cryptoDecryptShard(envelope, tierKey);
@@ -310,7 +316,7 @@ class CryptoWorker implements CryptoWorkerApi {
    */
   async verifyShard(
     envelope: Uint8Array,
-    expectedSha256: string
+    expectedSha256: string,
   ): Promise<boolean> {
     await this.ensureSodiumReady();
     return cryptoVerifyShard(envelope, expectedSha256);
@@ -324,7 +330,7 @@ class CryptoWorker implements CryptoWorkerApi {
    * @returns Header info including epochId, shardId, and tier
    */
   async peekHeader(
-    envelope: Uint8Array
+    envelope: Uint8Array,
   ): Promise<{ epochId: number; shardId: number; tier: number }> {
     // peekHeader is synchronous but we expose it as async for consistency
     const header = cryptoPeekHeader(envelope);
@@ -354,14 +360,14 @@ class CryptoWorker implements CryptoWorkerApi {
    */
   async decryptManifest(
     encryptedMeta: Uint8Array,
-    readKey: Uint8Array
+    readKey: Uint8Array,
   ): Promise<PhotoMeta> {
     await this.ensureSodiumReady();
 
     // Manifest metadata uses the envelope format and is encrypted with thumbKey
     // Derive thumbKey from epochSeed for decryption
     const { thumbKey } = deriveTierKeys(readKey);
-    
+
     let plaintext: Uint8Array;
     try {
       plaintext = await cryptoDecryptShard(encryptedMeta, thumbKey);
@@ -396,7 +402,7 @@ class CryptoWorker implements CryptoWorkerApi {
   async verifyManifest(
     manifest: Uint8Array,
     signature: Uint8Array,
-    pubKey: Uint8Array
+    pubKey: Uint8Array,
   ): Promise<boolean> {
     await this.ensureSodiumReady();
     return cryptoVerifyManifest(manifest, signature, pubKey);
@@ -434,8 +440,12 @@ class CryptoWorker implements CryptoWorkerApi {
     bundle: Uint8Array,
     senderPubkey: Uint8Array,
     albumId: string,
-    minEpochId: number
-  ): Promise<{ epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }> {
+    minEpochId: number,
+  ): Promise<{
+    epochSeed: Uint8Array;
+    signPublicKey: Uint8Array;
+    signSecretKey: Uint8Array;
+  }> {
     if (!this.identityKeypair) {
       throw new Error('Identity not derived - call deriveIdentity() first');
     }
@@ -461,7 +471,7 @@ class CryptoWorker implements CryptoWorkerApi {
       signature,
       senderPubkey,
       this.identityKeypair,
-      context
+      context,
     );
     timer.end();
 
@@ -481,7 +491,7 @@ class CryptoWorker implements CryptoWorkerApi {
     epochSeed: Uint8Array,
     signPublicKey: Uint8Array,
     signSecretKey: Uint8Array,
-    recipientPubkey: Uint8Array
+    recipientPubkey: Uint8Array,
   ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array }> {
     if (!this.identityKeypair) {
       throw new Error('Identity not derived - call deriveIdentity() first');
@@ -502,7 +512,11 @@ class CryptoWorker implements CryptoWorkerApi {
     };
 
     // Seal and sign the bundle
-    const sealed = sealAndSignBundle(bundle, recipientPubkey, this.identityKeypair);
+    const sealed = sealAndSignBundle(
+      bundle,
+      recipientPubkey,
+      this.identityKeypair,
+    );
 
     return {
       encryptedBundle: sealed.sealed,
@@ -513,9 +527,11 @@ class CryptoWorker implements CryptoWorkerApi {
   /**
    * Generate a new epoch key for album creation or rotation.
    */
-  async generateEpochKey(
-    epochId: number
-  ): Promise<{ epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }> {
+  async generateEpochKey(epochId: number): Promise<{
+    epochSeed: Uint8Array;
+    signPublicKey: Uint8Array;
+    signSecretKey: Uint8Array;
+  }> {
     await this.ensureSodiumReady();
 
     const epochKey = cryptoGenerateEpochKey(epochId);
@@ -530,15 +546,15 @@ class CryptoWorker implements CryptoWorkerApi {
   /**
    * Encrypt manifest metadata for upload.
    * Uses the same envelope format as shards with epoch and shard index 0.
-   * 
+   *
    * IMPORTANT: The readKey parameter is the epochSeed. We derive the thumbKey
-   * from it so that share link recipients (who only have tier keys, not the 
+   * from it so that share link recipients (who only have tier keys, not the
    * epochSeed) can decrypt the manifest with their thumbKey (tier 1).
    */
   async encryptManifest(
     meta: PhotoMeta,
     readKey: Uint8Array,
-    epochId: number
+    epochId: number,
   ): Promise<{ ciphertext: Uint8Array; sha256: string }> {
     await this.ensureSodiumReady();
 
@@ -568,7 +584,7 @@ class CryptoWorker implements CryptoWorkerApi {
    */
   async signManifest(
     manifestData: Uint8Array,
-    signSecretKey: Uint8Array
+    signSecretKey: Uint8Array,
   ): Promise<Uint8Array> {
     await this.ensureSodiumReady();
     return cryptoSignManifest(manifestData, signSecretKey);
@@ -594,7 +610,7 @@ class CryptoWorker implements CryptoWorkerApi {
       null, // no additional data
       null, // secret nonce (not used)
       nonce,
-      this.accountKey
+      this.accountKey,
     );
 
     // Return nonce || ciphertext
@@ -616,7 +632,9 @@ class CryptoWorker implements CryptoWorkerApi {
     }
 
     if (wrapped.length < 24 + 16) {
-      throw new Error('Wrapped data too short (minimum 40 bytes for nonce + tag)');
+      throw new Error(
+        'Wrapped data too short (minimum 40 bytes for nonce + tag)',
+      );
     }
 
     // Extract nonce (first 24 bytes) and ciphertext (rest)
@@ -629,7 +647,7 @@ class CryptoWorker implements CryptoWorkerApi {
       ciphertext,
       null, // no additional data
       nonce,
-      this.accountKey
+      this.accountKey,
     );
 
     return plaintext;
@@ -642,7 +660,9 @@ class CryptoWorker implements CryptoWorkerApi {
   /**
    * Derive link ID and wrapping key from a link secret.
    */
-  async deriveLinkKeys(linkSecret: Uint8Array): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }> {
+  async deriveLinkKeys(
+    linkSecret: Uint8Array,
+  ): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }> {
     await this.ensureSodiumReady();
     return cryptoDeriveLinkKeys(linkSecret);
   }
@@ -653,10 +673,14 @@ class CryptoWorker implements CryptoWorkerApi {
   async wrapTierKeyForLink(
     tierKey: Uint8Array,
     tier: number,
-    wrappingKey: Uint8Array
+    wrappingKey: Uint8Array,
   ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }> {
     await this.ensureSodiumReady();
-    const wrapped = cryptoWrapTierKeyForLink(tierKey, tier as AccessTier, wrappingKey);
+    const wrapped = cryptoWrapTierKeyForLink(
+      tierKey,
+      tier as AccessTier,
+      wrappingKey,
+    );
     return {
       tier: wrapped.tier,
       nonce: wrapped.nonce,
@@ -671,7 +695,7 @@ class CryptoWorker implements CryptoWorkerApi {
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     tier: number,
-    wrappingKey: Uint8Array
+    wrappingKey: Uint8Array,
   ): Promise<Uint8Array> {
     await this.ensureSodiumReady();
     const wrapped = {
@@ -679,7 +703,11 @@ class CryptoWorker implements CryptoWorkerApi {
       nonce,
       encryptedKey,
     };
-    return cryptoUnwrapTierKeyFromLink(wrapped, tier as AccessTier, wrappingKey);
+    return cryptoUnwrapTierKeyFromLink(
+      wrapped,
+      tier as AccessTier,
+      wrappingKey,
+    );
   }
 
   /**
@@ -704,12 +732,30 @@ class CryptoWorker implements CryptoWorkerApi {
     }
 
     return {
-      accountKey: sodium.to_base64(this.accountKey, sodium.base64_variants.ORIGINAL),
-      sessionKey: sodium.to_base64(this.sessionKey, sodium.base64_variants.ORIGINAL),
-      identitySecretKey: sodium.to_base64(this.identityKeypair.ed25519.secretKey, sodium.base64_variants.ORIGINAL),
-      identityPublicKey: sodium.to_base64(this.identityKeypair.ed25519.publicKey, sodium.base64_variants.ORIGINAL),
-      identityX25519SecretKey: sodium.to_base64(this.identityKeypair.x25519.secretKey, sodium.base64_variants.ORIGINAL),
-      identityX25519PublicKey: sodium.to_base64(this.identityKeypair.x25519.publicKey, sodium.base64_variants.ORIGINAL),
+      accountKey: sodium.to_base64(
+        this.accountKey,
+        sodium.base64_variants.ORIGINAL,
+      ),
+      sessionKey: sodium.to_base64(
+        this.sessionKey,
+        sodium.base64_variants.ORIGINAL,
+      ),
+      identitySecretKey: sodium.to_base64(
+        this.identityKeypair.ed25519.secretKey,
+        sodium.base64_variants.ORIGINAL,
+      ),
+      identityPublicKey: sodium.to_base64(
+        this.identityKeypair.ed25519.publicKey,
+        sodium.base64_variants.ORIGINAL,
+      ),
+      identityX25519SecretKey: sodium.to_base64(
+        this.identityKeypair.x25519.secretKey,
+        sodium.base64_variants.ORIGINAL,
+      ),
+      identityX25519PublicKey: sodium.to_base64(
+        this.identityKeypair.x25519.publicKey,
+        sodium.base64_variants.ORIGINAL,
+      ),
     };
   }
 
@@ -723,18 +769,36 @@ class CryptoWorker implements CryptoWorkerApi {
     await this.clear();
 
     // Restore keys from base64
-    this.accountKey = sodium.from_base64(keys.accountKey, sodium.base64_variants.ORIGINAL);
-    this.sessionKey = sodium.from_base64(keys.sessionKey, sodium.base64_variants.ORIGINAL);
+    this.accountKey = sodium.from_base64(
+      keys.accountKey,
+      sodium.base64_variants.ORIGINAL,
+    );
+    this.sessionKey = sodium.from_base64(
+      keys.sessionKey,
+      sodium.base64_variants.ORIGINAL,
+    );
 
     // Restore identity keypair
     this.identityKeypair = {
       ed25519: {
-        publicKey: sodium.from_base64(keys.identityPublicKey, sodium.base64_variants.ORIGINAL),
-        secretKey: sodium.from_base64(keys.identitySecretKey, sodium.base64_variants.ORIGINAL),
+        publicKey: sodium.from_base64(
+          keys.identityPublicKey,
+          sodium.base64_variants.ORIGINAL,
+        ),
+        secretKey: sodium.from_base64(
+          keys.identitySecretKey,
+          sodium.base64_variants.ORIGINAL,
+        ),
       },
       x25519: {
-        publicKey: sodium.from_base64(keys.identityX25519PublicKey, sodium.base64_variants.ORIGINAL),
-        secretKey: sodium.from_base64(keys.identityX25519SecretKey, sodium.base64_variants.ORIGINAL),
+        publicKey: sodium.from_base64(
+          keys.identityX25519PublicKey,
+          sodium.base64_variants.ORIGINAL,
+        ),
+        secretKey: sodium.from_base64(
+          keys.identityX25519SecretKey,
+          sodium.base64_variants.ORIGINAL,
+        ),
       },
     };
   }
@@ -750,17 +814,17 @@ class CryptoWorker implements CryptoWorkerApi {
    * Derive auth keypair directly from password + userSalt.
    * This is a deterministic derivation path separate from the random account key.
    * The auth keypair is used for challenge-response authentication.
-   * 
+   *
    * Must be called before signAuthChallenge() or getAuthPublicKey().
-   * 
+   *
    * @param password - User password
    * @param userSalt - 16-byte user salt from server
    */
   async deriveAuthKey(password: string, userSalt: Uint8Array): Promise<void> {
     await this.ensureSodiumReady();
-    
+
     const params = getArgon2Params();
-    
+
     // Derive the auth keypair deterministically from password + userSalt
     // This is separate from the random account key derivation
     this.authKeypair = await deriveAuthKeypair(password, userSalt, {
@@ -768,20 +832,20 @@ class CryptoWorker implements CryptoWorkerApi {
       iterations: params.iterations,
       parallelism: params.parallelism,
     });
-    
+
     log.debug('Auth keypair derived successfully');
   }
 
   /**
    * Sign an authentication challenge for LocalAuth login.
    * Uses the auth Ed25519 key derived from password+salt.
-   * 
+   *
    * Message format: context || username_len(4 BE) || username || [timestamp(8 BE)] || challenge
    */
   async signAuthChallenge(
     challenge: Uint8Array,
     username: string,
-    timestamp?: number
+    timestamp?: number,
   ): Promise<Uint8Array> {
     if (!this.authKeypair) {
       throw new Error('Auth key not derived - call deriveAuthKey() first');
@@ -789,16 +853,22 @@ class CryptoWorker implements CryptoWorkerApi {
     await this.ensureSodiumReady();
 
     // Build message exactly as backend expects
-    const contextBytes = new TextEncoder().encode(CryptoWorker.AUTH_CHALLENGE_CONTEXT);
+    const contextBytes = new TextEncoder().encode(
+      CryptoWorker.AUTH_CHALLENGE_CONTEXT,
+    );
     const usernameBytes = new TextEncoder().encode(username);
-    
+
     // Username length as 4 bytes big-endian
     const usernameLenBytes = new Uint8Array(4);
-    new DataView(usernameLenBytes.buffer).setUint32(0, usernameBytes.length, false); // false = big-endian
-    
+    new DataView(usernameLenBytes.buffer).setUint32(
+      0,
+      usernameBytes.length,
+      false,
+    ); // false = big-endian
+
     // Build message parts
     const parts: Uint8Array[] = [contextBytes, usernameLenBytes, usernameBytes];
-    
+
     // Add timestamp if provided (8 bytes big-endian)
     if (timestamp !== undefined) {
       const timestampBytes = new Uint8Array(8);
@@ -808,10 +878,10 @@ class CryptoWorker implements CryptoWorkerApi {
       view.setBigUint64(0, BigInt(timestamp), false); // false = big-endian
       parts.push(timestampBytes);
     }
-    
+
     // Add challenge
     parts.push(challenge);
-    
+
     // Concatenate all parts
     const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
     const message = new Uint8Array(totalLen);
@@ -820,7 +890,7 @@ class CryptoWorker implements CryptoWorkerApi {
       message.set(part, offset);
       offset += part.length;
     }
-    
+
     // Sign with Ed25519 auth key
     return sodium.crypto_sign_detached(message, this.authKeypair.secretKey);
   }

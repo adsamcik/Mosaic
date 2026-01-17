@@ -10,7 +10,10 @@ export { GalleryHeader } from './GalleryHeader';
 
 export { JustifiedPhotoThumbnail } from './JustifiedPhotoThumbnail';
 export { PhotoGridSkeleton, SkeletonTile } from './PhotoGridSkeleton';
-export type { PhotoGridSkeletonProps, SkeletonTileProps } from './PhotoGridSkeleton';
+export type {
+  PhotoGridSkeletonProps,
+  SkeletonTileProps,
+} from './PhotoGridSkeleton';
 export { MapView } from './MapView';
 export type { BBox, MapViewProps } from './MapView';
 export { PhotoGrid } from './PhotoGrid';

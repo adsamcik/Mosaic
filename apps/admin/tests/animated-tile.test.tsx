@@ -149,4 +149,3 @@ describe('usePrefersReducedMotion', () => {
     expect(removeEventListenerCalled).toBe(true);
   });
 });
-

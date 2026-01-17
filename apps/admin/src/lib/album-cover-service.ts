@@ -16,7 +16,7 @@ export class AlbumCoverError extends Error {
   constructor(
     message: string,
     public readonly albumId: string,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'AlbumCoverError';
@@ -49,7 +49,7 @@ const pendingLoads = new Map<string, Promise<AlbumCover | null>>();
  * @returns First photo or null if album is empty
  */
 export async function getFirstPhotoForAlbum(
-  albumId: string
+  albumId: string,
 ): Promise<PhotoMeta | null> {
   try {
     const db = await getDbClient();
@@ -61,7 +61,7 @@ export async function getFirstPhotoForAlbum(
     throw new AlbumCoverError(
       `Failed to get first photo for album: ${err instanceof Error ? err.message : String(err)}`,
       albumId,
-      err instanceof Error ? err : undefined
+      err instanceof Error ? err : undefined,
     );
   }
 }
@@ -77,7 +77,7 @@ export async function getFirstPhotoForAlbum(
  */
 export async function getAlbumCover(
   albumId: string,
-  epochReadKey: Uint8Array
+  epochReadKey: Uint8Array,
 ): Promise<AlbumCover | null> {
   // Check cache first
   const cached = coverCache.get(albumId);
@@ -102,10 +102,7 @@ export async function getAlbumCover(
 
       // Check if photo has shards
       if (!firstPhoto.shardIds || firstPhoto.shardIds.length === 0) {
-        throw new AlbumCoverError(
-          'First photo has no shard IDs',
-          albumId
-        );
+        throw new AlbumCoverError('First photo has no shard IDs', albumId);
       }
 
       // Load and decrypt the photo
@@ -113,7 +110,7 @@ export async function getAlbumCover(
         firstPhoto.id,
         firstPhoto.shardIds,
         epochReadKey,
-        firstPhoto.mimeType
+        firstPhoto.mimeType,
       );
 
       const cover: AlbumCover = {

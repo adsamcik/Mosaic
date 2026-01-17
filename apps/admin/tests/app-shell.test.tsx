@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from '../src/components/App/AppShell';
 
 // Track router state for tests
-let mockRoute: { view: 'albums' | 'gallery' | 'settings' | 'admin'; albumId?: string } = { view: 'albums' };
+let mockRoute: {
+  view: 'albums' | 'gallery' | 'settings' | 'admin';
+  albumId?: string;
+} = { view: 'albums' };
 const mockNavigate = vi.fn((route: { view: string; albumId?: string }) => {
   mockRoute = route as typeof mockRoute;
 });
@@ -21,7 +24,8 @@ vi.mock('../src/hooks', async (importOriginal) => {
       route: mockRoute,
       navigate: mockNavigate,
       navigateToAlbums: () => mockNavigate({ view: 'albums' }),
-      navigateToGallery: (albumId: string) => mockNavigate({ view: 'gallery', albumId }),
+      navigateToGallery: (albumId: string) =>
+        mockNavigate({ view: 'gallery', albumId }),
       navigateToSettings: () => mockNavigate({ view: 'settings' }),
       navigateToAdmin: () => mockNavigate({ view: 'admin' }),
       goBack: () => mockNavigate({ view: 'albums' }),
@@ -31,12 +35,17 @@ vi.mock('../src/hooks', async (importOriginal) => {
 
 // Mock child components
 vi.mock('../src/components/Auth/LogoutButton', () => ({
-  LogoutButton: () => createElement('button', { className: 'logout-button' }, 'Logout'),
+  LogoutButton: () =>
+    createElement('button', { className: 'logout-button' }, 'Logout'),
 }));
 
 vi.mock('../src/components/Gallery/Gallery', () => ({
   Gallery: ({ albumId }: { albumId: string }) =>
-    createElement('div', { 'data-testid': 'gallery', 'data-album-id': albumId }, 'Gallery'),
+    createElement(
+      'div',
+      { 'data-testid': 'gallery', 'data-album-id': albumId },
+      'Gallery',
+    ),
 }));
 
 vi.mock('../src/components/Albums/AlbumList', () => ({
@@ -46,14 +55,18 @@ vi.mock('../src/components/Albums/AlbumList', () => ({
       { 'data-testid': 'album-list' },
       createElement(
         'button',
-        { onClick: () => onSelectAlbum('album-1'), 'data-testid': 'select-album' },
-        'Select Album'
-      )
+        {
+          onClick: () => onSelectAlbum('album-1'),
+          'data-testid': 'select-album',
+        },
+        'Select Album',
+      ),
     ),
 }));
 
 vi.mock('../src/components/Settings/SettingsPage', () => ({
-  SettingsPage: () => createElement('div', { 'data-testid': 'settings-page' }, 'Settings'),
+  SettingsPage: () =>
+    createElement('div', { 'data-testid': 'settings-page' }, 'Settings'),
 }));
 
 // Mock SyncContext/SyncProvider - it wraps the entire app
@@ -116,7 +129,9 @@ describe('AppShell', () => {
 
     expect(container.querySelector('[data-testid="album-list"]')).toBeTruthy();
     expect(container.querySelector('[data-testid="gallery"]')).toBeFalsy();
-    expect(container.querySelector('[data-testid="settings-page"]')).toBeFalsy();
+    expect(
+      container.querySelector('[data-testid="settings-page"]'),
+    ).toBeFalsy();
   });
 
   it('has settings button in header', async () => {
@@ -124,7 +139,9 @@ describe('AppShell', () => {
       root.render(createElement(AppShell));
     });
 
-    const settingsButton = container.querySelector('[data-testid="settings-nav-button"]');
+    const settingsButton = container.querySelector(
+      '[data-testid="settings-nav-button"]',
+    );
     expect(settingsButton).toBeTruthy();
     // Button uses an SVG icon, check for the svg element
     expect(settingsButton?.querySelector('svg')).toBeTruthy();
@@ -136,7 +153,7 @@ describe('AppShell', () => {
     });
 
     const settingsButton = container.querySelector(
-      '[data-testid="settings-nav-button"]'
+      '[data-testid="settings-nav-button"]',
     ) as HTMLButtonElement;
 
     await act(async () => {
@@ -149,18 +166,20 @@ describe('AppShell', () => {
   it('hides settings button when on settings page', async () => {
     // Start on settings page
     mockRoute = { view: 'settings' };
-    
+
     await act(async () => {
       root.render(createElement(AppShell));
     });
 
-    expect(container.querySelector('[data-testid="settings-nav-button"]')).toBeFalsy();
+    expect(
+      container.querySelector('[data-testid="settings-nav-button"]'),
+    ).toBeFalsy();
   });
 
   it('shows back button on settings page', async () => {
     // Start on settings page
     mockRoute = { view: 'settings' };
-    
+
     await act(async () => {
       root.render(createElement(AppShell));
     });
@@ -173,13 +192,15 @@ describe('AppShell', () => {
   it('navigates back to albums from settings', async () => {
     // Start on settings page
     mockRoute = { view: 'settings' };
-    
+
     await act(async () => {
       root.render(createElement(AppShell));
     });
 
     // Go back
-    const backButton = container.querySelector('.back-button') as HTMLButtonElement;
+    const backButton = container.querySelector(
+      '.back-button',
+    ) as HTMLButtonElement;
 
     await act(async () => {
       backButton.click();
@@ -194,20 +215,23 @@ describe('AppShell', () => {
     });
 
     const selectButton = container.querySelector(
-      '[data-testid="select-album"]'
+      '[data-testid="select-album"]',
     ) as HTMLButtonElement;
 
     await act(async () => {
       selectButton.click();
     });
 
-    expect(mockNavigate).toHaveBeenCalledWith({ view: 'gallery', albumId: 'album-1' });
+    expect(mockNavigate).toHaveBeenCalledWith({
+      view: 'gallery',
+      albumId: 'album-1',
+    });
   });
 
   it('shows back button in gallery view', async () => {
     // Start on gallery page
     mockRoute = { view: 'gallery', albumId: 'album-1' };
-    
+
     await act(async () => {
       root.render(createElement(AppShell));
     });
@@ -225,7 +249,9 @@ describe('AppShell', () => {
       root.render(createElement(AppShell));
     });
 
-    const backButton = container.querySelector('.back-button') as HTMLButtonElement;
+    const backButton = container.querySelector(
+      '.back-button',
+    ) as HTMLButtonElement;
 
     await act(async () => {
       backButton.click();
@@ -237,7 +263,7 @@ describe('AppShell', () => {
   it('passes album ID to gallery component', async () => {
     // Start on gallery page with album-1
     mockRoute = { view: 'gallery', albumId: 'album-1' };
-    
+
     await act(async () => {
       root.render(createElement(AppShell));
     });

@@ -23,17 +23,17 @@ i18n
     fallbackLng: 'en',
     supportedLngs: supportedLanguages.map((l) => l.code),
     nonExplicitSupportedLngs: true, // Allow cs-CZ to match cs
-    
+
     interpolation: {
       escapeValue: false, // React already escapes values
     },
-    
+
     detection: {
       order: ['localStorage', 'navigator', 'htmlTag'],
       caches: ['localStorage'],
       lookupLocalStorage: 'mosaic-language',
     },
-    
+
     react: {
       useSuspense: false, // Prevent suspense boundary issues
     },

@@ -23,7 +23,12 @@ import { syncCoordinator } from './sync-coordinator';
 const log = createLogger('session');
 
 /** Events that reset the idle timer */
-const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart', 'scroll'] as const;
+const ACTIVITY_EVENTS = [
+  'mousedown',
+  'keydown',
+  'touchstart',
+  'scroll',
+] as const;
 
 /** Salt storage key in localStorage */
 const USER_SALT_KEY = 'mosaic:userSalt';
@@ -53,7 +58,7 @@ export class SaltDecryptionError extends Error {
  */
 async function deriveSaltEncryptionKey(
   password: string,
-  username: string
+  username: string,
 ): Promise<CryptoKey> {
   // Import password as a key
   const passwordKey = await crypto.subtle.importKey(
@@ -61,7 +66,7 @@ async function deriveSaltEncryptionKey(
     new TextEncoder().encode(password),
     'PBKDF2',
     false,
-    ['deriveKey']
+    ['deriveKey'],
   );
 
   // Use username as the salt for PBKDF2
@@ -78,7 +83,7 @@ async function deriveSaltEncryptionKey(
     passwordKey,
     { name: 'AES-GCM', length: 256 },
     false,
-    ['encrypt', 'decrypt']
+    ['encrypt', 'decrypt'],
   );
 }
 
@@ -89,7 +94,7 @@ async function deriveSaltEncryptionKey(
 export async function encryptSalt(
   salt: Uint8Array,
   password: string,
-  username: string
+  username: string,
 ): Promise<{ encryptedSalt: string; saltNonce: string }> {
   const key = await deriveSaltEncryptionKey(password, username);
 
@@ -100,7 +105,7 @@ export async function encryptSalt(
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
     key,
-    salt as Uint8Array<ArrayBuffer>
+    salt as Uint8Array<ArrayBuffer>,
   );
 
   return {
@@ -117,7 +122,7 @@ export async function decryptSalt(
   encryptedSaltBase64: string,
   saltNonceBase64: string,
   password: string,
-  username: string
+  username: string,
 ): Promise<Uint8Array> {
   const key = await deriveSaltEncryptionKey(password, username);
   const encryptedSalt = fromBase64(encryptedSaltBase64);
@@ -127,7 +132,7 @@ export async function decryptSalt(
     const decrypted = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
       key,
-      encryptedSalt as Uint8Array<ArrayBuffer>
+      encryptedSalt as Uint8Array<ArrayBuffer>,
     );
     return new Uint8Array(decrypted);
   } catch {
@@ -196,7 +201,10 @@ class SessionManager {
    * Check if session restoration is needed (has session state but not logged in)
    */
   get needsSessionRestore(): boolean {
-    return !this._isLoggedIn && sessionStorage.getItem(SESSION_STATE_KEY) === 'active';
+    return (
+      !this._isLoggedIn &&
+      sessionStorage.getItem(SESSION_STATE_KEY) === 'active'
+    );
   }
 
   /**
@@ -318,7 +326,10 @@ class SessionManager {
    * Cache keys for session restoration after page reload.
    * Only caches if key caching is enabled in settings.
    */
-  private async cacheSessionKeys(userSalt: Uint8Array, accountSalt: Uint8Array): Promise<void> {
+  private async cacheSessionKeys(
+    userSalt: Uint8Array,
+    accountSalt: Uint8Array,
+  ): Promise<void> {
     try {
       const cryptoClient = await getCryptoClient();
       const exportedKeys = await cryptoClient.exportKeys();
@@ -344,7 +355,7 @@ class SessionManager {
    * Restore an existing session with password.
    * Use this after page reload when the session cookie is still valid
    * but crypto workers need to be reinitialized.
-   * 
+   *
    * @param password - User's password to derive keys
    * @param user - Optional user object from checkSession() to skip refetch
    * @throws SaltDecryptionError if password is wrong
@@ -360,7 +371,7 @@ class SessionManager {
 
     // Get current user from backend (authenticated via session cookie)
     const api = getApi();
-    this._currentUser = user ?? await api.getCurrentUser();
+    this._currentUser = user ?? (await api.getCurrentUser());
 
     // Get user salt - server should have it if user logged in before
     let userSalt: Uint8Array;
@@ -373,7 +384,7 @@ class SessionManager {
         this._currentUser.encryptedSalt,
         this._currentUser.saltNonce,
         password,
-        username
+        username,
       );
       // Store locally for faster subsequent operations
       localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
@@ -387,7 +398,9 @@ class SessionManager {
     }
 
     // Account salt is derived from user ID for deterministic derivation
-    const accountSalt = new TextEncoder().encode(this._currentUser.id).slice(0, 16);
+    const accountSalt = new TextEncoder()
+      .encode(this._currentUser.id)
+      .slice(0, 16);
     const paddedAccountSalt = new Uint8Array(16);
     paddedAccountSalt.set(accountSalt);
 
@@ -396,9 +409,16 @@ class SessionManager {
     const cryptoClient = await getCryptoClient();
     if (this._currentUser.wrappedAccountKey) {
       const wrappedKey = fromBase64(this._currentUser.wrappedAccountKey);
-      await cryptoClient.initWithWrappedKey(password, userSalt, paddedAccountSalt, wrappedKey);
+      await cryptoClient.initWithWrappedKey(
+        password,
+        userSalt,
+        paddedAccountSalt,
+        wrappedKey,
+      );
     } else {
-      log.warn('Session restore without wrapped account key - identity may differ!');
+      log.warn(
+        'Session restore without wrapped account key - identity may differ!',
+      );
       await cryptoClient.init(password, userSalt, paddedAccountSalt);
     }
 
@@ -462,14 +482,14 @@ class SessionManager {
         this._currentUser.encryptedSalt,
         this._currentUser.saltNonce,
         password,
-        username
+        username,
       );
       // Store locally for faster subsequent logins
       localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
     } else {
       // Server has no salt - use local or generate new
       const storedSalt = localStorage.getItem(USER_SALT_KEY);
-      
+
       if (storedSalt) {
         userSalt = fromBase64(storedSalt);
       } else {
@@ -479,14 +499,20 @@ class SessionManager {
       }
 
       // Encrypt and upload salt to server for multi-device sync
-      const { encryptedSalt, saltNonce } = await encryptSalt(userSalt, password, username);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        userSalt,
+        password,
+        username,
+      );
       await api.updateCurrentUser({ encryptedSalt, saltNonce });
     }
 
     // Account salt is derived from user ID for deterministic derivation
     // This ensures the same keys are derived regardless of device
-    const accountSalt = new TextEncoder().encode(this._currentUser.id).slice(0, 16);
-    
+    const accountSalt = new TextEncoder()
+      .encode(this._currentUser.id)
+      .slice(0, 16);
+
     // Pad to 16 bytes if user ID is shorter
     const paddedAccountSalt = new Uint8Array(16);
     paddedAccountSalt.set(accountSalt);
@@ -496,14 +522,19 @@ class SessionManager {
     const cryptoClient = await getCryptoClient();
     if (this._currentUser.wrappedAccountKey) {
       const wrappedKey = fromBase64(this._currentUser.wrappedAccountKey);
-      await cryptoClient.initWithWrappedKey(password, userSalt, paddedAccountSalt, wrappedKey);
+      await cryptoClient.initWithWrappedKey(
+        password,
+        userSalt,
+        paddedAccountSalt,
+        wrappedKey,
+      );
     } else {
       // First login - generate new key and store it
       await cryptoClient.init(password, userSalt, paddedAccountSalt);
-      
+
       // Derive identity to get public key
       await cryptoClient.deriveIdentity();
-      
+
       // Save wrapped key and identity pubkey to server for future logins
       const wrappedAccountKey = await cryptoClient.getWrappedAccountKey();
       const identityPubkey = await cryptoClient.getIdentityPublicKey();
@@ -518,7 +549,9 @@ class SessionManager {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ wrappedAccountKey: toBase64(wrappedAccountKey) }),
+          body: JSON.stringify({
+            wrappedAccountKey: toBase64(wrappedAccountKey),
+          }),
         });
       }
     }
@@ -569,7 +602,8 @@ class SessionManager {
     }
 
     // Perform LocalAuth login (registers if user doesn't exist)
-    const { userId, userSalt, accountSalt, isNewUser, wrappedAccountKey } = await localAuthLogin(username, password);
+    const { userId, userSalt, accountSalt, isNewUser, wrappedAccountKey } =
+      await localAuthLogin(username, password);
 
     // Now fetch the current user (we have a session cookie)
     const api = getApi();
@@ -584,11 +618,18 @@ class SessionManager {
     const cryptoClient = await getCryptoClient();
     if (wrappedAccountKey) {
       // Returning user: unwrap their existing account key
-      await cryptoClient.initWithWrappedKey(password, userSalt, accountSalt, wrappedAccountKey);
+      await cryptoClient.initWithWrappedKey(
+        password,
+        userSalt,
+        accountSalt,
+        wrappedAccountKey,
+      );
     } else if (!isNewUser) {
       // Returning user but no wrapped key on server - this is a problem!
       // Fall back to generating new key (will break epoch key decryption)
-      log.warn('Returning user without wrapped account key - identity will differ!');
+      log.warn(
+        'Returning user without wrapped account key - identity will differ!',
+      );
       await cryptoClient.init(password, userSalt, accountSalt);
     }
     // For new users, localAuthLogin already called init() with correct key
@@ -617,7 +658,9 @@ class SessionManager {
     this.resetIdleTimer();
     this.attachIdleListeners();
 
-    log.info(`LocalAuth login successful: ${username} (${userId})${isNewUser ? ' [new user]' : ''}`);
+    log.info(
+      `LocalAuth login successful: ${username} (${userId})${isNewUser ? ' [new user]' : ''}`,
+    );
   }
 
   /**
@@ -639,7 +682,8 @@ class SessionManager {
     }
 
     // Perform LocalAuth registration (will fail if user exists)
-    const { userId, userSalt, accountSalt, wrappedAccountKey } = await localAuthRegister(username, password);
+    const { userId, userSalt, accountSalt, wrappedAccountKey } =
+      await localAuthRegister(username, password);
 
     // Now fetch the current user (we have a session cookie)
     const api = getApi();
@@ -651,10 +695,15 @@ class SessionManager {
     // For new users, localAuthRegister already called init() with correct key
     // Just need to derive identity for epoch key operations
     const cryptoClient = await getCryptoClient();
-    
+
     // Re-init if wrapped key provided (shouldn't happen for new users, but handle it)
     if (wrappedAccountKey) {
-      await cryptoClient.initWithWrappedKey(password, userSalt, accountSalt, wrappedAccountKey);
+      await cryptoClient.initWithWrappedKey(
+        password,
+        userSalt,
+        accountSalt,
+        wrappedAccountKey,
+      );
     }
     await cryptoClient.deriveIdentity();
 
@@ -697,7 +746,7 @@ class SessionManager {
     } catch {
       // Ignore errors - continue with client-side cleanup
     }
-    
+
     // Clear idle timer
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
@@ -756,7 +805,7 @@ class SessionManager {
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
     }
-    
+
     this.idleTimer = window.setTimeout(() => {
       log.info('Session idle timeout - logging out');
       void this.logout();

@@ -1,26 +1,33 @@
 /**
  * AnimatedTile Component
- * 
+ *
  * Wrapper component that provides smooth enter/exit animations for photo tiles.
  * Designed to work with virtualized lists where items are mounted/unmounted
  * based on scroll position.
- * 
+ *
  * Animation Phases:
  * - entering: Item just appeared (opacity 0, scale 0.92)
  * - entered: Animation complete (opacity 1, scale 1)
  * - exiting: Item being removed (animating to opacity 0, scale 0.85)
  * - exited: Animation done, ready for unmount
- * 
+ *
  * Key Features:
  * - Detects "new" items vs returning items (no re-animation on scroll)
  * - Supports staggered batch animations
  * - GPU-accelerated (transform + opacity only)
  * - Respects prefers-reduced-motion
- * 
+ *
  * @module AnimatedTile
  */
 
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import '../../styles/animations.css';
 
 /** Animation phase states */
@@ -66,7 +73,7 @@ const SETTLE_DELAY = 100;
 
 /**
  * AnimatedTile - Provides smooth enter/exit animations for photo grid tiles.
- * 
+ *
  * @example
  * ```tsx
  * <AnimatedTile
@@ -96,11 +103,11 @@ export const AnimatedTile = memo(function AnimatedTile({
   // Determine initial phase
   const getInitialPhase = (): AnimationPhase => {
     if (skipAnimation || hasBeenSeen) return 'entered';
-    
+
     const now = Date.now();
     const entryTime = appearedAt ?? now;
     const isNew = now - entryTime < NEW_ITEM_THRESHOLD;
-    
+
     return isNew ? 'entering' : 'entered';
   };
 
@@ -129,10 +136,13 @@ export const AnimatedTile = memo(function AnimatedTile({
       // After animation completes + settle delay, remove will-change
       // Use a ref to prevent cleanup from cancelling the timer when phase changes
       if (!settleTimerRef.current) {
-        settleTimerRef.current = setTimeout(() => {
-          setIsSettled(true);
-          settleTimerRef.current = null;
-        }, staggerDelay + ENTER_DURATION + SETTLE_DELAY);
+        settleTimerRef.current = setTimeout(
+          () => {
+            setIsSettled(true);
+            settleTimerRef.current = null;
+          },
+          staggerDelay + ENTER_DURATION + SETTLE_DELAY,
+        );
       }
 
       return () => {
@@ -200,10 +210,12 @@ export const AnimatedTile = memo(function AnimatedTile({
     <div
       ref={ref}
       className={`animated-tile ${animationClass} ${settledClass} ${className}`.trim()}
-      style={{
-        '--stagger-delay': `${staggerDelay}ms`,
-        ...style,
-      } as React.CSSProperties}
+      style={
+        {
+          '--stagger-delay': `${staggerDelay}ms`,
+          ...style,
+        } as React.CSSProperties
+      }
       data-item-key={itemKey}
       data-animation-phase={phase}
       data-testid={testId}
@@ -224,7 +236,7 @@ export function usePrefersReducedMotion(): boolean {
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    
+
     const handler = (event: MediaQueryListEvent) => {
       setPrefersReduced(event.matches);
     };

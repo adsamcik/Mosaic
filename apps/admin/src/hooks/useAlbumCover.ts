@@ -7,9 +7,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
-    getAlbumCover,
-    getCachedCover,
-    type AlbumCover,
+  getAlbumCover,
+  getCachedCover,
+  type AlbumCover,
 } from '../lib/album-cover-service';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
 import { createLogger } from '../lib/logger';
@@ -60,7 +60,7 @@ export interface UseAlbumCoverResult {
  */
 export function useAlbumCover(
   albumId: string,
-  enabled = true
+  enabled = true,
 ): UseAlbumCoverResult {
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [photoId, setPhotoId] = useState<string | null>(null);

@@ -1,9 +1,9 @@
 /**
  * PhotoGridSkeleton Component
- * 
+ *
  * Loading skeleton for the photo grid with shimmer animation.
  * Provides visual feedback during initial load and respects reduced motion preferences.
- * 
+ *
  * @module PhotoGridSkeleton
  */
 
@@ -26,13 +26,13 @@ export interface PhotoGridSkeletonProps {
 
 /**
  * PhotoGridSkeleton - Loading placeholder for photo grid
- * 
+ *
  * Features:
  * - Shimmer animation
  * - Responsive column adjustment
  * - Staggered reveal option
  * - Reduced motion support
- * 
+ *
  * @example
  * ```tsx
  * if (isLoading) {
@@ -54,8 +54,8 @@ export const PhotoGridSkeleton = memo(function PhotoGridSkeleton({
       const row = Math.floor(index / columns);
       const col = index % columns;
       // Diagonal wave pattern
-      const staggerDelay = staggerReveal ? (col * 50) + (row * 100) : 0;
-      
+      const staggerDelay = staggerReveal ? col * 50 + row * 100 : 0;
+
       return {
         key: `skeleton-${index}`,
         staggerDelay,
@@ -79,11 +79,13 @@ export const PhotoGridSkeleton = memo(function PhotoGridSkeleton({
         <div
           key={key}
           className={`skeleton-tile ${staggerReveal ? 'reveal-stagger' : ''}`}
-          style={{
-            aspectRatio: String(aspectRatio),
-            minHeight: '100px',
-            '--reveal-delay': `${staggerDelay}ms`,
-          } as React.CSSProperties}
+          style={
+            {
+              aspectRatio: String(aspectRatio),
+              minHeight: '100px',
+              '--reveal-delay': `${staggerDelay}ms`,
+            } as React.CSSProperties
+          }
         />
       ))}
     </div>
@@ -117,14 +119,15 @@ export const SkeletonTile = memo(function SkeletonTile({
   className = '',
 }: SkeletonTileProps) {
   const loadedClass = isLoaded ? 'skeleton-tile-loaded' : '';
-  
+
   return (
     <div
       className={`skeleton-tile ${loadedClass} ${className}`.trim()}
       style={{
         width: typeof width === 'number' ? `${width}px` : width,
         height: typeof height === 'number' ? `${height}px` : height,
-        borderRadius: typeof borderRadius === 'number' ? `${borderRadius}px` : borderRadius,
+        borderRadius:
+          typeof borderRadius === 'number' ? `${borderRadius}px` : borderRadius,
       }}
     />
   );

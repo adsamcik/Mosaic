@@ -55,7 +55,7 @@ export interface PhotoLoadResult {
 export class PhotoAssemblyError extends Error {
   constructor(
     public readonly photoId: string,
-    public readonly cause: Error
+    public readonly cause: Error,
   ) {
     super(`Failed to assemble photo ${photoId}: ${cause.message}`);
     this.name = 'PhotoAssemblyError';
@@ -101,28 +101,33 @@ export function isMemoryPressureActive(): boolean {
 /**
  * Reduce cache sizes to a fraction of their normal maximum.
  * Used when tab is backgrounded to free memory.
- * 
+ *
  * @param ratio - Target ratio (0.0 to 1.0) of max cache size
  */
 export function reduceCacheToRatio(ratio: number): void {
   const targetPhotoSize = Math.floor(MAX_CACHE_SIZE * ratio);
-  
-  log.info(`Reducing photo cache to ${Math.round(ratio * 100)}% (target: ${targetPhotoSize} bytes)`);
+
+  log.info(
+    `Reducing photo cache to ${Math.round(ratio * 100)}% (target: ${targetPhotoSize} bytes)`,
+  );
 
   // Evict photo cache entries
-  const photoEntries = Array.from(photoCache.entries())
-    .sort(([, a], [, b]) => a.lastAccess - b.lastAccess);
-  
+  const photoEntries = Array.from(photoCache.entries()).sort(
+    ([, a], [, b]) => a.lastAccess - b.lastAccess,
+  );
+
   for (const [id, entry] of photoEntries) {
     if (currentCacheSize <= targetPhotoSize) break;
     if (entry.refCount > 0) continue; // Don't evict in-use photos
-    
+
     URL.revokeObjectURL(entry.blobUrl);
     currentCacheSize -= entry.blob.size;
     photoCache.delete(id);
   }
-  
-  log.info(`Photo cache reduced: entries=${photoCache.size}, size=${currentCacheSize} bytes`);
+
+  log.info(
+    `Photo cache reduced: entries=${photoCache.size}, size=${currentCacheSize} bytes`,
+  );
 }
 
 /**
@@ -148,7 +153,7 @@ function handleVisibilityChange(): void {
  */
 export function initMemoryPressureHandling(): void {
   if (memoryPressureInitialized) return;
-  
+
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     memoryPressureInitialized = true;
@@ -162,7 +167,7 @@ export function initMemoryPressureHandling(): void {
  */
 export function cleanupMemoryPressureHandling(): void {
   if (!memoryPressureInitialized) return;
-  
+
   if (typeof document !== 'undefined') {
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     memoryPressureInitialized = false;
@@ -185,7 +190,7 @@ function evictCache(requiredSpace: number): void {
 
   // Sort entries by last access time (oldest first)
   const entries = Array.from(photoCache.entries()).sort(
-    ([, a], [, b]) => a.lastAccess - b.lastAccess
+    ([, a], [, b]) => a.lastAccess - b.lastAccess,
   );
 
   for (const [id, entry] of entries) {
@@ -239,7 +244,7 @@ const pendingLoads = new Map<string, Promise<PhotoLoadResult>>();
 export class ShardIntegrityError extends Error {
   constructor(
     public readonly shardId: string,
-    public readonly expectedHash: string
+    public readonly expectedHash: string,
   ) {
     super(`Shard integrity check failed for ${shardId}: hash mismatch`);
     this.name = 'ShardIntegrityError';
@@ -265,7 +270,7 @@ export async function loadPhoto(
   epochReadKey: Uint8Array,
   mimeType: string,
   options: PhotoLoadOptions = {},
-  shardHashes?: string[]
+  shardHashes?: string[],
 ): Promise<PhotoLoadResult> {
   const { onProgress, skipCache = false } = options;
 
@@ -317,7 +322,10 @@ export async function loadPhoto(
       }
 
       // Calculate total size
-      const totalSize = decryptedChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      const totalSize = decryptedChunks.reduce(
+        (sum, chunk) => sum + chunk.length,
+        0,
+      );
 
       // Combine chunks into single array
       const photoData = new Uint8Array(totalSize);
@@ -328,7 +336,8 @@ export async function loadPhoto(
       }
 
       // Create displayable URL (handles AVIF fallback for legacy browsers)
-      const { url: blobUrl, mimeType: displayMimeType } = await createDisplayableUrl(photoData, mimeType);
+      const { url: blobUrl, mimeType: displayMimeType } =
+        await createDisplayableUrl(photoData, mimeType);
       const blob = new Blob([photoData], { type: displayMimeType });
 
       // Cache the result
@@ -401,7 +410,7 @@ export function getCacheStats(): {
  */
 export async function preloadPhotos(
   photos: Array<{ id: string; shardIds: string[]; mimeType: string }>,
-  epochReadKey: Uint8Array
+  epochReadKey: Uint8Array,
 ): Promise<void> {
   // Load in parallel but don't wait for all
   const loads = photos.map(async (photo) => {
@@ -433,27 +442,32 @@ const MAX_THUMBNAIL_CACHE_SIZE = 20 * 1024 * 1024;
 /**
  * Reduce thumbnail cache to a fraction of max size.
  * Called by memory pressure handling when tab is backgrounded.
- * 
+ *
  * @param ratio - Target ratio (0.0 to 1.0) of max cache size
  */
 function reduceThumbnailCacheToRatio(ratio: number): void {
   const targetSize = Math.floor(MAX_THUMBNAIL_CACHE_SIZE * ratio);
-  
-  log.info(`Reducing thumbnail cache to ${Math.round(ratio * 100)}% (target: ${targetSize} bytes)`);
 
-  const entries = Array.from(thumbnailCache.entries())
-    .sort(([, a], [, b]) => a.lastAccess - b.lastAccess);
-  
+  log.info(
+    `Reducing thumbnail cache to ${Math.round(ratio * 100)}% (target: ${targetSize} bytes)`,
+  );
+
+  const entries = Array.from(thumbnailCache.entries()).sort(
+    ([, a], [, b]) => a.lastAccess - b.lastAccess,
+  );
+
   for (const [id, entry] of entries) {
     if (thumbnailCacheSize <= targetSize) break;
     if (entry.refCount > 0) continue;
-    
+
     URL.revokeObjectURL(entry.blobUrl);
     thumbnailCacheSize -= entry.blob.size;
     thumbnailCache.delete(id);
   }
-  
-  log.info(`Thumbnail cache reduced: entries=${thumbnailCache.size}, size=${thumbnailCacheSize} bytes`);
+
+  log.info(
+    `Thumbnail cache reduced: entries=${thumbnailCache.size}, size=${thumbnailCacheSize} bytes`,
+  );
 }
 
 /**
@@ -468,7 +482,7 @@ function evictThumbnailCache(requiredSpace: number): void {
   }
 
   const entries = Array.from(thumbnailCache.entries()).sort(
-    ([, a], [, b]) => a.lastAccess - b.lastAccess
+    ([, a], [, b]) => a.lastAccess - b.lastAccess,
   );
 
   for (const [id, entry] of entries) {
@@ -499,7 +513,7 @@ function evictThumbnailCache(requiredSpace: number): void {
  */
 export function loadThumbnailFromBase64(
   photoId: string,
-  thumbnailBase64: string
+  thumbnailBase64: string,
 ): PhotoLoadResult {
   const cacheKey = `thumb:${photoId}`;
 

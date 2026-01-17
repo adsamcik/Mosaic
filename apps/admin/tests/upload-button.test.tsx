@@ -74,7 +74,9 @@ describe('UploadButton', () => {
       root.render(createElement(UploadButton, { albumId: 'album-123' }));
     });
 
-    const input = container.querySelector('[data-testid="upload-input"]') as HTMLInputElement;
+    const input = container.querySelector(
+      '[data-testid="upload-input"]',
+    ) as HTMLInputElement;
     expect(input).not.toBeNull();
     expect(input.type).toBe('file');
     expect(input.accept).toBe('image/*');

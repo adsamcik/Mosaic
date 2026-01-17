@@ -6,9 +6,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    downloadShard,
-    downloadShards,
-    ShardDownloadError,
+  downloadShard,
+  downloadShards,
+  ShardDownloadError,
 } from '../src/lib/shard-service';
 
 // Store original fetch
@@ -22,7 +22,7 @@ describe('ShardDownloadError', () => {
     expect(error.shardId).toBe('shard-123');
     expect(error.cause).toBe(cause);
     expect(error.message).toBe(
-      'Failed to download shard shard-123: Network failure'
+      'Failed to download shard shard-123: Network failure',
     );
     expect(error.name).toBe('ShardDownloadError');
   });
@@ -47,7 +47,7 @@ describe('downloadShard', () => {
 
   it('downloads shard successfully without progress callback', async () => {
     const testData = new Uint8Array([1, 2, 3, 4, 5]);
-    
+
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -116,9 +116,9 @@ describe('downloadShard', () => {
 
     const progressCallback = vi.fn();
 
-    await expect(downloadShard('missing-shard', progressCallback)).rejects.toThrow(
-      ShardDownloadError
-    );
+    await expect(
+      downloadShard('missing-shard', progressCallback),
+    ).rejects.toThrow(ShardDownloadError);
   });
 
   it('handles network errors', async () => {
@@ -127,7 +127,7 @@ describe('downloadShard', () => {
     const progressCallback = vi.fn();
 
     await expect(downloadShard('shard-123', progressCallback)).rejects.toThrow(
-      ShardDownloadError
+      ShardDownloadError,
     );
 
     try {
@@ -191,7 +191,8 @@ describe('downloadShards', () => {
 
       // Create mock with streaming response for progress tracking
       const mockReader = {
-        read: vi.fn()
+        read: vi
+          .fn()
           .mockResolvedValueOnce({ done: false, value: data })
           .mockResolvedValueOnce({ done: true, value: undefined }),
       };
@@ -224,7 +225,7 @@ describe('downloadShards', () => {
     });
 
     await expect(downloadShards(['shard-fail'])).rejects.toThrow(
-      ShardDownloadError
+      ShardDownloadError,
     );
   });
 
@@ -240,7 +241,8 @@ describe('downloadShards', () => {
 
       // Mock with streaming response
       const mockReader = {
-        read: vi.fn()
+        read: vi
+          .fn()
           .mockResolvedValueOnce({ done: false, value: data })
           .mockResolvedValueOnce({ done: true, value: undefined }),
       };

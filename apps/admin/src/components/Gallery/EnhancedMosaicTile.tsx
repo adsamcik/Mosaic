@@ -1,6 +1,6 @@
 /**
  * Enhanced Mosaic Tile Component (v2)
- * 
+ *
  * Renders individual tiles in the enhanced mosaic layout, supporting:
  * - Standard photo tiles
  * - Hero (large) photo tiles
@@ -17,14 +17,16 @@ interface EnhancedMosaicTileProps {
   photo?: PhotoMeta;
   photos?: Map<string, PhotoMeta>;
   onClick?: () => void;
-  onMapClick?: (coordinates: Array<{ lat: number; lng: number; photoId: string }>) => void;
-  renderThumbnail: (props: { 
-    photo: PhotoMeta; 
-    width: number; 
+  onMapClick?: (
+    coordinates: Array<{ lat: number; lng: number; photoId: string }>,
+  ) => void;
+  renderThumbnail: (props: {
+    photo: PhotoMeta;
+    width: number;
     height: number;
     onClick?: () => void;
   }) => React.ReactNode;
-  /** 
+  /**
    * When true, skip absolute positioning (used when wrapped by AnimatedTile).
    * The wrapper handles positioning, tile just fills its container.
    */
@@ -35,11 +37,11 @@ interface EnhancedMosaicTileProps {
  * Mini-map component for map cluster tiles
  * Uses a simple canvas-based approach for lightweight rendering
  */
-function MiniMap({ 
+function MiniMap({
   coordinates,
   width,
   height,
-  onClick
+  onClick,
 }: {
   coordinates: Array<{ lat: number; lng: number; photoId: string }>;
   width: number;
@@ -63,8 +65,8 @@ function MiniMap({
     ctx.scale(dpr, dpr);
 
     // Calculate bounds
-    const lats = coordinates.map(c => c.lat);
-    const lngs = coordinates.map(c => c.lng);
+    const lats = coordinates.map((c) => c.lat);
+    const lngs = coordinates.map((c) => c.lng);
     const minLat = Math.min(...lats);
     const maxLat = Math.max(...lats);
     const minLng = Math.min(...lngs);
@@ -87,14 +89,14 @@ function MiniMap({
     // Draw grid lines for visual reference
     ctx.strokeStyle = 'rgba(128, 128, 128, 0.2)';
     ctx.lineWidth = 1;
-    
+
     for (let i = 1; i < 4; i++) {
       const y = (height / 4) * i;
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(width, y);
       ctx.stroke();
-      
+
       const x = (width / 4) * i;
       ctx.beginPath();
       ctx.moveTo(x, 0);
@@ -103,19 +105,26 @@ function MiniMap({
     }
 
     // Convert coordinates to canvas positions
-    const toCanvasX = (lng: number) => 
+    const toCanvasX = (lng: number) =>
       ((lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * width;
-    const toCanvasY = (lat: number) => 
-      height - ((lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * height;
+    const toCanvasY = (lat: number) =>
+      height -
+      ((lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * height;
 
     // Draw connecting lines
     if (coordinates.length > 1) {
       ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(toCanvasX(coordinates[0]!.lng), toCanvasY(coordinates[0]!.lat));
+      ctx.moveTo(
+        toCanvasX(coordinates[0]!.lng),
+        toCanvasY(coordinates[0]!.lat),
+      );
       for (let i = 1; i < coordinates.length; i++) {
-        ctx.lineTo(toCanvasX(coordinates[i]!.lng), toCanvasY(coordinates[i]!.lat));
+        ctx.lineTo(
+          toCanvasX(coordinates[i]!.lng),
+          toCanvasY(coordinates[i]!.lat),
+        );
       }
       ctx.stroke();
     }
@@ -124,13 +133,13 @@ function MiniMap({
     coordinates.forEach((coord, index) => {
       const x = toCanvasX(coord.lng);
       const y = toCanvasY(coord.lat);
-      
+
       // Outer glow
       ctx.beginPath();
       ctx.arc(x, y, 8, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(59, 130, 246, 0.3)';
       ctx.fill();
-      
+
       // Inner point
       ctx.beginPath();
       ctx.arc(x, y, 5, 0, Math.PI * 2);
@@ -139,7 +148,7 @@ function MiniMap({
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.stroke();
-      
+
       // Number label
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 8px sans-serif';
@@ -147,11 +156,10 @@ function MiniMap({
       ctx.textBaseline = 'middle';
       ctx.fillText(String(index + 1), x, y);
     });
-
   }, [coordinates, width, height]);
 
   return (
-    <div 
+    <div
       className="mini-map-container"
       style={{
         width: '100%',
@@ -165,7 +173,7 @@ function MiniMap({
       onMouseLeave={() => setIsHovered(false)}
       onClick={onClick}
     >
-      <canvas 
+      <canvas
         ref={canvasRef}
         style={{
           width: '100%',
@@ -173,41 +181,45 @@ function MiniMap({
           display: 'block',
         }}
       />
-      
+
       {/* Location count badge */}
-      <div style={{
-        position: 'absolute',
-        top: '8px',
-        left: '8px',
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        color: 'white',
-        padding: '4px 8px',
-        borderRadius: '12px',
-        fontSize: '12px',
-        fontWeight: 500,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '4px',
-      }}>
+      <div
+        style={{
+          position: 'absolute',
+          top: '8px',
+          left: '8px',
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          color: 'white',
+          padding: '4px 8px',
+          borderRadius: '12px',
+          fontSize: '12px',
+          fontWeight: 500,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+        }}
+      >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
         </svg>
         {coordinates.length} locations
       </div>
-      
+
       {/* Hover overlay */}
       {isHovered && onClick && (
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.3)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'white',
-          fontSize: '14px',
-          fontWeight: 500,
-        }}>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'white',
+            fontSize: '14px',
+            fontWeight: 500,
+          }}
+        >
           Click to view on map
         </div>
       )}
@@ -223,9 +235,8 @@ export function EnhancedMosaicTile({
   renderThumbnail,
   skipPositioning = false,
 }: EnhancedMosaicTileProps) {
-  
   // Compute base positioning style (can be skipped when wrapped by AnimatedTile)
-  const positionStyle = skipPositioning 
+  const positionStyle = skipPositioning
     ? { width: '100%', height: '100%' }
     : {
         position: 'absolute' as const,
@@ -234,7 +245,7 @@ export function EnhancedMosaicTile({
         width: item.rect.width,
         height: item.rect.height,
       };
-  
+
   const handleMapClick = useCallback(() => {
     if (item.coordinates && onMapClick) {
       onMapClick(item.coordinates);
@@ -244,7 +255,7 @@ export function EnhancedMosaicTile({
   // Map Cluster Tile
   if (item.type === 'map-cluster') {
     return (
-      <div 
+      <div
         className="mosaic-tile mosaic-map-tile"
         style={{
           position: 'absolute',
@@ -258,7 +269,7 @@ export function EnhancedMosaicTile({
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         }}
       >
-        <MiniMap 
+        <MiniMap
           coordinates={item.coordinates || []}
           width={item.rect.width}
           height={item.rect.height}
@@ -267,11 +278,11 @@ export function EnhancedMosaicTile({
       </div>
     );
   }
-  
+
   // Story Tile (Photo + Description)
   if (item.type === 'story' && photo) {
     return (
-      <div 
+      <div
         className="mosaic-tile mosaic-story-tile"
         style={{
           position: 'absolute',
@@ -283,7 +294,7 @@ export function EnhancedMosaicTile({
           backgroundColor: 'var(--bg-secondary)',
           borderRadius: '8px',
           overflow: 'hidden',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         }}
       >
         {/* Photo Section - 50% width */}
@@ -292,65 +303,82 @@ export function EnhancedMosaicTile({
             photo,
             width: item.rect.width / 2,
             height: item.rect.height,
-            ...(onClick ? { onClick } : {})
+            ...(onClick ? { onClick } : {}),
           })}
         </div>
-        
+
         {/* Text Section */}
-        <div style={{ 
-          width: '50%', 
-          padding: '24px', 
-          display: 'flex', 
-          flexDirection: 'column', 
-          justifyContent: 'center',
-          overflow: 'hidden'
-        }}>
-          <div style={{
+        <div
+          style={{
+            width: '50%',
+            padding: '24px',
             display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            marginBottom: '12px',
-          }}>
-            <h3 style={{ 
-              margin: 0, 
-              fontSize: '1.1rem', 
-              fontWeight: 600,
-              color: 'var(--text-primary)'
-            }}>
-              {new Date(photo.createdAt).toLocaleDateString(undefined, { dateStyle: 'long' })}
+            flexDirection: 'column',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '12px',
+            }}
+          >
+            <h3
+              style={{
+                margin: 0,
+                fontSize: '1.1rem',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+              }}
+            >
+              {new Date(photo.createdAt).toLocaleDateString(undefined, {
+                dateStyle: 'long',
+              })}
             </h3>
-            
+
             {/* Location badge if available */}
             {photo.lat != null && photo.lng != null && (
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                color: '#3b82f6',
-                padding: '2px 8px',
-                borderRadius: '12px',
-                fontSize: '12px',
-              }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  color: '#3b82f6',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  fontSize: '12px',
+                }}
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
                 </svg>
               </span>
             )}
           </div>
-          
-          <p style={{ 
-            margin: 0, 
-            lineHeight: 1.6, 
-            color: 'var(--text-secondary)',
-            fontSize: '1rem',
-            whiteSpace: 'pre-wrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            display: '-webkit-box',
-            WebkitLineClamp: 6,
-            WebkitBoxOrient: 'vertical',
-          }}>
+
+          <p
+            style={{
+              margin: 0,
+              lineHeight: 1.6,
+              color: 'var(--text-secondary)',
+              fontSize: '1rem',
+              whiteSpace: 'pre-wrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              display: '-webkit-box',
+              WebkitLineClamp: 6,
+              WebkitBoxOrient: 'vertical',
+            }}
+          >
             {item.description}
           </p>
         </div>
@@ -361,7 +389,7 @@ export function EnhancedMosaicTile({
   // Description Panel (standalone)
   if (item.type === 'description-panel') {
     return (
-      <div 
+      <div
         className="mosaic-tile mosaic-description-tile"
         style={{
           position: 'absolute',
@@ -377,13 +405,15 @@ export function EnhancedMosaicTile({
           justifyContent: 'center',
         }}
       >
-        <p style={{ 
-          margin: 0, 
-          lineHeight: 1.6, 
-          color: 'var(--text-secondary)',
-          fontSize: '1rem',
-          fontStyle: 'italic',
-        }}>
+        <p
+          style={{
+            margin: 0,
+            lineHeight: 1.6,
+            color: 'var(--text-secondary)',
+            fontSize: '1rem',
+            fontStyle: 'italic',
+          }}
+        >
           "{item.description}"
         </p>
       </div>
@@ -393,7 +423,7 @@ export function EnhancedMosaicTile({
   // Standard or Hero Photo Tile
   if (photo) {
     return (
-      <div 
+      <div
         className={`mosaic-tile mosaic-${item.type}-tile`}
         style={positionStyle}
       >
@@ -401,7 +431,7 @@ export function EnhancedMosaicTile({
           photo,
           width: item.rect.width,
           height: item.rect.height,
-          ...(onClick ? { onClick } : {})
+          ...(onClick ? { onClick } : {}),
         })}
       </div>
     );
@@ -409,7 +439,7 @@ export function EnhancedMosaicTile({
 
   // Fallback for missing photo
   return (
-    <div 
+    <div
       className="mosaic-tile mosaic-empty-tile"
       style={{
         ...positionStyle,

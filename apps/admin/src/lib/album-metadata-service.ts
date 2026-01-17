@@ -15,7 +15,7 @@ export class AlbumMetadataError extends Error {
   constructor(
     message: string,
     public readonly albumId: string,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'AlbumMetadataError';
@@ -49,12 +49,14 @@ const metadataCache = new Map<string, DecryptedAlbumMetadata>();
 export async function decryptAlbumName(
   encryptedName: string | Uint8Array,
   readKey: Uint8Array,
-  albumId: string
+  albumId: string,
 ): Promise<string> {
   try {
     // Convert base64 to Uint8Array if needed
     const encryptedBytes =
-      typeof encryptedName === 'string' ? fromBase64(encryptedName) : encryptedName;
+      typeof encryptedName === 'string'
+        ? fromBase64(encryptedName)
+        : encryptedName;
 
     // Validate inputs
     if (!encryptedBytes || encryptedBytes.length === 0) {
@@ -78,7 +80,7 @@ export async function decryptAlbumName(
     throw new AlbumMetadataError(
       `Failed to decrypt album name: ${err instanceof Error ? err.message : String(err)}`,
       albumId,
-      err instanceof Error ? err : undefined
+      err instanceof Error ? err : undefined,
     );
   }
 }
@@ -99,12 +101,14 @@ export async function decryptAlbumName(
 export async function decryptAlbumNameWithTierKey(
   encryptedName: string | Uint8Array,
   tierKey: Uint8Array,
-  albumId: string
+  albumId: string,
 ): Promise<string> {
   try {
     // Convert base64 to Uint8Array if needed
     const encryptedBytes =
-      typeof encryptedName === 'string' ? fromBase64(encryptedName) : encryptedName;
+      typeof encryptedName === 'string'
+        ? fromBase64(encryptedName)
+        : encryptedName;
 
     // Validate inputs
     if (!encryptedBytes || encryptedBytes.length === 0) {
@@ -117,7 +121,10 @@ export async function decryptAlbumNameWithTierKey(
 
     // Decrypt using crypto worker with tier key directly (no derivation)
     const crypto = await getCryptoClient();
-    const decryptedBytes = await crypto.decryptShardWithTierKey(encryptedBytes, tierKey);
+    const decryptedBytes = await crypto.decryptShardWithTierKey(
+      encryptedBytes,
+      tierKey,
+    );
 
     // Decode UTF-8 text
     const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -128,7 +135,7 @@ export async function decryptAlbumNameWithTierKey(
     throw new AlbumMetadataError(
       `Failed to decrypt album name: ${err instanceof Error ? err.message : String(err)}`,
       albumId,
-      err instanceof Error ? err : undefined
+      err instanceof Error ? err : undefined,
     );
   }
 }
@@ -139,7 +146,9 @@ export async function decryptAlbumNameWithTierKey(
  * @param albumId - Album ID
  * @returns Cached metadata or null if not cached
  */
-export function getCachedMetadata(albumId: string): DecryptedAlbumMetadata | null {
+export function getCachedMetadata(
+  albumId: string,
+): DecryptedAlbumMetadata | null {
   return metadataCache.get(albumId) ?? null;
 }
 
@@ -149,7 +158,10 @@ export function getCachedMetadata(albumId: string): DecryptedAlbumMetadata | nul
  * @param albumId - Album ID
  * @param metadata - Decrypted metadata to cache
  */
-export function setCachedMetadata(albumId: string, metadata: DecryptedAlbumMetadata): void {
+export function setCachedMetadata(
+  albumId: string,
+  metadata: DecryptedAlbumMetadata,
+): void {
   metadataCache.set(albumId, metadata);
 }
 
@@ -184,7 +196,7 @@ export function clearAllCachedMetadata(): void {
 export async function getDecryptedAlbumName(
   albumId: string,
   encryptedName: string | Uint8Array,
-  readKey: Uint8Array
+  readKey: Uint8Array,
 ): Promise<string> {
   // Check cache first
   const cached = getCachedMetadata(albumId);
@@ -220,7 +232,10 @@ export function getStoredEncryptedName(albumId: string): string | null {
  * @param albumId - Album ID
  * @param encryptedName - Base64-encoded encrypted name
  */
-export function setStoredEncryptedName(albumId: string, encryptedName: string): void {
+export function setStoredEncryptedName(
+  albumId: string,
+  encryptedName: string,
+): void {
   localStorage.setItem(`mosaic:album:${albumId}:encryptedName`, encryptedName);
 }
 

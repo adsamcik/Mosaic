@@ -50,7 +50,7 @@ export function InviteMemberDialog({
   const [localError, setLocalError] = useState<string | null>(null);
   const [foundUser, setFoundUser] = useState<UserPublic | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
-  
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Focus input when dialog opens
@@ -88,7 +88,8 @@ export function InviteMemberDialog({
       const user = await lookupUser(trimmedQuery);
       setFoundUser(user);
     } catch (err) {
-      const message = err instanceof Error ? err.message : t('member.invite.userNotFound');
+      const message =
+        err instanceof Error ? err.message : t('member.invite.userNotFound');
       setLookupError(message);
     }
   };
@@ -147,7 +148,11 @@ export function InviteMemberDialog({
       testId="invite-member-dialog"
       closeOnBackdropClick={!isInviting}
     >
-      <form id="invite-member-form" onSubmit={handleSubmit} className="dialog-form">
+      <form
+        id="invite-member-form"
+        onSubmit={handleSubmit}
+        className="dialog-form"
+      >
         <div className="form-group">
           <label htmlFor="user-query" className="form-label">
             {t('member.invite.userIdLabel')}
@@ -177,7 +182,9 @@ export function InviteMemberDialog({
               disabled={isProcessing || !query.trim()}
               data-testid="lookup-button"
             >
-              {isLookingUp ? t('member.invite.looking') : t('member.invite.lookUp')}
+              {isLookingUp
+                ? t('member.invite.looking')
+                : t('member.invite.lookUp')}
             </button>
           </div>
         </div>
@@ -186,8 +193,12 @@ export function InviteMemberDialog({
           <div className="found-user" data-testid="found-user">
             <span className="found-user-icon">✓</span>
             <div className="found-user-details">
-              <span className="found-user-label">{t('member.invite.foundUserLabel')}</span>
-              <span className="found-user-id">{foundUser.id.slice(0, 16)}...</span>
+              <span className="found-user-label">
+                {t('member.invite.foundUserLabel')}
+              </span>
+              <span className="found-user-id">
+                {foundUser.id.slice(0, 16)}...
+              </span>
             </div>
           </div>
         )}
@@ -206,7 +217,9 @@ export function InviteMemberDialog({
               />
               <span className="role-option-label">
                 <strong>{t('member.role.viewer')}</strong>
-                <span className="role-option-description">{t('member.invite.viewerDescription')}</span>
+                <span className="role-option-description">
+                  {t('member.invite.viewerDescription')}
+                </span>
               </span>
             </label>
             <label className="role-option">
@@ -220,7 +233,9 @@ export function InviteMemberDialog({
               />
               <span className="role-option-label">
                 <strong>{t('member.role.editor')}</strong>
-                <span className="role-option-description">{t('member.invite.editorDescription')}</span>
+                <span className="role-option-description">
+                  {t('member.invite.editorDescription')}
+                </span>
               </span>
             </label>
           </div>

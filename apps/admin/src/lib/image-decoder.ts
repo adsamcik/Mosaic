@@ -104,8 +104,12 @@ export async function canDecodeAvif(): Promise<boolean> {
 
   try {
     // Small valid AVIF image (1x1 pixel)
-    const avifData = 'AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADybWV0YQAAAAAAAAAoaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAGxpYmF2aWYAAAAADnBpdG0AAAAAAAEAAAAeaWxvYwAAAABEAAABAAEAAAABAAABGgAAAB0AAAAoaWluZgAAAAAAAQAAABppbmZlAgAAAAABAABhdjAxQ29sb3IAAAAAamlwcnAAAABLaXBjbwAAABRpc3BlAAAAAAAAAAIAAAACAAAAEHBpeGkAAAAAAwgICAAAAAxhdjFDgQ0MAAAAABNjb2xybmNseAACAAIAAYAAAAAXaXBtYQAAAAAAAAABAAEEAQKDBAAAACVtZGF0EgAKBzgABpAQ0AIADEAABBQZAf/WFhAA';
-    const blob = new Blob([Uint8Array.from(atob(avifData), c => c.charCodeAt(0))], { type: 'image/avif' });
+    const avifData =
+      'AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADybWV0YQAAAAAAAAAoaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAGxpYmF2aWYAAAAADnBpdG0AAAAAAAEAAAAeaWxvYwAAAABEAAABAAEAAAABAAABGgAAAB0AAAAoaWluZgAAAAAAAQAAABppbmZlAgAAAAABAABhdjAxQ29sb3IAAAAAamlwcnAAAABLaXBjbwAAABRpc3BlAAAAAAAAAAIAAAACAAAAEHBpeGkAAAAAAwgICAAAAAxhdjFDgQ0MAAAAABNjb2xybmNseAACAAIAAYAAAAAXaXBtYQAAAAAAAAABAAEEAQKDBAAAACVtZGF0EgAKBzgABpAQ0AIADEAABBQZAf/WFhAA';
+    const blob = new Blob(
+      [Uint8Array.from(atob(avifData), (c) => c.charCodeAt(0))],
+      { type: 'image/avif' },
+    );
     const url = URL.createObjectURL(blob);
 
     const result = await new Promise<boolean>((resolve) => {
@@ -137,7 +141,7 @@ export async function canDecodeAvif(): Promise<boolean> {
 /**
  * Decode AVIF to a displayable format using fallback library
  * Only used when browser doesn't support AVIF natively
- * 
+ *
  * NOTE: Currently returns an error as no fallback library is configured.
  * This is acceptable as 95%+ of browsers support AVIF natively.
  *
@@ -149,8 +153,12 @@ export async function decodeAvifFallback(_data: Uint8Array): Promise<Blob> {
   // 95%+ of modern browsers support AVIF natively, so this fallback
   // is rarely needed. If you need to support older browsers, consider
   // implementing a WASM-based decoder here.
-  log.warn('AVIF fallback decoder not available - browser does not support AVIF');
-  throw new Error('AVIF fallback decoder not available. Please use a modern browser that supports AVIF.');
+  log.warn(
+    'AVIF fallback decoder not available - browser does not support AVIF',
+  );
+  throw new Error(
+    'AVIF fallback decoder not available. Please use a modern browser that supports AVIF.',
+  );
 }
 
 // =============================================================================
@@ -167,9 +175,14 @@ export async function decodeAvifFallback(_data: Uint8Array): Promise<Blob> {
  * @param mimeType - Detected MIME type from magic bytes
  * @returns A blob/file that can be used with createImageBitmap
  */
-export async function prepareForBitmap(file: File, mimeType: string): Promise<Blob> {
+export async function prepareForBitmap(
+  file: File,
+  mimeType: string,
+): Promise<Blob> {
   if (checkNeedsDecoding(mimeType)) {
-    log.info('Converting HEIC/HEIF to JPEG for bitmap creation', { filename: file.name });
+    log.info('Converting HEIC/HEIF to JPEG for bitmap creation', {
+      filename: file.name,
+    });
     return decodeHeicToJpeg(file);
   }
   return file;
@@ -186,7 +199,7 @@ export async function prepareForBitmap(file: File, mimeType: string): Promise<Bl
  */
 export async function createDisplayableUrl(
   data: Uint8Array,
-  mimeType: string
+  mimeType: string,
 ): Promise<{ url: string; mimeType: string }> {
   // Check if we need AVIF fallback
   if (mimeType === 'image/avif') {

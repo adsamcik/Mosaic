@@ -85,7 +85,11 @@ export function DeleteAlbumDialog({
       testId="delete-album-dialog"
       closeOnBackdropClick={!isDeleting}
     >
-      <form id="delete-album-form" className="dialog-form" onSubmit={handleSubmit}>
+      <form
+        id="delete-album-form"
+        className="dialog-form"
+        onSubmit={handleSubmit}
+      >
         <p className="dialog-description delete-warning">
           {t('common.permanentAction')}
         </p>
@@ -101,7 +105,10 @@ export function DeleteAlbumDialog({
 
         {/* Show error message if deletion failed */}
         {error && (
-          <p className="form-error delete-error" data-testid="delete-album-error">
+          <p
+            className="form-error delete-error"
+            data-testid="delete-album-error"
+          >
             {error}
           </p>
         )}

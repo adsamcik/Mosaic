@@ -19,11 +19,13 @@ const mockCanvas = {
 };
 
 const mockContext = {
-  createImageData: vi.fn().mockImplementation((width: number, height: number) => ({
-    data: new Uint8ClampedArray(width * height * 4),
-    width,
-    height,
-  })),
+  createImageData: vi
+    .fn()
+    .mockImplementation((width: number, height: number) => ({
+      data: new Uint8ClampedArray(width * height * 4),
+      width,
+      height,
+    })),
   putImageData: vi.fn(),
 };
 
@@ -31,14 +33,14 @@ const originalCreateElement = document.createElement.bind(document);
 
 beforeEach(() => {
   mockCanvas.getContext = vi.fn().mockReturnValue(mockContext);
-  
+
   vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
     if (tag === 'canvas') {
       return mockCanvas as unknown as HTMLCanvasElement;
     }
     return originalCreateElement(tag);
   });
-  
+
   clearBlurhashCache();
 });
 
@@ -79,8 +81,12 @@ describe('isValidBlurhash', () => {
 
 describe('decodeBlurhashToDataURL', () => {
   it('returns a data URL', () => {
-    const result = decodeBlurhashToDataURL('LEHV6nWB2yk8pyo0adR*.7kCMdnj', 32, 32);
-    
+    const result = decodeBlurhashToDataURL(
+      'LEHV6nWB2yk8pyo0adR*.7kCMdnj',
+      32,
+      32,
+    );
+
     expect(result).toMatch(/^data:/);
     expect(mockCanvas.toDataURL).toHaveBeenCalled();
     expect(mockContext.createImageData).toHaveBeenCalledWith(32, 32);
@@ -89,15 +95,15 @@ describe('decodeBlurhashToDataURL', () => {
 
   it('uses custom dimensions', () => {
     decodeBlurhashToDataURL('LEHV6nWB2yk8pyo0adR*.7kCMdnj', 64, 48);
-    
+
     expect(mockContext.createImageData).toHaveBeenCalledWith(64, 48);
   });
 
   it('throws when canvas context is unavailable', () => {
     mockCanvas.getContext = vi.fn().mockReturnValue(null);
-    
-    expect(() => 
-      decodeBlurhashToDataURL('LEHV6nWB2yk8pyo0adR*.7kCMdnj')
+
+    expect(() =>
+      decodeBlurhashToDataURL('LEHV6nWB2yk8pyo0adR*.7kCMdnj'),
     ).toThrow('Failed to get canvas 2D context');
   });
 });
@@ -105,53 +111,53 @@ describe('decodeBlurhashToDataURL', () => {
 describe('getCachedBlurhashDataURL', () => {
   it('caches decoded blurhash', () => {
     const blurhash = 'LEHV6nWB2yk8pyo0adR*.7kCMdnj';
-    
+
     // Clear any previous calls
     mockContext.createImageData.mockClear();
-    
+
     // First call - should decode
     const result1 = getCachedBlurhashDataURL(blurhash);
     const callCount = mockContext.createImageData.mock.calls.length;
     expect(callCount).toBeGreaterThan(0);
-    
+
     // Clear mock call count
     mockContext.createImageData.mockClear();
-    
+
     // Second call - should use cache (no new decode calls)
     const result2 = getCachedBlurhashDataURL(blurhash);
     expect(mockContext.createImageData).not.toHaveBeenCalled();
-    
+
     // Results should be the same
     expect(result1).toBe(result2);
   });
 
   it('caches different dimensions separately', () => {
     const blurhash = 'LEHV6nWB2yk8pyo0adR*.7kCMdnj';
-    
+
     // Clear any previous calls and cache
     clearBlurhashCache();
     mockContext.createImageData.mockClear();
-    
+
     getCachedBlurhashDataURL(blurhash, 32, 32);
     const callsAfterFirst = mockContext.createImageData.mock.calls.length;
-    
+
     getCachedBlurhashDataURL(blurhash, 64, 64);
     const callsAfterSecond = mockContext.createImageData.mock.calls.length;
-    
+
     // Should have made additional calls for the second dimension set
     expect(callsAfterSecond).toBeGreaterThan(callsAfterFirst);
   });
 
   it('clears cache with clearBlurhashCache', () => {
     const blurhash = 'LEHV6nWB2yk8pyo0adR*.7kCMdnj';
-    
+
     // First call - populate cache
     getCachedBlurhashDataURL(blurhash);
     mockContext.createImageData.mockClear();
-    
+
     // Clear cache
     clearBlurhashCache();
-    
+
     // Should decode again after cache clear
     getCachedBlurhashDataURL(blurhash);
     expect(mockContext.createImageData).toHaveBeenCalledTimes(1);
@@ -196,7 +202,7 @@ describe('getCachedBlurhashDataURL', () => {
 
     // Access entry 1 again - this should move it to the end (most recently used)
     getCachedBlurhashDataURL('LEHV6nWB2yk8pyo0adR*.7kCMdnj', 1, 32);
-    
+
     // Should not have decoded again (still cached)
     expect(mockContext.createImageData).not.toHaveBeenCalled();
   });
@@ -234,12 +240,12 @@ describe('Error Handling', () => {
     // Since we're mocking the canvas, we test that decode errors propagate
     // A truly invalid blurhash like 'X' would throw in the real library
     // Here we test that the error handling path exists
-    
+
     // First test: empty canvas context throws as expected
     mockCanvas.getContext = vi.fn().mockReturnValue(null);
-    
-    expect(() => 
-      decodeBlurhashToDataURL('LEHV6nWB2yk8pyo0adR*.7kCMdnj')
+
+    expect(() =>
+      decodeBlurhashToDataURL('LEHV6nWB2yk8pyo0adR*.7kCMdnj'),
     ).toThrow('Failed to get canvas 2D context');
   });
 });

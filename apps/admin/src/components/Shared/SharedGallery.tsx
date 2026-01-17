@@ -62,13 +62,15 @@ export function SharedGallery({
   // Determine default layout based on metadata when photos load
   useEffect(() => {
     if (photos.length === 0) return;
-    
+
     // Check if we have sufficient metadata for Mosaic
-    const hasDescriptions = photos.some(p => !!p.description && p.description.length > 20);
+    const hasDescriptions = photos.some(
+      (p) => !!p.description && p.description.length > 20,
+    );
     // You could also check for location variety, etc.
-    
+
     if (hasDescriptions) {
-        setViewMode('mosaic');
+      setViewMode('mosaic');
     }
   }, [photos]);
 
@@ -84,7 +86,9 @@ export function SharedGallery({
         const response = await fetch(`/api/s/${linkId}/photos`);
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Failed to fetch photos: ${response.status}`);
+          throw new Error(
+            errorData.error || `Failed to fetch photos: ${response.status}`,
+          );
         }
 
         const photoResponses: ShareLinkPhotoResponse[] = await response.json();
@@ -113,7 +117,10 @@ export function SharedGallery({
 
               try {
                 const encryptedMeta = fromBase64(photoResp.encryptedMeta);
-                decrypted = await crypto.decryptManifest(encryptedMeta, tierKey.key);
+                decrypted = await crypto.decryptManifest(
+                  encryptedMeta,
+                  tierKey.key,
+                );
                 // If successful, add epoch info
                 decrypted.epochId = epochId;
                 decrypted.shardIds = photoResp.shardIds;
@@ -179,7 +186,7 @@ export function SharedGallery({
           tiers: Array.from(tiers.keys()),
         })),
       });
-      
+
       const epochTiers = tierKeys.get(epochId);
       if (!epochTiers) {
         log.debug('Epoch not found, trying fallback', { epochId });
@@ -187,8 +194,8 @@ export function SharedGallery({
         for (const [fallbackEpochId, tiers] of tierKeys) {
           const key = tiers.get(tier);
           if (key) {
-            log.debug('Found key via fallback', { 
-              originalEpoch: epochId, 
+            log.debug('Found key via fallback', {
+              originalEpoch: epochId,
               fallbackEpoch: fallbackEpochId,
               tier,
             });
@@ -202,10 +209,12 @@ export function SharedGallery({
       // Return requested tier or highest available
       const tierKey = epochTiers.get(tier);
       if (tierKey) {
-        log.debug('Found exact tier key', { 
-          epochId, 
+        log.debug('Found exact tier key', {
+          epochId,
           tier,
-          keyPrefix: Array.from(tierKey.key.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
+          keyPrefix: Array.from(tierKey.key.slice(0, 4))
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join(''),
         });
         return tierKey.key;
       }
@@ -214,14 +223,18 @@ export function SharedGallery({
       for (const t of [3, 2, 1] as AccessTierType[]) {
         const key = epochTiers.get(t);
         if (key) {
-          log.debug('Using fallback tier', { epochId, requestedTier: tier, actualTier: t });
+          log.debug('Using fallback tier', {
+            epochId,
+            requestedTier: tier,
+            actualTier: t,
+          });
           return key.key;
         }
       }
       log.warn('No tier key found after fallback', { epochId, tier });
       return undefined;
     },
-    [tierKeys]
+    [tierKeys],
   );
 
   // Loading state
@@ -230,7 +243,9 @@ export function SharedGallery({
       <div className="shared-gallery" data-testid="shared-gallery">
         <div className="gallery-loading">
           <div className="loading-spinner" />
-          <p>{isLoadingKeys ? 'Loading encryption keys...' : 'Loading photos...'}</p>
+          <p>
+            {isLoadingKeys ? 'Loading encryption keys...' : 'Loading photos...'}
+          </p>
         </div>
       </div>
     );
@@ -268,55 +283,91 @@ export function SharedGallery({
           <span className="gallery-count">({photos.length} photos)</span>
         </h2>
         <div className="gallery-tier-badge">
-          {accessTier === 1 && <span className="tier-badge tier-thumb">Thumbnails</span>}
-          {accessTier === 2 && <span className="tier-badge tier-preview">Preview</span>}
-          {accessTier === 3 && <span className="tier-badge tier-full">Full Access</span>}
+          {accessTier === 1 && (
+            <span className="tier-badge tier-thumb">Thumbnails</span>
+          )}
+          {accessTier === 2 && (
+            <span className="tier-badge tier-preview">Preview</span>
+          )}
+          {accessTier === 3 && (
+            <span className="tier-badge tier-full">Full Access</span>
+          )}
         </div>
-        
+
         {/* View Toggle */}
         <div className="view-toggle" role="group" aria-label="View mode">
-          <button 
+          <button
             className={`view-toggle-btn ${viewMode === 'grid' ? 'view-toggle-btn--active' : ''}`}
             onClick={() => setViewMode('grid')}
             title="Grid View"
             aria-pressed={viewMode === 'grid'}
           >
-             <span className="view-toggle-icon">
-               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-             </span>
-             <span className="view-toggle-label">Grid</span>
+            <span className="view-toggle-icon">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="7" height="7" />
+                <rect x="14" y="3" width="7" height="7" />
+                <rect x="14" y="14" width="7" height="7" />
+                <rect x="3" y="14" width="7" height="7" />
+              </svg>
+            </span>
+            <span className="view-toggle-label">Grid</span>
           </button>
-          <button 
+          <button
             className={`view-toggle-btn ${viewMode === 'mosaic' ? 'view-toggle-btn--active' : ''}`}
             onClick={() => setViewMode('mosaic')}
             title="Mosaic View"
             aria-pressed={viewMode === 'mosaic'}
           >
-             <span className="view-toggle-icon">
-               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h8v8H4z"/><path d="M4 16h8v4H4z"/><path d="M16 4h4v4h-4z"/><path d="M16 12h4v8h-4z"/></svg>
-             </span>
-             <span className="view-toggle-label">Mosaic</span>
+            <span className="view-toggle-icon">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 4h8v8H4z" />
+                <path d="M4 16h8v4H4z" />
+                <path d="M16 4h4v4h-4z" />
+                <path d="M16 12h4v8h-4z" />
+              </svg>
+            </span>
+            <span className="view-toggle-label">Mosaic</span>
           </button>
         </div>
       </div>
 
       <div className="gallery-content">
         {viewMode === 'mosaic' ? (
-             <SharedMosaicPhotoGrid
-               photos={photos}
-               linkId={linkId}
-               accessTier={accessTier}
-               getTierKey={getTierKey}
-               isLoadingKeys={isLoadingKeys}
-             />
+          <SharedMosaicPhotoGrid
+            photos={photos}
+            linkId={linkId}
+            accessTier={accessTier}
+            getTierKey={getTierKey}
+            isLoadingKeys={isLoadingKeys}
+          />
         ) : (
-             <SharedPhotoGrid
-               photos={photos}
-               linkId={linkId}
-               accessTier={accessTier}
-               getTierKey={getTierKey}
-               isLoadingKeys={isLoadingKeys}
-             />
+          <SharedPhotoGrid
+            photos={photos}
+            linkId={linkId}
+            accessTier={accessTier}
+            getTierKey={getTierKey}
+            isLoadingKeys={isLoadingKeys}
+          />
         )}
       </div>
     </div>

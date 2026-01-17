@@ -4,15 +4,15 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-    clearAlbumKeys,
-    clearAllEpochKeys,
-    getCachedEpochIds,
-    getCacheSize,
-    getCurrentEpochKey,
-    getEpochKey,
-    hasEpochKey,
-    setEpochKey,
-    type EpochKeyBundle,
+  clearAlbumKeys,
+  clearAllEpochKeys,
+  getCachedEpochIds,
+  getCacheSize,
+  getCurrentEpochKey,
+  getEpochKey,
+  hasEpochKey,
+  setEpochKey,
+  type EpochKeyBundle,
 } from '../src/lib/epoch-key-store';
 
 describe('Epoch Key Store', () => {
@@ -115,17 +115,26 @@ describe('Epoch Key Store', () => {
         {
           epochId: 1,
           epochSeed: new Uint8Array([1]),
-          signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+          signKeypair: {
+            publicKey: new Uint8Array(32),
+            secretKey: new Uint8Array(64),
+          },
         },
         {
           epochId: 5,
           epochSeed: new Uint8Array([5]),
-          signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+          signKeypair: {
+            publicKey: new Uint8Array(32),
+            secretKey: new Uint8Array(64),
+          },
         },
         {
           epochId: 3,
           epochSeed: new Uint8Array([3]),
-          signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+          signKeypair: {
+            publicKey: new Uint8Array(32),
+            secretKey: new Uint8Array(64),
+          },
         },
       ];
 
@@ -146,7 +155,10 @@ describe('Epoch Key Store', () => {
       setEpochKey('album-1', {
         epochId: 1,
         epochSeed: new Uint8Array(32),
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
 
       expect(hasEpochKey('album-1', 999)).toBe(false);
@@ -156,7 +168,10 @@ describe('Epoch Key Store', () => {
       setEpochKey('album-1', {
         epochId: 1,
         epochSeed: new Uint8Array(32),
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
 
       expect(hasEpochKey('album-1', 1)).toBe(true);
@@ -174,7 +189,10 @@ describe('Epoch Key Store', () => {
         setEpochKey('album-1', {
           epochId,
           epochSeed: new Uint8Array(32),
-          signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+          signKeypair: {
+            publicKey: new Uint8Array(32),
+            secretKey: new Uint8Array(64),
+          },
         });
       });
 
@@ -188,12 +206,18 @@ describe('Epoch Key Store', () => {
       setEpochKey('album-1', {
         epochId: 1,
         epochSeed: new Uint8Array(32),
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
       setEpochKey('album-2', {
         epochId: 1,
         epochSeed: new Uint8Array(32),
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
 
       clearAlbumKeys('album-1');
@@ -229,12 +253,18 @@ describe('Epoch Key Store', () => {
       setEpochKey('album-1', {
         epochId: 1,
         epochSeed: new Uint8Array(32),
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
       setEpochKey('album-2', {
         epochId: 2,
         epochSeed: new Uint8Array(32),
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
 
       clearAllEpochKeys();
@@ -251,12 +281,18 @@ describe('Epoch Key Store', () => {
       setEpochKey('album-1', {
         epochId: 1,
         epochSeed: epochSeed1,
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
       setEpochKey('album-2', {
         epochId: 1,
         epochSeed: epochSeed2,
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
 
       clearAllEpochKeys();
@@ -275,17 +311,26 @@ describe('Epoch Key Store', () => {
       setEpochKey('album-1', {
         epochId: 1,
         epochSeed: new Uint8Array(32),
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
       setEpochKey('album-1', {
         epochId: 2,
         epochSeed: new Uint8Array(32),
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
       setEpochKey('album-2', {
         epochId: 1,
         epochSeed: new Uint8Array(32),
-        signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+        signKeypair: {
+          publicKey: new Uint8Array(32),
+          secretKey: new Uint8Array(64),
+        },
       });
 
       expect(getCacheSize()).toBe(3);

@@ -75,7 +75,7 @@ function getAspectRatio(photo: PhotoMeta): number {
  */
 export function computeJustifiedLayout(
   photos: PhotoMeta[],
-  config: JustifiedLayoutConfig
+  config: JustifiedLayoutConfig,
 ): JustifiedRow[] {
   const {
     containerWidth,
@@ -94,7 +94,11 @@ export function computeJustifiedLayout(
   let currentRowAspectSum = 0;
 
   // Calculate how many photos can fit in a row at target height
-  const getRowWidth = (aspectSum: number, rowHeight: number, photoCount: number): number => {
+  const getRowWidth = (
+    aspectSum: number,
+    rowHeight: number,
+    photoCount: number,
+  ): number => {
     return aspectSum * rowHeight + (photoCount - 1) * gap;
   };
 
@@ -106,27 +110,39 @@ export function computeJustifiedLayout(
     currentRowAspectSum += aspectRatio;
 
     // Check if row is full
-    const rowWidth = getRowWidth(currentRowAspectSum, targetRowHeight, currentRow.length);
+    const rowWidth = getRowWidth(
+      currentRowAspectSum,
+      targetRowHeight,
+      currentRow.length,
+    );
 
     if (rowWidth >= containerWidth) {
       // Calculate the actual row height to fit exactly in container
       // containerWidth = aspectSum * height + (n-1) * gap
       // height = (containerWidth - (n-1) * gap) / aspectSum
-      const actualHeight = (containerWidth - (currentRow.length - 1) * gap) / currentRowAspectSum;
+      const actualHeight =
+        (containerWidth - (currentRow.length - 1) * gap) / currentRowAspectSum;
 
       // Clamp height to reasonable bounds and floor to avoid sub-pixel rendering issues
-      const clampedHeight = Math.floor(Math.min(actualHeight, targetRowHeight * maxRowHeightMultiplier));
+      const clampedHeight = Math.floor(
+        Math.min(actualHeight, targetRowHeight * maxRowHeightMultiplier),
+      );
 
       // Create justified row - all photos in the same row have the same height
-      const justifiedPhotos: JustifiedPhoto[] = currentRow.map(({ photo: p, aspectRatio: ar }) => ({
-        photo: p,
-        width: Math.floor(ar * clampedHeight),
-        height: clampedHeight,
-      }));
+      const justifiedPhotos: JustifiedPhoto[] = currentRow.map(
+        ({ photo: p, aspectRatio: ar }) => ({
+          photo: p,
+          width: Math.floor(ar * clampedHeight),
+          height: clampedHeight,
+        }),
+      );
 
       // Adjust last photo width to fill remaining space exactly
       if (justifiedPhotos.length > 0) {
-        const totalWidth = justifiedPhotos.reduce((sum, jp) => sum + jp.width, 0);
+        const totalWidth = justifiedPhotos.reduce(
+          (sum, jp) => sum + jp.width,
+          0,
+        );
         const totalGaps = (justifiedPhotos.length - 1) * gap;
         const remaining = containerWidth - totalWidth - totalGaps;
         const lastPhoto = justifiedPhotos[justifiedPhotos.length - 1];
@@ -151,14 +167,16 @@ export function computeJustifiedLayout(
     // Use target row height for partial row (already an integer)
     const rowHeight = Math.floor(targetRowHeight);
 
-    const justifiedPhotos: JustifiedPhoto[] = currentRow.map(({ photo: p, aspectRatio: ar }) => {
-      const width = Math.max(Math.floor(ar * rowHeight), minPhotoWidth);
-      return {
-        photo: p,
-        width,
-        height: rowHeight,
-      };
-    });
+    const justifiedPhotos: JustifiedPhoto[] = currentRow.map(
+      ({ photo: p, aspectRatio: ar }) => {
+        const width = Math.max(Math.floor(ar * rowHeight), minPhotoWidth);
+        return {
+          photo: p,
+          width,
+          height: rowHeight,
+        };
+      },
+    );
 
     rows.push({
       photos: justifiedPhotos,
@@ -172,9 +190,14 @@ export function computeJustifiedLayout(
 /**
  * Calculate total height of all rows
  */
-export function getTotalHeight(rows: JustifiedRow[], gap: number = DEFAULT_GAP): number {
+export function getTotalHeight(
+  rows: JustifiedRow[],
+  gap: number = DEFAULT_GAP,
+): number {
   if (rows.length === 0) return 0;
-  return rows.reduce((sum, row) => sum + row.height, 0) + (rows.length - 1) * gap;
+  return (
+    rows.reduce((sum, row) => sum + row.height, 0) + (rows.length - 1) * gap
+  );
 }
 
 /**
@@ -182,12 +205,12 @@ export function getTotalHeight(rows: JustifiedRow[], gap: number = DEFAULT_GAP):
  */
 export function findPhotoRow(
   rows: JustifiedRow[],
-  photoId: string
+  photoId: string,
 ): { rowIndex: number; photoIndex: number } | null {
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
     const row = rows[rowIndex];
     if (!row) continue;
-    
+
     for (let photoIndex = 0; photoIndex < row.photos.length; photoIndex++) {
       const jp = row.photos[photoIndex];
       if (jp && jp.photo.id === photoId) {
@@ -205,7 +228,7 @@ export function findPhotoRow(
 export function getRowOffset(
   rows: JustifiedRow[],
   rowIndex: number,
-  gap: number = DEFAULT_GAP
+  gap: number = DEFAULT_GAP,
 ): number {
   let offset = 0;
   for (let i = 0; i < rowIndex && i < rows.length; i++) {
@@ -225,7 +248,7 @@ export function getVisibleRows(
   scrollTop: number,
   viewportHeight: number,
   gap: number = DEFAULT_GAP,
-  overscan: number = 2
+  overscan: number = 2,
 ): { startIndex: number; endIndex: number; offsetY: number } {
   if (rows.length === 0) {
     return { startIndex: 0, endIndex: 0, offsetY: 0 };
@@ -238,7 +261,7 @@ export function getVisibleRows(
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row) continue;
-    
+
     const rowBottom = currentY + row.height;
     if (rowBottom >= scrollTop) {
       startIndex = Math.max(0, i - overscan);
@@ -255,7 +278,7 @@ export function getVisibleRows(
   for (let i = startIndex; i < rows.length; i++) {
     const row = rows[i];
     if (!row) continue;
-    
+
     endIndex = i;
     if (currentY > visibleBottom) {
       endIndex = Math.min(rows.length - 1, i + overscan);

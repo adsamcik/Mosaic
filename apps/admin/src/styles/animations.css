@@ -36,7 +36,7 @@
 .tile-enter-active {
   opacity: 1;
   transform: scale(1);
-  transition: 
+  transition:
     opacity 280ms cubic-bezier(0.16, 1, 0.3, 1),
     transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
   transition-delay: var(--stagger-delay, 0ms);
@@ -52,7 +52,7 @@
 .tile-exit-active {
   opacity: 0;
   transform: scale(0.85);
-  transition: 
+  transition:
     opacity 200ms ease-out,
     transform 200ms cubic-bezier(0.4, 0, 1, 1);
   pointer-events: none;
@@ -127,10 +127,14 @@
 }
 
 .upload-complete-flash::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.4) 0%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(99, 102, 241, 0.4) 0%,
+    transparent 70%
+  );
   animation: flash-fade 600ms ease-out forwards;
   pointer-events: none;
   border-radius: inherit;
@@ -159,7 +163,7 @@
 
 /* When items shift position due to deletions/reordering */
 .layout-shift {
-  transition: 
+  transition:
     transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
     left 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
     top 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -188,7 +192,7 @@
 .image-progressive-load {
   filter: blur(8px);
   transform: scale(1.02);
-  transition: 
+  transition:
     filter 400ms ease-out,
     transform 400ms ease-out;
 }
@@ -256,24 +260,24 @@
     transition: opacity 100ms linear !important;
     transform: none !important;
   }
-  
+
   .tile-enter {
     opacity: 0;
     transform: none;
   }
-  
+
   .tile-enter-active {
     opacity: 1;
     transform: none;
     transition: opacity 100ms linear !important;
   }
-  
+
   .tile-exit-active {
     opacity: 0;
     transform: none;
     transition: opacity 100ms linear !important;
   }
-  
+
   .upload-complete-flash::after {
     animation: none !important;
     display: none;

@@ -106,7 +106,7 @@ export function useSelection(): UseSelectionReturn {
 
   const isSelected = useCallback(
     (photoId: string) => selectedIds.has(photoId),
-    [selectedIds]
+    [selectedIds],
   );
 
   return {

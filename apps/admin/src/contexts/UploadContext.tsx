@@ -1,4 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react';
 import { getApi, toBase64 } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
@@ -16,7 +23,7 @@ export class UploadError extends Error {
   constructor(
     message: string,
     public readonly code: UploadErrorCode,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'UploadError';
@@ -59,18 +66,21 @@ async function createManifestForUpload(
   task: UploadTask,
   shardIds: string[],
   epochKey: EpochKeyBundle,
-  tieredShards?: TieredShardIds
+  tieredShards?: TieredShardIds,
 ): Promise<void> {
   const crypto = await getCryptoClient();
   const api = getApi();
 
   // Build shard hashes array (in order of shard index)
-  const sortedShards = [...task.completedShards].sort((a, b) => a.index - b.index);
+  const sortedShards = [...task.completedShards].sort(
+    (a, b) => a.index - b.index,
+  );
   const shardHashes = sortedShards.map((s) => s.sha256);
 
   // Use detected MIME type (from magic bytes) over browser-reported type
   // This is more reliable for formats like HEIC
-  const mimeType = task.detectedMimeType || task.file.type || 'application/octet-stream';
+  const mimeType =
+    task.detectedMimeType || task.file.type || 'application/octet-stream';
 
   // Build photo metadata with tier-specific shard IDs
   const now = new Date().toISOString();
@@ -98,8 +108,8 @@ async function createManifestForUpload(
       thumbnailShardHash: tieredShards.thumbnail.sha256,
       previewShardId: tieredShards.preview.shardId,
       previewShardHash: tieredShards.preview.sha256,
-      originalShardIds: tieredShards.original.map(s => s.shardId),
-      originalShardHashes: tieredShards.original.map(s => s.sha256),
+      originalShardIds: tieredShards.original.map((s) => s.shardId),
+      originalShardHashes: tieredShards.original.map((s) => s.sha256),
     }),
   };
 
@@ -107,24 +117,26 @@ async function createManifestForUpload(
   const encrypted = await crypto.encryptManifest(
     photoMeta,
     epochKey.epochSeed,
-    task.epochId
+    task.epochId,
   );
 
   // Sign the encrypted manifest with the epoch signing key
   const signature = await crypto.signManifest(
     encrypted.ciphertext,
-    epochKey.signKeypair.secretKey
+    epochKey.signKeypair.secretKey,
   );
 
   // Get signer public key
   const signerPubkey = epochKey.signKeypair.publicKey;
 
   // Build tiered shard info for backend if available
-  const tieredShardInfo = tieredShards ? [
-    { shardId: tieredShards.thumbnail.shardId, tier: 1 },
-    { shardId: tieredShards.preview.shardId, tier: 2 },
-    ...tieredShards.original.map(s => ({ shardId: s.shardId, tier: 3 })),
-  ] : undefined;
+  const tieredShardInfo = tieredShards
+    ? [
+        { shardId: tieredShards.thumbnail.shardId, tier: 1 },
+        { shardId: tieredShards.preview.shardId, tier: 2 },
+        ...tieredShards.original.map((s) => ({ shardId: s.shardId, tier: 3 })),
+      ]
+    : undefined;
 
   // Create manifest via API
   await api.createManifest({
@@ -157,7 +169,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
   useEffect(() => {
     // 1. Initialize the bridge first (sets up PhotoStore integration)
     const bridgeCleanup = initUploadStoreBridge();
-    
+
     // 2. Capture the bridge handlers that were just set up
     const bridgeOnProgress = uploadQueue.onProgress;
     const bridgeOnComplete = uploadQueue.onComplete;
@@ -190,11 +202,13 @@ export function UploadProvider({ children }: UploadProviderProps) {
         // The epoch key was cached when upload() fetched it via getCurrentOrFetchEpochKey
         const epochKey = getEpochKey(task.albumId, task.epochId);
         if (!epochKey) {
-          throw new Error(`Epoch key not found for album ${task.albumId}, epoch ${task.epochId}`);
+          throw new Error(
+            `Epoch key not found for album ${task.albumId}, epoch ${task.epochId}`,
+          );
         }
 
         await createManifestForUpload(task, shardIds, epochKey, tieredShards);
-        
+
         // Sync to pull the newly created manifest into local DB
         log.info(`Upload complete, syncing album ${task.albumId}`);
         try {
@@ -206,7 +220,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
             error: syncErr instanceof Error ? syncErr.message : String(syncErr),
           });
         }
-        
+
         setIsUploading(false);
         setProgress(100);
       } catch (manifestErr) {
@@ -215,8 +229,8 @@ export function UploadProvider({ children }: UploadProviderProps) {
           new UploadError(
             `Upload succeeded but manifest creation failed: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`,
             UploadErrorCode.MANIFEST_FAILED,
-            manifestErr instanceof Error ? manifestErr : undefined
-          )
+            manifestErr instanceof Error ? manifestErr : undefined,
+          ),
         );
         setIsUploading(false);
       }
@@ -226,7 +240,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
     uploadQueue.onError = (task, uploadErr) => {
       // Call bridge handler first (marks as failed in PhotoStore)
       bridgeOnError?.(task, uploadErr);
-      
+
       // Remove from active tasks
       setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
 
@@ -235,8 +249,8 @@ export function UploadProvider({ children }: UploadProviderProps) {
         new UploadError(
           uploadErr.message,
           UploadErrorCode.UPLOAD_FAILED,
-          uploadErr
-        )
+          uploadErr,
+        ),
       );
       setIsUploading(false);
     };
@@ -278,7 +292,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
         const uploadError = new UploadError(
           `Failed to get epoch key for album: ${err instanceof Error ? err.message : String(err)}`,
           UploadErrorCode.EPOCH_KEY_FAILED,
-          err instanceof Error ? err : undefined
+          err instanceof Error ? err : undefined,
         );
         setError(uploadError);
         setIsUploading(false);
@@ -286,12 +300,14 @@ export function UploadProvider({ children }: UploadProviderProps) {
       }
 
       // Add file to queue with real epoch key
-      log.info(`Adding file to upload queue: ${file.name}, albumId=${albumId}, epochId=${epochKey.epochId}`);
+      log.info(
+        `Adding file to upload queue: ${file.name}, albumId=${albumId}, epochId=${epochKey.epochId}`,
+      );
       await uploadQueue.add(
         file,
         albumId,
         epochKey.epochId,
-        epochKey.epochSeed
+        epochKey.epochSeed,
       );
       log.info(`File added to upload queue: ${file.name}`);
     } catch (err) {
@@ -301,7 +317,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
         const uploadError = new UploadError(
           err instanceof Error ? err.message : String(err),
           UploadErrorCode.UPLOAD_FAILED,
-          err instanceof Error ? err : undefined
+          err instanceof Error ? err : undefined,
         );
         setError(uploadError);
         setIsUploading(false);

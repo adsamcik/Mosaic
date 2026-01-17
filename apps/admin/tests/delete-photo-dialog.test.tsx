@@ -7,7 +7,10 @@
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DeletePhotoDialog, type DeletePhotoDialogProps } from '../src/components/Gallery/DeletePhotoDialog';
+import {
+  DeletePhotoDialog,
+  type DeletePhotoDialogProps,
+} from '../src/components/Gallery/DeletePhotoDialog';
 import type { PhotoMeta } from '../src/workers/types';
 
 // Create mock photo for testing
@@ -44,7 +47,9 @@ function renderDialog(props: Partial<DeletePhotoDialogProps> = {}) {
   let root: ReturnType<typeof createRoot>;
   act(() => {
     root = createRoot(container);
-    root.render(createElement(DeletePhotoDialog, { ...defaultProps, ...props }));
+    root.render(
+      createElement(DeletePhotoDialog, { ...defaultProps, ...props }),
+    );
   });
 
   const getByTestId = (testId: string) =>
@@ -62,7 +67,11 @@ function renderDialog(props: Partial<DeletePhotoDialogProps> = {}) {
   const rerender = (newProps: Partial<DeletePhotoDialogProps>) => {
     act(() => {
       root.render(
-        createElement(DeletePhotoDialog, { ...defaultProps, ...props, ...newProps })
+        createElement(DeletePhotoDialog, {
+          ...defaultProps,
+          ...props,
+          ...newProps,
+        }),
       );
     });
   };
@@ -111,7 +120,11 @@ describe('DeletePhotoDialog', () => {
 
     it('shows bulk delete title for multiple photos', () => {
       const { container, cleanup } = renderDialog({
-        photos: [createMockPhoto('photo-1'), createMockPhoto('photo-2'), createMockPhoto('photo-3')],
+        photos: [
+          createMockPhoto('photo-1'),
+          createMockPhoto('photo-2'),
+          createMockPhoto('photo-3'),
+        ],
       });
 
       const title = container.querySelector('#delete-photo-dialog-title');
@@ -129,7 +142,7 @@ describe('DeletePhotoDialog', () => {
 
       const preview = getByTestId('delete-preview');
       expect(preview).toBeTruthy();
-      
+
       const img = preview?.querySelector('img');
       expect(img?.src).toBe('blob:test-thumbnail');
 
@@ -177,8 +190,12 @@ describe('DeletePhotoDialog', () => {
         isDeleting: true,
       });
 
-      const confirmButton = getByTestId('delete-confirm-button') as HTMLButtonElement;
-      const cancelButton = getByTestId('delete-cancel-button') as HTMLButtonElement;
+      const confirmButton = getByTestId(
+        'delete-confirm-button',
+      ) as HTMLButtonElement;
+      const cancelButton = getByTestId(
+        'delete-cancel-button',
+      ) as HTMLButtonElement;
 
       expect(confirmButton.disabled).toBe(true);
       expect(cancelButton.disabled).toBe(true);
@@ -216,7 +233,9 @@ describe('DeletePhotoDialog', () => {
 
       const confirmButton = getByTestId('delete-confirm-button');
       act(() => {
-        confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        confirmButton?.dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        );
       });
 
       expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -296,11 +315,16 @@ describe('DeletePhotoDialog', () => {
 
     it('does not call onConfirm when deleting', () => {
       const onConfirm = vi.fn();
-      const { getByTestId, cleanup } = renderDialog({ onConfirm, isDeleting: true });
+      const { getByTestId, cleanup } = renderDialog({
+        onConfirm,
+        isDeleting: true,
+      });
 
       const confirmButton = getByTestId('delete-confirm-button');
       act(() => {
-        confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        confirmButton?.dispatchEvent(
+          new MouseEvent('click', { bubbles: true }),
+        );
       });
 
       // Form submission should not work when disabled
@@ -317,7 +341,9 @@ describe('DeletePhotoDialog', () => {
       // HTML5 dialog element has implicit role="dialog", so we check for the element type
       expect(dialog?.tagName.toLowerCase()).toBe('dialog');
       expect(dialog?.getAttribute('aria-modal')).toBe('true');
-      expect(dialog?.getAttribute('aria-labelledby')).toBe('delete-photo-dialog-title');
+      expect(dialog?.getAttribute('aria-labelledby')).toBe(
+        'delete-photo-dialog-title',
+      );
 
       cleanup();
     });

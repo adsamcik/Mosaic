@@ -80,7 +80,7 @@ describe('SettingsPage', () => {
     // Mock localStorage
     localStorageMock = {};
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(
-      (key) => localStorageMock[key] ?? null
+      (key) => localStorageMock[key] ?? null,
     );
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key, value) => {
       localStorageMock[key] = value;
@@ -140,18 +140,29 @@ describe('SettingsPage', () => {
       root.render(createElement(SettingsPage));
     });
 
-    expect(container.querySelector('[data-testid="account-section"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="storage-section"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="session-section"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="security-section"]')).toBeTruthy();
-    expect(container.querySelector('[data-testid="about-section"]')).toBeTruthy();
+    expect(
+      container.querySelector('[data-testid="account-section"]'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-testid="storage-section"]'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-testid="session-section"]'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-testid="security-section"]'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-testid="about-section"]'),
+    ).toBeTruthy();
   });
 
   describe('Account Section', () => {
     it('displays loading state initially', async () => {
       // Delay the API response
       mockApi.getCurrentUser.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(mockUser), 100))
+        () =>
+          new Promise((resolve) => setTimeout(() => resolve(mockUser), 100)),
       );
 
       await act(async () => {
@@ -172,7 +183,9 @@ describe('SettingsPage', () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      const accountSection = container.querySelector('[data-testid="account-section"]');
+      const accountSection = container.querySelector(
+        '[data-testid="account-section"]',
+      );
       expect(accountSection?.textContent).toContain('user-123');
       expect(accountSection?.textContent).toContain('abcdef1234');
       expect(accountSection?.textContent).toContain('January');
@@ -204,7 +217,9 @@ describe('SettingsPage', () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      const storageSection = container.querySelector('[data-testid="storage-section"]');
+      const storageSection = container.querySelector(
+        '[data-testid="storage-section"]',
+      );
       expect(storageSection?.textContent).toContain('50'); // 50 MB
       expect(storageSection?.textContent).toContain('5'); // 5 GB
     });
@@ -218,7 +233,9 @@ describe('SettingsPage', () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      const progressBar = container.querySelector('[data-testid="storage-bar-fill"]');
+      const progressBar = container.querySelector(
+        '[data-testid="storage-bar-fill"]',
+      );
       expect(progressBar).toBeTruthy();
     });
   });
@@ -230,7 +247,7 @@ describe('SettingsPage', () => {
       });
 
       const select = container.querySelector(
-        '[data-testid="idle-timeout-select"]'
+        '[data-testid="idle-timeout-select"]',
       ) as HTMLSelectElement;
       expect(select).toBeTruthy();
       expect(select.options.length).toBe(3);
@@ -242,7 +259,7 @@ describe('SettingsPage', () => {
       });
 
       const select = container.querySelector(
-        '[data-testid="idle-timeout-select"]'
+        '[data-testid="idle-timeout-select"]',
       ) as HTMLSelectElement;
       expect(select.value).toBe('30');
     });
@@ -253,7 +270,7 @@ describe('SettingsPage', () => {
       });
 
       const select = container.querySelector(
-        '[data-testid="theme-select"]'
+        '[data-testid="theme-select"]',
       ) as HTMLSelectElement;
       expect(select).toBeTruthy();
       expect(select.options.length).toBe(3);
@@ -265,7 +282,7 @@ describe('SettingsPage', () => {
       });
 
       const select = container.querySelector(
-        '[data-testid="thumbnail-quality-select"]'
+        '[data-testid="thumbnail-quality-select"]',
       ) as HTMLSelectElement;
       expect(select).toBeTruthy();
       expect(select.options.length).toBe(3);
@@ -277,7 +294,7 @@ describe('SettingsPage', () => {
       });
 
       const toggle = container.querySelector(
-        '[data-testid="auto-sync-toggle"]'
+        '[data-testid="auto-sync-toggle"]',
       ) as HTMLInputElement;
       expect(toggle).toBeTruthy();
       expect(toggle.type).toBe('checkbox');
@@ -290,7 +307,7 @@ describe('SettingsPage', () => {
       });
 
       const select = container.querySelector(
-        '[data-testid="idle-timeout-select"]'
+        '[data-testid="idle-timeout-select"]',
       ) as HTMLSelectElement;
 
       await act(async () => {
@@ -307,7 +324,7 @@ describe('SettingsPage', () => {
       });
 
       const toggle = container.querySelector(
-        '[data-testid="auto-sync-toggle"]'
+        '[data-testid="auto-sync-toggle"]',
       ) as HTMLInputElement;
 
       await act(async () => {
@@ -335,7 +352,7 @@ describe('SettingsPage', () => {
       const buttons = container.querySelectorAll('.button-secondary');
       // With i18n mock, the translation key is returned
       const resetButton = Array.from(buttons).find((b) =>
-        b.textContent?.includes('settings.resetToDefaults')
+        b.textContent?.includes('settings.resetToDefaults'),
       );
       expect(resetButton).toBeTruthy();
     });
@@ -347,7 +364,9 @@ describe('SettingsPage', () => {
         root.render(createElement(SettingsPage));
       });
 
-      const clearButton = container.querySelector('[data-testid="clear-data-button"]');
+      const clearButton = container.querySelector(
+        '[data-testid="clear-data-button"]',
+      );
       expect(clearButton).toBeTruthy();
       // With i18n mock, the translation key is returned
       expect(clearButton?.textContent).toContain('settings.security.clearData');
@@ -359,14 +378,16 @@ describe('SettingsPage', () => {
       });
 
       const clearButton = container.querySelector(
-        '[data-testid="clear-data-button"]'
+        '[data-testid="clear-data-button"]',
       ) as HTMLButtonElement;
 
       await act(async () => {
         clearButton.click();
       });
 
-      const dialog = container.querySelector('[data-testid="clear-confirm-dialog"]');
+      const dialog = container.querySelector(
+        '[data-testid="clear-confirm-dialog"]',
+      );
       expect(dialog).toBeTruthy();
     });
 
@@ -376,7 +397,7 @@ describe('SettingsPage', () => {
       });
 
       const clearButton = container.querySelector(
-        '[data-testid="clear-data-button"]'
+        '[data-testid="clear-data-button"]',
       ) as HTMLButtonElement;
 
       await act(async () => {
@@ -384,14 +405,16 @@ describe('SettingsPage', () => {
       });
 
       const cancelButton = container.querySelector(
-        '.dialog .button-secondary'
+        '.dialog .button-secondary',
       ) as HTMLButtonElement;
 
       await act(async () => {
         cancelButton.click();
       });
 
-      const dialog = container.querySelector('[data-testid="clear-confirm-dialog"]');
+      const dialog = container.querySelector(
+        '[data-testid="clear-confirm-dialog"]',
+      );
       expect(dialog).toBeFalsy();
     });
   });
@@ -402,7 +425,9 @@ describe('SettingsPage', () => {
         root.render(createElement(SettingsPage));
       });
 
-      const aboutSection = container.querySelector('[data-testid="about-section"]');
+      const aboutSection = container.querySelector(
+        '[data-testid="about-section"]',
+      );
       expect(aboutSection?.textContent).toContain('1.0.0');
     });
 
@@ -421,7 +446,9 @@ describe('SettingsPage', () => {
         root.render(createElement(SettingsPage));
       });
 
-      const aboutSection = container.querySelector('[data-testid="about-section"]');
+      const aboutSection = container.querySelector(
+        '[data-testid="about-section"]',
+      );
       // With i18n mock, the translation key is returned instead of actual text
       expect(aboutSection?.textContent).toContain('settings.about.description');
     });
@@ -441,16 +468,16 @@ describe('SettingsPage', () => {
       });
 
       const idleSelect = container.querySelector(
-        '[data-testid="idle-timeout-select"]'
+        '[data-testid="idle-timeout-select"]',
       ) as HTMLSelectElement;
       const themeSelect = container.querySelector(
-        '[data-testid="theme-select"]'
+        '[data-testid="theme-select"]',
       ) as HTMLSelectElement;
       const qualitySelect = container.querySelector(
-        '[data-testid="thumbnail-quality-select"]'
+        '[data-testid="thumbnail-quality-select"]',
       ) as HTMLSelectElement;
       const syncToggle = container.querySelector(
-        '[data-testid="auto-sync-toggle"]'
+        '[data-testid="auto-sync-toggle"]',
       ) as HTMLInputElement;
 
       expect(idleSelect.value).toBe('60');
@@ -466,7 +493,7 @@ describe('SettingsPage', () => {
 
       // Change a setting
       const select = container.querySelector(
-        '[data-testid="idle-timeout-select"]'
+        '[data-testid="idle-timeout-select"]',
       ) as HTMLSelectElement;
 
       await act(async () => {
@@ -475,7 +502,9 @@ describe('SettingsPage', () => {
       });
 
       // Click save
-      const saveButton = container.querySelector('.button-primary') as HTMLButtonElement;
+      const saveButton = container.querySelector(
+        '.button-primary',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         saveButton.click();

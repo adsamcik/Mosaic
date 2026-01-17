@@ -24,7 +24,7 @@ export class ShareLinkError extends Error {
   constructor(
     message: string,
     public readonly code: ShareLinkErrorCode,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'ShareLinkError';
@@ -88,7 +88,9 @@ export interface UseShareLinksResult {
   /** Refresh share links list */
   refetch: () => Promise<void>;
   /** Create a new share link */
-  createShareLink: (options: CreateShareLinkOptions) => Promise<CreateShareLinkResult>;
+  createShareLink: (
+    options: CreateShareLinkOptions,
+  ) => Promise<CreateShareLinkResult>;
   /** Whether create is in progress */
   isCreating: boolean;
   /** Error during create */
@@ -103,7 +105,7 @@ export interface UseShareLinksResult {
   updateExpiration: (
     linkId: string,
     expiresAt: Date | null,
-    maxUses: number | null
+    maxUses: number | null,
   ) => Promise<void>;
   /** Whether update is in progress */
   isUpdating: boolean;
@@ -184,7 +186,10 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
       // Transform to ShareLinkInfo and sort by creation date (newest first)
       const transformed = links
         .map(toShareLinkInfo)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        );
 
       setShareLinks(transformed);
     } catch (err) {
@@ -230,7 +235,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
         if (epochIds.length === 0) {
           throw new ShareLinkError(
             'No epoch keys available for album',
-            ShareLinkErrorCode.NO_EPOCH_KEYS
+            ShareLinkErrorCode.NO_EPOCH_KEYS,
           );
         }
 
@@ -239,7 +244,8 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
         const { linkId, wrappingKey } = deriveLinkKeys(linkSecret);
 
         // Step 3: Wrap the account key around the link secret for owner recovery
-        const ownerEncryptedSecret = await crypto.wrapWithAccountKey(linkSecret);
+        const ownerEncryptedSecret =
+          await crypto.wrapWithAccountKey(linkSecret);
 
         // Step 4: Wrap tier keys for each epoch
         const wrappedKeys: WrappedKeyRequest[] = [];
@@ -256,7 +262,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           const wrappedThumb = wrapTierKeyForLink(
             tierKeys.thumbKey,
             AccessTierEnum.THUMB,
-            wrappingKey
+            wrappingKey,
           );
           wrappedKeys.push({
             epochId,
@@ -270,7 +276,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
             const wrappedPreview = wrapTierKeyForLink(
               tierKeys.previewKey,
               AccessTierEnum.PREVIEW,
-              wrappingKey
+              wrappingKey,
             );
             wrappedKeys.push({
               epochId,
@@ -285,7 +291,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
             const wrappedFull = wrapTierKeyForLink(
               tierKeys.fullKey,
               AccessTierEnum.FULL,
-              wrappingKey
+              wrappingKey,
             );
             wrappedKeys.push({
               epochId,
@@ -330,44 +336,43 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           linkSecret: encodedSecret,
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to create share link';
+        const message =
+          err instanceof Error ? err.message : 'Failed to create share link';
         setCreateError(message);
         throw err;
       } finally {
         setIsCreating(false);
       }
     },
-    [albumId]
+    [albumId],
   );
 
   /**
    * Revoke a share link
    */
-  const revokeShareLink = useCallback(
-    async (linkId: string): Promise<void> => {
-      try {
-        setIsRevoking(true);
-        setRevokeError(null);
+  const revokeShareLink = useCallback(async (linkId: string): Promise<void> => {
+    try {
+      setIsRevoking(true);
+      setRevokeError(null);
 
-        const api = getApi();
-        await api.revokeShareLink(linkId);
+      const api = getApi();
+      await api.revokeShareLink(linkId);
 
-        // Remove from list or mark as revoked
-        setShareLinks((prev) =>
-          prev.map((link) =>
-            link.id === linkId ? { ...link, isRevoked: true } : link
-          )
-        );
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to revoke share link';
-        setRevokeError(message);
-        throw err;
-      } finally {
-        setIsRevoking(false);
-      }
-    },
-    []
-  );
+      // Remove from list or mark as revoked
+      setShareLinks((prev) =>
+        prev.map((link) =>
+          link.id === linkId ? { ...link, isRevoked: true } : link,
+        ),
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to revoke share link';
+      setRevokeError(message);
+      throw err;
+    } finally {
+      setIsRevoking(false);
+    }
+  }, []);
 
   /**
    * Update share link expiration
@@ -376,7 +381,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
     async (
       linkId: string,
       expiresAt: Date | null,
-      maxUses: number | null
+      maxUses: number | null,
     ): Promise<void> => {
       try {
         setIsUpdating(true);
@@ -391,7 +396,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
         // Update the link in the list
         const updatedLink = toShareLinkInfo(response);
         setShareLinks((prev) =>
-          prev.map((link) => (link.id === linkId ? updatedLink : link))
+          prev.map((link) => (link.id === linkId ? updatedLink : link)),
         );
       } catch (err) {
         const message =
@@ -402,7 +407,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
         setIsUpdating(false);
       }
     },
-    [albumId]
+    [albumId],
   );
 
   return {

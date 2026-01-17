@@ -10,8 +10,6 @@ import { DeletePhotoDialog } from './DeletePhotoDialog';
 import { PhotoLightbox } from './PhotoLightbox';
 import { PhotoThumbnail } from './PhotoThumbnail';
 
-
-
 /** Estimated row height for virtualization fallback */
 const ROW_HEIGHT = 200;
 
@@ -39,19 +37,29 @@ interface SquarePhotoGridProps {
  * Uses TanStack Virtual for efficient rendering of large photo collections
  * This is the "classic" grid view with fixed aspect ratio squares.
  */
-export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotosDeleted, selection }: SquarePhotoGridProps) {
+export function SquarePhotoGrid({
+  albumId,
+  photos,
+  isLoading,
+  error,
+  refetch,
+  onPhotosDeleted,
+  selection,
+}: SquarePhotoGridProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
-  
+
   // Sort photos by createdAt descending to match display order
   // This ensures lightbox navigation follows the visual order
-  const sortedPhotos = useMemo(() => 
-    [...photos].sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    ),
-    [photos]
+  const sortedPhotos = useMemo(
+    () =>
+      [...photos].sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [photos],
   );
-  
+
   const lightbox = useLightbox(sortedPhotos);
 
   // Get photo items from store for status checking
@@ -61,13 +69,16 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
    * Check if a photo is pending/syncing by looking it up in the PhotoStore.
    * Returns the PhotoItem if pending/syncing, undefined otherwise.
    */
-  const getPendingPhotoItem = useCallback((photo: PhotoMeta): PhotoItem | undefined => {
-    const item = getPhotoItem(albumId, photo.assetId);
-    if (item && (item.status === 'pending' || item.status === 'syncing')) {
-      return item;
-    }
-    return undefined;
-  }, [getPhotoItem, albumId]);
+  const getPendingPhotoItem = useCallback(
+    (photo: PhotoMeta): PhotoItem | undefined => {
+      const item = getPhotoItem(albumId, photo.assetId);
+      if (item && (item.status === 'pending' || item.status === 'syncing')) {
+        return item;
+      }
+      return undefined;
+    },
+    [getPhotoItem, albumId],
+  );
 
   // Photo delete workflow
   const {
@@ -93,24 +104,24 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
 
   // Track container width for square aspect ratio
   const [containerWidth, setContainerWidth] = useState(0);
-  
+
   // Callback ref for resize observer
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     parentRef.current = node;
-    
+
     if (node) {
       const observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
-           // Use contentRect for accurate inner width
+          // Use contentRect for accurate inner width
           setContainerWidth(entry.contentRect.width);
         }
       });
-      
+
       observer.observe(node);
-      
+
       // Set initial width
       setContainerWidth(node.clientWidth || node.getBoundingClientRect().width);
-      
+
       return () => observer.disconnect();
     }
   }, []);
@@ -125,14 +136,15 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
   }, [containerWidth]);
 
   const rowCount = Math.ceil(photos.length / columns);
-  
+
   // Calculate row height based on column width to ensure squares
   // Subtracting gap from width to get accurate cell size
   const gap = 4;
-  const cellWidth = containerWidth > 0 
-    ? (containerWidth - (columns - 1) * gap) / columns 
-    : ROW_HEIGHT;
-  const rowHeight = cellWidth; 
+  const cellWidth =
+    containerWidth > 0
+      ? (containerWidth - (columns - 1) * gap) / columns
+      : ROW_HEIGHT;
+  const rowHeight = cellWidth;
 
   const virtualizer = useVirtualizer({
     count: rowCount,
@@ -144,10 +156,10 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
   // Compute preload queue for lightbox (photos around current)
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
-    
+
     const queue: PhotoMeta[] = [];
     const currentIdx = lightbox.currentIndex;
-    
+
     // Add photos before and after current
     for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
       const prevPhoto = sortedPhotos[currentIdx - offset];
@@ -159,31 +171,42 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
         queue.push(nextPhoto);
       }
     }
-    
+
     return queue;
-  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, sortedPhotos]);
+  }, [
+    lightbox.isOpen,
+    lightbox.currentIndex,
+    lightbox.currentPhoto,
+    sortedPhotos,
+  ]);
 
   // Handle photo click to open lightbox
-  const handlePhotoClick = useCallback((photo: PhotoMeta) => {
-    if (!isSelectionMode) {
-      // Find index in the sorted photos array (matches display order)
-      const index = sortedPhotos.findIndex((p) => p.id === photo.id);
-      if (index >= 0) {
-        lightbox.open(index);
+  const handlePhotoClick = useCallback(
+    (photo: PhotoMeta) => {
+      if (!isSelectionMode) {
+        // Find index in the sorted photos array (matches display order)
+        const index = sortedPhotos.findIndex((p) => p.id === photo.id);
+        if (index >= 0) {
+          lightbox.open(index);
+        }
       }
-    }
-  }, [isSelectionMode, lightbox, sortedPhotos]);
+    },
+    [isSelectionMode, lightbox, sortedPhotos],
+  );
 
   // Handle selection change for a single photo
-  const handleSelectionChange = useCallback((photoId: string, selected: boolean) => {
-    if (selection) {
-      if (selected) {
-        selection.selectPhoto(photoId);
-      } else {
-        selection.deselectPhoto(photoId);
+  const handleSelectionChange = useCallback(
+    (photoId: string, selected: boolean) => {
+      if (selection) {
+        if (selected) {
+          selection.selectPhoto(photoId);
+        } else {
+          selection.deselectPhoto(photoId);
+        }
       }
-    }
-  }, [selection]);
+    },
+    [selection],
+  );
 
   if (isLoading || keysLoading) {
     return (
@@ -206,7 +229,20 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
     return (
       <div className="photo-grid-empty">
         <div className="empty-state-icon">
-             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+            <circle cx="12" cy="13" r="3" />
+          </svg>
         </div>
         <h3>No photos yet</h3>
         <p className="text-muted">Upload some photos to get started</p>
@@ -221,7 +257,11 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
 
   return (
     <>
-      <div ref={containerRef} className={`photo-grid-container ${isSelectionMode ? 'photo-grid-selection-mode' : ''}`} data-testid="photo-grid">
+      <div
+        ref={containerRef}
+        className={`photo-grid-container ${isSelectionMode ? 'photo-grid-selection-mode' : ''}`}
+        data-testid="photo-grid"
+      >
         <div
           className="photo-grid-virtual"
           style={{
@@ -250,47 +290,65 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
 
                 // Check if this photo is pending/syncing in the PhotoStore
                 const pendingItem = getPendingPhotoItem(photo);
-                
+
                 if (pendingItem) {
                   // Render pending photo with progress overlay
                   const progress = pendingItem.uploadProgress ?? 0;
                   const isUploading = progress > 0 && progress < 1;
-                  const statusText = pendingItem.error 
-                    ? 'Error' 
-                    : isUploading 
-                      ? 'Uploading...' 
+                  const statusText = pendingItem.error
+                    ? 'Error'
+                    : isUploading
+                      ? 'Uploading...'
                       : pendingItem.status === 'syncing'
                         ? 'Finalizing...'
                         : 'Queued';
-                  const displayProgress = isUploading ? 20 + (progress * 70) : (pendingItem.status === 'syncing' ? 95 : 0);
-                  
+                  const displayProgress = isUploading
+                    ? 20 + progress * 70
+                    : pendingItem.status === 'syncing'
+                      ? 95
+                      : 0;
+
                   return (
-                    <div 
+                    <div
                       key={photo.id}
-                      className="photo-thumbnail photo-thumbnail-pending" 
+                      className="photo-thumbnail photo-thumbnail-pending"
                       data-testid="pending-photo-thumbnail"
                     >
                       <div className="photo-content">
                         {(pendingItem.localBlobUrl || photo.thumbnail) && (
                           <img
-                            src={pendingItem.localBlobUrl ?? (photo.thumbnail ? `data:image/jpeg;base64,${photo.thumbnail}` : undefined)}
+                            src={
+                              pendingItem.localBlobUrl ??
+                              (photo.thumbnail
+                                ? `data:image/jpeg;base64,${photo.thumbnail}`
+                                : undefined)
+                            }
                             alt={photo.filename}
                             className="photo-image"
-                            style={{ opacity: 0.7, width: '100%', height: '100%', objectFit: 'cover' }}
+                            style={{
+                              opacity: 0.7,
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
                           />
                         )}
                         <div className="upload-overlay">
                           {displayProgress > 0 ? (
                             <div className="upload-progress-container">
-                              <div 
+                              <div
                                 className={`upload-progress-bar ${progress === 0 ? 'encrypting' : ''}`}
                                 style={{ width: `${displayProgress}%` }}
                               />
                             </div>
                           ) : (
-                            !pendingItem.error && <div className="upload-queued-badge"></div>
+                            !pendingItem.error && (
+                              <div className="upload-queued-badge"></div>
+                            )
                           )}
-                          <span className="upload-status-text">{statusText}</span>
+                          <span className="upload-status-text">
+                            {statusText}
+                          </span>
                         </div>
                       </div>
                       {pendingItem.error && (
@@ -312,8 +370,12 @@ export function SquarePhotoGrid({ albumId, photos, isLoading, error, refetch, on
                     {...(epochReadKey && { epochReadKey })}
                     onClick={() => handlePhotoClick(photo)}
                     isSelected={isSelected}
-                    onSelectionChange={(selected: boolean) => handleSelectionChange(photo.id, selected)}
-                    onDelete={(thumbnailUrl) => handleDeletePhoto(photo, thumbnailUrl)}
+                    onSelectionChange={(selected: boolean) =>
+                      handleSelectionChange(photo.id, selected)
+                    }
+                    onDelete={(thumbnailUrl) =>
+                      handleDeletePhoto(photo, thumbnailUrl)
+                    }
                     selectionMode={isSelectionMode}
                   />
                 );

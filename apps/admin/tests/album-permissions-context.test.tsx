@@ -30,23 +30,74 @@ afterEach(() => {
 function PermissionsDisplay() {
   const permissions = useAlbumPermissions();
   return createElement('div', null, [
-    createElement('span', { key: 'role', 'data-testid': 'role' }, permissions.role),
-    createElement('span', { key: 'is-owner', 'data-testid': 'is-owner' }, String(permissions.isOwner)),
-    createElement('span', { key: 'can-upload', 'data-testid': 'can-upload' }, String(permissions.canUpload)),
-    createElement('span', { key: 'can-delete', 'data-testid': 'can-delete' }, String(permissions.canDelete)),
-    createElement('span', { key: 'can-manage-members', 'data-testid': 'can-manage-members' }, String(permissions.canManageMembers)),
-    createElement('span', { key: 'can-manage-share-links', 'data-testid': 'can-manage-share-links' }, String(permissions.canManageShareLinks)),
-    createElement('span', { key: 'can-edit-album', 'data-testid': 'can-edit-album' }, String(permissions.canEditAlbum)),
-    createElement('span', { key: 'can-select', 'data-testid': 'can-select' }, String(permissions.canSelect)),
-    createElement('span', { key: 'can-download', 'data-testid': 'can-download' }, String(permissions.canDownload)),
-    createElement('span', { key: 'access-tier', 'data-testid': 'access-tier' }, permissions.accessTier ?? 'undefined'),
+    createElement(
+      'span',
+      { key: 'role', 'data-testid': 'role' },
+      permissions.role,
+    ),
+    createElement(
+      'span',
+      { key: 'is-owner', 'data-testid': 'is-owner' },
+      String(permissions.isOwner),
+    ),
+    createElement(
+      'span',
+      { key: 'can-upload', 'data-testid': 'can-upload' },
+      String(permissions.canUpload),
+    ),
+    createElement(
+      'span',
+      { key: 'can-delete', 'data-testid': 'can-delete' },
+      String(permissions.canDelete),
+    ),
+    createElement(
+      'span',
+      { key: 'can-manage-members', 'data-testid': 'can-manage-members' },
+      String(permissions.canManageMembers),
+    ),
+    createElement(
+      'span',
+      {
+        key: 'can-manage-share-links',
+        'data-testid': 'can-manage-share-links',
+      },
+      String(permissions.canManageShareLinks),
+    ),
+    createElement(
+      'span',
+      { key: 'can-edit-album', 'data-testid': 'can-edit-album' },
+      String(permissions.canEditAlbum),
+    ),
+    createElement(
+      'span',
+      { key: 'can-select', 'data-testid': 'can-select' },
+      String(permissions.canSelect),
+    ),
+    createElement(
+      'span',
+      { key: 'can-download', 'data-testid': 'can-download' },
+      String(permissions.canDownload),
+    ),
+    createElement(
+      'span',
+      { key: 'access-tier', 'data-testid': 'access-tier' },
+      permissions.accessTier ?? 'undefined',
+    ),
   ]);
 }
 
 // Test component for useHasPermission hook
-function HasPermissionDisplay({ permission }: { permission: 'canUpload' | 'canDelete' | 'canSelect' }) {
+function HasPermissionDisplay({
+  permission,
+}: {
+  permission: 'canUpload' | 'canDelete' | 'canSelect';
+}) {
   const has = useHasPermission(permission);
-  return createElement('span', { 'data-testid': 'has-permission' }, String(has));
+  return createElement(
+    'span',
+    { 'data-testid': 'has-permission' },
+    String(has),
+  );
 }
 
 function getTestId(id: string): string {
@@ -58,10 +109,10 @@ describe('AlbumPermissionsContext', () => {
     it('should grant all permissions to owner', () => {
       act(() => {
         root.render(
-          createElement(
-            AlbumPermissionsProvider,
-            { role: 'owner', children: createElement(PermissionsDisplay) }
-          )
+          createElement(AlbumPermissionsProvider, {
+            role: 'owner',
+            children: createElement(PermissionsDisplay),
+          }),
         );
       });
 
@@ -81,10 +132,10 @@ describe('AlbumPermissionsContext', () => {
     it('should grant upload and delete permissions but not member management', () => {
       act(() => {
         root.render(
-          createElement(
-            AlbumPermissionsProvider,
-            { role: 'editor', children: createElement(PermissionsDisplay) }
-          )
+          createElement(AlbumPermissionsProvider, {
+            role: 'editor',
+            children: createElement(PermissionsDisplay),
+          }),
         );
       });
 
@@ -104,10 +155,10 @@ describe('AlbumPermissionsContext', () => {
     it('should grant read-only permissions', () => {
       act(() => {
         root.render(
-          createElement(
-            AlbumPermissionsProvider,
-            { role: 'viewer', children: createElement(PermissionsDisplay) }
-          )
+          createElement(AlbumPermissionsProvider, {
+            role: 'viewer',
+            children: createElement(PermissionsDisplay),
+          }),
         );
       });
 
@@ -127,10 +178,10 @@ describe('AlbumPermissionsContext', () => {
     it('should grant minimal permissions without access tier', () => {
       act(() => {
         root.render(
-          createElement(
-            AlbumPermissionsProvider,
-            { role: 'anonymous', children: createElement(PermissionsDisplay) }
-          )
+          createElement(AlbumPermissionsProvider, {
+            role: 'anonymous',
+            children: createElement(PermissionsDisplay),
+          }),
         );
       });
 
@@ -147,10 +198,11 @@ describe('AlbumPermissionsContext', () => {
     it('should allow download with full access tier (AccessTier.Full)', () => {
       act(() => {
         root.render(
-          createElement(
-            AlbumPermissionsProvider,
-            { role: 'anonymous', accessTier: AccessTier.Full, children: createElement(PermissionsDisplay) }
-          )
+          createElement(AlbumPermissionsProvider, {
+            role: 'anonymous',
+            accessTier: AccessTier.Full,
+            children: createElement(PermissionsDisplay),
+          }),
         );
       });
 
@@ -161,10 +213,11 @@ describe('AlbumPermissionsContext', () => {
     it('should not allow download with preview access tier (AccessTier.Preview)', () => {
       act(() => {
         root.render(
-          createElement(
-            AlbumPermissionsProvider,
-            { role: 'anonymous', accessTier: AccessTier.Preview, children: createElement(PermissionsDisplay) }
-          )
+          createElement(AlbumPermissionsProvider, {
+            role: 'anonymous',
+            accessTier: AccessTier.Preview,
+            children: createElement(PermissionsDisplay),
+          }),
         );
       });
 
@@ -175,10 +228,11 @@ describe('AlbumPermissionsContext', () => {
     it('should not allow download with thumbnail access tier (AccessTier.Thumbnail)', () => {
       act(() => {
         root.render(
-          createElement(
-            AlbumPermissionsProvider,
-            { role: 'anonymous', accessTier: AccessTier.Thumbnail, children: createElement(PermissionsDisplay) }
-          )
+          createElement(AlbumPermissionsProvider, {
+            role: 'anonymous',
+            accessTier: AccessTier.Thumbnail,
+            children: createElement(PermissionsDisplay),
+          }),
         );
       });
 
@@ -191,10 +245,12 @@ describe('AlbumPermissionsContext', () => {
     it('should return true when user has permission', () => {
       act(() => {
         root.render(
-          createElement(
-            AlbumPermissionsProvider,
-            { role: 'owner', children: createElement(HasPermissionDisplay, { permission: 'canUpload' }) }
-          )
+          createElement(AlbumPermissionsProvider, {
+            role: 'owner',
+            children: createElement(HasPermissionDisplay, {
+              permission: 'canUpload',
+            }),
+          }),
         );
       });
 
@@ -204,10 +260,12 @@ describe('AlbumPermissionsContext', () => {
     it('should return false when user lacks permission', () => {
       act(() => {
         root.render(
-          createElement(
-            AlbumPermissionsProvider,
-            { role: 'viewer', children: createElement(HasPermissionDisplay, { permission: 'canUpload' }) }
-          )
+          createElement(AlbumPermissionsProvider, {
+            role: 'viewer',
+            children: createElement(HasPermissionDisplay, {
+              permission: 'canUpload',
+            }),
+          }),
         );
       });
 

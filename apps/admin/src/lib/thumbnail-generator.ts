@@ -21,7 +21,12 @@
  */
 
 import { encode as encodeBlurhash } from 'blurhash';
-import { encryptShard, ShardTier, type EncryptedShard, type EpochKey } from '@mosaic/crypto';
+import {
+  encryptShard,
+  ShardTier,
+  type EncryptedShard,
+  type EpochKey,
+} from '@mosaic/crypto';
 import { prepareForBitmap } from './image-decoder';
 import { getMimeType } from './mime-type-detection';
 import { shouldStoreOriginalsAsAvif } from './settings-service';
@@ -145,7 +150,10 @@ export function detectAVIFSupport(): boolean {
  * Get the preferred output format for thumbnails/previews
  * Priority: AVIF (best compression) > WebP > JPEG (fallback)
  */
-export function getPreferredImageFormat(): 'image/avif' | 'image/webp' | 'image/jpeg' {
+export function getPreferredImageFormat():
+  | 'image/avif'
+  | 'image/webp'
+  | 'image/jpeg' {
   if (detectAVIFSupport()) {
     return 'image/avif';
   }
@@ -253,7 +261,7 @@ export interface TieredShardResult {
 export class ThumbnailError extends Error {
   constructor(
     message: string,
-    public readonly cause?: unknown
+    public readonly cause?: unknown,
   ) {
     super(message);
     this.name = 'ThumbnailError';
@@ -278,7 +286,7 @@ export function isSupportedImageType(mimeType: string): boolean {
 export function calculateDimensions(
   width: number,
   height: number,
-  maxSize: number
+  maxSize: number,
 ): { width: number; height: number } {
   if (width <= maxSize && height <= maxSize) {
     return { width, height };
@@ -388,7 +396,7 @@ function applyOrientationTransform(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  orientation: number
+  orientation: number,
 ): void {
   switch (orientation) {
     case 2: // Flip horizontal
@@ -429,10 +437,10 @@ function orientationSwapsDimensions(orientation: number): boolean {
  *
  * Uses createImageBitmap for efficient image decoding and Canvas API
  * for resizing. Handles EXIF orientation for rotated photos.
- * 
+ *
  * Default settings are optimized for embedded manifest thumbnails (150px, 10KB).
  * For larger thumbnail shards, the tiered generation uses THUMB_MAX_SIZE (450px).
- * 
+ *
  * HEIC/HEIF files are automatically decoded to JPEG before processing.
  *
  * @param file - Image file to generate thumbnail from
@@ -442,13 +450,21 @@ function orientationSwapsDimensions(orientation: number): boolean {
  */
 export async function generateThumbnail(
   file: File,
-  options: ThumbnailOptions = {}
+  options: ThumbnailOptions = {},
 ): Promise<ThumbnailResult> {
-  const { maxSize = EMBEDDED_MAX_SIZE, quality = THUMB_QUALITY, maxBytes = MAX_EMBEDDED_BYTES } = options;
+  const {
+    maxSize = EMBEDDED_MAX_SIZE,
+    quality = THUMB_QUALITY,
+    maxBytes = MAX_EMBEDDED_BYTES,
+  } = options;
 
   // Detect actual MIME type from magic bytes
   const detectedMimeType = await getMimeType(file);
-  log.debug('Detected MIME type', { filename: file.name, browserType: file.type, detected: detectedMimeType });
+  log.debug('Detected MIME type', {
+    filename: file.name,
+    browserType: file.type,
+    detected: detectedMimeType,
+  });
 
   // Validate file type using detected MIME
   if (!isSupportedImageType(detectedMimeType)) {
@@ -523,7 +539,7 @@ export async function generateThumbnail(
     // Use smaller dimensions for faster encoding while maintaining quality
     const blurhashWidth = Math.min(dims.width, 32);
     const blurhashHeight = Math.min(dims.height, 32);
-    
+
     // Create a small canvas for blurhash to speed up encoding
     const blurhashCanvas = document.createElement('canvas');
     blurhashCanvas.width = blurhashWidth;
@@ -533,23 +549,28 @@ export async function generateThumbnail(
       throw new ThumbnailError('Failed to get blurhash canvas 2D context');
     }
     blurhashCtx.drawImage(canvas, 0, 0, blurhashWidth, blurhashHeight);
-    const blurhashImageData = blurhashCtx.getImageData(0, 0, blurhashWidth, blurhashHeight);
-    
+    const blurhashImageData = blurhashCtx.getImageData(
+      0,
+      0,
+      blurhashWidth,
+      blurhashHeight,
+    );
+
     // Encode blurhash with 4x3 components for good quality/size balance (~30 chars)
     const blurhash = encodeBlurhash(
       blurhashImageData.data,
       blurhashWidth,
       blurhashHeight,
-      4,  // componentX
-      3   // componentY
+      4, // componentX
+      3, // componentY
     );
 
     // Use WebP if supported (30-40% smaller), fallback to JPEG
     const outputFormat = getPreferredImageFormat();
-    
+
     // Convert to WebP/JPEG blob
     let blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, outputFormat, quality)
+      canvas.toBlob(resolve, outputFormat, quality),
     );
 
     if (!blob) {
@@ -561,10 +582,12 @@ export async function generateThumbnail(
     while (blob.size > maxBytes && currentQuality > 0.3) {
       currentQuality -= 0.1;
       blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, outputFormat, currentQuality)
+        canvas.toBlob(resolve, outputFormat, currentQuality),
       );
       if (!blob) {
-        throw new ThumbnailError(`Failed to encode thumbnail as ${outputFormat}`);
+        throw new ThumbnailError(
+          `Failed to encode thumbnail as ${outputFormat}`,
+        );
       }
     }
 
@@ -597,7 +620,7 @@ export async function generateThumbnail(
  */
 export async function generateThumbnailBase64(
   file: File,
-  options: ThumbnailOptions = {}
+  options: ThumbnailOptions = {},
 ): Promise<string> {
   const result = await generateThumbnail(file, options);
   return uint8ArrayToBase64(result.data);
@@ -643,7 +666,7 @@ async function resizeImage(
   maxSize: number,
   quality: number,
   maxBytes: number,
-  orientation: number
+  orientation: number,
 ): Promise<{ data: Uint8Array; width: number; height: number }> {
   // Swap dimensions if orientation requires it
   const swapDims = orientationSwapsDimensions(orientation);
@@ -678,7 +701,7 @@ async function resizeImage(
 
   // Convert to WebP/JPEG blob
   let blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, outputFormat, quality)
+    canvas.toBlob(resolve, outputFormat, quality),
   );
 
   if (!blob) {
@@ -690,7 +713,7 @@ async function resizeImage(
   while (blob.size > maxBytes && currentQuality > 0.3) {
     currentQuality -= 0.1;
     blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, outputFormat, currentQuality)
+      canvas.toBlob(resolve, outputFormat, currentQuality),
     );
     if (!blob) {
       throw new ThumbnailError(`Failed to encode image as ${outputFormat}`);
@@ -713,17 +736,23 @@ async function resizeImage(
  *
  * Creates thumbnail (300px), preview (1200px), and keeps original.
  * Each tier is prepared for encryption with its corresponding key.
- * 
+ *
  * HEIC/HEIF files are automatically decoded to JPEG before processing.
  *
  * @param file - Image file to process
  * @returns Three-tier image data with dimensions
  * @throws ThumbnailError if generation fails
  */
-export async function generateTieredImages(file: File): Promise<TieredImageResult> {
+export async function generateTieredImages(
+  file: File,
+): Promise<TieredImageResult> {
   // Detect actual MIME type from magic bytes
   const detectedMimeType = await getMimeType(file);
-  log.debug('Detected MIME type for tiered generation', { filename: file.name, browserType: file.type, detected: detectedMimeType });
+  log.debug('Detected MIME type for tiered generation', {
+    filename: file.name,
+    browserType: file.type,
+    detected: detectedMimeType,
+  });
 
   // Validate file type using detected MIME
   if (!isSupportedImageType(detectedMimeType)) {
@@ -757,7 +786,7 @@ export async function generateTieredImages(file: File): Promise<TieredImageResul
       THUMB_MAX_SIZE,
       THUMB_QUALITY,
       MAX_THUMBNAIL_BYTES,
-      orientation
+      orientation,
     );
 
     // Generate preview (1200px max)
@@ -766,38 +795,41 @@ export async function generateTieredImages(file: File): Promise<TieredImageResul
       PREVIEW_MAX_SIZE,
       PREVIEW_QUALITY,
       MAX_PREVIEW_BYTES,
-      orientation
+      orientation,
     );
 
     // Handle original tier - either convert to AVIF or preserve original format
     let originalData: Uint8Array;
     let originalMimeType: string;
-    
+
     if (shouldStoreOriginalsAsAvif()) {
       // Convert to AVIF at full resolution with high quality
       const ORIGINAL_QUALITY = 0.92; // High quality for "original" tier
       const MAX_ORIGINAL_BYTES = 15 * 1024 * 1024; // 15MB max for original AVIF
-      
+
       const originalAvifData = await resizeImage(
         bitmap,
         Math.max(logicalWidth, logicalHeight), // Keep full resolution
         ORIGINAL_QUALITY,
         MAX_ORIGINAL_BYTES,
-        orientation
+        orientation,
       );
       originalData = originalAvifData.data;
       originalMimeType = 'image/avif';
-      log.debug('Converted original to AVIF', { 
+      log.debug('Converted original to AVIF', {
         inputSize: file.size,
         avifSize: originalData.byteLength,
-        savings: `${Math.round((1 - originalData.byteLength / file.size) * 100)}%`
+        savings: `${Math.round((1 - originalData.byteLength / file.size) * 100)}%`,
       });
     } else {
       // Preserve original file format
       const originalArrayBuffer = await file.arrayBuffer();
       originalData = new Uint8Array(originalArrayBuffer);
       originalMimeType = await getMimeType(file);
-      log.debug('Preserved original format', { mimeType: originalMimeType, size: originalData.byteLength });
+      log.debug('Preserved original format', {
+        mimeType: originalMimeType,
+        size: originalData.byteLength,
+      });
     }
 
     // Clean up bitmap
@@ -848,36 +880,37 @@ export async function generateTieredImages(file: File): Promise<TieredImageResul
 export async function generateTieredShards(
   file: File,
   epochKey: EpochKey,
-  shardIndex: number = 0
+  shardIndex: number = 0,
 ): Promise<TieredShardResult> {
   // Generate the three tiers
   const tieredImages = await generateTieredImages(file);
 
   try {
     // Encrypt each tier with its corresponding key
-    const [thumbEncrypted, previewEncrypted, originalEncrypted] = await Promise.all([
-      encryptShard(
-        tieredImages.thumbnail.data,
-        epochKey.thumbKey,
-        epochKey.epochId,
-        shardIndex,
-        ShardTier.THUMB
-      ),
-      encryptShard(
-        tieredImages.preview.data,
-        epochKey.previewKey,
-        epochKey.epochId,
-        shardIndex,
-        ShardTier.PREVIEW
-      ),
-      encryptShard(
-        tieredImages.original.data,
-        epochKey.fullKey,
-        epochKey.epochId,
-        shardIndex,
-        ShardTier.ORIGINAL
-      ),
-    ]);
+    const [thumbEncrypted, previewEncrypted, originalEncrypted] =
+      await Promise.all([
+        encryptShard(
+          tieredImages.thumbnail.data,
+          epochKey.thumbKey,
+          epochKey.epochId,
+          shardIndex,
+          ShardTier.THUMB,
+        ),
+        encryptShard(
+          tieredImages.preview.data,
+          epochKey.previewKey,
+          epochKey.epochId,
+          shardIndex,
+          ShardTier.PREVIEW,
+        ),
+        encryptShard(
+          tieredImages.original.data,
+          epochKey.fullKey,
+          epochKey.epochId,
+          shardIndex,
+          ShardTier.ORIGINAL,
+        ),
+      ]);
 
     return {
       thumbnail: {

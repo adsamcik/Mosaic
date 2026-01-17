@@ -21,7 +21,8 @@ import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 
 // Apply the icon fix
-delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
+delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })
+  ._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconUrl: markerIcon,
   iconRetinaUrl: markerIcon2x,
@@ -196,7 +197,8 @@ export function MapView({
 
     // Add OpenStreetMap tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: MAX_ZOOM,
     }).addTo(map);
 
@@ -253,7 +255,10 @@ export function MapView({
 
         // Trigger cluster update if we have bounds
         if (currentBounds) {
-          const result = await geo.getClusters(currentBounds, Math.floor(currentZoom));
+          const result = await geo.getClusters(
+            currentBounds,
+            Math.floor(currentZoom),
+          );
           setClusters(result);
         }
       } catch (err) {
@@ -277,7 +282,10 @@ export function MapView({
 
       try {
         const geo = await getGeoClient();
-        const result = await geo.getClusters(currentBounds, Math.floor(currentZoom));
+        const result = await geo.getClusters(
+          currentBounds,
+          Math.floor(currentZoom),
+        );
         setClusters(result);
       } catch (err) {
         log.error('Failed to get clusters:', err);
@@ -309,13 +317,16 @@ export function MapView({
         } else {
           // Zoom in to cluster
           const [lng, lat] = feature.geometry.coordinates;
-          mapRef.current.setView([lat, lng], Math.min(currentZoom + 3, MAX_ZOOM));
+          mapRef.current.setView(
+            [lat, lng],
+            Math.min(currentZoom + 3, MAX_ZOOM),
+          );
         }
       } catch (err) {
         log.error('Failed to handle cluster click:', err);
       }
     },
-    [currentZoom, onClusterClick]
+    [currentZoom, onClusterClick],
   );
 
   // Handle photo click
@@ -323,7 +334,7 @@ export function MapView({
     (photoId: string) => {
       onPhotoClick?.(photoId);
     },
-    [onPhotoClick]
+    [onPhotoClick],
   );
 
   // Update markers when clusters change
@@ -337,7 +348,7 @@ export function MapView({
     // Add new markers
     clusters.forEach((feature) => {
       const [lng, lat] = feature.geometry.coordinates;
-      
+
       // Skip features with invalid coordinates
       if (
         typeof lat !== 'number' ||
@@ -347,7 +358,7 @@ export function MapView({
       ) {
         return;
       }
-      
+
       const isCluster = feature.properties.cluster === true;
 
       if (isCluster) {
@@ -419,7 +430,11 @@ export function MapView({
       try {
         const bounds = L.latLngBounds(latLngs);
         // Verify bounds are valid before fitting (bounds.isValid() returns false for empty/invalid bounds)
-        if (bounds && typeof bounds.isValid === 'function' && bounds.isValid()) {
+        if (
+          bounds &&
+          typeof bounds.isValid === 'function' &&
+          bounds.isValid()
+        ) {
           map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
         } else {
           log.warn('Invalid bounds computed from points, using default view');
@@ -456,7 +471,11 @@ export function MapView({
       data-point-count={points.length}
     >
       {/* Map container */}
-      <div ref={mapContainerRef} className="map-view-container" data-testid="map-container" />
+      <div
+        ref={mapContainerRef}
+        className="map-view-container"
+        data-testid="map-container"
+      />
 
       {/* Loading overlay */}
       {isLoading && (

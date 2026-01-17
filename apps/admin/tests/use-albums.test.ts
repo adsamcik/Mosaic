@@ -123,7 +123,7 @@ describe('useAlbums', () => {
         new Uint8Array(32),
         new Uint8Array(32),
         new Uint8Array(64),
-        identityPubkey!
+        identityPubkey!,
       );
 
       expect(bundle.encryptedBundle).toBeDefined();
@@ -170,9 +170,12 @@ describe('useAlbums', () => {
         },
       });
 
-      expect(mockSetEpochKey).toHaveBeenCalledWith('album-123', expect.objectContaining({
-        epochId: 1,
-      }));
+      expect(mockSetEpochKey).toHaveBeenCalledWith(
+        'album-123',
+        expect.objectContaining({
+          epochId: 1,
+        }),
+      );
     });
   });
 
@@ -230,11 +233,12 @@ describe('useAlbums', () => {
     });
 
     it('handles epoch key generation failure', async () => {
-      mockCryptoClient.generateEpochKey.mockRejectedValue(new Error('Crypto error'));
+      mockCryptoClient.generateEpochKey.mockRejectedValue(
+        new Error('Crypto error'),
+      );
 
       const crypto = await getCryptoClient();
       await expect(crypto.generateEpochKey(1)).rejects.toThrow('Crypto error');
     });
   });
 });
-

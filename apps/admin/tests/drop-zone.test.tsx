@@ -35,7 +35,11 @@ function createImageFile(name: string) {
 }
 
 // Helper to create DropZone with children typed correctly
-function createDropZone(props: { albumId: string; className?: string; children: ReactNode }) {
+function createDropZone(props: {
+  albumId: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return createElement(DropZone, props as any);
 }
 
@@ -62,12 +66,18 @@ describe('DropZone', () => {
       root.render(
         createDropZone({
           albumId: 'album-123',
-          children: createElement('div', { 'data-testid': 'child-content' }, 'Gallery Content')
-        })
+          children: createElement(
+            'div',
+            { 'data-testid': 'child-content' },
+            'Gallery Content',
+          ),
+        }),
       );
     });
 
-    expect(container.querySelector('[data-testid="child-content"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="child-content"]'),
+    ).not.toBeNull();
     expect(container.textContent).toContain('Gallery Content');
   });
 
@@ -76,8 +86,8 @@ describe('DropZone', () => {
       root.render(
         createDropZone({
           albumId: 'album-123',
-          children: createElement('div', null, 'Content')
-        })
+          children: createElement('div', null, 'Content'),
+        }),
       );
     });
 
@@ -90,8 +100,8 @@ describe('DropZone', () => {
         createDropZone({
           albumId: 'album-123',
           className: 'custom-class',
-          children: createElement('div', null, 'Content')
-        })
+          children: createElement('div', null, 'Content'),
+        }),
       );
     });
 
@@ -103,19 +113,23 @@ describe('DropZone', () => {
       root.render(
         createDropZone({
           albumId: 'album-123',
-          children: createElement('div', null, 'Content')
-        })
+          children: createElement('div', null, 'Content'),
+        }),
       );
     });
 
     const dropZone = container.querySelector('[data-testid="drop-zone"]')!;
-    const dragEvent = createDragEvent('dragenter', [createImageFile('photo.png')]);
+    const dragEvent = createDragEvent('dragenter', [
+      createImageFile('photo.png'),
+    ]);
 
     act(() => {
       dropZone.dispatchEvent(dragEvent);
     });
 
-    expect(container.querySelector('[data-testid="drop-zone-overlay"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="drop-zone-overlay"]'),
+    ).not.toBeNull();
     expect(container.textContent).toContain('upload.dropHere');
   });
 
@@ -124,19 +138,23 @@ describe('DropZone', () => {
       root.render(
         createDropZone({
           albumId: 'album-123',
-          children: createElement('div', null, 'Content')
-        })
+          children: createElement('div', null, 'Content'),
+        }),
       );
     });
 
     const dropZone = container.querySelector('[data-testid="drop-zone"]')!;
 
     // Drag enter
-    const enterEvent = createDragEvent('dragenter', [createImageFile('photo.png')]);
+    const enterEvent = createDragEvent('dragenter', [
+      createImageFile('photo.png'),
+    ]);
     act(() => {
       dropZone.dispatchEvent(enterEvent);
     });
-    expect(container.querySelector('[data-testid="drop-zone-overlay"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="drop-zone-overlay"]'),
+    ).not.toBeNull();
 
     // Drag leave
     const leaveEvent = createDragEvent('dragleave', []);
@@ -144,7 +162,9 @@ describe('DropZone', () => {
       dropZone.dispatchEvent(leaveEvent);
     });
 
-    expect(container.querySelector('[data-testid="drop-zone-overlay"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="drop-zone-overlay"]'),
+    ).toBeNull();
   });
 
   it('has active class when dragging', () => {
@@ -152,13 +172,15 @@ describe('DropZone', () => {
       root.render(
         createDropZone({
           albumId: 'album-123',
-          children: createElement('div', null, 'Content')
-        })
+          children: createElement('div', null, 'Content'),
+        }),
       );
     });
 
     const dropZone = container.querySelector('[data-testid="drop-zone"]')!;
-    const dragEvent = createDragEvent('dragenter', [createImageFile('photo.png')]);
+    const dragEvent = createDragEvent('dragenter', [
+      createImageFile('photo.png'),
+    ]);
 
     act(() => {
       dropZone.dispatchEvent(dragEvent);
@@ -172,13 +194,15 @@ describe('DropZone', () => {
       root.render(
         createDropZone({
           albumId: 'album-123',
-          children: createElement('div', null, 'Content')
-        })
+          children: createElement('div', null, 'Content'),
+        }),
       );
     });
 
     const dropZone = container.querySelector('[data-testid="drop-zone"]')!;
-    const dragOverEvent = createDragEvent('dragover', [createImageFile('photo.png')]);
+    const dragOverEvent = createDragEvent('dragover', [
+      createImageFile('photo.png'),
+    ]);
 
     act(() => {
       dropZone.dispatchEvent(dragOverEvent);
@@ -193,19 +217,23 @@ describe('DropZone', () => {
       root.render(
         createDropZone({
           albumId: 'album-123',
-          children: createElement('div', null, 'Content')
-        })
+          children: createElement('div', null, 'Content'),
+        }),
       );
     });
 
     const dropZone = container.querySelector('[data-testid="drop-zone"]')!;
 
     // Drag enter first
-    const enterEvent = createDragEvent('dragenter', [createImageFile('photo.png')]);
+    const enterEvent = createDragEvent('dragenter', [
+      createImageFile('photo.png'),
+    ]);
     act(() => {
       dropZone.dispatchEvent(enterEvent);
     });
-    expect(container.querySelector('[data-testid="drop-zone-overlay"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="drop-zone-overlay"]'),
+    ).not.toBeNull();
 
     // Drop
     const dropEvent = createDragEvent('drop', [createImageFile('photo.png')]);
@@ -213,7 +241,9 @@ describe('DropZone', () => {
       dropZone.dispatchEvent(dropEvent);
     });
 
-    expect(container.querySelector('[data-testid="drop-zone-overlay"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="drop-zone-overlay"]'),
+    ).toBeNull();
   });
 
   it('renders without crashing when no files dragged', () => {
@@ -221,8 +251,8 @@ describe('DropZone', () => {
       root.render(
         createDropZone({
           albumId: 'album-123',
-          children: createElement('div', null, 'Content')
-        })
+          children: createElement('div', null, 'Content'),
+        }),
       );
     });
 

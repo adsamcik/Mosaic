@@ -4,13 +4,13 @@ import { fromBase64, getApi } from './api';
 import { getCryptoClient } from './crypto-client';
 import { getDbClient } from './db-client';
 import {
-    fetchAndUnwrapEpochKeys,
-    getOrFetchEpochKey,
+  fetchAndUnwrapEpochKeys,
+  getOrFetchEpochKey,
 } from './epoch-key-service';
 import {
-    clearAllEpochKeys,
-    getEpochKey,
-    setEpochKey as storeEpochKey,
+  clearAllEpochKeys,
+  getEpochKey,
+  setEpochKey as storeEpochKey,
 } from './epoch-key-store';
 import { createLogger } from './logger';
 
@@ -19,7 +19,7 @@ const log = createLogger('sync-engine');
 /**
  * Get epoch thumb key for manifest decryption.
  * Derives the thumbKey from epochSeed for decrypting manifests.
- * 
+ *
  * IMPORTANT: Manifests are encrypted with the thumbKey (tier 1), not the raw epochSeed.
  * This ensures share link recipients (who only have tier keys) can decrypt manifests.
  *
@@ -29,7 +29,7 @@ const log = createLogger('sync-engine');
  */
 async function getEpochThumbKey(
   albumId: string,
-  epochId: number
+  epochId: number,
 ): Promise<Uint8Array | null> {
   // Check cache first via epoch-key-store
   const cached = getEpochKey(albumId, epochId);
@@ -50,7 +50,11 @@ async function getEpochThumbKey(
 }
 
 /** Sync event types */
-type SyncEventType = 'sync-start' | 'sync-progress' | 'sync-complete' | 'sync-error';
+type SyncEventType =
+  | 'sync-start'
+  | 'sync-progress'
+  | 'sync-complete'
+  | 'sync-error';
 
 interface SyncEventDetail {
   albumId: string;
@@ -71,7 +75,7 @@ interface QueuedSyncRequest {
 class SyncEngine extends EventTarget {
   private syncing = false;
   private syncAbortController: AbortController | null = null;
-  
+
   /** Queued sync requests - album IDs that need sync after current sync completes */
   private pendingSyncQueue = new Map<string, QueuedSyncRequest>();
 
@@ -89,12 +93,12 @@ class SyncEngine extends EventTarget {
    */
   async sync(albumId: string, readKey?: Uint8Array): Promise<void> {
     log.info(`Sync requested for album ${albumId}`, { hasReadKey: !!readKey });
-    
+
     if (this.syncing) {
       // Queue this sync request - it will run after current sync completes
       // Return a promise that resolves when the queued sync actually completes
       log.debug(`Sync in progress, queueing sync for album ${albumId}`);
-      
+
       return new Promise<void>((resolve, reject) => {
         const existing = this.pendingSyncQueue.get(albumId);
         if (existing) {
@@ -135,9 +139,14 @@ class SyncEngine extends EventTarget {
         // Manifests are encrypted with thumbKey (tier 1) to enable share link decryption.
         let epochSeed = readKey;
         if (!epochSeed) {
-          const cachedKey = await getEpochThumbKey(albumId, response.currentEpochId);
+          const cachedKey = await getEpochThumbKey(
+            albumId,
+            response.currentEpochId,
+          );
           if (!cachedKey) {
-            log.warn(`No epoch key available for album ${albumId} epoch ${response.currentEpochId}`);
+            log.warn(
+              `No epoch key available for album ${albumId} epoch ${response.currentEpochId}`,
+            );
             continue;
           }
           // getEpochThumbKey already returns the derived thumbKey
@@ -156,8 +165,12 @@ class SyncEngine extends EventTarget {
         // DEBUG: Log the verification key details
         log.debug('Verifying manifest signature', {
           manifestId: m.id,
-          signerPubkeyPrefix: Array.from(signerPubkey.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
-          signaturePrefix: Array.from(signature.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
+          signerPubkeyPrefix: Array.from(signerPubkey.slice(0, 8))
+            .map((b: number) => b.toString(16).padStart(2, '0'))
+            .join(''),
+          signaturePrefix: Array.from(signature.slice(0, 8))
+            .map((b: number) => b.toString(16).padStart(2, '0'))
+            .join(''),
           encryptedMetaLength: encryptedMeta.length,
         });
 
@@ -165,7 +178,7 @@ class SyncEngine extends EventTarget {
         const isValid = await crypto.verifyManifest(
           encryptedMeta,
           signature,
-          signerPubkey
+          signerPubkey,
         );
 
         if (!isValid) {
@@ -219,7 +232,7 @@ class SyncEngine extends EventTarget {
     } finally {
       this.syncing = false;
       this.syncAbortController = null;
-      
+
       // Process queued sync requests
       void this.processQueuedSyncs();
     }
@@ -234,13 +247,13 @@ class SyncEngine extends EventTarget {
     if (this.pendingSyncQueue.size === 0) {
       return;
     }
-    
+
     // Take all queued requests and clear the queue
     const queuedSyncs = Array.from(this.pendingSyncQueue.entries());
     this.pendingSyncQueue.clear();
-    
+
     log.info(`Processing ${queuedSyncs.length} queued sync request(s)`);
-    
+
     // Process each queued album (they will queue themselves if another is in progress)
     for (const [queuedAlbumId, request] of queuedSyncs) {
       try {
@@ -288,7 +301,7 @@ class SyncEngine extends EventTarget {
   /**
    * Store an epoch seed in the cache
    * Used when unwrapping keys after sync
-   * 
+   *
    * IMPORTANT: This method preserves existing signKeypair if the epoch key
    * was already cached with complete data. This prevents overwriting a
    * correctly unwrapped bundle with one that has empty signKeypair.
@@ -298,14 +311,18 @@ class SyncEngine extends EventTarget {
     const existing = getEpochKey(albumId, epochId);
     if (existing) {
       // Check if existing bundle has a valid (non-zero) signKeypair
-      const hasValidSignKeypair = existing.signKeypair.publicKey.some(b => b !== 0);
+      const hasValidSignKeypair = existing.signKeypair.publicKey.some(
+        (b) => b !== 0,
+      );
       if (hasValidSignKeypair) {
         // Don't overwrite - we already have complete data
-        log.debug(`Preserving existing epoch key ${epochId} with valid signKeypair`);
+        log.debug(
+          `Preserving existing epoch key ${epochId} with valid signKeypair`,
+        );
         return;
       }
     }
-    
+
     // Store minimal bundle (legacy compatibility)
     storeEpochKey(albumId, {
       epochId,
@@ -329,7 +346,10 @@ class SyncEngine extends EventTarget {
     }
   }
 
-  private dispatchSyncEvent(type: SyncEventType, detail: SyncEventDetail): void {
+  private dispatchSyncEvent(
+    type: SyncEventType,
+    detail: SyncEventDetail,
+  ): void {
     this.dispatchEvent(new CustomEvent(type, { detail }));
   }
 }
@@ -339,4 +359,3 @@ export const syncEngine = new SyncEngine();
 
 // Re-export types for convenience
 export type { SyncEventDetail, SyncEventType };
-

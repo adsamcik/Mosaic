@@ -13,7 +13,9 @@ interface AlbumExpirationSettingsProps {
  * Calculate days remaining until a date.
  * Returns null if no date provided.
  */
-function calculateDaysRemaining(expiresAt: string | null | undefined): number | null {
+function calculateDaysRemaining(
+  expiresAt: string | null | undefined,
+): number | null {
   if (!expiresAt) return null;
 
   const now = new Date();
@@ -66,8 +68,12 @@ export function AlbumExpirationSettings({
 }: AlbumExpirationSettingsProps) {
   // State
   const [enabled, setEnabled] = useState(!!album.expiresAt);
-  const [expiresAt, setExpiresAt] = useState(formatDateForInput(album.expiresAt));
-  const [warningDays, setWarningDays] = useState(album.expirationWarningDays ?? 7);
+  const [expiresAt, setExpiresAt] = useState(
+    formatDateForInput(album.expiresAt),
+  );
+  const [warningDays, setWarningDays] = useState(
+    album.expirationWarningDays ?? 7,
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -88,40 +94,50 @@ export function AlbumExpirationSettings({
   }, [enabled, expiresAt]);
 
   // Check if warning should be shown (7 days or less)
-  const showWarning = daysRemaining !== null && daysRemaining <= 7 && daysRemaining > 0;
+  const showWarning =
+    daysRemaining !== null && daysRemaining <= 7 && daysRemaining > 0;
   const isExpired = daysRemaining !== null && daysRemaining <= 0;
 
   // Handle enable/disable toggle
-  const handleEnabledChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setEnabled(e.target.checked);
-    setError(null);
-    setSuccess(false);
-
-    // If enabling and no date set, default to 30 days from now
-    if (e.target.checked && !expiresAt) {
-      const defaultDate = new Date();
-      defaultDate.setDate(defaultDate.getDate() + 30);
-      const parts = defaultDate.toISOString().split('T');
-      setExpiresAt(parts[0] ?? '');
-    }
-  }, [expiresAt]);
-
-  // Handle date change
-  const handleDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setExpiresAt(e.target.value);
-    setError(null);
-    setSuccess(false);
-  }, []);
-
-  // Handle warning days change
-  const handleWarningDaysChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value, 10);
-    if (!isNaN(value) && value >= 1 && value <= 30) {
-      setWarningDays(value);
+  const handleEnabledChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setEnabled(e.target.checked);
       setError(null);
       setSuccess(false);
-    }
-  }, []);
+
+      // If enabling and no date set, default to 30 days from now
+      if (e.target.checked && !expiresAt) {
+        const defaultDate = new Date();
+        defaultDate.setDate(defaultDate.getDate() + 30);
+        const parts = defaultDate.toISOString().split('T');
+        setExpiresAt(parts[0] ?? '');
+      }
+    },
+    [expiresAt],
+  );
+
+  // Handle date change
+  const handleDateChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setExpiresAt(e.target.value);
+      setError(null);
+      setSuccess(false);
+    },
+    [],
+  );
+
+  // Handle warning days change
+  const handleWarningDaysChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = parseInt(e.target.value, 10);
+      if (!isNaN(value) && value >= 1 && value <= 30) {
+        setWarningDays(value);
+        setError(null);
+        setSuccess(false);
+      }
+    },
+    [],
+  );
 
   // Save settings
   const handleSave = useCallback(async () => {
@@ -139,7 +155,10 @@ export function AlbumExpirationSettings({
     try {
       const api = getApi();
       const request = enabled
-        ? { expiresAt: new Date(expiresAt).toISOString(), expirationWarningDays: warningDays }
+        ? {
+            expiresAt: new Date(expiresAt).toISOString(),
+            expirationWarningDays: warningDays,
+          }
         : { expiresAt: null };
       await api.updateAlbumExpiration(album.id, request);
 
@@ -149,7 +168,11 @@ export function AlbumExpirationSettings({
       // Clear success message after 3 seconds
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save expiration settings');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to save expiration settings',
+      );
     } finally {
       setSaving(false);
     }
@@ -166,14 +189,20 @@ export function AlbumExpirationSettings({
     if (enabled && warningDays !== originalWarningDays) return true;
 
     return false;
-  }, [album.expiresAt, album.expirationWarningDays, enabled, expiresAt, warningDays]);
+  }, [
+    album.expiresAt,
+    album.expirationWarningDays,
+    enabled,
+    expiresAt,
+    warningDays,
+  ]);
 
   return (
     <div className="expiration-settings" data-testid="expiration-settings">
       <h3 className="expiration-settings-title">Album Expiration</h3>
       <p className="text-muted expiration-settings-description">
-        Set an expiration date to automatically delete this album and all its photos.
-        This action is irreversible once the album expires.
+        Set an expiration date to automatically delete this album and all its
+        photos. This action is irreversible once the album expires.
       </p>
 
       {/* Enable/Disable Toggle */}
@@ -207,7 +236,10 @@ export function AlbumExpirationSettings({
               data-testid="expiration-date-input"
             />
             {daysRemaining !== null && !isExpired && (
-              <span className="expiration-days-remaining" data-testid="days-remaining">
+              <span
+                className="expiration-days-remaining"
+                data-testid="days-remaining"
+              >
                 {daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} remaining
               </span>
             )}
@@ -215,15 +247,24 @@ export function AlbumExpirationSettings({
 
           {/* Warning Banner */}
           {showWarning && (
-            <div className="warning-banner" role="alert" data-testid="expiration-warning">
-              ⚠️ This album will expire in {daysRemaining} {daysRemaining === 1 ? 'day' : 'days'}.
-              All photos will be permanently deleted.
+            <div
+              className="warning-banner"
+              role="alert"
+              data-testid="expiration-warning"
+            >
+              ⚠️ This album will expire in {daysRemaining}{' '}
+              {daysRemaining === 1 ? 'day' : 'days'}. All photos will be
+              permanently deleted.
             </div>
           )}
 
           {/* Expired Banner */}
           {isExpired && (
-            <div className="error-banner" role="alert" data-testid="expiration-expired">
+            <div
+              className="error-banner"
+              role="alert"
+              data-testid="expiration-expired"
+            >
               ⚠️ This album has expired and is scheduled for deletion.
             </div>
           )}
@@ -260,7 +301,11 @@ export function AlbumExpirationSettings({
 
       {/* Success Message */}
       {success && (
-        <div className="form-success" role="status" data-testid="expiration-success">
+        <div
+          className="form-success"
+          role="status"
+          data-testid="expiration-success"
+        >
           Settings saved successfully
         </div>
       )}

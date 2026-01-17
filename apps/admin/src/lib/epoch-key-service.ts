@@ -9,11 +9,11 @@ import { fromBase64, getApi } from './api';
 import type { EpochKeyRecord } from './api-types';
 import { getCryptoClient } from './crypto-client';
 import {
-    getCurrentEpochKey,
-    getEpochKey,
-    hasEpochKey,
-    setEpochKey,
-    type EpochKeyBundle,
+  getCurrentEpochKey,
+  getEpochKey,
+  hasEpochKey,
+  setEpochKey,
+  type EpochKeyBundle,
 } from './epoch-key-store';
 import { createLogger } from './logger';
 
@@ -24,7 +24,7 @@ export class EpochKeyError extends Error {
   constructor(
     message: string,
     public readonly code: EpochKeyErrorCode,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'EpochKeyError';
@@ -63,7 +63,7 @@ export enum EpochKeyErrorCode {
  */
 export async function fetchAndUnwrapEpochKeys(
   albumId: string,
-  minEpochId = 0
+  minEpochId = 0,
 ): Promise<EpochKeyBundle[]> {
   const api = getApi();
   const crypto = await getCryptoClient();
@@ -78,7 +78,7 @@ export async function fetchAndUnwrapEpochKeys(
       throw new EpochKeyError(
         'Identity keypair not derived - cannot open epoch key bundles',
         EpochKeyErrorCode.IDENTITY_NOT_DERIVED,
-        err instanceof Error ? err : undefined
+        err instanceof Error ? err : undefined,
       );
     }
   }
@@ -91,14 +91,14 @@ export async function fetchAndUnwrapEpochKeys(
     throw new EpochKeyError(
       `Failed to fetch epoch keys for album ${albumId}`,
       EpochKeyErrorCode.FETCH_FAILED,
-      err instanceof Error ? err : undefined
+      err instanceof Error ? err : undefined,
     );
   }
 
   if (epochKeyRecords.length === 0) {
     throw new EpochKeyError(
       `No epoch keys available for album ${albumId}`,
-      EpochKeyErrorCode.NO_KEYS_AVAILABLE
+      EpochKeyErrorCode.NO_KEYS_AVAILABLE,
     );
   }
 
@@ -132,7 +132,7 @@ export async function fetchAndUnwrapEpochKeys(
         fullBundle,
         sharerPubkey,
         albumId,
-        minEpochId
+        minEpochId,
       );
 
       const bundle: EpochKeyBundle = {
@@ -155,7 +155,7 @@ export async function fetchAndUnwrapEpochKeys(
         throw new EpochKeyError(
           `Invalid signature for epoch key ${record.epochId}`,
           EpochKeyErrorCode.SIGNATURE_INVALID,
-          err instanceof Error ? err : undefined
+          err instanceof Error ? err : undefined,
         );
       }
 
@@ -163,7 +163,7 @@ export async function fetchAndUnwrapEpochKeys(
         throw new EpochKeyError(
           `Failed to decrypt epoch key ${record.epochId}`,
           EpochKeyErrorCode.DECRYPTION_FAILED,
-          err instanceof Error ? err : undefined
+          err instanceof Error ? err : undefined,
         );
       }
 
@@ -171,7 +171,7 @@ export async function fetchAndUnwrapEpochKeys(
         throw new EpochKeyError(
           `Context mismatch for epoch key ${record.epochId}`,
           EpochKeyErrorCode.CONTEXT_MISMATCH,
-          err instanceof Error ? err : undefined
+          err instanceof Error ? err : undefined,
         );
       }
 
@@ -193,7 +193,7 @@ export async function fetchAndUnwrapEpochKeys(
  */
 export async function getOrFetchEpochKey(
   albumId: string,
-  epochId: number
+  epochId: number,
 ): Promise<EpochKeyBundle> {
   // Check cache first
   const cached = getEpochKey(albumId, epochId);
@@ -209,7 +209,7 @@ export async function getOrFetchEpochKey(
   if (!bundle) {
     throw new EpochKeyError(
       `Epoch key ${epochId} not found for album ${albumId}`,
-      EpochKeyErrorCode.NO_KEYS_AVAILABLE
+      EpochKeyErrorCode.NO_KEYS_AVAILABLE,
     );
   }
 
@@ -225,7 +225,7 @@ export async function getOrFetchEpochKey(
  * @throws EpochKeyError if no keys available
  */
 export async function getCurrentOrFetchEpochKey(
-  albumId: string
+  albumId: string,
 ): Promise<EpochKeyBundle> {
   // Check cache first
   let current = getCurrentEpochKey(albumId);
@@ -233,7 +233,9 @@ export async function getCurrentOrFetchEpochKey(
     log.debug('Got epoch key from cache', {
       albumId,
       epochId: current.epochId,
-      signPublicKeyPrefix: Array.from(current.signKeypair.publicKey.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join(''),
+      signPublicKeyPrefix: Array.from(current.signKeypair.publicKey.slice(0, 8))
+        .map((b: number) => b.toString(16).padStart(2, '0'))
+        .join(''),
     });
     return current;
   }
@@ -246,7 +248,7 @@ export async function getCurrentOrFetchEpochKey(
   if (!current) {
     throw new EpochKeyError(
       `No epoch keys available for album ${albumId}`,
-      EpochKeyErrorCode.NO_KEYS_AVAILABLE
+      EpochKeyErrorCode.NO_KEYS_AVAILABLE,
     );
   }
 

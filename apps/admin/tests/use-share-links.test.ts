@@ -53,7 +53,8 @@ vi.mock('../src/lib/epoch-key-store', () => ({
 
 // Mock epoch key service
 vi.mock('../src/lib/epoch-key-service', () => ({
-  fetchAndUnwrapEpochKeys: (...args: unknown[]) => mockFetchAndUnwrapEpochKeys(...args),
+  fetchAndUnwrapEpochKeys: (...args: unknown[]) =>
+    mockFetchAndUnwrapEpochKeys(...args),
 }));
 
 // Mock @mosaic/crypto
@@ -155,7 +156,9 @@ describe('useShareLinks', () => {
     });
 
     it('can create a share link', async () => {
-      mockApi.createShareLink.mockResolvedValue(createMockShareLink('new-link'));
+      mockApi.createShareLink.mockResolvedValue(
+        createMockShareLink('new-link'),
+      );
 
       const api = (await import('../src/lib/api')).getApi();
       const result = await api.createShareLink('album-1', {
@@ -180,7 +183,7 @@ describe('useShareLinks', () => {
     it('creates error with code', () => {
       const error = new ShareLinkError(
         'Test error',
-        ShareLinkErrorCode.FETCH_FAILED
+        ShareLinkErrorCode.FETCH_FAILED,
       );
 
       expect(error.message).toBe('Test error');
@@ -193,7 +196,7 @@ describe('useShareLinks', () => {
       const error = new ShareLinkError(
         'Wrapper error',
         ShareLinkErrorCode.CREATE_FAILED,
-        cause
+        cause,
       );
 
       expect(error.cause).toBe(cause);
@@ -384,7 +387,9 @@ describe('useShareLinks', () => {
 
       const api = (await import('../src/lib/api')).getApi();
 
-      await expect(api.listShareLinks('album-1')).rejects.toThrow('Network error');
+      await expect(api.listShareLinks('album-1')).rejects.toThrow(
+        'Network error',
+      );
     });
 
     it('handles create errors', async () => {
@@ -397,7 +402,7 @@ describe('useShareLinks', () => {
           accessTier: 2,
           linkId: 'test',
           wrappedKeys: [],
-        })
+        }),
       ).rejects.toThrow('Create failed');
     });
 
@@ -406,7 +411,9 @@ describe('useShareLinks', () => {
 
       const api = (await import('../src/lib/api')).getApi();
 
-      await expect(api.revokeShareLink('link-1')).rejects.toThrow('Revoke failed');
+      await expect(api.revokeShareLink('link-1')).rejects.toThrow(
+        'Revoke failed',
+      );
     });
   });
 
@@ -447,14 +454,16 @@ describe('useShareLinks', () => {
   describe('multiple epoch handling', () => {
     it('wraps keys for all cached epochs', async () => {
       mockGetCachedEpochIds.mockReturnValue([1, 2, 3]);
-      mockGetEpochKey.mockImplementation((albumId: string, epochId: number) => ({
-        epochId,
-        epochSeed: new Uint8Array(32).fill(epochId),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      }));
+      mockGetEpochKey.mockImplementation(
+        (albumId: string, epochId: number) => ({
+          epochId,
+          epochSeed: new Uint8Array(32).fill(epochId),
+          signKeypair: {
+            publicKey: new Uint8Array(32),
+            secretKey: new Uint8Array(64),
+          },
+        }),
+      );
 
       const epochIds = mockGetCachedEpochIds('album-1');
       expect(epochIds).toEqual([1, 2, 3]);

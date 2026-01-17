@@ -10,7 +10,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreateAlbumDialog } from '../src/components/Albums/CreateAlbumDialog';
 
 // Helper to render component and get elements
-function renderDialog(props: Partial<Parameters<typeof CreateAlbumDialog>[0]> = {}) {
+function renderDialog(
+  props: Partial<Parameters<typeof CreateAlbumDialog>[0]> = {},
+) {
   const defaultProps = {
     isOpen: true,
     onClose: vi.fn(),
@@ -25,12 +27,19 @@ function renderDialog(props: Partial<Parameters<typeof CreateAlbumDialog>[0]> = 
   let root: ReturnType<typeof createRoot>;
   act(() => {
     root = createRoot(container);
-    root.render(createElement(CreateAlbumDialog, { ...defaultProps, ...props }));
+    root.render(
+      createElement(CreateAlbumDialog, { ...defaultProps, ...props }),
+    );
   });
 
-  const getByTestId = (testId: string) => container.querySelector(`[data-testid="${testId}"]`);
-  const queryByTestId = (testId: string) => container.querySelector(`[data-testid="${testId}"]`);
-  const getByLabelText = (label: string) => container.querySelector(`[aria-label="${label}"], label:has(+ input)`) as HTMLElement | null;
+  const getByTestId = (testId: string) =>
+    container.querySelector(`[data-testid="${testId}"]`);
+  const queryByTestId = (testId: string) =>
+    container.querySelector(`[data-testid="${testId}"]`);
+  const getByLabelText = (label: string) =>
+    container.querySelector(
+      `[aria-label="${label}"], label:has(+ input)`,
+    ) as HTMLElement | null;
   const getByText = (text: string) => {
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
@@ -48,13 +57,30 @@ function renderDialog(props: Partial<Parameters<typeof CreateAlbumDialog>[0]> = 
     container.remove();
   };
 
-  const rerender = (newProps: Partial<Parameters<typeof CreateAlbumDialog>[0]>) => {
+  const rerender = (
+    newProps: Partial<Parameters<typeof CreateAlbumDialog>[0]>,
+  ) => {
     act(() => {
-      root.render(createElement(CreateAlbumDialog, { ...defaultProps, ...props, ...newProps }));
+      root.render(
+        createElement(CreateAlbumDialog, {
+          ...defaultProps,
+          ...props,
+          ...newProps,
+        }),
+      );
     });
   };
 
-  return { container, getByTestId, queryByTestId, getByLabelText, getByText, cleanup, rerender, props: { ...defaultProps, ...props } };
+  return {
+    container,
+    getByTestId,
+    queryByTestId,
+    getByLabelText,
+    getByText,
+    cleanup,
+    rerender,
+    props: { ...defaultProps, ...props },
+  };
 }
 
 describe('CreateAlbumDialog', () => {
@@ -113,7 +139,9 @@ describe('CreateAlbumDialog', () => {
       // Simulate React-style input change
       act(() => {
         const event = new Event('change', { bubbles: true });
-        Object.defineProperty(event, 'target', { value: { value: 'My Photos' } });
+        Object.defineProperty(event, 'target', {
+          value: { value: 'My Photos' },
+        });
         input.value = 'My Photos';
         input.dispatchEvent(new Event('change', { bubbles: true }));
       });
@@ -142,7 +170,9 @@ describe('CreateAlbumDialog', () => {
     });
 
     it('displays error from props', () => {
-      const { getByTestId, cleanup } = renderDialog({ error: 'Failed to create album' });
+      const { getByTestId, cleanup } = renderDialog({
+        error: 'Failed to create album',
+      });
 
       const errorElement = getByTestId('create-album-error');
       expect(errorElement).not.toBeNull();
@@ -169,7 +199,9 @@ describe('CreateAlbumDialog', () => {
       const onClose = vi.fn();
       const { getByTestId, cleanup } = renderDialog({ onClose });
 
-      const backdrop = getByTestId('create-album-dialog-backdrop') as HTMLElement;
+      const backdrop = getByTestId(
+        'create-album-dialog-backdrop',
+      ) as HTMLElement;
       act(() => {
         backdrop.click();
       });
@@ -180,9 +212,14 @@ describe('CreateAlbumDialog', () => {
 
     it('does not close on backdrop click when creating', () => {
       const onClose = vi.fn();
-      const { getByTestId, cleanup } = renderDialog({ onClose, isCreating: true });
+      const { getByTestId, cleanup } = renderDialog({
+        onClose,
+        isCreating: true,
+      });
 
-      const backdrop = getByTestId('create-album-dialog-backdrop') as HTMLElement;
+      const backdrop = getByTestId(
+        'create-album-dialog-backdrop',
+      ) as HTMLElement;
       act(() => {
         backdrop.click();
       });
@@ -206,7 +243,9 @@ describe('CreateAlbumDialog', () => {
       const { getByTestId, cleanup } = renderDialog();
 
       const dialog = getByTestId('create-album-dialog') as HTMLElement;
-      expect(dialog.getAttribute('aria-labelledby')).toBe('create-album-dialog-title');
+      expect(dialog.getAttribute('aria-labelledby')).toBe(
+        'create-album-dialog-title',
+      );
       cleanup();
     });
 

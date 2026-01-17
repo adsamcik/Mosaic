@@ -3,7 +3,7 @@
  *
  * Full-screen photo viewer for anonymous share link viewers.
  * Displays photos based on available tier access.
- * 
+ *
  * HEIC/HEIF and AVIF images are automatically decoded for display
  * on browsers that don't natively support them.
  */
@@ -40,7 +40,9 @@ export interface SharedPhotoLightboxProps {
   /** Queue of photos to preload */
   preloadQueue?: PhotoMeta[] | undefined;
   /** Get tier key for preloading */
-  getTierKey?: ((epochId: number, tier: AccessTierType) => Uint8Array | undefined) | undefined;
+  getTierKey?:
+    | ((epochId: number, tier: AccessTierType) => Uint8Array | undefined)
+    | undefined;
 }
 
 /** Photo loading state */
@@ -91,7 +93,11 @@ export function SharedPhotoLightbox({
           thumbnailBlobUrl = URL.createObjectURL(blob);
           if (!cancelled) {
             // Show thumbnail immediately, but mark as not full-res
-            setState({ status: 'loaded', blobUrl: thumbnailBlobUrl, isFullRes: false });
+            setState({
+              status: 'loaded',
+              blobUrl: thumbnailBlobUrl,
+              isFullRes: false,
+            });
           }
         } catch {
           // Thumbnail decode failed, continue to shard loading
@@ -100,9 +106,11 @@ export function SharedPhotoLightbox({
 
       // Phase 2: Load full-resolution from shards if we have a tier key
       // First check if we have new tier-specific shard IDs
-      const hasTieredShards = photo.thumbnailShardId || photo.previewShardId || 
+      const hasTieredShards =
+        photo.thumbnailShardId ||
+        photo.previewShardId ||
         (photo.originalShardIds && photo.originalShardIds.length > 0);
-      
+
       if (!tierKey) {
         // No tier key - thumbnail is all we have
         if (!thumbnailBlobUrl && !cancelled) {
@@ -110,7 +118,7 @@ export function SharedPhotoLightbox({
         }
         return;
       }
-      
+
       // Check if we have any shards to work with
       const hasLegacyShards = photo.shardIds && photo.shardIds.length > 0;
       if (!hasTieredShards && !hasLegacyShards) {
@@ -125,15 +133,19 @@ export function SharedPhotoLightbox({
         // Download and decrypt shards via share link endpoint
         const crypto = await getCryptoClient();
         const decryptedChunks: Uint8Array[] = [];
-        
+
         // Determine which shard to download based on access tier and available tier-specific shards
         let targetShardId: string | undefined;
         let targetTier: number = accessTier;
-        
+
         if (hasTieredShards) {
           // New path: Use tier-specific shard IDs
           // Pick the best available tier up to our access level
-          if (accessTier >= 3 && photo.originalShardIds && photo.originalShardIds.length > 0) {
+          if (
+            accessTier >= 3 &&
+            photo.originalShardIds &&
+            photo.originalShardIds.length > 0
+          ) {
             targetShardId = photo.originalShardIds[0];
             targetTier = 3;
           } else if (accessTier >= 2 && photo.previewShardId) {
@@ -143,112 +155,142 @@ export function SharedPhotoLightbox({
             targetShardId = photo.thumbnailShardId;
             targetTier = 1;
           }
-          
+
           log.debug('Using tier-specific shard', {
             photoId: photo.id,
             accessTier,
             targetTier,
             targetShardId,
           });
-          
+
           if (targetShardId) {
             // Single shard download for tier-specific path
             if (!cancelled) {
               setLoadProgress(25);
             }
-            
-            const encryptedShard = await downloadShardViaShareLink(linkId, targetShardId);
-            
+
+            const encryptedShard = await downloadShardViaShareLink(
+              linkId,
+              targetShardId,
+            );
+
             if (!cancelled) {
               setLoadProgress(50);
             }
-            
+
             // Get the appropriate tier key
-            const decryptionKey = getTierKey 
+            const decryptionKey = getTierKey
               ? getTierKey(photo.epochId, targetTier as AccessTierType)
               : tierKey;
-            
+
             if (!decryptionKey) {
-              log.warn('No decryption key for tier', { photoId: photo.id, targetTier });
+              log.warn('No decryption key for tier', {
+                photoId: photo.id,
+                targetTier,
+              });
               if (!cancelled) {
                 setLoadProgress(100);
                 if (!thumbnailBlobUrl) {
-                  setState({ status: 'error', message: 'No decryption key available' });
+                  setState({
+                    status: 'error',
+                    message: 'No decryption key available',
+                  });
                 }
               }
               return;
             }
-            
-            const plaintext = await crypto.decryptShardWithTierKey(encryptedShard, decryptionKey);
+
+            const plaintext = await crypto.decryptShardWithTierKey(
+              encryptedShard,
+              decryptionKey,
+            );
             decryptedChunks.push(plaintext);
-            
+
             if (!cancelled) {
               setLoadProgress(100);
             }
           }
         }
-        
+
         // If no tier-specific shard found, fall back to legacy shard detection
         if (decryptedChunks.length === 0 && hasLegacyShards) {
           // Legacy path: Download all shards and filter by tier
-          const downloadedShards: { shardId: string; data: Uint8Array; tier: number }[] = [];
-        
+          const downloadedShards: {
+            shardId: string;
+            data: Uint8Array;
+            tier: number;
+          }[] = [];
+
           for (let i = 0; i < photo.shardIds.length; i++) {
             if (cancelled) return;
-            
+
             const shardId = photo.shardIds[i]!;
-            const encryptedShard = await downloadShardViaShareLink(linkId, shardId);
-            
+            const encryptedShard = await downloadShardViaShareLink(
+              linkId,
+              shardId,
+            );
+
             // Peek at the shard header to determine its tier
             const header = await crypto.peekHeader(encryptedShard);
-            downloadedShards.push({ shardId, data: encryptedShard, tier: header.tier });
-            
+            downloadedShards.push({
+              shardId,
+              data: encryptedShard,
+              tier: header.tier,
+            });
+
             // Update progress (download phase)
             if (!cancelled) {
               setLoadProgress(((i + 1) / photo.shardIds.length) * 50);
             }
           }
-          
+
           if (cancelled) return;
-          
+
           // Log downloaded shards for debugging
           log.debug('Downloaded shards (legacy)', {
             photoId: photo.id,
             accessTier,
             shardCount: downloadedShards.length,
-            shardTiers: downloadedShards.map(s => s.tier),
+            shardTiers: downloadedShards.map((s) => s.tier),
           });
-          
+
           // Filter to shards matching our access tier
-          const matchingShards = downloadedShards.filter(s => s.tier <= accessTier);
-          
+          const matchingShards = downloadedShards.filter(
+            (s) => s.tier <= accessTier,
+          );
+
           if (matchingShards.length === 0) {
             log.warn('No matching shards for access tier', {
               photoId: photo.id,
               accessTier,
-              shardTiers: downloadedShards.map(s => s.tier),
+              shardTiers: downloadedShards.map((s) => s.tier),
             });
             if (!cancelled) {
               setLoadProgress(100);
               if (!thumbnailBlobUrl) {
-                setState({ status: 'error', message: 'No accessible shards for this tier' });
+                setState({
+                  status: 'error',
+                  message: 'No accessible shards for this tier',
+                });
               }
             }
             return;
           }
-          
+
           // Sort by tier descending to get highest quality first
           matchingShards.sort((a, b) => b.tier - a.tier);
-          
+
           // Take the highest tier group
           const bestTier = matchingShards[0]!.tier;
-          const shardsToDecrypt = matchingShards.filter(s => s.tier === bestTier);
-          
+          const shardsToDecrypt = matchingShards.filter(
+            (s) => s.tier === bestTier,
+          );
+
           // Get the appropriate tier key for decryption
-          const decryptionKey = getTierKey 
+          const decryptionKey = getTierKey
             ? getTierKey(photo.epochId, bestTier as AccessTierType)
             : tierKey;
-          
+
           log.debug('Decryption key lookup (legacy)', {
             photoId: photo.id,
             epochId: photo.epochId,
@@ -256,37 +298,49 @@ export function SharedPhotoLightbox({
             hasKey: !!decryptionKey,
             usedGetTierKey: !!getTierKey,
           });
-          
+
           if (!decryptionKey) {
-            log.warn('No decryption key for tier', { photoId: photo.id, bestTier });
+            log.warn('No decryption key for tier', {
+              photoId: photo.id,
+              bestTier,
+            });
             if (!cancelled) {
               setLoadProgress(100);
               if (!thumbnailBlobUrl) {
-                setState({ status: 'error', message: 'No decryption key available for this tier' });
+                setState({
+                  status: 'error',
+                  message: 'No decryption key available for this tier',
+                });
               }
             }
             return;
           }
-          
+
           // Decrypt the matching shards
           for (let i = 0; i < shardsToDecrypt.length; i++) {
             if (cancelled) return;
-            
+
             const shard = shardsToDecrypt[i]!;
-            const plaintext = await crypto.decryptShardWithTierKey(shard.data, decryptionKey);
+            const plaintext = await crypto.decryptShardWithTierKey(
+              shard.data,
+              decryptionKey,
+            );
             decryptedChunks.push(plaintext);
-            
+
             // Update progress (decrypt phase)
             if (!cancelled) {
               setLoadProgress(50 + ((i + 1) / shardsToDecrypt.length) * 50);
             }
           }
         }
-        
+
         // If we have decrypted data, create blob URL
         if (decryptedChunks.length > 0) {
           // Combine chunks
-          const totalSize = decryptedChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+          const totalSize = decryptedChunks.reduce(
+            (sum, chunk) => sum + chunk.length,
+            0,
+          );
           const photoData = new Uint8Array(totalSize);
           let offset = 0;
           for (const chunk of decryptedChunks) {
@@ -298,15 +352,21 @@ export function SharedPhotoLightbox({
           // Use createDisplayableUrl to handle AVIF fallback for browsers that don't support it
           // and HEIC/HEIF decoding for legacy formats
           try {
-            const decoded = await createDisplayableUrl(photoData, photo.mimeType);
+            const decoded = await createDisplayableUrl(
+              photoData,
+              photo.mimeType,
+            );
             fullResBlobUrl = decoded.url;
-            log.debug('Created displayable URL', { 
-              photoId: photo.id, 
+            log.debug('Created displayable URL', {
+              photoId: photo.id,
               originalMimeType: photo.mimeType,
-              displayMimeType: decoded.mimeType 
+              displayMimeType: decoded.mimeType,
             });
           } catch (decodeErr) {
-            log.error('Failed to create displayable URL', { photoId: photo.id, error: decodeErr });
+            log.error('Failed to create displayable URL', {
+              photoId: photo.id,
+              error: decodeErr,
+            });
             // Fall back to creating blob directly (may fail for HEIC or unsupported AVIF)
             const blob = new Blob([photoData], { type: photo.mimeType });
             fullResBlobUrl = URL.createObjectURL(blob);
@@ -319,7 +379,11 @@ export function SharedPhotoLightbox({
 
           if (!cancelled) {
             // Replace thumbnail with full-res
-            setState({ status: 'loaded', blobUrl: fullResBlobUrl, isFullRes: true });
+            setState({
+              status: 'loaded',
+              blobUrl: fullResBlobUrl,
+              isFullRes: true,
+            });
             // Revoke thumbnail URL now that we have full-res
             if (thumbnailBlobUrl) {
               URL.revokeObjectURL(thumbnailBlobUrl);
@@ -340,7 +404,8 @@ export function SharedPhotoLightbox({
           if (!thumbnailBlobUrl) {
             setState({
               status: 'error',
-              message: err instanceof Error ? err.message : 'Failed to load photo',
+              message:
+                err instanceof Error ? err.message : 'Failed to load photo',
             });
           }
           // If we have thumbnail, state is already set - just complete progress
@@ -359,7 +424,17 @@ export function SharedPhotoLightbox({
         URL.revokeObjectURL(fullResBlobUrl);
       }
     };
-  }, [photo.id, photo.thumbnail, photo.shardIds, photo.mimeType, photo.epochId, tierKey, accessTier, linkId, getTierKey]);
+  }, [
+    photo.id,
+    photo.thumbnail,
+    photo.shardIds,
+    photo.mimeType,
+    photo.epochId,
+    tierKey,
+    accessTier,
+    linkId,
+    getTierKey,
+  ]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -396,7 +471,7 @@ export function SharedPhotoLightbox({
         onClose();
       }
     },
-    [onClose]
+    [onClose],
   );
 
   return (
@@ -460,12 +535,12 @@ export function SharedPhotoLightbox({
               />
               {/* Show progress overlay while loading full-res */}
               {!state.isFullRes && loadProgress > 0 && loadProgress < 100 && (
-                <div 
+                <div
                   className="lightbox-progress-overlay"
                   data-testid="lightbox-progress-overlay"
                 >
                   <div className="lightbox-progress-bar">
-                    <div 
+                    <div
                       className="lightbox-progress-fill"
                       style={{ width: `${loadProgress}%` }}
                     />

@@ -37,7 +37,9 @@ export interface UseAlbumMembersReturn {
  */
 export function useAlbumMembers(albumId: string): UseAlbumMembersReturn {
   const [members, setMembers] = useState<AlbumMember[]>([]);
-  const [currentUserRole, setCurrentUserRole] = useState<AlbumRole | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<AlbumRole | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -57,7 +59,7 @@ export function useAlbumMembers(albumId: string): UseAlbumMembersReturn {
 
       // Find current user's role
       const userMembership = albumMembers.find(
-        (m) => m.userId === currentUser.id
+        (m) => m.userId === currentUser.id,
       );
 
       if (userMembership) {

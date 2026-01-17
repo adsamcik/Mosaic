@@ -50,7 +50,7 @@ export function EditDescriptionDialog({
     e.preventDefault();
 
     const trimmedDescription = description.trim();
-    
+
     if (trimmedDescription.length > 1000) {
       setLocalError('Description must be 1000 characters or less');
       return;
@@ -109,7 +109,9 @@ export function EditDescriptionDialog({
     >
       <form onSubmit={handleSubmit} id="edit-description-form">
         <div className="form-field">
-          <label htmlFor="album-description" className="form-label">Description</label>
+          <label htmlFor="album-description" className="form-label">
+            Description
+          </label>
           <textarea
             ref={textareaRef}
             id="album-description"
@@ -123,13 +125,24 @@ export function EditDescriptionDialog({
             data-testid="edit-description-input"
             style={{ resize: 'vertical', minHeight: '100px' }}
           />
-          <div className="form-field-hint" style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>
+          <div
+            className="form-field-hint"
+            style={{
+              marginTop: '8px',
+              fontSize: '0.8rem',
+              color: 'var(--color-text-tertiary)',
+            }}
+          >
             {description.length}/1000 characters
           </div>
         </div>
 
         {displayError && (
-          <div className="form-error" role="alert" data-testid="edit-description-error">
+          <div
+            className="form-error"
+            role="alert"
+            data-testid="edit-description-error"
+          >
             {displayError}
           </div>
         )}

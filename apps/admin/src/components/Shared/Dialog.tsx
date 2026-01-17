@@ -14,7 +14,7 @@ export interface DialogProps {
 
 /**
  * Reusable Dialog Component
- * 
+ *
  * Implements a standard modal dialog with:
  * - Backdrop with blur effect
  * - Centered content
@@ -92,22 +92,12 @@ export function Dialog({
           <h2 id={`${testId}-title`} className="dialog-title">
             {title}
           </h2>
-          {description && (
-            <p className="dialog-description">
-              {description}
-            </p>
-          )}
+          {description && <p className="dialog-description">{description}</p>}
         </div>
 
-        <div className="dialog-content">
-          {children}
-        </div>
+        <div className="dialog-content">{children}</div>
 
-        {footer && (
-          <div className="dialog-actions">
-            {footer}
-          </div>
-        )}
+        {footer && <div className="dialog-actions">{footer}</div>}
       </dialog>
     </div>
   );

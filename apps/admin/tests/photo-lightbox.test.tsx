@@ -12,7 +12,9 @@ import type { PhotoMeta } from '../src/workers/types';
 
 // Mock the photo-service
 vi.mock('../src/lib/photo-service', () => ({
-  loadPhoto: vi.fn().mockResolvedValue({ blobUrl: 'blob:test-full', size: 2048 }),
+  loadPhoto: vi
+    .fn()
+    .mockResolvedValue({ blobUrl: 'blob:test-full', size: 2048 }),
   preloadPhotos: vi.fn().mockResolvedValue(undefined),
   releasePhoto: vi.fn(),
 }));
@@ -75,7 +77,7 @@ describe('PhotoLightbox', () => {
           photo: createMockPhoto(),
           epochReadKey: new Uint8Array(32),
           onClose,
-        })
+        }),
       );
     });
 
@@ -90,11 +92,13 @@ describe('PhotoLightbox', () => {
           photo: createMockPhoto(),
           epochReadKey: new Uint8Array(32),
           onClose: vi.fn(),
-        })
+        }),
       );
     });
 
-    const closeButton = container.querySelector('[data-testid="lightbox-close"]');
+    const closeButton = container.querySelector(
+      '[data-testid="lightbox-close"]',
+    );
     expect(closeButton).not.toBeNull();
     expect(closeButton?.querySelector('svg')).not.toBeNull();
     // Should NOT contain text close character
@@ -112,7 +116,7 @@ describe('PhotoLightbox', () => {
           onPrevious: vi.fn(),
           hasNext: true,
           hasPrevious: true,
-        })
+        }),
       );
     });
 
@@ -139,11 +143,13 @@ describe('PhotoLightbox', () => {
           epochReadKey: new Uint8Array(32),
           onClose: vi.fn(),
           showMetadata: true,
-        })
+        }),
       );
     });
 
-    const infoButton = container.querySelector('[data-testid="lightbox-info-toggle"]');
+    const infoButton = container.querySelector(
+      '[data-testid="lightbox-info-toggle"]',
+    );
     expect(infoButton).not.toBeNull();
     expect(infoButton?.querySelector('svg')).not.toBeNull();
     // Should NOT contain info character
@@ -158,11 +164,13 @@ describe('PhotoLightbox', () => {
           epochReadKey: new Uint8Array(32),
           onClose: vi.fn(),
           onDelete: vi.fn(),
-        })
+        }),
       );
     });
 
-    const deleteButton = container.querySelector('[data-testid="lightbox-delete"]');
+    const deleteButton = container.querySelector(
+      '[data-testid="lightbox-delete"]',
+    );
     expect(deleteButton).not.toBeNull();
     expect(deleteButton?.querySelector('svg')).not.toBeNull();
     // Should NOT contain trash emoji
@@ -176,7 +184,7 @@ describe('PhotoLightbox', () => {
           photo: createMockPhoto(),
           epochReadKey: new Uint8Array(32),
           onClose: vi.fn(),
-        })
+        }),
       );
     });
 
@@ -194,11 +202,13 @@ describe('PhotoLightbox', () => {
           photo: createMockPhoto(),
           epochReadKey: new Uint8Array(32),
           onClose,
-        })
+        }),
       );
     });
 
-    const closeButton = container.querySelector('[data-testid="lightbox-close"]') as HTMLButtonElement;
+    const closeButton = container.querySelector(
+      '[data-testid="lightbox-close"]',
+    ) as HTMLButtonElement;
 
     act(() => {
       closeButton.click();
@@ -216,7 +226,7 @@ describe('PhotoLightbox', () => {
           photo,
           epochReadKey: new Uint8Array(32),
           onClose: vi.fn(),
-        })
+        }),
       );
     });
 
@@ -301,7 +311,7 @@ describe('PhotoLightbox Preloading', () => {
             epochReadKey,
             onClose: vi.fn(),
             preloadQueue,
-          })
+          }),
         );
         // Allow useEffect to run
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -340,7 +350,7 @@ describe('PhotoLightbox Preloading', () => {
             epochReadKey: new Uint8Array(32),
             onClose: vi.fn(),
             preloadQueue: [],
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -361,7 +371,7 @@ describe('PhotoLightbox Preloading', () => {
             epochReadKey: undefined as unknown as Uint8Array,
             onClose: vi.fn(),
             preloadQueue,
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -388,7 +398,7 @@ describe('PhotoLightbox Preloading', () => {
             epochReadKey,
             onClose: vi.fn(),
             preloadQueue,
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -418,7 +428,7 @@ describe('PhotoLightbox Preloading', () => {
             epochReadKey,
             onClose: vi.fn(),
             preloadQueue,
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -440,7 +450,7 @@ describe('PhotoLightbox Preloading', () => {
     it('does not crash when preloadPhotos fails', async () => {
       // Mock preloadPhotos to throw an error
       vi.mocked(photoService.preloadPhotos).mockRejectedValueOnce(
-        new Error('Network error during preload')
+        new Error('Network error during preload'),
       );
 
       const photos = createMockPhotos(5);
@@ -455,7 +465,7 @@ describe('PhotoLightbox Preloading', () => {
             epochReadKey: new Uint8Array(32),
             onClose: vi.fn(),
             preloadQueue,
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 50));
       });
@@ -468,7 +478,7 @@ describe('PhotoLightbox Preloading', () => {
     it('continues to load main photo when preload fails', async () => {
       // Mock preloadPhotos to throw an error
       vi.mocked(photoService.preloadPhotos).mockRejectedValueOnce(
-        new Error('Preload failed')
+        new Error('Preload failed'),
       );
 
       const photos = createMockPhotos(5);
@@ -482,7 +492,7 @@ describe('PhotoLightbox Preloading', () => {
             epochReadKey: new Uint8Array(32),
             onClose: vi.fn(),
             preloadQueue,
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 50));
       });
@@ -508,7 +518,7 @@ describe('PhotoLightbox Preloading', () => {
             epochReadKey,
             onClose: vi.fn(),
             preloadQueue: initialQueue,
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -526,7 +536,7 @@ describe('PhotoLightbox Preloading', () => {
             epochReadKey,
             onClose: vi.fn(),
             preloadQueue: newQueue,
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -548,7 +558,7 @@ describe('PhotoLightbox Preloading', () => {
   describe('Original Shard Extraction', () => {
     it('uses originalShardIds when available', async () => {
       vi.mocked(photoService.loadPhoto).mockClear();
-      
+
       const photo = createMockPhoto({
         shardIds: ['thumb-shard', 'preview-shard', 'original-shard'],
         originalShardIds: ['original-shard-1', 'original-shard-2'],
@@ -560,7 +570,7 @@ describe('PhotoLightbox Preloading', () => {
             photo,
             epochReadKey: new Uint8Array(32),
             onClose: vi.fn(),
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -570,13 +580,13 @@ describe('PhotoLightbox Preloading', () => {
         ['original-shard-1', 'original-shard-2'], // Should use originalShardIds
         expect.any(Uint8Array),
         'image/jpeg',
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
     it('extracts original from 3-shard legacy format', async () => {
       vi.mocked(photoService.loadPhoto).mockClear();
-      
+
       const photo = createMockPhoto({
         shardIds: ['thumb-shard', 'preview-shard', 'original-shard'],
         originalShardIds: undefined, // No tier-specific fields
@@ -588,7 +598,7 @@ describe('PhotoLightbox Preloading', () => {
             photo,
             epochReadKey: new Uint8Array(32),
             onClose: vi.fn(),
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -598,13 +608,13 @@ describe('PhotoLightbox Preloading', () => {
         ['original-shard'], // Should extract only shardIds[2]
         expect.any(Uint8Array),
         'image/jpeg',
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
     it('uses all shards for legacy chunked format (non-3 shard count)', async () => {
       vi.mocked(photoService.loadPhoto).mockClear();
-      
+
       const photo = createMockPhoto({
         shardIds: ['chunk-1', 'chunk-2', 'chunk-3', 'chunk-4'], // 4 chunks = large file
         originalShardIds: undefined,
@@ -616,7 +626,7 @@ describe('PhotoLightbox Preloading', () => {
             photo,
             epochReadKey: new Uint8Array(32),
             onClose: vi.fn(),
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -626,13 +636,13 @@ describe('PhotoLightbox Preloading', () => {
         ['chunk-1', 'chunk-2', 'chunk-3', 'chunk-4'], // All chunks for legacy format
         expect.any(Uint8Array),
         'image/jpeg',
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
     it('uses single shard for small files', async () => {
       vi.mocked(photoService.loadPhoto).mockClear();
-      
+
       const photo = createMockPhoto({
         shardIds: ['single-original'],
         originalShardIds: undefined,
@@ -644,7 +654,7 @@ describe('PhotoLightbox Preloading', () => {
             photo,
             epochReadKey: new Uint8Array(32),
             onClose: vi.fn(),
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -654,13 +664,13 @@ describe('PhotoLightbox Preloading', () => {
         ['single-original'], // Single shard used as-is
         expect.any(Uint8Array),
         'image/jpeg',
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
     it('falls back to shardIds when originalShardIds is empty array', async () => {
       vi.mocked(photoService.loadPhoto).mockClear();
-      
+
       const photo = createMockPhoto({
         shardIds: ['thumb', 'preview', 'original'],
         originalShardIds: [], // Empty array
@@ -672,7 +682,7 @@ describe('PhotoLightbox Preloading', () => {
             photo,
             epochReadKey: new Uint8Array(32),
             onClose: vi.fn(),
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -682,13 +692,13 @@ describe('PhotoLightbox Preloading', () => {
         ['original'], // Falls back to shardIds[2]
         expect.any(Uint8Array),
         'image/jpeg',
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
     it('extracts original shards in preload queue', async () => {
       vi.mocked(photoService.preloadPhotos).mockClear();
-      
+
       const mainPhoto = createMockPhoto({ id: 'main' });
       const preloadPhoto = createMockPhoto({
         id: 'preload-1',
@@ -703,16 +713,16 @@ describe('PhotoLightbox Preloading', () => {
             epochReadKey: new Uint8Array(32),
             onClose: vi.fn(),
             preloadQueue: [preloadPhoto],
-          })
+          }),
         );
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
 
       expect(photoService.preloadPhotos).toHaveBeenCalled();
       const [photosArg] = vi.mocked(photoService.preloadPhotos).mock.calls[0]!;
-      
+
       // Verify preload extracts only original shard
-      const preloadItem = photosArg.find(p => p.id === 'preload-1:full');
+      const preloadItem = photosArg.find((p) => p.id === 'preload-1:full');
       expect(preloadItem).toBeDefined();
       expect(preloadItem?.shardIds).toEqual(['original']); // Only original shard
     });

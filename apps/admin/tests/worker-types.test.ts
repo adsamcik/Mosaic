@@ -7,14 +7,14 @@
 
 import { describe, expect, it } from 'vitest';
 import type {
-    Bounds,
-    CryptoWorkerApi,
-    DbWorkerApi,
-    DecryptedManifest,
-    EncryptedShard,
-    GeoPoint,
-    GeoWorkerApi,
-    PhotoMeta,
+  Bounds,
+  CryptoWorkerApi,
+  DbWorkerApi,
+  DecryptedManifest,
+  EncryptedShard,
+  GeoPoint,
+  GeoWorkerApi,
+  PhotoMeta,
 } from '../src/workers/types';
 
 describe('PhotoMeta type', () => {
@@ -108,11 +108,11 @@ describe('GeoPoint type', () => {
     const point: GeoPoint = {
       id: 'photo-123',
       lat: 40.7128,
-      lng: -74.0060,
+      lng: -74.006,
     };
 
     expect(point.lat).toBeCloseTo(40.7128);
-    expect(point.lng).toBeCloseTo(-74.0060);
+    expect(point.lng).toBeCloseTo(-74.006);
   });
 });
 

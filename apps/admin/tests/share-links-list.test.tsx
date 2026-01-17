@@ -28,7 +28,9 @@ function createMockShareLinkInfo(id: string, overrides = {}): ShareLinkInfo {
 }
 
 // Helper to render ShareLinksList
-function renderShareLinksList(props: Partial<Parameters<typeof ShareLinksList>[0]> = {}) {
+function renderShareLinksList(
+  props: Partial<Parameters<typeof ShareLinksList>[0]> = {},
+) {
   const defaultProps = {
     shareLinks: [],
     isLoading: false,
@@ -48,9 +50,12 @@ function renderShareLinksList(props: Partial<Parameters<typeof ShareLinksList>[0
     root.render(createElement(ShareLinksList, { ...defaultProps, ...props }));
   });
 
-  const getByTestId = (testId: string) => document.querySelector(`[data-testid="${testId}"]`);
-  const queryByTestId = (testId: string) => document.querySelector(`[data-testid="${testId}"]`);
-  const getAllByTestId = (testId: string) => document.querySelectorAll(`[data-testid="${testId}"]`);
+  const getByTestId = (testId: string) =>
+    document.querySelector(`[data-testid="${testId}"]`);
+  const queryByTestId = (testId: string) =>
+    document.querySelector(`[data-testid="${testId}"]`);
+  const getAllByTestId = (testId: string) =>
+    document.querySelectorAll(`[data-testid="${testId}"]`);
 
   const cleanup = () => {
     act(() => {
@@ -59,13 +64,29 @@ function renderShareLinksList(props: Partial<Parameters<typeof ShareLinksList>[0
     container.remove();
   };
 
-  const rerender = (newProps: Partial<Parameters<typeof ShareLinksList>[0]>) => {
+  const rerender = (
+    newProps: Partial<Parameters<typeof ShareLinksList>[0]>,
+  ) => {
     act(() => {
-      root.render(createElement(ShareLinksList, { ...defaultProps, ...props, ...newProps }));
+      root.render(
+        createElement(ShareLinksList, {
+          ...defaultProps,
+          ...props,
+          ...newProps,
+        }),
+      );
     });
   };
 
-  return { container, getByTestId, queryByTestId, getAllByTestId, cleanup, rerender, props: { ...defaultProps, ...props } };
+  return {
+    container,
+    getByTestId,
+    queryByTestId,
+    getAllByTestId,
+    cleanup,
+    rerender,
+    props: { ...defaultProps, ...props },
+  };
 }
 
 describe('ShareLinksList', () => {
@@ -83,10 +104,14 @@ describe('ShareLinksList', () => {
     });
 
     it('shows loading state', () => {
-      const { getByTestId, cleanup } = renderShareLinksList({ isLoading: true });
+      const { getByTestId, cleanup } = renderShareLinksList({
+        isLoading: true,
+      });
 
       expect(getByTestId('share-links-loading')).not.toBeNull();
-      expect(getByTestId('share-links-loading')?.textContent).toContain('Loading');
+      expect(getByTestId('share-links-loading')?.textContent).toContain(
+        'Loading',
+      );
       cleanup();
     });
 
@@ -96,7 +121,9 @@ describe('ShareLinksList', () => {
       });
 
       expect(getByTestId('share-links-error')).not.toBeNull();
-      expect(getByTestId('share-links-error')?.textContent).toContain('Network error');
+      expect(getByTestId('share-links-error')?.textContent).toContain(
+        'Network error',
+      );
       cleanup();
     });
 
@@ -104,7 +131,9 @@ describe('ShareLinksList', () => {
       const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: [] });
 
       expect(getByTestId('share-links-empty')).not.toBeNull();
-      expect(getByTestId('share-links-empty')?.textContent).toContain('No share links');
+      expect(getByTestId('share-links-empty')?.textContent).toContain(
+        'No share links',
+      );
       cleanup();
     });
 
@@ -116,7 +145,9 @@ describe('ShareLinksList', () => {
     });
 
     it('hides create button for non-owner', () => {
-      const { queryByTestId, cleanup } = renderShareLinksList({ isOwner: false });
+      const { queryByTestId, cleanup } = renderShareLinksList({
+        isOwner: false,
+      });
 
       expect(queryByTestId('create-share-link-button')).toBeNull();
       cleanup();
@@ -129,7 +160,9 @@ describe('ShareLinksList', () => {
         createMockShareLinkInfo('link-1'),
         createMockShareLinkInfo('link-2'),
       ];
-      const { getAllByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const { getAllByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
       const items = getAllByTestId('share-link-item');
       expect(items.length).toBe(2);
@@ -137,8 +170,12 @@ describe('ShareLinksList', () => {
     });
 
     it('displays access tier badge', () => {
-      const links = [createMockShareLinkInfo('link-1', { accessTierDisplay: 'Full Access' })];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const links = [
+        createMockShareLinkInfo('link-1', { accessTierDisplay: 'Full Access' }),
+      ];
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
       const badge = getByTestId('tier-badge');
       expect(badge?.textContent).toContain('Full Access');
@@ -147,7 +184,9 @@ describe('ShareLinksList', () => {
 
     it('displays use count', () => {
       const links = [createMockShareLinkInfo('link-1', { useCount: 5 })];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
       const useCount = getByTestId('use-count');
       expect(useCount?.textContent).toContain('5 uses');
@@ -155,8 +194,12 @@ describe('ShareLinksList', () => {
     });
 
     it('displays max uses when set', () => {
-      const links = [createMockShareLinkInfo('link-1', { useCount: 3, maxUses: 10 })];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const links = [
+        createMockShareLinkInfo('link-1', { useCount: 3, maxUses: 10 }),
+      ];
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
       const useCount = getByTestId('use-count');
       expect(useCount?.textContent).toContain('3 uses');
@@ -165,8 +208,12 @@ describe('ShareLinksList', () => {
     });
 
     it('displays expiry date when set', () => {
-      const links = [createMockShareLinkInfo('link-1', { expiryDisplay: 'Jan 15, 2025' })];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const links = [
+        createMockShareLinkInfo('link-1', { expiryDisplay: 'Jan 15, 2025' }),
+      ];
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
       const expiry = getByTestId('expiry-date');
       expect(expiry?.textContent).toContain('Expires');
@@ -176,7 +223,9 @@ describe('ShareLinksList', () => {
 
     it('displays created date', () => {
       const links = [createMockShareLinkInfo('link-1')];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
       const created = getByTestId('created-date');
       expect(created?.textContent).toContain('Created');
@@ -185,7 +234,9 @@ describe('ShareLinksList', () => {
 
     it('shows expired badge for expired links', () => {
       const links = [createMockShareLinkInfo('link-1', { isExpired: true })];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
       expect(getByTestId('expired-badge')).not.toBeNull();
       expect(getByTestId('expired-badge')?.textContent).toContain('Expired');
@@ -196,7 +247,9 @@ describe('ShareLinksList', () => {
   describe('link actions', () => {
     it('has copy button for each link', () => {
       const links = [createMockShareLinkInfo('link-1')];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
       expect(getByTestId('copy-link-button')).not.toBeNull();
       cleanup();
@@ -230,7 +283,9 @@ describe('ShareLinksList', () => {
       const onCreateClick = vi.fn();
       const { getByTestId, cleanup } = renderShareLinksList({ onCreateClick });
 
-      const button = getByTestId('create-share-link-button') as HTMLButtonElement;
+      const button = getByTestId(
+        'create-share-link-button',
+      ) as HTMLButtonElement;
 
       act(() => {
         button.click();
@@ -251,7 +306,9 @@ describe('ShareLinksList', () => {
       // Initially no confirm dialog
       expect(queryByTestId('revoke-confirm-dialog')).toBeNull();
 
-      const revokeButton = getByTestId('revoke-link-button') as HTMLButtonElement;
+      const revokeButton = getByTestId(
+        'revoke-link-button',
+      ) as HTMLButtonElement;
 
       act(() => {
         revokeButton.click();
@@ -270,13 +327,17 @@ describe('ShareLinksList', () => {
         onRevoke,
       });
 
-      const revokeButton = getByTestId('revoke-link-button') as HTMLButtonElement;
+      const revokeButton = getByTestId(
+        'revoke-link-button',
+      ) as HTMLButtonElement;
 
       act(() => {
         revokeButton.click();
       });
 
-      const confirmButton = getByTestId('confirm-revoke-button') as HTMLButtonElement;
+      const confirmButton = getByTestId(
+        'confirm-revoke-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         confirmButton.click();
@@ -293,7 +354,9 @@ describe('ShareLinksList', () => {
         shareLinks: links,
       });
 
-      const revokeButton = getByTestId('revoke-link-button') as HTMLButtonElement;
+      const revokeButton = getByTestId(
+        'revoke-link-button',
+      ) as HTMLButtonElement;
 
       act(() => {
         revokeButton.click();
@@ -301,7 +364,9 @@ describe('ShareLinksList', () => {
 
       expect(getByTestId('revoke-confirm-dialog')).not.toBeNull();
 
-      const cancelButton = getByTestId('cancel-revoke-button') as HTMLButtonElement;
+      const cancelButton = getByTestId(
+        'cancel-revoke-button',
+      ) as HTMLButtonElement;
 
       act(() => {
         cancelButton.click();
@@ -319,7 +384,9 @@ describe('ShareLinksList', () => {
       });
 
       // First click revoke to show the dialog (when not yet revoking)
-      const revokeButton = getByTestId('revoke-link-button') as HTMLButtonElement;
+      const revokeButton = getByTestId(
+        'revoke-link-button',
+      ) as HTMLButtonElement;
 
       act(() => {
         revokeButton.click();
@@ -328,7 +395,9 @@ describe('ShareLinksList', () => {
       // Now set isRevoking to true and rerender to see loading state
       rerender({ isRevoking: true });
 
-      const confirmButton = getByTestId('confirm-revoke-button') as HTMLButtonElement;
+      const confirmButton = getByTestId(
+        'confirm-revoke-button',
+      ) as HTMLButtonElement;
       expect(confirmButton.textContent).toContain('Revoking...');
       expect(confirmButton.disabled).toBe(true);
       cleanup();
@@ -341,7 +410,9 @@ describe('ShareLinksList', () => {
         createMockShareLinkInfo('active', { isRevoked: false }),
         createMockShareLinkInfo('revoked', { isRevoked: true }),
       ];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
       expect(getByTestId('revoked-links-section')).not.toBeNull();
       cleanup();
@@ -349,9 +420,13 @@ describe('ShareLinksList', () => {
 
     it('lists revoked links when section is expanded', () => {
       const links = [createMockShareLinkInfo('revoked', { isRevoked: true })];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
-      const section = getByTestId('revoked-links-section') as HTMLDetailsElement;
+      const section = getByTestId(
+        'revoked-links-section',
+      ) as HTMLDetailsElement;
 
       act(() => {
         section.open = true;
@@ -366,7 +441,9 @@ describe('ShareLinksList', () => {
         createMockShareLinkInfo('revoked-1', { isRevoked: true }),
         createMockShareLinkInfo('revoked-2', { isRevoked: true }),
       ];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
       const section = getByTestId('revoked-links-section');
       expect(section?.textContent).toContain('2');
@@ -397,9 +474,13 @@ describe('ShareLinksList', () => {
   describe('accessibility', () => {
     it('confirm dialog has aria-modal', () => {
       const links = [createMockShareLinkInfo('link-1')];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
-      const revokeButton = getByTestId('revoke-link-button') as HTMLButtonElement;
+      const revokeButton = getByTestId(
+        'revoke-link-button',
+      ) as HTMLButtonElement;
 
       act(() => {
         revokeButton.click();
@@ -412,16 +493,22 @@ describe('ShareLinksList', () => {
 
     it('confirm dialog has aria-labelledby', () => {
       const links = [createMockShareLinkInfo('link-1')];
-      const { getByTestId, cleanup } = renderShareLinksList({ shareLinks: links });
+      const { getByTestId, cleanup } = renderShareLinksList({
+        shareLinks: links,
+      });
 
-      const revokeButton = getByTestId('revoke-link-button') as HTMLButtonElement;
+      const revokeButton = getByTestId(
+        'revoke-link-button',
+      ) as HTMLButtonElement;
 
       act(() => {
         revokeButton.click();
       });
 
       const dialog = getByTestId('revoke-confirm-dialog') as HTMLElement;
-      expect(dialog.getAttribute('aria-labelledby')).toBe('revoke-confirm-title');
+      expect(dialog.getAttribute('aria-labelledby')).toBe(
+        'revoke-confirm-title',
+      );
       cleanup();
     });
   });

@@ -23,16 +23,22 @@ vi.mock('../src/lib/session', () => ({
 
 // Mock components
 vi.mock('../src/components/Auth/LoginForm', () => ({
-  LoginForm: () => createElement('div', { 'data-testid': 'login-form' }, 'Login Form'),
+  LoginForm: () =>
+    createElement('div', { 'data-testid': 'login-form' }, 'Login Form'),
 }));
 
 vi.mock('../src/components/App/AppShell', () => ({
-  AppShell: () => createElement('div', { 'data-testid': 'app-shell' }, 'App Shell'),
+  AppShell: () =>
+    createElement('div', { 'data-testid': 'app-shell' }, 'App Shell'),
 }));
 
 vi.mock('../src/components/Shared/SharedAlbumViewer', () => ({
   SharedAlbumViewer: ({ linkId }: { linkId: string }) =>
-    createElement('div', { 'data-testid': 'shared-album-viewer', 'data-link-id': linkId }, 'Shared Album Viewer'),
+    createElement(
+      'div',
+      { 'data-testid': 'shared-album-viewer', 'data-link-id': linkId },
+      'Shared Album Viewer',
+    ),
 }));
 
 // Import after mocks
@@ -47,10 +53,10 @@ describe('App routing', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    
+
     // Save original location
     originalLocation = window.location;
-    
+
     // Reset session state
     mocks.session.isLoggedIn = false;
     vi.clearAllMocks();
@@ -61,14 +67,14 @@ describe('App routing', () => {
       root.unmount();
     });
     container.remove();
-    
+
     // Restore location
     Object.defineProperty(window, 'location', {
       value: originalLocation,
       writable: true,
       configurable: true,
     });
-    
+
     vi.restoreAllMocks();
     document.body.innerHTML = '';
   });
@@ -88,7 +94,9 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      const viewer = container.querySelector('[data-testid="shared-album-viewer"]');
+      const viewer = container.querySelector(
+        '[data-testid="shared-album-viewer"]',
+      );
       expect(viewer).toBeTruthy();
       expect(viewer?.getAttribute('data-link-id')).toBe('ABC123_-test');
     });
@@ -107,7 +115,9 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      const viewer = container.querySelector('[data-testid="shared-album-viewer"]');
+      const viewer = container.querySelector(
+        '[data-testid="shared-album-viewer"]',
+      );
       expect(viewer?.getAttribute('data-link-id')).toBe('my-link-id-123');
     });
 
@@ -127,8 +137,12 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      expect(container.querySelector('[data-testid="shared-album-viewer"]')).toBeFalsy();
-      expect(container.querySelector('[data-testid="login-form"]')).toBeTruthy();
+      expect(
+        container.querySelector('[data-testid="shared-album-viewer"]'),
+      ).toBeFalsy();
+      expect(
+        container.querySelector('[data-testid="login-form"]'),
+      ).toBeTruthy();
     });
 
     it('should not match /s/ without linkId', async () => {
@@ -147,7 +161,9 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      expect(container.querySelector('[data-testid="shared-album-viewer"]')).toBeFalsy();
+      expect(
+        container.querySelector('[data-testid="shared-album-viewer"]'),
+      ).toBeFalsy();
     });
 
     it('should not match /s/{linkId}/extra path', async () => {
@@ -166,7 +182,9 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      expect(container.querySelector('[data-testid="shared-album-viewer"]')).toBeFalsy();
+      expect(
+        container.querySelector('[data-testid="shared-album-viewer"]'),
+      ).toBeFalsy();
     });
   });
 
@@ -189,7 +207,9 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      expect(container.querySelector('[data-testid="login-form"]')).toBeTruthy();
+      expect(
+        container.querySelector('[data-testid="login-form"]'),
+      ).toBeTruthy();
       expect(container.querySelector('[data-testid="app-shell"]')).toBeFalsy();
     });
 
@@ -230,7 +250,9 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      expect(container.querySelector('[data-testid="shared-album-viewer"]')).toBeTruthy();
+      expect(
+        container.querySelector('[data-testid="shared-album-viewer"]'),
+      ).toBeTruthy();
       expect(container.querySelector('[data-testid="login-form"]')).toBeFalsy();
     });
 
@@ -250,7 +272,9 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      expect(container.querySelector('[data-testid="shared-album-viewer"]')).toBeTruthy();
+      expect(
+        container.querySelector('[data-testid="shared-album-viewer"]'),
+      ).toBeTruthy();
       expect(container.querySelector('[data-testid="app-shell"]')).toBeFalsy();
     });
   });
@@ -259,7 +283,8 @@ describe('App routing', () => {
     it('should match base64url characters in linkId', async () => {
       Object.defineProperty(window, 'location', {
         value: {
-          pathname: '/s/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-',
+          pathname:
+            '/s/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-',
           hash: '#k=secret',
         },
         writable: true,
@@ -270,7 +295,9 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      expect(container.querySelector('[data-testid="shared-album-viewer"]')).toBeTruthy();
+      expect(
+        container.querySelector('[data-testid="shared-album-viewer"]'),
+      ).toBeTruthy();
     });
 
     it('should not match invalid characters in linkId', async () => {
@@ -289,7 +316,9 @@ describe('App routing', () => {
         root.render(createElement(App));
       });
 
-      expect(container.querySelector('[data-testid="shared-album-viewer"]')).toBeFalsy();
+      expect(
+        container.querySelector('[data-testid="shared-album-viewer"]'),
+      ).toBeFalsy();
     });
   });
 });

@@ -108,18 +108,23 @@ export function usePhotoDelete({
   onPhotosDeleted,
 }: UsePhotoDeleteOptions): UsePhotoDeleteResult {
   const photoActions = usePhotoActions();
-  
+
   // Delete dialog state
   const [deleteTarget, setDeleteTarget] = useState<PhotoMeta[] | null>(null);
-  const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<string | undefined>();
+  const [deleteThumbnailUrl, setDeleteThumbnailUrl] = useState<
+    string | undefined
+  >();
 
   /**
    * Trigger delete dialog for a single photo from thumbnail
    */
-  const handleDeletePhoto = useCallback((photo: PhotoMeta, thumbnailUrl?: string) => {
-    setDeleteTarget([photo]);
-    setDeleteThumbnailUrl(thumbnailUrl);
-  }, []);
+  const handleDeletePhoto = useCallback(
+    (photo: PhotoMeta, thumbnailUrl?: string) => {
+      setDeleteTarget([photo]);
+      setDeleteThumbnailUrl(thumbnailUrl);
+    },
+    [],
+  );
 
   /**
    * Trigger delete dialog from lightbox (uses current lightbox photo)
@@ -147,7 +152,7 @@ export function usePhotoDelete({
       } else {
         await photoActions.deletePhotos(
           deleteTarget.map((p) => p.id),
-          albumId
+          albumId,
         );
       }
 
@@ -172,7 +177,15 @@ export function usePhotoDelete({
       console.error('[usePhotoDelete] Photo deletion failed:', err);
       // Keep dialog open so user can see the error message and retry
     }
-  }, [deleteTarget, photoActions, albumId, lightbox, selection, refetch, onPhotosDeleted]);
+  }, [
+    deleteTarget,
+    photoActions,
+    albumId,
+    lightbox,
+    selection,
+    refetch,
+    onPhotosDeleted,
+  ]);
 
   /**
    * Cancel the delete operation and close dialog

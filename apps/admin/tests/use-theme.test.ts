@@ -72,7 +72,7 @@ describe('useTheme', () => {
     // Mock localStorage
     localStorageMock = {};
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(
-      (key) => localStorageMock[key] ?? null
+      (key) => localStorageMock[key] ?? null,
     );
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key, value) => {
       localStorageMock[key] = value;
@@ -90,7 +90,7 @@ describe('useTheme', () => {
       }),
       removeEventListener: vi.fn((_, listener) => {
         const idx = mediaQueryListeners.indexOf(
-          listener as (e: MediaQueryListEvent) => void
+          listener as (e: MediaQueryListEvent) => void,
         );
         if (idx !== -1) mediaQueryListeners.splice(idx, 1);
       }),
@@ -100,7 +100,9 @@ describe('useTheme', () => {
       removeListener: vi.fn(),
     };
 
-    vi.spyOn(window, 'matchMedia').mockReturnValue(mockMediaQuery as unknown as MediaQueryList);
+    vi.spyOn(window, 'matchMedia').mockReturnValue(
+      mockMediaQuery as unknown as MediaQueryList,
+    );
 
     // Reset document attribute
     document.documentElement.removeAttribute('data-theme');
@@ -234,7 +236,7 @@ describe('useTheme', () => {
     act(() => {
       mockMediaQuery.matches = true;
       mediaQueryListeners.forEach((listener) =>
-        listener({ matches: true } as MediaQueryListEvent)
+        listener({ matches: true } as MediaQueryListEvent),
       );
     });
 
@@ -260,7 +262,7 @@ describe('useTheme', () => {
     act(() => {
       mockMediaQuery.matches = true;
       mediaQueryListeners.forEach((listener) =>
-        listener({ matches: true } as MediaQueryListEvent)
+        listener({ matches: true } as MediaQueryListEvent),
       );
     });
 

@@ -11,16 +11,20 @@
 
 import { fromBase64, getApi, toBase64 } from './api';
 import type {
-    AlbumMember,
-    CreateEpochKeyRequest,
-    RotateEpochRequest,
-    ShareLinkKeyUpdateRequest,
-    ShareLinkWithSecretResponse,
+  AlbumMember,
+  CreateEpochKeyRequest,
+  RotateEpochRequest,
+  ShareLinkKeyUpdateRequest,
+  ShareLinkWithSecretResponse,
 } from './api-types';
 import { getCryptoClient } from './crypto-client';
 import { getDbClient } from './db-client';
 import { fetchAndUnwrapEpochKeys } from './epoch-key-service';
-import { clearAlbumKeys, setEpochKey, type EpochKeyBundle } from './epoch-key-store';
+import {
+  clearAlbumKeys,
+  setEpochKey,
+  type EpochKeyBundle,
+} from './epoch-key-store';
 import { createLogger } from './logger';
 
 const log = createLogger('epoch-rotation-service');
@@ -30,7 +34,7 @@ export class EpochRotationError extends Error {
   constructor(
     message: string,
     public readonly code: EpochRotationErrorCode,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'EpochRotationError';
@@ -115,7 +119,7 @@ export enum RotationStep {
  */
 export async function rotateEpoch(
   albumId: string,
-  onProgress?: RotationProgressCallback
+  onProgress?: RotationProgressCallback,
 ): Promise<EpochRotationResult> {
   const api = getApi();
   const crypto = await getCryptoClient();
@@ -130,7 +134,7 @@ export async function rotateEpoch(
     throw new EpochRotationError(
       'Failed to get album information',
       EpochRotationErrorCode.ALBUM_FETCH_FAILED,
-      err instanceof Error ? err : undefined
+      err instanceof Error ? err : undefined,
     );
   }
 
@@ -138,14 +142,18 @@ export async function rotateEpoch(
   // SECURITY: This MUST be completely random, never derived from previous keys
   onProgress?.(RotationStep.GENERATING_KEY);
   const newEpochId = currentEpochId + 1;
-  let newEpochKey: { epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array };
+  let newEpochKey: {
+    epochSeed: Uint8Array;
+    signPublicKey: Uint8Array;
+    signSecretKey: Uint8Array;
+  };
   try {
     newEpochKey = await crypto.generateEpochKey(newEpochId);
   } catch (err) {
     throw new EpochRotationError(
       'Failed to generate new epoch key',
       EpochRotationErrorCode.KEY_GENERATION_FAILED,
-      err instanceof Error ? err : undefined
+      err instanceof Error ? err : undefined,
     );
   }
 
@@ -158,14 +166,14 @@ export async function rotateEpoch(
     throw new EpochRotationError(
       'Failed to fetch remaining members',
       EpochRotationErrorCode.MEMBERS_FETCH_FAILED,
-      err instanceof Error ? err : undefined
+      err instanceof Error ? err : undefined,
     );
   }
 
   if (members.length === 0) {
     throw new EpochRotationError(
       'No members to distribute keys to',
-      EpochRotationErrorCode.NO_RECIPIENTS
+      EpochRotationErrorCode.NO_RECIPIENTS,
     );
   }
 
@@ -178,7 +186,7 @@ export async function rotateEpoch(
       throw new EpochRotationError(
         'Identity not derived - please log in again',
         EpochRotationErrorCode.IDENTITY_NOT_DERIVED,
-        err instanceof Error ? err : undefined
+        err instanceof Error ? err : undefined,
       );
     }
   }
@@ -186,7 +194,7 @@ export async function rotateEpoch(
   if (!signerPubkey) {
     throw new EpochRotationError(
       'Identity not derived - please log in again',
-      EpochRotationErrorCode.IDENTITY_NOT_DERIVED
+      EpochRotationErrorCode.IDENTITY_NOT_DERIVED,
     );
   }
 
@@ -200,20 +208,20 @@ export async function rotateEpoch(
     if (!recipientPubkey) {
       throw new EpochRotationError(
         `Member ${member.userId} has no identity public key`,
-        EpochRotationErrorCode.RECIPIENT_NO_PUBKEY
+        EpochRotationErrorCode.RECIPIENT_NO_PUBKEY,
       );
     }
 
     try {
       const recipientPubkeyBytes = fromBase64(recipientPubkey);
-      
+
       const sealed = await crypto.createEpochKeyBundle(
         albumId,
         newEpochId,
         newEpochKey.epochSeed,
         newEpochKey.signPublicKey,
         newEpochKey.signSecretKey,
-        recipientPubkeyBytes
+        recipientPubkeyBytes,
       );
 
       epochKeys.push({
@@ -228,7 +236,7 @@ export async function rotateEpoch(
       throw new EpochRotationError(
         `Failed to seal key bundle for member ${member.userId}`,
         EpochRotationErrorCode.SEAL_FAILED,
-        err instanceof Error ? err : undefined
+        err instanceof Error ? err : undefined,
       );
     }
   }
@@ -242,7 +250,7 @@ export async function rotateEpoch(
     throw new EpochRotationError(
       'Failed to fetch share links',
       EpochRotationErrorCode.SHARE_LINKS_FETCH_FAILED,
-      err instanceof Error ? err : undefined
+      err instanceof Error ? err : undefined,
     );
   }
 
@@ -250,7 +258,7 @@ export async function rotateEpoch(
   onProgress?.(RotationStep.WRAPPING_SHARE_LINK_KEYS);
   const shareLinkKeys = await wrapKeysForShareLinks(
     shareLinks,
-    newEpochKey.epochSeed
+    newEpochKey.epochSeed,
   );
 
   // Step 8: Call rotate API with member keys and share link keys
@@ -265,7 +273,7 @@ export async function rotateEpoch(
     throw new EpochRotationError(
       'Failed to rotate epoch on server',
       EpochRotationErrorCode.ROTATE_FAILED,
-      err instanceof Error ? err : undefined
+      err instanceof Error ? err : undefined,
     );
   }
 
@@ -310,10 +318,11 @@ export async function rotateEpoch(
  */
 async function wrapKeysForShareLinks(
   shareLinks: ShareLinkWithSecretResponse[],
-  epochSeed: Uint8Array
+  epochSeed: Uint8Array,
 ): Promise<ShareLinkKeyUpdateRequest[]> {
   // Import crypto functions dynamically to avoid circular deps
-  const { deriveTierKeys, deriveLinkKeys, wrapTierKeyForLink, AccessTier } = await import('@mosaic/crypto');
+  const { deriveTierKeys, deriveLinkKeys, wrapTierKeyForLink, AccessTier } =
+    await import('@mosaic/crypto');
 
   const crypto = await getCryptoClient();
   const results: ShareLinkKeyUpdateRequest[] = [];
@@ -339,7 +348,11 @@ async function wrapKeysForShareLinks(
       const wrappedKeys: ShareLinkKeyUpdateRequest['wrappedKeys'] = [];
 
       // Always wrap thumb key (tier 1)
-      const wrappedThumb = wrapTierKeyForLink(tierKeys.thumbKey, AccessTier.THUMB, wrappingKey);
+      const wrappedThumb = wrapTierKeyForLink(
+        tierKeys.thumbKey,
+        AccessTier.THUMB,
+        wrappingKey,
+      );
       wrappedKeys.push({
         tier: 1,
         nonce: toBase64(wrappedThumb.nonce),
@@ -348,7 +361,11 @@ async function wrapKeysForShareLinks(
 
       // Wrap preview key if access tier >= 2
       if (link.accessTier >= 2) {
-        const wrappedPreview = wrapTierKeyForLink(tierKeys.previewKey, AccessTier.PREVIEW, wrappingKey);
+        const wrappedPreview = wrapTierKeyForLink(
+          tierKeys.previewKey,
+          AccessTier.PREVIEW,
+          wrappingKey,
+        );
         wrappedKeys.push({
           tier: 2,
           nonce: toBase64(wrappedPreview.nonce),
@@ -358,7 +375,11 @@ async function wrapKeysForShareLinks(
 
       // Wrap full key if access tier >= 3
       if (link.accessTier >= 3) {
-        const wrappedFull = wrapTierKeyForLink(tierKeys.fullKey, AccessTier.FULL, wrappingKey);
+        const wrappedFull = wrapTierKeyForLink(
+          tierKeys.fullKey,
+          AccessTier.FULL,
+          wrappingKey,
+        );
         wrappedKeys.push({
           tier: 3,
           nonce: toBase64(wrappedFull.nonce),

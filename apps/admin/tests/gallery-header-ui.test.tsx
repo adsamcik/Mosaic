@@ -17,23 +17,29 @@ vi.mock('../src/contexts/AlbumPermissionsContext', () => ({
     canManageMembers: true,
     canManageShareLinks: true,
   }),
-  AlbumPermissionsProvider: ({ children }: { children: React.ReactNode }) => children,
+  AlbumPermissionsProvider: ({ children }: { children: React.ReactNode }) =>
+    children,
 }));
 
 // Mock the UploadButton
 vi.mock('../src/components/Upload/UploadButton', () => ({
-  UploadButton: () => createElement('button', { 'data-testid': 'upload-button' }, 'Upload'),
+  UploadButton: () =>
+    createElement('button', { 'data-testid': 'upload-button' }, 'Upload'),
 }));
 
 // Mock the AlbumSettingsDropdown
 vi.mock('../src/components/Gallery/AlbumSettingsDropdown', () => ({
-  AlbumSettingsDropdown: () => createElement('div', { 'data-testid': 'album-settings' }, 'Settings'),
+  AlbumSettingsDropdown: () =>
+    createElement('div', { 'data-testid': 'album-settings' }, 'Settings'),
 }));
 
 // Mock the SearchInput
 vi.mock('../src/components/Gallery/SearchInput', () => ({
   SearchInput: ({ onSearch }: { onSearch: (q: string) => void }) =>
-    createElement('input', { 'data-testid': 'search-input', onChange: (e: any) => onSearch(e.target.value) }),
+    createElement('input', {
+      'data-testid': 'search-input',
+      onChange: (e: any) => onSearch(e.target.value),
+    }),
 }));
 
 describe('GalleryHeader - View Toggles', () => {
@@ -67,7 +73,7 @@ describe('GalleryHeader - View Toggles', () => {
           onSearch: vi.fn(),
           onShowMembers: vi.fn(),
           onShowShareLinks: vi.fn(),
-        })
+        }),
       );
     });
 
@@ -89,7 +95,7 @@ describe('GalleryHeader - View Toggles', () => {
           onSearch: vi.fn(),
           onShowMembers: vi.fn(),
           onShowShareLinks: vi.fn(),
-        })
+        }),
       );
     });
 
@@ -122,7 +128,7 @@ describe('GalleryHeader - View Toggles', () => {
           onSearch: vi.fn(),
           onShowMembers: vi.fn(),
           onShowShareLinks: vi.fn(),
-        })
+        }),
       );
     });
 
@@ -145,15 +151,15 @@ describe('GalleryHeader - View Toggles', () => {
           onSearch: vi.fn(),
           onShowMembers: vi.fn(),
           onShowShareLinks: vi.fn(),
-        })
+        }),
       );
     });
 
     const viewToggleButtons = container.querySelectorAll('.view-toggle-btn');
-    
+
     // Click on a non-active button (grid mode)
     const gridButton = Array.from(viewToggleButtons).find(
-      (btn) => !btn.classList.contains('view-toggle-btn--active')
+      (btn) => !btn.classList.contains('view-toggle-btn--active'),
     ) as HTMLButtonElement;
 
     if (gridButton) {
@@ -178,12 +184,14 @@ describe('GalleryHeader - View Toggles', () => {
           onSearch: vi.fn(),
           onShowMembers: vi.fn(),
           onShowShareLinks: vi.fn(),
-        })
+        }),
       );
     });
 
     // Verify the header renders - the mocked AlbumSettingsDropdown should be present
-    expect(container.querySelector('[data-testid="album-settings"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="album-settings"]'),
+    ).not.toBeNull();
   });
 
   it('shows map toggle only when geotagged photos exist', () => {
@@ -199,7 +207,7 @@ describe('GalleryHeader - View Toggles', () => {
           onSearch: vi.fn(),
           onShowMembers: vi.fn(),
           onShowShareLinks: vi.fn(),
-        })
+        }),
       );
     });
 

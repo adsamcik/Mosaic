@@ -14,8 +14,8 @@ import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoDelete } from '../../hooks/usePhotoDelete';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
 import {
-    computeJustifiedLayout,
-    type JustifiedRow,
+  computeJustifiedLayout,
+  type JustifiedRow,
 } from '../../lib/justified-layout';
 import '../../styles/upload.css';
 import type { PhotoMeta } from '../../workers/types';
@@ -52,114 +52,134 @@ interface PhotoGridProps {
   selection?: UseSelectionReturn;
 }
 
-type LayoutItem = 
+type LayoutItem =
   | { type: 'header'; date: string; top: number; height: number; id: string }
-  | { type: 'row'; row: JustifiedRow; top: number; height: number; rowIndex: number; id: string };
+  | {
+      type: 'row';
+      row: JustifiedRow;
+      top: number;
+      height: number;
+      rowIndex: number;
+      id: string;
+    };
 
 /**
  * Helper to format date groups
  */
-function formatDateHeader(dateString: string, t: (key: string) => string): string {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return t('gallery.date.unknown');
-    
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
+function formatDateHeader(
+  dateString: string,
+  t: (key: string) => string,
+): string {
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return t('gallery.date.unknown');
 
-    if (date.toDateString() === today.toDateString()) {
-        return t('gallery.date.today');
-    }
-    if (date.toDateString() === yesterday.toDateString()) {
-        return t('gallery.date.yesterday');
-    }
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
 
-    return new Intl.DateTimeFormat('en-US', { 
-        weekday: 'long', 
-        month: 'short', 
-        day: 'numeric',
-        year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
-    }).format(date);
+  if (date.toDateString() === today.toDateString()) {
+    return t('gallery.date.today');
+  }
+  if (date.toDateString() === yesterday.toDateString()) {
+    return t('gallery.date.yesterday');
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
+  }).format(date);
 }
 
 /**
  * Group photos by date string (YYYY-MM-DD)
  */
 function groupPhotosByDate(photos: PhotoMeta[]) {
-    const groups: Record<string, PhotoMeta[]> = {};
-    const sorted = [...photos].sort((a, b) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+  const groups: Record<string, PhotoMeta[]> = {};
+  const sorted = [...photos].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 
-    for (const photo of sorted) {
-        // Use local date string for grouping to avoid timezone splits if possible, 
-        // but ISO string split is safer for consistency if timezones aren't strict.
-        // Assuming createdAt is ISO UTC.
-        const dateKey = new Date(photo.createdAt).toDateString(); 
-        if (!groups[dateKey]) {
-            groups[dateKey] = [];
-        }
-        groups[dateKey].push(photo);
+  for (const photo of sorted) {
+    // Use local date string for grouping to avoid timezone splits if possible,
+    // but ISO string split is safer for consistency if timezones aren't strict.
+    // Assuming createdAt is ISO UTC.
+    const dateKey = new Date(photo.createdAt).toDateString();
+    if (!groups[dateKey]) {
+      groups[dateKey] = [];
     }
-    
-    // Sort keys descending (newest first)
-    return Object.entries(groups).sort((a, b) => 
-        new Date(b[0]).getTime() - new Date(a[0]).getTime()
-    );
+    groups[dateKey].push(photo);
+  }
+
+  // Sort keys descending (newest first)
+  return Object.entries(groups).sort(
+    (a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime(),
+  );
 }
 
 /**
  * Virtualized Justified Photo Grid Component
  * Uses a Google Photos-style layout with efficient rendering
  */
-export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotosDeleted, selection }: PhotoGridProps) {
+export function PhotoGrid({
+  albumId,
+  photos,
+  isLoading,
+  error,
+  refetch,
+  onPhotosDeleted,
+  selection,
+}: PhotoGridProps) {
   const { t } = useTranslation();
   const [containerWidth, setContainerWidth] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
-  
+
   // Store the actual container element for scroll/height access
   const containerElementRef = useRef<HTMLDivElement | null>(null);
-  
+
   // Store ResizeObserver instance so we can clean it up
   const observerRef = useRef<ResizeObserver | null>(null);
-  
+
   // Callback ref - called when the container element is attached/detached from DOM
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     // Store the element
     containerElementRef.current = node;
-    
+
     // Clean up previous observer
     if (observerRef.current) {
       observerRef.current.disconnect();
       observerRef.current = null;
     }
-    
+
     if (node) {
       // Create new observer for this node
       const observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
-           // Use contentRect for accurate inner width
+          // Use contentRect for accurate inner width
           setContainerWidth(entry.contentRect.width);
         }
       });
-      
+
       observer.observe(node);
       observerRef.current = observer;
-      
+
       // Set initial width
       setContainerWidth(node.clientWidth || node.getBoundingClientRect().width);
     }
   }, []);
 
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
-  
+
   // Sort photos by createdAt descending to match display order
   // This ensures lightbox navigation follows the visual order
-  const sortedPhotos = useMemo(() => 
-    [...photos].sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    ),
-    [photos]
+  const sortedPhotos = useMemo(
+    () =>
+      [...photos].sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [photos],
   );
 
   // Animation system for photo tiles
@@ -178,7 +198,10 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
 
   // Create animation lookup map for quick access during render
   const animationLookup = useMemo(() => {
-    const lookup = new Map<string, { isExiting: boolean; staggerDelay: number; hasBeenSeen: boolean }>();
+    const lookup = new Map<
+      string,
+      { isExiting: boolean; staggerDelay: number; hasBeenSeen: boolean }
+    >();
     for (const item of animatedItems) {
       lookup.set(item.key, {
         isExiting: item.isExiting,
@@ -188,7 +211,7 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
     }
     return lookup;
   }, [animatedItems, getStaggerDelay, hasBeenSeen]);
-  
+
   const lightbox = useLightbox(sortedPhotos);
   const permissions = useAlbumPermissions();
 
@@ -226,35 +249,35 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
     currentTop += PHOTO_GAP;
 
     for (const [dateString, groupPhotos] of grouped) {
-        // Add Header
+      // Add Header
+      items.push({
+        type: 'header',
+        date: formatDateHeader(dateString, t),
+        top: currentTop,
+        height: HEADER_HEIGHT,
+        id: `header-${dateString}`,
+      });
+      currentTop += HEADER_HEIGHT;
+
+      // Compute rows for this group
+      const rows = computeJustifiedLayout(groupPhotos, {
+        containerWidth,
+        targetRowHeight: TARGET_ROW_HEIGHT,
+        gap: PHOTO_GAP,
+      });
+
+      // Add Rows
+      rows.forEach((row, idx) => {
         items.push({
-            type: 'header',
-            date: formatDateHeader(dateString, t),
-            top: currentTop,
-            height: HEADER_HEIGHT,
-            id: `header-${dateString}`
+          type: 'row',
+          row,
+          top: currentTop,
+          height: row.height,
+          rowIndex: idx,
+          id: `row-${dateString}-${idx}`,
         });
-        currentTop += HEADER_HEIGHT;
-
-        // Compute rows for this group
-        const rows = computeJustifiedLayout(groupPhotos, {
-            containerWidth,
-            targetRowHeight: TARGET_ROW_HEIGHT,
-            gap: PHOTO_GAP,
-        });
-
-        // Add Rows
-        rows.forEach((row, idx) => {
-            items.push({
-                type: 'row',
-                row,
-                top: currentTop,
-                height: row.height,
-                rowIndex: idx,
-                id: `row-${dateString}-${idx}`
-            });
-            currentTop += row.height + PHOTO_GAP;
-        });
+        currentTop += row.height + PHOTO_GAP;
+      });
     }
 
     return items;
@@ -273,37 +296,36 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
 
   // Compute visible items for virtualization
   const visibleItems = useMemo(() => {
-      const overscan = 500; // pixels
-      const startY = Math.max(0, scrollTop - overscan);
-      const endY = scrollTop + viewportHeight + overscan;
+    const overscan = 500; // pixels
+    const startY = Math.max(0, scrollTop - overscan);
+    const endY = scrollTop + viewportHeight + overscan;
 
-      // Binary search could be faster, but linear scan is fine for typical album sizes (<10k rows) 
-      // since we only render visible ones. Optimization: find start index via binary search.
-      
-      let startIndex = 0;
-      let endIndex = layoutItems.length - 1;
+    // Binary search could be faster, but linear scan is fine for typical album sizes (<10k rows)
+    // since we only render visible ones. Optimization: find start index via binary search.
 
-      // Simple find
-      for (let i = 0; i < layoutItems.length; i++) {
-          if (layoutItems[i]!.top + layoutItems[i]!.height >= startY) {
-              startIndex = i;
-              break;
-          }
+    let startIndex = 0;
+    let endIndex = layoutItems.length - 1;
+
+    // Simple find
+    for (let i = 0; i < layoutItems.length; i++) {
+      if (layoutItems[i]!.top + layoutItems[i]!.height >= startY) {
+        startIndex = i;
+        break;
       }
+    }
 
-      for (let i = startIndex; i < layoutItems.length; i++) {
-          if (layoutItems[i]!.top > endY) {
-              endIndex = i - 1;
-              break;
-          }
-          endIndex = i;
+    for (let i = startIndex; i < layoutItems.length; i++) {
+      if (layoutItems[i]!.top > endY) {
+        endIndex = i - 1;
+        break;
       }
-      
-      if (layoutItems.length === 0) return [];
-      
-      return layoutItems.slice(startIndex, endIndex + 1);
+      endIndex = i;
+    }
+
+    if (layoutItems.length === 0) return [];
+
+    return layoutItems.slice(startIndex, endIndex + 1);
   }, [layoutItems, scrollTop, viewportHeight]);
-
 
   // Handle scroll
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -325,7 +347,12 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
     }
 
     return queue;
-  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, sortedPhotos]);
+  }, [
+    lightbox.isOpen,
+    lightbox.currentIndex,
+    lightbox.currentPhoto,
+    sortedPhotos,
+  ]);
 
   // Handle photo click to open lightbox
   const handlePhotoClick = useCallback(
@@ -338,23 +365,26 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
         }
       }
     },
-    [isSelectionMode, lightbox, sortedPhotos]
+    [isSelectionMode, lightbox, sortedPhotos],
   );
 
   // Handle selection change for a single photo (checkbox click)
-  const handleSelectionChange = useCallback((photoId: string, selected: boolean) => {
-    if (selection) {
-      if (selected) {
-        // Enter selection mode if not already in it
-        if (!selection.isSelectionMode) {
-          selection.enterSelectionMode();
+  const handleSelectionChange = useCallback(
+    (photoId: string, selected: boolean) => {
+      if (selection) {
+        if (selected) {
+          // Enter selection mode if not already in it
+          if (!selection.isSelectionMode) {
+            selection.enterSelectionMode();
+          }
+          selection.selectPhoto(photoId);
+        } else {
+          selection.deselectPhoto(photoId);
         }
-        selection.selectPhoto(photoId);
-      } else {
-        selection.deselectPhoto(photoId);
       }
-    }
-  }, [selection]);
+    },
+    [selection],
+  );
 
   // Loading state
   if (isLoading || keysLoading) {
@@ -370,7 +400,9 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
   if (error) {
     return (
       <div className="photo-grid-error" data-testid="photo-grid-error">
-        <p>{t('gallery.error.loadFailed')}: {error.message}</p>
+        <p>
+          {t('gallery.error.loadFailed')}: {error.message}
+        </p>
       </div>
     );
   }
@@ -390,9 +422,22 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
       >
         {photos.length === 0 ? (
           <div className="photo-grid-empty" data-testid="photo-grid-empty">
-             {/* Using existing empty state styles */}
+            {/* Using existing empty state styles */}
             <div className="empty-state-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+                <circle cx="12" cy="13" r="3" />
+              </svg>
             </div>
             <h3>No photos yet</h3>
             {permissions.canUpload ? (
@@ -402,95 +447,97 @@ export function PhotoGrid({ albumId, photos, isLoading, error, refetch, onPhotos
             )}
           </div>
         ) : (
-        <div
-          className="photo-grid-content"
-          style={{ height: totalHeight, position: 'relative' }}
-        >
-          {visibleItems.map((item) => {
-            if (item.type === 'header') {
+          <div
+            className="photo-grid-content"
+            style={{ height: totalHeight, position: 'relative' }}
+          >
+            {visibleItems.map((item) => {
+              if (item.type === 'header') {
                 return (
-                    <div
-                        key={item.id}
-                        className="photo-grid-header"
-                        style={{
-                            position: 'absolute',
-                            top: item.top,
-                            left: 0,
-                            right: 0,
-                            height: item.height,
-                            paddingLeft: '16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            fontWeight: 600,
-                            color: 'var(--text-secondary)',
-                            zIndex: 1
-                        }}
-                    >
-                        {item.date}
-                    </div>
+                  <div
+                    key={item.id}
+                    className="photo-grid-header"
+                    style={{
+                      position: 'absolute',
+                      top: item.top,
+                      left: 0,
+                      right: 0,
+                      height: item.height,
+                      paddingLeft: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      fontWeight: 600,
+                      color: 'var(--text-secondary)',
+                      zIndex: 1,
+                    }}
+                  >
+                    {item.date}
+                  </div>
                 );
-            }
+              }
 
-            // It's a row
-            return (
-              <div
-                key={item.id}
-                className="photo-grid-row"
-                style={{
-                  position: 'absolute',
-                  top: item.top,
-                  left: 0,
-                  right: 0,
-                  height: item.height,
-                  display: 'flex',
-                  gap: PHOTO_GAP,
-                }}
-                data-testid="photo-grid-row"
-              >
-                {item.row.photos.map(({ photo, width, height }) => {
-                  const epochReadKey = epochKeys.get(photo.epochId);
-                  const isSelected = selectedIds.has(photo.id);
-                  
-                  // Get animation state for this photo
-                  const animState = animationLookup.get(photo.id);
-                  const skipAnimation = isInitialLoad || !animState;
+              // It's a row
+              return (
+                <div
+                  key={item.id}
+                  className="photo-grid-row"
+                  style={{
+                    position: 'absolute',
+                    top: item.top,
+                    left: 0,
+                    right: 0,
+                    height: item.height,
+                    display: 'flex',
+                    gap: PHOTO_GAP,
+                  }}
+                  data-testid="photo-grid-row"
+                >
+                  {item.row.photos.map(({ photo, width, height }) => {
+                    const epochReadKey = epochKeys.get(photo.epochId);
+                    const isSelected = selectedIds.has(photo.id);
 
-                  return (
-                    <AnimatedTile
-                      key={photo.id}
-                      itemKey={photo.id}
-                      skipAnimation={skipAnimation}
-                      isExiting={animState?.isExiting ?? false}
-                      onExitComplete={() => handleExitComplete(photo.id)}
-                      staggerDelay={animState?.staggerDelay ?? 0}
-                      hasBeenSeen={animState?.hasBeenSeen ?? false}
-                      style={{
-                        width,
-                        height,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <JustifiedPhotoThumbnail
-                        photo={photo}
-                        width={width}
-                        height={height}
-                        epochReadKey={epochReadKey}
-                        isSelected={isSelected}
-                        selectionMode={isSelectionMode}
-                        showDelete={permissions.canDelete && !photo.isPending}
-                        onClick={() => handlePhotoClick(photo)}
-                        onSelectionChange={(selected: boolean) =>
-                          handleSelectionChange(photo.id, selected)
-                        }
-                        onDelete={(thumbnailUrl) => handleDeletePhoto(photo, thumbnailUrl)}
-                      />
-                    </AnimatedTile>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
+                    // Get animation state for this photo
+                    const animState = animationLookup.get(photo.id);
+                    const skipAnimation = isInitialLoad || !animState;
+
+                    return (
+                      <AnimatedTile
+                        key={photo.id}
+                        itemKey={photo.id}
+                        skipAnimation={skipAnimation}
+                        isExiting={animState?.isExiting ?? false}
+                        onExitComplete={() => handleExitComplete(photo.id)}
+                        staggerDelay={animState?.staggerDelay ?? 0}
+                        hasBeenSeen={animState?.hasBeenSeen ?? false}
+                        style={{
+                          width,
+                          height,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <JustifiedPhotoThumbnail
+                          photo={photo}
+                          width={width}
+                          height={height}
+                          epochReadKey={epochReadKey}
+                          isSelected={isSelected}
+                          selectionMode={isSelectionMode}
+                          showDelete={permissions.canDelete && !photo.isPending}
+                          onClick={() => handlePhotoClick(photo)}
+                          onSelectionChange={(selected: boolean) =>
+                            handleSelectionChange(photo.id, selected)
+                          }
+                          onDelete={(thumbnailUrl) =>
+                            handleDeletePhoto(photo, thumbnailUrl)
+                          }
+                        />
+                      </AnimatedTile>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 

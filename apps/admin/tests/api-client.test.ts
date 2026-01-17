@@ -20,7 +20,11 @@ describe('ApiError', () => {
   });
 
   it('includes optional body', () => {
-    const error = new ApiError(400, 'Bad Request', '{"error": "validation failed"}');
+    const error = new ApiError(
+      400,
+      'Bad Request',
+      '{"error": "validation failed"}',
+    );
 
     expect(error.body).toBe('{"error": "validation failed"}');
   });

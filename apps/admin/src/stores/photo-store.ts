@@ -8,24 +8,28 @@ import { immer } from 'zustand/middleware/immer';
 export type PhotoStatus = 'stable' | 'pending' | 'syncing' | 'deleting';
 
 /** Current action during upload */
-export type UploadAction = 'waiting' | 'encrypting' | 'uploading' | 'finalizing';
+export type UploadAction =
+  | 'waiting'
+  | 'encrypting'
+  | 'uploading'
+  | 'finalizing';
 
 export interface PhotoItem {
   assetId: string;
   albumId: string;
   status: PhotoStatus;
-  
+
   // Metadata (available for stable/syncing items)
   encryptedMetadata?: Uint8Array;
   thumbnailUrl?: string;
   createdAt?: Date;
-  
+
   // Pending-specific fields
   localBlobUrl?: string;
   uploadProgress?: number;
   uploadAction?: UploadAction;
   error?: string;
-  
+
   // For optimistic delete recovery
   previousStatus?: PhotoStatus;
 }
@@ -49,48 +53,56 @@ export interface PhotoStoreActions {
   // Album management
   initAlbum: (albumId: string) => void;
   setActiveAlbum: (albumId: string | null) => void;
-  
+
   // Fetch lifecycle
   startFetch: (albumId: string) => void;
   completeFetch: (
     albumId: string,
     items: Array<Omit<PhotoItem, 'status' | 'albumId'>>,
     cursor?: string,
-    hasMore?: boolean
+    hasMore?: boolean,
   ) => void;
   failFetch: (albumId: string, error: string) => void;
-  
+
   // Pending upload lifecycle
   addPending: (albumId: string, assetId: string, localBlobUrl: string) => void;
-  updateProgress: (albumId: string, assetId: string, progress: number, action?: UploadAction) => void;
+  updateProgress: (
+    albumId: string,
+    assetId: string,
+    progress: number,
+    action?: UploadAction,
+  ) => void;
   transitionToSyncing: (albumId: string, assetId: string) => void;
   promoteToStable: (
     albumId: string,
     assetId: string,
-    metadata: Pick<PhotoItem, 'encryptedMetadata' | 'thumbnailUrl' | 'createdAt'>
+    metadata: Pick<
+      PhotoItem,
+      'encryptedMetadata' | 'thumbnailUrl' | 'createdAt'
+    >,
   ) => void;
   markUploadFailed: (albumId: string, assetId: string, error: string) => void;
   removePending: (albumId: string, assetId: string) => void;
-  
+
   // Delete lifecycle
   markDeleting: (albumId: string, assetId: string) => void;
   confirmDeleted: (albumId: string, assetId: string) => void;
   revertDelete: (albumId: string, assetId: string) => void;
-  
+
   // Server sync lifecycle (from sync-coordinator)
   addStableFromServer: (
     albumId: string,
     assetId: string,
     thumbnailUrl?: string,
-    createdAt?: Date
+    createdAt?: Date,
   ) => void;
   updatePhotoFromServer: (
     albumId: string,
     assetId: string,
     thumbnailUrl?: string,
-    createdAt?: Date
+    createdAt?: Date,
   ) => void;
-  
+
   // Selectors
   getAlbumState: (albumId: string) => AlbumPhotoState | undefined;
   getPhoto: (albumId: string, assetId: string) => PhotoItem | undefined;
@@ -224,7 +236,12 @@ export const usePhotoStore = create<PhotoStore>()(
       });
     },
 
-    updateProgress: (albumId: string, assetId: string, progress: number, action?: UploadAction) => {
+    updateProgress: (
+      albumId: string,
+      assetId: string,
+      progress: number,
+      action?: UploadAction,
+    ) => {
       set((state) => {
         const album = state.albums.get(albumId);
         const item = album?.items.get(assetId);
@@ -250,7 +267,10 @@ export const usePhotoStore = create<PhotoStore>()(
     promoteToStable: (
       albumId: string,
       assetId: string,
-      metadata: Pick<PhotoItem, 'encryptedMetadata' | 'thumbnailUrl' | 'createdAt'>
+      metadata: Pick<
+        PhotoItem,
+        'encryptedMetadata' | 'thumbnailUrl' | 'createdAt'
+      >,
     ) => {
       set((state) => {
         const album = state.albums.get(albumId);
@@ -267,7 +287,7 @@ export const usePhotoStore = create<PhotoStore>()(
           if (metadata.createdAt !== undefined) {
             item.createdAt = metadata.createdAt;
           }
-          
+
           // Clean up pending-specific fields using delete
           delete item.localBlobUrl;
           delete item.uploadProgress;
@@ -344,28 +364,28 @@ export const usePhotoStore = create<PhotoStore>()(
       albumId: string,
       assetId: string,
       thumbnailUrl?: string,
-      createdAt?: Date
+      createdAt?: Date,
     ) => {
       set((state) => {
         const album = state.albums.get(albumId);
         if (!album) return;
-        
+
         // Don't overwrite existing items
         if (album.items.has(assetId)) return;
-        
+
         const newItem: PhotoItem = {
           assetId,
           albumId,
           status: 'stable',
         };
-        
+
         if (thumbnailUrl !== undefined) {
           newItem.thumbnailUrl = thumbnailUrl;
         }
         if (createdAt !== undefined) {
           newItem.createdAt = createdAt;
         }
-        
+
         album.items.set(assetId, newItem);
       });
     },
@@ -374,12 +394,12 @@ export const usePhotoStore = create<PhotoStore>()(
       albumId: string,
       assetId: string,
       thumbnailUrl?: string,
-      createdAt?: Date
+      createdAt?: Date,
     ) => {
       set((state) => {
         const album = state.albums.get(albumId);
         const item = album?.items.get(assetId);
-        
+
         // Only update stable items
         if (item && item.status === 'stable') {
           if (thumbnailUrl !== undefined) {
@@ -407,7 +427,7 @@ export const usePhotoStore = create<PhotoStore>()(
     getPhotosByStatus: (albumId: string, status: PhotoStatus) => {
       const album = get().albums.get(albumId);
       if (!album) return [];
-      
+
       const result: PhotoItem[] = [];
       for (const item of album.items.values()) {
         if (item.status === status) {
@@ -422,7 +442,7 @@ export const usePhotoStore = create<PhotoStore>()(
       if (!album) return [];
 
       const items = Array.from(album.items.values());
-      
+
       // Sort: pending first (newest first), then syncing, then stable/deleting by createdAt
       return items.sort((a, b) => {
         // Status priority: pending > syncing > stable/deleting
@@ -433,7 +453,8 @@ export const usePhotoStore = create<PhotoStore>()(
           deleting: 2,
         };
 
-        const priorityDiff = statusPriority[a.status] - statusPriority[b.status];
+        const priorityDiff =
+          statusPriority[a.status] - statusPriority[b.status];
         if (priorityDiff !== 0) return priorityDiff;
 
         // Within same status, sort by createdAt (newest first)
@@ -442,17 +463,20 @@ export const usePhotoStore = create<PhotoStore>()(
         return bTime - aTime;
       });
     },
-  }))
+  })),
 );
 
 // ============================================================================
 // Selector Hooks (for React components)
 // ============================================================================
 
-export const useActiveAlbumId = () => usePhotoStore((state) => state.activeAlbumId);
+export const useActiveAlbumId = () =>
+  usePhotoStore((state) => state.activeAlbumId);
 
 export const useAlbumFetchStatus = (albumId: string): FetchStatus => {
-  return usePhotoStore((state) => state.albums.get(albumId)?.fetchStatus ?? 'idle');
+  return usePhotoStore(
+    (state) => state.albums.get(albumId)?.fetchStatus ?? 'idle',
+  );
 };
 
 export const useAlbumHasMore = (albumId: string): boolean => {

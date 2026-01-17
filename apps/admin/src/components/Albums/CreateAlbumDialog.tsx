@@ -126,7 +126,11 @@ export function CreateAlbumDialog({
       testId="create-album-dialog"
       closeOnBackdropClick={!isCreating}
     >
-      <form onSubmit={handleSubmit} className="dialog-form" id="create-album-form">
+      <form
+        onSubmit={handleSubmit}
+        className="dialog-form"
+        id="create-album-form"
+      >
         <div className="form-group">
           <label htmlFor="album-name" className="form-label">
             {t('album.create.nameLabel')}

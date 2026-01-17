@@ -26,7 +26,7 @@ export interface UseSyncResult {
   syncAlbum: (albumId: string, readKey: Uint8Array) => Promise<void>;
   /** Sync all albums (requires album list and read keys) */
   syncAll: (
-    albums: Array<{ id: string; readKey: Uint8Array }>
+    albums: Array<{ id: string; readKey: Uint8Array }>,
   ) => Promise<void>;
 }
 
@@ -96,7 +96,7 @@ export function useSync(): UseSyncResult {
         log.error('Sync failed:', err);
       }
     },
-    []
+    [],
   );
 
   /**
@@ -104,7 +104,7 @@ export function useSync(): UseSyncResult {
    */
   const syncAll = useCallback(
     async (
-      albums: Array<{ id: string; readKey: Uint8Array }>
+      albums: Array<{ id: string; readKey: Uint8Array }>,
     ): Promise<void> => {
       for (const album of albums) {
         try {
@@ -115,7 +115,7 @@ export function useSync(): UseSyncResult {
         }
       }
     },
-    []
+    [],
   );
 
   return {

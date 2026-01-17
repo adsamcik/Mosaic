@@ -24,22 +24,41 @@ vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
       decryptManifest: mocks.decryptManifest,
-    })
+    }),
   ),
 }));
 
 // Mock @mosaic/crypto
 vi.mock('@mosaic/crypto', () => ({
-  fromBase64: (s: string) => new Uint8Array(atob(s).split('').map(c => c.charCodeAt(0))),
+  fromBase64: (s: string) =>
+    new Uint8Array(
+      atob(s)
+        .split('')
+        .map((c) => c.charCodeAt(0)),
+    ),
   toBase64: (arr: Uint8Array) => btoa(String.fromCharCode(...arr)),
 }));
 
 // Mock SharedPhotoGrid
 vi.mock('../src/components/Shared/SharedPhotoGrid', () => ({
-  SharedPhotoGrid: ({ photos, accessTier }: { photos: unknown[]; accessTier: number }) =>
+  SharedPhotoGrid: ({
+    photos,
+    accessTier,
+  }: {
+    photos: unknown[];
+    accessTier: number;
+  }) =>
     createElement('div', { 'data-testid': 'shared-photo-grid' }, [
-      createElement('span', { key: 'count', 'data-testid': 'photo-count' }, String(photos.length)),
-      createElement('span', { key: 'tier', 'data-testid': 'grid-access-tier' }, String(accessTier)),
+      createElement(
+        'span',
+        { key: 'count', 'data-testid': 'photo-count' },
+        String(photos.length),
+      ),
+      createElement(
+        'span',
+        { key: 'tier', 'data-testid': 'grid-access-tier' },
+        String(accessTier),
+      ),
     ]),
 }));
 
@@ -47,7 +66,10 @@ vi.mock('../src/components/Shared/SharedPhotoGrid', () => ({
 import { SharedGallery } from '../src/components/Shared/SharedGallery';
 
 // Helper to create tier keys map
-function createTierKeys(epochId: number, tier: AccessTier): Map<number, Map<AccessTier, TierKey>> {
+function createTierKeys(
+  epochId: number,
+  tier: AccessTier,
+): Map<number, Map<AccessTier, TierKey>> {
   const tierMap = new Map<AccessTier, TierKey>();
   tierMap.set(tier, {
     epochId,
@@ -99,7 +121,9 @@ function renderComponent(props: {
     getByTestId,
     getByText,
     cleanup: () => {
-      act(() => { root.unmount(); });
+      act(() => {
+        root.unmount();
+      });
       container.remove();
     },
   };
@@ -108,16 +132,16 @@ function renderComponent(props: {
 // Helper to wait for async updates
 async function waitFor(
   condition: () => boolean,
-  { timeout = 1000, interval = 10 } = {}
+  { timeout = 1000, interval = 10 } = {},
 ): Promise<void> {
   const start = Date.now();
   while (!condition()) {
     if (Date.now() - start > timeout) {
       throw new Error('waitFor timed out');
     }
-    await new Promise(r => setTimeout(r, interval));
+    await new Promise((r) => setTimeout(r, interval));
     await act(async () => {
-      await new Promise(r => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
     });
   }
 }
@@ -334,21 +358,24 @@ describe('SharedGallery', () => {
       [1, 'Thumbnails'],
       [2, 'Preview'],
       [3, 'Full Access'],
-    ])('should display correct badge for tier %d', async (tier, expectedText) => {
-      const { getByText, getByTestId, cleanup } = renderComponent({
-        linkId: 'test-link-id',
-        albumId: 'album-123',
-        accessTier: tier as AccessTier,
-        tierKeys: createTierKeys(1, tier as AccessTier),
-        isLoadingKeys: false,
-      });
+    ])(
+      'should display correct badge for tier %d',
+      async (tier, expectedText) => {
+        const { getByText, getByTestId, cleanup } = renderComponent({
+          linkId: 'test-link-id',
+          albumId: 'album-123',
+          accessTier: tier as AccessTier,
+          tierKeys: createTierKeys(1, tier as AccessTier),
+          isLoadingKeys: false,
+        });
 
-      await waitFor(() => getByTestId('shared-photo-grid') !== null);
+        await waitFor(() => getByTestId('shared-photo-grid') !== null);
 
-      expect(getByText(expectedText)).not.toBeNull();
+        expect(getByText(expectedText)).not.toBeNull();
 
-      cleanup();
-    });
+        cleanup();
+      },
+    );
   });
 
   describe('photo decryption', () => {

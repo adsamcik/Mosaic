@@ -6,15 +6,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    clearPhotoCache,
-    clearThumbnailCache,
-    getCacheStats,
-    getThumbnailCacheStats,
-    loadPhoto,
-    loadThumbnailFromBase64,
-    PhotoAssemblyError,
-    releasePhoto,
-    releaseThumbnail,
+  clearPhotoCache,
+  clearThumbnailCache,
+  getCacheStats,
+  getThumbnailCacheStats,
+  loadPhoto,
+  loadThumbnailFromBase64,
+  PhotoAssemblyError,
+  releasePhoto,
+  releaseThumbnail,
 } from '../src/lib/photo-service';
 
 // Mock dependencies
@@ -88,12 +88,12 @@ describe('Photo Service', () => {
         'photo-1',
         ['shard-a', 'shard-b'],
         epochKey,
-        'image/jpeg'
+        'image/jpeg',
       );
 
       expect(downloadShards).toHaveBeenCalledWith(
         ['shard-a', 'shard-b'],
-        undefined // no progress callback when not provided
+        undefined, // no progress callback when not provided
       );
       expect(mockCrypto.decryptShard).toHaveBeenCalledTimes(2);
       expect(result.blobUrl).toMatch(/^blob:mock-/);
@@ -120,7 +120,7 @@ describe('Photo Service', () => {
         'photo-cached',
         ['shard-1'],
         epochKey,
-        'image/png'
+        'image/png',
       );
 
       // Second call - should return cached
@@ -128,7 +128,7 @@ describe('Photo Service', () => {
         'photo-cached',
         ['shard-1'],
         epochKey,
-        'image/png'
+        'image/png',
       );
 
       // Should only download once
@@ -166,16 +166,16 @@ describe('Photo Service', () => {
       const { downloadShards } = await import('../src/lib/shard-service');
       const { getCryptoClient } = await import('../src/lib/crypto-client');
 
-      let progressCallback: ((loaded: number, total: number) => void) | undefined;
+      let progressCallback:
+        | ((loaded: number, total: number) => void)
+        | undefined;
 
-      vi.mocked(downloadShards).mockImplementation(
-        async (_, onProgress) => {
-          progressCallback = onProgress;
-          onProgress?.(50, 100);
-          onProgress?.(100, 100);
-          return [new Uint8Array([1, 2, 3])];
-        }
-      );
+      vi.mocked(downloadShards).mockImplementation(async (_, onProgress) => {
+        progressCallback = onProgress;
+        onProgress?.(50, 100);
+        onProgress?.(100, 100);
+        return [new Uint8Array([1, 2, 3])];
+      });
 
       vi.mocked(getCryptoClient).mockResolvedValue({
         decryptShard: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
@@ -204,7 +204,7 @@ describe('Photo Service', () => {
       const epochKey = new Uint8Array(32).fill(42);
 
       await expect(
-        loadPhoto('photo-fail', ['shard-1'], epochKey, 'image/jpeg')
+        loadPhoto('photo-fail', ['shard-1'], epochKey, 'image/jpeg'),
       ).rejects.toThrow();
     });
   });
@@ -316,7 +316,7 @@ describe('PhotoAssemblyError', () => {
     expect(error.photoId).toBe('photo-123');
     expect(error.cause).toBe(cause);
     expect(error.message).toBe(
-      'Failed to assemble photo photo-123: Decryption failed'
+      'Failed to assemble photo photo-123: Decryption failed',
     );
     expect(error.name).toBe('PhotoAssemblyError');
   });
@@ -355,9 +355,9 @@ describe('Thumbnail Loading', () => {
     it('decodes base64 and returns blob URL', () => {
       // Base64 of "JPEG" (4 bytes)
       const base64 = 'SlBFRw==';
-      
+
       const result = loadThumbnailFromBase64('photo-1', base64);
-      
+
       expect(result.blobUrl).toMatch(/^blob:mock-/);
       expect(result.mimeType).toBe('image/jpeg');
       expect(result.size).toBe(4);
@@ -365,10 +365,10 @@ describe('Thumbnail Loading', () => {
 
     it('returns cached result on second call', () => {
       const base64 = 'SlBFRw==';
-      
+
       const result1 = loadThumbnailFromBase64('photo-2', base64);
       const result2 = loadThumbnailFromBase64('photo-2', base64);
-      
+
       expect(result1.blobUrl).toBe(result2.blobUrl);
       // createObjectURL should only be called once
       expect(globalThis.URL.createObjectURL).toHaveBeenCalledTimes(1);
@@ -376,10 +376,10 @@ describe('Thumbnail Loading', () => {
 
     it('creates separate cache entries for different photos', () => {
       const base64 = 'SlBFRw==';
-      
+
       const result1 = loadThumbnailFromBase64('photo-a', base64);
       const result2 = loadThumbnailFromBase64('photo-b', base64);
-      
+
       expect(result1.blobUrl).not.toBe(result2.blobUrl);
       expect(globalThis.URL.createObjectURL).toHaveBeenCalledTimes(2);
     });
@@ -389,7 +389,7 @@ describe('Thumbnail Loading', () => {
     it('decreases ref count without error', () => {
       const base64 = 'SlBFRw==';
       loadThumbnailFromBase64('photo-release', base64);
-      
+
       // Should not throw
       expect(() => releaseThumbnail('photo-release')).not.toThrow();
     });
@@ -404,9 +404,9 @@ describe('Thumbnail Loading', () => {
       const base64 = 'SlBFRw==';
       loadThumbnailFromBase64('photo-clear-1', base64);
       loadThumbnailFromBase64('photo-clear-2', base64);
-      
+
       clearThumbnailCache();
-      
+
       const stats = getThumbnailCacheStats();
       expect(stats.entries).toBe(0);
       expect(stats.sizeBytes).toBe(0);
@@ -415,9 +415,9 @@ describe('Thumbnail Loading', () => {
     it('revokes blob URLs when clearing', () => {
       const base64 = 'SlBFRw==';
       loadThumbnailFromBase64('photo-revoke', base64);
-      
+
       clearThumbnailCache();
-      
+
       expect(globalThis.URL.revokeObjectURL).toHaveBeenCalled();
     });
   });
@@ -426,7 +426,7 @@ describe('Thumbnail Loading', () => {
     it('returns initial empty stats', () => {
       clearThumbnailCache();
       const stats = getThumbnailCacheStats();
-      
+
       expect(stats.entries).toBe(0);
       expect(stats.sizeBytes).toBe(0);
       expect(stats.maxSizeBytes).toBeGreaterThan(0);
@@ -435,9 +435,9 @@ describe('Thumbnail Loading', () => {
     it('tracks cache size after loading thumbnails', () => {
       const base64 = 'SlBFRw==';
       loadThumbnailFromBase64('photo-stats', base64);
-      
+
       const stats = getThumbnailCacheStats();
-      
+
       expect(stats.entries).toBe(1);
       expect(stats.sizeBytes).toBe(4); // "JPEG" is 4 bytes
     });

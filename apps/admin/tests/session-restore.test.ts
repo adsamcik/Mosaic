@@ -106,18 +106,20 @@ describe('Session Restore', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Setup default mocks
     (getApi as ReturnType<typeof vi.fn>).mockReturnValue(mockApi);
-    (getCryptoClient as ReturnType<typeof vi.fn>).mockResolvedValue(mockCryptoClient);
+    (getCryptoClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockCryptoClient,
+    );
     (getDbClient as ReturnType<typeof vi.fn>).mockResolvedValue(mockDbClient);
-    
+
     // Mock fetch for wrapped-key endpoint
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ success: true }),
     });
-    
+
     // Clear storage
     localStorage.clear();
     sessionStorage.clear();
@@ -175,11 +177,14 @@ describe('Session Restore', () => {
 
     it('returns false when already logged in', async () => {
       const { session } = await getSessionModule();
-      
+
       // Set up for login
       mockApi.getCurrentUser.mockResolvedValue(mockUser);
-      localStorage.setItem('mosaic:userSalt', btoa(String.fromCharCode(...new Uint8Array(16))));
-      
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...new Uint8Array(16))),
+      );
+
       await session.login('test-password');
 
       expect(session.needsSessionRestore).toBe(false);
@@ -189,17 +194,21 @@ describe('Session Restore', () => {
   describe('restoreSession', () => {
     it('restores session with valid password when server has salt', async () => {
       const { session, encryptSalt } = await getSessionModule();
-      
+
       // Encrypt a salt with known password
       const salt = new Uint8Array(16).fill(1);
-      const { encryptedSalt, saltNonce } = await encryptSalt(salt, 'test-password', mockUser.authSub);
-      
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        salt,
+        'test-password',
+        mockUser.authSub,
+      );
+
       const userWithRealSalt: User = {
         ...mockUser,
         encryptedSalt,
         saltNonce,
       };
-      
+
       mockApi.getCurrentUser.mockResolvedValue(userWithRealSalt);
 
       await session.restoreSession('test-password', userWithRealSalt);
@@ -213,11 +222,14 @@ describe('Session Restore', () => {
 
     it('restores session with local salt when server has no salt', async () => {
       const { session } = await getSessionModule();
-      
+
       // Set up local salt
       const salt = new Uint8Array(16).fill(2);
-      localStorage.setItem('mosaic:userSalt', btoa(String.fromCharCode(...salt)));
-      
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...salt)),
+      );
+
       mockApi.getCurrentUser.mockResolvedValue(mockUser);
 
       await session.restoreSession('test-password');
@@ -231,35 +243,45 @@ describe('Session Restore', () => {
       mockApi.getCurrentUser.mockResolvedValue(mockUser);
       // No local salt, no server salt
 
-      await expect(session.restoreSession('test-password'))
-        .rejects.toThrow('No salt available');
+      await expect(session.restoreSession('test-password')).rejects.toThrow(
+        'No salt available',
+      );
     });
 
     it('throws SaltDecryptionError when password is wrong', async () => {
-      const { session, encryptSalt, SaltDecryptionError } = await getSessionModule();
-      
+      const { session, encryptSalt, SaltDecryptionError } =
+        await getSessionModule();
+
       // Encrypt salt with one password
       const salt = new Uint8Array(16).fill(3);
-      const { encryptedSalt, saltNonce } = await encryptSalt(salt, 'correct-password', mockUser.authSub);
-      
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        salt,
+        'correct-password',
+        mockUser.authSub,
+      );
+
       const userWithSalt: User = {
         ...mockUser,
         encryptedSalt,
         saltNonce,
       };
-      
+
       mockApi.getCurrentUser.mockResolvedValue(userWithSalt);
 
       // Try to restore with wrong password
-      await expect(session.restoreSession('wrong-password', userWithSalt))
-        .rejects.toThrow(SaltDecryptionError);
+      await expect(
+        session.restoreSession('wrong-password', userWithSalt),
+      ).rejects.toThrow(SaltDecryptionError);
     });
 
     it('marks session as active after restore', async () => {
       const { session } = await getSessionModule();
-      
+
       const salt = new Uint8Array(16).fill(4);
-      localStorage.setItem('mosaic:userSalt', btoa(String.fromCharCode(...salt)));
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...salt)),
+      );
       mockApi.getCurrentUser.mockResolvedValue(mockUser);
 
       await session.restoreSession('test-password');
@@ -269,9 +291,12 @@ describe('Session Restore', () => {
 
     it('uses provided user object to skip API call', async () => {
       const { session } = await getSessionModule();
-      
+
       const salt = new Uint8Array(16).fill(5);
-      localStorage.setItem('mosaic:userSalt', btoa(String.fromCharCode(...salt)));
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...salt)),
+      );
 
       await session.restoreSession('test-password', mockUser);
 
@@ -284,9 +309,12 @@ describe('Session Restore', () => {
   describe('login marks session active', () => {
     it('sets session state to active after login', async () => {
       const { session } = await getSessionModule();
-      
+
       const salt = new Uint8Array(16).fill(6);
-      localStorage.setItem('mosaic:userSalt', btoa(String.fromCharCode(...salt)));
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...salt)),
+      );
       mockApi.getCurrentUser.mockResolvedValue(mockUser);
 
       await session.login('test-password');
@@ -298,9 +326,12 @@ describe('Session Restore', () => {
   describe('logout clears session state', () => {
     it('clears session storage on logout', async () => {
       const { session } = await getSessionModule();
-      
+
       const salt = new Uint8Array(16).fill(7);
-      localStorage.setItem('mosaic:userSalt', btoa(String.fromCharCode(...salt)));
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...salt)),
+      );
       mockApi.getCurrentUser.mockResolvedValue(mockUser);
 
       await session.login('test-password');
@@ -327,7 +358,7 @@ describe('Session Restore Integration', () => {
   it('simulates page reload scenario', async () => {
     // First session: user logs in
     const { session: session1, encryptSalt } = await getSessionModule();
-    
+
     const mockUser: User = {
       id: 'user-456',
       authSub: 'reload-test@example.com',
@@ -336,12 +367,12 @@ describe('Session Restore Integration', () => {
       encryptedSalt: undefined,
       saltNonce: undefined,
     };
-    
+
     const mockApi = {
       getCurrentUser: vi.fn().mockResolvedValue(mockUser),
       updateCurrentUser: vi.fn().mockResolvedValue(mockUser),
     };
-    
+
     const mockCryptoClient = {
       init: vi.fn(),
       initWithWrappedKey: vi.fn(),
@@ -351,40 +382,42 @@ describe('Session Restore Integration', () => {
       getIdentityPublicKey: vi.fn(() => new Uint8Array(32)),
       clear: vi.fn(),
     };
-    
+
     const mockDbClient = {
       init: vi.fn(),
       close: vi.fn(),
     };
-    
+
     (getApi as ReturnType<typeof vi.fn>).mockReturnValue(mockApi);
-    (getCryptoClient as ReturnType<typeof vi.fn>).mockResolvedValue(mockCryptoClient);
+    (getCryptoClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockCryptoClient,
+    );
     (getDbClient as ReturnType<typeof vi.fn>).mockResolvedValue(mockDbClient);
-    
+
     // Mock fetch for wrapped-key endpoint
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ success: true }),
     });
-    
+
     // Initial login
     await session1.login('my-password');
     expect(session1.isLoggedIn).toBe(true);
     expect(sessionStorage.getItem('mosaic:sessionState')).toBe('active');
-    
+
     // Simulate page reload: get fresh session module
     // The sessionStorage persists across module reloads
     const { session: session2 } = await getSessionModule();
-    
+
     // New session instance is not logged in
     expect(session2.isLoggedIn).toBe(false);
     // But needs session restore because sessionStorage has the marker
     expect(session2.needsSessionRestore).toBe(true);
-    
+
     // Check if server session is still valid
     const user = await session2.checkSession();
     expect(user).toBeTruthy();
-    
+
     // Restore session with password
     await session2.restoreSession('my-password', user!);
     expect(session2.isLoggedIn).toBe(true);

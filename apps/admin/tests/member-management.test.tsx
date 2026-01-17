@@ -43,14 +43,18 @@ vi.mock('../src/hooks/useMemberManagement', () => ({
     removeMemberWithRotation: vi.fn().mockResolvedValue(undefined),
     isRemoving: false,
     removalStep: null,
-    lookupUser: vi.fn().mockResolvedValue({ id: 'user-4', identityPubkey: 'abc123' }),
+    lookupUser: vi
+      .fn()
+      .mockResolvedValue({ id: 'user-4', identityPubkey: 'abc123' }),
     isLookingUp: false,
     isOwner: true,
   })),
 }));
 
 // Helper to render MemberList and get elements
-function renderMemberList(props: Partial<Parameters<typeof MemberList>[0]> = {}) {
+function renderMemberList(
+  props: Partial<Parameters<typeof MemberList>[0]> = {},
+) {
   const defaultProps = {
     albumId: 'album-1',
     isOpen: true,
@@ -66,9 +70,12 @@ function renderMemberList(props: Partial<Parameters<typeof MemberList>[0]> = {})
     root.render(createElement(MemberList, { ...defaultProps, ...props }));
   });
 
-  const getByTestId = (testId: string) => document.querySelector(`[data-testid="${testId}"]`);
-  const queryByTestId = (testId: string) => document.querySelector(`[data-testid="${testId}"]`);
-  const getAllByTestId = (testId: string) => document.querySelectorAll(`[data-testid="${testId}"]`);
+  const getByTestId = (testId: string) =>
+    document.querySelector(`[data-testid="${testId}"]`);
+  const queryByTestId = (testId: string) =>
+    document.querySelector(`[data-testid="${testId}"]`);
+  const getAllByTestId = (testId: string) =>
+    document.querySelectorAll(`[data-testid="${testId}"]`);
 
   const cleanup = () => {
     act(() => {
@@ -79,20 +86,34 @@ function renderMemberList(props: Partial<Parameters<typeof MemberList>[0]> = {})
 
   const rerender = (newProps: Partial<Parameters<typeof MemberList>[0]>) => {
     act(() => {
-      root.render(createElement(MemberList, { ...defaultProps, ...props, ...newProps }));
+      root.render(
+        createElement(MemberList, { ...defaultProps, ...props, ...newProps }),
+      );
     });
   };
 
-  return { container, getByTestId, queryByTestId, getAllByTestId, cleanup, rerender, props: { ...defaultProps, ...props } };
+  return {
+    container,
+    getByTestId,
+    queryByTestId,
+    getAllByTestId,
+    cleanup,
+    rerender,
+    props: { ...defaultProps, ...props },
+  };
 }
 
 // Helper to render InviteMemberDialog
-function renderInviteDialog(props: Partial<Parameters<typeof InviteMemberDialog>[0]> = {}) {
+function renderInviteDialog(
+  props: Partial<Parameters<typeof InviteMemberDialog>[0]> = {},
+) {
   const defaultProps = {
     isOpen: true,
     onClose: vi.fn(),
     onInvite: vi.fn().mockResolvedValue(undefined),
-    lookupUser: vi.fn().mockResolvedValue({ id: 'user-new', identityPubkey: 'xyz789' }),
+    lookupUser: vi
+      .fn()
+      .mockResolvedValue({ id: 'user-new', identityPubkey: 'xyz789' }),
     isInviting: false,
     isLookingUp: false,
     error: null,
@@ -104,11 +125,15 @@ function renderInviteDialog(props: Partial<Parameters<typeof InviteMemberDialog>
   let root: ReturnType<typeof createRoot>;
   act(() => {
     root = createRoot(container);
-    root.render(createElement(InviteMemberDialog, { ...defaultProps, ...props }));
+    root.render(
+      createElement(InviteMemberDialog, { ...defaultProps, ...props }),
+    );
   });
 
-  const getByTestId = (testId: string) => document.querySelector(`[data-testid="${testId}"]`);
-  const queryByTestId = (testId: string) => document.querySelector(`[data-testid="${testId}"]`);
+  const getByTestId = (testId: string) =>
+    document.querySelector(`[data-testid="${testId}"]`);
+  const queryByTestId = (testId: string) =>
+    document.querySelector(`[data-testid="${testId}"]`);
 
   const cleanup = () => {
     act(() => {
@@ -117,13 +142,28 @@ function renderInviteDialog(props: Partial<Parameters<typeof InviteMemberDialog>
     container.remove();
   };
 
-  const rerender = (newProps: Partial<Parameters<typeof InviteMemberDialog>[0]>) => {
+  const rerender = (
+    newProps: Partial<Parameters<typeof InviteMemberDialog>[0]>,
+  ) => {
     act(() => {
-      root.render(createElement(InviteMemberDialog, { ...defaultProps, ...props, ...newProps }));
+      root.render(
+        createElement(InviteMemberDialog, {
+          ...defaultProps,
+          ...props,
+          ...newProps,
+        }),
+      );
     });
   };
 
-  return { container, getByTestId, queryByTestId, cleanup, rerender, props: { ...defaultProps, ...props } };
+  return {
+    container,
+    getByTestId,
+    queryByTestId,
+    cleanup,
+    rerender,
+    props: { ...defaultProps, ...props },
+  };
 }
 
 describe('MemberList', () => {
@@ -175,7 +215,9 @@ describe('MemberList', () => {
       const onClose = vi.fn();
       const { getByTestId, cleanup } = renderMemberList({ onClose });
 
-      const closeButton = getByTestId('close-members-button') as HTMLButtonElement;
+      const closeButton = getByTestId(
+        'close-members-button',
+      ) as HTMLButtonElement;
       act(() => {
         closeButton.click();
       });
@@ -211,7 +253,9 @@ describe('MemberList', () => {
     it('has aria-label on close button', () => {
       const { getByTestId, cleanup } = renderMemberList();
 
-      const closeButton = getByTestId('close-members-button') as HTMLButtonElement;
+      const closeButton = getByTestId(
+        'close-members-button',
+      ) as HTMLButtonElement;
       expect(closeButton.getAttribute('aria-label')).toBe('member.closePanel');
       cleanup();
     });
@@ -288,7 +332,9 @@ describe('InviteMemberDialog', () => {
     });
 
     it('shows loading state during lookup', () => {
-      const { getByTestId, cleanup } = renderInviteDialog({ isLookingUp: true });
+      const { getByTestId, cleanup } = renderInviteDialog({
+        isLookingUp: true,
+      });
 
       const button = getByTestId('lookup-button') as HTMLButtonElement;
       expect(button.textContent).toContain('member.invite.looking');
@@ -296,7 +342,9 @@ describe('InviteMemberDialog', () => {
     });
 
     it('displays error from props', () => {
-      const { getByTestId, cleanup } = renderInviteDialog({ error: 'Failed to invite' });
+      const { getByTestId, cleanup } = renderInviteDialog({
+        error: 'Failed to invite',
+      });
 
       const errorElement = getByTestId('invite-error');
       expect(errorElement).not.toBeNull();
@@ -310,7 +358,9 @@ describe('InviteMemberDialog', () => {
       const onClose = vi.fn();
       const { getByTestId, cleanup } = renderInviteDialog({ onClose });
 
-      const cancelButton = getByTestId('cancel-invite-button') as HTMLButtonElement;
+      const cancelButton = getByTestId(
+        'cancel-invite-button',
+      ) as HTMLButtonElement;
       act(() => {
         cancelButton.click();
       });
@@ -323,7 +373,9 @@ describe('InviteMemberDialog', () => {
       const onClose = vi.fn();
       const { getByTestId, cleanup } = renderInviteDialog({ onClose });
 
-      const backdrop = getByTestId('invite-member-dialog-backdrop') as HTMLElement;
+      const backdrop = getByTestId(
+        'invite-member-dialog-backdrop',
+      ) as HTMLElement;
       act(() => {
         backdrop.click();
       });
@@ -334,9 +386,14 @@ describe('InviteMemberDialog', () => {
 
     it('does not close on backdrop click when inviting', () => {
       const onClose = vi.fn();
-      const { getByTestId, cleanup } = renderInviteDialog({ onClose, isInviting: true });
+      const { getByTestId, cleanup } = renderInviteDialog({
+        onClose,
+        isInviting: true,
+      });
 
-      const backdrop = getByTestId('invite-member-dialog-backdrop') as HTMLElement;
+      const backdrop = getByTestId(
+        'invite-member-dialog-backdrop',
+      ) as HTMLElement;
       act(() => {
         backdrop.click();
       });
@@ -359,7 +416,9 @@ describe('InviteMemberDialog', () => {
       const { getByTestId, cleanup } = renderInviteDialog();
 
       const dialog = getByTestId('invite-member-dialog') as HTMLElement;
-      expect(dialog.getAttribute('aria-labelledby')).toBe('invite-member-dialog-title');
+      expect(dialog.getAttribute('aria-labelledby')).toBe(
+        'invite-member-dialog-title',
+      );
       cleanup();
     });
 
@@ -387,19 +446,29 @@ describe('MemberList - Remove Member Dialog', () => {
       let root: ReturnType<typeof createRoot>;
       await act(async () => {
         root = createRoot(container);
-        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+        root.render(
+          createElement(MemberList, {
+            albumId: 'album-1',
+            isOpen: true,
+            onClose: vi.fn(),
+          }),
+        );
       });
 
       // Click remove button for user-2 (editor)
-      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      const removeButton = document.querySelector(
+        '[data-testid="remove-member-user-2"]',
+      ) as HTMLButtonElement;
       expect(removeButton).not.toBeNull();
-      
+
       await act(async () => {
         removeButton.click();
       });
 
       // Dialog should appear
-      const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
+      const dialog = document.querySelector(
+        '[data-testid="remove-member-dialog"]',
+      );
       expect(dialog).not.toBeNull();
 
       await act(async () => {
@@ -415,15 +484,25 @@ describe('MemberList - Remove Member Dialog', () => {
       let root: ReturnType<typeof createRoot>;
       await act(async () => {
         root = createRoot(container);
-        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+        root.render(
+          createElement(MemberList, {
+            albumId: 'album-1',
+            isOpen: true,
+            onClose: vi.fn(),
+          }),
+        );
       });
 
-      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      const removeButton = document.querySelector(
+        '[data-testid="remove-member-user-2"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         removeButton.click();
       });
 
-      const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
+      const dialog = document.querySelector(
+        '[data-testid="remove-member-dialog"]',
+      );
       expect(dialog?.textContent).toContain('User user-2');
 
       await act(async () => {
@@ -439,15 +518,25 @@ describe('MemberList - Remove Member Dialog', () => {
       let root: ReturnType<typeof createRoot>;
       await act(async () => {
         root = createRoot(container);
-        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+        root.render(
+          createElement(MemberList, {
+            albumId: 'album-1',
+            isOpen: true,
+            onClose: vi.fn(),
+          }),
+        );
       });
 
-      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      const removeButton = document.querySelector(
+        '[data-testid="remove-member-user-2"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         removeButton.click();
       });
 
-      const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
+      const dialog = document.querySelector(
+        '[data-testid="remove-member-dialog"]',
+      );
       expect(dialog?.textContent).toContain('member.removeDialog.warning');
 
       await act(async () => {
@@ -465,23 +554,35 @@ describe('MemberList - Remove Member Dialog', () => {
       let root: ReturnType<typeof createRoot>;
       await act(async () => {
         root = createRoot(container);
-        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+        root.render(
+          createElement(MemberList, {
+            albumId: 'album-1',
+            isOpen: true,
+            onClose: vi.fn(),
+          }),
+        );
       });
 
       // Open dialog
-      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      const removeButton = document.querySelector(
+        '[data-testid="remove-member-user-2"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         removeButton.click();
       });
 
       // Click cancel
-      const cancelButton = document.querySelector('[data-testid="cancel-remove-button"]') as HTMLButtonElement;
+      const cancelButton = document.querySelector(
+        '[data-testid="cancel-remove-button"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         cancelButton.click();
       });
 
       // Dialog should be closed
-      const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
+      const dialog = document.querySelector(
+        '[data-testid="remove-member-dialog"]',
+      );
       expect(dialog).toBeNull();
 
       await act(async () => {
@@ -497,23 +598,35 @@ describe('MemberList - Remove Member Dialog', () => {
       let root: ReturnType<typeof createRoot>;
       await act(async () => {
         root = createRoot(container);
-        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+        root.render(
+          createElement(MemberList, {
+            albumId: 'album-1',
+            isOpen: true,
+            onClose: vi.fn(),
+          }),
+        );
       });
 
       // Open dialog
-      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      const removeButton = document.querySelector(
+        '[data-testid="remove-member-user-2"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         removeButton.click();
       });
 
       // Click backdrop
-      const backdrop = document.querySelector('[data-testid="remove-dialog-backdrop"]') as HTMLElement;
+      const backdrop = document.querySelector(
+        '[data-testid="remove-dialog-backdrop"]',
+      ) as HTMLElement;
       await act(async () => {
         backdrop.click();
       });
 
       // Dialog should be closed
-      const dialog = document.querySelector('[data-testid="remove-member-dialog"]');
+      const dialog = document.querySelector(
+        '[data-testid="remove-member-dialog"]',
+      );
       expect(dialog).toBeNull();
 
       await act(async () => {
@@ -531,16 +644,28 @@ describe('MemberList - Remove Member Dialog', () => {
       let root: ReturnType<typeof createRoot>;
       await act(async () => {
         root = createRoot(container);
-        root.render(createElement(MemberList, { albumId: 'album-1', isOpen: true, onClose: vi.fn() }));
+        root.render(
+          createElement(MemberList, {
+            albumId: 'album-1',
+            isOpen: true,
+            onClose: vi.fn(),
+          }),
+        );
       });
 
-      const removeButton = document.querySelector('[data-testid="remove-member-user-2"]') as HTMLButtonElement;
+      const removeButton = document.querySelector(
+        '[data-testid="remove-member-user-2"]',
+      ) as HTMLButtonElement;
       await act(async () => {
         removeButton.click();
       });
 
-      const dialog = document.querySelector('[data-testid="remove-member-dialog"]') as HTMLElement;
-      expect(dialog.getAttribute('aria-labelledby')).toBe('remove-member-title');
+      const dialog = document.querySelector(
+        '[data-testid="remove-member-dialog"]',
+      ) as HTMLElement;
+      expect(dialog.getAttribute('aria-labelledby')).toBe(
+        'remove-member-title',
+      );
       expect(dialog.getAttribute('aria-modal')).toBe('true');
 
       await act(async () => {

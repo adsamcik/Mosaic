@@ -138,7 +138,11 @@ export interface DbWorkerApi {
   deleteManifest(id: string): Promise<void>;
 
   // Photo queries
-  getPhotos(albumId: string, limit: number, offset: number): Promise<PhotoMeta[]>;
+  getPhotos(
+    albumId: string,
+    limit: number,
+    offset: number,
+  ): Promise<PhotoMeta[]>;
   getPhotoCount(albumId: string): Promise<number>;
   searchPhotos(albumId: string, query: string): Promise<PhotoMeta[]>;
   getPhotosForMap(albumId: string, bounds: Bounds): Promise<GeoPoint[]>;
@@ -171,7 +175,7 @@ export interface CryptoWorkerApi {
   init(
     password: string,
     userSalt: Uint8Array,
-    accountSalt: Uint8Array
+    accountSalt: Uint8Array,
   ): Promise<void>;
 
   /**
@@ -182,7 +186,7 @@ export interface CryptoWorkerApi {
     password: string,
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
-    wrappedAccountKey: Uint8Array
+    wrappedAccountKey: Uint8Array,
   ): Promise<void>;
 
   /**
@@ -212,7 +216,7 @@ export interface CryptoWorkerApi {
     data: Uint8Array,
     epochSeed: Uint8Array,
     epochId: number,
-    shardIndex: number
+    shardIndex: number,
   ): Promise<EncryptedShard>;
 
   /**
@@ -220,7 +224,10 @@ export interface CryptoWorkerApi {
    * @param envelope - Complete envelope (header + ciphertext)
    * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
    */
-  decryptShard(envelope: Uint8Array, epochSeed: Uint8Array): Promise<Uint8Array>;
+  decryptShard(
+    envelope: Uint8Array,
+    epochSeed: Uint8Array,
+  ): Promise<Uint8Array>;
 
   /**
    * Decrypt a photo shard with a tier key directly (for share link viewing)
@@ -228,7 +235,10 @@ export interface CryptoWorkerApi {
    * @param envelope - Complete envelope (header + ciphertext)
    * @param tierKey - Tier-specific decryption key (32 bytes, already derived)
    */
-  decryptShardWithTierKey(envelope: Uint8Array, tierKey: Uint8Array): Promise<Uint8Array>;
+  decryptShardWithTierKey(
+    envelope: Uint8Array,
+    tierKey: Uint8Array,
+  ): Promise<Uint8Array>;
 
   /**
    * Peek at shard envelope header without decrypting
@@ -254,7 +264,7 @@ export interface CryptoWorkerApi {
    */
   decryptManifest(
     encryptedMeta: Uint8Array,
-    readKey: Uint8Array
+    readKey: Uint8Array,
   ): Promise<PhotoMeta>;
 
   /**
@@ -263,7 +273,7 @@ export interface CryptoWorkerApi {
   verifyManifest(
     manifest: Uint8Array,
     signature: Uint8Array,
-    pubKey: Uint8Array
+    pubKey: Uint8Array,
   ): Promise<boolean>;
 
   /**
@@ -290,8 +300,12 @@ export interface CryptoWorkerApi {
     bundle: Uint8Array,
     senderPubkey: Uint8Array,
     albumId: string,
-    minEpochId: number
-  ): Promise<{ epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }>;
+    minEpochId: number,
+  ): Promise<{
+    epochSeed: Uint8Array;
+    signPublicKey: Uint8Array;
+    signSecretKey: Uint8Array;
+  }>;
 
   /**
    * Create an epoch key bundle for sharing with another user
@@ -308,7 +322,7 @@ export interface CryptoWorkerApi {
     epochSeed: Uint8Array,
     signPublicKey: Uint8Array,
     signSecretKey: Uint8Array,
-    recipientPubkey: Uint8Array
+    recipientPubkey: Uint8Array,
   ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array }>;
 
   /**
@@ -316,9 +330,11 @@ export interface CryptoWorkerApi {
    * @param epochId - Epoch ID
    * @returns New epoch key with epochSeed and signKeypair
    */
-  generateEpochKey(
-    epochId: number
-  ): Promise<{ epochSeed: Uint8Array; signPublicKey: Uint8Array; signSecretKey: Uint8Array }>;
+  generateEpochKey(epochId: number): Promise<{
+    epochSeed: Uint8Array;
+    signPublicKey: Uint8Array;
+    signSecretKey: Uint8Array;
+  }>;
 
   /**
    * Encrypt manifest metadata for upload
@@ -330,7 +346,7 @@ export interface CryptoWorkerApi {
   encryptManifest(
     meta: PhotoMeta,
     readKey: Uint8Array,
-    epochId: number
+    epochId: number,
   ): Promise<{ ciphertext: Uint8Array; sha256: string }>;
 
   /**
@@ -339,7 +355,10 @@ export interface CryptoWorkerApi {
    * @param signSecretKey - Epoch sign secret key (64 bytes)
    * @returns Ed25519 signature (64 bytes)
    */
-  signManifest(manifestData: Uint8Array, signSecretKey: Uint8Array): Promise<Uint8Array>;
+  signManifest(
+    manifestData: Uint8Array,
+    signSecretKey: Uint8Array,
+  ): Promise<Uint8Array>;
 
   /**
    * Wrap data with the account key (L2) for secure storage
@@ -365,7 +384,9 @@ export interface CryptoWorkerApi {
    * @param linkSecret - 32-byte secret from URL fragment
    * @returns Object with linkId (16 bytes) and wrappingKey (32 bytes)
    */
-  deriveLinkKeys(linkSecret: Uint8Array): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }>;
+  deriveLinkKeys(
+    linkSecret: Uint8Array,
+  ): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }>;
 
   /**
    * Wrap a tier key for share link storage
@@ -377,7 +398,7 @@ export interface CryptoWorkerApi {
   wrapTierKeyForLink(
     tierKey: Uint8Array,
     tier: number,
-    wrappingKey: Uint8Array
+    wrappingKey: Uint8Array,
   ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
 
   /**
@@ -392,7 +413,7 @@ export interface CryptoWorkerApi {
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     tier: number,
-    wrappingKey: Uint8Array
+    wrappingKey: Uint8Array,
   ): Promise<Uint8Array>;
 
   /**
@@ -409,9 +430,9 @@ export interface CryptoWorkerApi {
    * Derive auth keypair from password + userSalt.
    * This is a deterministic derivation separate from the random account key.
    * The auth keypair is used for challenge-response authentication.
-   * 
+   *
    * Must be called before signAuthChallenge() or getAuthPublicKey().
-   * 
+   *
    * @param password - User password
    * @param userSalt - 16-byte user salt from server
    */
@@ -420,9 +441,9 @@ export interface CryptoWorkerApi {
   /**
    * Sign an authentication challenge for LocalAuth login.
    * Uses the auth Ed25519 key derived from password+salt.
-   * 
+   *
    * Message format: context || username_len(4 BE) || username || [timestamp(8 BE)] || challenge
-   * 
+   *
    * @param challenge - 32-byte challenge from server
    * @param username - Username for binding
    * @param timestamp - Optional timestamp for replay protection
@@ -431,7 +452,7 @@ export interface CryptoWorkerApi {
   signAuthChallenge(
     challenge: Uint8Array,
     username: string,
-    timestamp?: number
+    timestamp?: number,
   ): Promise<Uint8Array>;
 
   /**
@@ -500,7 +521,10 @@ export interface GeoWorkerApi {
    * @param bbox - [westLng, southLat, eastLng, northLat]
    * @param zoom - Map zoom level (0-20)
    */
-  getClusters(bbox: [number, number, number, number], zoom: number): GeoFeature[];
+  getClusters(
+    bbox: [number, number, number, number],
+    zoom: number,
+  ): GeoFeature[];
 
   /**
    * Get leaf points for a cluster

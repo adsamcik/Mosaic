@@ -81,8 +81,12 @@ function createMockStore(): MockStore {
       {
         id: 'user-00000000-0000-0000-0000-000000000002',
         authSub: 'alice@example.com',
-        identityPubkey: btoa(String.fromCharCode(...new Uint8Array(32).fill(2))),
-        createdAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
+        identityPubkey: btoa(
+          String.fromCharCode(...new Uint8Array(32).fill(2)),
+        ),
+        createdAt: new Date(
+          Date.now() - 60 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
       },
     ],
     [
@@ -90,8 +94,12 @@ function createMockStore(): MockStore {
       {
         id: 'user-00000000-0000-0000-0000-000000000003',
         authSub: 'bob@example.com',
-        identityPubkey: btoa(String.fromCharCode(...new Uint8Array(32).fill(3))),
-        createdAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
+        identityPubkey: btoa(
+          String.fromCharCode(...new Uint8Array(32).fill(3)),
+        ),
+        createdAt: new Date(
+          Date.now() - 45 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
       },
     ],
   ]);
@@ -116,7 +124,9 @@ function createMockStore(): MockStore {
         ownerId: 'user-00000000-0000-0000-0000-000000000002',
         currentVersion: 128,
         currentEpochId: 2,
-        createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date(
+          Date.now() - 14 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
         updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
       },
     ],
@@ -130,13 +140,17 @@ function createMockStore(): MockStore {
         {
           userId: currentUserId,
           role: 'owner',
-          joinedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+          joinedAt: new Date(
+            Date.now() - 7 * 24 * 60 * 60 * 1000,
+          ).toISOString(),
         },
         {
           userId: 'user-00000000-0000-0000-0000-000000000002',
           role: 'editor',
           invitedBy: currentUserId,
-          joinedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+          joinedAt: new Date(
+            Date.now() - 5 * 24 * 60 * 60 * 1000,
+          ).toISOString(),
         },
       ],
     ],
@@ -146,13 +160,17 @@ function createMockStore(): MockStore {
         {
           userId: 'user-00000000-0000-0000-0000-000000000002',
           role: 'owner',
-          joinedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+          joinedAt: new Date(
+            Date.now() - 14 * 24 * 60 * 60 * 1000,
+          ).toISOString(),
         },
         {
           userId: currentUserId,
           role: 'viewer',
           invitedBy: 'user-00000000-0000-0000-0000-000000000002',
-          joinedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+          joinedAt: new Date(
+            Date.now() - 10 * 24 * 60 * 60 * 1000,
+          ).toISOString(),
         },
       ],
     ],
@@ -309,7 +327,10 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       store.epochKeys.delete(albumId);
     },
 
-    async renameAlbum(albumId: string, request: RenameAlbumRequest): Promise<RenameAlbumResponse> {
+    async renameAlbum(
+      albumId: string,
+      request: RenameAlbumRequest,
+    ): Promise<RenameAlbumResponse> {
       await delay();
       const album = store.albums.get(albumId);
       if (!album) {
@@ -318,7 +339,10 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       // Check if user is owner or editor
       const members = store.members.get(albumId) ?? [];
       const membership = members.find((m) => m.userId === store.currentUser.id);
-      if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
+      if (
+        !membership ||
+        (membership.role !== 'owner' && membership.role !== 'editor')
+      ) {
         throw new Error('Forbidden: must be owner or editor to rename');
       }
       // Update album
@@ -334,7 +358,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
 
     async updateAlbumDescription(
       albumId: string,
-      request: UpdateDescriptionRequest
+      request: UpdateDescriptionRequest,
     ): Promise<UpdateDescriptionResponse> {
       await delay();
       const album = store.albums.get(albumId);
@@ -344,8 +368,13 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       // Check if user is owner or editor
       const members = store.members.get(albumId) ?? [];
       const membership = members.find((m) => m.userId === store.currentUser.id);
-      if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
-        throw new Error('Forbidden: must be owner or editor to update description');
+      if (
+        !membership ||
+        (membership.role !== 'owner' && membership.role !== 'editor')
+      ) {
+        throw new Error(
+          'Forbidden: must be owner or editor to update description',
+        );
       }
       // Update album
       album.encryptedDescription = request.encryptedDescription ?? null;
@@ -361,7 +390,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     async syncAlbum(
       albumId: string,
       since: number,
-      limit: number = 100
+      limit: number = 100,
     ): Promise<SyncResponse> {
       await delay();
       const album = store.albums.get(albumId);
@@ -383,12 +412,9 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
           encryptedMeta: btoa(`mock-encrypted-meta-${version}`),
           signature: btoa(`mock-signature-${version}`),
           signerPubkey: btoa(`mock-pubkey-${version}`),
-          shardIds: [
-            `shard-${version}-0`,
-            `shard-${version}-1`,
-          ],
+          shardIds: [`shard-${version}-0`, `shard-${version}-1`],
           createdAt: new Date(
-            Date.now() - (album.currentVersion - version) * 60 * 60 * 1000
+            Date.now() - (album.currentVersion - version) * 60 * 60 * 1000,
           ).toISOString(),
         });
       }
@@ -415,7 +441,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
 
     async inviteToAlbum(
       albumId: string,
-      request: InviteRequest
+      request: InviteRequest,
     ): Promise<AlbumMember> {
       await delay();
       const memberList = store.members.get(albumId);
@@ -452,14 +478,12 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     async getEpochKeys(albumId: string): Promise<EpochKeyRecord[]> {
       await delay();
       const keys = store.epochKeys.get(albumId) || [];
-      return keys
-        .filter((k) => k.albumId === albumId)
-        .map((k) => ({ ...k }));
+      return keys.filter((k) => k.albumId === albumId).map((k) => ({ ...k }));
     },
 
     async createEpochKey(
       albumId: string,
-      request: CreateEpochKeyRequest
+      request: CreateEpochKeyRequest,
     ): Promise<EpochKeyRecord> {
       await delay();
       const id = `epoch-key-${generateUuid()}`;
@@ -484,7 +508,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     async rotateEpoch(
       albumId: string,
       epochId: number,
-      request: RotateEpochRequest
+      request: RotateEpochRequest,
     ): Promise<void> {
       await delay();
       const album = store.albums.get(albumId);
@@ -514,7 +538,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     // Manifests
     // =========================================================================
     async createManifest(
-      request: CreateManifestRequest
+      request: CreateManifestRequest,
     ): Promise<ManifestCreated> {
       await delay();
       const album = store.albums.get(request.albumId);
@@ -581,7 +605,9 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       return mockData;
     },
 
-    async createShardUpload(_request: CreateShardRequest): Promise<ShardCreated> {
+    async createShardUpload(
+      _request: CreateShardRequest,
+    ): Promise<ShardCreated> {
       await delay();
       const id = `shard-${generateUuid()}`;
       return {
@@ -598,19 +624,26 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       return [];
     },
 
-    async listShareLinksWithSecrets(_albumId: string): Promise<ShareLinkWithSecretResponse[]> {
+    async listShareLinksWithSecrets(
+      _albumId: string,
+    ): Promise<ShareLinkWithSecretResponse[]> {
       await delay();
       return [];
     },
 
-    async createShareLink(_albumId: string, request: CreateShareLinkRequest): Promise<ShareLinkResponse> {
+    async createShareLink(
+      _albumId: string,
+      request: CreateShareLinkRequest,
+    ): Promise<ShareLinkResponse> {
       await delay();
       const id = generateUuid();
       return {
         id,
         linkId: `link-${generateUuid().slice(0, 8)}`,
         accessTier: request.accessTier,
-        ...(request.expiresAt !== undefined && { expiresAt: request.expiresAt }),
+        ...(request.expiresAt !== undefined && {
+          expiresAt: request.expiresAt,
+        }),
         ...(request.maxUses !== undefined && { maxUses: request.maxUses }),
         useCount: 0,
         isRevoked: false,
@@ -624,7 +657,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
 
     async addShareLinkEpochKeys(
       _linkId: string,
-      request: AddShareLinkEpochKeysRequest
+      request: AddShareLinkEpochKeysRequest,
     ): Promise<{ added: number; updated: number }> {
       await delay();
       return { added: request.epochKeys.length, updated: 0 };
@@ -632,7 +665,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
 
     async updateAlbumExpiration(
       albumId: string,
-      request: UpdateExpirationRequest
+      request: UpdateExpirationRequest,
     ): Promise<Album> {
       await delay();
       const album = store.albums.get(albumId);
@@ -654,7 +687,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     async updateShareLinkExpiration(
       _albumId: string,
       linkId: string,
-      request: UpdateLinkExpirationRequest
+      request: UpdateLinkExpirationRequest,
     ): Promise<ShareLinkResponse> {
       await delay();
       const response: ShareLinkResponse = {
@@ -684,7 +717,9 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       };
     },
 
-    async getShareLinkKeys(_linkIdBase64: string): Promise<LinkEpochKeyResponse[]> {
+    async getShareLinkKeys(
+      _linkIdBase64: string,
+    ): Promise<LinkEpochKeyResponse[]> {
       await delay();
       return [
         {
@@ -697,12 +732,17 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       ];
     },
 
-    async getShareLinkPhotos(_linkIdBase64: string): Promise<ShareLinkPhotoResponse[]> {
+    async getShareLinkPhotos(
+      _linkIdBase64: string,
+    ): Promise<ShareLinkPhotoResponse[]> {
       await delay();
       return [];
     },
 
-    async getShareLinkShard(_linkIdBase64: string, _shardId: string): Promise<ArrayBuffer> {
+    async getShareLinkShard(
+      _linkIdBase64: string,
+      _shardId: string,
+    ): Promise<ArrayBuffer> {
       await delay();
       // Return empty encrypted shard mock
       return new ArrayBuffer(64);
@@ -760,13 +800,19 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       };
     },
 
-    async updateUserQuota(_userId: string, request: UpdateUserQuotaRequest): Promise<AdminUserQuota> {
+    async updateUserQuota(
+      _userId: string,
+      request: UpdateUserQuotaRequest,
+    ): Promise<AdminUserQuota> {
       await delay();
       const result: AdminUserQuota = {
         currentStorageBytes: Math.floor(Math.random() * 1073741824),
         currentAlbumCount: Math.floor(Math.random() * 5),
       };
-      if (request.maxStorageBytes !== null && request.maxStorageBytes !== undefined) {
+      if (
+        request.maxStorageBytes !== null &&
+        request.maxStorageBytes !== undefined
+      ) {
         result.maxStorageBytes = request.maxStorageBytes;
       }
       if (request.maxAlbums !== null && request.maxAlbums !== undefined) {
@@ -821,7 +867,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
 
     async updateAlbumLimits(
       _albumId: string,
-      request: UpdateAlbumLimitsRequest
+      request: UpdateAlbumLimitsRequest,
     ): Promise<AdminAlbumLimits> {
       await delay();
       const result: AdminAlbumLimits = {

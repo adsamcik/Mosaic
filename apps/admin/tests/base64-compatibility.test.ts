@@ -31,7 +31,7 @@ describe('Base64 format compatibility', () => {
 
     it('should decode standard Base64 with + character', () => {
       // 0xFB produces + in standard Base64
-      const bytes = new Uint8Array([0xFB]);
+      const bytes = new Uint8Array([0xfb]);
       const standardBase64 = btoa(String.fromCharCode(...bytes));
       expect(standardBase64).toContain('+');
 
@@ -42,7 +42,7 @@ describe('Base64 format compatibility', () => {
     it('should decode standard Base64 with / character', () => {
       // Bytes that produce / in standard Base64
       // 0xFF 0xFF produces //8= which contains /
-      const bytes = new Uint8Array([0xFF, 0xFF]);
+      const bytes = new Uint8Array([0xff, 0xff]);
       const standardBase64 = btoa(String.fromCharCode(...bytes));
       expect(standardBase64).toContain('/');
 
@@ -53,9 +53,8 @@ describe('Base64 format compatibility', () => {
     it('should decode 24-byte nonce from .NET (simulates LinkEpochKeyResponse.Nonce)', () => {
       // Simulate a real nonce that would come from the backend
       const nonce = new Uint8Array([
-        0xFB, 0xEF, 0xBE, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-        0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10
+        0xfb, 0xef, 0xbe, 0xff, 0xff, 0xff, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04,
+        0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
       ]);
 
       // .NET serializes byte[] to standard Base64
@@ -70,7 +69,7 @@ describe('Base64 format compatibility', () => {
       // Simulate a real encrypted key (32 bytes key + 16 bytes auth tag)
       const encryptedKey = new Uint8Array(48);
       for (let i = 0; i < 48; i++) {
-        encryptedKey[i] = (i * 17 + 0xAB) % 256; // Pseudo-random pattern
+        encryptedKey[i] = (i * 17 + 0xab) % 256; // Pseudo-random pattern
       }
 
       // .NET serializes byte[] to standard Base64
@@ -85,7 +84,7 @@ describe('Base64 format compatibility', () => {
       // Simulate an Ed25519 public key
       const signPubkey = new Uint8Array(32);
       for (let i = 0; i < 32; i++) {
-        signPubkey[i] = (i * 7 + 0x3F) % 256;
+        signPubkey[i] = (i * 7 + 0x3f) % 256;
       }
 
       // .NET serializes byte[] to standard Base64
@@ -113,7 +112,7 @@ describe('Base64 format compatibility', () => {
 
     it('should handle URL-safe characters - and _', () => {
       // Create data that would produce + and / in standard Base64
-      const bytes = new Uint8Array([0xFB, 0xEF, 0xBE, 0xFF]);
+      const bytes = new Uint8Array([0xfb, 0xef, 0xbe, 0xff]);
       const urlSafe = toBase64(bytes);
 
       // URL-safe uses - and _ instead of + and /
@@ -126,7 +125,9 @@ describe('Base64 format compatibility', () => {
 
   describe('round-trip compatibility', () => {
     it('should decode standard Base64 and URL-safe Base64 to same result', () => {
-      const originalBytes = new Uint8Array([0xFB, 0xEF, 0xBE, 0xFF, 0x00, 0xFF]);
+      const originalBytes = new Uint8Array([
+        0xfb, 0xef, 0xbe, 0xff, 0x00, 0xff,
+      ]);
 
       // Standard Base64 (what .NET produces)
       const standard = btoa(String.fromCharCode(...originalBytes));
@@ -180,7 +181,7 @@ describe('Base64 format compatibility', () => {
       // '/' in standard == '_' in URL-safe
 
       // Test case that produces a single +
-      const withPlus = new Uint8Array([0xFB]);
+      const withPlus = new Uint8Array([0xfb]);
       const standardWithPlus = btoa(String.fromCharCode(...withPlus));
       expect(standardWithPlus).toBe('+w==');
 

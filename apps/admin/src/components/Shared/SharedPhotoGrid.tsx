@@ -10,13 +10,12 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { NavigationDirection } from '../../hooks/useLightbox';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import {
-    computeJustifiedLayout,
-    type JustifiedRow,
+  computeJustifiedLayout,
+  type JustifiedRow,
 } from '../../lib/justified-layout';
 import type { PhotoMeta } from '../../workers/types';
 import { SharedPhotoLightbox } from './SharedPhotoLightbox';
 import { SharedPhotoThumbnail } from './SharedPhotoThumbnail';
-
 
 /** Gap between photos in pixels */
 const PHOTO_GAP = 4;
@@ -25,7 +24,7 @@ const PHOTO_GAP = 4;
 const TARGET_ROW_HEIGHT = 220;
 
 /** Height of the date header in pixels */
-const HEADER_HEIGHT = 44; 
+const HEADER_HEIGHT = 44;
 
 /** Number of photos to preload ahead/behind in lightbox */
 const PRELOAD_COUNT = 2;
@@ -45,58 +44,65 @@ interface SharedPhotoGridProps {
   isLoadingKeys?: boolean;
 }
 
-type LayoutItem = 
+type LayoutItem =
   | { type: 'header'; date: string; top: number; height: number; id: string }
-  | { type: 'row'; row: JustifiedRow; top: number; height: number; rowIndex: number; id: string };
+  | {
+      type: 'row';
+      row: JustifiedRow;
+      top: number;
+      height: number;
+      rowIndex: number;
+      id: string;
+    };
 
 /**
  * Helper to format date groups
  */
 function formatDateHeader(dateString: string): string {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'Unknown Date';
-    
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return 'Unknown Date';
 
-    if (date.toDateString() === today.toDateString()) {
-        return 'Today';
-    }
-    if (date.toDateString() === yesterday.toDateString()) {
-        return 'Yesterday';
-    }
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
 
-    return new Intl.DateTimeFormat('en-US', { 
-        weekday: 'long', 
-        month: 'short', 
-        day: 'numeric',
-        year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
-    }).format(date);
+  if (date.toDateString() === today.toDateString()) {
+    return 'Today';
+  }
+  if (date.toDateString() === yesterday.toDateString()) {
+    return 'Yesterday';
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
+  }).format(date);
 }
 
 /**
  * Group photos by date string (YYYY-MM-DD)
  */
 function groupPhotosByDate(photos: PhotoMeta[]) {
-    const groups: Record<string, PhotoMeta[]> = {};
-    const sorted = [...photos].sort((a, b) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+  const groups: Record<string, PhotoMeta[]> = {};
+  const sorted = [...photos].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 
-    for (const photo of sorted) {
-        // Use local date string for grouping
-        const dateKey = new Date(photo.createdAt).toDateString(); 
-        if (!groups[dateKey]) {
-            groups[dateKey] = [];
-        }
-        groups[dateKey].push(photo);
+  for (const photo of sorted) {
+    // Use local date string for grouping
+    const dateKey = new Date(photo.createdAt).toDateString();
+    if (!groups[dateKey]) {
+      groups[dateKey] = [];
     }
-    
-    // Sort keys descending (newest first)
-    return Object.entries(groups).sort((a, b) => 
-        new Date(b[0]).getTime() - new Date(a[0]).getTime()
-    );
+    groups[dateKey].push(photo);
+  }
+
+  // Sort keys descending (newest first)
+  return Object.entries(groups).sort(
+    (a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime(),
+  );
 }
 
 /**
@@ -111,10 +117,11 @@ export function SharedPhotoGrid({
   isLoadingKeys = false,
 }: SharedPhotoGridProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
-  
+
   // Lightbox state
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [navigationDirection, setNavigationDirection] = useState<NavigationDirection>('initial');
+  const [navigationDirection, setNavigationDirection] =
+    useState<NavigationDirection>('initial');
 
   // Track container width for responsive layout
   const [containerWidth, setContainerWidth] = useState(0);
@@ -122,20 +129,20 @@ export function SharedPhotoGrid({
   // Callback ref for resize observer
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     parentRef.current = node;
-    
+
     if (node) {
       const observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
-           // Use contentRect for accurate inner width
+          // Use contentRect for accurate inner width
           setContainerWidth(entry.contentRect.width);
         }
       });
-      
+
       observer.observe(node);
-      
+
       // Set initial width
       setContainerWidth(node.clientWidth || node.getBoundingClientRect().width);
-      
+
       return () => observer.disconnect();
     }
   }, []);
@@ -150,35 +157,35 @@ export function SharedPhotoGrid({
     currentTop += PHOTO_GAP;
 
     for (const [dateString, groupPhotos] of grouped) {
-        // Add Header
+      // Add Header
+      items.push({
+        type: 'header',
+        date: formatDateHeader(dateString),
+        top: currentTop,
+        height: HEADER_HEIGHT,
+        id: `header-${dateString}`,
+      });
+      currentTop += HEADER_HEIGHT;
+
+      // Compute rows for this group
+      const rows = computeJustifiedLayout(groupPhotos, {
+        containerWidth,
+        targetRowHeight: TARGET_ROW_HEIGHT,
+        gap: PHOTO_GAP,
+      });
+
+      // Add Rows
+      rows.forEach((row, idx) => {
         items.push({
-            type: 'header',
-            date: formatDateHeader(dateString),
-            top: currentTop,
-            height: HEADER_HEIGHT,
-            id: `header-${dateString}`
+          type: 'row',
+          row,
+          top: currentTop,
+          height: row.height,
+          rowIndex: idx,
+          id: `row-${dateString}-${idx}`,
         });
-        currentTop += HEADER_HEIGHT;
-
-        // Compute rows for this group
-        const rows = computeJustifiedLayout(groupPhotos, {
-            containerWidth,
-            targetRowHeight: TARGET_ROW_HEIGHT,
-            gap: PHOTO_GAP,
-        });
-
-        // Add Rows
-        rows.forEach((row, idx) => {
-            items.push({
-                type: 'row',
-                row,
-                top: currentTop,
-                height: row.height,
-                rowIndex: idx,
-                id: `row-${dateString}-${idx}`
-            });
-            currentTop += row.height + PHOTO_GAP;
-        });
+        currentTop += row.height + PHOTO_GAP;
+      });
     }
 
     return items;
@@ -203,22 +210,25 @@ export function SharedPhotoGrid({
   // We need to find the photo in the sorted list (since layout sorts by date)
   // But for now, let's assume photos prop is not necessarily sorted, so we should use the sorted order from the layout
   // Actually, lightbox navigation relies on an index. We should probably sort photos once and use that for lightbox.
-  
-  const sortedPhotos = useMemo(() => 
-    [...photos].sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    ),
-    [photos]
+
+  const sortedPhotos = useMemo(
+    () =>
+      [...photos].sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [photos],
   );
 
-  const currentPhoto = lightboxIndex !== null ? sortedPhotos[lightboxIndex] : null;
+  const currentPhoto =
+    lightboxIndex !== null ? sortedPhotos[lightboxIndex] : null;
 
   // Direction-aware preload queue for lightbox
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (lightboxIndex === null) return [];
 
     const queue: PhotoMeta[] = [];
-    
+
     if (navigationDirection === 'forward') {
       // Moving forward: prioritize ahead, then add one behind
       for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
@@ -244,19 +254,22 @@ export function SharedPhotoGrid({
         if (prevPhoto?.shardIds?.length) queue.push(prevPhoto);
       }
     }
-    
+
     return queue;
   }, [lightboxIndex, navigationDirection, sortedPhotos]);
 
   // Handle photo click to open lightbox
-  const handlePhotoClick = useCallback((photo: PhotoMeta) => {
-    // Find index in sortedPhotos
-    const index = sortedPhotos.findIndex(p => p.id === photo.id);
-    if (index >= 0) {
+  const handlePhotoClick = useCallback(
+    (photo: PhotoMeta) => {
+      // Find index in sortedPhotos
+      const index = sortedPhotos.findIndex((p) => p.id === photo.id);
+      if (index >= 0) {
         setNavigationDirection('initial');
         setLightboxIndex(index);
-    }
-  }, [sortedPhotos]);
+      }
+    },
+    [sortedPhotos],
+  );
 
   // Lightbox navigation
   const handleLightboxClose = useCallback(() => {
@@ -323,27 +336,27 @@ export function SharedPhotoGrid({
             if (!item) return null;
 
             if (item.type === 'header') {
-                return (
-                    <div
-                        key={item.id}
-                        className="photo-grid-header"
-                        style={{
-                            position: 'absolute',
-                            top: item.top,
-                            left: 0,
-                            right: 0,
-                            height: item.height,
-                            paddingLeft: '16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            fontWeight: 600,
-                            color: 'var(--text-secondary)',
-                            zIndex: 1
-                        }}
-                    >
-                        {item.date}
-                    </div>
-                );
+              return (
+                <div
+                  key={item.id}
+                  className="photo-grid-header"
+                  style={{
+                    position: 'absolute',
+                    top: item.top,
+                    left: 0,
+                    right: 0,
+                    height: item.height,
+                    paddingLeft: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    fontWeight: 600,
+                    color: 'var(--text-secondary)',
+                    zIndex: 1,
+                  }}
+                >
+                  {item.date}
+                </div>
+              );
             }
 
             // Row
@@ -367,16 +380,16 @@ export function SharedPhotoGrid({
 
                   return (
                     <div
-                        key={photo.id}
-                        style={{ width, height, overflow: 'hidden' }}
+                      key={photo.id}
+                      style={{ width, height, overflow: 'hidden' }}
                     >
-                        <SharedPhotoThumbnail
+                      <SharedPhotoThumbnail
                         key={photo.id}
                         photo={photo}
                         tierKey={tierKey}
                         accessTier={accessTier}
                         onClick={() => handlePhotoClick(photo)}
-                        />
+                      />
                     </div>
                   );
                 })}
@@ -394,7 +407,11 @@ export function SharedPhotoGrid({
           tierKey={getTierKey(currentPhoto.epochId, accessTier)}
           accessTier={accessTier}
           onClose={handleLightboxClose}
-          onNext={lightboxIndex < sortedPhotos.length - 1 ? handleLightboxNext : undefined}
+          onNext={
+            lightboxIndex < sortedPhotos.length - 1
+              ? handleLightboxNext
+              : undefined
+          }
           onPrevious={lightboxIndex > 0 ? handleLightboxPrevious : undefined}
           hasNext={lightboxIndex < sortedPhotos.length - 1}
           hasPrevious={lightboxIndex > 0}

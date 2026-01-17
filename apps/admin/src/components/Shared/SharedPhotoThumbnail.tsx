@@ -13,7 +13,10 @@
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
-import { getCachedBlurhashDataURL, isValidBlurhash } from '../../lib/blurhash-decoder';
+import {
+  getCachedBlurhashDataURL,
+  isValidBlurhash,
+} from '../../lib/blurhash-decoder';
 import type { PhotoMeta } from '../../workers/types';
 
 export interface SharedPhotoThumbnailProps {
@@ -87,7 +90,7 @@ export const SharedPhotoThumbnail = memo(function SharedPhotoThumbnail({
         onClick?.();
       }
     },
-    [onClick]
+    [onClick],
   );
 
   const renderContent = () => {

@@ -46,10 +46,17 @@ vi.mock('../src/lib/album-cover-service', () => ({
 }));
 
 // Import after mocks are set up
-import { PhotoDeleteError, usePhotoActions } from '../src/hooks/usePhotoActions';
+import {
+  PhotoDeleteError,
+  usePhotoActions,
+} from '../src/hooks/usePhotoActions';
 
 // Test component that captures hook result and updates on state changes
-function TestComponent({ onResult }: { onResult: (result: ReturnType<typeof usePhotoActions>) => void }) {
+function TestComponent({
+  onResult,
+}: {
+  onResult: (result: ReturnType<typeof usePhotoActions>) => void;
+}) {
   const result = usePhotoActions();
   // Use layout effect to ensure we always have the latest result
   onResult(result);
@@ -66,9 +73,11 @@ function renderHook() {
   // Wrapper component that forces rerenders and captures results
   function Wrapper() {
     const [, setCount] = useState(0);
-    updateTrigger = useCallback(() => setCount(c => c + 1), []);
+    updateTrigger = useCallback(() => setCount((c) => c + 1), []);
     return createElement(TestComponent, {
-      onResult: (result) => { hookResult = result; }
+      onResult: (result) => {
+        hookResult = result;
+      },
     });
   }
 
@@ -78,28 +87,32 @@ function renderHook() {
   });
 
   return {
-    get result() { return hookResult!; },
+    get result() {
+      return hookResult!;
+    },
     cleanup: () => {
-      act(() => { root.unmount(); });
+      act(() => {
+        root.unmount();
+      });
       container.remove();
     },
     rerender: () => {
       act(() => {
         updateTrigger?.();
       });
-    }
+    },
   };
 }
 
 describe('usePhotoActions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Setup default mock implementations
     mocks.api.deleteManifest.mockResolvedValue(undefined);
     mocks.dbClient.deleteManifest.mockResolvedValue(undefined);
     mocks.coverService.getCachedCover.mockReturnValue(null);
-    
+
     document.body.innerHTML = '';
   });
 
@@ -198,7 +211,7 @@ describe('usePhotoActions', () => {
       await act(async () => {
         deleteResult = await result.deletePhotos(
           ['manifest-1', 'manifest-2', 'manifest-3'],
-          'album-1'
+          'album-1',
         );
       });
 
@@ -225,7 +238,7 @@ describe('usePhotoActions', () => {
       await act(async () => {
         deleteResult = await result.deletePhotos(
           ['manifest-1', 'manifest-2', 'manifest-3'],
-          'album-1'
+          'album-1',
         );
       });
 
@@ -247,7 +260,7 @@ describe('usePhotoActions', () => {
       await act(async () => {
         deleteResult = await result.deletePhotos(
           ['manifest-1', 'manifest-2'],
-          'album-1'
+          'album-1',
         );
       });
 
@@ -285,8 +298,12 @@ describe('usePhotoActions', () => {
       });
 
       expect(mocks.photoService.releasePhoto).toHaveBeenCalledWith('photo-123');
-      expect(mocks.photoService.releasePhoto).toHaveBeenCalledWith('photo-123:full');
-      expect(mocks.photoService.releaseThumbnail).toHaveBeenCalledWith('photo-123');
+      expect(mocks.photoService.releasePhoto).toHaveBeenCalledWith(
+        'photo-123:full',
+      );
+      expect(mocks.photoService.releaseThumbnail).toHaveBeenCalledWith(
+        'photo-123',
+      );
 
       cleanup();
     });

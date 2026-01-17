@@ -18,25 +18,33 @@ interface DropZoneProps {
  * Wraps content and provides drag-and-drop file upload functionality.
  * Shows visual feedback when files are dragged over.
  */
-export function DropZone({ albumId, children, className = '', disabled = false }: DropZoneProps) {
+export function DropZone({
+  albumId,
+  children,
+  className = '',
+  disabled = false,
+}: DropZoneProps) {
   const { t } = useTranslation();
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef(0);
   const { upload } = useUploadContext();
 
   // Handle drag enter
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (disabled) return;
-    
-    dragCounterRef.current += 1;
-    
-    // Check if dragged items contain files
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDragging(true);
-    }
-  }, [disabled]);
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (disabled) return;
+
+      dragCounterRef.current += 1;
+
+      // Check if dragged items contain files
+      if (e.dataTransfer.types.includes('Files')) {
+        setIsDragging(true);
+      }
+    },
+    [disabled],
+  );
 
   // Handle drag leave
   const handleDragLeave = useCallback((e: React.DragEvent) => {
@@ -61,7 +69,7 @@ export function DropZone({ albumId, children, className = '', disabled = false }
       e.stopPropagation();
       setIsDragging(false);
       dragCounterRef.current = 0;
-      
+
       if (disabled) return;
 
       const files = e.dataTransfer.files;
@@ -69,7 +77,7 @@ export function DropZone({ albumId, children, className = '', disabled = false }
 
       // Filter for image files
       const imageFiles = Array.from(files).filter((file) =>
-        file.type.startsWith('image/')
+        file.type.startsWith('image/'),
       );
 
       if (imageFiles.length === 0) {
@@ -82,7 +90,7 @@ export function DropZone({ albumId, children, className = '', disabled = false }
         await upload(file, albumId);
       }
     },
-    [upload, albumId]
+    [upload, albumId],
   );
 
   return (
@@ -101,14 +109,26 @@ export function DropZone({ albumId, children, className = '', disabled = false }
         <div className="drop-zone-overlay" data-testid="drop-zone-overlay">
           <div className="drop-zone-indicator">
             <span className="drop-zone-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
             </span>
             <span className="drop-zone-text">{t('upload.dropHere')}</span>
           </div>
         </div>
       )}
-
-
     </div>
   );
 }

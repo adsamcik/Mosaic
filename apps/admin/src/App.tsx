@@ -59,7 +59,9 @@ export function App() {
   const [shareLinkId, setShareLinkId] = useState<string | null>(getShareLinkId);
   // Session restore state
   const [isCheckingSession, setIsCheckingSession] = useState(true);
-  const [pendingSessionUser, setPendingSessionUser] = useState<User | null>(null);
+  const [pendingSessionUser, setPendingSessionUser] = useState<User | null>(
+    null,
+  );
   // Crypto support state
   const [cryptoError, setCryptoError] = useState<string | null>(null);
 
@@ -109,7 +111,8 @@ export function App() {
     if (!session.isLoggedIn && session.needsSessionRestore) {
       // First, try to restore from cache (no password needed)
       if (session.canRestoreFromCache) {
-        session.restoreFromCache()
+        session
+          .restoreFromCache()
           .then((success) => {
             if (success) {
               // Session restored from cache, no password needed!
@@ -160,17 +163,31 @@ export function App() {
     return (
       <div className="login-container" data-testid="crypto-error">
         <div className="login-card">
-          <h1 className="login-title" style={{ color: 'var(--color-error, #dc2626)' }}>
+          <h1
+            className="login-title"
+            style={{ color: 'var(--color-error, #dc2626)' }}
+          >
             {t('errors.cryptoNotSupported', 'Crypto Not Supported')}
           </h1>
           <p className="login-subtitle" style={{ marginBottom: '1rem' }}>
-            {t('errors.cryptoNotSupportedMessage', 'This application requires a secure context (HTTPS or localhost) to function.')}
+            {t(
+              'errors.cryptoNotSupportedMessage',
+              'This application requires a secure context (HTTPS or localhost) to function.',
+            )}
           </p>
           <details style={{ textAlign: 'left', fontSize: '0.875rem' }}>
             <summary style={{ cursor: 'pointer', marginBottom: '0.5rem' }}>
               {t('errors.technicalDetails', 'Technical Details')}
             </summary>
-            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: 'var(--color-surface, #f5f5f5)', padding: '0.5rem', borderRadius: '4px' }}>
+            <pre
+              style={{
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                background: 'var(--color-surface, #f5f5f5)',
+                padding: '0.5rem',
+                borderRadius: '4px',
+              }}
+            >
               {cryptoError}
             </pre>
           </details>

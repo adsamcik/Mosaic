@@ -31,7 +31,7 @@ interface ShareLinksListProps {
   onUpdateExpiration: (
     linkId: string,
     expiresAt: Date | null,
-    maxUses: number | null
+    maxUses: number | null,
   ) => Promise<void>;
   /** Whether update is in progress */
   isUpdating: boolean;
@@ -141,15 +141,16 @@ export function ShareLinksList({
       {activeLinks.length === 0 && revokedLinks.length === 0 ? (
         <div className="share-links-empty" data-testid="share-links-empty">
           <p>No share links yet.</p>
-          {isOwner && (
-            <p>Create a share link to let others view this album.</p>
-          )}
+          {isOwner && <p>Create a share link to let others view this album.</p>}
         </div>
       ) : (
         <>
           {activeLinks.length > 0 && (
             <>
-              <ul className="share-links-items" data-testid="active-share-links">
+              <ul
+                className="share-links-items"
+                data-testid="active-share-links"
+              >
                 {activeLinks.map((link) => (
                   <li
                     key={link.id}
@@ -165,7 +166,10 @@ export function ShareLinksList({
                           {link.accessTierDisplay}
                         </span>
                         {link.isExpired && (
-                          <span className="expired-badge" data-testid="expired-badge">
+                          <span
+                            className="expired-badge"
+                            data-testid="expired-badge"
+                          >
                             Expired
                           </span>
                         )}
@@ -173,7 +177,8 @@ export function ShareLinksList({
                       <div className="share-link-stats">
                         <span className="stat" data-testid="use-count">
                           {link.useCount} uses
-                          {link.maxUses !== undefined && ` / ${link.maxUses} max`}
+                          {link.maxUses !== undefined &&
+                            ` / ${link.maxUses} max`}
                         </span>
                         {link.expiryDisplay && (
                           <span className="stat" data-testid="expiry-date">
@@ -182,11 +187,14 @@ export function ShareLinksList({
                         )}
                         <span className="stat" data-testid="created-date">
                           Created:{' '}
-                          {new Date(link.createdAt).toLocaleDateString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
+                          {new Date(link.createdAt).toLocaleDateString(
+                            undefined,
+                            {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            },
+                          )}
                         </span>
                       </div>
                     </div>
@@ -228,19 +236,25 @@ export function ShareLinksList({
               </ul>
               <p className="share-links-note" data-testid="share-links-note">
                 <small>
-                  💡 The full shareable URL is only displayed when creating a new link.
-                  Copy it immediately after creation.
+                  💡 The full shareable URL is only displayed when creating a
+                  new link. Copy it immediately after creation.
                 </small>
               </p>
             </>
           )}
 
           {revokedLinks.length > 0 && (
-            <details className="revoked-links-section" data-testid="revoked-links-section">
+            <details
+              className="revoked-links-section"
+              data-testid="revoked-links-section"
+            >
               <summary className="revoked-links-summary">
                 Revoked Links ({revokedLinks.length})
               </summary>
-              <ul className="share-links-items revoked" data-testid="revoked-share-links">
+              <ul
+                className="share-links-items revoked"
+                data-testid="revoked-share-links"
+              >
                 {revokedLinks.map((link) => (
                   <li
                     key={link.id}
@@ -249,7 +263,9 @@ export function ShareLinksList({
                   >
                     <div className="share-link-info">
                       <div className="share-link-tier">
-                        <span className={`tier-badge tier-${link.accessTier} revoked`}>
+                        <span
+                          className={`tier-badge tier-${link.accessTier} revoked`}
+                        >
                           {link.accessTierDisplay}
                         </span>
                         <span className="revoked-badge">Revoked</span>
@@ -260,11 +276,14 @@ export function ShareLinksList({
                         </span>
                         <span className="stat">
                           Created:{' '}
-                          {new Date(link.createdAt).toLocaleDateString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
+                          {new Date(link.createdAt).toLocaleDateString(
+                            undefined,
+                            {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            },
+                          )}
                         </span>
                       </div>
                     </div>
@@ -296,8 +315,8 @@ export function ShareLinksList({
               Revoke Share Link?
             </h3>
             <p className="dialog-description">
-              This will permanently disable this share link. Anyone with the link will
-              no longer be able to access the album.
+              This will permanently disable this share link. Anyone with the
+              link will no longer be able to access the album.
             </p>
             <div className="dialog-actions">
               <button
@@ -325,4 +344,3 @@ export function ShareLinksList({
     </div>
   );
 }
-

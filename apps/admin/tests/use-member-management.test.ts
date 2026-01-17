@@ -6,8 +6,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    MemberManagementError,
-    MemberManagementErrorCode,
+  MemberManagementError,
+  MemberManagementErrorCode,
 } from '../src/hooks/useMemberManagement';
 
 // Mock the dependencies
@@ -52,7 +52,7 @@ describe('MemberManagementError', () => {
   it('creates error with message and code', () => {
     const error = new MemberManagementError(
       'Test error',
-      MemberManagementErrorCode.FETCH_FAILED
+      MemberManagementErrorCode.FETCH_FAILED,
     );
 
     expect(error.message).toBe('Test error');
@@ -65,7 +65,7 @@ describe('MemberManagementError', () => {
     const error = new MemberManagementError(
       'Wrapped error',
       MemberManagementErrorCode.INVITE_FAILED,
-      cause
+      cause,
     );
 
     expect(error.cause).toBe(cause);
@@ -75,13 +75,21 @@ describe('MemberManagementError', () => {
 describe('MemberManagementErrorCode', () => {
   it('has all expected error codes', () => {
     expect(MemberManagementErrorCode.FETCH_FAILED).toBe('FETCH_FAILED');
-    expect(MemberManagementErrorCode.USER_LOOKUP_FAILED).toBe('USER_LOOKUP_FAILED');
+    expect(MemberManagementErrorCode.USER_LOOKUP_FAILED).toBe(
+      'USER_LOOKUP_FAILED',
+    );
     expect(MemberManagementErrorCode.USER_NOT_FOUND).toBe('USER_NOT_FOUND');
-    expect(MemberManagementErrorCode.IDENTITY_NOT_DERIVED).toBe('IDENTITY_NOT_DERIVED');
-    expect(MemberManagementErrorCode.BUNDLE_CREATION_FAILED).toBe('BUNDLE_CREATION_FAILED');
+    expect(MemberManagementErrorCode.IDENTITY_NOT_DERIVED).toBe(
+      'IDENTITY_NOT_DERIVED',
+    );
+    expect(MemberManagementErrorCode.BUNDLE_CREATION_FAILED).toBe(
+      'BUNDLE_CREATION_FAILED',
+    );
     expect(MemberManagementErrorCode.INVITE_FAILED).toBe('INVITE_FAILED');
     expect(MemberManagementErrorCode.REMOVE_FAILED).toBe('REMOVE_FAILED');
-    expect(MemberManagementErrorCode.CANNOT_INVITE_SELF).toBe('CANNOT_INVITE_SELF');
+    expect(MemberManagementErrorCode.CANNOT_INVITE_SELF).toBe(
+      'CANNOT_INVITE_SELF',
+    );
     expect(MemberManagementErrorCode.ALREADY_MEMBER).toBe('ALREADY_MEMBER');
     expect(MemberManagementErrorCode.NO_EPOCH_KEYS).toBe('NO_EPOCH_KEYS');
   });
@@ -105,14 +113,22 @@ describe('useMemberManagement hook logic', () => {
   describe('user lookup logic', () => {
     it('identifies pubkey by length > 36', () => {
       const pubkey = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop==';
-      const isLikelyPubkey = pubkey.length > 36 || pubkey.includes('+') || pubkey.includes('/') || pubkey.includes('=');
+      const isLikelyPubkey =
+        pubkey.length > 36 ||
+        pubkey.includes('+') ||
+        pubkey.includes('/') ||
+        pubkey.includes('=');
 
       expect(isLikelyPubkey).toBe(true);
     });
 
     it('identifies UUID by length <= 36', () => {
       const uuid = 'abcd1234-5678-90ab-cdef-1234567890ab';
-      const isLikelyPubkey = uuid.length > 36 || uuid.includes('+') || uuid.includes('/') || uuid.includes('=');
+      const isLikelyPubkey =
+        uuid.length > 36 ||
+        uuid.includes('+') ||
+        uuid.includes('/') ||
+        uuid.includes('=');
 
       expect(isLikelyPubkey).toBe(false);
     });
@@ -160,7 +176,7 @@ describe('useMemberManagement hook logic', () => {
       ];
 
       const isOwner = members.some(
-        (m) => m.userId === currentUserId && m.role === 'owner'
+        (m) => m.userId === currentUserId && m.role === 'owner',
       );
 
       expect(isOwner).toBe(true);
@@ -174,7 +190,7 @@ describe('useMemberManagement hook logic', () => {
       ];
 
       const isOwner = members.some(
-        (m) => m.userId === currentUserId && m.role === 'owner'
+        (m) => m.userId === currentUserId && m.role === 'owner',
       );
 
       expect(isOwner).toBe(false);
@@ -203,10 +219,7 @@ describe('useMemberManagement hook logic', () => {
 
   describe('duplicate member detection', () => {
     it('detects existing member', () => {
-      const members = [
-        { userId: 'user-1' },
-        { userId: 'user-2' },
-      ];
+      const members = [{ userId: 'user-1' }, { userId: 'user-2' }];
       const recipientId = 'user-2';
 
       const isAlreadyMember = members.some((m) => m.userId === recipientId);
@@ -215,10 +228,7 @@ describe('useMemberManagement hook logic', () => {
     });
 
     it('allows new member', () => {
-      const members = [
-        { userId: 'user-1' },
-        { userId: 'user-2' },
-      ];
+      const members = [{ userId: 'user-1' }, { userId: 'user-2' }];
       const recipientId = 'user-3';
 
       const isAlreadyMember = members.some((m) => m.userId === recipientId);

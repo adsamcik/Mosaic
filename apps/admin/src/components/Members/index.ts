@@ -4,4 +4,3 @@
 
 export { InviteMemberDialog } from './InviteMemberDialog';
 export { MemberList } from './MemberList';
-

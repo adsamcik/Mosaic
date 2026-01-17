@@ -9,10 +9,7 @@ import { useCallback, useState } from 'react';
 import { getCachedCover, releaseCover } from '../lib/album-cover-service';
 import { getApi } from '../lib/api';
 import { getDbClient } from '../lib/db-client';
-import {
-    releasePhoto,
-    releaseThumbnail,
-} from '../lib/photo-service';
+import { releasePhoto, releaseThumbnail } from '../lib/photo-service';
 
 /**
  * Error thrown when photo deletion fails
@@ -21,7 +18,7 @@ export class PhotoDeleteError extends Error {
   constructor(
     message: string,
     public readonly manifestId: string,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'PhotoDeleteError';
@@ -49,7 +46,10 @@ export interface UsePhotoActionsResult {
   /** Delete a single photo by manifest ID */
   deletePhoto: (manifestId: string, albumId: string) => Promise<void>;
   /** Delete multiple photos by manifest IDs */
-  deletePhotos: (manifestIds: string[], albumId: string) => Promise<BulkDeleteResult>;
+  deletePhotos: (
+    manifestIds: string[],
+    albumId: string,
+  ) => Promise<BulkDeleteResult>;
   /** Whether a delete operation is in progress */
   isDeleting: boolean;
   /** Current error message if any */
@@ -110,19 +110,26 @@ export function usePhotoActions(): UsePhotoActionsResult {
         const message =
           err instanceof Error ? err.message : 'Failed to delete photo';
         setError(message);
-        throw new PhotoDeleteError(message, manifestId, err instanceof Error ? err : undefined);
+        throw new PhotoDeleteError(
+          message,
+          manifestId,
+          err instanceof Error ? err : undefined,
+        );
       } finally {
         setIsDeleting(false);
       }
     },
-    [cleanupPhotoCache]
+    [cleanupPhotoCache],
   );
 
   /**
    * Delete multiple photos (bulk delete)
    */
   const deletePhotos = useCallback(
-    async (manifestIds: string[], albumId: string): Promise<BulkDeleteResult> => {
+    async (
+      manifestIds: string[],
+      albumId: string,
+    ): Promise<BulkDeleteResult> => {
       setIsDeleting(true);
       setError(null);
 
@@ -155,7 +162,9 @@ export function usePhotoActions(): UsePhotoActionsResult {
             result.failureCount++;
             result.failedIds.push(manifestId);
             result.errors.push(
-              err instanceof Error ? err.message : `Failed to delete ${manifestId}`
+              err instanceof Error
+                ? err.message
+                : `Failed to delete ${manifestId}`,
             );
           }
         }
@@ -173,7 +182,7 @@ export function usePhotoActions(): UsePhotoActionsResult {
         setIsDeleting(false);
       }
     },
-    [cleanupPhotoCache]
+    [cleanupPhotoCache],
   );
 
   /**

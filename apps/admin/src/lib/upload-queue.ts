@@ -6,9 +6,9 @@ import { createLogger } from './logger';
 import { getMimeType } from './mime-type-detection';
 import { getThumbnailQualityValue } from './settings-service';
 import {
-    generateThumbnail,
-    generateTieredShards,
-    isSupportedImageType,
+  generateThumbnail,
+  generateTieredShards,
+  isSupportedImageType,
 } from './thumbnail-generator';
 import type { TieredShardIds } from '../workers/types';
 
@@ -30,8 +30,17 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 const CHUNK_SIZE = 6 * 1024 * 1024;
 
 /** Upload task status */
-export type UploadStatus = 'queued' | 'uploading' | 'complete' | 'error' | 'permanently_failed';
-export type UploadAction = 'pending' | 'encrypting' | 'uploading' | 'finalizing';
+export type UploadStatus =
+  | 'queued'
+  | 'uploading'
+  | 'complete'
+  | 'error'
+  | 'permanently_failed';
+export type UploadAction =
+  | 'pending'
+  | 'encrypting'
+  | 'uploading'
+  | 'finalizing';
 
 /** Maximum number of retry attempts before marking as permanently failed */
 const MAX_RETRIES = 3;
@@ -138,7 +147,11 @@ interface UploadQueueDB {
 }
 
 type ProgressCallback = (task: UploadTask) => void;
-type CompleteCallback = (task: UploadTask, shardIds: string[], tieredShards?: TieredShardIds) => void;
+type CompleteCallback = (
+  task: UploadTask,
+  shardIds: string[],
+  tieredShards?: TieredShardIds,
+) => void;
 type ErrorCallback = (task: UploadTask, error: Error) => void;
 
 /**
@@ -154,10 +167,10 @@ class UploadQueue {
 
   /** Called when upload progress updates */
   onProgress?: ProgressCallback;
-  
+
   /** Called when upload completes successfully */
   onComplete?: CompleteCallback;
-  
+
   /** Called when upload fails */
   onError?: ErrorCallback;
 
@@ -180,9 +193,11 @@ class UploadQueue {
     file: File,
     albumId: string,
     epochId: number,
-    readKey: Uint8Array
+    readKey: Uint8Array,
   ): Promise<string> {
-    log.info(`UploadQueue.add called: file=${file.name}, albumId=${albumId}, epochId=${epochId}`);
+    log.info(
+      `UploadQueue.add called: file=${file.name}, albumId=${albumId}, epochId=${epochId}`,
+    );
     if (!this.db) {
       log.error('Upload queue not initialized - db is null');
       throw new Error('Upload queue not initialized');
@@ -223,7 +238,9 @@ class UploadQueue {
     };
 
     this.queue.push(task);
-    log.info(`Task ${taskId} pushed to queue, queue length: ${this.queue.length}, starting processQueue`);
+    log.info(
+      `Task ${taskId} pushed to queue, queue length: ${this.queue.length}, starting processQueue`,
+    );
     void this.processQueue();
 
     return taskId;
@@ -234,9 +251,11 @@ class UploadQueue {
    */
   async getPendingTasks(): Promise<PersistedTask[]> {
     if (!this.db) return [];
-    
+
     const all = await this.db.getAll('tasks');
-    return all.filter((t) => t.status !== 'complete' && t.status !== 'permanently_failed');
+    return all.filter(
+      (t) => t.status !== 'complete' && t.status !== 'permanently_failed',
+    );
   }
 
   /**
@@ -244,9 +263,11 @@ class UploadQueue {
    */
   async getFailedTasks(): Promise<PersistedTask[]> {
     if (!this.db) return [];
-    
+
     const all = await this.db.getAll('tasks');
-    return all.filter((t) => t.status === 'error' || t.status === 'permanently_failed');
+    return all.filter(
+      (t) => t.status === 'error' || t.status === 'permanently_failed',
+    );
   }
 
   /**
@@ -266,7 +287,9 @@ class UploadQueue {
   }
 
   private async processQueue(): Promise<void> {
-    log.info(`processQueue called: processing=${this.processing}, queueLength=${this.queue.length}, activeCount=${this.activeCount}, maxConcurrent=${this.maxConcurrent}`);
+    log.info(
+      `processQueue called: processing=${this.processing}, queueLength=${this.queue.length}, activeCount=${this.activeCount}, maxConcurrent=${this.maxConcurrent}`,
+    );
     if (this.processing) {
       log.info('processQueue: already processing, returning');
       return;
@@ -276,7 +299,7 @@ class UploadQueue {
     while (this.queue.length > 0 && this.activeCount < this.maxConcurrent) {
       const task = this.queue.shift();
       if (!task) break;
-      
+
       log.info(`processQueue: starting task ${task.id}`);
       this.activeCount++;
       this.processTask(task)
@@ -293,7 +316,9 @@ class UploadQueue {
   }
 
   private async processTask(task: UploadTask): Promise<void> {
-    log.info(`Processing task ${task.id}: ${task.file.name} (${task.file.type}, ${task.file.size} bytes)`);
+    log.info(
+      `Processing task ${task.id}: ${task.file.name} (${task.file.type}, ${task.file.size} bytes)`,
+    );
     const crypto = await getCryptoClient();
 
     try {
@@ -305,7 +330,9 @@ class UploadQueue {
       // This is more reliable than file.type for formats like HEIC
       const detectedMimeType = await getMimeType(task.file);
       task.detectedMimeType = detectedMimeType;
-      log.info(`Detected MIME type: ${detectedMimeType} (browser reported: ${task.file.type})`);
+      log.info(
+        `Detected MIME type: ${detectedMimeType} (browser reported: ${task.file.type})`,
+      );
 
       // Check if this is a supported image type for tiered upload
       if (isSupportedImageType(detectedMimeType)) {
@@ -317,11 +344,11 @@ class UploadQueue {
         log.info(`Using legacy upload for non-image: ${task.file.name}`);
         await this.processLegacyUpload(task, crypto);
       }
-
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       const now = Date.now();
-      
+
       task.retryCount++;
       task.lastAttemptAt = now;
       task.error = errorMessage;
@@ -329,29 +356,40 @@ class UploadQueue {
       if (task.retryCount >= MAX_RETRIES) {
         // Max retries exceeded - mark as permanently failed
         task.status = 'permanently_failed';
-        log.error(`Upload task ${task.id} permanently failed after ${MAX_RETRIES} retries:`, error);
-        
+        log.error(
+          `Upload task ${task.id} permanently failed after ${MAX_RETRIES} retries:`,
+          error,
+        );
+
         await this.updatePersistedTask(task.id, {
           status: 'permanently_failed',
           retryCount: task.retryCount,
           lastAttemptAt: now,
         });
-        
-        this.onError?.(task, error instanceof Error ? error : new Error(errorMessage));
+
+        this.onError?.(
+          task,
+          error instanceof Error ? error : new Error(errorMessage),
+        );
       } else {
         // Schedule retry with exponential backoff
         const delay = getRetryDelay(task.retryCount - 1);
-        log.warn(`Upload task ${task.id} failed (attempt ${task.retryCount}/${MAX_RETRIES}), retrying in ${delay}ms: ${errorMessage}`);
-        
+        log.warn(
+          `Upload task ${task.id} failed (attempt ${task.retryCount}/${MAX_RETRIES}), retrying in ${delay}ms: ${errorMessage}`,
+        );
+
         task.status = 'error';
         await this.updatePersistedTask(task.id, {
           status: 'error',
           retryCount: task.retryCount,
           lastAttemptAt: now,
         });
-        
-        this.onError?.(task, error instanceof Error ? error : new Error(errorMessage));
-        
+
+        this.onError?.(
+          task,
+          error instanceof Error ? error : new Error(errorMessage),
+        );
+
         // Re-queue for retry after delay
         setTimeout(() => {
           task.status = 'queued';
@@ -373,11 +411,11 @@ class UploadQueue {
       // Import deriveTierKeys to construct full EpochKey
       const { deriveTierKeys } = await import('@mosaic/crypto');
       log.info(`deriveTierKeys imported successfully`);
-      
+
       // Derive tier keys from epochSeed (stored as readKey)
       const tierKeys = deriveTierKeys(task.readKey);
       log.info(`Tier keys derived successfully`);
-      
+
       // Construct full EpochKey for generateTieredShards
       const epochKey = {
         epochId: task.epochId,
@@ -395,118 +433,134 @@ class UploadQueue {
       // Generate tiered shards (thumb, preview, original)
       task.currentAction = 'encrypting';
       this.onProgress?.(task);
-      
+
       log.info(`Starting tiered shard generation for ${task.file.name}`);
-    const tieredResult = await generateTieredShards(task.file, epochKey, 0);
-    log.info(`Tiered shards generated: thumb=${tieredResult.thumbnail.width}x${tieredResult.thumbnail.height}, preview=${tieredResult.preview.width}x${tieredResult.preview.height}, original=${tieredResult.originalWidth}x${tieredResult.originalHeight}`);
-    
-    // Extract dimensions and thumbnail for manifest
-    log.info(`Extracting dimensions for manifest`);
-    task.originalWidth = tieredResult.originalWidth;
-    task.originalHeight = tieredResult.originalHeight;
-    task.thumbWidth = tieredResult.thumbnail.width;
-    task.thumbHeight = tieredResult.thumbnail.height;
-    
-    // Generate base64 thumbnail for embedded manifest preview
-    // Use the thumbnail data before encryption for fast gallery loading
-    log.info(`Generating base64 thumbnail for manifest`);
-    try {
-      const quality = getThumbnailQualityValue();
-      const thumbResult = await generateThumbnail(task.file, { quality });
-      task.thumbnailBase64 = uint8ArrayToBase64(thumbResult.data);
-      task.blurhash = thumbResult.blurhash;
-      log.info(`Base64 thumbnail generated successfully`);
-    } catch (thumbError) {
-      log.error('Thumbnail generation for manifest failed', thumbError);
-    }
-    
-    // Upload all three tiers
-    log.info(`Setting task action to uploading`);
-    task.currentAction = 'uploading';
-    this.onProgress?.(task);
-    
-    // Upload thumbnail shard (tier 1)
-    log.info(`Starting TUS upload for ${task.file.name}`);
-    const thumbShardId = await this.tusUpload(
-      task.albumId,
-      tieredResult.thumbnail.encrypted.ciphertext,
-      tieredResult.thumbnail.encrypted.sha256,
-      0
-    );
-    log.info(`Thumbnail shard uploaded: ${thumbShardId}`);
-    task.completedShards.push({
-      index: 0,
-      shardId: thumbShardId,
-      sha256: tieredResult.thumbnail.encrypted.sha256,
-      tier: 1,
-    });
-    task.progress = 0.33;
-    this.onProgress?.(task);
-    
-    // Upload preview shard (tier 2)
-    log.debug(`Uploading preview shard for ${task.file.name}`);
-    const previewShardId = await this.tusUpload(
-      task.albumId,
-      tieredResult.preview.encrypted.ciphertext,
-      tieredResult.preview.encrypted.sha256,
-      0
-    );
-    task.completedShards.push({
-      index: 0,
-      shardId: previewShardId,
-      sha256: tieredResult.preview.encrypted.sha256,
-      tier: 2,
-    });
-    task.progress = 0.66;
-    this.onProgress?.(task);
-    
-    // Upload original shard (tier 3)
-    log.debug(`Uploading original shard for ${task.file.name}`);
-    const originalShardId = await this.tusUpload(
-      task.albumId,
-      tieredResult.original.encrypted.ciphertext,
-      tieredResult.original.encrypted.sha256,
-      0
-    );
-    task.completedShards.push({
-      index: 0,
-      shardId: originalShardId,
-      sha256: tieredResult.original.encrypted.sha256,
-      tier: 3,
-    });
-    task.progress = 1;
-    this.onProgress?.(task);
-    
-    // Build tiered shard IDs for manifest
-    const tieredShards: TieredShardIds = {
-      thumbnail: { shardId: thumbShardId, sha256: tieredResult.thumbnail.encrypted.sha256 },
-      preview: { shardId: previewShardId, sha256: tieredResult.preview.encrypted.sha256 },
-      original: [{ shardId: originalShardId, sha256: tieredResult.original.encrypted.sha256 }],
-    };
-    task.tieredShards = tieredShards;
-    
-    // Persist and complete - only include defined values to satisfy exactOptionalPropertyTypes
-    const persistedUpdate: Partial<PersistedTask> = {
-      status: 'complete',
-      completedShards: task.completedShards,
-      thumbWidth: task.thumbWidth,
-      thumbHeight: task.thumbHeight,
-      originalWidth: task.originalWidth,
-      originalHeight: task.originalHeight,
-    };
-    if (task.thumbnailBase64) persistedUpdate.thumbnailBase64 = task.thumbnailBase64;
-    if (task.blurhash) persistedUpdate.blurhash = task.blurhash;
-    
-    await this.updatePersistedTask(task.id, persistedUpdate);
-    
-    task.status = 'complete';
-    task.currentAction = 'finalizing';
-    this.onProgress?.(task);
-    
-    // Legacy shardIds for backward compatibility
-    const shardIds = [thumbShardId, previewShardId, originalShardId];
-    log.info(`Tiered upload complete for ${task.file.name}: ${shardIds.join(', ')}`);
-    this.onComplete?.(task, shardIds, tieredShards);
+      const tieredResult = await generateTieredShards(task.file, epochKey, 0);
+      log.info(
+        `Tiered shards generated: thumb=${tieredResult.thumbnail.width}x${tieredResult.thumbnail.height}, preview=${tieredResult.preview.width}x${tieredResult.preview.height}, original=${tieredResult.originalWidth}x${tieredResult.originalHeight}`,
+      );
+
+      // Extract dimensions and thumbnail for manifest
+      log.info(`Extracting dimensions for manifest`);
+      task.originalWidth = tieredResult.originalWidth;
+      task.originalHeight = tieredResult.originalHeight;
+      task.thumbWidth = tieredResult.thumbnail.width;
+      task.thumbHeight = tieredResult.thumbnail.height;
+
+      // Generate base64 thumbnail for embedded manifest preview
+      // Use the thumbnail data before encryption for fast gallery loading
+      log.info(`Generating base64 thumbnail for manifest`);
+      try {
+        const quality = getThumbnailQualityValue();
+        const thumbResult = await generateThumbnail(task.file, { quality });
+        task.thumbnailBase64 = uint8ArrayToBase64(thumbResult.data);
+        task.blurhash = thumbResult.blurhash;
+        log.info(`Base64 thumbnail generated successfully`);
+      } catch (thumbError) {
+        log.error('Thumbnail generation for manifest failed', thumbError);
+      }
+
+      // Upload all three tiers
+      log.info(`Setting task action to uploading`);
+      task.currentAction = 'uploading';
+      this.onProgress?.(task);
+
+      // Upload thumbnail shard (tier 1)
+      log.info(`Starting TUS upload for ${task.file.name}`);
+      const thumbShardId = await this.tusUpload(
+        task.albumId,
+        tieredResult.thumbnail.encrypted.ciphertext,
+        tieredResult.thumbnail.encrypted.sha256,
+        0,
+      );
+      log.info(`Thumbnail shard uploaded: ${thumbShardId}`);
+      task.completedShards.push({
+        index: 0,
+        shardId: thumbShardId,
+        sha256: tieredResult.thumbnail.encrypted.sha256,
+        tier: 1,
+      });
+      task.progress = 0.33;
+      this.onProgress?.(task);
+
+      // Upload preview shard (tier 2)
+      log.debug(`Uploading preview shard for ${task.file.name}`);
+      const previewShardId = await this.tusUpload(
+        task.albumId,
+        tieredResult.preview.encrypted.ciphertext,
+        tieredResult.preview.encrypted.sha256,
+        0,
+      );
+      task.completedShards.push({
+        index: 0,
+        shardId: previewShardId,
+        sha256: tieredResult.preview.encrypted.sha256,
+        tier: 2,
+      });
+      task.progress = 0.66;
+      this.onProgress?.(task);
+
+      // Upload original shard (tier 3)
+      log.debug(`Uploading original shard for ${task.file.name}`);
+      const originalShardId = await this.tusUpload(
+        task.albumId,
+        tieredResult.original.encrypted.ciphertext,
+        tieredResult.original.encrypted.sha256,
+        0,
+      );
+      task.completedShards.push({
+        index: 0,
+        shardId: originalShardId,
+        sha256: tieredResult.original.encrypted.sha256,
+        tier: 3,
+      });
+      task.progress = 1;
+      this.onProgress?.(task);
+
+      // Build tiered shard IDs for manifest
+      const tieredShards: TieredShardIds = {
+        thumbnail: {
+          shardId: thumbShardId,
+          sha256: tieredResult.thumbnail.encrypted.sha256,
+        },
+        preview: {
+          shardId: previewShardId,
+          sha256: tieredResult.preview.encrypted.sha256,
+        },
+        original: [
+          {
+            shardId: originalShardId,
+            sha256: tieredResult.original.encrypted.sha256,
+          },
+        ],
+      };
+      task.tieredShards = tieredShards;
+
+      // Persist and complete - only include defined values to satisfy exactOptionalPropertyTypes
+      const persistedUpdate: Partial<PersistedTask> = {
+        status: 'complete',
+        completedShards: task.completedShards,
+        thumbWidth: task.thumbWidth,
+        thumbHeight: task.thumbHeight,
+        originalWidth: task.originalWidth,
+        originalHeight: task.originalHeight,
+      };
+      if (task.thumbnailBase64)
+        persistedUpdate.thumbnailBase64 = task.thumbnailBase64;
+      if (task.blurhash) persistedUpdate.blurhash = task.blurhash;
+
+      await this.updatePersistedTask(task.id, persistedUpdate);
+
+      task.status = 'complete';
+      task.currentAction = 'finalizing';
+      this.onProgress?.(task);
+
+      // Legacy shardIds for backward compatibility
+      const shardIds = [thumbShardId, previewShardId, originalShardId];
+      log.info(
+        `Tiered upload complete for ${task.file.name}: ${shardIds.join(', ')}`,
+      );
+      this.onComplete?.(task, shardIds, tieredShards);
     } catch (error) {
       log.error(`processTieredUpload failed for ${task.file.name}:`, error);
       throw error;
@@ -517,7 +571,10 @@ class UploadQueue {
    * Process legacy upload for non-image files.
    * Uploads file as chunks of original shards only.
    */
-  private async processLegacyUpload(task: UploadTask, crypto: Awaited<ReturnType<typeof getCryptoClient>>): Promise<void> {
+  private async processLegacyUpload(
+    task: UploadTask,
+    crypto: Awaited<ReturnType<typeof getCryptoClient>>,
+  ): Promise<void> {
     const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
     const shardIds: string[] = new Array(totalChunks);
 
@@ -542,7 +599,7 @@ class UploadQueue {
         new Uint8Array(chunk),
         task.readKey,
         task.epochId,
-        i
+        i,
       );
 
       // Upload via Tus resumable protocol
@@ -552,12 +609,17 @@ class UploadQueue {
         task.albumId,
         encrypted.ciphertext,
         encrypted.sha256,
-        i
+        i,
       );
       shardIds[i] = shardId;
 
       // Persist progress for resume (including hash for integrity verification)
-      task.completedShards.push({ index: i, shardId, sha256: encrypted.sha256, tier: 3 });
+      task.completedShards.push({
+        index: i,
+        shardId,
+        sha256: encrypted.sha256,
+        tier: 3,
+      });
       await this.updatePersistedTask(task.id, {
         completedShards: task.completedShards,
       });
@@ -571,14 +633,14 @@ class UploadQueue {
     task.status = 'complete';
     task.currentAction = 'finalizing';
     this.onProgress?.(task);
-    
+
     await this.updatePersistedTask(task.id, { status: 'complete' });
     this.onComplete?.(task, shardIds);
   }
 
   private async updatePersistedTask(
     id: string,
-    updates: Partial<PersistedTask>
+    updates: Partial<PersistedTask>,
   ): Promise<void> {
     if (!this.db) return;
 
@@ -595,7 +657,7 @@ class UploadQueue {
    */
   async getPermanentlyFailedTasks(): Promise<PersistedTask[]> {
     if (!this.db) return [];
-    
+
     const all = await this.db.getAll('tasks');
     return all.filter((t) => t.status === 'permanently_failed');
   }
@@ -606,14 +668,16 @@ class UploadQueue {
    */
   async getStaleFailedTasks(): Promise<PersistedTask[]> {
     if (!this.db) return [];
-    
+
     const now = Date.now();
     const all = await this.db.getAll('tasks');
-    
+
     return all.filter((t) => {
       // Include permanently failed or error tasks that are stale
-      const isFailedStatus = t.status === 'permanently_failed' || t.status === 'error';
-      const isStale = t.lastAttemptAt > 0 && (now - t.lastAttemptAt) > STALE_THRESHOLD_MS;
+      const isFailedStatus =
+        t.status === 'permanently_failed' || t.status === 'error';
+      const isStale =
+        t.lastAttemptAt > 0 && now - t.lastAttemptAt > STALE_THRESHOLD_MS;
       return isFailedStatus && isStale;
     });
   }
@@ -627,7 +691,7 @@ class UploadQueue {
   async retryPermanentlyFailed(
     taskId: string,
     file: File,
-    readKey: Uint8Array
+    readKey: Uint8Array,
   ): Promise<void> {
     if (!this.db) {
       throw new Error('Upload queue not initialized');
@@ -698,14 +762,16 @@ class UploadQueue {
     albumId: string,
     data: Uint8Array,
     sha256: string,
-    shardIndex: number
+    shardIndex: number,
   ): Promise<string> {
-    log.info(`TUS upload starting: albumId=${albumId}, shardIndex=${shardIndex}, size=${data.byteLength} bytes`);
+    log.info(
+      `TUS upload starting: albumId=${albumId}, shardIndex=${shardIndex}, size=${data.byteLength} bytes`,
+    );
     return new Promise((resolve, reject) => {
       // Create a new ArrayBuffer to satisfy TypeScript's BlobPart type
       const buffer = new ArrayBuffer(data.byteLength);
       new Uint8Array(buffer).set(data);
-      
+
       const upload = new tus.Upload(new Blob([buffer]), {
         endpoint: TUS_ENDPOINT,
         retryDelays: [0, 1000, 3000, 5000],
@@ -724,10 +790,14 @@ class UploadQueue {
         },
         onProgress: (bytesUploaded, bytesTotal) => {
           const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(2);
-          log.info(`TUS progress: ${bytesUploaded}/${bytesTotal} (${percentage}%)`);
+          log.info(
+            `TUS progress: ${bytesUploaded}/${bytesTotal} (${percentage}%)`,
+          );
         },
         onError: (error) => {
-          log.error(`TUS upload failed: albumId=${albumId}, shardIndex=${shardIndex}, error=${error.message}`);
+          log.error(
+            `TUS upload failed: albumId=${albumId}, shardIndex=${shardIndex}, error=${error.message}`,
+          );
           reject(new Error(`Upload failed: ${error.message}`));
         },
         onSuccess: () => {
@@ -739,7 +809,9 @@ class UploadQueue {
           }
           // URL format: /api/files/{shardId}
           const shardId = url.substring(url.lastIndexOf('/') + 1);
-          log.info(`TUS upload success: albumId=${albumId}, shardIndex=${shardIndex}, shardId=${shardId}`);
+          log.info(
+            `TUS upload success: albumId=${albumId}, shardIndex=${shardIndex}, shardId=${shardId}`,
+          );
           resolve(shardId);
         },
       });

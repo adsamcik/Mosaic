@@ -5,22 +5,30 @@
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SyncProvider, useSyncContext, useAutoSync } from '../src/contexts/SyncContext';
+import {
+  SyncProvider,
+  useSyncContext,
+  useAutoSync,
+} from '../src/contexts/SyncContext';
 import { useEffect } from 'react';
 
 // Mock settings service
 let mockAutoSyncEnabled = true;
-const mockSettingsSubscribers: Array<(settings: { autoSync: boolean }) => void> = [];
+const mockSettingsSubscribers: Array<
+  (settings: { autoSync: boolean }) => void
+> = [];
 
 vi.mock('../src/lib/settings-service', () => ({
   getSettings: vi.fn(() => ({ autoSync: mockAutoSyncEnabled })),
-  subscribeToSettings: vi.fn((callback: (settings: { autoSync: boolean }) => void) => {
-    mockSettingsSubscribers.push(callback);
-    return () => {
-      const index = mockSettingsSubscribers.indexOf(callback);
-      if (index >= 0) mockSettingsSubscribers.splice(index, 1);
-    };
-  }),
+  subscribeToSettings: vi.fn(
+    (callback: (settings: { autoSync: boolean }) => void) => {
+      mockSettingsSubscribers.push(callback);
+      return () => {
+        const index = mockSettingsSubscribers.indexOf(callback);
+        if (index >= 0) mockSettingsSubscribers.splice(index, 1);
+      };
+    },
+  ),
 }));
 
 // Mock sync engine - use vi.fn() directly in mock factory
@@ -52,12 +60,19 @@ vi.mock('../src/lib/epoch-key-service', () => ({
   getOrFetchEpochKey: vi.fn().mockResolvedValue({
     epochId: 1,
     epochSeed: new Uint8Array(32),
-    signKeypair: { publicKey: new Uint8Array(32), secretKey: new Uint8Array(64) },
+    signKeypair: {
+      publicKey: new Uint8Array(32),
+      secretKey: new Uint8Array(64),
+    },
   }),
 }));
 
 // Helper component to access context
-function TestConsumer({ onContext }: { onContext: (ctx: ReturnType<typeof useSyncContext>) => void }) {
+function TestConsumer({
+  onContext,
+}: {
+  onContext: (ctx: ReturnType<typeof useSyncContext>) => void;
+}) {
   const context = useSyncContext();
   useEffect(() => {
     onContext(context);
@@ -99,11 +114,15 @@ describe('SyncContext', () => {
       act(() => {
         root = createRoot(container);
         root.render(
-          createElement(SyncProvider, null,
+          createElement(
+            SyncProvider,
+            null,
             createElement(TestConsumer, {
-              onContext: (ctx) => { capturedContext = ctx; }
-            })
-          )
+              onContext: (ctx) => {
+                capturedContext = ctx;
+              },
+            }),
+          ),
         );
       });
 
@@ -122,11 +141,15 @@ describe('SyncContext', () => {
       act(() => {
         root = createRoot(container);
         root.render(
-          createElement(SyncProvider, null,
+          createElement(
+            SyncProvider,
+            null,
             createElement(TestConsumer, {
-              onContext: (ctx) => { capturedContext = ctx; }
-            })
-          )
+              onContext: (ctx) => {
+                capturedContext = ctx;
+              },
+            }),
+          ),
         );
       });
 
@@ -134,7 +157,7 @@ describe('SyncContext', () => {
 
       // Simulate settings change
       act(() => {
-        mockSettingsSubscribers.forEach(cb => cb({ autoSync: false }));
+        mockSettingsSubscribers.forEach((cb) => cb({ autoSync: false }));
       });
 
       expect(capturedContext!.autoSyncEnabled).toBe(false);
@@ -144,9 +167,11 @@ describe('SyncContext', () => {
       act(() => {
         root = createRoot(container);
         root.render(
-          createElement(SyncProvider, null,
-            createElement(TestAutoSyncConsumer, { albumId: 'album-1' })
-          )
+          createElement(
+            SyncProvider,
+            null,
+            createElement(TestAutoSyncConsumer, { albumId: 'album-1' }),
+          ),
         );
       });
 
@@ -159,7 +184,10 @@ describe('SyncContext', () => {
       });
 
       // Should have synced the registered album
-      expect(syncEngine.sync).toHaveBeenCalledWith('album-1', expect.any(Uint8Array));
+      expect(syncEngine.sync).toHaveBeenCalledWith(
+        'album-1',
+        expect.any(Uint8Array),
+      );
     });
 
     it('should not sync when autoSync is disabled', async () => {
@@ -168,9 +196,11 @@ describe('SyncContext', () => {
       act(() => {
         root = createRoot(container);
         root.render(
-          createElement(SyncProvider, null,
-            createElement(TestAutoSyncConsumer, { albumId: 'album-1' })
-          )
+          createElement(
+            SyncProvider,
+            null,
+            createElement(TestAutoSyncConsumer, { albumId: 'album-1' }),
+          ),
         );
       });
 
@@ -187,9 +217,11 @@ describe('SyncContext', () => {
       act(() => {
         root = createRoot(container);
         root.render(
-          createElement(SyncProvider, null,
-            createElement(TestAutoSyncConsumer, { albumId: 'album-1' })
-          )
+          createElement(
+            SyncProvider,
+            null,
+            createElement(TestAutoSyncConsumer, { albumId: 'album-1' }),
+          ),
         );
       });
 
@@ -201,7 +233,7 @@ describe('SyncContext', () => {
 
       // Disable autoSync
       act(() => {
-        mockSettingsSubscribers.forEach(cb => cb({ autoSync: false }));
+        mockSettingsSubscribers.forEach((cb) => cb({ autoSync: false }));
       });
 
       // Advance timer again - should NOT sync
@@ -227,9 +259,11 @@ describe('SyncContext', () => {
       act(() => {
         root = createRoot(container);
         root.render(
-          createElement(SyncProvider, null,
-            createElement(RegisteredAlbumTracker)
-          )
+          createElement(
+            SyncProvider,
+            null,
+            createElement(RegisteredAlbumTracker),
+          ),
         );
       });
 
@@ -250,11 +284,15 @@ describe('SyncContext', () => {
       act(() => {
         root = createRoot(container);
         root.render(
-          createElement(SyncProvider, null,
+          createElement(
+            SyncProvider,
+            null,
             createElement(TestConsumer, {
-              onContext: (ctx) => { capturedContext = ctx; }
-            })
-          )
+              onContext: (ctx) => {
+                capturedContext = ctx;
+              },
+            }),
+          ),
         );
       });
 
@@ -263,7 +301,10 @@ describe('SyncContext', () => {
         await capturedContext!.triggerSync('album-manual');
       });
 
-      expect(syncEngine.sync).toHaveBeenCalledWith('album-manual', expect.any(Uint8Array));
+      expect(syncEngine.sync).toHaveBeenCalledWith(
+        'album-manual',
+        expect.any(Uint8Array),
+      );
     });
 
     it('should prevent duplicate sync operations for the same album (race condition fix)', async () => {
@@ -280,11 +321,15 @@ describe('SyncContext', () => {
       act(() => {
         root = createRoot(container);
         root.render(
-          createElement(SyncProvider, null,
+          createElement(
+            SyncProvider,
+            null,
             createElement(TestConsumer, {
-              onContext: (ctx) => { capturedContext = ctx; }
-            })
-          )
+              onContext: (ctx) => {
+                capturedContext = ctx;
+              },
+            }),
+          ),
         );
       });
 
@@ -296,9 +341,15 @@ describe('SyncContext', () => {
 
       act(() => {
         // Fire all three sync calls without awaiting - simulating rapid succession
-        void capturedContext!.triggerSync('album-race').then(() => { sync1Done = true; });
-        void capturedContext!.triggerSync('album-race').then(() => { sync2Done = true; });
-        void capturedContext!.triggerSync('album-race').then(() => { sync3Done = true; });
+        void capturedContext!.triggerSync('album-race').then(() => {
+          sync1Done = true;
+        });
+        void capturedContext!.triggerSync('album-race').then(() => {
+          sync2Done = true;
+        });
+        void capturedContext!.triggerSync('album-race').then(() => {
+          sync3Done = true;
+        });
       });
 
       // The second and third calls should return immediately (already syncing)
@@ -324,7 +375,10 @@ describe('SyncContext', () => {
 
       // Most importantly: sync engine should only be called ONCE
       expect(syncEngine.sync).toHaveBeenCalledTimes(1);
-      expect(syncEngine.sync).toHaveBeenCalledWith('album-race', expect.any(Uint8Array));
+      expect(syncEngine.sync).toHaveBeenCalledWith(
+        'album-race',
+        expect.any(Uint8Array),
+      );
     });
 
     it('should allow syncing different albums concurrently', async () => {
@@ -336,11 +390,15 @@ describe('SyncContext', () => {
       act(() => {
         root = createRoot(container);
         root.render(
-          createElement(SyncProvider, null,
+          createElement(
+            SyncProvider,
+            null,
             createElement(TestConsumer, {
-              onContext: (ctx) => { capturedContext = ctx; }
-            })
-          )
+              onContext: (ctx) => {
+                capturedContext = ctx;
+              },
+            }),
+          ),
         );
       });
 
@@ -354,15 +412,23 @@ describe('SyncContext', () => {
 
       // Both should have been synced
       expect(syncEngine.sync).toHaveBeenCalledTimes(2);
-      expect(syncEngine.sync).toHaveBeenCalledWith('album-1', expect.any(Uint8Array));
-      expect(syncEngine.sync).toHaveBeenCalledWith('album-2', expect.any(Uint8Array));
+      expect(syncEngine.sync).toHaveBeenCalledWith(
+        'album-1',
+        expect.any(Uint8Array),
+      );
+      expect(syncEngine.sync).toHaveBeenCalledWith(
+        'album-2',
+        expect.any(Uint8Array),
+      );
     });
   });
 
   describe('useSyncContext outside provider', () => {
     it('should throw error when used outside SyncProvider', () => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-      
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
       expect(() => {
         act(() => {
           root = createRoot(container);

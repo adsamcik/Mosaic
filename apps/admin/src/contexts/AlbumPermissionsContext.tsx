@@ -6,7 +6,11 @@
  */
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { AccessTier, type AlbumRole, type AccessTierValue } from '../lib/api-types';
+import {
+  AccessTier,
+  type AlbumRole,
+  type AccessTierValue,
+} from '../lib/api-types';
 
 /**
  * Permission capabilities derived from user's role
@@ -60,7 +64,8 @@ const defaultPermissions: AlbumPermissions = {
   canDownload: false,
 };
 
-const AlbumPermissionsContext = createContext<AlbumPermissions>(defaultPermissions);
+const AlbumPermissionsContext =
+  createContext<AlbumPermissions>(defaultPermissions);
 
 /**
  * Derive permissions from role
@@ -73,7 +78,7 @@ const AlbumPermissionsContext = createContext<AlbumPermissions>(defaultPermissio
  */
 function derivePermissions(
   role: AlbumRole | 'anonymous',
-  accessTier?: AccessTierValue
+  accessTier?: AccessTierValue,
 ): AlbumPermissions {
   switch (role) {
     case 'owner':
@@ -148,7 +153,7 @@ export function AlbumPermissionsProvider({
 }: AlbumPermissionsProviderProps) {
   const permissions = useMemo(
     () => derivePermissions(role, accessTier),
-    [role, accessTier]
+    [role, accessTier],
   );
 
   return (
@@ -176,7 +181,7 @@ export function useAlbumPermissions(): AlbumPermissions {
  * @returns Whether the user has the permission
  */
 export function useHasPermission(
-  permission: keyof Omit<AlbumPermissions, 'role' | 'accessTier'>
+  permission: keyof Omit<AlbumPermissions, 'role' | 'accessTier'>,
 ): boolean {
   const permissions = useAlbumPermissions();
   return Boolean(permissions[permission]);

@@ -115,7 +115,11 @@ export function RenameAlbumDialog({
       testId="rename-album-dialog"
       closeOnBackdropClick={!isRenaming}
     >
-      <form onSubmit={handleSubmit} className="dialog-form" id="rename-album-form">
+      <form
+        onSubmit={handleSubmit}
+        className="dialog-form"
+        id="rename-album-form"
+      >
         <div className="form-group">
           <label htmlFor="rename-album-name" className="form-label">
             {t('album.edit.nameLabel')}

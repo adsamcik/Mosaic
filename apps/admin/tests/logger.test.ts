@@ -36,40 +36,51 @@ describe('logger', () => {
       logger.debug('Test debug message');
       expect(consoleLogSpy).toHaveBeenCalledTimes(1);
       expect(consoleLogSpy.mock.calls[0].join(' ')).toContain('[DEBUG]');
-      expect(consoleLogSpy.mock.calls[0].join(' ')).toContain('Test debug message');
+      expect(consoleLogSpy.mock.calls[0].join(' ')).toContain(
+        'Test debug message',
+      );
     });
 
     it('logs info messages', () => {
       logger.info('Test info message');
       expect(consoleInfoSpy).toHaveBeenCalledTimes(1);
       expect(consoleInfoSpy.mock.calls[0].join(' ')).toContain('[INFO]');
-      expect(consoleInfoSpy.mock.calls[0].join(' ')).toContain('Test info message');
+      expect(consoleInfoSpy.mock.calls[0].join(' ')).toContain(
+        'Test info message',
+      );
     });
 
     it('logs warn messages', () => {
       logger.warn('Test warn message');
       expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
       expect(consoleWarnSpy.mock.calls[0].join(' ')).toContain('[WARN]');
-      expect(consoleWarnSpy.mock.calls[0].join(' ')).toContain('Test warn message');
+      expect(consoleWarnSpy.mock.calls[0].join(' ')).toContain(
+        'Test warn message',
+      );
     });
 
     it('logs error messages', () => {
       logger.error('Test error message');
       expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
       expect(consoleErrorSpy.mock.calls[0].join(' ')).toContain('[ERROR]');
-      expect(consoleErrorSpy.mock.calls[0].join(' ')).toContain('Test error message');
+      expect(consoleErrorSpy.mock.calls[0].join(' ')).toContain(
+        'Test error message',
+      );
     });
 
     it('logs with context object', () => {
       logger.info('Upload started', { filename: 'photo.jpg', size: 1024 });
       expect(consoleInfoSpy).toHaveBeenCalledTimes(1);
       const args = consoleInfoSpy.mock.calls[0];
-      expect(args.some((arg: unknown) => 
-        typeof arg === 'object' && 
-        arg !== null &&
-        'filename' in arg && 
-        (arg as { filename: string }).filename === 'photo.jpg'
-      )).toBe(true);
+      expect(
+        args.some(
+          (arg: unknown) =>
+            typeof arg === 'object' &&
+            arg !== null &&
+            'filename' in arg &&
+            (arg as { filename: string }).filename === 'photo.jpg',
+        ),
+      ).toBe(true);
     });
 
     it('logs errors with Error object', () => {
@@ -77,12 +88,15 @@ describe('logger', () => {
       logger.error('Operation failed', error);
       expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
       const args = consoleErrorSpy.mock.calls[0];
-      expect(args.some((arg: unknown) => 
-        typeof arg === 'object' && 
-        arg !== null &&
-        'name' in arg && 
-        (arg as { name: string }).name === 'Error'
-      )).toBe(true);
+      expect(
+        args.some(
+          (arg: unknown) =>
+            typeof arg === 'object' &&
+            arg !== null &&
+            'name' in arg &&
+            (arg as { name: string }).name === 'Error',
+        ),
+      ).toBe(true);
     });
 
     it('logs errors with context', () => {
@@ -181,12 +195,12 @@ describe('logger', () => {
   describe('performance timing', () => {
     it('logs duration with startTimer', async () => {
       const timer = logger.startTimer('testOperation');
-      
+
       // Simulate some work
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
       timer.end();
-      
+
       expect(consoleLogSpy).toHaveBeenCalledTimes(1);
       const output = consoleLogSpy.mock.calls[0].join(' ');
       expect(output).toContain('testOperation completed');
@@ -197,28 +211,29 @@ describe('logger', () => {
     it('includes context in timer end', () => {
       const timer = logger.startTimer('upload');
       timer.end({ shardIndex: 0, size: 1024 });
-      
+
       expect(consoleLogSpy).toHaveBeenCalledTimes(1);
       const args = consoleLogSpy.mock.calls[0];
-      expect(args.some((arg: unknown) => 
-        typeof arg === 'object' && 
-        arg !== null &&
-        'shardIndex' in arg
-      )).toBe(true);
+      expect(
+        args.some(
+          (arg: unknown) =>
+            typeof arg === 'object' && arg !== null && 'shardIndex' in arg,
+        ),
+      ).toBe(true);
     });
 
     it('elapsed returns current duration without ending', async () => {
       const timer = logger.startTimer('longOp');
-      
-      await new Promise(resolve => setTimeout(resolve, 5));
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
       const elapsed1 = timer.elapsed();
-      
-      await new Promise(resolve => setTimeout(resolve, 5));
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
       const elapsed2 = timer.elapsed();
-      
+
       expect(elapsed2).toBeGreaterThan(elapsed1);
       expect(consoleLogSpy).not.toHaveBeenCalled(); // Not ended yet
-      
+
       timer.end();
       expect(consoleLogSpy).toHaveBeenCalledTimes(1);
     });
@@ -257,7 +272,7 @@ describe('logger', () => {
     it('supports startTimer on scoped logger', () => {
       const timer = scopedLog.startTimer('scopedOp');
       timer.end();
-      
+
       const output = consoleLogSpy.mock.calls[0].join(' ');
       expect(output).toContain('[TestModule]');
       expect(output).toContain('scopedOp completed');
@@ -268,24 +283,27 @@ describe('logger', () => {
     it('creates child logger with bound context', () => {
       const parentLog = createLogger('Upload');
       const childLog = parentLog.child({ uploadId: 'upload-123' });
-      
+
       childLog.info('Shard completed');
-      
+
       const args = consoleInfoSpy.mock.calls[0];
-      expect(args.some((arg: unknown) => 
-        typeof arg === 'object' && 
-        arg !== null &&
-        'uploadId' in arg && 
-        (arg as { uploadId: string }).uploadId === 'upload-123'
-      )).toBe(true);
+      expect(
+        args.some(
+          (arg: unknown) =>
+            typeof arg === 'object' &&
+            arg !== null &&
+            'uploadId' in arg &&
+            (arg as { uploadId: string }).uploadId === 'upload-123',
+        ),
+      ).toBe(true);
     });
 
     it('child logger inherits scope', () => {
       const parentLog = createLogger('CryptoWorker');
       const childLog = parentLog.child({ operationId: 'op-456' });
-      
+
       expect(childLog.scope).toBe('CryptoWorker');
-      
+
       childLog.debug('Child message');
       const output = consoleLogSpy.mock.calls[0].join(' ');
       expect(output).toContain('[CryptoWorker]');
@@ -294,16 +312,15 @@ describe('logger', () => {
     it('child logger merges context with parent', () => {
       const parentLog = createLogger('Service', { serviceId: 'svc-1' });
       const childLog = parentLog.child({ requestId: 'req-1' });
-      
+
       childLog.info('Processing');
-      
+
       const args = consoleInfoSpy.mock.calls[0];
-      const contextArg = args.find((arg: unknown) => 
-        typeof arg === 'object' && 
-        arg !== null &&
-        'serviceId' in arg
+      const contextArg = args.find(
+        (arg: unknown) =>
+          typeof arg === 'object' && arg !== null && 'serviceId' in arg,
       ) as Record<string, string> | undefined;
-      
+
       expect(contextArg).toBeDefined();
       expect(contextArg?.serviceId).toBe('svc-1');
       expect(contextArg?.requestId).toBe('req-1');
@@ -312,16 +329,15 @@ describe('logger', () => {
     it('child context overrides parent context on conflict', () => {
       const parentLog = createLogger('Test', { value: 'parent' });
       const childLog = parentLog.child({ value: 'child' });
-      
+
       childLog.info('Test');
-      
+
       const args = consoleInfoSpy.mock.calls[0];
-      const contextArg = args.find((arg: unknown) => 
-        typeof arg === 'object' && 
-        arg !== null &&
-        'value' in arg
+      const contextArg = args.find(
+        (arg: unknown) =>
+          typeof arg === 'object' && arg !== null && 'value' in arg,
       ) as Record<string, string> | undefined;
-      
+
       expect(contextArg?.value).toBe('child');
     });
 
@@ -329,16 +345,15 @@ describe('logger', () => {
       const log1 = createLogger('Service');
       const log2 = log1.child({ level1: 'a' });
       const log3 = log2.child({ level2: 'b' });
-      
+
       log3.info('Deep message');
-      
+
       const args = consoleInfoSpy.mock.calls[0];
-      const contextArg = args.find((arg: unknown) => 
-        typeof arg === 'object' && 
-        arg !== null &&
-        'level1' in arg
+      const contextArg = args.find(
+        (arg: unknown) =>
+          typeof arg === 'object' && arg !== null && 'level1' in arg,
       ) as Record<string, string> | undefined;
-      
+
       expect(contextArg?.level1).toBe('a');
       expect(contextArg?.level2).toBe('b');
     });
@@ -348,15 +363,16 @@ describe('logger', () => {
     it('serializes Error objects with name and message', () => {
       const error = new Error('Test error');
       logger.error('Failed', error);
-      
+
       const args = consoleErrorSpy.mock.calls[0];
-      const errorArg = args.find((arg: unknown) => 
-        typeof arg === 'object' && 
-        arg !== null &&
-        'name' in arg && 
-        'message' in arg
+      const errorArg = args.find(
+        (arg: unknown) =>
+          typeof arg === 'object' &&
+          arg !== null &&
+          'name' in arg &&
+          'message' in arg,
       ) as { name: string; message: string } | undefined;
-      
+
       expect(errorArg?.name).toBe('Error');
       expect(errorArg?.message).toBe('Test error');
     });
@@ -368,31 +384,31 @@ describe('logger', () => {
           this.name = 'CustomError';
         }
       }
-      
+
       const error = new CustomError('Custom failure');
       logger.error('Custom error occurred', error);
-      
+
       const args = consoleErrorSpy.mock.calls[0];
-      const errorArg = args.find((arg: unknown) => 
-        typeof arg === 'object' && 
-        arg !== null &&
-        'name' in arg
+      const errorArg = args.find(
+        (arg: unknown) =>
+          typeof arg === 'object' && arg !== null && 'name' in arg,
       ) as { name: string } | undefined;
-      
+
       expect(errorArg?.name).toBe('CustomError');
     });
 
     it('handles non-Error thrown values', () => {
       logger.error('Strange error', 'string error');
-      
+
       const args = consoleErrorSpy.mock.calls[0];
-      const errorArg = args.find((arg: unknown) => 
-        typeof arg === 'object' && 
-        arg !== null &&
-        'name' in arg && 
-        'message' in arg
+      const errorArg = args.find(
+        (arg: unknown) =>
+          typeof arg === 'object' &&
+          arg !== null &&
+          'name' in arg &&
+          'message' in arg,
       ) as { name: string; message: string } | undefined;
-      
+
       expect(errorArg?.name).toBe('Unknown');
       expect(errorArg?.message).toBe('string error');
     });

@@ -56,7 +56,7 @@ describe('computeJustifiedLayout', () => {
 
   it('should fill row width for full rows', () => {
     const photos = Array.from({ length: 10 }, (_, i) =>
-      createMockPhoto(String(i + 1), 400, 300)
+      createMockPhoto(String(i + 1), 400, 300),
     );
     const containerWidth = 800;
     const gap = 4;
@@ -87,7 +87,9 @@ describe('computeJustifiedLayout', () => {
     });
 
     expect(rows.length).toBe(1);
-    expect(rows[0]!.photos[0]!.width).toBeGreaterThan(rows[0]!.photos[0]!.height);
+    expect(rows[0]!.photos[0]!.width).toBeGreaterThan(
+      rows[0]!.photos[0]!.height,
+    );
   });
 
   it('should handle portrait photos', () => {
@@ -137,7 +139,9 @@ describe('computeJustifiedLayout', () => {
     });
 
     // Flatten all photos from rows and check order
-    const allPhotoIds = rows.flatMap((row) => row.photos.map((p) => p.photo.id));
+    const allPhotoIds = rows.flatMap((row) =>
+      row.photos.map((p) => p.photo.id),
+    );
     expect(allPhotoIds).toEqual(['a', 'b', 'c']);
   });
 });

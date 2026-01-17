@@ -58,13 +58,16 @@ let mockIDBOpenRequest: {
 
 // Mock @mosaic/crypto
 vi.mock('@mosaic/crypto', () => ({
-  decodeLinkSecret: (...args: unknown[]) => mocks.crypto.decodeLinkSecret(...args),
+  decodeLinkSecret: (...args: unknown[]) =>
+    mocks.crypto.decodeLinkSecret(...args),
   decodeLinkId: (...args: unknown[]) => mocks.crypto.decodeLinkId(...args),
   deriveLinkKeys: (...args: unknown[]) => mocks.crypto.deriveLinkKeys(...args),
-  unwrapTierKeyFromLink: (...args: unknown[]) => mocks.crypto.unwrapTierKeyFromLink(...args),
+  unwrapTierKeyFromLink: (...args: unknown[]) =>
+    mocks.crypto.unwrapTierKeyFromLink(...args),
   fromBase64: (...args: unknown[]) => mocks.crypto.fromBase64(...args),
   toBase64: (...args: unknown[]) => mocks.crypto.toBase64(...args),
-  constantTimeEqual: (...args: unknown[]) => mocks.crypto.constantTimeEqual(...args),
+  constantTimeEqual: (...args: unknown[]) =>
+    mocks.crypto.constantTimeEqual(...args),
   AccessTier: {
     THUMB: 1,
     PREVIEW: 2,
@@ -76,15 +79,19 @@ vi.mock('@mosaic/crypto', () => ({
 global.fetch = mocks.fetch as unknown as typeof fetch;
 
 // Import after mocks
-import { clearLinkKeys, parseLinkFragment, useLinkKeys } from '../src/hooks/useLinkKeys';
+import {
+  clearLinkKeys,
+  parseLinkFragment,
+  useLinkKeys,
+} from '../src/hooks/useLinkKeys';
 
 // Test component that captures hook result
-function TestComponent({ 
-  linkId, 
-  linkSecret, 
-  onResult 
-}: { 
-  linkId: string | null; 
+function TestComponent({
+  linkId,
+  linkSecret,
+  onResult,
+}: {
+  linkId: string | null;
   linkSecret: string | null;
   onResult: (result: ReturnType<typeof useLinkKeys>) => void;
 }) {
@@ -104,11 +111,13 @@ function renderHookWithArgs(linkId: string | null, linkSecret: string | null) {
 
   function Wrapper() {
     const [, setCount] = useState(0);
-    updateTrigger = useCallback(() => setCount(c => c + 1), []);
+    updateTrigger = useCallback(() => setCount((c) => c + 1), []);
     return createElement(TestComponent, {
       linkId: currentLinkId,
       linkSecret: currentLinkSecret,
-      onResult: (result) => { hookResult = result; }
+      onResult: (result) => {
+        hookResult = result;
+      },
     });
   }
 
@@ -118,9 +127,13 @@ function renderHookWithArgs(linkId: string | null, linkSecret: string | null) {
   });
 
   return {
-    get result() { return hookResult!; },
+    get result() {
+      return hookResult!;
+    },
     cleanup: () => {
-      act(() => { root.unmount(); });
+      act(() => {
+        root.unmount();
+      });
       container.remove();
     },
     rerender: (newLinkId?: string | null, newLinkSecret?: string | null) => {
@@ -129,23 +142,23 @@ function renderHookWithArgs(linkId: string | null, linkSecret: string | null) {
       act(() => {
         updateTrigger?.();
       });
-    }
+    },
   };
 }
 
 // Helper to wait for async updates
 async function waitFor(
   condition: () => boolean,
-  { timeout = 1000, interval = 10 } = {}
+  { timeout = 1000, interval = 10 } = {},
 ): Promise<void> {
   const start = Date.now();
   while (!condition()) {
     if (Date.now() - start > timeout) {
       throw new Error('waitFor timed out');
     }
-    await new Promise(r => setTimeout(r, interval));
+    await new Promise((r) => setTimeout(r, interval));
     await act(async () => {
-      await new Promise(r => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
     });
   }
 }
@@ -209,7 +222,9 @@ function setupIndexedDB() {
     value: {
       open: vi.fn(() => {
         setTimeout(() => {
-          mockIDBOpenRequest.onsuccess?.({ target: mockIDBOpenRequest } as unknown as Event);
+          mockIDBOpenRequest.onsuccess?.({
+            target: mockIDBOpenRequest,
+          } as unknown as Event);
         }, 0);
         return mockIDBOpenRequest;
       }),
@@ -239,10 +254,12 @@ describe('useLinkKeys', () => {
       if (s === 'test-signpubkey') return new Uint8Array(32).fill(6);
       return new Uint8Array(32);
     });
-    mocks.crypto.toBase64.mockImplementation((arr: Uint8Array) => 
-      btoa(String.fromCharCode(...arr))
+    mocks.crypto.toBase64.mockImplementation((arr: Uint8Array) =>
+      btoa(String.fromCharCode(...arr)),
     );
-    mocks.crypto.unwrapTierKeyFromLink.mockReturnValue(new Uint8Array(32).fill(7));
+    mocks.crypto.unwrapTierKeyFromLink.mockReturnValue(
+      new Uint8Array(32).fill(7),
+    );
   });
 
   afterEach(() => {
@@ -252,7 +269,10 @@ describe('useLinkKeys', () => {
 
   describe('initial state', () => {
     it('should start with loading state', () => {
-      const { result, cleanup } = renderHookWithArgs('test-link-id', 'test-secret');
+      const { result, cleanup } = renderHookWithArgs(
+        'test-link-id',
+        'test-secret',
+      );
 
       expect(result.isLoading).toBe(true);
       expect(result.error).toBeNull();
@@ -288,7 +308,10 @@ describe('useLinkKeys', () => {
 
   describe('link validation', () => {
     it('should expose error property for validation feedback', () => {
-      const { result, cleanup } = renderHookWithArgs('test-link-id', 'test-secret');
+      const { result, cleanup } = renderHookWithArgs(
+        'test-link-id',
+        'test-secret',
+      );
 
       expect(result.error).toBeNull(); // Initially null
 
@@ -296,7 +319,10 @@ describe('useLinkKeys', () => {
     });
 
     it('should expose isValid property', () => {
-      const { result, cleanup } = renderHookWithArgs('test-link-id', 'test-secret');
+      const { result, cleanup } = renderHookWithArgs(
+        'test-link-id',
+        'test-secret',
+      );
 
       expect(typeof result.isValid).toBe('boolean');
 
@@ -306,25 +332,34 @@ describe('useLinkKeys', () => {
 
   describe('key fetching', () => {
     it('should expose isLoading property', () => {
-      const { result, cleanup } = renderHookWithArgs('test-link-id', 'test-secret');
+      const { result, cleanup } = renderHookWithArgs(
+        'test-link-id',
+        'test-secret',
+      );
 
       expect(typeof result.isLoading).toBe('boolean');
-      
+
       cleanup();
     });
 
     it('should expose getReadKey function', () => {
-      const { result, cleanup } = renderHookWithArgs('test-link-id', 'test-secret');
+      const { result, cleanup } = renderHookWithArgs(
+        'test-link-id',
+        'test-secret',
+      );
 
       expect(typeof result.getReadKey).toBe('function');
-      
+
       cleanup();
     });
   });
 
   describe('getReadKey', () => {
     it('should return undefined when no keys loaded', () => {
-      const { result, cleanup } = renderHookWithArgs('test-link-id', 'test-secret');
+      const { result, cleanup } = renderHookWithArgs(
+        'test-link-id',
+        'test-secret',
+      );
 
       // Before async loading completes, getReadKey should return undefined
       const readKey = result.getReadKey(999);
@@ -334,20 +369,26 @@ describe('useLinkKeys', () => {
     });
 
     it('should expose tierKeys as a Map', () => {
-      const { result, cleanup } = renderHookWithArgs('test-link-id', 'test-secret');
+      const { result, cleanup } = renderHookWithArgs(
+        'test-link-id',
+        'test-secret',
+      );
 
       expect(result.tierKeys).toBeInstanceOf(Map);
-      
+
       cleanup();
     });
   });
 
   describe('refresh', () => {
     it('should expose refresh function', () => {
-      const { result, cleanup } = renderHookWithArgs('test-link-id', 'test-secret');
+      const { result, cleanup } = renderHookWithArgs(
+        'test-link-id',
+        'test-secret',
+      );
 
       expect(typeof result.refresh).toBe('function');
-      
+
       cleanup();
     });
   });
@@ -375,7 +416,11 @@ describe('parseLinkFragment', () => {
   });
 
   it('should accept valid base64url characters', () => {
-    expect(parseLinkFragment('#k=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-')).not.toBeNull();
+    expect(
+      parseLinkFragment(
+        '#k=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-',
+      ),
+    ).not.toBeNull();
   });
 });
 

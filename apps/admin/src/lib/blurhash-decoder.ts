@@ -23,7 +23,7 @@ export function decodeBlurhashToDataURL(
   blurhash: string,
   width = 32,
   height = 32,
-  punch = 1
+  punch = 1,
 ): string {
   // Decode blurhash to pixel array (RGBA)
   const pixels = decode(blurhash, width, height, punch);
@@ -63,7 +63,7 @@ const MAX_CACHE_SIZE = 500;
 export function getCachedBlurhashDataURL(
   blurhash: string,
   width = 32,
-  height = 32
+  height = 32,
 ): string {
   const key = `${blurhash}:${width}:${height}`;
 

@@ -100,9 +100,12 @@ export function useRouter() {
   /**
    * Navigate to a specific album's gallery
    */
-  const navigateToGallery = useCallback((albumId: string) => {
-    navigate({ view: 'gallery', albumId });
-  }, [navigate]);
+  const navigateToGallery = useCallback(
+    (albumId: string) => {
+      navigate({ view: 'gallery', albumId });
+    },
+    [navigate],
+  );
 
   /**
    * Navigate to settings
@@ -121,14 +124,17 @@ export function useRouter() {
   /**
    * Go back in history, with a fallback route
    */
-  const goBack = useCallback((fallback: Route = { view: 'albums' }) => {
-    // Check if we can go back
-    if (window.history.length > 1) {
-      window.history.back();
-    } else {
-      navigate(fallback);
-    }
-  }, [navigate]);
+  const goBack = useCallback(
+    (fallback: Route = { view: 'albums' }) => {
+      // Check if we can go back
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        navigate(fallback);
+      }
+    },
+    [navigate],
+  );
 
   return {
     route,

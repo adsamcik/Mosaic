@@ -25,7 +25,13 @@ const defaultMockState = {
   error: null,
   refetch: vi.fn(),
   createShareLink: vi.fn().mockResolvedValue({
-    shareLink: { id: 'link-1', linkId: 'abc123', accessTier: 2, accessTierDisplay: 'Preview', isExpired: false },
+    shareLink: {
+      id: 'link-1',
+      linkId: 'abc123',
+      accessTier: 2,
+      accessTierDisplay: 'Preview',
+      isExpired: false,
+    },
     shareUrl: 'http://localhost/s/abc123#secret',
     linkSecret: 'secret',
   }),
@@ -37,7 +43,9 @@ const defaultMockState = {
 };
 
 // Helper to render ShareLinksPanel
-function renderShareLinksPanel(props: Partial<Parameters<typeof ShareLinksPanel>[0]> = {}) {
+function renderShareLinksPanel(
+  props: Partial<Parameters<typeof ShareLinksPanel>[0]> = {},
+) {
   const defaultProps = {
     albumId: 'album-123',
     isOpen: true,
@@ -54,8 +62,10 @@ function renderShareLinksPanel(props: Partial<Parameters<typeof ShareLinksPanel>
     root.render(createElement(ShareLinksPanel, { ...defaultProps, ...props }));
   });
 
-  const getByTestId = (testId: string) => document.querySelector(`[data-testid="${testId}"]`);
-  const queryByTestId = (testId: string) => document.querySelector(`[data-testid="${testId}"]`);
+  const getByTestId = (testId: string) =>
+    document.querySelector(`[data-testid="${testId}"]`);
+  const queryByTestId = (testId: string) =>
+    document.querySelector(`[data-testid="${testId}"]`);
 
   const cleanup = () => {
     act(() => {
@@ -64,13 +74,28 @@ function renderShareLinksPanel(props: Partial<Parameters<typeof ShareLinksPanel>
     container.remove();
   };
 
-  const rerender = (newProps: Partial<Parameters<typeof ShareLinksPanel>[0]>) => {
+  const rerender = (
+    newProps: Partial<Parameters<typeof ShareLinksPanel>[0]>,
+  ) => {
     act(() => {
-      root.render(createElement(ShareLinksPanel, { ...defaultProps, ...props, ...newProps }));
+      root.render(
+        createElement(ShareLinksPanel, {
+          ...defaultProps,
+          ...props,
+          ...newProps,
+        }),
+      );
     });
   };
 
-  return { container, getByTestId, queryByTestId, cleanup, rerender, props: { ...defaultProps, ...props } };
+  return {
+    container,
+    getByTestId,
+    queryByTestId,
+    cleanup,
+    rerender,
+    props: { ...defaultProps, ...props },
+  };
 }
 
 describe('ShareLinksPanel', () => {
@@ -89,7 +114,9 @@ describe('ShareLinksPanel', () => {
     });
 
     it('does not render when isOpen is false', () => {
-      const { queryByTestId, cleanup } = renderShareLinksPanel({ isOpen: false });
+      const { queryByTestId, cleanup } = renderShareLinksPanel({
+        isOpen: false,
+      });
 
       expect(queryByTestId('share-links-panel')).toBeNull();
       cleanup();
@@ -162,7 +189,7 @@ describe('ShareLinksPanel', () => {
       // View should switch
       expect(queryByTestId('share-links-list')).toBeNull();
       expect(getByTestId('create-share-link-view')).not.toBeNull();
-      
+
       // Check title update
       const header = getByTestId('share-links-panel');
       expect(header?.textContent).toContain('shareLink.panel.createTitle');
@@ -205,9 +232,21 @@ describe('ShareLinksPanel', () => {
 
     it('passes share links to ShareLinksList', () => {
       const mockLinks = [
-        { id: 'link-1', linkId: 'abc', accessTier: 2, accessTierDisplay: 'Preview', isExpired: false, isRevoked: false, useCount: 0, createdAt: new Date().toISOString() },
+        {
+          id: 'link-1',
+          linkId: 'abc',
+          accessTier: 2,
+          accessTierDisplay: 'Preview',
+          isExpired: false,
+          isRevoked: false,
+          useCount: 0,
+          createdAt: new Date().toISOString(),
+        },
       ];
-      mockUseShareLinks.mockReturnValue({ ...defaultMockState, shareLinks: mockLinks });
+      mockUseShareLinks.mockReturnValue({
+        ...defaultMockState,
+        shareLinks: mockLinks,
+      });
 
       const { getByTestId, cleanup } = renderShareLinksPanel();
 
@@ -217,7 +256,10 @@ describe('ShareLinksPanel', () => {
     });
 
     it('shows loading state from hook', () => {
-      mockUseShareLinks.mockReturnValue({ ...defaultMockState, isLoading: true });
+      mockUseShareLinks.mockReturnValue({
+        ...defaultMockState,
+        isLoading: true,
+      });
 
       const { getByTestId, cleanup } = renderShareLinksPanel();
 
@@ -226,12 +268,17 @@ describe('ShareLinksPanel', () => {
     });
 
     it('shows error state from hook', () => {
-      mockUseShareLinks.mockReturnValue({ ...defaultMockState, error: new Error('Network error') });
+      mockUseShareLinks.mockReturnValue({
+        ...defaultMockState,
+        error: new Error('Network error'),
+      });
 
       const { getByTestId, cleanup } = renderShareLinksPanel();
 
       expect(getByTestId('share-links-error')).not.toBeNull();
-      expect(getByTestId('share-links-error')?.textContent).toContain('Network error');
+      expect(getByTestId('share-links-error')?.textContent).toContain(
+        'Network error',
+      );
       cleanup();
     });
   });
@@ -245,7 +292,9 @@ describe('ShareLinksPanel', () => {
     });
 
     it('hides create button for non-owners', () => {
-      const { queryByTestId, cleanup } = renderShareLinksPanel({ isOwner: false });
+      const { queryByTestId, cleanup } = renderShareLinksPanel({
+        isOwner: false,
+      });
 
       expect(queryByTestId('create-share-link-button')).toBeNull();
       cleanup();

@@ -1,6 +1,13 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { getCachedBlurhashDataURL, isValidBlurhash } from '../../lib/blurhash-decoder';
-import { loadPhoto, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
+import {
+  getCachedBlurhashDataURL,
+  isValidBlurhash,
+} from '../../lib/blurhash-decoder';
+import {
+  loadPhoto,
+  releasePhoto,
+  type PhotoLoadResult,
+} from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
 
 interface PhotoThumbnailProps {
@@ -33,10 +40,10 @@ type ThumbnailState =
 /**
  * Photo Thumbnail Component
  * Displays a single photo in the grid with encrypted shard loading.
- * 
+ *
  * Optimization: Uses embedded base64 thumbnails first when available,
  * only loading full shards when explicitly requested or when no thumbnail exists.
- * 
+ *
  * Loading priority (instant to slow):
  * 1. BlurHash placeholder (instant, ~30 char string decoded in <1ms)
  * 2. Embedded thumbnail (fast, base64 in manifest)
@@ -79,7 +86,8 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
   // 2. Full resolution is explicitly requested
   // AND we have the epoch key and shard IDs
   const shouldLoadShards = useMemo(() => {
-    const hasShards = epochReadKey && photo.shardIds && photo.shardIds.length > 0;
+    const hasShards =
+      epochReadKey && photo.shardIds && photo.shardIds.length > 0;
     if (!hasShards) return false;
     // Load shards if no thumbnail OR if full resolution is requested
     return !photo.thumbnail || loadFullResolution;
@@ -109,7 +117,7 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
                 setState({ status: 'loading', progress });
               }
             },
-          }
+          },
         );
 
         if (!cancelled) {
@@ -132,7 +140,13 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
       cancelled = true;
       releasePhoto(photo.id);
     };
-  }, [photo.id, photo.shardIds, photo.mimeType, epochReadKey, shouldLoadShards]);
+  }, [
+    photo.id,
+    photo.shardIds,
+    photo.mimeType,
+    epochReadKey,
+    shouldLoadShards,
+  ]);
 
   // Retry handler for failed loads
   const handleRetry = useCallback(() => {
@@ -176,7 +190,11 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
     }
 
     // If loading full resolution and have embedded thumbnail, show it as placeholder while loading
-    if (embeddedThumbnailUrl && loadFullResolution && state.status === 'loading') {
+    if (
+      embeddedThumbnailUrl &&
+      loadFullResolution &&
+      state.status === 'loading'
+    ) {
       return (
         <div className="photo-upgrading" data-testid="photo-upgrading">
           <img
@@ -192,7 +210,10 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
     }
 
     // If we have a blurhash, show it as instant placeholder while loading
-    if (blurhashUrl && (state.status === 'idle' || state.status === 'loading')) {
+    if (
+      blurhashUrl &&
+      (state.status === 'idle' || state.status === 'loading')
+    ) {
       return (
         <div className="photo-blurhash" data-testid="photo-blurhash">
           <img
@@ -200,7 +221,12 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
             alt=""
             aria-hidden="true"
             className="photo-blurhash-image"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(0px)' }}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              filter: 'blur(0px)',
+            }}
           />
           {state.status === 'loading' && state.progress > 0 && (
             <div
@@ -218,11 +244,40 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
         return (
           <div className="photo-placeholder" data-testid="photo-placeholder">
             <span className="photo-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
             </span>
-            {!epochReadKey && <span className="photo-locked">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            </span>}
+            {!epochReadKey && (
+              <span className="photo-locked">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </span>
+            )}
           </div>
         );
 
@@ -243,7 +298,21 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
         return (
           <div className="photo-error" data-testid="photo-error">
             <span className="error-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
             </span>
             <span className="error-message">Failed to load</span>
             <button
@@ -262,7 +331,8 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
   };
 
   // Allow clicking when any visual is available (blurhash, embedded thumbnail, or fully loaded)
-  const isClickable = blurhashUrl || embeddedThumbnailUrl || state.status === 'loaded';
+  const isClickable =
+    blurhashUrl || embeddedThumbnailUrl || state.status === 'loaded';
 
   // Handle click - in selection mode, toggle selection; otherwise open photo
   const handleClick = useCallback(() => {
@@ -281,7 +351,7 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
         onSelectionChange(!isSelected);
       }
     },
-    [onSelectionChange, isSelected]
+    [onSelectionChange, isSelected],
   );
 
   // Handle delete button click
@@ -289,19 +359,24 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
     (event: React.MouseEvent) => {
       event.stopPropagation();
       if (onDelete) {
-        const url = state.status === 'loaded' 
-          ? state.result.blobUrl 
-          : embeddedThumbnailUrl ?? undefined;
+        const url =
+          state.status === 'loaded'
+            ? state.result.blobUrl
+            : (embeddedThumbnailUrl ?? undefined);
         onDelete(url);
       }
     },
-    [onDelete, state, embeddedThumbnailUrl]
+    [onDelete, state, embeddedThumbnailUrl],
   );
 
   // Handle keyboard activation
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if ((event.key === 'Enter' || event.key === ' ') && onClick && isClickable) {
+      if (
+        (event.key === 'Enter' || event.key === ' ') &&
+        onClick &&
+        isClickable
+      ) {
         event.preventDefault();
         if (selectionMode && onSelectionChange) {
           onSelectionChange(!isSelected);
@@ -312,19 +387,30 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
       // Delete on Delete/Backspace key when focused
       if ((event.key === 'Delete' || event.key === 'Backspace') && onDelete) {
         event.preventDefault();
-        const url = state.status === 'loaded' 
-          ? state.result.blobUrl 
-          : embeddedThumbnailUrl ?? undefined;
+        const url =
+          state.status === 'loaded'
+            ? state.result.blobUrl
+            : (embeddedThumbnailUrl ?? undefined);
         onDelete(url);
       }
     },
-    [onClick, isClickable, selectionMode, onSelectionChange, isSelected, onDelete, state, embeddedThumbnailUrl]
+    [
+      onClick,
+      isClickable,
+      selectionMode,
+      onSelectionChange,
+      isSelected,
+      onDelete,
+      state,
+      embeddedThumbnailUrl,
+    ],
   );
 
   // Get thumbnail URL for delete dialog if loaded or embedded
-  const thumbnailUrl = state.status === 'loaded' 
-    ? state.result.blobUrl 
-    : embeddedThumbnailUrl ?? undefined;
+  const thumbnailUrl =
+    state.status === 'loaded'
+      ? state.result.blobUrl
+      : (embeddedThumbnailUrl ?? undefined);
 
   return (
     <div
@@ -366,7 +452,20 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
           title="Delete photo"
           data-testid="photo-delete-button"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
         </button>
       )}
 

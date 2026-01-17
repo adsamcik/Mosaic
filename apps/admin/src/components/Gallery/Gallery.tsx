@@ -46,7 +46,13 @@ interface GalleryProps {
  */
 function photosToGeoFeatures(photos: PhotoMeta[]): GeoFeature[] {
   return photos
-    .filter((p) => p.lat != null && p.lng != null && Number.isFinite(p.lat) && Number.isFinite(p.lng))
+    .filter(
+      (p) =>
+        p.lat != null &&
+        p.lng != null &&
+        Number.isFinite(p.lat) &&
+        Number.isFinite(p.lng),
+    )
     .map((p) => ({
       type: 'Feature' as const,
       geometry: {
@@ -63,7 +69,13 @@ function photosToGeoFeatures(photos: PhotoMeta[]): GeoFeature[] {
  * Gallery View Component
  * Displays photos in a virtualized grid or map view with upload capability
  */
-export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onRenameAlbum }: GalleryProps) {
+export function Gallery({
+  albumId,
+  albumName,
+  onAlbumDeleted,
+  onDeleteAlbum,
+  onRenameAlbum,
+}: GalleryProps) {
   const [showMembers, setShowMembers] = useState(false);
   const [showShareLinks, setShowShareLinks] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -74,35 +86,42 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
   const [renameError, setRenameError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('justified');
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // State for bulk photo delete dialog
   const [bulkDeletePhotos, setBulkDeletePhotos] = useState<PhotoMeta[]>([]);
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
 
-  const { photos, isLoading, error, refetch: reloadPhotos } = usePhotoList(albumId, searchQuery);
+  const {
+    photos,
+    isLoading,
+    error,
+    refetch: reloadPhotos,
+  } = usePhotoList(albumId, searchQuery);
   const { epochKeys, isLoading: epochKeysLoading } = useAlbumEpochKeys(albumId);
   const { currentUserRole, isOwner, canEdit } = useAlbumMembers(albumId);
   const photoActions = usePhotoActions();
-  
+
   // Sort photos by createdAt descending to match display order
   // This ensures lightbox navigation follows the visual order
-  const sortedPhotos = useMemo(() => 
-    [...photos].sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    ),
-    [photos]
+  const sortedPhotos = useMemo(
+    () =>
+      [...photos].sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [photos],
   );
-  
+
   const lightbox = useLightbox(sortedPhotos);
   const { syncAlbum } = useSync();
-  
+
   // Selection state for batch operations (lifted up from photo grids)
   const selection = useSelection();
-  
+
   // Register this album for background auto-sync
   useAutoSync(albumId);
-  
+
   // Track if initial sync has been attempted
   const initialSyncDone = useRef(false);
 
@@ -120,13 +139,13 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
     }
 
     // Use the most recent epoch (highest epochId)
-    const [epochId, readKey] = entries.reduce((max, curr) => 
-      curr[0] > max[0] ? curr : max
+    const [epochId, readKey] = entries.reduce((max, curr) =>
+      curr[0] > max[0] ? curr : max,
     );
 
     initialSyncDone.current = true;
     log.info(`Initial sync for album ${albumId} with epoch ${epochId}`);
-    
+
     syncAlbum(albumId, readKey)
       .then(() => {
         log.info(`Initial sync complete for album ${albumId}`);
@@ -155,7 +174,7 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
         lightbox.open(index);
       }
     },
-    [photos, lightbox]
+    [photos, lightbox],
   );
 
   // Handle cluster click from map - open lightbox with first photo
@@ -168,7 +187,7 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
         }
       }
     },
-    [photos, lightbox]
+    [photos, lightbox],
   );
 
   // Handle album deletion
@@ -192,7 +211,8 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
         setDeleteError('Failed to delete album. Please try again.');
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete album';
+      const message =
+        err instanceof Error ? err.message : 'Failed to delete album';
       setDeleteError(message);
     } finally {
       setIsDeleting(false);
@@ -208,7 +228,9 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
 
   // Handle bulk photo delete from header
   const handleBulkDeleteClick = useCallback(() => {
-    const selectedPhotos = photos.filter((p) => selection.selectedIds.has(p.id));
+    const selectedPhotos = photos.filter((p) =>
+      selection.selectedIds.has(p.id),
+    );
     if (selectedPhotos.length > 0) {
       setBulkDeletePhotos(selectedPhotos);
       setShowBulkDeleteDialog(true);
@@ -225,13 +247,13 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
     try {
       const result = await photoActions.deletePhotos(
         bulkDeletePhotos.map((p) => p.id),
-        albumId
+        albumId,
       );
 
       if (result.failureCount > 0) {
         // Some photos failed to delete
         setBulkDeleteError(
-          `Failed to delete ${result.failureCount} of ${bulkDeletePhotos.length} photos. ${result.errors.join(', ')}`
+          `Failed to delete ${result.failureCount} of ${bulkDeletePhotos.length} photos. ${result.errors.join(', ')}`,
         );
       } else {
         // All photos deleted successfully
@@ -241,7 +263,8 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
         reloadPhotos();
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete photos';
+      const message =
+        err instanceof Error ? err.message : 'Failed to delete photos';
       setBulkDeleteError(message);
     }
   }, [bulkDeletePhotos, photoActions, albumId, selection, reloadPhotos]);
@@ -274,26 +297,30 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
     setShowRenameDialog(true);
   }, []);
 
-  const handleConfirmRename = useCallback(async (newName: string) => {
-    if (!onRenameAlbum) return;
+  const handleConfirmRename = useCallback(
+    async (newName: string) => {
+      if (!onRenameAlbum) return;
 
-    setIsRenaming(true);
-    setRenameError(null);
+      setIsRenaming(true);
+      setRenameError(null);
 
-    try {
-      const success = await onRenameAlbum(albumId, newName);
-      if (success) {
-        setShowRenameDialog(false);
-      } else {
-        setRenameError('Failed to rename album. Please try again.');
+      try {
+        const success = await onRenameAlbum(albumId, newName);
+        if (success) {
+          setShowRenameDialog(false);
+        } else {
+          setRenameError('Failed to rename album. Please try again.');
+        }
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Failed to rename album';
+        setRenameError(message);
+      } finally {
+        setIsRenaming(false);
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to rename album';
-      setRenameError(message);
-    } finally {
-      setIsRenaming(false);
-    }
-  }, [albumId, onRenameAlbum]);
+    },
+    [albumId, onRenameAlbum],
+  );
 
   const handleCancelRename = useCallback(() => {
     if (!isRenaming) {
@@ -344,7 +371,9 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
     return (
       <div className="gallery" data-testid="gallery">
         <div className="gallery-error">
-          <p>{t('gallery.error.loadFailed')}: {error.message}</p>
+          <p>
+            {t('gallery.error.loadFailed')}: {error.message}
+          </p>
         </div>
       </div>
     );
@@ -352,155 +381,167 @@ export function Gallery({ albumId, albumName, onAlbumDeleted, onDeleteAlbum, onR
 
   return (
     <AlbumPermissionsProvider role={currentUserRole ?? 'viewer'}>
-    <UploadProvider>
-    <SyncCoordinatorProvider>
-      <div className={`gallery ${selection.isSelectionMode ? 'selection-mode-active' : ''}`} data-testid="gallery">
-        <GalleryHeader
-          albumId={albumId}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          geotaggedCount={geotaggedCount}
-          onShowMembers={() => setShowMembers(true)}
-          onShowShareLinks={() => setShowShareLinks(true)}
-          onRenameAlbum={onRenameAlbum ? handleRenameAlbum : undefined}
-          onDeleteAlbum={onDeleteAlbum ? handleDeleteAlbum : undefined}
-          selection={{
-            isSelectionMode: selection.isSelectionMode,
-            selectedCount: selection.selectedCount,
-          }}
-          selectionActions={{
-            toggleSelectionMode: selection.toggleSelectionMode,
-            selectAll: handleSelectAll,
-            clearSelection: selection.clearSelection,
-            onBulkDelete: handleBulkDeleteClick,
-          }}
-        />
+      <UploadProvider>
+        <SyncCoordinatorProvider>
+          <div
+            className={`gallery ${selection.isSelectionMode ? 'selection-mode-active' : ''}`}
+            data-testid="gallery"
+          >
+            <GalleryHeader
+              albumId={albumId}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              geotaggedCount={geotaggedCount}
+              onShowMembers={() => setShowMembers(true)}
+              onShowShareLinks={() => setShowShareLinks(true)}
+              onRenameAlbum={onRenameAlbum ? handleRenameAlbum : undefined}
+              onDeleteAlbum={onDeleteAlbum ? handleDeleteAlbum : undefined}
+              selection={{
+                isSelectionMode: selection.isSelectionMode,
+                selectedCount: selection.selectedCount,
+              }}
+              selectionActions={{
+                toggleSelectionMode: selection.toggleSelectionMode,
+                selectAll: handleSelectAll,
+                clearSelection: selection.clearSelection,
+                onBulkDelete: handleBulkDeleteClick,
+              }}
+            />
 
-      {/* Gallery Content - Wrapped in DropZone for drag-and-drop upload */}
-      <DropZone albumId={albumId} className="gallery-content" disabled={!canEdit}>
-        {viewMode === 'justified' ? (
-          <PhotoGrid
-            albumId={albumId}
-            photos={photos}
-            isLoading={isLoading}
-            error={error}
-            refetch={reloadPhotos}
-            selection={selection}
-            onPhotosDeleted={handleBulkDeleteComplete}
-          />
-        ) : viewMode === 'grid' ? (
-          <SquarePhotoGrid
-            albumId={albumId}
-            photos={photos}
-            isLoading={isLoading}
-            error={error}
-            refetch={reloadPhotos}
-            selection={selection}
-            onPhotosDeleted={handleBulkDeleteComplete}
-          />
-        ) : viewMode === 'mosaic' ? (
-          <MosaicPhotoGrid
-            albumId={albumId}
-            photos={photos}
-            isLoading={isLoading}
-            error={error}
-            refetch={reloadPhotos}
-            selection={selection}
-            onPhotosDeleted={handleBulkDeleteComplete}
-          />
-        ) : (
-          <MapView
-            albumId={albumId}
-            points={geoFeatures}
-            photos={photos}
-            onPhotoClick={handleMapPhotoClick}
-            onClusterClick={handleMapClusterClick}
-          />
-        )}
-      </DropZone>
+            {/* Gallery Content - Wrapped in DropZone for drag-and-drop upload */}
+            <DropZone
+              albumId={albumId}
+              className="gallery-content"
+              disabled={!canEdit}
+            >
+              {viewMode === 'justified' ? (
+                <PhotoGrid
+                  albumId={albumId}
+                  photos={photos}
+                  isLoading={isLoading}
+                  error={error}
+                  refetch={reloadPhotos}
+                  selection={selection}
+                  onPhotosDeleted={handleBulkDeleteComplete}
+                />
+              ) : viewMode === 'grid' ? (
+                <SquarePhotoGrid
+                  albumId={albumId}
+                  photos={photos}
+                  isLoading={isLoading}
+                  error={error}
+                  refetch={reloadPhotos}
+                  selection={selection}
+                  onPhotosDeleted={handleBulkDeleteComplete}
+                />
+              ) : viewMode === 'mosaic' ? (
+                <MosaicPhotoGrid
+                  albumId={albumId}
+                  photos={photos}
+                  isLoading={isLoading}
+                  error={error}
+                  refetch={reloadPhotos}
+                  selection={selection}
+                  onPhotosDeleted={handleBulkDeleteComplete}
+                />
+              ) : (
+                <MapView
+                  albumId={albumId}
+                  points={geoFeatures}
+                  photos={photos}
+                  onPhotoClick={handleMapPhotoClick}
+                  onClusterClick={handleMapClusterClick}
+                />
+              )}
+            </DropZone>
 
-      {/* Member List Modal */}
-      <MemberList
-        albumId={albumId}
-        isOpen={showMembers}
-        onClose={() => setShowMembers(false)}
-      />
+            {/* Member List Modal */}
+            <MemberList
+              albumId={albumId}
+              isOpen={showMembers}
+              onClose={() => setShowMembers(false)}
+            />
 
-      {/* Share Links Panel (owners only) */}
-      {isOwner && (
-        <ShareLinksPanel
-          albumId={albumId}
-          isOpen={showShareLinks}
-          onClose={() => setShowShareLinks(false)}
-          isOwner={isOwner}
-        />
-      )}
+            {/* Share Links Panel (owners only) */}
+            {isOwner && (
+              <ShareLinksPanel
+                albumId={albumId}
+                isOpen={showShareLinks}
+                onClose={() => setShowShareLinks(false)}
+                isOwner={isOwner}
+              />
+            )}
 
-      {/* Photo Lightbox - Only used by MapView; justified/mosaic grids manage their own */}
-      {viewMode === 'map' && lightbox.isOpen && lightbox.currentPhoto && currentEpochReadKey && (
-        <PhotoLightbox
-          photo={lightbox.currentPhoto}
-          epochReadKey={currentEpochReadKey}
-          onClose={lightbox.close}
-          {...(lightbox.hasNext && { onNext: lightbox.next })}
-          {...(lightbox.hasPrevious && { onPrevious: lightbox.previous })}
-          hasNext={lightbox.hasNext}
-          hasPrevious={lightbox.hasPrevious}
-          preloadQueue={preloadQueue}
-        />
-      )}
+            {/* Photo Lightbox - Only used by MapView; justified/mosaic grids manage their own */}
+            {viewMode === 'map' &&
+              lightbox.isOpen &&
+              lightbox.currentPhoto &&
+              currentEpochReadKey && (
+                <PhotoLightbox
+                  photo={lightbox.currentPhoto}
+                  epochReadKey={currentEpochReadKey}
+                  onClose={lightbox.close}
+                  {...(lightbox.hasNext && { onNext: lightbox.next })}
+                  {...(lightbox.hasPrevious && {
+                    onPrevious: lightbox.previous,
+                  })}
+                  hasNext={lightbox.hasNext}
+                  hasPrevious={lightbox.hasPrevious}
+                  preloadQueue={preloadQueue}
+                />
+              )}
 
-      {/* Delete Album Confirmation Dialog */}
-      {showDeleteDialog && (
-        <DeleteAlbumDialog
-          albumName={albumName ?? `Album ${albumId.slice(0, 8)}`}
-          photoCount={photos.length}
-          isDeleting={isDeleting}
-          onConfirm={handleConfirmDelete}
-          onCancel={handleCancelDelete}
-          error={deleteError}
-        />
-      )}
+            {/* Delete Album Confirmation Dialog */}
+            {showDeleteDialog && (
+              <DeleteAlbumDialog
+                albumName={albumName ?? `Album ${albumId.slice(0, 8)}`}
+                photoCount={photos.length}
+                isDeleting={isDeleting}
+                onConfirm={handleConfirmDelete}
+                onCancel={handleCancelDelete}
+                error={deleteError}
+              />
+            )}
 
-      {/* Rename Album Dialog */}
-      <RenameAlbumDialog
-        isOpen={showRenameDialog}
-        onClose={handleCancelRename}
-        onRename={handleConfirmRename}
-        isRenaming={isRenaming}
-        error={renameError}
-        currentName={albumName ?? `Album ${albumId.slice(0, 8)}`}
-      />
+            {/* Rename Album Dialog */}
+            <RenameAlbumDialog
+              isOpen={showRenameDialog}
+              onClose={handleCancelRename}
+              onRename={handleConfirmRename}
+              isRenaming={isRenaming}
+              error={renameError}
+              currentName={albumName ?? `Album ${albumId.slice(0, 8)}`}
+            />
 
-      {/* Upload Error Toast */}
-      <UploadErrorToast />
+            {/* Upload Error Toast */}
+            <UploadErrorToast />
 
-      {/* Bulk Delete Photo Confirmation Dialog */}
-      {showBulkDeleteDialog && bulkDeletePhotos.length > 0 && (
-        <DeletePhotoDialog
-          photos={bulkDeletePhotos}
-          isDeleting={photoActions.isDeleting}
-          onConfirm={handleConfirmBulkDelete}
-          onCancel={handleCancelBulkDelete}
-          error={bulkDeleteError}
-        />
-      )}
+            {/* Bulk Delete Photo Confirmation Dialog */}
+            {showBulkDeleteDialog && bulkDeletePhotos.length > 0 && (
+              <DeletePhotoDialog
+                photos={bulkDeletePhotos}
+                isDeleting={photoActions.isDeleting}
+                onConfirm={handleConfirmBulkDelete}
+                onCancel={handleCancelBulkDelete}
+                error={bulkDeleteError}
+              />
+            )}
 
-      {/* Selection Action Bar - floating bottom bar when in selection mode */}
-      <SelectionActionBar
-        selectedCount={selection.selectedCount}
-        isSelectionMode={selection.isSelectionMode}
-        onSelectAll={handleSelectAll}
-        onClearSelection={selection.clearSelection}
-        onExitSelectionMode={selection.exitSelectionMode}
-        onDeleteSelected={handleBulkDeleteClick}
-        totalPhotos={photos.length}
-      />
-      </div>
-    </SyncCoordinatorProvider>
-    </UploadProvider>
+            {/* Selection Action Bar - floating bottom bar when in selection mode */}
+            <SelectionActionBar
+              selectedCount={selection.selectedCount}
+              isSelectionMode={selection.isSelectionMode}
+              onSelectAll={handleSelectAll}
+              onClearSelection={selection.clearSelection}
+              onExitSelectionMode={selection.exitSelectionMode}
+              onDeleteSelected={handleBulkDeleteClick}
+              totalPhotos={photos.length}
+            />
+          </div>
+        </SyncCoordinatorProvider>
+      </UploadProvider>
     </AlbumPermissionsProvider>
   );
 }

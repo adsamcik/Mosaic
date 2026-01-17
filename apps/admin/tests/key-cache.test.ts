@@ -26,7 +26,9 @@ vi.mock('../src/lib/settings-service', () => ({
 const mockKeys: CachedKeys = {
   accountKey: btoa('account-key-32-bytes-test-data!'),
   sessionKey: btoa('session-key-32-bytes-test-data!'),
-  identitySecretKey: btoa('identity-secret-key-64-bytes-data-for-ed25519-signing-test!!!!'),
+  identitySecretKey: btoa(
+    'identity-secret-key-64-bytes-data-for-ed25519-signing-test!!!!',
+  ),
   identityPublicKey: btoa('identity-public-key-32-bytes!'),
   identityX25519SecretKey: btoa('x25519-secret-key-32-bytes!!'),
   identityX25519PublicKey: btoa('x25519-public-key-32-bytes!!'),
@@ -41,7 +43,9 @@ describe('key-cache', () => {
     // Reset the cache encryption key
     clearCacheEncryptionKey();
     // Default to enabled with 30 minute duration
-    vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(30 * 60 * 1000);
+    vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(
+      30 * 60 * 1000,
+    );
   });
 
   afterEach(() => {
@@ -60,7 +64,9 @@ describe('key-cache', () => {
     });
 
     it('returns true when duration is Infinity (until tab close)', () => {
-      vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(Infinity);
+      vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(
+        Infinity,
+      );
       expect(isKeyCachingEnabled()).toBe(true);
     });
   });
@@ -100,7 +106,9 @@ describe('key-cache', () => {
     });
 
     it('sets expiresAt to 0 when duration is Infinity', async () => {
-      vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(Infinity);
+      vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(
+        Infinity,
+      );
 
       await cacheKeys(mockKeys);
 
@@ -162,7 +170,9 @@ describe('key-cache', () => {
     });
 
     it('returns keys when expiresAt is 0 (no expiry)', async () => {
-      vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(Infinity);
+      vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(
+        Infinity,
+      );
 
       await cacheKeys(mockKeys);
 
@@ -200,7 +210,9 @@ describe('key-cache', () => {
       expect(sessionStorage.getItem('mosaic:keyCache')).toBeNull();
       // And we can't retrieve keys anymore
       // Need to re-mock since we just cleared
-      vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(30 * 60 * 1000);
+      vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(
+        30 * 60 * 1000,
+      );
       const result = await getCachedKeys();
       expect(result).toBeNull();
     });

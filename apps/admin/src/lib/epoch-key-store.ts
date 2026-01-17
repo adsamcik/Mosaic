@@ -28,7 +28,7 @@ const epochKeyCache = new Map<string, Map<number, EpochKeyBundle>>();
  */
 export function getEpochKey(
   albumId: string,
-  epochId: number
+  epochId: number,
 ): EpochKeyBundle | null {
   const albumKeys = epochKeyCache.get(albumId);
   return albumKeys?.get(epochId) ?? null;
@@ -82,10 +82,10 @@ export function setEpochKey(albumId: string, bundle: EpochKeyBundle): void {
   const existing = albumKeys.get(bundle.epochId);
   if (existing) {
     const existingHasValidSignKeypair = existing.signKeypair.publicKey.some(
-      (b) => b !== 0
+      (b) => b !== 0,
     );
     const newHasValidSignKeypair = bundle.signKeypair.publicKey.some(
-      (b) => b !== 0
+      (b) => b !== 0,
     );
 
     // Don't overwrite a complete bundle with one that has empty signKeypair
@@ -93,7 +93,7 @@ export function setEpochKey(albumId: string, bundle: EpochKeyBundle): void {
       // Preserve existing, but update epochSeed if the new one is different
       // (in case the seed was updated but signKeypair wasn't provided)
       const seedsMatch = existing.epochSeed.every(
-        (b, i) => b === bundle.epochSeed[i]
+        (b, i) => b === bundle.epochSeed[i],
       );
       if (seedsMatch) {
         // Same seed, existing has better data - keep it
@@ -101,7 +101,7 @@ export function setEpochKey(albumId: string, bundle: EpochKeyBundle): void {
       }
       // Different seed with no signKeypair - this shouldn't happen, but log it
       console.warn(
-        `[epoch-key-store] Overwriting epoch ${bundle.epochId} with different seed but empty signKeypair`
+        `[epoch-key-store] Overwriting epoch ${bundle.epochId} with different seed but empty signKeypair`,
       );
     }
   }

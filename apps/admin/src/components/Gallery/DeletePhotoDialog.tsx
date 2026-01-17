@@ -81,8 +81,8 @@ export function DeletePhotoDialog({
     }
   };
 
-  const title = isBulkDelete 
-    ? t('gallery.delete.titleBulk', { count: photoCount }) 
+  const title = isBulkDelete
+    ? t('gallery.delete.titleBulk', { count: photoCount })
     : t('gallery.delete.titleSingle');
 
   return (
@@ -94,10 +94,13 @@ export function DeletePhotoDialog({
       testId="delete-photo-dialog"
       closeOnBackdropClick={!isDeleting}
     >
-      <form id="delete-photo-form" className="dialog-form" onSubmit={handleSubmit}>
+      <form
+        id="delete-photo-form"
+        className="dialog-form"
+        onSubmit={handleSubmit}
+      >
         <p className="dialog-description delete-warning">
-          {t('common.permanentAction')}
-          {' '}
+          {t('common.permanentAction')}{' '}
           {isBulkDelete
             ? t('gallery.delete.warningBulk', { count: photoCount })
             : t('gallery.delete.warningSingle')}

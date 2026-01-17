@@ -8,7 +8,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
-import { loadPhoto, preloadPhotos, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
+import {
+  loadPhoto,
+  preloadPhotos,
+  releasePhoto,
+  type PhotoLoadResult,
+} from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
 
 /** Props for the PhotoLightbox component */
@@ -82,7 +87,10 @@ export function PhotoLightbox({
   onDelete,
 }: PhotoLightboxProps) {
   const { t } = useTranslation();
-  const [loadState, setLoadState] = useState<LoadState>({ status: 'loading', progress: 0 });
+  const [loadState, setLoadState] = useState<LoadState>({
+    status: 'loading',
+    progress: 0,
+  });
   const [showInfo, setShowInfo] = useState(false);
   const backdropRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -131,7 +139,7 @@ export function PhotoLightbox({
                 setLoadState({ status: 'loading', progress });
               }
             },
-          }
+          },
         );
 
         if (!cancelled) {
@@ -162,18 +170,19 @@ export function PhotoLightbox({
     void preloadPhotos(
       preloadQueue.map((p) => {
         // Extract original shards for preloading
-        const origShards = p.originalShardIds && p.originalShardIds.length > 0
-          ? p.originalShardIds
-          : p.shardIds.length === 3
-            ? [p.shardIds[2]!]
-            : p.shardIds;
+        const origShards =
+          p.originalShardIds && p.originalShardIds.length > 0
+            ? p.originalShardIds
+            : p.shardIds.length === 3
+              ? [p.shardIds[2]!]
+              : p.shardIds;
         return {
           id: `${p.id}:full`,
           shardIds: origShards,
           mimeType: p.mimeType,
         };
       }),
-      epochReadKey
+      epochReadKey,
     );
   }, [preloadQueue, epochReadKey]);
 
@@ -195,7 +204,7 @@ export function PhotoLightbox({
         setLoadState({
           status: 'error',
           error: error instanceof Error ? error : new Error(String(error)),
-        })
+        }),
       );
   }, [fullResPhotoId, originalShards, photo.mimeType, epochReadKey]);
 
@@ -222,7 +231,7 @@ export function PhotoLightbox({
         onClose();
       }
     },
-    [onClose]
+    [onClose],
   );
 
   // Touch handlers for swipe navigation
@@ -245,7 +254,10 @@ export function PhotoLightbox({
 
       // Minimum swipe distance (50px) and more horizontal than vertical
       const minSwipeDistance = 50;
-      if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaX) > Math.abs(deltaY)) {
+      if (
+        Math.abs(deltaX) > minSwipeDistance &&
+        Math.abs(deltaX) > Math.abs(deltaY)
+      ) {
         if (deltaX > 0 && hasPrevious && onPrevious) {
           onPrevious();
         } else if (deltaX < 0 && hasNext && onNext) {
@@ -255,7 +267,7 @@ export function PhotoLightbox({
 
       touchStartRef.current = null;
     },
-    [hasNext, hasPrevious, onNext, onPrevious]
+    [hasNext, hasPrevious, onNext, onPrevious],
   );
 
   // Toggle metadata panel
@@ -312,11 +324,17 @@ export function PhotoLightbox({
       <div className="lightbox-progress">
         <div
           className="lightbox-progress-bar"
-          style={{ width: `${(loadState as { progress: number }).progress * 100}%` }}
+          style={{
+            width: `${(loadState as { progress: number }).progress * 100}%`,
+          }}
         />
       </div>
       <span className="lightbox-progress-text">
-        {t('lightbox.loadingProgress', { percent: Math.round((loadState as { progress: number }).progress * 100) })}
+        {t('lightbox.loadingProgress', {
+          percent: Math.round(
+            (loadState as { progress: number }).progress * 100,
+          ),
+        })}
       </span>
     </div>
   );
@@ -325,7 +343,21 @@ export function PhotoLightbox({
   const renderError = () => (
     <div className="lightbox-error" data-testid="lightbox-error">
       <span className="lightbox-error-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
       </span>
       <p className="lightbox-error-message">
         Failed to load photo: {(loadState as { error: Error }).error.message}
@@ -423,7 +455,20 @@ export function PhotoLightbox({
         aria-label={t('lightbox.close')}
         data-testid="lightbox-close"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
       </button>
 
       {/* Navigation buttons */}
@@ -434,7 +479,19 @@ export function PhotoLightbox({
           aria-label={t('lightbox.previous')}
           data-testid="lightbox-prev"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
         </button>
       )}
       {hasNext && onNext && (
@@ -444,7 +501,19 @@ export function PhotoLightbox({
           aria-label={t('lightbox.next')}
           data-testid="lightbox-next"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
         </button>
       )}
 
@@ -460,11 +529,27 @@ export function PhotoLightbox({
         <button
           className={`lightbox-info-toggle ${showInfo ? 'lightbox-info-toggle-active' : ''}`}
           onClick={toggleInfo}
-          aria-label={showInfo ? t('lightbox.hideMetadata') : t('lightbox.showMetadata')}
+          aria-label={
+            showInfo ? t('lightbox.hideMetadata') : t('lightbox.showMetadata')
+          }
           aria-pressed={showInfo}
           data-testid="lightbox-info-toggle"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
         </button>
       )}
 
@@ -477,7 +562,21 @@ export function PhotoLightbox({
           title={t('lightbox.download')}
           data-testid="lightbox-download"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
         </button>
       )}
 
@@ -490,7 +589,20 @@ export function PhotoLightbox({
           title={t('lightbox.delete')}
           data-testid="lightbox-delete"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
         </button>
       )}
 

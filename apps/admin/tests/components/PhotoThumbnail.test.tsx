@@ -15,14 +15,24 @@ import * as photoService from '../../src/lib/photo-service';
 
 // Mock the photo-service
 vi.mock('../../src/lib/photo-service', () => ({
-  loadPhoto: vi.fn().mockResolvedValue({ blobUrl: 'blob:test', mimeType: 'image/jpeg', size: 1024 }),
+  loadPhoto: vi
+    .fn()
+    .mockResolvedValue({
+      blobUrl: 'blob:test',
+      mimeType: 'image/jpeg',
+      size: 1024,
+    }),
   releasePhoto: vi.fn(),
 }));
 
 // Mock the blurhash-decoder
 vi.mock('../../src/lib/blurhash-decoder', () => ({
-  getCachedBlurhashDataURL: vi.fn().mockReturnValue('data:image/png;base64,blurhashMockData'),
-  isValidBlurhash: vi.fn().mockImplementation((hash: string) => hash && hash.length > 4),
+  getCachedBlurhashDataURL: vi
+    .fn()
+    .mockReturnValue('data:image/png;base64,blurhashMockData'),
+  isValidBlurhash: vi
+    .fn()
+    .mockImplementation((hash: string) => hash && hash.length > 4),
 }));
 
 /**
@@ -76,13 +86,17 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
-      const embeddedImg = container.querySelector('[data-testid="photo-image-embedded"]');
+      const embeddedImg = container.querySelector(
+        '[data-testid="photo-image-embedded"]',
+      );
       expect(embeddedImg).not.toBeNull();
-      expect(embeddedImg?.getAttribute('src')).toBe('data:image/jpeg;base64,base64EncodedThumbnailData');
+      expect(embeddedImg?.getAttribute('src')).toBe(
+        'data:image/jpeg;base64,base64EncodedThumbnailData',
+      );
     });
 
     it('does NOT show loading spinner when embedded thumbnail exists', () => {
@@ -95,7 +109,7 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
@@ -113,10 +127,10 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Wait for any potential async effects
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       expect(photoService.loadPhoto).not.toHaveBeenCalled();
@@ -132,12 +146,16 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
-      expect(thumbnail?.getAttribute('data-thumbnail-url')).toBe('data:image/jpeg;base64,base64EncodedThumbnailData');
+      const thumbnail = container.querySelector(
+        '[data-testid="photo-thumbnail"]',
+      );
+      expect(thumbnail?.getAttribute('data-thumbnail-url')).toBe(
+        'data:image/jpeg;base64,base64EncodedThumbnailData',
+      );
     });
   });
 
@@ -152,10 +170,10 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Wait for the effect to trigger
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       expect(photoService.loadPhoto).toHaveBeenCalledWith(
@@ -163,7 +181,7 @@ describe('PhotoThumbnail', () => {
         photo.shardIds,
         mockEpochKey,
         photo.mimeType,
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -177,10 +195,10 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Wait for the effect to trigger
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       expect(photoService.loadPhoto).toHaveBeenCalled();
@@ -205,10 +223,10 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Allow effect to run
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
       const loading = container.querySelector('[data-testid="photo-loading"]');
@@ -216,7 +234,11 @@ describe('PhotoThumbnail', () => {
 
       // Cleanup
       await act(async () => {
-        resolveLoad!({ blobUrl: 'blob:test', mimeType: 'image/jpeg', size: 1024 });
+        resolveLoad!({
+          blobUrl: 'blob:test',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
       });
     });
   });
@@ -233,10 +255,10 @@ describe('PhotoThumbnail', () => {
             photo,
             epochReadKey: mockEpochKey,
             loadFullResolution: true,
-          })
+          }),
         );
         // Wait for the effect to trigger
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       expect(photoService.loadPhoto).toHaveBeenCalledWith(
@@ -244,7 +266,7 @@ describe('PhotoThumbnail', () => {
         photo.shardIds,
         mockEpochKey,
         photo.mimeType,
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -267,18 +289,24 @@ describe('PhotoThumbnail', () => {
             photo,
             epochReadKey: mockEpochKey,
             loadFullResolution: true,
-          })
+          }),
         );
         // Allow effect to run
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      const upgrading = container.querySelector('[data-testid="photo-upgrading"]');
+      const upgrading = container.querySelector(
+        '[data-testid="photo-upgrading"]',
+      );
       expect(upgrading).not.toBeNull();
 
       // Cleanup
       await act(async () => {
-        resolveLoad!({ blobUrl: 'blob:test', mimeType: 'image/jpeg', size: 1024 });
+        resolveLoad!({
+          blobUrl: 'blob:test',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
       });
     });
 
@@ -299,10 +327,10 @@ describe('PhotoThumbnail', () => {
             photo,
             epochReadKey: mockEpochKey,
             loadFullResolution: true,
-          })
+          }),
         );
         // Wait for loading to complete
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       const fullResImg = container.querySelector('[data-testid="photo-image"]');
@@ -324,11 +352,13 @@ describe('PhotoThumbnail', () => {
             photo,
             epochReadKey: mockEpochKey,
             onClick,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="photo-thumbnail"]',
+      );
       expect(thumbnail?.getAttribute('tabIndex')).toBe('0');
 
       act(() => {
@@ -350,11 +380,13 @@ describe('PhotoThumbnail', () => {
             photo,
             epochReadKey: mockEpochKey,
             onClick,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="photo-thumbnail"]',
+      );
       act(() => {
         thumbnail?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
@@ -374,14 +406,16 @@ describe('PhotoThumbnail', () => {
             photo,
             epochReadKey: mockEpochKey,
             onClick,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="photo-thumbnail"]',
+      );
       act(() => {
         thumbnail?.dispatchEvent(
-          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
         );
       });
 
@@ -404,11 +438,13 @@ describe('PhotoThumbnail', () => {
             selectionMode: true,
             isSelected: false,
             onSelectionChange,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="photo-thumbnail"]',
+      );
       act(() => {
         thumbnail?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
@@ -428,11 +464,13 @@ describe('PhotoThumbnail', () => {
             epochReadKey: mockEpochKey,
             selectionMode: true,
             onSelectionChange: vi.fn(),
-          })
+          }),
         );
       });
 
-      const checkbox = container.querySelector('[data-testid="photo-checkbox"]');
+      const checkbox = container.querySelector(
+        '[data-testid="photo-checkbox"]',
+      );
       expect(checkbox).not.toBeNull();
     });
 
@@ -449,7 +487,7 @@ describe('PhotoThumbnail', () => {
             selectionMode: true,
             isSelected: true,
             onSelectionChange: vi.fn(),
-          })
+          }),
         );
       });
 
@@ -469,9 +507,9 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: undefined,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       expect(photoService.loadPhoto).not.toHaveBeenCalled();
@@ -488,11 +526,13 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: undefined,
-          })
+          }),
         );
       });
 
-      const placeholder = container.querySelector('[data-testid="photo-placeholder"]');
+      const placeholder = container.querySelector(
+        '[data-testid="photo-placeholder"]',
+      );
       expect(placeholder).not.toBeNull();
     });
 
@@ -506,11 +546,13 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: undefined,
-          })
+          }),
         );
       });
 
-      const embeddedImg = container.querySelector('[data-testid="photo-image-embedded"]');
+      const embeddedImg = container.querySelector(
+        '[data-testid="photo-image-embedded"]',
+      );
       expect(embeddedImg).not.toBeNull();
     });
   });
@@ -535,18 +577,24 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Allow effect to run
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      const blurhash = container.querySelector('[data-testid="photo-blurhash"]');
+      const blurhash = container.querySelector(
+        '[data-testid="photo-blurhash"]',
+      );
       expect(blurhash).not.toBeNull();
 
       // Cleanup
       await act(async () => {
-        resolveLoad!({ blobUrl: 'blob:test', mimeType: 'image/jpeg', size: 1024 });
+        resolveLoad!({
+          blobUrl: 'blob:test',
+          mimeType: 'image/jpeg',
+          size: 1024,
+        });
       });
     });
 
@@ -561,13 +609,17 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
       // Should show embedded thumbnail, not blurhash
-      const embeddedImg = container.querySelector('[data-testid="photo-image-embedded"]');
-      const blurhash = container.querySelector('[data-testid="photo-blurhash"]');
+      const embeddedImg = container.querySelector(
+        '[data-testid="photo-image-embedded"]',
+      );
+      const blurhash = container.querySelector(
+        '[data-testid="photo-blurhash"]',
+      );
       expect(embeddedImg).not.toBeNull();
       expect(blurhash).toBeNull();
     });
@@ -586,14 +638,18 @@ describe('PhotoThumbnail', () => {
             photo,
             epochReadKey: mockEpochKey,
             onDelete,
-          })
+          }),
         );
       });
 
       // Verify the thumbnail URL is set correctly via data attribute
       // This URL is used by the delete handler when invoked
-      const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
-      expect(thumbnail?.getAttribute('data-thumbnail-url')).toBe('data:image/jpeg;base64,base64EncodedThumbnailData');
+      const thumbnail = container.querySelector(
+        '[data-testid="photo-thumbnail"]',
+      );
+      expect(thumbnail?.getAttribute('data-thumbnail-url')).toBe(
+        'data:image/jpeg;base64,base64EncodedThumbnailData',
+      );
     });
 
     it('handles keyboard delete with embedded thumbnail URL', () => {
@@ -609,18 +665,22 @@ describe('PhotoThumbnail', () => {
             epochReadKey: mockEpochKey,
             onDelete,
             onClick: vi.fn(), // Needed for focus/keyboard handling
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="photo-thumbnail"]',
+      );
       act(() => {
         thumbnail?.dispatchEvent(
-          new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })
+          new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }),
         );
       });
 
-      expect(onDelete).toHaveBeenCalledWith('data:image/jpeg;base64,base64EncodedThumbnailData');
+      expect(onDelete).toHaveBeenCalledWith(
+        'data:image/jpeg;base64,base64EncodedThumbnailData',
+      );
     });
   });
 
@@ -636,11 +696,13 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="photo-thumbnail"]',
+      );
       expect(thumbnail?.getAttribute('data-photo-id')).toBe('unique-photo-id');
     });
 
@@ -655,11 +717,13 @@ describe('PhotoThumbnail', () => {
             photo,
             epochReadKey: mockEpochKey,
             style: { maxWidth: '300px' },
-          })
+          }),
         );
       });
 
-      const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
+      const thumbnail = container.querySelector(
+        '[data-testid="photo-thumbnail"]',
+      );
       expect((thumbnail as HTMLElement).style.maxWidth).toBe('300px');
     });
 
@@ -674,7 +738,7 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
       });
 
@@ -694,9 +758,9 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       act(() => {
@@ -716,9 +780,9 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       vi.clearAllMocks();
@@ -734,7 +798,9 @@ describe('PhotoThumbnail', () => {
 
   describe('Error State', () => {
     it('shows error state when shard loading fails', async () => {
-      vi.mocked(photoService.loadPhoto).mockRejectedValue(new Error('Failed to load'));
+      vi.mocked(photoService.loadPhoto).mockRejectedValue(
+        new Error('Failed to load'),
+      );
 
       const photo = createMockPhoto({
         thumbnail: undefined,
@@ -746,10 +812,10 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
         // Wait for the error to propagate
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       const error = container.querySelector('[data-testid="photo-error"]');
@@ -757,7 +823,9 @@ describe('PhotoThumbnail', () => {
     });
 
     it('shows retry button on error', async () => {
-      vi.mocked(photoService.loadPhoto).mockRejectedValue(new Error('Failed to load'));
+      vi.mocked(photoService.loadPhoto).mockRejectedValue(
+        new Error('Failed to load'),
+      );
 
       const photo = createMockPhoto({
         thumbnail: undefined,
@@ -769,9 +837,9 @@ describe('PhotoThumbnail', () => {
           createElement(PhotoThumbnail, {
             photo,
             epochReadKey: mockEpochKey,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
       const retryButton = container.querySelector('.retry-button');

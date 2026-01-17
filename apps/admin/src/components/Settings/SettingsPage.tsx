@@ -19,21 +19,21 @@ import type { User } from '../../lib/api-types';
 import { closeDbClient } from '../../lib/db-client';
 import { clearAllEpochKeys } from '../../lib/epoch-key-store';
 import {
-    changeLanguage,
-    getCurrentLanguage,
-    supportedLanguages,
-    type SupportedLanguage,
+  changeLanguage,
+  getCurrentLanguage,
+  supportedLanguages,
+  type SupportedLanguage,
 } from '../../lib/i18n';
 import { session } from '../../lib/session';
 import {
-    getDefaultSettings,
-    getSettings,
-    saveSettings,
-    type IdleTimeoutMinutes,
-    type KeyCacheDuration,
-    type Theme,
-    type ThumbnailQuality,
-    type UserSettings,
+  getDefaultSettings,
+  getSettings,
+  saveSettings,
+  type IdleTimeoutMinutes,
+  type KeyCacheDuration,
+  type Theme,
+  type ThumbnailQuality,
+  type UserSettings,
 } from '../../lib/settings-service';
 
 // =============================================================================
@@ -85,9 +85,10 @@ function truncate(str: string, maxLen: number): string {
 
 export function SettingsPage() {
   const { t, i18n } = useTranslation();
-  
+
   // Language state
-  const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>(getCurrentLanguage);
+  const [currentLanguage, setCurrentLanguage] =
+    useState<SupportedLanguage>(getCurrentLanguage);
 
   // User state
   const [user, setUser] = useState<User | null>(null);
@@ -125,7 +126,9 @@ export function SettingsPage() {
           });
         }
       } catch (err) {
-        setUserError(err instanceof Error ? err.message : 'Failed to load user data');
+        setUserError(
+          err instanceof Error ? err.message : 'Failed to load user data',
+        );
       } finally {
         setIsLoadingUser(false);
       }
@@ -147,7 +150,7 @@ export function SettingsPage() {
         return newSettings;
       });
     },
-    []
+    [],
   );
 
   // Save settings
@@ -218,7 +221,9 @@ export function SettingsPage() {
       // Force logout after clearing data
       await session.logout();
     } catch (err) {
-      setClearError(err instanceof Error ? err.message : 'Failed to clear data');
+      setClearError(
+        err instanceof Error ? err.message : 'Failed to clear data',
+      );
     } finally {
       setIsClearing(false);
     }
@@ -254,23 +259,33 @@ export function SettingsPage() {
             ) : user ? (
               <div className="account-info">
                 <div className="info-row">
-                  <span className="info-label">{t('settings.account.userId')}</span>
+                  <span className="info-label">
+                    {t('settings.account.userId')}
+                  </span>
                   <span className="info-value" title={user.id}>
                     {truncate(user.id, 20)}
                   </span>
                 </div>
                 <div className="info-row">
-                  <span className="info-label">{t('settings.account.publicKey')}</span>
+                  <span className="info-label">
+                    {t('settings.account.publicKey')}
+                  </span>
                   <span
                     className="info-value info-mono"
                     title={user.identityPubkey ?? t('common.notSet')}
                   >
-                    {user.identityPubkey ? truncate(user.identityPubkey, 24) : t('common.notSet')}
+                    {user.identityPubkey
+                      ? truncate(user.identityPubkey, 24)
+                      : t('common.notSet')}
                   </span>
                 </div>
                 <div className="info-row">
-                  <span className="info-label">{t('settings.account.createdAt')}</span>
-                  <span className="info-value">{formatDate(user.createdAt, i18n.language)}</span>
+                  <span className="info-label">
+                    {t('settings.account.createdAt')}
+                  </span>
+                  <span className="info-value">
+                    {formatDate(user.createdAt, i18n.language)}
+                  </span>
                 </div>
               </div>
             ) : null}
@@ -292,17 +307,25 @@ export function SettingsPage() {
                 </div>
                 <div className="storage-details">
                   <span className="storage-used">
-                    {t('settings.storage.used', { used: formatBytes(storageQuota.used) })}
+                    {t('settings.storage.used', {
+                      used: formatBytes(storageQuota.used),
+                    })}
                   </span>
-                  <span className="storage-percent">{t('common.percent', { value: storagePercent })}</span>
+                  <span className="storage-percent">
+                    {t('common.percent', { value: storagePercent })}
+                  </span>
                   <span className="storage-max">
-                    {t('settings.storage.of', { total: formatBytes(storageQuota.max) })}
+                    {t('settings.storage.of', {
+                      total: formatBytes(storageQuota.max),
+                    })}
                   </span>
                 </div>
               </div>
             ) : (
               <div className="storage-info">
-                <span className="text-muted">{t('settings.storage.unavailable')}</span>
+                <span className="text-muted">
+                  {t('settings.storage.unavailable')}
+                </span>
               </div>
             )}
           </div>
@@ -314,7 +337,9 @@ export function SettingsPage() {
           <div className="settings-card">
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">{t('settings.language.title')}</span>
+                <span className="setting-label">
+                  {t('settings.language.title')}
+                </span>
                 <span className="setting-description">
                   {t('settings.language.description')}
                 </span>
@@ -322,7 +347,9 @@ export function SettingsPage() {
               <select
                 className="setting-select"
                 value={currentLanguage}
-                onChange={(e) => void handleLanguageChange(e.target.value as SupportedLanguage)}
+                onChange={(e) =>
+                  void handleLanguageChange(e.target.value as SupportedLanguage)
+                }
                 data-testid="language-select"
               >
                 {supportedLanguages.map((lang) => (
@@ -341,7 +368,9 @@ export function SettingsPage() {
           <div className="settings-card">
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">{t('settings.session.idleTimeout')}</span>
+                <span className="setting-label">
+                  {t('settings.session.idleTimeout')}
+                </span>
                 <span className="setting-description">
                   {t('settings.session.idleTimeoutDescription')}
                 </span>
@@ -352,7 +381,7 @@ export function SettingsPage() {
                 onChange={(e) =>
                   handleSettingsChange(
                     'idleTimeout',
-                    parseInt(e.target.value, 10) as IdleTimeoutMinutes
+                    parseInt(e.target.value, 10) as IdleTimeoutMinutes,
                   )
                 }
                 data-testid="idle-timeout-select"
@@ -365,7 +394,9 @@ export function SettingsPage() {
 
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">{t('settings.session.theme')}</span>
+                <span className="setting-label">
+                  {t('settings.session.theme')}
+                </span>
                 <span className="setting-description">
                   {t('settings.session.themeDescription')}
                 </span>
@@ -379,14 +410,20 @@ export function SettingsPage() {
                 data-testid="theme-select"
               >
                 <option value="dark">{t('settings.session.themeDark')}</option>
-                <option value="light">{t('settings.session.themeLight')}</option>
-                <option value="system">{t('settings.session.themeSystem')}</option>
+                <option value="light">
+                  {t('settings.session.themeLight')}
+                </option>
+                <option value="system">
+                  {t('settings.session.themeSystem')}
+                </option>
               </select>
             </div>
 
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">{t('settings.session.thumbnailQuality')}</span>
+                <span className="setting-label">
+                  {t('settings.session.thumbnailQuality')}
+                </span>
                 <span className="setting-description">
                   {t('settings.session.thumbnailQualityDescription')}
                 </span>
@@ -397,20 +434,26 @@ export function SettingsPage() {
                 onChange={(e) =>
                   handleSettingsChange(
                     'thumbnailQuality',
-                    e.target.value as ThumbnailQuality
+                    e.target.value as ThumbnailQuality,
                   )
                 }
                 data-testid="thumbnail-quality-select"
               >
                 <option value="low">{t('settings.session.qualityLow')}</option>
-                <option value="medium">{t('settings.session.qualityMedium')}</option>
-                <option value="high">{t('settings.session.qualityHigh')}</option>
+                <option value="medium">
+                  {t('settings.session.qualityMedium')}
+                </option>
+                <option value="high">
+                  {t('settings.session.qualityHigh')}
+                </option>
               </select>
             </div>
 
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">{t('settings.session.autoSync')}</span>
+                <span className="setting-label">
+                  {t('settings.session.autoSync')}
+                </span>
                 <span className="setting-description">
                   {t('settings.session.autoSyncDescription')}
                 </span>
@@ -430,7 +473,9 @@ export function SettingsPage() {
 
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">{t('settings.session.rememberSession')}</span>
+                <span className="setting-label">
+                  {t('settings.session.rememberSession')}
+                </span>
                 <span className="setting-description">
                   {t('settings.session.rememberSessionDescription')}
                 </span>
@@ -441,7 +486,7 @@ export function SettingsPage() {
                 onChange={(e) =>
                   handleSettingsChange(
                     'keyCacheDuration',
-                    parseInt(e.target.value, 10) as KeyCacheDuration
+                    parseInt(e.target.value, 10) as KeyCacheDuration,
                   )
                 }
                 data-testid="key-cache-duration-select"
@@ -451,7 +496,9 @@ export function SettingsPage() {
                 <option value={30}>{t('settings.session.cache30min')}</option>
                 <option value={60}>{t('settings.session.cache1hour')}</option>
                 <option value={240}>{t('settings.session.cache4hours')}</option>
-                <option value={-1}>{t('settings.session.cacheUntilClose')}</option>
+                <option value={-1}>
+                  {t('settings.session.cacheUntilClose')}
+                </option>
               </select>
             </div>
 
@@ -489,12 +536,18 @@ export function SettingsPage() {
           <h2 className="section-title">{t('settings.security.title')}</h2>
           <div className="settings-card">
             <div className="info-row">
-              <span className="info-label">{t('settings.security.lastLogin')}</span>
-              <span className="info-value">{t('settings.security.thisSession')}</span>
+              <span className="info-label">
+                {t('settings.security.lastLogin')}
+              </span>
+              <span className="info-value">
+                {t('settings.security.thisSession')}
+              </span>
             </div>
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">{t('settings.security.clearLocalData')}</span>
+                <span className="setting-label">
+                  {t('settings.security.clearLocalData')}
+                </span>
                 <span className="setting-description">
                   {t('settings.security.clearLocalDataDescription')}
                 </span>
@@ -526,7 +579,9 @@ export function SettingsPage() {
               <span className="info-value">1.0.0</span>
             </div>
             <div className="info-row">
-              <span className="info-label">{t('settings.about.documentation')}</span>
+              <span className="info-label">
+                {t('settings.about.documentation')}
+              </span>
               <a
                 href="https://github.com/mosaic/mosaic"
                 target="_blank"
@@ -537,9 +592,7 @@ export function SettingsPage() {
               </a>
             </div>
             <div className="about-description">
-              <p>
-                {t('settings.about.description')}
-              </p>
+              <p>{t('settings.about.description')}</p>
             </div>
           </div>
         </section>
@@ -591,7 +644,9 @@ export function SettingsPage() {
                   type="button"
                   data-testid="confirm-clear-button"
                 >
-                  {isClearing ? t('common.clearing') : t('settings.security.clearData')}
+                  {isClearing
+                    ? t('common.clearing')
+                    : t('settings.security.clearData')}
                 </button>
               </div>
             </div>

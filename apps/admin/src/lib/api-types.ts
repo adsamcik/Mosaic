@@ -456,9 +456,19 @@ export interface MosaicApi {
   createAlbum(request: CreateAlbumRequest): Promise<Album>;
   getAlbum(albumId: string): Promise<Album>;
   deleteAlbum(albumId: string): Promise<void>;
-  renameAlbum(albumId: string, request: RenameAlbumRequest): Promise<RenameAlbumResponse>;
-  updateAlbumDescription(albumId: string, request: UpdateDescriptionRequest): Promise<UpdateDescriptionResponse>;
-  syncAlbum(albumId: string, since: number, limit?: number): Promise<SyncResponse>;
+  renameAlbum(
+    albumId: string,
+    request: RenameAlbumRequest,
+  ): Promise<RenameAlbumResponse>;
+  updateAlbumDescription(
+    albumId: string,
+    request: UpdateDescriptionRequest,
+  ): Promise<UpdateDescriptionResponse>;
+  syncAlbum(
+    albumId: string,
+    since: number,
+    limit?: number,
+  ): Promise<SyncResponse>;
 
   // Members
   listAlbumMembers(albumId: string): Promise<AlbumMember[]>;
@@ -467,8 +477,15 @@ export interface MosaicApi {
 
   // Epoch Keys
   getEpochKeys(albumId: string): Promise<EpochKeyRecord[]>;
-  createEpochKey(albumId: string, request: CreateEpochKeyRequest): Promise<EpochKeyRecord>;
-  rotateEpoch(albumId: string, epochId: number, request: RotateEpochRequest): Promise<void>;
+  createEpochKey(
+    albumId: string,
+    request: CreateEpochKeyRequest,
+  ): Promise<EpochKeyRecord>;
+  rotateEpoch(
+    albumId: string,
+    epochId: number,
+    request: RotateEpochRequest,
+  ): Promise<void>;
 
   // Manifests
   createManifest(request: CreateManifestRequest): Promise<ManifestCreated>;
@@ -480,28 +497,39 @@ export interface MosaicApi {
   createShardUpload(request: CreateShardRequest): Promise<ShardCreated>;
 
   // Album Expiration
-  updateAlbumExpiration(albumId: string, request: UpdateExpirationRequest): Promise<Album>;
+  updateAlbumExpiration(
+    albumId: string,
+    request: UpdateExpirationRequest,
+  ): Promise<Album>;
 
   // Share Links
   listShareLinks(albumId: string): Promise<ShareLinkResponse[]>;
-  listShareLinksWithSecrets(albumId: string): Promise<ShareLinkWithSecretResponse[]>;
-  createShareLink(albumId: string, request: CreateShareLinkRequest): Promise<ShareLinkResponse>;
+  listShareLinksWithSecrets(
+    albumId: string,
+  ): Promise<ShareLinkWithSecretResponse[]>;
+  createShareLink(
+    albumId: string,
+    request: CreateShareLinkRequest,
+  ): Promise<ShareLinkResponse>;
   revokeShareLink(linkId: string): Promise<void>;
   addShareLinkEpochKeys(
     linkId: string,
-    request: AddShareLinkEpochKeysRequest
+    request: AddShareLinkEpochKeysRequest,
   ): Promise<{ added: number; updated: number }>;
   updateShareLinkExpiration(
     albumId: string,
     linkId: string,
-    request: UpdateLinkExpirationRequest
+    request: UpdateLinkExpirationRequest,
   ): Promise<ShareLinkResponse>;
 
   // Anonymous Share Link Access (no auth required)
   getShareLinkInfo(linkIdBase64: string): Promise<LinkAccessResponse>;
   getShareLinkKeys(linkIdBase64: string): Promise<LinkEpochKeyResponse[]>;
   getShareLinkPhotos(linkIdBase64: string): Promise<ShareLinkPhotoResponse[]>;
-  getShareLinkShard(linkIdBase64: string, shardId: string): Promise<ArrayBuffer>;
+  getShareLinkShard(
+    linkIdBase64: string,
+    shardId: string,
+  ): Promise<ArrayBuffer>;
 
   // Admin - Settings
   getQuotaDefaults(): Promise<QuotaDefaults>;
@@ -510,7 +538,10 @@ export interface MosaicApi {
   // Admin - Users
   listUsers(): Promise<AdminUserResponse[]>;
   getUserQuota(userId: string): Promise<AdminUserQuota>;
-  updateUserQuota(userId: string, request: UpdateUserQuotaRequest): Promise<AdminUserQuota>;
+  updateUserQuota(
+    userId: string,
+    request: UpdateUserQuotaRequest,
+  ): Promise<AdminUserQuota>;
   resetUserQuota(userId: string): Promise<AdminUserQuota>;
   promoteToAdmin(userId: string): Promise<void>;
   demoteFromAdmin(userId: string): Promise<void>;
@@ -518,7 +549,10 @@ export interface MosaicApi {
   // Admin - Albums
   listAllAlbums(): Promise<AdminAlbumResponse[]>;
   getAlbumLimits(albumId: string): Promise<AdminAlbumLimits>;
-  updateAlbumLimits(albumId: string, request: UpdateAlbumLimitsRequest): Promise<AdminAlbumLimits>;
+  updateAlbumLimits(
+    albumId: string,
+    request: UpdateAlbumLimitsRequest,
+  ): Promise<AdminAlbumLimits>;
   resetAlbumLimits(albumId: string): Promise<AdminAlbumLimits>;
 
   // Admin - Stats

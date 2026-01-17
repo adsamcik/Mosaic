@@ -14,7 +14,7 @@ export function usePhotos(albumId: string, searchQuery?: string) {
 
   // Function to trigger a refresh
   const refetch = useCallback(() => {
-    setRefreshTrigger(prev => prev + 1);
+    setRefreshTrigger((prev) => prev + 1);
   }, []);
 
   useEffect(() => {
@@ -24,9 +24,9 @@ export function usePhotos(albumId: string, searchQuery?: string) {
       try {
         setIsLoading(true);
         setError(null);
-        
+
         const db = await getDbClient();
-        
+
         let result: PhotoMeta[];
         if (searchQuery && searchQuery.trim().length > 0) {
           // Use FTS5 search
@@ -35,7 +35,7 @@ export function usePhotos(albumId: string, searchQuery?: string) {
           // Regular fetch
           result = await db.getPhotos(albumId, 1000, 0);
         }
-        
+
         if (!cancelled) {
           setPhotos(result);
         }

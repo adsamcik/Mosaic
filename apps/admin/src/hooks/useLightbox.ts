@@ -75,23 +75,28 @@ export type UseLightboxResult = LightboxState & LightboxControls;
 export function useLightbox(photos: PhotoMeta[]): UseLightboxResult {
   const [isOpen, setIsOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [navigationDirection, setNavigationDirection] = useState<NavigationDirection>('initial');
+  const [navigationDirection, setNavigationDirection] =
+    useState<NavigationDirection>('initial');
 
   // Compute derived state
-  const currentPhoto = isOpen && photos.length > 0 ? photos[currentIndex] ?? null : null;
+  const currentPhoto =
+    isOpen && photos.length > 0 ? (photos[currentIndex] ?? null) : null;
   const hasNext = isOpen && currentIndex < photos.length - 1;
   const hasPrevious = isOpen && currentIndex > 0;
 
   /**
    * Open the lightbox at a specific photo index
    */
-  const open = useCallback((index: number) => {
-    if (index >= 0 && index < photos.length) {
-      setCurrentIndex(index);
-      setNavigationDirection('initial');
-      setIsOpen(true);
-    }
-  }, [photos.length]);
+  const open = useCallback(
+    (index: number) => {
+      if (index >= 0 && index < photos.length) {
+        setCurrentIndex(index);
+        setNavigationDirection('initial');
+        setIsOpen(true);
+      }
+    },
+    [photos.length],
+  );
 
   /**
    * Close the lightbox
@@ -129,11 +134,14 @@ export function useLightbox(photos: PhotoMeta[]): UseLightboxResult {
   /**
    * Navigate to a specific photo index
    */
-  const goTo = useCallback((index: number) => {
-    if (index >= 0 && index < photos.length) {
-      setCurrentIndex(index);
-    }
-  }, [photos.length]);
+  const goTo = useCallback(
+    (index: number) => {
+      if (index >= 0 && index < photos.length) {
+        setCurrentIndex(index);
+      }
+    },
+    [photos.length],
+  );
 
   // Handle keyboard navigation when lightbox is open
   useEffect(() => {

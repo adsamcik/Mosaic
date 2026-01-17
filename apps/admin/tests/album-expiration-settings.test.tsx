@@ -38,10 +38,12 @@ function daysFromNow(days: number): string {
 }
 
 // Helper to render component
-function renderComponent(props: Partial<{
-  album: Album;
-  onUpdate: () => void;
-}> = {}) {
+function renderComponent(
+  props: Partial<{
+    album: Album;
+    onUpdate: () => void;
+  }> = {},
+) {
   const defaultProps = {
     album: createMockAlbum(),
     onUpdate: vi.fn(),
@@ -53,11 +55,15 @@ function renderComponent(props: Partial<{
   let root: ReturnType<typeof createRoot>;
   act(() => {
     root = createRoot(container);
-    root.render(createElement(AlbumExpirationSettings, { ...defaultProps, ...props }));
+    root.render(
+      createElement(AlbumExpirationSettings, { ...defaultProps, ...props }),
+    );
   });
 
-  const getByTestId = (testId: string) => container.querySelector(`[data-testid="${testId}"]`);
-  const queryByTestId = (testId: string) => container.querySelector(`[data-testid="${testId}"]`);
+  const getByTestId = (testId: string) =>
+    container.querySelector(`[data-testid="${testId}"]`);
+  const queryByTestId = (testId: string) =>
+    container.querySelector(`[data-testid="${testId}"]`);
 
   const cleanup = () => {
     act(() => {
@@ -66,22 +72,30 @@ function renderComponent(props: Partial<{
     container.remove();
   };
 
-  const rerender = (newProps: Partial<{
-    album: Album;
-    onUpdate: () => void;
-  }>) => {
+  const rerender = (
+    newProps: Partial<{
+      album: Album;
+      onUpdate: () => void;
+    }>,
+  ) => {
     act(() => {
-      root.render(createElement(AlbumExpirationSettings, { ...defaultProps, ...props, ...newProps }));
+      root.render(
+        createElement(AlbumExpirationSettings, {
+          ...defaultProps,
+          ...props,
+          ...newProps,
+        }),
+      );
     });
   };
 
-  return { 
-    container, 
-    getByTestId, 
-    queryByTestId, 
-    cleanup, 
-    rerender, 
-    props: { ...defaultProps, ...props } 
+  return {
+    container,
+    getByTestId,
+    queryByTestId,
+    cleanup,
+    rerender,
+    props: { ...defaultProps, ...props },
   };
 }
 
@@ -115,7 +129,9 @@ describe('AlbumExpirationSettings', () => {
     it('renders the enable checkbox unchecked by default', () => {
       const { getByTestId, cleanup } = renderComponent();
 
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       expect(checkbox.checked).toBe(false);
       cleanup();
     });
@@ -125,7 +141,9 @@ describe('AlbumExpirationSettings', () => {
         album: createMockAlbum({ expiresAt: daysFromNow(30) }),
       });
 
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       expect(checkbox.checked).toBe(true);
       cleanup();
     });
@@ -163,7 +181,9 @@ describe('AlbumExpirationSettings', () => {
 
       expect(queryByTestId('expiration-controls')).toBeNull();
 
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
@@ -179,7 +199,9 @@ describe('AlbumExpirationSettings', () => {
 
       expect(getByTestId('expiration-controls')).not.toBeNull();
 
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
@@ -191,28 +213,36 @@ describe('AlbumExpirationSettings', () => {
     it('sets default date to 30 days when enabling without existing date', () => {
       const { getByTestId, cleanup } = renderComponent();
 
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
 
-      const dateInput = getByTestId('expiration-date-input') as HTMLInputElement;
+      const dateInput = getByTestId(
+        'expiration-date-input',
+      ) as HTMLInputElement;
       expect(dateInput.value).not.toBe('');
-      
+
       // Should be approximately 30 days from now
       const selectedDate = new Date(dateInput.value);
       const now = new Date();
-      const diffDays = Math.round((selectedDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      const diffDays = Math.round(
+        (selectedDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
       expect(diffDays).toBeGreaterThanOrEqual(29);
       expect(diffDays).toBeLessThanOrEqual(31);
-      
+
       cleanup();
     });
 
     it('enables save button after toggling', () => {
       const { getByTestId, cleanup } = renderComponent();
 
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
@@ -253,7 +283,9 @@ describe('AlbumExpirationSettings', () => {
       });
 
       expect(getByTestId('expiration-warning')).not.toBeNull();
-      expect(getByTestId('expiration-warning')?.textContent).toContain('5 days');
+      expect(getByTestId('expiration-warning')?.textContent).toContain(
+        '5 days',
+      );
       cleanup();
     });
 
@@ -272,7 +304,9 @@ describe('AlbumExpirationSettings', () => {
       });
 
       expect(getByTestId('expiration-expired')).not.toBeNull();
-      expect(getByTestId('expiration-expired')?.textContent).toContain('expired');
+      expect(getByTestId('expiration-expired')?.textContent).toContain(
+        'expired',
+      );
       cleanup();
     });
   });
@@ -283,9 +317,11 @@ describe('AlbumExpirationSettings', () => {
         album: createMockAlbum({ expiresAt: daysFromNow(30) }),
       });
 
-      const dateInput = getByTestId('expiration-date-input') as HTMLInputElement;
+      const dateInput = getByTestId(
+        'expiration-date-input',
+      ) as HTMLInputElement;
       const newDate = daysFromNow(60).split('T')[0];
-      
+
       act(() => {
         dateInput.value = newDate;
         dateInput.dispatchEvent(new Event('change', { bubbles: true }));
@@ -300,11 +336,13 @@ describe('AlbumExpirationSettings', () => {
         album: createMockAlbum({ expiresAt: daysFromNow(30) }),
       });
 
-      const dateInput = getByTestId('expiration-date-input') as HTMLInputElement;
+      const dateInput = getByTestId(
+        'expiration-date-input',
+      ) as HTMLInputElement;
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const expectedMin = tomorrow.toISOString().split('T')[0];
-      
+
       expect(dateInput.min).toBe(expectedMin);
       cleanup();
     });
@@ -313,7 +351,10 @@ describe('AlbumExpirationSettings', () => {
   describe('warning days input', () => {
     it('displays current value from album', () => {
       const { getByTestId, cleanup } = renderComponent({
-        album: createMockAlbum({ expiresAt: daysFromNow(30), expirationWarningDays: 14 }),
+        album: createMockAlbum({
+          expiresAt: daysFromNow(30),
+          expirationWarningDays: 14,
+        }),
       });
 
       const input = getByTestId('warning-days-input') as HTMLInputElement;
@@ -337,7 +378,7 @@ describe('AlbumExpirationSettings', () => {
       });
 
       const input = getByTestId('warning-days-input') as HTMLInputElement;
-      
+
       act(() => {
         input.value = '10';
         input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -368,21 +409,28 @@ describe('AlbumExpirationSettings', () => {
       });
 
       // Enable expiration
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
 
       // Save
-      const saveButton = getByTestId('save-expiration-button') as HTMLButtonElement;
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
       await act(async () => {
         saveButton.click();
       });
 
-      expect(mockUpdateAlbumExpiration).toHaveBeenCalledWith('album-123', expect.objectContaining({
-        expiresAt: expect.any(String),
-        expirationWarningDays: 7,
-      }));
+      expect(mockUpdateAlbumExpiration).toHaveBeenCalledWith(
+        'album-123',
+        expect.objectContaining({
+          expiresAt: expect.any(String),
+          expirationWarningDays: 7,
+        }),
+      );
       expect(onUpdate).toHaveBeenCalled();
       cleanup();
     });
@@ -395,20 +443,27 @@ describe('AlbumExpirationSettings', () => {
       });
 
       // Disable expiration
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
 
       // Save
-      const saveButton = getByTestId('save-expiration-button') as HTMLButtonElement;
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
       await act(async () => {
         saveButton.click();
       });
 
-      expect(mockUpdateAlbumExpiration).toHaveBeenCalledWith('album-123', expect.objectContaining({
-        expiresAt: null,
-      }));
+      expect(mockUpdateAlbumExpiration).toHaveBeenCalledWith(
+        'album-123',
+        expect.objectContaining({
+          expiresAt: null,
+        }),
+      );
       expect(onUpdate).toHaveBeenCalled();
       cleanup();
     });
@@ -421,13 +476,17 @@ describe('AlbumExpirationSettings', () => {
       });
 
       // Disable to create a change
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
 
       // Click save
-      const saveButton = getByTestId('save-expiration-button') as HTMLButtonElement;
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
       act(() => {
         saveButton.click();
       });
@@ -443,19 +502,25 @@ describe('AlbumExpirationSettings', () => {
       });
 
       // Disable to create a change
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
 
       // Save
-      const saveButton = getByTestId('save-expiration-button') as HTMLButtonElement;
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
       await act(async () => {
         saveButton.click();
       });
 
       expect(getByTestId('expiration-success')).not.toBeNull();
-      expect(getByTestId('expiration-success')?.textContent).toContain('saved successfully');
+      expect(getByTestId('expiration-success')?.textContent).toContain(
+        'saved successfully',
+      );
       cleanup();
     });
 
@@ -467,19 +532,25 @@ describe('AlbumExpirationSettings', () => {
       });
 
       // Disable to create a change
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
 
       // Save
-      const saveButton = getByTestId('save-expiration-button') as HTMLButtonElement;
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
       await act(async () => {
         saveButton.click();
       });
 
       expect(getByTestId('expiration-error')).not.toBeNull();
-      expect(getByTestId('expiration-error')?.textContent).toContain('Network error');
+      expect(getByTestId('expiration-error')?.textContent).toContain(
+        'Network error',
+      );
       cleanup();
     });
 
@@ -487,27 +558,38 @@ describe('AlbumExpirationSettings', () => {
       const { getByTestId, cleanup } = renderComponent();
 
       // Enable expiration
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
 
       // Clear the date by setting to empty (need to use Object.defineProperty to force empty value)
-      const dateInput = getByTestId('expiration-date-input') as HTMLInputElement;
+      const dateInput = getByTestId(
+        'expiration-date-input',
+      ) as HTMLInputElement;
       act(() => {
         // Trigger change with empty value
-        Object.defineProperty(dateInput, 'value', { value: '', writable: true });
+        Object.defineProperty(dateInput, 'value', {
+          value: '',
+          writable: true,
+        });
         dateInput.dispatchEvent(new Event('change', { bubbles: true }));
       });
 
       // Try to save
-      const saveButton = getByTestId('save-expiration-button') as HTMLButtonElement;
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
       await act(async () => {
         saveButton.click();
       });
 
       expect(getByTestId('expiration-error')).not.toBeNull();
-      expect(getByTestId('expiration-error')?.textContent).toContain('select an expiration date');
+      expect(getByTestId('expiration-error')?.textContent).toContain(
+        'select an expiration date',
+      );
       expect(mockUpdateAlbumExpiration).not.toHaveBeenCalled();
       cleanup();
     });
@@ -516,7 +598,10 @@ describe('AlbumExpirationSettings', () => {
   describe('has changes detection', () => {
     it('save button disabled when no changes made', () => {
       const { getByTestId, cleanup } = renderComponent({
-        album: createMockAlbum({ expiresAt: daysFromNow(30), expirationWarningDays: 7 }),
+        album: createMockAlbum({
+          expiresAt: daysFromNow(30),
+          expirationWarningDays: 7,
+        }),
       });
 
       const button = getByTestId('save-expiration-button') as HTMLButtonElement;
@@ -529,7 +614,9 @@ describe('AlbumExpirationSettings', () => {
         album: createMockAlbum({ expiresAt: daysFromNow(30) }),
       });
 
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
@@ -544,11 +631,16 @@ describe('AlbumExpirationSettings', () => {
         album: createMockAlbum({ expiresAt: daysFromNow(30) }),
       });
 
-      const dateInput = getByTestId('expiration-date-input') as HTMLInputElement;
+      const dateInput = getByTestId(
+        'expiration-date-input',
+      ) as HTMLInputElement;
       const newDate = daysFromNow(45).split('T')[0];
       act(() => {
         // Use native setter to update value, then dispatch input event
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value',
+        )!.set!;
         nativeInputValueSetter.call(dateInput, newDate);
         dateInput.dispatchEvent(new Event('input', { bubbles: true }));
         dateInput.dispatchEvent(new Event('change', { bubbles: true }));
@@ -561,13 +653,19 @@ describe('AlbumExpirationSettings', () => {
 
     it('save button enabled when warning days changes', () => {
       const { getByTestId, cleanup } = renderComponent({
-        album: createMockAlbum({ expiresAt: daysFromNow(30), expirationWarningDays: 7 }),
+        album: createMockAlbum({
+          expiresAt: daysFromNow(30),
+          expirationWarningDays: 7,
+        }),
       });
 
       const input = getByTestId('warning-days-input') as HTMLInputElement;
       act(() => {
         // Use native setter to update value, then dispatch input event
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value',
+        )!.set!;
         nativeInputValueSetter.call(input, '14');
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -581,13 +679,20 @@ describe('AlbumExpirationSettings', () => {
 
   describe('album prop changes', () => {
     it('resets state when album changes', () => {
-      const album1 = createMockAlbum({ id: 'album-1', expiresAt: daysFromNow(30) });
+      const album1 = createMockAlbum({
+        id: 'album-1',
+        expiresAt: daysFromNow(30),
+      });
       const album2 = createMockAlbum({ id: 'album-2' });
 
-      const { getByTestId, rerender, cleanup } = renderComponent({ album: album1 });
+      const { getByTestId, rerender, cleanup } = renderComponent({
+        album: album1,
+      });
 
       // Verify initial state
-      let checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      let checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       expect(checkbox.checked).toBe(true);
 
       // Change album
@@ -632,13 +737,17 @@ describe('AlbumExpirationSettings', () => {
       });
 
       // Toggle to create change
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
 
       // Save
-      const saveButton = getByTestId('save-expiration-button') as HTMLButtonElement;
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
       await act(async () => {
         saveButton.click();
       });
@@ -654,13 +763,17 @@ describe('AlbumExpirationSettings', () => {
       });
 
       // Toggle to create change
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
 
       // Save
-      const saveButton = getByTestId('save-expiration-button') as HTMLButtonElement;
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
       await act(async () => {
         saveButton.click();
       });
@@ -680,18 +793,25 @@ describe('AlbumExpirationSettings', () => {
       });
 
       // Toggle to create change
-      const checkbox = getByTestId('expiration-enabled-checkbox') as HTMLInputElement;
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
       act(() => {
         checkbox.click();
       });
 
       // Click save
-      const saveButton = getByTestId('save-expiration-button') as HTMLButtonElement;
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
       act(() => {
         saveButton.click();
       });
 
-      expect((getByTestId('expiration-enabled-checkbox') as HTMLInputElement).disabled).toBe(true);
+      expect(
+        (getByTestId('expiration-enabled-checkbox') as HTMLInputElement)
+          .disabled,
+      ).toBe(true);
       cleanup();
     });
   });

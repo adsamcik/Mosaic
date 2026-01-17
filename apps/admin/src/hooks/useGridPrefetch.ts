@@ -78,7 +78,7 @@ export function useGridPrefetch<T = unknown>({
     const prefetchStartIndex = Math.max(0, startIndex - overscan);
     const prefetchEndIndex = Math.min(
       virtualizer.options.count - 1,
-      endIndex + overscan
+      endIndex + overscan,
     );
 
     // Debounce prefetching
@@ -106,9 +106,9 @@ export function useGridPrefetch<T = unknown>({
           // Skip items in the visible range (they're already loading)
           if (i >= startIndex && i <= endIndex) continue;
 
-          const virtualItem = virtualizer.getVirtualItems().find(
-            (item) => item.index === i
-          );
+          const virtualItem = virtualizer
+            .getVirtualItems()
+            .find((item) => item.index === i);
           if (!virtualItem) continue;
 
           // Get the row data - this depends on how the virtualizer is configured
@@ -165,11 +165,15 @@ export function useGridPrefetch<T = unknown>({
       for (const [epochId, epochPhotos] of byEpoch) {
         const epochKey = getEpochReadKey(epochId);
         if (!epochKey) {
-          log.debug(`Skipping prefetch for epoch ${epochId} - no key available`);
+          log.debug(
+            `Skipping prefetch for epoch ${epochId} - no key available`,
+          );
           continue;
         }
 
-        log.debug(`Prefetching ${epochPhotos.length} photos for epoch ${epochId}`);
+        log.debug(
+          `Prefetching ${epochPhotos.length} photos for epoch ${epochId}`,
+        );
 
         preloadPhotos(
           epochPhotos.map((p) => ({
@@ -177,7 +181,7 @@ export function useGridPrefetch<T = unknown>({
             shardIds: p.shardIds,
             mimeType: p.mimeType,
           })),
-          epochKey
+          epochKey,
         ).catch((error) => {
           log.error('Prefetch failed', error);
         });
@@ -200,10 +204,10 @@ export function useGridPrefetch<T = unknown>({
 /**
  * Check if a photo is in the cache.
  * Useful for determining if prefetching is needed.
- * 
+ *
  * Note: This is a heuristic based on cache stats, not an exact check.
  * For exact checking, photo-service would need to expose cache.has().
- * 
+ *
  * @param _photoId - Photo ID to check (currently not used for exact match)
  */
 export function isPhotoInCache(_photoId: string): boolean {

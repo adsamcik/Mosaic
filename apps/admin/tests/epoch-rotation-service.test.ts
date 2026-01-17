@@ -6,18 +6,20 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    clearPhotoCaches,
-    EpochRotationError,
-    EpochRotationErrorCode,
-    rotateEpoch,
-    RotationStep,
+  clearPhotoCaches,
+  EpochRotationError,
+  EpochRotationErrorCode,
+  rotateEpoch,
+  RotationStep,
 } from '../src/lib/epoch-rotation-service';
 
 // Mock dependencies
 vi.mock('../src/lib/api', () => ({
   getApi: vi.fn(),
   toBase64: vi.fn((arr: Uint8Array) => Buffer.from(arr).toString('base64')),
-  fromBase64: vi.fn((str: string) => new Uint8Array(Buffer.from(str, 'base64'))),
+  fromBase64: vi.fn(
+    (str: string) => new Uint8Array(Buffer.from(str, 'base64')),
+  ),
 }));
 
 vi.mock('../src/lib/crypto-client', () => ({
@@ -62,7 +64,7 @@ describe('epoch-rotation-service', () => {
   const albumId = 'album-123';
   const currentEpochId = 5;
   const newEpochId = 6;
-  
+
   const mockAlbum = {
     id: albumId,
     ownerId: 'user-owner',
@@ -129,7 +131,9 @@ describe('epoch-rotation-service', () => {
       getIdentityPublicKey: vi.fn().mockResolvedValue(mockIdentityPubkey),
       deriveIdentity: vi.fn().mockResolvedValue(undefined),
       createEpochKeyBundle: vi.fn().mockResolvedValue(mockSealedBundle),
-      unwrapWithAccountKey: vi.fn().mockResolvedValue(new Uint8Array(32).fill(50)),
+      unwrapWithAccountKey: vi
+        .fn()
+        .mockResolvedValue(new Uint8Array(32).fill(50)),
     };
 
     vi.mocked(getApi).mockReturnValue(mockApi as any);
@@ -156,22 +160,22 @@ describe('epoch-rotation-service', () => {
 
       // Should fetch album first
       expect(mockApi.getAlbum).toHaveBeenCalledWith(albumId);
-      
+
       // Then generate new key
       expect(mockCrypto.generateEpochKey).toHaveBeenCalledWith(newEpochId);
-      
+
       // Then fetch members
       expect(mockApi.listAlbumMembers).toHaveBeenCalledWith(albumId);
-      
+
       // Then fetch share links
       expect(mockApi.listShareLinksWithSecrets).toHaveBeenCalledWith(albumId);
-      
+
       // Then fetch members
       expect(mockApi.listAlbumMembers).toHaveBeenCalledWith(albumId);
-      
+
       // Then create bundles for each member
       expect(mockCrypto.createEpochKeyBundle).toHaveBeenCalledTimes(2);
-      
+
       // Finally call rotate API
       expect(mockApi.rotateEpoch).toHaveBeenCalledWith(
         albumId,
@@ -181,7 +185,7 @@ describe('epoch-rotation-service', () => {
             expect.objectContaining({ recipientId: 'user-owner' }),
             expect.objectContaining({ recipientId: 'user-member1' }),
           ]),
-        })
+        }),
       );
     });
 
@@ -190,14 +194,26 @@ describe('epoch-rotation-service', () => {
 
       await rotateEpoch(albumId, progressCallback);
 
-      expect(progressCallback).toHaveBeenCalledWith(RotationStep.FETCHING_ALBUM);
-      expect(progressCallback).toHaveBeenCalledWith(RotationStep.GENERATING_KEY);
-      expect(progressCallback).toHaveBeenCalledWith(RotationStep.FETCHING_MEMBERS);
+      expect(progressCallback).toHaveBeenCalledWith(
+        RotationStep.FETCHING_ALBUM,
+      );
+      expect(progressCallback).toHaveBeenCalledWith(
+        RotationStep.GENERATING_KEY,
+      );
+      expect(progressCallback).toHaveBeenCalledWith(
+        RotationStep.FETCHING_MEMBERS,
+      );
       expect(progressCallback).toHaveBeenCalledWith(RotationStep.SEALING_KEYS);
-      expect(progressCallback).toHaveBeenCalledWith(RotationStep.FETCHING_SHARE_LINKS);
-      expect(progressCallback).toHaveBeenCalledWith(RotationStep.WRAPPING_SHARE_LINK_KEYS);
+      expect(progressCallback).toHaveBeenCalledWith(
+        RotationStep.FETCHING_SHARE_LINKS,
+      );
+      expect(progressCallback).toHaveBeenCalledWith(
+        RotationStep.WRAPPING_SHARE_LINK_KEYS,
+      );
       expect(progressCallback).toHaveBeenCalledWith(RotationStep.CALLING_API);
-      expect(progressCallback).toHaveBeenCalledWith(RotationStep.UPDATING_CACHE);
+      expect(progressCallback).toHaveBeenCalledWith(
+        RotationStep.UPDATING_CACHE,
+      );
       expect(progressCallback).toHaveBeenCalledWith(RotationStep.COMPLETE);
     });
 
@@ -214,7 +230,7 @@ describe('epoch-rotation-service', () => {
             publicKey: mockNewEpochKey.signPublicKey,
             secretKey: mockNewEpochKey.signSecretKey,
           }),
-        })
+        }),
       );
     });
 
@@ -225,7 +241,7 @@ describe('epoch-rotation-service', () => {
       // This ensures it generates fresh random keys, not derived from previous
       expect(mockCrypto.generateEpochKey).toHaveBeenCalledWith(newEpochId);
       expect(mockCrypto.generateEpochKey).toHaveBeenCalledTimes(1);
-      
+
       // Verify the old epoch key was NOT passed to generateEpochKey
       const callArgs = mockCrypto.generateEpochKey.mock.calls[0];
       expect(callArgs.length).toBe(1); // Only epoch ID
@@ -246,12 +262,14 @@ describe('epoch-rotation-service', () => {
         mockApi.getAlbum.mockRejectedValue(new Error('Network error'));
 
         await expect(rotateEpoch(albumId)).rejects.toThrow(EpochRotationError);
-        
+
         try {
           await rotateEpoch(albumId);
         } catch (err) {
           expect(err).toBeInstanceOf(EpochRotationError);
-          expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.ALBUM_FETCH_FAILED);
+          expect((err as EpochRotationError).code).toBe(
+            EpochRotationErrorCode.ALBUM_FETCH_FAILED,
+          );
         }
       });
 
@@ -263,7 +281,9 @@ describe('epoch-rotation-service', () => {
           expect.fail('Should have thrown');
         } catch (err) {
           expect(err).toBeInstanceOf(EpochRotationError);
-          expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.MEMBERS_FETCH_FAILED);
+          expect((err as EpochRotationError).code).toBe(
+            EpochRotationErrorCode.MEMBERS_FETCH_FAILED,
+          );
         }
       });
 
@@ -275,7 +295,9 @@ describe('epoch-rotation-service', () => {
           expect.fail('Should have thrown');
         } catch (err) {
           expect(err).toBeInstanceOf(EpochRotationError);
-          expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.NO_RECIPIENTS);
+          expect((err as EpochRotationError).code).toBe(
+            EpochRotationErrorCode.NO_RECIPIENTS,
+          );
         }
       });
 
@@ -287,7 +309,9 @@ describe('epoch-rotation-service', () => {
           expect.fail('Should have thrown');
         } catch (err) {
           expect(err).toBeInstanceOf(EpochRotationError);
-          expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.KEY_GENERATION_FAILED);
+          expect((err as EpochRotationError).code).toBe(
+            EpochRotationErrorCode.KEY_GENERATION_FAILED,
+          );
         }
       });
 
@@ -306,19 +330,25 @@ describe('epoch-rotation-service', () => {
           expect.fail('Should have thrown');
         } catch (err) {
           expect(err).toBeInstanceOf(EpochRotationError);
-          expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.RECIPIENT_NO_PUBKEY);
+          expect((err as EpochRotationError).code).toBe(
+            EpochRotationErrorCode.RECIPIENT_NO_PUBKEY,
+          );
         }
       });
 
       it('should throw SEAL_FAILED when bundle sealing fails', async () => {
-        mockCrypto.createEpochKeyBundle.mockRejectedValue(new Error('Seal failed'));
+        mockCrypto.createEpochKeyBundle.mockRejectedValue(
+          new Error('Seal failed'),
+        );
 
         try {
           await rotateEpoch(albumId);
           expect.fail('Should have thrown');
         } catch (err) {
           expect(err).toBeInstanceOf(EpochRotationError);
-          expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.SEAL_FAILED);
+          expect((err as EpochRotationError).code).toBe(
+            EpochRotationErrorCode.SEAL_FAILED,
+          );
         }
       });
 
@@ -330,7 +360,9 @@ describe('epoch-rotation-service', () => {
           expect.fail('Should have thrown');
         } catch (err) {
           expect(err).toBeInstanceOf(EpochRotationError);
-          expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.ROTATE_FAILED);
+          expect((err as EpochRotationError).code).toBe(
+            EpochRotationErrorCode.ROTATE_FAILED,
+          );
         }
       });
 
@@ -343,19 +375,25 @@ describe('epoch-rotation-service', () => {
           expect.fail('Should have thrown');
         } catch (err) {
           expect(err).toBeInstanceOf(EpochRotationError);
-          expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.IDENTITY_NOT_DERIVED);
+          expect((err as EpochRotationError).code).toBe(
+            EpochRotationErrorCode.IDENTITY_NOT_DERIVED,
+          );
         }
       });
 
       it('should throw SHARE_LINKS_FETCH_FAILED when share links fetch fails', async () => {
-        mockApi.listShareLinksWithSecrets.mockRejectedValue(new Error('Network error'));
+        mockApi.listShareLinksWithSecrets.mockRejectedValue(
+          new Error('Network error'),
+        );
 
         try {
           await rotateEpoch(albumId);
           expect.fail('Should have thrown');
         } catch (err) {
           expect(err).toBeInstanceOf(EpochRotationError);
-          expect((err as EpochRotationError).code).toBe(EpochRotationErrorCode.SHARE_LINKS_FETCH_FAILED);
+          expect((err as EpochRotationError).code).toBe(
+            EpochRotationErrorCode.SHARE_LINKS_FETCH_FAILED,
+          );
         }
       });
     });
@@ -401,7 +439,7 @@ describe('epoch-rotation-service', () => {
               expect.objectContaining({ shareLinkId: 'link-1' }),
               expect.objectContaining({ shareLinkId: 'link-2' }),
             ]),
-          })
+          }),
         );
       });
 
@@ -439,11 +477,15 @@ describe('epoch-rotation-service', () => {
         const shareLinkKeys = rotateCall[2].shareLinkKeys;
 
         // First link has accessTier 3 (FULL) - should have 3 wrapped keys
-        const link1Keys = shareLinkKeys.find((k: { shareLinkId: string }) => k.shareLinkId === 'link-1');
+        const link1Keys = shareLinkKeys.find(
+          (k: { shareLinkId: string }) => k.shareLinkId === 'link-1',
+        );
         expect(link1Keys.wrappedKeys).toHaveLength(3);
 
         // Second link has accessTier 2 (PREVIEW) - should have 2 wrapped keys
-        const link2Keys = shareLinkKeys.find((k: { shareLinkId: string }) => k.shareLinkId === 'link-2');
+        const link2Keys = shareLinkKeys.find(
+          (k: { shareLinkId: string }) => k.shareLinkId === 'link-2',
+        );
         expect(link2Keys.wrappedKeys).toHaveLength(2);
       });
 
@@ -485,7 +527,9 @@ describe('epoch-rotation-service', () => {
     });
 
     it('should not throw if fetchAndUnwrapEpochKeys fails', async () => {
-      vi.mocked(fetchAndUnwrapEpochKeys).mockRejectedValue(new Error('Network error'));
+      vi.mocked(fetchAndUnwrapEpochKeys).mockRejectedValue(
+        new Error('Network error'),
+      );
 
       // Should not throw
       await expect(clearPhotoCaches(albumId)).resolves.toBeUndefined();

@@ -62,7 +62,7 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly statusText: string,
-    public readonly body?: string
+    public readonly body?: string,
   ) {
     super(`API Error ${status}: ${statusText}`);
     this.name = 'ApiError';
@@ -79,7 +79,10 @@ interface RequestOptions {
   headers?: Record<string, string>;
 }
 
-async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function apiRequest<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const { method = 'GET', body, headers = {} } = options;
 
   const requestHeaders: Record<string, string> = {
@@ -180,7 +183,10 @@ export function createApiClient(): MosaicApi {
       });
     },
 
-    async renameAlbum(albumId: string, request: RenameAlbumRequest): Promise<RenameAlbumResponse> {
+    async renameAlbum(
+      albumId: string,
+      request: RenameAlbumRequest,
+    ): Promise<RenameAlbumResponse> {
       return apiRequest(`/albums/${albumId}/name`, {
         method: 'PATCH',
         body: request,
@@ -189,7 +195,7 @@ export function createApiClient(): MosaicApi {
 
     async updateAlbumDescription(
       albumId: string,
-      request: UpdateDescriptionRequest
+      request: UpdateDescriptionRequest,
     ): Promise<UpdateDescriptionResponse> {
       return apiRequest(`/albums/${albumId}/description`, {
         method: 'PATCH',
@@ -199,7 +205,7 @@ export function createApiClient(): MosaicApi {
 
     async updateAlbumExpiration(
       albumId: string,
-      request: UpdateExpirationRequest
+      request: UpdateExpirationRequest,
     ): Promise<Album> {
       return apiRequest(`/albums/${albumId}/expiration`, {
         method: 'PUT',
@@ -207,7 +213,11 @@ export function createApiClient(): MosaicApi {
       });
     },
 
-    async syncAlbum(albumId: string, since: number, limit?: number): Promise<SyncResponse> {
+    async syncAlbum(
+      albumId: string,
+      since: number,
+      limit?: number,
+    ): Promise<SyncResponse> {
       const params = new URLSearchParams({
         since: String(since),
       });
@@ -224,7 +234,10 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/members`);
     },
 
-    async inviteToAlbum(albumId: string, request: InviteRequest): Promise<AlbumMember> {
+    async inviteToAlbum(
+      albumId: string,
+      request: InviteRequest,
+    ): Promise<AlbumMember> {
       return apiRequest(`/albums/${albumId}/members`, {
         method: 'POST',
         body: request,
@@ -244,14 +257,21 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/epoch-keys`);
     },
 
-    async createEpochKey(albumId: string, request: CreateEpochKeyRequest): Promise<EpochKeyRecord> {
+    async createEpochKey(
+      albumId: string,
+      request: CreateEpochKeyRequest,
+    ): Promise<EpochKeyRecord> {
       return apiRequest(`/albums/${albumId}/epoch-keys`, {
         method: 'POST',
         body: request,
       });
     },
 
-    async rotateEpoch(albumId: string, epochId: number, request: RotateEpochRequest): Promise<void> {
+    async rotateEpoch(
+      albumId: string,
+      epochId: number,
+      request: RotateEpochRequest,
+    ): Promise<void> {
       return apiRequest(`/albums/${albumId}/epochs/${epochId}/rotate`, {
         method: 'POST',
         body: request,
@@ -261,7 +281,9 @@ export function createApiClient(): MosaicApi {
     // =========================================================================
     // Manifests
     // =========================================================================
-    async createManifest(request: CreateManifestRequest): Promise<ManifestCreated> {
+    async createManifest(
+      request: CreateManifestRequest,
+    ): Promise<ManifestCreated> {
       return apiRequest('/manifests', {
         method: 'POST',
         body: request,
@@ -293,7 +315,9 @@ export function createApiClient(): MosaicApi {
       return new Uint8Array(await response.arrayBuffer());
     },
 
-    async createShardUpload(_request: CreateShardRequest): Promise<ShardCreated> {
+    async createShardUpload(
+      _request: CreateShardRequest,
+    ): Promise<ShardCreated> {
       // Note: Actual shard uploads use TUS protocol at /api/files
       // This method returns the upload URL for the TUS client
       return {
@@ -309,11 +333,16 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/share-links`);
     },
 
-    async listShareLinksWithSecrets(albumId: string): Promise<ShareLinkWithSecretResponse[]> {
+    async listShareLinksWithSecrets(
+      albumId: string,
+    ): Promise<ShareLinkWithSecretResponse[]> {
       return apiRequest(`/albums/${albumId}/share-links/with-secrets`);
     },
 
-    async createShareLink(albumId: string, request: CreateShareLinkRequest): Promise<ShareLinkResponse> {
+    async createShareLink(
+      albumId: string,
+      request: CreateShareLinkRequest,
+    ): Promise<ShareLinkResponse> {
       return apiRequest(`/albums/${albumId}/share-links`, {
         method: 'POST',
         body: request,
@@ -328,7 +357,7 @@ export function createApiClient(): MosaicApi {
 
     async addShareLinkEpochKeys(
       linkId: string,
-      request: AddShareLinkEpochKeysRequest
+      request: AddShareLinkEpochKeysRequest,
     ): Promise<{ added: number; updated: number }> {
       return apiRequest(`/share-links/${linkId}/keys`, {
         method: 'POST',
@@ -339,7 +368,7 @@ export function createApiClient(): MosaicApi {
     async updateShareLinkExpiration(
       albumId: string,
       linkId: string,
-      request: UpdateLinkExpirationRequest
+      request: UpdateLinkExpirationRequest,
     ): Promise<ShareLinkResponse> {
       return apiRequest(`/albums/${albumId}/share-links/${linkId}/expiration`, {
         method: 'PUT',
@@ -354,17 +383,24 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}`);
     },
 
-    async getShareLinkKeys(linkIdBase64: string): Promise<LinkEpochKeyResponse[]> {
+    async getShareLinkKeys(
+      linkIdBase64: string,
+    ): Promise<LinkEpochKeyResponse[]> {
       return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}/keys`);
     },
 
-    async getShareLinkPhotos(linkIdBase64: string): Promise<ShareLinkPhotoResponse[]> {
+    async getShareLinkPhotos(
+      linkIdBase64: string,
+    ): Promise<ShareLinkPhotoResponse[]> {
       return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}/photos`);
     },
 
-    async getShareLinkShard(linkIdBase64: string, shardId: string): Promise<ArrayBuffer> {
+    async getShareLinkShard(
+      linkIdBase64: string,
+      shardId: string,
+    ): Promise<ArrayBuffer> {
       const response = await fetch(
-        `${API_BASE}/s/${encodeURIComponent(linkIdBase64)}/shards/${encodeURIComponent(shardId)}`
+        `${API_BASE}/s/${encodeURIComponent(linkIdBase64)}/shards/${encodeURIComponent(shardId)}`,
       );
       if (!response.ok) {
         const text = await response.text();
@@ -398,7 +434,10 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/admin/users/${userId}/quota`);
     },
 
-    async updateUserQuota(userId: string, request: UpdateUserQuotaRequest): Promise<AdminUserQuota> {
+    async updateUserQuota(
+      userId: string,
+      request: UpdateUserQuotaRequest,
+    ): Promise<AdminUserQuota> {
       return apiRequest(`/admin/users/${userId}/quota`, {
         method: 'PUT',
         body: request,
@@ -436,7 +475,7 @@ export function createApiClient(): MosaicApi {
 
     async updateAlbumLimits(
       albumId: string,
-      request: UpdateAlbumLimitsRequest
+      request: UpdateAlbumLimitsRequest,
     ): Promise<AdminAlbumLimits> {
       return apiRequest(`/admin/albums/${albumId}/limits`, {
         method: 'PUT',

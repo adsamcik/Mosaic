@@ -9,9 +9,9 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-    useMemberManagement,
-    type MemberInfo,
-    type RemovalProgressStep,
+  useMemberManagement,
+  type MemberInfo,
+  type RemovalProgressStep,
 } from '../../hooks/useMemberManagement';
 import { InviteMemberDialog } from './InviteMemberDialog';
 
@@ -118,7 +118,8 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
       setShowRemoveDialog(false);
       setMemberToRemove(null);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to remove member';
+      const message =
+        err instanceof Error ? err.message : 'Failed to remove member';
       setRemoveError(message);
     }
   }, [memberToRemove, removeMemberWithRotation]);
@@ -130,7 +131,10 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
     setRemoveError(null);
   }, [isRemoving]);
 
-  const handleInvite = async (recipientId: string, role: 'editor' | 'viewer') => {
+  const handleInvite = async (
+    recipientId: string,
+    role: 'editor' | 'viewer',
+  ) => {
     await inviteMember(recipientId, role);
     setShowInviteDialog(false);
   };
@@ -195,11 +199,17 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
 
               <ul className="member-list" data-testid="member-list">
                 {members.map((member) => (
-                  <li key={member.userId} className="member-item" data-testid="member-item">
+                  <li
+                    key={member.userId}
+                    className="member-item"
+                    data-testid="member-item"
+                  >
                     <div className="member-info">
                       <span className="member-avatar">👤</span>
                       <div className="member-details">
-                        <span className="member-name">{member.displayName}</span>
+                        <span className="member-name">
+                          {member.displayName}
+                        </span>
                         <span className={getRoleBadgeClass(member.role)}>
                           {t(getRoleKey(member.role))}
                         </span>
@@ -251,14 +261,19 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
 
             <div className="dialog-content">
               <p>
-                {t('member.removeDialog.confirm', { name: memberToRemove.displayName })}
+                {t('member.removeDialog.confirm', {
+                  name: memberToRemove.displayName,
+                })}
               </p>
               <p className="dialog-warning">
                 {t('member.removeDialog.warning')}
               </p>
 
               {isRemoving && removalStep && (
-                <div className="removal-progress" data-testid="removal-progress">
+                <div
+                  className="removal-progress"
+                  data-testid="removal-progress"
+                >
                   <div className="loading-spinner" />
                   <span>{t(getProgressKey(removalStep))}</span>
                 </div>
@@ -289,7 +304,9 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
                 disabled={isRemoving}
                 data-testid="confirm-remove-button"
               >
-                {isRemoving ? t('member.removeDialog.removing') : t('member.removeDialog.submit')}
+                {isRemoving
+                  ? t('member.removeDialog.removing')
+                  : t('member.removeDialog.submit')}
               </button>
             </div>
           </dialog>

@@ -12,20 +12,20 @@ export interface UseImageDecodeResult {
 
 /**
  * Hook for progressive image decoding using the img.decode() API.
- * 
+ *
  * Decodes images off the main thread before displaying, preventing
  * jank during gallery scrolling. The hook handles:
  * - Aborting previous decode when URL changes
  * - Cleaning up on unmount (no state updates after unmount)
  * - Error handling for failed decodes
- * 
+ *
  * @param url - The image URL to decode (blob URL, data URL, or regular URL)
  * @returns { isDecoded, error }
- * 
+ *
  * @example
  * ```tsx
  * const { isDecoded, error } = useImageDecode(blobUrl);
- * 
+ *
  * return isDecoded ? (
  *   <img src={blobUrl} alt="Photo" />
  * ) : (
@@ -33,10 +33,12 @@ export interface UseImageDecodeResult {
  * );
  * ```
  */
-export function useImageDecode(url: string | null | undefined): UseImageDecodeResult {
+export function useImageDecode(
+  url: string | null | undefined,
+): UseImageDecodeResult {
   const [isDecoded, setIsDecoded] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  
+
   // Track the current decode operation to abort on URL change
   const currentUrlRef = useRef<string | null | undefined>(null);
   const isMountedRef = useRef(true);
@@ -67,7 +69,8 @@ export function useImageDecode(url: string | null | undefined): UseImageDecodeRe
     const img = new Image();
     img.src = url;
 
-    img.decode()
+    img
+      .decode()
       .then(() => {
         // Only update state if still mounted and URL hasn't changed
         if (isMountedRef.current && currentUrlRef.current === url) {

@@ -8,7 +8,10 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ShareLinkDialog } from '../src/components/ShareLinks';
-import type { CreateShareLinkResult, ShareLinkInfo } from '../src/hooks/useShareLinks';
+import type {
+  CreateShareLinkResult,
+  ShareLinkInfo,
+} from '../src/hooks/useShareLinks';
 
 // Helper to create mock share link result
 function createMockResult(overrides = {}): CreateShareLinkResult {
@@ -35,7 +38,9 @@ function createMockResult(overrides = {}): CreateShareLinkResult {
 }
 
 // Helper to render ShareLinkDialog (now CreateShareLinkView)
-function renderShareLinkDialog(props: Partial<Parameters<typeof ShareLinkDialog>[0]> = {}) {
+function renderShareLinkDialog(
+  props: Partial<Parameters<typeof ShareLinkDialog>[0]> = {},
+) {
   const defaultProps = {
     onCancel: vi.fn(),
     onDone: vi.fn(),
@@ -53,8 +58,10 @@ function renderShareLinkDialog(props: Partial<Parameters<typeof ShareLinkDialog>
     root.render(createElement(ShareLinkDialog, { ...defaultProps, ...props }));
   });
 
-  const getByTestId = (testId: string) => document.querySelector(`[data-testid="${testId}"]`);
-  const queryByTestId = (testId: string) => document.querySelector(`[data-testid="${testId}"]`);
+  const getByTestId = (testId: string) =>
+    document.querySelector(`[data-testid="${testId}"]`);
+  const queryByTestId = (testId: string) =>
+    document.querySelector(`[data-testid="${testId}"]`);
 
   const cleanup = () => {
     act(() => {
@@ -63,13 +70,28 @@ function renderShareLinkDialog(props: Partial<Parameters<typeof ShareLinkDialog>
     container.remove();
   };
 
-  const rerender = (newProps: Partial<Parameters<typeof ShareLinkDialog>[0]>) => {
+  const rerender = (
+    newProps: Partial<Parameters<typeof ShareLinkDialog>[0]>,
+  ) => {
     act(() => {
-      root.render(createElement(ShareLinkDialog, { ...defaultProps, ...props, ...newProps }));
+      root.render(
+        createElement(ShareLinkDialog, {
+          ...defaultProps,
+          ...props,
+          ...newProps,
+        }),
+      );
     });
   };
 
-  return { container, getByTestId, queryByTestId, cleanup, rerender, props: { ...defaultProps, ...props } };
+  return {
+    container,
+    getByTestId,
+    queryByTestId,
+    cleanup,
+    rerender,
+    props: { ...defaultProps, ...props },
+  };
 }
 
 describe('ShareLinkDialog', () => {
@@ -125,7 +147,7 @@ describe('ShareLinkDialog', () => {
 
       // Find the checked input
       const checkedInput = Array.from(inputs || []).find(
-        (input) => (input as HTMLInputElement).checked
+        (input) => (input as HTMLInputElement).checked,
       ) as HTMLInputElement | undefined;
 
       expect(checkedInput?.value).toBe('2');
@@ -140,7 +162,7 @@ describe('ShareLinkDialog', () => {
 
       // Select tier 1 (Thumbnails Only)
       const tier1Input = Array.from(inputs || []).find(
-        (input) => (input as HTMLInputElement).value === '1'
+        (input) => (input as HTMLInputElement).value === '1',
       ) as HTMLInputElement;
 
       act(() => {
@@ -177,7 +199,9 @@ describe('ShareLinkDialog', () => {
     it('allows selecting different presets', () => {
       const { getByTestId, cleanup } = renderShareLinkDialog();
 
-      const oneHourPreset = getByTestId('expiry-preset-1-hour') as HTMLButtonElement;
+      const oneHourPreset = getByTestId(
+        'expiry-preset-1-hour',
+      ) as HTMLButtonElement;
 
       act(() => {
         oneHourPreset.click();
@@ -193,7 +217,9 @@ describe('ShareLinkDialog', () => {
       // Initially warning should be hidden (7 days is selected)
       expect(queryByTestId('never-expires-warning')).toBeNull();
 
-      const neverPreset = getByTestId('expiry-preset-never') as HTMLButtonElement;
+      const neverPreset = getByTestId(
+        'expiry-preset-never',
+      ) as HTMLButtonElement;
 
       act(() => {
         neverPreset.click();
@@ -207,7 +233,9 @@ describe('ShareLinkDialog', () => {
       const { getByTestId, queryByTestId, cleanup } = renderShareLinkDialog();
 
       // Select Never first
-      const neverPreset = getByTestId('expiry-preset-never') as HTMLButtonElement;
+      const neverPreset = getByTestId(
+        'expiry-preset-never',
+      ) as HTMLButtonElement;
       act(() => {
         neverPreset.click();
       });
@@ -215,7 +243,9 @@ describe('ShareLinkDialog', () => {
       expect(queryByTestId('never-expires-warning')).not.toBeNull();
 
       // Select 7 days
-      const sevenDaysPreset = getByTestId('expiry-preset-7-days') as HTMLButtonElement;
+      const sevenDaysPreset = getByTestId(
+        'expiry-preset-7-days',
+      ) as HTMLButtonElement;
       act(() => {
         sevenDaysPreset.click();
       });
@@ -266,7 +296,9 @@ describe('ShareLinkDialog', () => {
       const onCreate = vi.fn().mockResolvedValue(createMockResult());
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -285,14 +317,16 @@ describe('ShareLinkDialog', () => {
       // Select tier 3
       const tierSelector = getByTestId('tier-selector');
       const tier3Input = tierSelector?.querySelector(
-        'input[value="3"]'
+        'input[value="3"]',
       ) as HTMLInputElement;
 
       act(() => {
         tier3Input.click();
       });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -302,7 +336,7 @@ describe('ShareLinkDialog', () => {
       expect(onCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           accessTier: 3,
-        })
+        }),
       );
       cleanup();
     });
@@ -312,7 +346,9 @@ describe('ShareLinkDialog', () => {
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
       // Default is 7 days, so expiresAt should be set
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -322,7 +358,7 @@ describe('ShareLinkDialog', () => {
       expect(onCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           expiresAt: expect.any(Date),
-        })
+        }),
       );
       cleanup();
     });
@@ -331,13 +367,17 @@ describe('ShareLinkDialog', () => {
       const onCreate = vi.fn().mockResolvedValue(createMockResult());
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
-      const neverPreset = getByTestId('expiry-preset-never') as HTMLButtonElement;
+      const neverPreset = getByTestId(
+        'expiry-preset-never',
+      ) as HTMLButtonElement;
 
       act(() => {
         neverPreset.click();
       });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -353,13 +393,17 @@ describe('ShareLinkDialog', () => {
       const onCreate = vi.fn().mockResolvedValue(createMockResult());
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
-      const maxUsesCheckbox = getByTestId('max-uses-checkbox') as HTMLInputElement;
+      const maxUsesCheckbox = getByTestId(
+        'max-uses-checkbox',
+      ) as HTMLInputElement;
 
       act(() => {
         maxUsesCheckbox.click();
       });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -369,7 +413,7 @@ describe('ShareLinkDialog', () => {
       expect(onCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           maxUses: 10,
-        })
+        }),
       );
       cleanup();
     });
@@ -377,7 +421,9 @@ describe('ShareLinkDialog', () => {
 
   describe('loading state', () => {
     it('shows loading text when creating', () => {
-      const { getByTestId, cleanup } = renderShareLinkDialog({ isCreating: true });
+      const { getByTestId, cleanup } = renderShareLinkDialog({
+        isCreating: true,
+      });
 
       const button = getByTestId('generate-button') as HTMLButtonElement;
       expect(button.textContent).toContain('Generating...');
@@ -385,9 +431,13 @@ describe('ShareLinkDialog', () => {
     });
 
     it('disables buttons when creating', () => {
-      const { getByTestId, cleanup } = renderShareLinkDialog({ isCreating: true });
+      const { getByTestId, cleanup } = renderShareLinkDialog({
+        isCreating: true,
+      });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
       const cancelButton = getByTestId('cancel-button') as HTMLButtonElement;
 
       expect(generateButton.disabled).toBe(true);
@@ -422,7 +472,9 @@ describe('ShareLinkDialog', () => {
         onCreate,
       });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -440,7 +492,9 @@ describe('ShareLinkDialog', () => {
       const onCreate = vi.fn().mockResolvedValue(createMockResult());
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -456,7 +510,9 @@ describe('ShareLinkDialog', () => {
       const onCreate = vi.fn().mockResolvedValue(createMockResult());
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -470,9 +526,14 @@ describe('ShareLinkDialog', () => {
     it('calls onDone when done button is clicked', async () => {
       const onDone = vi.fn();
       const onCreate = vi.fn().mockResolvedValue(createMockResult());
-      const { getByTestId, cleanup } = renderShareLinkDialog({ onDone, onCreate });
+      const { getByTestId, cleanup } = renderShareLinkDialog({
+        onDone,
+        onCreate,
+      });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -495,7 +556,9 @@ describe('ShareLinkDialog', () => {
       const onCreate = vi.fn().mockResolvedValue(createMockResult());
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -544,7 +607,9 @@ describe('ShareLinkDialog', () => {
         onCreate,
       });
 
-      const maxUsesCheckbox = getByTestId('max-uses-checkbox') as HTMLInputElement;
+      const maxUsesCheckbox = getByTestId(
+        'max-uses-checkbox',
+      ) as HTMLInputElement;
 
       act(() => {
         maxUsesCheckbox.click();
@@ -557,14 +622,16 @@ describe('ShareLinkDialog', () => {
         usesInput.focus();
         const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
           window.HTMLInputElement.prototype,
-          'value'
+          'value',
         )?.set;
         nativeInputValueSetter?.call(usesInput, '0');
         const event = new Event('input', { bubbles: true });
         usesInput.dispatchEvent(event);
       });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -585,7 +652,9 @@ describe('ShareLinkDialog', () => {
       const onCreate = vi.fn().mockResolvedValue(result);
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -603,7 +672,9 @@ describe('ShareLinkDialog', () => {
       const onCreate = vi.fn().mockResolvedValue(result);
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();
@@ -622,7 +693,9 @@ describe('ShareLinkDialog', () => {
       const onCreate = vi.fn().mockResolvedValue(result);
       const { getByTestId, cleanup } = renderShareLinkDialog({ onCreate });
 
-      const generateButton = getByTestId('generate-button') as HTMLButtonElement;
+      const generateButton = getByTestId(
+        'generate-button',
+      ) as HTMLButtonElement;
 
       await act(async () => {
         generateButton.click();

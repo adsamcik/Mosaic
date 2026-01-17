@@ -36,7 +36,7 @@ function createMockLink(overrides: Partial<ShareLinkInfo> = {}): ShareLinkInfo {
 
 // Helper to render EditLinkExpirationDialog
 function renderEditLinkExpirationDialog(
-  props: Partial<EditLinkExpirationDialogProps> = {}
+  props: Partial<EditLinkExpirationDialogProps> = {},
 ) {
   const defaultProps: EditLinkExpirationDialogProps = {
     link: createMockLink(),
@@ -73,7 +73,10 @@ function renderEditLinkExpirationDialog(
   const rerender = (newProps: Partial<EditLinkExpirationDialogProps>) => {
     act(() => {
       root.render(
-        createElement(EditLinkExpirationDialog, { ...defaultProps, ...newProps })
+        createElement(EditLinkExpirationDialog, {
+          ...defaultProps,
+          ...newProps,
+        }),
       );
     });
   };
@@ -176,7 +179,7 @@ describe('EditLinkExpirationDialog', () => {
       const { getByTestId, cleanup } = renderEditLinkExpirationDialog();
 
       const sevenDaysPreset = getByTestId(
-        'expiry-preset-7-days'
+        'expiry-preset-7-days',
       ) as HTMLButtonElement;
 
       act(() => {
@@ -203,7 +206,7 @@ describe('EditLinkExpirationDialog', () => {
         });
 
       const sevenDaysPreset = getByTestId(
-        'expiry-preset-7-days'
+        'expiry-preset-7-days',
       ) as HTMLButtonElement;
 
       act(() => {
@@ -263,7 +266,7 @@ describe('EditLinkExpirationDialog', () => {
       });
 
       const sevenDaysPreset = getByTestId(
-        'expiry-preset-7-days'
+        'expiry-preset-7-days',
       ) as HTMLButtonElement;
 
       act(() => {
@@ -277,11 +280,7 @@ describe('EditLinkExpirationDialog', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
 
-      expect(onUpdate).toHaveBeenCalledWith(
-        'link-1',
-        expect.any(Date),
-        null
-      );
+      expect(onUpdate).toHaveBeenCalledWith('link-1', expect.any(Date), null);
       expect(onSave).toHaveBeenCalled();
       cleanup();
     });
@@ -293,7 +292,9 @@ describe('EditLinkExpirationDialog', () => {
         link: createMockLink({ expiresAt: new Date().toISOString() }),
       });
 
-      const neverPreset = getByTestId('expiry-preset-never') as HTMLButtonElement;
+      const neverPreset = getByTestId(
+        'expiry-preset-never',
+      ) as HTMLButtonElement;
 
       act(() => {
         neverPreset.click();
@@ -405,11 +406,12 @@ describe('EditLinkExpirationDialog', () => {
       // Since the component initializes maxUses from link or defaults to 10,
       // we need to test by providing a link with maxUses of 0
       const onUpdate = vi.fn().mockResolvedValue(undefined);
-      const { getByTestId, queryByTestId, cleanup } = renderEditLinkExpirationDialog({
-        onUpdate,
-        // Link with maxUses=0 to trigger validation
-        link: createMockLink({ maxUses: 0 }),
-      });
+      const { getByTestId, queryByTestId, cleanup } =
+        renderEditLinkExpirationDialog({
+          onUpdate,
+          // Link with maxUses=0 to trigger validation
+          link: createMockLink({ maxUses: 0 }),
+        });
 
       // maxUses checkbox should be checked since link has maxUses defined
       // The value should be 0 which is invalid

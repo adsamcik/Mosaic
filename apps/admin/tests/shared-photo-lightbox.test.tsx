@@ -8,17 +8,22 @@ import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import type { PhotoMeta } from '../src/workers/types';
 
 // Mock crypto client - use vi.hoisted to avoid hoisting issues
-const { mockDecryptShardWithTierKey, mockPeekHeader, mockCryptoClient } = vi.hoisted(() => {
-  const mockDecryptShardWithTierKey = vi.fn(() => Promise.resolve(new Uint8Array(10)));
-  // Default: return tier 2 (preview) for all shards
-  const mockPeekHeader = vi.fn(() => Promise.resolve({ epochId: 1, shardId: 0, tier: 2 }));
-  const mockCryptoClient = {
-    decryptShard: vi.fn(() => Promise.resolve(new Uint8Array(10))),
-    decryptShardWithTierKey: mockDecryptShardWithTierKey,
-    peekHeader: mockPeekHeader,
-  };
-  return { mockDecryptShardWithTierKey, mockPeekHeader, mockCryptoClient };
-});
+const { mockDecryptShardWithTierKey, mockPeekHeader, mockCryptoClient } =
+  vi.hoisted(() => {
+    const mockDecryptShardWithTierKey = vi.fn(() =>
+      Promise.resolve(new Uint8Array(10)),
+    );
+    // Default: return tier 2 (preview) for all shards
+    const mockPeekHeader = vi.fn(() =>
+      Promise.resolve({ epochId: 1, shardId: 0, tier: 2 }),
+    );
+    const mockCryptoClient = {
+      decryptShard: vi.fn(() => Promise.resolve(new Uint8Array(10))),
+      decryptShardWithTierKey: mockDecryptShardWithTierKey,
+      peekHeader: mockPeekHeader,
+    };
+    return { mockDecryptShardWithTierKey, mockPeekHeader, mockCryptoClient };
+  });
 
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() => Promise.resolve(mockCryptoClient)),
@@ -86,7 +91,8 @@ describe('SharedPhotoLightbox', () => {
 
   // Create a base64 encoded tiny image for thumbnail testing
   // This is a 1x1 pixel JPEG
-  const tinyJpegBase64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+gD/2Q==';
+  const tinyJpegBase64 =
+    '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+gD/2Q==';
 
   const mockPhotoWithThumbnail: PhotoMeta = {
     ...mockPhoto,
@@ -108,11 +114,13 @@ describe('SharedPhotoLightbox', () => {
           onClose: vi.fn(),
           hasNext: false,
           hasPrevious: false,
-        })
+        }),
       );
     });
 
-    const lightbox = container.querySelector('[data-testid="shared-photo-lightbox"]');
+    const lightbox = container.querySelector(
+      '[data-testid="shared-photo-lightbox"]',
+    );
     expect(lightbox).toBeTruthy();
     expect(lightbox?.className).toBe('lightbox-backdrop');
   });
@@ -132,7 +140,7 @@ describe('SharedPhotoLightbox', () => {
           onClose: vi.fn(),
           hasNext: false,
           hasPrevious: false,
-        })
+        }),
       );
     });
 
@@ -155,15 +163,15 @@ describe('SharedPhotoLightbox', () => {
           onClose: vi.fn(),
           hasNext: false,
           hasPrevious: false,
-        })
+        }),
       );
       // Wait for async effects
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     });
 
     // Should create a blob URL for the thumbnail
     expect(mockCreateObjectURL).toHaveBeenCalled();
-    
+
     // Should show the image
     const image = container.querySelector('[data-testid="lightbox-image"]');
     expect(image).toBeTruthy();
@@ -184,23 +192,25 @@ describe('SharedPhotoLightbox', () => {
           onClose: vi.fn(),
           hasNext: false,
           hasPrevious: false,
-        })
+        }),
       );
       // Wait for async shard loading
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     });
 
     // Should have downloaded shards
     expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'shard-1');
-    
+
     // Should have decrypted shards
     expect(mockDecryptShardWithTierKey).toHaveBeenCalled();
   });
 
   it('gracefully handles decryption failure when thumbnail is available', async () => {
     // Make decryption fail
-    mockDecryptShardWithTierKey.mockRejectedValueOnce(new Error('Decryption failed'));
-    
+    mockDecryptShardWithTierKey.mockRejectedValueOnce(
+      new Error('Decryption failed'),
+    );
+
     container = document.createElement('div');
     document.body.appendChild(container);
 
@@ -215,16 +225,16 @@ describe('SharedPhotoLightbox', () => {
           onClose: vi.fn(),
           hasNext: false,
           hasPrevious: false,
-        })
+        }),
       );
       // Wait for async effects
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     });
 
     // Should still show the image (thumbnail fallback)
     const image = container.querySelector('[data-testid="lightbox-image"]');
     expect(image).toBeTruthy();
-    
+
     // Should NOT show an error
     const error = container.querySelector('[data-testid="lightbox-error"]');
     expect(error).toBeNull();
@@ -232,8 +242,10 @@ describe('SharedPhotoLightbox', () => {
 
   it('shows error when no thumbnail and shard loading fails', async () => {
     // Make decryption fail
-    mockDecryptShardWithTierKey.mockRejectedValueOnce(new Error('Decryption failed'));
-    
+    mockDecryptShardWithTierKey.mockRejectedValueOnce(
+      new Error('Decryption failed'),
+    );
+
     container = document.createElement('div');
     document.body.appendChild(container);
 
@@ -248,10 +260,10 @@ describe('SharedPhotoLightbox', () => {
           onClose: vi.fn(),
           hasNext: false,
           hasPrevious: false,
-        })
+        }),
       );
       // Wait for async effects
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     });
 
     // Should show an error
@@ -275,7 +287,7 @@ describe('SharedPhotoLightbox', () => {
           onClose: vi.fn(),
           hasNext: false,
           hasPrevious: false,
-        })
+        }),
       );
     });
 
@@ -301,10 +313,10 @@ describe('SharedPhotoLightbox', () => {
           onClose: vi.fn(),
           hasNext: false,
           hasPrevious: false,
-        })
+        }),
       );
       // Wait for async shard loading
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     });
 
     // Should have called peekHeader to check shard tier
@@ -338,18 +350,18 @@ describe('SharedPhotoLightbox', () => {
           onClose: vi.fn(),
           hasNext: false,
           hasPrevious: false,
-        })
+        }),
       );
       // Wait for async shard loading
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 150));
     });
 
     // Should have peeked at all 3 shards
     expect(mockPeekHeader).toHaveBeenCalledTimes(3);
-    
+
     // Should only decrypt 1 shard (the preview tier, highest available <= accessTier)
     expect(mockDecryptShardWithTierKey).toHaveBeenCalledTimes(1);
-    
+
     // Should show the loaded image
     const image = container.querySelector('[data-testid="lightbox-image"]');
     expect(image).toBeTruthy();
@@ -379,10 +391,10 @@ describe('SharedPhotoLightbox', () => {
           hasNext: false,
           hasPrevious: false,
           getTierKey: mockGetTierKey,
-        })
+        }),
       );
       // Wait for async shard loading
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     });
 
     // Should have called getTierKey with epoch 1 and tier 1 (from the shard header)
@@ -394,7 +406,7 @@ describe('SharedPhotoLightbox', () => {
     // 1. Photo is encrypted with fullKey (tier 3)
     // 2. Share link has accessTier 3 (full access)
     // 3. Shard header has tier 3
-    
+
     const mockGetTierKey = vi.fn((epochId: number, tier: number) => {
       // Return a tier key for tier 3
       if (tier === 3) {
@@ -421,18 +433,18 @@ describe('SharedPhotoLightbox', () => {
           hasNext: false,
           hasPrevious: false,
           getTierKey: mockGetTierKey,
-        })
+        }),
       );
       // Wait for async shard loading and decryption
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 150));
     });
 
     // Should have called getTierKey with epoch 1 and tier 3 (from the shard header)
     expect(mockGetTierKey).toHaveBeenCalledWith(1, 3);
-    
+
     // Should have decrypted the shard
     expect(mockDecryptShardWithTierKey).toHaveBeenCalled();
-    
+
     // The key passed should be the tier 3 key
     const callArgs = mockDecryptShardWithTierKey.mock.calls[0];
     expect(callArgs![1]).toEqual(new Uint8Array(32).fill(3));
@@ -465,14 +477,20 @@ describe('SharedPhotoLightbox', () => {
             onClose: vi.fn(),
             hasNext: false,
             hasPrevious: false,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
       });
 
       // Should download the tier-specific original shard, NOT the legacy shard
-      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'tier-original-shard');
-      expect(mockDownloadShard).not.toHaveBeenCalledWith('link-1', 'legacy-shard');
+      expect(mockDownloadShard).toHaveBeenCalledWith(
+        'link-1',
+        'tier-original-shard',
+      );
+      expect(mockDownloadShard).not.toHaveBeenCalledWith(
+        'link-1',
+        'legacy-shard',
+      );
     });
 
     it('falls back to previewShardId when access tier is 2', async () => {
@@ -500,14 +518,20 @@ describe('SharedPhotoLightbox', () => {
             onClose: vi.fn(),
             hasNext: false,
             hasPrevious: false,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
       });
 
       // Should download the preview shard, not original
-      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'tier-preview-shard');
-      expect(mockDownloadShard).not.toHaveBeenCalledWith('link-1', 'tier-original-shard');
+      expect(mockDownloadShard).toHaveBeenCalledWith(
+        'link-1',
+        'tier-preview-shard',
+      );
+      expect(mockDownloadShard).not.toHaveBeenCalledWith(
+        'link-1',
+        'tier-original-shard',
+      );
     });
 
     it('falls back to thumbnailShardId when access tier is 1', async () => {
@@ -535,13 +559,16 @@ describe('SharedPhotoLightbox', () => {
             onClose: vi.fn(),
             hasNext: false,
             hasPrevious: false,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
       });
 
       // Should download the thumbnail shard
-      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'tier-thumb-shard');
+      expect(mockDownloadShard).toHaveBeenCalledWith(
+        'link-1',
+        'tier-thumb-shard',
+      );
     });
 
     it('uses preview when access tier is 2 but original is available (respects tier limit)', async () => {
@@ -569,14 +596,20 @@ describe('SharedPhotoLightbox', () => {
             onClose: vi.fn(),
             hasNext: false,
             hasPrevious: false,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
       });
 
       // Should download preview, NOT original
-      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'tier-preview-shard');
-      expect(mockDownloadShard).not.toHaveBeenCalledWith('link-1', 'tier-original-shard');
+      expect(mockDownloadShard).toHaveBeenCalledWith(
+        'link-1',
+        'tier-preview-shard',
+      );
+      expect(mockDownloadShard).not.toHaveBeenCalledWith(
+        'link-1',
+        'tier-original-shard',
+      );
     });
 
     it('falls back to legacy shardIds when no tier-specific fields', async () => {
@@ -605,15 +638,24 @@ describe('SharedPhotoLightbox', () => {
             onClose: vi.fn(),
             hasNext: false,
             hasPrevious: false,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
       });
 
       // Should download legacy shards
-      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'legacy-shard-1');
-      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'legacy-shard-2');
-      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'legacy-shard-3');
+      expect(mockDownloadShard).toHaveBeenCalledWith(
+        'link-1',
+        'legacy-shard-1',
+      );
+      expect(mockDownloadShard).toHaveBeenCalledWith(
+        'link-1',
+        'legacy-shard-2',
+      );
+      expect(mockDownloadShard).toHaveBeenCalledWith(
+        'link-1',
+        'legacy-shard-3',
+      );
     });
 
     it('handles missing higher tier shards gracefully (falls back to lower tier)', async () => {
@@ -641,13 +683,16 @@ describe('SharedPhotoLightbox', () => {
             onClose: vi.fn(),
             hasNext: false,
             hasPrevious: false,
-          })
+          }),
         );
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise((resolve) => setTimeout(resolve, 150));
       });
 
       // Should fall back to preview shard since original is missing
-      expect(mockDownloadShard).toHaveBeenCalledWith('link-1', 'tier-preview-shard');
+      expect(mockDownloadShard).toHaveBeenCalledWith(
+        'link-1',
+        'tier-preview-shard',
+      );
     });
   });
 });

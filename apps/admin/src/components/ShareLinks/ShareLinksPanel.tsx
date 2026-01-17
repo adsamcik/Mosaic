@@ -116,15 +116,15 @@ export function ShareLinksPanel({
               ←
             </button>
           ) : null}
-          
+
           <h3 className="member-panel-title">
             {view === 'create'
               ? t('shareLink.panel.createTitle')
               : view === 'edit'
-              ? t('shareLink.panel.editTitle')
-              : t('shareLink.panel.listTitle')}
+                ? t('shareLink.panel.editTitle')
+                : t('shareLink.panel.listTitle')}
           </h3>
-          
+
           <button
             className="member-panel-close"
             onClick={onClose}

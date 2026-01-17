@@ -33,7 +33,7 @@ describe('Memory Pressure Handling', () => {
 
       expect(addEventListenerSpy).toHaveBeenCalledWith(
         'visibilitychange',
-        expect.any(Function)
+        expect.any(Function),
       );
 
       addEventListenerSpy.mockRestore();
@@ -47,7 +47,7 @@ describe('Memory Pressure Handling', () => {
 
       // Should only add listener once
       const visibilityChangeCalls = addEventListenerSpy.mock.calls.filter(
-        (call) => call[0] === 'visibilitychange'
+        (call) => call[0] === 'visibilitychange',
       );
       expect(visibilityChangeCalls).toHaveLength(1);
 
@@ -64,7 +64,7 @@ describe('Memory Pressure Handling', () => {
 
       expect(removeEventListenerSpy).toHaveBeenCalledWith(
         'visibilitychange',
-        expect.any(Function)
+        expect.any(Function),
       );
 
       removeEventListenerSpy.mockRestore();
@@ -78,7 +78,7 @@ describe('Memory Pressure Handling', () => {
       initMemoryPressureHandling();
 
       const visibilityChangeCalls = addEventListenerSpy.mock.calls.filter(
-        (call) => call[0] === 'visibilitychange'
+        (call) => call[0] === 'visibilitychange',
       );
       expect(visibilityChangeCalls).toHaveLength(2);
 

@@ -61,7 +61,14 @@ const mockPhotos: PhotoMeta[] = [
 // Mock photo actions
 const mockPhotoActions = {
   deletePhoto: vi.fn().mockResolvedValue(undefined),
-  deletePhotos: vi.fn().mockResolvedValue({ successCount: 0, failureCount: 0, failedIds: [], errors: [] }),
+  deletePhotos: vi
+    .fn()
+    .mockResolvedValue({
+      successCount: 0,
+      failureCount: 0,
+      failedIds: [],
+      errors: [],
+    }),
   isDeleting: false,
   error: null as string | null,
   clearError: vi.fn(),
@@ -94,7 +101,10 @@ vi.mock('../src/hooks/useLightbox', () => ({
 vi.mock('../src/hooks/usePhotoActions', () => ({
   usePhotoActions: vi.fn(() => mockPhotoActions),
   PhotoDeleteError: class extends Error {
-    constructor(message: string, public readonly manifestId: string) {
+    constructor(
+      message: string,
+      public readonly manifestId: string,
+    ) {
       super(message);
     }
   },
@@ -133,7 +143,7 @@ describe('PhotoGrid Selection and Delete', () => {
     vi.clearAllMocks();
     mockPhotoActions.isDeleting = false;
     mockPhotoActions.error = null;
-    
+
     container = document.createElement('div');
     document.body.appendChild(container);
   });
@@ -146,7 +156,9 @@ describe('PhotoGrid Selection and Delete', () => {
     document.body.innerHTML = '';
   });
 
-  const createMockSelection = (overrides?: Partial<UseSelectionReturn>): UseSelectionReturn => ({
+  const createMockSelection = (
+    overrides?: Partial<UseSelectionReturn>,
+  ): UseSelectionReturn => ({
     isSelectionMode: false,
     selectedIds: new Set(),
     selectedCount: 0,
@@ -165,30 +177,35 @@ describe('PhotoGrid Selection and Delete', () => {
   const render = (albumId = 'album-1', selection?: UseSelectionReturn) => {
     act(() => {
       root = createRoot(container);
-      root.render(createElement(PhotoGrid, { 
-        albumId, 
-        photos: mockPhotos,
-        isLoading: false,
-        error: null,
-        refetch: vi.fn(),
-        selection 
-      }));
+      root.render(
+        createElement(PhotoGrid, {
+          albumId,
+          photos: mockPhotos,
+          isLoading: false,
+          error: null,
+          refetch: vi.fn(),
+          selection,
+        }),
+      );
     });
 
     return {
-      getByTestId: (id: string) => container.querySelector(`[data-testid="${id}"]`),
-      getAllByTestId: (id: string) => container.querySelectorAll(`[data-testid="${id}"]`),
-      queryByTestId: (id: string) => container.querySelector(`[data-testid="${id}"]`),
+      getByTestId: (id: string) =>
+        container.querySelector(`[data-testid="${id}"]`),
+      getAllByTestId: (id: string) =>
+        container.querySelectorAll(`[data-testid="${id}"]`),
+      queryByTestId: (id: string) =>
+        container.querySelector(`[data-testid="${id}"]`),
     };
   };
 
   describe('selection with props', () => {
     it('renders photo grid without toolbar (toolbar is now in GalleryHeader)', () => {
       const { queryByTestId, getByTestId } = render();
-      
+
       // Toolbar should not be present in PhotoGrid anymore
       expect(queryByTestId('photo-grid-toolbar')).toBeNull();
-      
+
       // Grid should still be present
       expect(getByTestId('photo-grid')).toBeTruthy();
     });
@@ -199,7 +216,7 @@ describe('PhotoGrid Selection and Delete', () => {
         selectedIds: new Set(),
         selectedCount: 0,
       });
-      
+
       // Due to virtualization, we can't easily test checkbox visibility
       // but we can verify the component renders without errors
       const { getByTestId } = render('album-1', mockSelection);
@@ -213,7 +230,7 @@ describe('PhotoGrid Selection and Delete', () => {
         selectedCount: 2,
         isSelected: vi.fn((id: string) => ['photo-1', 'photo-2'].includes(id)),
       });
-      
+
       const { getByTestId } = render('album-1', mockSelection);
       expect(getByTestId('photo-grid')).toBeTruthy();
     });
@@ -223,10 +240,10 @@ describe('PhotoGrid Selection and Delete', () => {
     it('shows delete dialog when single photo delete is triggered', async () => {
       // This tests the internal delete functionality which is still in PhotoGrid
       const { getByTestId } = render();
-      
+
       // Grid should be present
       expect(getByTestId('photo-grid')).toBeTruthy();
-      
+
       // Note: Due to virtualization, we can't easily trigger delete button
       // The delete dialog is tested more thoroughly in e2e tests
     });
@@ -235,7 +252,7 @@ describe('PhotoGrid Selection and Delete', () => {
   describe('grid rendering', () => {
     it('renders photo grid container', () => {
       const { getByTestId } = render();
-      
+
       expect(getByTestId('photo-grid')).toBeTruthy();
     });
 
@@ -245,9 +262,9 @@ describe('PhotoGrid Selection and Delete', () => {
         selectedIds: new Set(['photo-1']),
         selectedCount: 1,
       });
-      
+
       const { getByTestId } = render('album-1', mockSelection);
-      
+
       // Verify grid renders without errors when selection is provided
       expect(getByTestId('photo-grid')).toBeTruthy();
     });

@@ -10,7 +10,7 @@ import { SearchInput } from '../src/components/Gallery/SearchInput';
 function setInputValue(input: HTMLInputElement, value: string) {
   const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
-    'value'
+    'value',
   )?.set;
   nativeInputValueSetter?.call(input, value);
   input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -38,10 +38,18 @@ describe('SearchInput', () => {
   it('renders with placeholder text', () => {
     const onChange = vi.fn();
     act(() => {
-      root.render(createElement(SearchInput, { value: '', onChange, placeholder: 'Search...' }));
+      root.render(
+        createElement(SearchInput, {
+          value: '',
+          onChange,
+          placeholder: 'Search...',
+        }),
+      );
     });
 
-    const input = container.querySelector('input[type="search"]') as HTMLInputElement;
+    const input = container.querySelector(
+      'input[type="search"]',
+    ) as HTMLInputElement;
     expect(input).not.toBeNull();
     expect(input.placeholder).toBe('Search...');
   });
@@ -52,8 +60,10 @@ describe('SearchInput', () => {
       root.render(createElement(SearchInput, { value: '', onChange }));
     });
 
-    const input = container.querySelector('input[type="search"]') as HTMLInputElement;
-    
+    const input = container.querySelector(
+      'input[type="search"]',
+    ) as HTMLInputElement;
+
     // Type in the input
     act(() => {
       setInputValue(input, 'test query');
@@ -68,7 +78,9 @@ describe('SearchInput', () => {
       root.render(createElement(SearchInput, { value: '', onChange }));
     });
 
-    const input = container.querySelector('input[type="search"]') as HTMLInputElement;
+    const input = container.querySelector(
+      'input[type="search"]',
+    ) as HTMLInputElement;
 
     act(() => {
       setInputValue(input, 'photo');
@@ -91,7 +103,9 @@ describe('SearchInput', () => {
       root.render(createElement(SearchInput, { value: '', onChange }));
     });
 
-    const input = container.querySelector('input[type="search"]') as HTMLInputElement;
+    const input = container.querySelector(
+      'input[type="search"]',
+    ) as HTMLInputElement;
 
     // Type first value
     act(() => {
@@ -133,14 +147,19 @@ describe('SearchInput', () => {
       root.render(createElement(SearchInput, { value: '', onChange }));
     });
 
-    const input = container.querySelector('input[type="search"]') as HTMLInputElement;
+    const input = container.querySelector(
+      'input[type="search"]',
+    ) as HTMLInputElement;
 
     act(() => {
       setInputValue(input, 'search term');
     });
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
+      const event = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+      });
       input.dispatchEvent(event);
     });
 
@@ -153,14 +172,19 @@ describe('SearchInput', () => {
       root.render(createElement(SearchInput, { value: '', onChange }));
     });
 
-    const input = container.querySelector('input[type="search"]') as HTMLInputElement;
+    const input = container.querySelector(
+      'input[type="search"]',
+    ) as HTMLInputElement;
 
     act(() => {
       setInputValue(input, 'test');
     });
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+      const event = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+      });
       input.dispatchEvent(event);
     });
 
@@ -174,16 +198,22 @@ describe('SearchInput', () => {
     });
 
     // No clear button when empty
-    expect(container.querySelector('[data-testid="search-clear-button"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="search-clear-button"]'),
+    ).toBeNull();
 
-    const input = container.querySelector('input[type="search"]') as HTMLInputElement;
+    const input = container.querySelector(
+      'input[type="search"]',
+    ) as HTMLInputElement;
 
     act(() => {
       setInputValue(input, 'test');
     });
 
     // Clear button should appear
-    expect(container.querySelector('[data-testid="search-clear-button"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="search-clear-button"]'),
+    ).not.toBeNull();
   });
 
   it('clears value when clear button is clicked', () => {
@@ -192,14 +222,18 @@ describe('SearchInput', () => {
       root.render(createElement(SearchInput, { value: '', onChange }));
     });
 
-    const input = container.querySelector('input[type="search"]') as HTMLInputElement;
+    const input = container.querySelector(
+      'input[type="search"]',
+    ) as HTMLInputElement;
 
     act(() => {
       setInputValue(input, 'test');
     });
 
-    const clearButton = container.querySelector('[data-testid="search-clear-button"]') as HTMLButtonElement;
-    
+    const clearButton = container.querySelector(
+      '[data-testid="search-clear-button"]',
+    ) as HTMLButtonElement;
+
     act(() => {
       clearButton.click();
     });
@@ -213,13 +247,21 @@ describe('SearchInput', () => {
       root.render(createElement(SearchInput, { value: '', onChange }));
     });
 
-    expect(container.querySelector('[data-testid="photo-search-input"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="photo-search-input"]'),
+    ).not.toBeNull();
   });
 
   it('applies custom className', () => {
     const onChange = vi.fn();
     act(() => {
-      root.render(createElement(SearchInput, { value: '', onChange, className: 'custom-class' }));
+      root.render(
+        createElement(SearchInput, {
+          value: '',
+          onChange,
+          className: 'custom-class',
+        }),
+      );
     });
 
     expect(container.querySelector('.custom-class')).not.toBeNull();
@@ -231,7 +273,9 @@ describe('SearchInput', () => {
       root.render(createElement(SearchInput, { value: '', onChange }));
     });
 
-    const input = container.querySelector('input[type="search"]') as HTMLInputElement;
+    const input = container.querySelector(
+      'input[type="search"]',
+    ) as HTMLInputElement;
     expect(input.placeholder).toBe('Search photos...');
   });
 });

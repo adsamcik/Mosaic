@@ -3,10 +3,10 @@
  *
  * A photo thumbnail designed for the justified grid layout.
  * Displays at specified dimensions while loading encrypted content.
- * 
+ *
  * Optimization: Uses embedded base64 thumbnails first when available,
  * only loading full shards when explicitly requested or when no thumbnail exists.
- * 
+ *
  * Loading priority (instant to slow):
  * 1. BlurHash placeholder (instant, ~30 char string decoded in <1ms)
  * 2. Embedded thumbnail (fast, base64 in manifest)
@@ -14,8 +14,15 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getCachedBlurhashDataURL, isValidBlurhash } from '../../lib/blurhash-decoder';
-import { loadPhoto, releasePhoto, type PhotoLoadResult } from '../../lib/photo-service';
+import {
+  getCachedBlurhashDataURL,
+  isValidBlurhash,
+} from '../../lib/blurhash-decoder';
+import {
+  loadPhoto,
+  releasePhoto,
+  type PhotoLoadResult,
+} from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
 import { createLogger } from '../../lib/logger';
 
@@ -89,9 +96,11 @@ export function JustifiedPhotoThumbnail({
   const embeddedThumbnailUrl = useMemo(() => {
     if (!photo.thumbnail || photo.thumbnail.length === 0) return null;
     // Check if it's already a URL (blob: or data: or http:)
-    if (photo.thumbnail.startsWith('blob:') || 
-        photo.thumbnail.startsWith('data:') || 
-        photo.thumbnail.startsWith('http')) {
+    if (
+      photo.thumbnail.startsWith('blob:') ||
+      photo.thumbnail.startsWith('data:') ||
+      photo.thumbnail.startsWith('http')
+    ) {
       return photo.thumbnail;
     }
     // Otherwise treat as base64
@@ -103,7 +112,8 @@ export function JustifiedPhotoThumbnail({
   // 2. Full resolution is explicitly requested
   // AND we have the epoch key and shard IDs
   const shouldLoadShards = useMemo(() => {
-    const hasShards = epochReadKey && photo.shardIds && photo.shardIds.length > 0;
+    const hasShards =
+      epochReadKey && photo.shardIds && photo.shardIds.length > 0;
     if (!hasShards) return false;
     // Load shards if no thumbnail OR if full resolution is requested
     return !photo.thumbnail || loadFullResolution;
@@ -133,7 +143,7 @@ export function JustifiedPhotoThumbnail({
                 setState({ status: 'loading', progress });
               }
             },
-          }
+          },
         );
 
         if (!cancelled) {
@@ -156,7 +166,13 @@ export function JustifiedPhotoThumbnail({
       cancelled = true;
       releasePhoto(photo.id);
     };
-  }, [photo.id, photo.shardIds, photo.mimeType, epochReadKey, shouldLoadShards]);
+  }, [
+    photo.id,
+    photo.shardIds,
+    photo.mimeType,
+    epochReadKey,
+    shouldLoadShards,
+  ]);
 
   // Retry handler for failed loads
   const handleRetry = useCallback(() => {
@@ -171,7 +187,8 @@ export function JustifiedPhotoThumbnail({
   }, [photo.id, photo.shardIds, photo.mimeType, epochReadKey]);
 
   // Handle click - allow clicking when any visual is available (blurhash, embedded thumbnail, or fully loaded)
-  const isClickable = blurhashUrl || embeddedThumbnailUrl || state.status === 'loaded';
+  const isClickable =
+    blurhashUrl || embeddedThumbnailUrl || state.status === 'loaded';
 
   const handleClick = useCallback(() => {
     if (selectionMode && onSelectionChange) {
@@ -187,19 +204,20 @@ export function JustifiedPhotoThumbnail({
       event.stopPropagation();
       onSelectionChange?.(!isSelected);
     },
-    [onSelectionChange, isSelected]
+    [onSelectionChange, isSelected],
   );
 
   // Handle delete button click
   const handleDeleteClick = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
-      const thumbnailUrl = state.status === 'loaded' 
-        ? state.result.blobUrl 
-        : embeddedThumbnailUrl ?? undefined;
+      const thumbnailUrl =
+        state.status === 'loaded'
+          ? state.result.blobUrl
+          : (embeddedThumbnailUrl ?? undefined);
       onDelete?.(thumbnailUrl);
     },
-    [onDelete, state, embeddedThumbnailUrl]
+    [onDelete, state, embeddedThumbnailUrl],
   );
 
   // Handle keyboard activation
@@ -215,13 +233,23 @@ export function JustifiedPhotoThumbnail({
       }
       if ((event.key === 'Delete' || event.key === 'Backspace') && onDelete) {
         event.preventDefault();
-        const thumbnailUrl = state.status === 'loaded' 
-          ? state.result.blobUrl 
-          : embeddedThumbnailUrl ?? undefined;
+        const thumbnailUrl =
+          state.status === 'loaded'
+            ? state.result.blobUrl
+            : (embeddedThumbnailUrl ?? undefined);
         onDelete(thumbnailUrl);
       }
     },
-    [isClickable, selectionMode, onSelectionChange, isSelected, onClick, onDelete, state, embeddedThumbnailUrl]
+    [
+      isClickable,
+      selectionMode,
+      onSelectionChange,
+      isSelected,
+      onClick,
+      onDelete,
+      state,
+      embeddedThumbnailUrl,
+    ],
   );
 
   // Render content based on state
@@ -255,9 +283,16 @@ export function JustifiedPhotoThumbnail({
     }
 
     // If loading full resolution and have embedded thumbnail, show it as placeholder while loading
-    if (embeddedThumbnailUrl && loadFullResolution && state.status === 'loading') {
+    if (
+      embeddedThumbnailUrl &&
+      loadFullResolution &&
+      state.status === 'loading'
+    ) {
       return (
-        <div className="justified-photo-upgrading" data-testid="photo-upgrading">
+        <div
+          className="justified-photo-upgrading"
+          data-testid="photo-upgrading"
+        >
           <img
             src={embeddedThumbnailUrl}
             alt={photo.filename}
@@ -272,7 +307,10 @@ export function JustifiedPhotoThumbnail({
     }
 
     // If we have a blurhash, show it as instant placeholder while loading
-    if (blurhashUrl && (state.status === 'idle' || state.status === 'loading')) {
+    if (
+      blurhashUrl &&
+      (state.status === 'idle' || state.status === 'loading')
+    ) {
       return (
         <div className="justified-photo-blurhash" data-testid="photo-blurhash">
           <img
@@ -280,7 +318,12 @@ export function JustifiedPhotoThumbnail({
             alt=""
             aria-hidden="true"
             className="justified-photo-blurhash-image"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(0px)' }}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              filter: 'blur(0px)',
+            }}
           />
           {state.status === 'loading' && state.progress > 0 && (
             <div
@@ -295,13 +338,45 @@ export function JustifiedPhotoThumbnail({
     switch (state.status) {
       case 'idle':
         return (
-          <div className="justified-photo-placeholder" data-testid="photo-placeholder">
+          <div
+            className="justified-photo-placeholder"
+            data-testid="photo-placeholder"
+          >
             <span className="photo-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
             </span>
-            {!epochReadKey && <span className="photo-locked">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            </span>}
+            {!epochReadKey && (
+              <span className="photo-locked">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </span>
+            )}
           </div>
         );
 
@@ -322,7 +397,21 @@ export function JustifiedPhotoThumbnail({
         return (
           <div className="justified-photo-error" data-testid="photo-error">
             <span className="error-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
             </span>
             <button
               className="retry-button"
@@ -370,59 +459,162 @@ export function JustifiedPhotoThumbnail({
       )}
 
       {/* Delete button */}
-      {isHovered && !selectionMode && showDelete && onDelete && !photo.isPending && (
-        <button
-          className="justified-photo-delete"
-          onClick={handleDeleteClick}
-          aria-label={`Delete ${photo.filename}`}
-          title="Delete photo"
-          data-testid="photo-delete-button"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-        </button>
-      )}
+      {isHovered &&
+        !selectionMode &&
+        showDelete &&
+        onDelete &&
+        !photo.isPending && (
+          <button
+            className="justified-photo-delete"
+            onClick={handleDeleteClick}
+            aria-label={`Delete ${photo.filename}`}
+            title="Delete photo"
+            data-testid="photo-delete-button"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+          </button>
+        )}
 
       {/* Pending upload overlay */}
       {photo.isPending && (
-        <div className="justified-photo-pending-overlay" data-testid="photo-pending-overlay">
+        <div
+          className="justified-photo-pending-overlay"
+          data-testid="photo-pending-overlay"
+        >
           {/* Progress bar */}
           <div className="pending-progress-container">
-            <div 
+            <div
               className={`pending-progress-bar ${photo.uploadAction === 'encrypting' ? 'encrypting' : ''} ${photo.isSyncing ? 'syncing' : ''}`}
-              style={{ width: `${photo.isSyncing ? 100 : (photo.uploadProgress ?? 0)}%` }}
+              style={{
+                width: `${photo.isSyncing ? 100 : (photo.uploadProgress ?? 0)}%`,
+              }}
             />
           </div>
-          
+
           {/* Status with icon */}
           <div className="pending-status">
             {photo.uploadError ? (
               <span className="pending-status-error">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" />
+                  <line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
                 <span>Failed</span>
               </span>
             ) : photo.isSyncing ? (
               <span className="pending-status-syncing">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
                 <span>Syncing</span>
               </span>
             ) : photo.uploadAction === 'waiting' ? (
               <span className="pending-status-waiting">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
                 <span>Waiting</span>
               </span>
             ) : photo.uploadAction === 'encrypting' ? (
               <span className="pending-status-encrypting">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
                 <span>Encrypting</span>
               </span>
             ) : photo.uploadAction === 'uploading' ? (
               <span className="pending-status-uploading">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
                 <span>{Math.round(photo.uploadProgress ?? 0)}%</span>
               </span>
             ) : (
               <span className="pending-status-finalizing">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
                 <span>Finalizing</span>
               </span>
             )}

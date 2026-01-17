@@ -55,11 +55,13 @@ describe('PhotoThumbnail', () => {
       root.render(
         createElement(PhotoThumbnail, {
           photo: createMockPhoto(),
-        })
+        }),
       );
     });
 
-    const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
+    const thumbnail = container.querySelector(
+      '[data-testid="photo-thumbnail"]',
+    );
     expect(thumbnail).not.toBeNull();
   });
 
@@ -69,11 +71,13 @@ describe('PhotoThumbnail', () => {
         createElement(PhotoThumbnail, {
           photo: createMockPhoto(),
           // No epochReadKey provided
-        })
+        }),
       );
     });
 
-    const placeholder = container.querySelector('[data-testid="photo-placeholder"]');
+    const placeholder = container.querySelector(
+      '[data-testid="photo-placeholder"]',
+    );
     expect(placeholder).not.toBeNull();
 
     // Should have SVG icons for image and lock
@@ -94,15 +98,16 @@ describe('PhotoThumbnail', () => {
           photo: createMockPhoto(),
           epochReadKey: new Uint8Array(32),
           onDelete,
-        })
+        }),
       );
     });
 
     // Verify the component accepts onDelete prop without error
-    const thumbnail = container.querySelector('[data-testid="photo-thumbnail"]');
+    const thumbnail = container.querySelector(
+      '[data-testid="photo-thumbnail"]',
+    );
     expect(thumbnail).not.toBeNull();
   });
-
 
   it('shows selected state when isSelected is true', () => {
     act(() => {
@@ -112,7 +117,7 @@ describe('PhotoThumbnail', () => {
           isSelected: true,
           selectionMode: true,
           onSelectionChange: vi.fn(),
-        })
+        }),
       );
     });
 
@@ -127,7 +132,7 @@ describe('PhotoThumbnail', () => {
           photo: createMockPhoto(),
           selectionMode: true,
           onSelectionChange: vi.fn(),
-        })
+        }),
       );
     });
 

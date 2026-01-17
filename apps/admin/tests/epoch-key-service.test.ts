@@ -5,14 +5,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EpochKeyRecord } from '../src/lib/api-types';
 import {
-    ensureEpochKeysLoaded,
-    EpochKeyError,
-    EpochKeyErrorCode,
-    fetchAndUnwrapEpochKeys,
-    getCurrentOrFetchEpochKey,
-    getOrFetchEpochKey,
+  ensureEpochKeysLoaded,
+  EpochKeyError,
+  EpochKeyErrorCode,
+  fetchAndUnwrapEpochKeys,
+  getCurrentOrFetchEpochKey,
+  getOrFetchEpochKey,
 } from '../src/lib/epoch-key-service';
-import { clearAllEpochKeys, getEpochKey, setEpochKey } from '../src/lib/epoch-key-store';
+import {
+  clearAllEpochKeys,
+  getEpochKey,
+  setEpochKey,
+} from '../src/lib/epoch-key-store';
 
 // Mock the API client
 vi.mock('../src/lib/api', () => ({
@@ -70,7 +74,7 @@ describe('Epoch Key Service', () => {
         epochSeed: new Uint8Array(32).fill(1),
         signPublicKey: new Uint8Array(32).fill(2),
         signSecretKey: new Uint8Array(64).fill(3),
-      })
+      }),
     );
     mockApi.getEpochKeys.mockResolvedValue([createMockEpochKeyRecord(1)]);
   });
@@ -85,7 +89,7 @@ describe('Epoch Key Service', () => {
       const error = new EpochKeyError(
         'Test error',
         EpochKeyErrorCode.FETCH_FAILED,
-        cause
+        cause,
       );
 
       expect(error.message).toBe('Test error');
@@ -97,7 +101,10 @@ describe('Epoch Key Service', () => {
 
   describe('fetchAndUnwrapEpochKeys', () => {
     it('fetches and unwraps epoch keys from server', async () => {
-      const records = [createMockEpochKeyRecord(1), createMockEpochKeyRecord(2)];
+      const records = [
+        createMockEpochKeyRecord(1),
+        createMockEpochKeyRecord(2),
+      ];
       mockApi.getEpochKeys.mockResolvedValue(records);
 
       const bundles = await fetchAndUnwrapEpochKeys('album-123');
@@ -156,11 +163,11 @@ describe('Epoch Key Service', () => {
     it('throws IDENTITY_NOT_DERIVED when identity not available', async () => {
       mockCryptoClient.getIdentityPublicKey.mockResolvedValue(null);
       mockCryptoClient.deriveIdentity.mockRejectedValue(
-        new Error('Not initialized')
+        new Error('Not initialized'),
       );
 
       await expect(fetchAndUnwrapEpochKeys('album-123')).rejects.toThrow(
-        EpochKeyError
+        EpochKeyError,
       );
 
       try {
@@ -168,7 +175,7 @@ describe('Epoch Key Service', () => {
       } catch (err) {
         expect(err).toBeInstanceOf(EpochKeyError);
         expect((err as EpochKeyError).code).toBe(
-          EpochKeyErrorCode.IDENTITY_NOT_DERIVED
+          EpochKeyErrorCode.IDENTITY_NOT_DERIVED,
         );
       }
     });
@@ -177,14 +184,16 @@ describe('Epoch Key Service', () => {
       mockApi.getEpochKeys.mockRejectedValue(new Error('Network error'));
 
       await expect(fetchAndUnwrapEpochKeys('album-123')).rejects.toThrow(
-        EpochKeyError
+        EpochKeyError,
       );
 
       try {
         await fetchAndUnwrapEpochKeys('album-123');
       } catch (err) {
         expect(err).toBeInstanceOf(EpochKeyError);
-        expect((err as EpochKeyError).code).toBe(EpochKeyErrorCode.FETCH_FAILED);
+        expect((err as EpochKeyError).code).toBe(
+          EpochKeyErrorCode.FETCH_FAILED,
+        );
       }
     });
 
@@ -192,7 +201,7 @@ describe('Epoch Key Service', () => {
       mockApi.getEpochKeys.mockResolvedValue([]);
 
       await expect(fetchAndUnwrapEpochKeys('album-123')).rejects.toThrow(
-        EpochKeyError
+        EpochKeyError,
       );
 
       try {
@@ -200,18 +209,18 @@ describe('Epoch Key Service', () => {
       } catch (err) {
         expect(err).toBeInstanceOf(EpochKeyError);
         expect((err as EpochKeyError).code).toBe(
-          EpochKeyErrorCode.NO_KEYS_AVAILABLE
+          EpochKeyErrorCode.NO_KEYS_AVAILABLE,
         );
       }
     });
 
     it('throws SIGNATURE_INVALID on signature error', async () => {
       mockCryptoClient.openEpochKeyBundle.mockRejectedValue(
-        new Error('Invalid signature - not from claimed owner')
+        new Error('Invalid signature - not from claimed owner'),
       );
 
       await expect(fetchAndUnwrapEpochKeys('album-123')).rejects.toThrow(
-        EpochKeyError
+        EpochKeyError,
       );
 
       try {
@@ -219,18 +228,18 @@ describe('Epoch Key Service', () => {
       } catch (err) {
         expect(err).toBeInstanceOf(EpochKeyError);
         expect((err as EpochKeyError).code).toBe(
-          EpochKeyErrorCode.SIGNATURE_INVALID
+          EpochKeyErrorCode.SIGNATURE_INVALID,
         );
       }
     });
 
     it('throws DECRYPTION_FAILED on decryption error', async () => {
       mockCryptoClient.openEpochKeyBundle.mockRejectedValue(
-        new Error('Failed to decrypt - not intended for this recipient')
+        new Error('Failed to decrypt - not intended for this recipient'),
       );
 
       await expect(fetchAndUnwrapEpochKeys('album-123')).rejects.toThrow(
-        EpochKeyError
+        EpochKeyError,
       );
 
       try {
@@ -238,18 +247,18 @@ describe('Epoch Key Service', () => {
       } catch (err) {
         expect(err).toBeInstanceOf(EpochKeyError);
         expect((err as EpochKeyError).code).toBe(
-          EpochKeyErrorCode.DECRYPTION_FAILED
+          EpochKeyErrorCode.DECRYPTION_FAILED,
         );
       }
     });
 
     it('throws CONTEXT_MISMATCH on context error', async () => {
       mockCryptoClient.openEpochKeyBundle.mockRejectedValue(
-        new Error('Bundle albumId mismatch: expected X, got Y')
+        new Error('Bundle albumId mismatch: expected X, got Y'),
       );
 
       await expect(fetchAndUnwrapEpochKeys('album-123')).rejects.toThrow(
-        EpochKeyError
+        EpochKeyError,
       );
 
       try {
@@ -257,7 +266,7 @@ describe('Epoch Key Service', () => {
       } catch (err) {
         expect(err).toBeInstanceOf(EpochKeyError);
         expect((err as EpochKeyError).code).toBe(
-          EpochKeyErrorCode.CONTEXT_MISMATCH
+          EpochKeyErrorCode.CONTEXT_MISMATCH,
         );
       }
     });
@@ -305,7 +314,7 @@ describe('Epoch Key Service', () => {
       mockApi.getEpochKeys.mockResolvedValue([createMockEpochKeyRecord(1)]);
 
       await expect(getOrFetchEpochKey('album-123', 999)).rejects.toThrow(
-        EpochKeyError
+        EpochKeyError,
       );
 
       try {
@@ -313,7 +322,7 @@ describe('Epoch Key Service', () => {
       } catch (err) {
         expect(err).toBeInstanceOf(EpochKeyError);
         expect((err as EpochKeyError).code).toBe(
-          EpochKeyErrorCode.NO_KEYS_AVAILABLE
+          EpochKeyErrorCode.NO_KEYS_AVAILABLE,
         );
       }
     });
@@ -409,8 +418,8 @@ describe('Epoch Key Service', () => {
     it('passes encryptedKeyBundle directly without prepending signature (regression test for duplicated signature bug)', async () => {
       // Create a record where encryptedKeyBundle already contains signature || sealed
       // This matches the format sent by useAlbums.ts when creating albums
-      const signature = new Uint8Array(64).fill(0xAA);
-      const sealedBox = new Uint8Array(50).fill(0xBB);
+      const signature = new Uint8Array(64).fill(0xaa);
+      const sealedBox = new Uint8Array(50).fill(0xbb);
       const fullBundle = new Uint8Array([...signature, ...sealedBox]);
 
       const record: EpochKeyRecord = {
@@ -419,7 +428,7 @@ describe('Epoch Key Service', () => {
         epochId: 1,
         encryptedKeyBundle: toBase64(fullBundle), // signature || sealed already combined
         ownerSignature: toBase64(signature), // signature stored separately too
-        sharerPubkey: toBase64(new Uint8Array(32).fill(0xCC)),
+        sharerPubkey: toBase64(new Uint8Array(32).fill(0xcc)),
         signPubkey: toBase64(new Uint8Array(32)),
         createdAt: new Date().toISOString(),
       };
@@ -431,7 +440,8 @@ describe('Epoch Key Service', () => {
       // Verify openEpochKeyBundle was called with the encryptedKeyBundle directly
       // NOT with signature prepended again (which would be 64 + 114 = 178 bytes)
       expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenCalledTimes(1);
-      const calledBundle = mockCryptoClient.openEpochKeyBundle.mock.calls[0][0] as Uint8Array;
+      const calledBundle = mockCryptoClient.openEpochKeyBundle.mock
+        .calls[0][0] as Uint8Array;
 
       // The bundle should be exactly what was in encryptedKeyBundle (114 bytes = 64 + 50)
       // NOT 178 bytes (signature prepended again)

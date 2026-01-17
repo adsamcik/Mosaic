@@ -48,7 +48,11 @@ function formatDate(dateStr: string): string {
 }
 
 /** Calculate usage percentage */
-function usagePercent(current: number, max: number | undefined, defaultMax: number): number {
+function usagePercent(
+  current: number,
+  max: number | undefined,
+  defaultMax: number,
+): number {
   const effectiveMax = max ?? defaultMax;
   if (effectiveMax <= 0) return 0;
   return Math.min(100, Math.round((current / effectiveMax) * 100));
@@ -117,7 +121,9 @@ function DashboardTab({
             <span className="stat-label">Total Photos</span>
           </div>
           <div className="stat-card">
-            <span className="stat-value">{formatBytes(stats?.totalStorageBytes ?? 0)}</span>
+            <span className="stat-value">
+              {formatBytes(stats?.totalStorageBytes ?? 0)}
+            </span>
             <span className="stat-label">Total Storage</span>
           </div>
         </div>
@@ -154,7 +160,9 @@ function DashboardTab({
                 {nearLimits.usersNearAlbumLimit.map((user) => (
                   <li key={user.id}>
                     {user.authSub} - {user.quota.currentAlbumCount}
-                    {user.quota.maxAlbums && <> / {user.quota.maxAlbums} albums</>}
+                    {user.quota.maxAlbums && (
+                      <> / {user.quota.maxAlbums} albums</>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -168,7 +176,9 @@ function DashboardTab({
                 {nearLimits.albumsNearPhotoLimit.map((album) => (
                   <li key={album.id}>
                     Album by {album.ownerAuthSub} - {album.photoCount}
-                    {album.limits?.maxPhotos && <> / {album.limits.maxPhotos} photos</>}
+                    {album.limits?.maxPhotos && (
+                      <> / {album.limits.maxPhotos} photos</>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -181,7 +191,8 @@ function DashboardTab({
               <ul>
                 {nearLimits.albumsNearSizeLimit.map((album) => (
                   <li key={album.id}>
-                    Album by {album.ownerAuthSub} - {formatBytes(album.totalSizeBytes)}
+                    Album by {album.ownerAuthSub} -{' '}
+                    {formatBytes(album.totalSizeBytes)}
                     {album.limits?.maxSizeBytes && (
                       <> / {formatBytes(album.limits.maxSizeBytes)}</>
                     )}
@@ -224,16 +235,18 @@ interface UsersTabProps {
 
 function UsersTab({ users, defaults, onRefresh }: UsersTabProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [editingUser, setEditingUser] = useState<AdminUserResponse | null>(null);
+  const [editingUser, setEditingUser] = useState<AdminUserResponse | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   const filteredUsers = users.filter((user) =>
-    user.authSub.toLowerCase().includes(searchTerm.toLowerCase())
+    user.authSub.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const handleSaveQuota = async (
     maxStorageBytes: number | null,
-    maxAlbums: number | null
+    maxAlbums: number | null,
   ) => {
     if (!editingUser) return;
     try {
@@ -261,7 +274,7 @@ function UsersTab({ users, defaults, onRefresh }: UsersTabProps) {
   const handleToggleAdmin = async (user: AdminUserResponse) => {
     const action = user.isAdmin ? 'demote' : 'promote';
     const confirmed = window.confirm(
-      `Are you sure you want to ${action} ${user.authSub} ${user.isAdmin ? 'from' : 'to'} admin?`
+      `Are you sure you want to ${action} ${user.authSub} ${user.isAdmin ? 'from' : 'to'} admin?`,
     );
     if (!confirmed) return;
 
@@ -312,12 +325,12 @@ function UsersTab({ users, defaults, onRefresh }: UsersTabProps) {
             const storagePercent = usagePercent(
               user.quota.currentStorageBytes,
               user.quota.maxStorageBytes,
-              defaults.maxStorageBytes
+              defaults.maxStorageBytes,
             );
             const albumPercent = usagePercent(
               user.quota.currentAlbumCount,
               user.quota.maxAlbums,
-              defaults.maxAlbums
+              defaults.maxAlbums,
             );
 
             return (
@@ -336,7 +349,9 @@ function UsersTab({ users, defaults, onRefresh }: UsersTabProps) {
                   </div>
                   <span className="usage-text">
                     {formatBytes(user.quota.currentStorageBytes)} /{' '}
-                    {formatBytes(user.quota.maxStorageBytes ?? defaults.maxStorageBytes)}
+                    {formatBytes(
+                      user.quota.maxStorageBytes ?? defaults.maxStorageBytes,
+                    )}
                   </span>
                 </td>
                 <td>
@@ -347,7 +362,8 @@ function UsersTab({ users, defaults, onRefresh }: UsersTabProps) {
                     />
                   </div>
                   <span className="usage-text">
-                    {user.quota.currentAlbumCount} / {user.quota.maxAlbums ?? defaults.maxAlbums}
+                    {user.quota.currentAlbumCount} /{' '}
+                    {user.quota.maxAlbums ?? defaults.maxAlbums}
                   </span>
                 </td>
                 <td className="actions-cell">
@@ -411,20 +427,22 @@ function EditUserQuotaModal({
   const [maxStorageGb, setMaxStorageGb] = useState<string>(
     user.quota.maxStorageBytes
       ? String(user.quota.maxStorageBytes / (1024 * 1024 * 1024))
-      : ''
+      : '',
   );
   const [maxAlbums, setMaxAlbums] = useState<string>(
-    user.quota.maxAlbums ? String(user.quota.maxAlbums) : ''
+    user.quota.maxAlbums ? String(user.quota.maxAlbums) : '',
   );
   const [useDefaults, setUseDefaults] = useState<boolean>(
-    !user.quota.maxStorageBytes && !user.quota.maxAlbums
+    !user.quota.maxStorageBytes && !user.quota.maxAlbums,
   );
 
   const handleSave = () => {
     if (useDefaults) {
       onReset();
     } else {
-      const storageBytes = maxStorageGb ? parseFloat(maxStorageGb) * 1024 * 1024 * 1024 : null;
+      const storageBytes = maxStorageGb
+        ? parseFloat(maxStorageGb) * 1024 * 1024 * 1024
+        : null;
       const albums = maxAlbums ? parseInt(maxAlbums, 10) : null;
       onSave(storageBytes, albums);
     }
@@ -457,9 +475,13 @@ function EditUserQuotaModal({
                 step="0.1"
                 value={maxStorageGb}
                 onChange={(e) => setMaxStorageGb(e.target.value)}
-                placeholder={String(defaults.maxStorageBytes / (1024 * 1024 * 1024))}
+                placeholder={String(
+                  defaults.maxStorageBytes / (1024 * 1024 * 1024),
+                )}
               />
-              <span className="hint">Default: {formatBytes(defaults.maxStorageBytes)}</span>
+              <span className="hint">
+                Default: {formatBytes(defaults.maxStorageBytes)}
+              </span>
             </div>
 
             <div className="form-group">
@@ -503,16 +525,21 @@ interface AlbumsTabProps {
 
 function AlbumsTab({ albums, defaults, onRefresh }: AlbumsTabProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [editingAlbum, setEditingAlbum] = useState<AdminAlbumResponse | null>(null);
+  const [editingAlbum, setEditingAlbum] = useState<AdminAlbumResponse | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   const filteredAlbums = albums.filter(
     (album) =>
       album.ownerAuthSub.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      album.id.toLowerCase().includes(searchTerm.toLowerCase())
+      album.id.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  const handleSaveLimits = async (maxPhotos: number | null, maxSizeBytes: number | null) => {
+  const handleSaveLimits = async (
+    maxPhotos: number | null,
+    maxSizeBytes: number | null,
+  ) => {
     if (!editingAlbum) return;
     try {
       const api = getApi();
@@ -571,12 +598,12 @@ function AlbumsTab({ albums, defaults, onRefresh }: AlbumsTabProps) {
             const photoPercent = usagePercent(
               album.limits?.currentPhotoCount ?? album.photoCount,
               album.limits?.maxPhotos,
-              defaults.maxPhotosPerAlbum
+              defaults.maxPhotosPerAlbum,
             );
             const sizePercent = usagePercent(
               album.limits?.currentSizeBytes ?? album.totalSizeBytes,
               album.limits?.maxSizeBytes,
-              defaults.maxAlbumSizeBytes
+              defaults.maxAlbumSizeBytes,
             );
 
             return (
@@ -604,8 +631,13 @@ function AlbumsTab({ albums, defaults, onRefresh }: AlbumsTabProps) {
                     />
                   </div>
                   <span className="usage-text">
-                    {formatBytes(album.limits?.currentSizeBytes ?? album.totalSizeBytes)} /{' '}
-                    {formatBytes(album.limits?.maxSizeBytes ?? defaults.maxAlbumSizeBytes)}
+                    {formatBytes(
+                      album.limits?.currentSizeBytes ?? album.totalSizeBytes,
+                    )}{' '}
+                    /{' '}
+                    {formatBytes(
+                      album.limits?.maxSizeBytes ?? defaults.maxAlbumSizeBytes,
+                    )}
                   </span>
                 </td>
                 <td className="actions-cell">
@@ -661,15 +693,15 @@ function EditAlbumLimitsModal({
   onClose,
 }: EditAlbumLimitsModalProps) {
   const [maxPhotos, setMaxPhotos] = useState<string>(
-    album.limits?.maxPhotos ? String(album.limits.maxPhotos) : ''
+    album.limits?.maxPhotos ? String(album.limits.maxPhotos) : '',
   );
   const [maxSizeGb, setMaxSizeGb] = useState<string>(
     album.limits?.maxSizeBytes
       ? String(album.limits.maxSizeBytes / (1024 * 1024 * 1024))
-      : ''
+      : '',
   );
   const [useDefaults, setUseDefaults] = useState<boolean>(
-    !album.limits?.maxPhotos && !album.limits?.maxSizeBytes
+    !album.limits?.maxPhotos && !album.limits?.maxSizeBytes,
   );
 
   const handleSave = () => {
@@ -677,7 +709,9 @@ function EditAlbumLimitsModal({
       onReset();
     } else {
       const photos = maxPhotos ? parseInt(maxPhotos, 10) : null;
-      const sizeBytes = maxSizeGb ? parseFloat(maxSizeGb) * 1024 * 1024 * 1024 : null;
+      const sizeBytes = maxSizeGb
+        ? parseFloat(maxSizeGb) * 1024 * 1024 * 1024
+        : null;
       onSave(photos, sizeBytes);
     }
   };
@@ -716,7 +750,9 @@ function EditAlbumLimitsModal({
                 onChange={(e) => setMaxPhotos(e.target.value)}
                 placeholder={String(defaults.maxPhotosPerAlbum)}
               />
-              <span className="hint">Default: {defaults.maxPhotosPerAlbum}</span>
+              <span className="hint">
+                Default: {defaults.maxPhotosPerAlbum}
+              </span>
             </div>
 
             <div className="form-group">
@@ -728,9 +764,13 @@ function EditAlbumLimitsModal({
                 step="0.1"
                 value={maxSizeGb}
                 onChange={(e) => setMaxSizeGb(e.target.value)}
-                placeholder={String(defaults.maxAlbumSizeBytes / (1024 * 1024 * 1024))}
+                placeholder={String(
+                  defaults.maxAlbumSizeBytes / (1024 * 1024 * 1024),
+                )}
               />
-              <span className="hint">Default: {formatBytes(defaults.maxAlbumSizeBytes)}</span>
+              <span className="hint">
+                Default: {formatBytes(defaults.maxAlbumSizeBytes)}
+              </span>
             </div>
           </>
         )}
@@ -763,10 +803,16 @@ function SettingsTab({ defaults, onRefresh }: SettingsTabProps) {
   const [success, setSuccess] = useState(false);
 
   // Form state
-  const [maxStorageGb, setMaxStorageGb] = useState(bytesToGb(defaults.maxStorageBytes));
+  const [maxStorageGb, setMaxStorageGb] = useState(
+    bytesToGb(defaults.maxStorageBytes),
+  );
   const [maxAlbums, setMaxAlbums] = useState(String(defaults.maxAlbums));
-  const [maxPhotosPerAlbum, setMaxPhotosPerAlbum] = useState(String(defaults.maxPhotosPerAlbum));
-  const [maxAlbumSizeGb, setMaxAlbumSizeGb] = useState(bytesToGb(defaults.maxAlbumSizeBytes));
+  const [maxPhotosPerAlbum, setMaxPhotosPerAlbum] = useState(
+    String(defaults.maxPhotosPerAlbum),
+  );
+  const [maxAlbumSizeGb, setMaxAlbumSizeGb] = useState(
+    bytesToGb(defaults.maxAlbumSizeBytes),
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -824,8 +870,8 @@ function SettingsTab({ defaults, onRefresh }: SettingsTabProps) {
   return (
     <div className="settings-tab">
       <p className="settings-description">
-        Configure system-wide default limits. These apply to all users and albums unless
-        overridden with custom limits.
+        Configure system-wide default limits. These apply to all users and
+        albums unless overridden with custom limits.
       </p>
 
       {error && (
@@ -846,7 +892,9 @@ function SettingsTab({ defaults, onRefresh }: SettingsTabProps) {
           <h3>User Limits</h3>
 
           <div className="form-group">
-            <label htmlFor="maxStorage">Default Max Storage per User (GB)</label>
+            <label htmlFor="maxStorage">
+              Default Max Storage per User (GB)
+            </label>
             <input
               id="maxStorage"
               type="number"
@@ -889,7 +937,9 @@ function SettingsTab({ defaults, onRefresh }: SettingsTabProps) {
           </div>
 
           <div className="form-group">
-            <label htmlFor="maxAlbumSize">Default Max Size per Album (GB)</label>
+            <label htmlFor="maxAlbumSize">
+              Default Max Size per Album (GB)
+            </label>
             <input
               id="maxAlbumSize"
               type="number"
@@ -936,20 +986,23 @@ export function AdminPage({ onBack }: AdminPageProps) {
       setLoading(true);
       setError(null);
       const api = getApi();
-      const [statsData, nearLimitsData, usersData, albumsData, defaultsData] = await Promise.all([
-        api.getStats(),
-        api.getNearLimits(),
-        api.listUsers(),
-        api.listAllAlbums(),
-        api.getQuotaDefaults(),
-      ]);
+      const [statsData, nearLimitsData, usersData, albumsData, defaultsData] =
+        await Promise.all([
+          api.getStats(),
+          api.getNearLimits(),
+          api.listUsers(),
+          api.listAllAlbums(),
+          api.getQuotaDefaults(),
+        ]);
       setStats(statsData);
       setNearLimits(nearLimitsData);
       setUsers(usersData);
       setAlbums(albumsData);
       setDefaults(defaultsData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load admin data');
+      setError(
+        err instanceof Error ? err.message : 'Failed to load admin data',
+      );
     } finally {
       setLoading(false);
     }

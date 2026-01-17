@@ -3,11 +3,11 @@ import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
 import { createLogger } from '../lib/logger';
 import type {
-    Bounds,
-    DbWorkerApi,
-    DecryptedManifest,
-    GeoPoint,
-    PhotoMeta,
+  Bounds,
+  DbWorkerApi,
+  DecryptedManifest,
+  GeoPoint,
+  PhotoMeta,
 } from './types';
 
 // Create scoped logger for database worker
@@ -27,25 +27,25 @@ let cachedSqlJs: SqlJsStatic | null = null;
  */
 async function loadSqlJs(): Promise<SqlJsStatic> {
   if (cachedSqlJs) return cachedSqlJs;
-  
+
   const timer = log.startTimer('sql.js WASM initialization');
-  
+
   // Fetch and evaluate sql.js from public folder
   const response = await fetch('/sql-wasm.js');
   const scriptText = await response.text();
-  
+
   // sql.js exports initSqlJs as a global - capture it via Function constructor
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const initSqlJs = new Function(scriptText + '\nreturn initSqlJs;')();
-  
+
   // Initialize sql.js with WASM file path
   cachedSqlJs = await initSqlJs({
     locateFile: () => '/sql-wasm.wasm',
   });
-  
+
   timer.end();
   log.info('sql.js loaded successfully');
-  
+
   return cachedSqlJs!;
 }
 
@@ -91,7 +91,9 @@ class DbWorker implements DbWorkerApi {
     // Try to load existing DB from OPFS
     const existingData = await this.loadFromOPFS();
     if (existingData) {
-      log.debug('Found existing database in OPFS', { size: existingData.byteLength });
+      log.debug('Found existing database in OPFS', {
+        size: existingData.byteLength,
+      });
       try {
         // Decrypt existing database with XChaCha20-Poly1305
         const decryptTimer = log.startTimer('database decryption');
@@ -150,10 +152,14 @@ class DbWorker implements DbWorkerApi {
   private ftsTableExists(): boolean {
     if (!this.db) return false;
     const result = this.db.exec(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='photos_fts'"
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='photos_fts'",
     );
     const firstRow = result[0];
-    return result.length > 0 && firstRow !== undefined && (firstRow.values?.length ?? 0) > 0;
+    return (
+      result.length > 0 &&
+      firstRow !== undefined &&
+      (firstRow.values?.length ?? 0) > 0
+    );
   }
 
   /**
@@ -317,7 +323,9 @@ class DbWorker implements DbWorkerApi {
         this.db.run(`ALTER TABLE photos ADD COLUMN preview_shard_id TEXT;`);
         this.db.run(`ALTER TABLE photos ADD COLUMN preview_shard_hash TEXT;`);
         this.db.run(`ALTER TABLE photos ADD COLUMN original_shard_ids TEXT;`); // JSON array
-        this.db.run(`ALTER TABLE photos ADD COLUMN original_shard_hashes TEXT;`); // JSON array
+        this.db.run(
+          `ALTER TABLE photos ADD COLUMN original_shard_hashes TEXT;`,
+        ); // JSON array
 
         this.setSchemaVersion(4);
         log.info('Tier shard columns migration complete');
@@ -345,7 +353,7 @@ class DbWorker implements DbWorkerApi {
 
     const result = this.db.exec(
       'SELECT current_version FROM albums WHERE id = ?',
-      [albumId]
+      [albumId],
     );
     return (result[0]?.values[0]?.[0] as number) ?? 0;
   }
@@ -358,7 +366,7 @@ class DbWorker implements DbWorkerApi {
       INSERT INTO albums (id, current_version) VALUES (?, ?)
       ON CONFLICT(id) DO UPDATE SET current_version = ?
     `,
-      [albumId, version, version]
+      [albumId, version, version],
     );
     await this.saveToOPFS();
   }
@@ -381,9 +389,13 @@ class DbWorker implements DbWorkerApi {
           hasThumbnail: !!m.meta.thumbnail,
           hasBlurhash: !!m.meta.blurhash,
           shardCount: m.meta.shardIds?.length ?? 0,
-          hasTierShards: !!(m.meta.thumbnailShardId || m.meta.previewShardId || m.meta.originalShardIds?.length),
+          hasTierShards: !!(
+            m.meta.thumbnailShardId ||
+            m.meta.previewShardId ||
+            m.meta.originalShardIds?.length
+          ),
         });
-        
+
         // Ensure all values are either defined or null - SQLite cannot bind undefined
         // Use m.meta.shardIds and m.meta.epochId (from decrypted metadata) for storage
         stmt.run([
@@ -432,7 +444,7 @@ class DbWorker implements DbWorkerApi {
   async getPhotos(
     albumId: string,
     limit: number,
-    offset: number
+    offset: number,
   ): Promise<PhotoMeta[]> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -442,21 +454,21 @@ class DbWorker implements DbWorkerApi {
       ORDER BY taken_at DESC, created_at DESC
       LIMIT ? OFFSET ?
     `,
-      [albumId, limit, offset]
+      [albumId, limit, offset],
     );
 
     const photos = this.rowsToPhotos(result);
-    
+
     log.debug('getPhotos', {
       albumId,
       count: photos.length,
-      firstFew: photos.slice(0, 3).map(p => ({
+      firstFew: photos.slice(0, 3).map((p) => ({
         id: p.id,
         hasThumbnail: !!p.thumbnail,
         shardCount: p.shardIds?.length ?? 0,
       })),
     });
-    
+
     return photos;
   }
 
@@ -465,7 +477,7 @@ class DbWorker implements DbWorkerApi {
 
     const result = this.db.exec(
       'SELECT COUNT(*) FROM photos WHERE album_id = ?',
-      [albumId]
+      [albumId],
     );
     return (result[0]?.values[0]?.[0] as number) ?? 0;
   }
@@ -481,7 +493,7 @@ class DbWorker implements DbWorkerApi {
       ORDER BY rank
       LIMIT 100
     `,
-      [albumId, query]
+      [albumId, query],
     );
 
     return this.rowsToPhotos(result);
@@ -498,7 +510,7 @@ class DbWorker implements DbWorkerApi {
         AND lat BETWEEN ? AND ?
         AND lng BETWEEN ? AND ?
     `,
-      [albumId, bounds.south, bounds.north, bounds.west, bounds.east]
+      [albumId, bounds.south, bounds.north, bounds.west, bounds.east],
     );
 
     if (!result[0]) return [];
@@ -535,7 +547,9 @@ class DbWorker implements DbWorkerApi {
     log.info('Cleared cached photos for album', { albumId });
   }
 
-  private rowsToPhotos(result: { columns: string[]; values: unknown[][] }[]): PhotoMeta[] {
+  private rowsToPhotos(
+    result: { columns: string[]; values: unknown[][] }[],
+  ): PhotoMeta[] {
     if (!result[0]) return [];
 
     const columns = result[0].columns;
@@ -547,13 +561,19 @@ class DbWorker implements DbWorkerApi {
       // Parse tags from JSON string
       obj['tags'] = JSON.parse((obj['tags'] as string) || '[]') as string[];
       // Parse shardIds from JSON string
-      obj['shardIds'] = JSON.parse((obj['shardIds'] as string) || '[]') as string[];
+      obj['shardIds'] = JSON.parse(
+        (obj['shardIds'] as string) || '[]',
+      ) as string[];
       // Parse tier-specific shard IDs from JSON strings (v4)
       if (obj['originalShardIds']) {
-        obj['originalShardIds'] = JSON.parse((obj['originalShardIds'] as string) || '[]') as string[];
+        obj['originalShardIds'] = JSON.parse(
+          (obj['originalShardIds'] as string) || '[]',
+        ) as string[];
       }
       if (obj['originalShardHashes']) {
-        obj['originalShardHashes'] = JSON.parse((obj['originalShardHashes'] as string) || '[]') as string[];
+        obj['originalShardHashes'] = JSON.parse(
+          (obj['originalShardHashes'] as string) || '[]',
+        ) as string[];
       }
       return obj as unknown as PhotoMeta;
     });
@@ -608,7 +628,11 @@ class DbWorker implements DbWorkerApi {
     const nonce = sodium.randombytes_buf(NONCE_SIZE);
 
     // Encrypt with XChaCha20-Poly1305
-    const ciphertext = sodium.crypto_secretbox_easy(data, nonce, this.sessionKey);
+    const ciphertext = sodium.crypto_secretbox_easy(
+      data,
+      nonce,
+      this.sessionKey,
+    );
 
     // Return nonce || ciphertext
     const result = new Uint8Array(NONCE_SIZE + ciphertext.length);
@@ -632,7 +656,11 @@ class DbWorker implements DbWorkerApi {
     const ciphertext = data.slice(NONCE_SIZE);
 
     try {
-      return sodium.crypto_secretbox_open_easy(ciphertext, nonce, this.sessionKey);
+      return sodium.crypto_secretbox_open_easy(
+        ciphertext,
+        nonce,
+        this.sessionKey,
+      );
     } catch {
       throw new Error('Decryption failed - authentication error');
     }
@@ -645,7 +673,8 @@ const worker = new DbWorker();
 // For regular Worker, expose on self
 // For SharedWorker, expose on each connection's port
 // Check if we're in a SharedWorker context
-const isSharedWorker = typeof (self as any).onconnect !== 'undefined' || 
+const isSharedWorker =
+  typeof (self as any).onconnect !== 'undefined' ||
   self.constructor.name === 'SharedWorkerGlobalScope';
 
 if (isSharedWorker) {

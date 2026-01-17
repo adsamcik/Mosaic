@@ -4,10 +4,10 @@ import { getDbClient } from '../lib/db-client';
 import { createLogger } from '../lib/logger';
 import { syncEngine, type SyncEventDetail } from '../lib/sync-engine';
 import {
-    type AlbumPhotoState,
-    type PhotoItem,
-    type PhotoStore,
-    usePhotoStore,
+  type AlbumPhotoState,
+  type PhotoItem,
+  type PhotoStore,
+  usePhotoStore,
 } from '../stores/photo-store';
 import type { PhotoMeta } from '../workers/types';
 
@@ -46,10 +46,10 @@ function createPendingSelector(albumId: string) {
   return (state: { albums: Map<string, AlbumPhotoState> }) => {
     const album = state.albums.get(albumId);
     if (!album) return [] as PhotoItem[];
-    
+
     // Return only pending/syncing items
     return Array.from(album.items.values()).filter(
-      (item) => item.status === 'pending' || item.status === 'syncing'
+      (item) => item.status === 'pending' || item.status === 'syncing',
     );
   };
 }
@@ -78,48 +78,52 @@ function pendingToPhotoMeta(item: PhotoItem): PhotoMeta {
     uploadAction: item.uploadAction ?? 'waiting',
     isSyncing: item.status === 'syncing',
   };
-  
+
   // Only add error if we have a value (exactOptionalPropertyTypes)
   if (item.error) {
     base.uploadError = item.error;
   }
-  
+
   // Only add thumbnail if we have a value (exactOptionalPropertyTypes)
   // localBlobUrl is a blob: URL, which JustifiedPhotoThumbnail now handles
   const thumbnailValue = item.localBlobUrl ?? item.thumbnailUrl;
   if (thumbnailValue) {
     base.thumbnail = thumbnailValue;
   }
-  
+
   return base;
 }
 
 /**
  * Hook that bridges PhotoStore (Zustand) to components.
- * 
+ *
  * Provides the same interface as usePhotos but uses the centralized PhotoStore
  * for pending photo tracking to prevent blinking issues.
- * 
+ *
  * Features:
  * - Fetches photos from local database
  * - Subscribes to pending uploads from PhotoStore
  * - Merges pending uploads with stable photos (pending appear first)
  * - Supports search query filtering via FTS5
  * - Memoizes results to prevent unnecessary re-renders
- * 
+ *
  * @param options - Album ID and optional search query
  * @returns Photos array, loading state, error, and refetch function
  */
 export function usePhotoList(options: UsePhotoListOptions): UsePhotoListResult;
-export function usePhotoList(albumId: string, searchQuery?: string): UsePhotoListResult;
+export function usePhotoList(
+  albumId: string,
+  searchQuery?: string,
+): UsePhotoListResult;
 export function usePhotoList(
   albumIdOrOptions: string | UsePhotoListOptions,
-  searchQueryArg?: string
+  searchQueryArg?: string,
 ): UsePhotoListResult {
   // Normalize arguments
-  const { albumId, searchQuery } = typeof albumIdOrOptions === 'string'
-    ? { albumId: albumIdOrOptions, searchQuery: searchQueryArg }
-    : albumIdOrOptions;
+  const { albumId, searchQuery } =
+    typeof albumIdOrOptions === 'string'
+      ? { albumId: albumIdOrOptions, searchQuery: searchQueryArg }
+      : albumIdOrOptions;
 
   // Local state for DB photos (full PhotoMeta objects)
   const [dbPhotos, setDbPhotos] = useState<PhotoMeta[]>([]);
@@ -135,7 +139,10 @@ export function usePhotoList(
   const initAlbum = usePhotoStore((state: PhotoStore) => state.initAlbum);
 
   // Subscribe to pending photos from store
-  const pendingSelector = useMemo(() => createPendingSelector(albumId), [albumId]);
+  const pendingSelector = useMemo(
+    () => createPendingSelector(albumId),
+    [albumId],
+  );
   const pendingItems = usePhotoStore(useShallow(pendingSelector));
 
   /**
@@ -143,9 +150,9 @@ export function usePhotoList(
    */
   const fetchFromDb = useCallback(async () => {
     log.debug(`Fetching photos for album ${albumId}`, { searchQuery });
-    
+
     const hadPhotos = dbPhotos.length > 0;
-    
+
     try {
       if (hadPhotos) {
         setIsRefreshing(true);
@@ -153,9 +160,9 @@ export function usePhotoList(
         setIsLoading(true);
       }
       setError(null);
-      
+
       const db = await getDbClient();
-      
+
       let result: PhotoMeta[];
       if (searchQuery && searchQuery.trim().length > 0) {
         // Use FTS5 search
@@ -164,7 +171,7 @@ export function usePhotoList(
         // Regular fetch - get all photos
         result = await db.getPhotos(albumId, 10000, 0);
       }
-      
+
       setDbPhotos(result);
       log.debug(`Loaded ${result.length} photos for album ${albumId}`);
     } catch (err) {
@@ -207,7 +214,7 @@ export function usePhotoList(
   useEffect(() => {
     // Skip the initial mount (handled by the albumId effect)
     if (!initialFetchDone.current) return;
-    
+
     void fetchFromDb();
   }, [searchQuery, fetchFromDb]);
 
@@ -233,16 +240,19 @@ export function usePhotoList(
   const mergedPhotos = useMemo(() => {
     // Convert pending items to PhotoMeta format
     const pendingPhotos = pendingItems.map(pendingToPhotoMeta);
-    
+
     // Sort pending by createdAt (newest first)
-    pendingPhotos.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    pendingPhotos.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-    
+
     // Filter out any DB photos that are being re-uploaded (by assetId)
-    const pendingAssetIds = new Set(pendingItems.map(p => p.assetId));
-    const filteredDbPhotos = dbPhotos.filter(p => !pendingAssetIds.has(p.assetId));
-    
+    const pendingAssetIds = new Set(pendingItems.map((p) => p.assetId));
+    const filteredDbPhotos = dbPhotos.filter(
+      (p) => !pendingAssetIds.has(p.assetId),
+    );
+
     // Return pending first, then stable photos
     return [...pendingPhotos, ...filteredDbPhotos];
   }, [pendingItems, dbPhotos]);

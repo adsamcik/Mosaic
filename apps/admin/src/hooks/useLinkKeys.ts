@@ -108,13 +108,13 @@ async function saveTierKeys(
   linkId: string,
   albumId: string,
   accessTier: AccessTierType,
-  tierKeys: Map<number, Map<AccessTierType, TierKey>>
+  tierKeys: Map<number, Map<AccessTierType, TierKey>>,
 ): Promise<void> {
   const db = await openLinkKeysDb();
-  
+
   // Import toBase64 dynamically
   const { toBase64 } = await import('@mosaic/crypto');
-  
+
   const keys: StoredLinkKeys['keys'] = [];
   for (const [epochId, tierMap] of tierKeys) {
     for (const [tier, tierKey] of tierMap) {
@@ -206,7 +206,7 @@ async function loadTierKeys(linkId: string): Promise<{
  */
 export async function clearLinkKeys(linkId: string): Promise<void> {
   const db = await openLinkKeysDb();
-  
+
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
@@ -236,7 +236,7 @@ export interface UseLinkKeysResult extends LinkKeyState {
  */
 export function useLinkKeys(
   linkId: string | null,
-  linkSecret: string | null
+  linkSecret: string | null,
 ): UseLinkKeysResult {
   const [state, setState] = useState<LinkKeyState>({
     isLoading: true,
@@ -313,7 +313,9 @@ export function useLinkKeys(
       const accessResponse = await fetch(`/api/s/${linkId}`);
       if (!accessResponse.ok) {
         const errorData = await accessResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || `Link access failed: ${accessResponse.status}`);
+        throw new Error(
+          errorData.error || `Link access failed: ${accessResponse.status}`,
+        );
       }
       const linkAccess: LinkAccessResponse = await accessResponse.json();
 
@@ -321,17 +323,19 @@ export function useLinkKeys(
       const keysResponse = await fetch(`/api/s/${linkId}/keys`);
       if (!keysResponse.ok) {
         const errorData = await keysResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || `Key fetch failed: ${keysResponse.status}`);
+        throw new Error(
+          errorData.error || `Key fetch failed: ${keysResponse.status}`,
+        );
       }
       const wrappedKeys: WrappedKeyResponse[] = await keysResponse.json();
 
       // Unwrap tier keys
       log.debug('Unwrapping tier keys', {
         keyCount: wrappedKeys.length,
-        epochs: [...new Set(wrappedKeys.map(k => k.epochId))],
-        tiers: wrappedKeys.map(k => ({ epoch: k.epochId, tier: k.tier })),
+        epochs: [...new Set(wrappedKeys.map((k) => k.epochId))],
+        tiers: wrappedKeys.map((k) => ({ epoch: k.epochId, tier: k.tier })),
       });
-      
+
       const tierKeys = new Map<number, Map<AccessTierType, TierKey>>();
       for (const wrapped of wrappedKeys) {
         try {
@@ -342,7 +346,7 @@ export function useLinkKeys(
               encryptedKey: fromBase64(wrapped.encryptedKey),
             },
             wrapped.tier as unknown as typeof AccessTierEnum.THUMB,
-            wrappingKey
+            wrappingKey,
           );
 
           if (!tierKeys.has(wrapped.epochId)) {
@@ -353,22 +357,34 @@ export function useLinkKeys(
             epochId: wrapped.epochId,
             tier: wrapped.tier,
             key: unwrapped,
-            signPubkey: wrapped.signPubkey ? fromBase64(wrapped.signPubkey) : undefined,
+            signPubkey: wrapped.signPubkey
+              ? fromBase64(wrapped.signPubkey)
+              : undefined,
           });
-          
+
           log.debug('Unwrapped tier key', {
             epochId: wrapped.epochId,
             tier: wrapped.tier,
             keyLength: unwrapped.length,
-            keyPrefix: Array.from(unwrapped.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
+            keyPrefix: Array.from(unwrapped.slice(0, 4))
+              .map((b) => b.toString(16).padStart(2, '0'))
+              .join(''),
           });
         } catch (err) {
-          log.error(`Failed to unwrap key for epoch ${wrapped.epochId} tier ${wrapped.tier}`, err);
+          log.error(
+            `Failed to unwrap key for epoch ${wrapped.epochId} tier ${wrapped.tier}`,
+            err,
+          );
         }
       }
 
       // Save to IndexedDB for return visits
-      await saveTierKeys(linkId, linkAccess.albumId, linkAccess.accessTier, tierKeys);
+      await saveTierKeys(
+        linkId,
+        linkAccess.albumId,
+        linkAccess.accessTier,
+        tierKeys,
+      );
 
       setState({
         isLoading: false,
@@ -411,7 +427,7 @@ export function useLinkKeys(
       }
       return undefined;
     },
-    [state.tierKeys]
+    [state.tierKeys],
   );
 
   /**
@@ -428,7 +444,7 @@ export function useLinkKeys(
       }
       return undefined;
     },
-    [state.tierKeys]
+    [state.tierKeys],
   );
 
   return {

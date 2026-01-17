@@ -45,7 +45,7 @@ function renderComponent(
   props: Partial<{
     album: Album;
     onClick: () => void;
-  }> = {}
+  }> = {},
 ) {
   const defaultProps = {
     album: createMockAlbum(),
@@ -308,44 +308,68 @@ describe('formatExpirationBadge', () => {
   describe('warning states', () => {
     it('returns warning for exactly 1 day left', () => {
       const result = formatExpirationBadge(daysFromNow(1), mockT);
-      expect(result).toEqual({ text: 'album.expiresInDay', variant: 'warning' });
+      expect(result).toEqual({
+        text: 'album.expiresInDay',
+        variant: 'warning',
+      });
     });
 
     it('returns warning for 2 days left', () => {
       const result = formatExpirationBadge(daysFromNow(2), mockT);
-      expect(result).toEqual({ text: 'album.expiresIn:{"days":2}', variant: 'warning' });
+      expect(result).toEqual({
+        text: 'album.expiresIn:{"days":2}',
+        variant: 'warning',
+      });
     });
 
     it('returns warning for 3 days left', () => {
       const result = formatExpirationBadge(daysFromNow(3), mockT);
-      expect(result).toEqual({ text: 'album.expiresIn:{"days":3}', variant: 'warning' });
+      expect(result).toEqual({
+        text: 'album.expiresIn:{"days":3}',
+        variant: 'warning',
+      });
     });
 
     it('returns warning for 7 days left', () => {
       const result = formatExpirationBadge(daysFromNow(7), mockT);
-      expect(result).toEqual({ text: 'album.expiresIn:{"days":7}', variant: 'warning' });
+      expect(result).toEqual({
+        text: 'album.expiresIn:{"days":7}',
+        variant: 'warning',
+      });
     });
   });
 
   describe('info states', () => {
     it('returns info for 8 days left (2 weeks)', () => {
       const result = formatExpirationBadge(daysFromNow(8), mockT);
-      expect(result).toEqual({ text: 'album.expiresInWeeks:{"weeks":2}', variant: 'info' });
+      expect(result).toEqual({
+        text: 'album.expiresInWeeks:{"weeks":2}',
+        variant: 'info',
+      });
     });
 
     it('returns info for 15 days left (3 weeks)', () => {
       const result = formatExpirationBadge(daysFromNow(15), mockT);
-      expect(result).toEqual({ text: 'album.expiresInWeeks:{"weeks":3}', variant: 'info' });
+      expect(result).toEqual({
+        text: 'album.expiresInWeeks:{"weeks":3}',
+        variant: 'info',
+      });
     });
 
     it('returns info for 21 days left (3 weeks)', () => {
       const result = formatExpirationBadge(daysFromNow(21), mockT);
-      expect(result).toEqual({ text: 'album.expiresInWeeks:{"weeks":3}', variant: 'info' });
+      expect(result).toEqual({
+        text: 'album.expiresInWeeks:{"weeks":3}',
+        variant: 'info',
+      });
     });
 
     it('returns info for 30 days left (5 weeks)', () => {
       const result = formatExpirationBadge(daysFromNow(30), mockT);
-      expect(result).toEqual({ text: 'album.expiresInWeeks:{"weeks":5}', variant: 'info' });
+      expect(result).toEqual({
+        text: 'album.expiresInWeeks:{"weeks":5}',
+        variant: 'info',
+      });
     });
 
     it('returns info with months for 31 days left', () => {
@@ -383,7 +407,9 @@ describe('formatExpirationBadge', () => {
     });
 
     it('handles ISO date strings correctly', () => {
-      const isoDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+      const isoDate = new Date(
+        Date.now() + 5 * 24 * 60 * 60 * 1000,
+      ).toISOString();
       const result = formatExpirationBadge(isoDate, mockT);
       expect(result?.variant).toBe('warning');
       expect(result?.text).toContain('album.expiresIn');

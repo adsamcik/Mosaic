@@ -39,7 +39,11 @@ const SIMPLE_SIGNATURES: MagicSignature[] = [
   // JPEG: FFD8FF
   { bytes: [0xff, 0xd8, 0xff], offset: 0, mime: 'image/jpeg' },
   // PNG: 89504E47 0D0A1A0A
-  { bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], offset: 0, mime: 'image/png' },
+  {
+    bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+    offset: 0,
+    mime: 'image/png',
+  },
   // GIF87a or GIF89a
   { bytes: [0x47, 0x49, 0x46, 0x38, 0x37, 0x61], offset: 0, mime: 'image/gif' },
   { bytes: [0x47, 0x49, 0x46, 0x38, 0x39, 0x61], offset: 0, mime: 'image/gif' },
@@ -62,7 +66,9 @@ const SIMPLE_SIGNATURES: MagicSignature[] = [
  * @param file - File or Blob to detect MIME type from
  * @returns Detected MIME type, or null if unknown
  */
-export async function detectMimeType(file: File | Blob): Promise<SupportedMimeType | null> {
+export async function detectMimeType(
+  file: File | Blob,
+): Promise<SupportedMimeType | null> {
   // Read first 32 bytes for detection
   const slice = file.slice(0, 32);
   const buffer = await slice.arrayBuffer();
@@ -104,7 +110,12 @@ export async function detectMimeType(file: File | Blob): Promise<SupportedMimeTy
  */
 function detectIsobmffFormat(bytes: Uint8Array): SupportedMimeType | null {
   // Brand starts at offset 8 (4 bytes)
-  const brand = String.fromCharCode(bytes[8]!, bytes[9]!, bytes[10]!, bytes[11]!);
+  const brand = String.fromCharCode(
+    bytes[8]!,
+    bytes[9]!,
+    bytes[10]!,
+    bytes[11]!,
+  );
 
   // AVIF brands
   if (brand === 'avif' || brand === 'avis' || brand === 'mif1') {
@@ -121,7 +132,12 @@ function detectIsobmffFormat(bytes: Uint8Array): SupportedMimeType | null {
   }
 
   // HEIC brands (HEVC-based)
-  if (brand === 'heic' || brand === 'heix' || brand === 'hevc' || brand === 'hevx') {
+  if (
+    brand === 'heic' ||
+    brand === 'heix' ||
+    brand === 'hevc' ||
+    brand === 'hevx'
+  ) {
     return 'image/heic';
   }
 
@@ -138,13 +154,19 @@ function detectIsobmffFormat(bytes: Uint8Array): SupportedMimeType | null {
  */
 function getCompatibleBrands(bytes: Uint8Array): string[] {
   // Box size is at offset 0 (4 bytes, big-endian)
-  const boxSize = (bytes[0]! << 24) | (bytes[1]! << 16) | (bytes[2]! << 8) | bytes[3]!;
+  const boxSize =
+    (bytes[0]! << 24) | (bytes[1]! << 16) | (bytes[2]! << 8) | bytes[3]!;
   const brands: string[] = [];
 
   // Compatible brands start at offset 16, each is 4 bytes
   // Box structure: size(4) + type(4) + major_brand(4) + minor_version(4) + compatible_brands[]
   for (let i = 16; i + 4 <= boxSize && i + 4 <= bytes.length; i += 4) {
-    const brand = String.fromCharCode(bytes[i]!, bytes[i + 1]!, bytes[i + 2]!, bytes[i + 3]!);
+    const brand = String.fromCharCode(
+      bytes[i]!,
+      bytes[i + 1]!,
+      bytes[i + 2]!,
+      bytes[i + 3]!,
+    );
     brands.push(brand);
   }
 
@@ -154,7 +176,11 @@ function getCompatibleBrands(bytes: Uint8Array): string[] {
 /**
  * Check if bytes match a signature at given offset
  */
-function matchBytes(data: Uint8Array, signature: number[], offset: number): boolean {
+function matchBytes(
+  data: Uint8Array,
+  signature: number[],
+  offset: number,
+): boolean {
   if (data.length < offset + signature.length) {
     return false;
   }
@@ -172,7 +198,9 @@ function matchBytes(data: Uint8Array, signature: number[], offset: number): bool
 function isSvg(bytes: Uint8Array): boolean {
   // Convert to string and check for XML declaration or SVG element
   const str = new TextDecoder().decode(bytes).toLowerCase().trim();
-  return str.startsWith('<?xml') || str.startsWith('<svg') || str.includes('<svg');
+  return (
+    str.startsWith('<?xml') || str.startsWith('<svg') || str.includes('<svg')
+  );
 }
 
 /**

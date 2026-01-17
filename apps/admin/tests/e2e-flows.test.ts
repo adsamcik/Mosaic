@@ -48,10 +48,18 @@ interface SimulatedUser {
   identity: IdentityKeypair;
 }
 
-async function createSimulatedUser(id: string, password: string): Promise<SimulatedUser> {
+async function createSimulatedUser(
+  id: string,
+  password: string,
+): Promise<SimulatedUser> {
   const { userSalt, accountSalt } = generateSalts();
   const params = getArgon2Params();
-  const keys = await deriveKeysInternal(password, userSalt, accountSalt, params);
+  const keys = await deriveKeysInternal(
+    password,
+    userSalt,
+    accountSalt,
+    params,
+  );
   const identity = deriveIdentityKeypair(keys.accountKey);
 
   memzero(keys.masterKey);
@@ -87,7 +95,12 @@ describe('e2e: new user registration flow', () => {
     const params = getArgon2Params();
 
     // Device 1: Initial registration - generates random L2 account key
-    const keysDevice1 = await deriveKeysInternal(password, userSalt, accountSalt, params);
+    const keysDevice1 = await deriveKeysInternal(
+      password,
+      userSalt,
+      accountSalt,
+      params,
+    );
     const identityDevice1 = deriveIdentityKeypair(keysDevice1.accountKey);
 
     // Simulate storing wrapped account key and identity pubkey on server
@@ -100,7 +113,7 @@ describe('e2e: new user registration flow', () => {
       userSalt,
       accountSalt,
       storedWrappedKey,
-      params
+      params,
     );
     const identityDevice2 = deriveIdentityKeypair(accountKeyDevice2);
 
@@ -119,14 +132,24 @@ describe('e2e: new user registration flow', () => {
     const { userSalt, accountSalt } = generateSalts();
     const params = getArgon2Params();
 
-    const correctKeys = await deriveKeysInternal('correct-password', userSalt, accountSalt, params);
-    const wrongKeys = await deriveKeysInternal('wrong-password', userSalt, accountSalt, params);
+    const correctKeys = await deriveKeysInternal(
+      'correct-password',
+      userSalt,
+      accountSalt,
+      params,
+    );
+    const wrongKeys = await deriveKeysInternal(
+      'wrong-password',
+      userSalt,
+      accountSalt,
+      params,
+    );
 
     const correctIdentity = deriveIdentityKeypair(correctKeys.accountKey);
     const wrongIdentity = deriveIdentityKeypair(wrongKeys.accountKey);
 
     expect(toBase64(wrongIdentity.ed25519.publicKey)).not.toBe(
-      toBase64(correctIdentity.ed25519.publicKey)
+      toBase64(correctIdentity.ed25519.publicKey),
     );
 
     memzero(correctKeys.masterKey);
@@ -155,13 +178,13 @@ describe('e2e: album creation and photo upload', () => {
       epochKey.epochId,
       epochKey.epochSeed,
       epochKey.signKeypair,
-      owner.identity.ed25519.publicKey
+      owner.identity.ed25519.publicKey,
     );
 
     const sealed = sealAndSignBundle(
       bundle,
       owner.identity.ed25519.publicKey,
-      owner.identity
+      owner.identity,
     );
 
     // Simulate API request payload
@@ -186,7 +209,13 @@ describe('e2e: album creation and photo upload', () => {
     const photoData = sodium.randombytes_buf(100 * 1024);
 
     // Encrypt photo shard
-    const encrypted = await encryptShard(photoData, epochKey.fullKey, 1, 0, ShardTier.ORIGINAL);
+    const encrypted = await encryptShard(
+      photoData,
+      epochKey.fullKey,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Create manifest
     const manifestData = {
@@ -205,13 +234,13 @@ describe('e2e: album creation and photo upload', () => {
       epochKey.fullKey,
       1,
       0,
-      ShardTier.ORIGINAL
+      ShardTier.ORIGINAL,
     );
 
     // Sign the encrypted manifest
     const signature = signManifest(
       encryptedManifest.ciphertext,
-      epochKey.signKeypair.secretKey
+      epochKey.signKeypair.secretKey,
     );
 
     // Simulate API request
@@ -241,7 +270,9 @@ describe('e2e: album sharing workflow', () => {
     epochKey = generateEpochKey(1);
 
     // Owner uploads a photo
-    const photoData = new TextEncoder().encode('This is a secret photo content!');
+    const photoData = new TextEncoder().encode(
+      'This is a secret photo content!',
+    );
     const encryptedShards = [
       await encryptShard(photoData, epochKey.fullKey, 1, 0, ShardTier.ORIGINAL),
     ];
@@ -260,12 +291,12 @@ describe('e2e: album sharing workflow', () => {
       epochKey.fullKey,
       1,
       0,
-      ShardTier.ORIGINAL
+      ShardTier.ORIGINAL,
     );
 
     const signature = signManifest(
       encryptedManifest.ciphertext,
-      epochKey.signKeypair.secretKey
+      epochKey.signKeypair.secretKey,
     );
 
     uploadedPhoto = {
@@ -285,13 +316,13 @@ describe('e2e: album sharing workflow', () => {
       epochKey.epochId,
       epochKey.epochSeed,
       epochKey.signKeypair,
-      viewer.identity.ed25519.publicKey
+      viewer.identity.ed25519.publicKey,
     );
 
     const sealed = sealAndSignBundle(
       bundle,
       viewer.identity.ed25519.publicKey,
-      owner.identity
+      owner.identity,
     );
 
     // Simulate invite API request
@@ -321,13 +352,13 @@ describe('e2e: album sharing workflow', () => {
       epochKey.epochId,
       epochKey.epochSeed,
       epochKey.signKeypair,
-      viewer.identity.ed25519.publicKey
+      viewer.identity.ed25519.publicKey,
     );
 
     const sealed = sealAndSignBundle(
       bundle,
       viewer.identity.ed25519.publicKey,
-      owner.identity
+      owner.identity,
     );
 
     // Viewer opens the bundle
@@ -336,7 +367,7 @@ describe('e2e: album sharing workflow', () => {
       sealed.signature,
       owner.identity.ed25519.publicKey,
       viewer.identity,
-      { albumId, minEpochId: 0 }
+      { albumId, minEpochId: 0 },
     );
 
     expect(opened.albumId).toBe(albumId);
@@ -352,14 +383,14 @@ describe('e2e: album sharing workflow', () => {
     const isValid = verifyManifest(
       uploadedPhoto.encryptedManifest,
       uploadedPhoto.signature,
-      epochKey.signKeypair.publicKey
+      epochKey.signKeypair.publicKey,
     );
     expect(isValid).toBe(true);
 
     // Decrypt manifest
     const decryptedManifest = await decryptShard(
       uploadedPhoto.encryptedManifest,
-      epochKey.fullKey
+      epochKey.fullKey,
     );
     const metadata = JSON.parse(new TextDecoder().decode(decryptedManifest));
     expect(metadata.filename).toBe('secret.jpg');
@@ -367,9 +398,11 @@ describe('e2e: album sharing workflow', () => {
     // Decrypt photo shard
     const decryptedPhoto = await decryptShard(
       uploadedPhoto.encryptedShards[0].ciphertext,
-      epochKey.fullKey
+      epochKey.fullKey,
     );
-    expect(new TextDecoder().decode(decryptedPhoto)).toBe('This is a secret photo content!');
+    expect(new TextDecoder().decode(decryptedPhoto)).toBe(
+      'This is a secret photo content!',
+    );
   });
 });
 
@@ -383,27 +416,49 @@ describe('e2e: member removal and key rotation', () => {
 
   beforeAll(async () => {
     owner = await createSimulatedUser('owner-rot', 'owner-password');
-    trustedMember = await createSimulatedUser('trusted-member', 'trusted-password');
-    removedMember = await createSimulatedUser('removed-member', 'removed-password');
+    trustedMember = await createSimulatedUser(
+      'trusted-member',
+      'trusted-password',
+    );
+    removedMember = await createSimulatedUser(
+      'removed-member',
+      'removed-password',
+    );
     epoch1 = generateEpochKey(1);
     epoch2 = generateEpochKey(2);
   });
 
   it('old photos remain accessible with epoch1 key', async () => {
     const oldPhotoData = new TextEncoder().encode('Photo from before rotation');
-    const encrypted = await encryptShard(oldPhotoData, epoch1.fullKey, 1, 0, ShardTier.ORIGINAL);
+    const encrypted = await encryptShard(
+      oldPhotoData,
+      epoch1.fullKey,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // After rotation, trusted member still has epoch1 cached
     const decrypted = await decryptShard(encrypted.ciphertext, epoch1.fullKey);
-    expect(new TextDecoder().decode(decrypted)).toBe('Photo from before rotation');
+    expect(new TextDecoder().decode(decrypted)).toBe(
+      'Photo from before rotation',
+    );
   });
 
   it('new photos use epoch2 key', async () => {
     const newPhotoData = new TextEncoder().encode('Photo after rotation');
-    const encrypted = await encryptShard(newPhotoData, epoch2.fullKey, 2, 0, ShardTier.ORIGINAL);
+    const encrypted = await encryptShard(
+      newPhotoData,
+      epoch2.fullKey,
+      2,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Cannot decrypt with epoch1
-    await expect(decryptShard(encrypted.ciphertext, epoch1.fullKey)).rejects.toThrow();
+    await expect(
+      decryptShard(encrypted.ciphertext, epoch1.fullKey),
+    ).rejects.toThrow();
 
     // Can decrypt with epoch2
     const decrypted = await decryptShard(encrypted.ciphertext, epoch2.fullKey);
@@ -417,13 +472,13 @@ describe('e2e: member removal and key rotation', () => {
       epoch2.epochId,
       epoch2.epochSeed,
       epoch2.signKeypair,
-      trustedMember.identity.ed25519.publicKey
+      trustedMember.identity.ed25519.publicKey,
     );
 
     const sealed = sealAndSignBundle(
       bundle,
       trustedMember.identity.ed25519.publicKey,
-      owner.identity
+      owner.identity,
     );
 
     // Trusted member can open
@@ -432,7 +487,7 @@ describe('e2e: member removal and key rotation', () => {
       sealed.signature,
       owner.identity.ed25519.publicKey,
       trustedMember.identity,
-      { albumId, minEpochId: 0 }
+      { albumId, minEpochId: 0 },
     );
     expect(opened.epochId).toBe(2);
 
@@ -443,17 +498,25 @@ describe('e2e: member removal and key rotation', () => {
         sealed.signature,
         owner.identity.ed25519.publicKey,
         removedMember.identity,
-        { albumId, minEpochId: 0 }
-      )
+        { albumId, minEpochId: 0 },
+      ),
     ).toThrow();
   });
 
   it('removed member cannot access new photos', async () => {
     const newPhotoData = new TextEncoder().encode('New secret photo');
-    const encrypted = await encryptShard(newPhotoData, epoch2.fullKey, 2, 0, ShardTier.ORIGINAL);
+    const encrypted = await encryptShard(
+      newPhotoData,
+      epoch2.fullKey,
+      2,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Removed member only has epoch1 key
-    await expect(decryptShard(encrypted.ciphertext, epoch1.fullKey)).rejects.toThrow();
+    await expect(
+      decryptShard(encrypted.ciphertext, epoch1.fullKey),
+    ).rejects.toThrow();
   });
 });
 
@@ -472,7 +535,13 @@ describe('e2e: sync and offline support', () => {
     const photos = [];
     for (let i = 0; i < 5; i++) {
       const data = new TextEncoder().encode(`Photo ${i} content`);
-      const encrypted = await encryptShard(data, epochKey.fullKey, 1, 0, ShardTier.ORIGINAL);
+      const encrypted = await encryptShard(
+        data,
+        epochKey.fullKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
 
       const manifest = {
         id: `photo-${i}`,
@@ -487,12 +556,12 @@ describe('e2e: sync and offline support', () => {
         epochKey.fullKey,
         1,
         0,
-        ShardTier.ORIGINAL
+        ShardTier.ORIGINAL,
       );
 
       const signature = signManifest(
         encryptedManifest.ciphertext,
-        epochKey.signKeypair.secretKey
+        epochKey.signKeypair.secretKey,
       );
 
       photos.push({
@@ -556,12 +625,12 @@ describe('e2e: security boundaries', () => {
       epochKey.fullKey,
       1,
       0,
-      ShardTier.ORIGINAL
+      ShardTier.ORIGINAL,
     );
 
     const realSignature = signManifest(
       encryptedManifest.ciphertext,
-      epochKey.signKeypair.secretKey
+      epochKey.signKeypair.secretKey,
     );
 
     // Attacker tries to create forged manifest
@@ -571,14 +640,14 @@ describe('e2e: security boundaries', () => {
       epochKey.fullKey,
       1,
       0,
-      ShardTier.ORIGINAL
+      ShardTier.ORIGINAL,
     );
 
     // Attacker tries to reuse the real signature
     const isValid = verifyManifest(
       forgedEncrypted.ciphertext,
       realSignature,
-      epochKey.signKeypair.publicKey
+      epochKey.signKeypair.publicKey,
     );
     expect(isValid).toBe(false);
   });
@@ -588,10 +657,18 @@ describe('e2e: security boundaries', () => {
     const fakeKey = generateEpochKey(2);
 
     const secretData = new TextEncoder().encode('Top secret!');
-    const encrypted = await encryptShard(secretData, realKey.fullKey, 1, 0, ShardTier.ORIGINAL);
+    const encrypted = await encryptShard(
+      secretData,
+      realKey.fullKey,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Cannot decrypt with wrong key
-    await expect(decryptShard(encrypted.ciphertext, fakeKey.fullKey)).rejects.toThrow();
+    await expect(
+      decryptShard(encrypted.ciphertext, fakeKey.fullKey),
+    ).rejects.toThrow();
   });
 
   it('cannot impersonate album owner', async () => {
@@ -607,13 +684,13 @@ describe('e2e: security boundaries', () => {
       epochKey.epochId,
       epochKey.epochSeed,
       epochKey.signKeypair,
-      victim.identity.ed25519.publicKey
+      victim.identity.ed25519.publicKey,
     );
 
     const sealed = sealAndSignBundle(
       maliciousBundle,
       victim.identity.ed25519.publicKey,
-      attacker.identity // Signed by attacker!
+      attacker.identity, // Signed by attacker!
     );
 
     // Victim verifies expecting real owner's pubkey - should fail
@@ -623,8 +700,8 @@ describe('e2e: security boundaries', () => {
         sealed.signature,
         realOwner.identity.ed25519.publicKey, // Victim expects real owner
         victim.identity,
-        { albumId, minEpochId: 0 }
-      )
+        { albumId, minEpochId: 0 },
+      ),
     ).toThrow();
   });
 });

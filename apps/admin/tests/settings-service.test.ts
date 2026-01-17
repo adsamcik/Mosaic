@@ -3,18 +3,18 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    getDefaultSettings,
-    getIdleTimeoutMs,
-    getKeyCacheDurationMs,
-    getSetting,
-    getSettings,
-    getThumbnailQualityValue,
-    resetSettings,
-    saveSettings,
-    setSetting,
-    subscribeToSettings,
-    updateSettings,
-    type UserSettings,
+  getDefaultSettings,
+  getIdleTimeoutMs,
+  getKeyCacheDurationMs,
+  getSetting,
+  getSettings,
+  getThumbnailQualityValue,
+  resetSettings,
+  saveSettings,
+  setSetting,
+  subscribeToSettings,
+  updateSettings,
+  type UserSettings,
 } from '../src/lib/settings-service';
 
 describe('settings-service', () => {
@@ -25,7 +25,7 @@ describe('settings-service', () => {
     // Mock localStorage
     localStorageMock = {};
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(
-      (key) => localStorageMock[key] ?? null
+      (key) => localStorageMock[key] ?? null,
     );
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key, value) => {
       localStorageMock[key] = value;
@@ -150,7 +150,9 @@ describe('settings-service', () => {
 
       saveSettings(settings);
 
-      expect(localStorageMock['mosaic:settings']).toBe(JSON.stringify(settings));
+      expect(localStorageMock['mosaic:settings']).toBe(
+        JSON.stringify(settings),
+      );
     });
 
     it('validates and normalizes settings before saving', () => {
