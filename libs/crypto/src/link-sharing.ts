@@ -49,15 +49,23 @@ export function generateLinkSecret(): Uint8Array {
 export function deriveLinkKeys(linkSecret: Uint8Array): LinkKeys {
   if (linkSecret.length !== LINK_SECRET_SIZE) {
     throw new Error(
-      `Link secret must be ${LINK_SECRET_SIZE} bytes, got ${linkSecret.length}`
+      `Link secret must be ${LINK_SECRET_SIZE} bytes, got ${linkSecret.length}`,
     );
   }
 
   // Derive 16-byte link ID using BLAKE2b HKDF-style
-  const linkId = sodium.crypto_generichash(LINK_ID_SIZE, LINK_ID_CONTEXT, linkSecret);
+  const linkId = sodium.crypto_generichash(
+    LINK_ID_SIZE,
+    LINK_ID_CONTEXT,
+    linkSecret,
+  );
 
   // Derive 32-byte wrapping key using BLAKE2b HKDF-style
-  const wrappingKey = sodium.crypto_generichash(KEY_SIZE, LINK_WRAP_CONTEXT, linkSecret);
+  const wrappingKey = sodium.crypto_generichash(
+    KEY_SIZE,
+    LINK_WRAP_CONTEXT,
+    linkSecret,
+  );
 
   return { linkId, wrappingKey };
 }
@@ -76,13 +84,17 @@ export function deriveLinkKeys(linkSecret: Uint8Array): LinkKeys {
 export function wrapTierKeyForLink(
   tierKey: Uint8Array,
   tier: AccessTier,
-  wrappingKey: Uint8Array
+  wrappingKey: Uint8Array,
 ): WrappedTierKey {
   if (wrappingKey.length !== KEY_SIZE) {
-    throw new Error(`Wrapping key must be ${KEY_SIZE} bytes, got ${wrappingKey.length}`);
+    throw new Error(
+      `Wrapping key must be ${KEY_SIZE} bytes, got ${wrappingKey.length}`,
+    );
   }
   if (tierKey.length !== KEY_SIZE) {
-    throw new Error(`Tier key must be ${KEY_SIZE} bytes, got ${tierKey.length}`);
+    throw new Error(
+      `Tier key must be ${KEY_SIZE} bytes, got ${tierKey.length}`,
+    );
   }
 
   // Wrap the tier key
@@ -107,23 +119,33 @@ export function wrapTierKeyForLink(
  * @returns Array of wrapped tier keys
  */
 export function wrapAllTierKeysForLink(
-  tierKeys: { thumbKey: Uint8Array; previewKey: Uint8Array; fullKey: Uint8Array },
+  tierKeys: {
+    thumbKey: Uint8Array;
+    previewKey: Uint8Array;
+    fullKey: Uint8Array;
+  },
   accessTier: AccessTier,
-  wrappingKey: Uint8Array
+  wrappingKey: Uint8Array,
 ): WrappedTierKey[] {
   const results: WrappedTierKey[] = [];
 
   // Always include thumb key
-  results.push(wrapTierKeyForLink(tierKeys.thumbKey, AccessTier.THUMB, wrappingKey));
+  results.push(
+    wrapTierKeyForLink(tierKeys.thumbKey, AccessTier.THUMB, wrappingKey),
+  );
 
   // Include preview key if tier allows
   if (accessTier >= AccessTier.PREVIEW) {
-    results.push(wrapTierKeyForLink(tierKeys.previewKey, AccessTier.PREVIEW, wrappingKey));
+    results.push(
+      wrapTierKeyForLink(tierKeys.previewKey, AccessTier.PREVIEW, wrappingKey),
+    );
   }
 
   // Include full key if tier allows
   if (accessTier >= AccessTier.FULL) {
-    results.push(wrapTierKeyForLink(tierKeys.fullKey, AccessTier.FULL, wrappingKey));
+    results.push(
+      wrapTierKeyForLink(tierKeys.fullKey, AccessTier.FULL, wrappingKey),
+    );
   }
 
   return results;
@@ -140,14 +162,16 @@ export function wrapAllTierKeysForLink(
 export function unwrapTierKeyFromLink(
   wrapped: WrappedTierKey,
   tier: AccessTier,
-  wrappingKey: Uint8Array
+  wrappingKey: Uint8Array,
 ): Uint8Array {
   if (wrapped.tier !== tier) {
     throw new Error(`Tier mismatch: expected ${tier}, got ${wrapped.tier}`);
   }
 
   // Reconstruct the full wrapped key (nonce || ciphertext)
-  const fullWrapped = new Uint8Array(wrapped.nonce.length + wrapped.encryptedKey.length);
+  const fullWrapped = new Uint8Array(
+    wrapped.nonce.length + wrapped.encryptedKey.length,
+  );
   fullWrapped.set(wrapped.nonce, 0);
   fullWrapped.set(wrapped.encryptedKey, wrapped.nonce.length);
 
@@ -161,7 +185,10 @@ export function unwrapTierKeyFromLink(
  * @returns Base64url encoded string (no padding)
  */
 export function encodeLinkSecret(linkSecret: Uint8Array): string {
-  return sodium.to_base64(linkSecret, sodium.base64_variants.URLSAFE_NO_PADDING);
+  return sodium.to_base64(
+    linkSecret,
+    sodium.base64_variants.URLSAFE_NO_PADDING,
+  );
 }
 
 /**
@@ -171,10 +198,13 @@ export function encodeLinkSecret(linkSecret: Uint8Array): string {
  * @returns 32-byte link secret
  */
 export function decodeLinkSecret(encoded: string): Uint8Array {
-  const decoded = sodium.from_base64(encoded, sodium.base64_variants.URLSAFE_NO_PADDING);
+  const decoded = sodium.from_base64(
+    encoded,
+    sodium.base64_variants.URLSAFE_NO_PADDING,
+  );
   if (decoded.length !== LINK_SECRET_SIZE) {
     throw new Error(
-      `Invalid link secret length: expected ${LINK_SECRET_SIZE}, got ${decoded.length}`
+      `Invalid link secret length: expected ${LINK_SECRET_SIZE}, got ${decoded.length}`,
     );
   }
   return decoded;
@@ -197,10 +227,13 @@ export function encodeLinkId(linkId: Uint8Array): string {
  * @returns 16-byte link ID
  */
 export function decodeLinkId(encoded: string): Uint8Array {
-  const decoded = sodium.from_base64(encoded, sodium.base64_variants.URLSAFE_NO_PADDING);
+  const decoded = sodium.from_base64(
+    encoded,
+    sodium.base64_variants.URLSAFE_NO_PADDING,
+  );
   if (decoded.length !== LINK_ID_SIZE) {
     throw new Error(
-      `Invalid link ID length: expected ${LINK_ID_SIZE}, got ${decoded.length}`
+      `Invalid link ID length: expected ${LINK_ID_SIZE}, got ${decoded.length}`,
     );
   }
   return decoded;
@@ -215,7 +248,10 @@ export function decodeLinkId(encoded: string): Uint8Array {
  * @param linkSecret - 32-byte link secret
  * @returns Complete shareable URL
  */
-export function createShareLinkUrl(baseUrl: string, linkSecret: Uint8Array): string {
+export function createShareLinkUrl(
+  baseUrl: string,
+  linkSecret: Uint8Array,
+): string {
   const { linkId } = deriveLinkKeys(linkSecret);
   const encodedLinkId = encodeLinkId(linkId);
   const encodedSecret = encodeLinkSecret(linkSecret);

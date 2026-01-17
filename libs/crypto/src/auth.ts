@@ -53,32 +53,39 @@ export function signAuthChallenge(
   challenge: Uint8Array,
   username: string,
   signSecretKey: Uint8Array,
-  timestamp?: number
+  timestamp?: number,
 ): string {
   // Validate inputs
   if (challenge.length !== CHALLENGE_SIZE) {
     throw new CryptoError(
       `Challenge must be ${CHALLENGE_SIZE} bytes, got ${challenge.length}`,
-      CryptoErrorCode.INVALID_INPUT
+      CryptoErrorCode.INVALID_INPUT,
     );
   }
 
   if (signSecretKey.length !== SECRET_KEY_LENGTH) {
     throw new CryptoError(
       `Signing secret key must be ${SECRET_KEY_LENGTH} bytes, got ${signSecretKey.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
   if (!username || username.length === 0) {
-    throw new CryptoError('Username cannot be empty', CryptoErrorCode.INVALID_INPUT);
+    throw new CryptoError(
+      'Username cannot be empty',
+      CryptoErrorCode.INVALID_INPUT,
+    );
   }
 
   // Build message: context || username_length(4 bytes) || username || timestamp(8 bytes, optional) || challenge
   const contextBytes = toBytes(AUTH_CHALLENGE_CONTEXT);
   const usernameBytes = toBytes(username);
   const usernameLenBytes = new Uint8Array(4);
-  new DataView(usernameLenBytes.buffer).setUint32(0, usernameBytes.length, false); // Big-endian
+  new DataView(usernameLenBytes.buffer).setUint32(
+    0,
+    usernameBytes.length,
+    false,
+  ); // Big-endian
 
   let message: Uint8Array;
   if (timestamp !== undefined) {
@@ -87,7 +94,13 @@ export function signAuthChallenge(
     // Store as two 32-bit values for JavaScript number precision
     view.setUint32(0, Math.floor(timestamp / 0x100000000), false);
     view.setUint32(4, timestamp >>> 0, false);
-    message = concat(contextBytes, usernameLenBytes, usernameBytes, timestampBytes, challenge);
+    message = concat(
+      contextBytes,
+      usernameLenBytes,
+      usernameBytes,
+      timestampBytes,
+      challenge,
+    );
   } else {
     message = concat(contextBytes, usernameLenBytes, usernameBytes, challenge);
   }
@@ -111,7 +124,7 @@ export function verifyAuthChallenge(
   username: string,
   signatureBase64: string,
   signPublicKey: Uint8Array,
-  timestamp?: number
+  timestamp?: number,
 ): boolean {
   // Validate inputs
   if (challenge.length !== CHALLENGE_SIZE) {
@@ -141,7 +154,11 @@ export function verifyAuthChallenge(
   const contextBytes = toBytes(AUTH_CHALLENGE_CONTEXT);
   const usernameBytes = toBytes(username);
   const usernameLenBytes = new Uint8Array(4);
-  new DataView(usernameLenBytes.buffer).setUint32(0, usernameBytes.length, false);
+  new DataView(usernameLenBytes.buffer).setUint32(
+    0,
+    usernameBytes.length,
+    false,
+  );
 
   let message: Uint8Array;
   if (timestamp !== undefined) {
@@ -149,13 +166,23 @@ export function verifyAuthChallenge(
     const view = new DataView(timestampBytes.buffer);
     view.setUint32(0, Math.floor(timestamp / 0x100000000), false);
     view.setUint32(4, timestamp >>> 0, false);
-    message = concat(contextBytes, usernameLenBytes, usernameBytes, timestampBytes, challenge);
+    message = concat(
+      contextBytes,
+      usernameLenBytes,
+      usernameBytes,
+      timestampBytes,
+      challenge,
+    );
   } else {
     message = concat(contextBytes, usernameLenBytes, usernameBytes, challenge);
   }
 
   try {
-    return sodium.crypto_sign_verify_detached(signature, message, signPublicKey);
+    return sodium.crypto_sign_verify_detached(
+      signature,
+      message,
+      signPublicKey,
+    );
   } catch {
     return false;
   }
@@ -186,12 +213,12 @@ export async function deriveAuthKeypair(
     memoryKiB: number;
     iterations: number;
     parallelism: number;
-  }
+  },
 ): Promise<{ publicKey: Uint8Array; secretKey: Uint8Array }> {
   if (userSalt.length !== 16) {
     throw new CryptoError(
       'User salt must be 16 bytes',
-      CryptoErrorCode.INVALID_INPUT
+      CryptoErrorCode.INVALID_INPUT,
     );
   }
 
@@ -209,7 +236,7 @@ export async function deriveAuthKeypair(
     userSalt,
     params.iterations,
     params.memoryKiB * 1024,
-    sodium.crypto_pwhash_ALG_ARGON2ID13
+    sodium.crypto_pwhash_ALG_ARGON2ID13,
   );
 
   // Derive auth key seed using HKDF-like construction
@@ -245,18 +272,24 @@ export async function deriveAuthKeypair(
  * @param serverSecret - Server-side secret for deterministic generation
  * @returns Fake user salt that looks real
  */
-export function generateFakeUserSalt(username: string, serverSecret: Uint8Array): Uint8Array {
+export function generateFakeUserSalt(
+  username: string,
+  serverSecret: Uint8Array,
+): Uint8Array {
   if (serverSecret.length !== KEY_SIZE) {
     throw new CryptoError(
       'Server secret must be 32 bytes',
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
   // Deterministic fake salt: BLAKE2b(serverSecret || "fake_salt" || username)
   const context = toBytes('fake_salt');
   const usernameBytes = toBytes(username);
-  return sodium.crypto_generichash(16, concat(serverSecret, context, usernameBytes));
+  return sodium.crypto_generichash(
+    16,
+    concat(serverSecret, context, usernameBytes),
+  );
 }
 
 /**
@@ -271,12 +304,12 @@ export function generateFakeUserSalt(username: string, serverSecret: Uint8Array)
 export function generateFakeChallenge(
   username: string,
   serverSecret: Uint8Array,
-  timestamp: number
+  timestamp: number,
 ): Uint8Array {
   if (serverSecret.length !== KEY_SIZE) {
     throw new CryptoError(
       'Server secret must be 32 bytes',
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -290,6 +323,6 @@ export function generateFakeChallenge(
 
   return sodium.crypto_generichash(
     CHALLENGE_SIZE,
-    concat(serverSecret, context, usernameBytes, timestampBytes)
+    concat(serverSecret, context, usernameBytes, timestampBytes),
   );
 }

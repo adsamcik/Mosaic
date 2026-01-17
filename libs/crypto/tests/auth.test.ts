@@ -52,7 +52,11 @@ describe('signAuthChallenge', () => {
   });
 
   it('signs challenge successfully', () => {
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+    );
     expect(signature).toBeDefined();
     expect(typeof signature).toBe('string');
     // Base64-encoded 64-byte signature
@@ -80,31 +84,47 @@ describe('signAuthChallenge', () => {
 
   it('includes timestamp in signature when provided', () => {
     const now = Date.now();
-    const sig1 = signAuthChallenge(challenge, username, keypair.privateKey, now);
-    const sig2 = signAuthChallenge(challenge, username, keypair.privateKey, now + 1000);
+    const sig1 = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+      now,
+    );
+    const sig2 = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+      now + 1000,
+    );
     expect(sig1).not.toEqual(sig2);
   });
 
   it('throws on invalid challenge length', () => {
     const shortChallenge = randomBytes(16);
-    expect(() => signAuthChallenge(shortChallenge, username, keypair.privateKey)).toThrow(
-      CryptoError
-    );
-    expect(() => signAuthChallenge(shortChallenge, username, keypair.privateKey)).toThrow(
-      /must be 32 bytes/
-    );
+    expect(() =>
+      signAuthChallenge(shortChallenge, username, keypair.privateKey),
+    ).toThrow(CryptoError);
+    expect(() =>
+      signAuthChallenge(shortChallenge, username, keypair.privateKey),
+    ).toThrow(/must be 32 bytes/);
   });
 
   it('throws on invalid key length', () => {
     const shortKey = randomBytes(32);
-    expect(() => signAuthChallenge(challenge, username, shortKey)).toThrow(CryptoError);
-    expect(() => signAuthChallenge(challenge, username, shortKey)).toThrow(/must be 64 bytes/);
+    expect(() => signAuthChallenge(challenge, username, shortKey)).toThrow(
+      CryptoError,
+    );
+    expect(() => signAuthChallenge(challenge, username, shortKey)).toThrow(
+      /must be 64 bytes/,
+    );
   });
 
   it('throws on empty username', () => {
-    expect(() => signAuthChallenge(challenge, '', keypair.privateKey)).toThrow(CryptoError);
     expect(() => signAuthChallenge(challenge, '', keypair.privateKey)).toThrow(
-      /cannot be empty/
+      CryptoError,
+    );
+    expect(() => signAuthChallenge(challenge, '', keypair.privateKey)).toThrow(
+      /cannot be empty/,
     );
   });
 });
@@ -120,107 +140,219 @@ describe('verifyAuthChallenge', () => {
   });
 
   it('verifies valid signature', () => {
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
-    const isValid = verifyAuthChallenge(challenge, username, signature, keypair.publicKey);
-    expect(isValid).toBe(true);
-  });
-
-  it('verifies signature with timestamp', () => {
-    const now = Date.now();
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey, now);
-    const isValid = verifyAuthChallenge(challenge, username, signature, keypair.publicKey, now);
-    expect(isValid).toBe(true);
-  });
-
-  it('rejects signature with wrong timestamp', () => {
-    const now = Date.now();
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey, now);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+    );
     const isValid = verifyAuthChallenge(
       challenge,
       username,
       signature,
       keypair.publicKey,
-      now + 1000
+    );
+    expect(isValid).toBe(true);
+  });
+
+  it('verifies signature with timestamp', () => {
+    const now = Date.now();
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+      now,
+    );
+    const isValid = verifyAuthChallenge(
+      challenge,
+      username,
+      signature,
+      keypair.publicKey,
+      now,
+    );
+    expect(isValid).toBe(true);
+  });
+
+  it('rejects signature with wrong timestamp', () => {
+    const now = Date.now();
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+      now,
+    );
+    const isValid = verifyAuthChallenge(
+      challenge,
+      username,
+      signature,
+      keypair.publicKey,
+      now + 1000,
     );
     expect(isValid).toBe(false);
   });
 
   it('rejects signature without timestamp when timestamp was used', () => {
     const now = Date.now();
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey, now);
-    const isValid = verifyAuthChallenge(challenge, username, signature, keypair.publicKey);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+      now,
+    );
+    const isValid = verifyAuthChallenge(
+      challenge,
+      username,
+      signature,
+      keypair.publicKey,
+    );
     expect(isValid).toBe(false);
   });
 
   it('rejects wrong challenge', () => {
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+    );
     const wrongChallenge = randomBytes(32);
-    const isValid = verifyAuthChallenge(wrongChallenge, username, signature, keypair.publicKey);
+    const isValid = verifyAuthChallenge(
+      wrongChallenge,
+      username,
+      signature,
+      keypair.publicKey,
+    );
     expect(isValid).toBe(false);
   });
 
   it('rejects wrong username', () => {
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
-    const isValid = verifyAuthChallenge(challenge, 'bob', signature, keypair.publicKey);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+    );
+    const isValid = verifyAuthChallenge(
+      challenge,
+      'bob',
+      signature,
+      keypair.publicKey,
+    );
     expect(isValid).toBe(false);
   });
 
   it('rejects wrong public key', () => {
     const otherKeypair = sodium.crypto_sign_keypair();
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+    );
     const isValid = verifyAuthChallenge(
       challenge,
       username,
       signature,
-      otherKeypair.publicKey
+      otherKeypair.publicKey,
     );
     expect(isValid).toBe(false);
   });
 
   it('rejects tampered signature', () => {
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+    );
     const tampered = signature.substring(0, signature.length - 2) + 'XX';
-    const isValid = verifyAuthChallenge(challenge, username, tampered, keypair.publicKey);
+    const isValid = verifyAuthChallenge(
+      challenge,
+      username,
+      tampered,
+      keypair.publicKey,
+    );
     expect(isValid).toBe(false);
   });
 
   it('returns false for invalid base64 signature', () => {
-    const isValid = verifyAuthChallenge(challenge, username, '!!!invalid!!!', keypair.publicKey);
+    const isValid = verifyAuthChallenge(
+      challenge,
+      username,
+      '!!!invalid!!!',
+      keypair.publicKey,
+    );
     expect(isValid).toBe(false);
   });
 
   it('returns false for wrong-length signature', () => {
     const shortSig = toBase64(randomBytes(32));
-    const isValid = verifyAuthChallenge(challenge, username, shortSig, keypair.publicKey);
+    const isValid = verifyAuthChallenge(
+      challenge,
+      username,
+      shortSig,
+      keypair.publicKey,
+    );
     expect(isValid).toBe(false);
   });
 
   it('returns false for invalid challenge length', () => {
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+    );
     const shortChallenge = randomBytes(16);
-    const isValid = verifyAuthChallenge(shortChallenge, username, signature, keypair.publicKey);
+    const isValid = verifyAuthChallenge(
+      shortChallenge,
+      username,
+      signature,
+      keypair.publicKey,
+    );
     expect(isValid).toBe(false);
   });
 
   it('returns false for invalid public key length', () => {
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+    );
     const shortPubKey = randomBytes(16);
-    const isValid = verifyAuthChallenge(challenge, username, signature, shortPubKey);
+    const isValid = verifyAuthChallenge(
+      challenge,
+      username,
+      signature,
+      shortPubKey,
+    );
     expect(isValid).toBe(false);
   });
 
   it('returns false for empty username', () => {
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
-    const isValid = verifyAuthChallenge(challenge, '', signature, keypair.publicKey);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+    );
+    const isValid = verifyAuthChallenge(
+      challenge,
+      '',
+      signature,
+      keypair.publicKey,
+    );
     expect(isValid).toBe(false);
   });
 
   it('returns false when sodium throws during verification', async () => {
     // Create a valid-looking but corrupted public key that will cause sodium to throw
-    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
+    const signature = signAuthChallenge(
+      challenge,
+      username,
+      keypair.privateKey,
+    );
     // Use all-zero public key which is not a valid curve point
     const invalidPubKey = new Uint8Array(32);
-    const isValid = verifyAuthChallenge(challenge, username, signature, invalidPubKey);
+    const isValid = verifyAuthChallenge(
+      challenge,
+      username,
+      signature,
+      invalidPubKey,
+    );
     expect(isValid).toBe(false);
   });
 });
@@ -261,17 +393,28 @@ describe('deriveAuthKeypair', () => {
 
   it('throws on invalid salt length', async () => {
     const shortSalt = randomBytes(8);
-    await expect(deriveAuthKeypair(password, shortSalt, fastParams)).rejects.toThrow(CryptoError);
-    await expect(deriveAuthKeypair(password, shortSalt, fastParams)).rejects.toThrow(
-      /must be 16 bytes/
-    );
+    await expect(
+      deriveAuthKeypair(password, shortSalt, fastParams),
+    ).rejects.toThrow(CryptoError);
+    await expect(
+      deriveAuthKeypair(password, shortSalt, fastParams),
+    ).rejects.toThrow(/must be 16 bytes/);
   });
 
   it('produces valid signing keypair', async () => {
     const keypair = await deriveAuthKeypair(password, userSalt, fastParams);
     const challenge = generateAuthChallenge();
-    const signature = signAuthChallenge(challenge, 'testuser', keypair.secretKey);
-    const isValid = verifyAuthChallenge(challenge, 'testuser', signature, keypair.publicKey);
+    const signature = signAuthChallenge(
+      challenge,
+      'testuser',
+      keypair.secretKey,
+    );
+    const isValid = verifyAuthChallenge(
+      challenge,
+      'testuser',
+      signature,
+      keypair.publicKey,
+    );
     expect(isValid).toBe(true);
   });
 
@@ -316,8 +459,12 @@ describe('generateFakeUserSalt', () => {
 
   it('throws on invalid server secret length', () => {
     const shortSecret = randomBytes(16);
-    expect(() => generateFakeUserSalt('alice', shortSecret)).toThrow(CryptoError);
-    expect(() => generateFakeUserSalt('alice', shortSecret)).toThrow(/must be 32 bytes/);
+    expect(() => generateFakeUserSalt('alice', shortSecret)).toThrow(
+      CryptoError,
+    );
+    expect(() => generateFakeUserSalt('alice', shortSecret)).toThrow(
+      /must be 32 bytes/,
+    );
   });
 });
 
@@ -331,7 +478,11 @@ describe('generateFakeChallenge', () => {
   });
 
   it('generates 32-byte challenge', () => {
-    const challenge = generateFakeChallenge('nonexistent', serverSecret, timestamp);
+    const challenge = generateFakeChallenge(
+      'nonexistent',
+      serverSecret,
+      timestamp,
+    );
     expect(challenge).toHaveLength(CHALLENGE_SIZE);
   });
 
@@ -355,7 +506,9 @@ describe('generateFakeChallenge', () => {
 
   it('throws on invalid server secret length', () => {
     const shortSecret = randomBytes(16);
-    expect(() => generateFakeChallenge('alice', shortSecret, timestamp)).toThrow(CryptoError);
+    expect(() =>
+      generateFakeChallenge('alice', shortSecret, timestamp),
+    ).toThrow(CryptoError);
   });
 });
 
@@ -373,8 +526,17 @@ describe('full auth flow', () => {
     const timestamp = Date.now();
 
     // Client signs challenge
-    const { secretKey } = await deriveAuthKeypair(password, userSalt, fastParams);
-    const signature = signAuthChallenge(serverChallenge, 'alice', secretKey, timestamp);
+    const { secretKey } = await deriveAuthKeypair(
+      password,
+      userSalt,
+      fastParams,
+    );
+    const signature = signAuthChallenge(
+      serverChallenge,
+      'alice',
+      secretKey,
+      timestamp,
+    );
 
     // Server verifies
     const isValid = verifyAuthChallenge(
@@ -382,7 +544,7 @@ describe('full auth flow', () => {
       'alice',
       signature,
       storedPublicKey,
-      timestamp
+      timestamp,
     );
     expect(isValid).toBe(true);
   });
@@ -396,7 +558,7 @@ describe('full auth flow', () => {
     const { publicKey: storedPublicKey } = await deriveAuthKeypair(
       correctPassword,
       userSalt,
-      fastParams
+      fastParams,
     );
 
     // Try to login with wrong password
@@ -404,16 +566,20 @@ describe('full auth flow', () => {
     const { secretKey: wrongSecretKey } = await deriveAuthKeypair(
       wrongPassword,
       userSalt,
-      fastParams
+      fastParams,
     );
-    const signature = signAuthChallenge(serverChallenge, 'alice', wrongSecretKey);
+    const signature = signAuthChallenge(
+      serverChallenge,
+      'alice',
+      wrongSecretKey,
+    );
 
     // Verification should fail
     const isValid = verifyAuthChallenge(
       serverChallenge,
       'alice',
       signature,
-      storedPublicKey
+      storedPublicKey,
     );
     expect(isValid).toBe(false);
   });
@@ -427,7 +593,11 @@ describe('full auth flow', () => {
 
     // Fake user gets deterministic fake salt
     const fakeUserSalt = generateFakeUserSalt('nonexistent', serverSecret);
-    const fakeChallenge = generateFakeChallenge('nonexistent', serverSecret, timestamp);
+    const fakeChallenge = generateFakeChallenge(
+      'nonexistent',
+      serverSecret,
+      timestamp,
+    );
 
     // Both look like valid 16-byte salts and 32-byte challenges
     expect(realUserSalt).toHaveLength(16);

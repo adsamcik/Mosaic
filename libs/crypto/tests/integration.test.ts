@@ -69,7 +69,7 @@ describe('integration: user registration flow', () => {
       userSalt,
       accountSalt,
       accountKeyWrapped,
-      params
+      params,
     );
 
     // Unwrapped key should match original
@@ -130,7 +130,12 @@ describe('integration: album creation and photo upload', () => {
     const { userSalt, accountSalt } = generateSalts();
     const params = getArgon2Params();
     // L0/L1 are zeroed internally by deriveKeys
-    const keys = await deriveKeys('owner-password', userSalt, accountSalt, params);
+    const keys = await deriveKeys(
+      'owner-password',
+      userSalt,
+      accountSalt,
+      params,
+    );
     ownerIdentity = deriveIdentityKeypair(keys.accountKey);
     memzero(keys.accountKey);
 
@@ -148,7 +153,7 @@ describe('integration: album creation and photo upload', () => {
       epochKey.fullKey,
       epochKey.epochId,
       0, // shard index
-      ShardTier.ORIGINAL
+      ShardTier.ORIGINAL,
     );
 
     // Verify SHA256 hash
@@ -156,7 +161,10 @@ describe('integration: album creation and photo upload', () => {
     expect(isValid).toBe(true);
 
     // Decrypt shard
-    const decrypted = await decryptShard(encrypted.ciphertext, epochKey.fullKey);
+    const decrypted = await decryptShard(
+      encrypted.ciphertext,
+      epochKey.fullKey,
+    );
     expect(decrypted).toEqual(photoData);
   });
 
@@ -177,7 +185,7 @@ describe('integration: album creation and photo upload', () => {
         epochKey.fullKey,
         epochKey.epochId,
         i,
-        ShardTier.ORIGINAL
+        ShardTier.ORIGINAL,
       );
 
       shards.push(encrypted);
@@ -199,17 +207,20 @@ describe('integration: album creation and photo upload', () => {
         width: 4000,
         height: 3000,
         shardIds: ['shard-1', 'shard-2', 'shard-3'],
-      })
+      }),
     );
 
     // Sign manifest with epoch sign key
-    const signature = signManifest(manifestData, epochKey.signKeypair.secretKey);
+    const signature = signManifest(
+      manifestData,
+      epochKey.signKeypair.secretKey,
+    );
 
     // Verify signature
     const isValid = verifyManifest(
       manifestData,
       signature,
-      epochKey.signKeypair.publicKey
+      epochKey.signKeypair.publicKey,
     );
     expect(isValid).toBe(true);
 
@@ -219,7 +230,7 @@ describe('integration: album creation and photo upload', () => {
     const isInvalid = verifyManifest(
       tamperedManifest,
       signature,
-      epochKey.signKeypair.publicKey
+      epochKey.signKeypair.publicKey,
     );
     expect(isInvalid).toBe(false);
   });
@@ -241,7 +252,7 @@ describe('integration: album sharing between users', () => {
       'owner-password',
       ownerSalts.userSalt,
       ownerSalts.accountSalt,
-      params
+      params,
     );
     ownerIdentity = deriveIdentityKeypair(ownerKeys.accountKey);
     memzero(ownerKeys.accountKey);
@@ -252,7 +263,7 @@ describe('integration: album sharing between users', () => {
       'recipient-password',
       recipientSalts.userSalt,
       recipientSalts.accountSalt,
-      params
+      params,
     );
     recipientIdentity = deriveIdentityKeypair(recipientKeys.accountKey);
     memzero(recipientKeys.accountKey);
@@ -268,14 +279,14 @@ describe('integration: album sharing between users', () => {
       epochKey.epochId,
       epochKey.epochSeed,
       epochKey.signKeypair,
-      recipientIdentity.ed25519.publicKey
+      recipientIdentity.ed25519.publicKey,
     );
 
     // Owner seals and signs the bundle
     const sealed = sealAndSignBundle(
       bundle,
       recipientIdentity.ed25519.publicKey,
-      ownerIdentity
+      ownerIdentity,
     );
 
     // Recipient opens the bundle
@@ -284,14 +295,16 @@ describe('integration: album sharing between users', () => {
       sealed.signature,
       ownerIdentity.ed25519.publicKey,
       recipientIdentity,
-      { albumId, minEpochId: 0 }
+      { albumId, minEpochId: 0 },
     );
 
     // Recipient should have the epoch seed
     expect(opened.albumId).toBe(albumId);
     expect(opened.epochId).toBe(epochKey.epochId);
     expect(opened.epochSeed).toEqual(epochKey.epochSeed);
-    expect(opened.signKeypair.publicKey).toEqual(epochKey.signKeypair.publicKey);
+    expect(opened.signKeypair.publicKey).toEqual(
+      epochKey.signKeypair.publicKey,
+    );
   });
 
   it('recipient can decrypt photos shared by owner', async () => {
@@ -302,7 +315,7 @@ describe('integration: album sharing between users', () => {
       epochKey.fullKey,
       epochKey.epochId,
       0,
-      ShardTier.ORIGINAL
+      ShardTier.ORIGINAL,
     );
 
     // Simulate sharing: recipient receives epoch key bundle
@@ -311,25 +324,28 @@ describe('integration: album sharing between users', () => {
       epochKey.epochId,
       epochKey.epochSeed,
       epochKey.signKeypair,
-      recipientIdentity.ed25519.publicKey
+      recipientIdentity.ed25519.publicKey,
     );
     const sealed = sealAndSignBundle(
       bundle,
       recipientIdentity.ed25519.publicKey,
-      ownerIdentity
+      ownerIdentity,
     );
     const opened = verifyAndOpenBundle(
       sealed.sealed,
       sealed.signature,
       ownerIdentity.ed25519.publicKey,
       recipientIdentity,
-      { albumId, minEpochId: 0 }
+      { albumId, minEpochId: 0 },
     );
 
     // Recipient derives tier keys from epochSeed and decrypts
     const { deriveTierKeys } = await import('../src/epochs');
     const tierKeys = deriveTierKeys(opened.epochSeed);
-    const decrypted = await decryptShard(encrypted.ciphertext, tierKeys.fullKey);
+    const decrypted = await decryptShard(
+      encrypted.ciphertext,
+      tierKeys.fullKey,
+    );
     expect(new TextDecoder().decode(decrypted)).toBe('This is a secret photo!');
   });
 
@@ -337,7 +353,7 @@ describe('integration: album sharing between users', () => {
     // Attacker tries to send a fake bundle
     const attackerSalts = generateSalts();
     const attackerIdentity = deriveIdentityKeypair(
-      sodium.crypto_generichash(32, attackerSalts.userSalt)
+      sodium.crypto_generichash(32, attackerSalts.userSalt),
     );
 
     const fakeBundle = createEpochKeyBundle(
@@ -345,13 +361,13 @@ describe('integration: album sharing between users', () => {
       epochKey.epochId,
       epochKey.epochSeed,
       epochKey.signKeypair,
-      recipientIdentity.ed25519.publicKey
+      recipientIdentity.ed25519.publicKey,
     );
 
     const sealed = sealAndSignBundle(
       fakeBundle,
       recipientIdentity.ed25519.publicKey,
-      attackerIdentity // Signed by attacker, not owner
+      attackerIdentity, // Signed by attacker, not owner
     );
 
     // Recipient verifies with owner's pubkey - should fail
@@ -361,8 +377,8 @@ describe('integration: album sharing between users', () => {
         sealed.signature,
         ownerIdentity.ed25519.publicKey, // Expected owner
         recipientIdentity,
-        { albumId, minEpochId: 0 }
-      )
+        { albumId, minEpochId: 0 },
+      ),
     ).toThrow();
   });
 
@@ -372,13 +388,13 @@ describe('integration: album sharing between users', () => {
       epochKey.epochId,
       epochKey.epochSeed,
       epochKey.signKeypair,
-      recipientIdentity.ed25519.publicKey
+      recipientIdentity.ed25519.publicKey,
     );
 
     const sealed = sealAndSignBundle(
       bundle,
       recipientIdentity.ed25519.publicKey,
-      ownerIdentity
+      ownerIdentity,
     );
 
     // Try to open for different album
@@ -388,8 +404,8 @@ describe('integration: album sharing between users', () => {
         sealed.signature,
         ownerIdentity.ed25519.publicKey,
         recipientIdentity,
-        { albumId: 'different-album', minEpochId: 0 }
-      )
+        { albumId: 'different-album', minEpochId: 0 },
+      ),
     ).toThrow('albumId');
   });
 });
@@ -409,7 +425,12 @@ describe('integration: epoch key rotation', () => {
     for (const password of ['owner', 'member', 'removed-member']) {
       const salts = generateSalts();
       // L0/L1 are zeroed internally by deriveKeys
-      const keys = await deriveKeys(password, salts.userSalt, salts.accountSalt, params);
+      const keys = await deriveKeys(
+        password,
+        salts.userSalt,
+        salts.accountSalt,
+        params,
+      );
       const identity = deriveIdentityKeypair(keys.accountKey);
       memzero(keys.accountKey);
 
@@ -427,23 +448,39 @@ describe('integration: epoch key rotation', () => {
   it('old photos encrypted with epoch1 are still readable after rotation', async () => {
     // Encrypt photo with epoch 1
     const oldPhoto = new TextEncoder().encode('Photo from before rotation');
-    const encrypted = await encryptShard(oldPhoto, epoch1.fullKey, 1, 0, ShardTier.ORIGINAL);
+    const encrypted = await encryptShard(
+      oldPhoto,
+      epoch1.fullKey,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Rotation happens - epoch 2 created
     // Member should still have epoch 1 key cached
 
     // Decrypt with epoch 1 key still works
     const decrypted = await decryptShard(encrypted.ciphertext, epoch1.fullKey);
-    expect(new TextDecoder().decode(decrypted)).toBe('Photo from before rotation');
+    expect(new TextDecoder().decode(decrypted)).toBe(
+      'Photo from before rotation',
+    );
   });
 
   it('new photos use epoch2 key', async () => {
     // New photo uploaded after rotation
     const newPhoto = new TextEncoder().encode('Photo after rotation');
-    const encrypted = await encryptShard(newPhoto, epoch2.fullKey, 2, 0, ShardTier.ORIGINAL);
+    const encrypted = await encryptShard(
+      newPhoto,
+      epoch2.fullKey,
+      2,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Cannot decrypt with old epoch key
-    await expect(decryptShard(encrypted.ciphertext, epoch1.fullKey)).rejects.toThrow();
+    await expect(
+      decryptShard(encrypted.ciphertext, epoch1.fullKey),
+    ).rejects.toThrow();
 
     // Can decrypt with new epoch key
     const decrypted = await decryptShard(encrypted.ciphertext, epoch2.fullKey);
@@ -457,13 +494,13 @@ describe('integration: epoch key rotation', () => {
       epoch2.epochId,
       epoch2.epochSeed,
       epoch2.signKeypair,
-      memberIdentity.ed25519.publicKey
+      memberIdentity.ed25519.publicKey,
     );
 
     const sealed = sealAndSignBundle(
       memberBundle,
       memberIdentity.ed25519.publicKey,
-      ownerIdentity
+      ownerIdentity,
     );
 
     // Member can open the bundle
@@ -472,7 +509,7 @@ describe('integration: epoch key rotation', () => {
       sealed.signature,
       ownerIdentity.ed25519.publicKey,
       memberIdentity,
-      { albumId, minEpochId: 0 }
+      { albumId, minEpochId: 0 },
     );
     expect(opened.epochId).toBe(2);
 
@@ -483,8 +520,8 @@ describe('integration: epoch key rotation', () => {
         sealed.signature,
         ownerIdentity.ed25519.publicKey,
         removedMemberIdentity, // Wrong recipient
-        { albumId, minEpochId: 0 }
-      )
+        { albumId, minEpochId: 0 },
+      ),
     ).toThrow();
   });
 });
@@ -526,7 +563,12 @@ describe('integration: complete photo lifecycle', () => {
 
     // === STEP 1: User Registration ===
     const { userSalt, accountSalt } = generateSalts();
-    const keys = await deriveKeys('user-password', userSalt, accountSalt, params);
+    const keys = await deriveKeys(
+      'user-password',
+      userSalt,
+      accountSalt,
+      params,
+    );
     const identity = deriveIdentityKeypair(keys.accountKey);
 
     // === STEP 2: Album Creation ===
@@ -546,7 +588,13 @@ describe('integration: complete photo lifecycle', () => {
 
     // Encrypt photo data (simulated 128KB file, reduced from 2MB for faster tests) using fullKey
     const photoData = sodium.randombytes_buf(128 * 1024);
-    const encrypted = await encryptShard(photoData, epochKey.fullKey, 1, 0, ShardTier.ORIGINAL);
+    const encrypted = await encryptShard(
+      photoData,
+      epochKey.fullKey,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Encrypt and sign manifest (also using fullKey for metadata)
     const manifestJson = JSON.stringify(photoMetadata);
@@ -555,11 +603,11 @@ describe('integration: complete photo lifecycle', () => {
       epochKey.fullKey,
       1,
       0,
-      ShardTier.ORIGINAL
+      ShardTier.ORIGINAL,
     );
     const signature = signManifest(
       manifestEncrypted.ciphertext,
-      epochKey.signKeypair.secretKey
+      epochKey.signKeypair.secretKey,
     );
 
     // === STEP 4: Simulate API Storage ===
@@ -583,14 +631,20 @@ describe('integration: complete photo lifecycle', () => {
     expect(sigValid).toBe(true);
 
     // Decrypt manifest
-    const decryptedManifest = await decryptShard(receivedMeta, epochKey.fullKey);
+    const decryptedManifest = await decryptShard(
+      receivedMeta,
+      epochKey.fullKey,
+    );
     const metadata = JSON.parse(new TextDecoder().decode(decryptedManifest));
     expect(metadata.filename).toBe('vacation.jpg');
     expect(metadata.tags).toContain('vacation');
 
     // === STEP 6: View Photo ===
     // Download and decrypt shard
-    const decryptedPhoto = await decryptShard(encrypted.ciphertext, epochKey.fullKey);
+    const decryptedPhoto = await decryptShard(
+      encrypted.ciphertext,
+      epochKey.fullKey,
+    );
     expect(decryptedPhoto).toEqual(photoData);
 
     // Cleanup
@@ -607,7 +661,7 @@ describe('integration: complete photo lifecycle', () => {
   it('share link recipients can decrypt data with unwrapped tier keys', async () => {
     // This test verifies the exact flow used by SharedAlbumViewer
     // Album owner encrypts data -> share link created -> visitor decrypts with tier key
-    
+
     const {
       generateLinkSecret,
       deriveLinkKeys,
@@ -616,13 +670,13 @@ describe('integration: complete photo lifecycle', () => {
     } = await import('../src/link-sharing');
     const { AccessTier } = await import('../src/types');
     const { deriveTierKeys } = await import('../src/epochs');
-    
+
     // === STEP 1: Album owner encrypts album name ===
     const ownerEpochSeed = sodium.randombytes_buf(32);
     const ownerTierKeys = deriveTierKeys(ownerEpochSeed);
     const albumName = 'My Vacation Photos 2024';
     const albumNameBytes = new TextEncoder().encode(albumName);
-    
+
     // Album name is encrypted using encryptShard with fullKey (tier 3)
     // This matches how crypto.worker.encryptShard works
     const encryptedName = await encryptShard(
@@ -630,46 +684,49 @@ describe('integration: complete photo lifecycle', () => {
       ownerTierKeys.fullKey,
       0, // epochId 0 for metadata
       0, // shardIndex 0 for album name
-      ShardTier.ORIGINAL // tier 3
+      ShardTier.ORIGINAL, // tier 3
     );
-    
+
     // === STEP 2: Album owner creates share link with full access ===
     const linkSecret = generateLinkSecret();
     const { wrappingKey } = deriveLinkKeys(linkSecret);
-    
+
     // Wrap all tier keys (full access link)
     const wrappedKeys = wrapAllTierKeysForLink(
-      { 
+      {
         thumbKey: ownerTierKeys.thumbKey,
         previewKey: ownerTierKeys.previewKey,
         fullKey: ownerTierKeys.fullKey,
       },
       AccessTier.FULL,
-      wrappingKey
+      wrappingKey,
     );
-    
+
     // === STEP 3: Share link visitor unwraps tier keys ===
     // In real app: visitor derives wrappingKey from linkSecret in URL fragment
     const visitorWrappingKey = deriveLinkKeys(linkSecret).wrappingKey;
-    
+
     // Visitor unwraps the fullKey (tier 3)
-    const wrappedFullKey = wrappedKeys.find(w => w.tier === AccessTier.FULL)!;
+    const wrappedFullKey = wrappedKeys.find((w) => w.tier === AccessTier.FULL)!;
     const visitorFullKey = unwrapTierKeyFromLink(
       wrappedFullKey,
       AccessTier.FULL,
-      visitorWrappingKey
+      visitorWrappingKey,
     );
-    
+
     // Verify key matches
     expect(visitorFullKey).toEqual(ownerTierKeys.fullKey);
-    
+
     // === STEP 4: Visitor decrypts album name with tier key directly ===
     // This is what decryptAlbumNameWithTierKey does
-    const decryptedNameBytes = await decryptShard(encryptedName.ciphertext, visitorFullKey);
+    const decryptedNameBytes = await decryptShard(
+      encryptedName.ciphertext,
+      visitorFullKey,
+    );
     const decryptedName = new TextDecoder().decode(decryptedNameBytes);
-    
+
     expect(decryptedName).toBe(albumName);
-    
+
     // === STEP 5: Verify photo shards can also be decrypted ===
     const photoData = sodium.randombytes_buf(1024);
     const encryptedPhoto = await encryptShard(
@@ -677,13 +734,16 @@ describe('integration: complete photo lifecycle', () => {
       ownerTierKeys.fullKey,
       1, // epochId 1
       0, // shardIndex 0
-      ShardTier.ORIGINAL
+      ShardTier.ORIGINAL,
     );
-    
+
     // Visitor decrypts with the same tier key
-    const decryptedPhoto = await decryptShard(encryptedPhoto.ciphertext, visitorFullKey);
+    const decryptedPhoto = await decryptShard(
+      encryptedPhoto.ciphertext,
+      visitorFullKey,
+    );
     expect(decryptedPhoto).toEqual(photoData);
-    
+
     // Cleanup
     memzero(ownerEpochSeed);
     memzero(ownerTierKeys.thumbKey);

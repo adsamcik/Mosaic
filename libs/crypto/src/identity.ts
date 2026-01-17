@@ -7,7 +7,12 @@
  */
 
 import sodium from 'libsodium-wrappers-sumo';
-import { CryptoError, CryptoErrorCode, KEY_SIZE, type IdentityKeypair } from './types';
+import {
+  CryptoError,
+  CryptoErrorCode,
+  KEY_SIZE,
+  type IdentityKeypair,
+} from './types';
 import { randomBytes } from './utils';
 
 /** Ed25519 public key length */
@@ -31,7 +36,7 @@ export function deriveIdentityKeypair(seed: Uint8Array): IdentityKeypair {
   if (seed.length !== KEY_SIZE) {
     throw new CryptoError(
       `Identity seed must be ${KEY_SIZE} bytes, got ${seed.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -44,13 +49,17 @@ export function deriveIdentityKeypair(seed: Uint8Array): IdentityKeypair {
   let x25519Public: Uint8Array;
 
   try {
-    x25519Secret = sodium.crypto_sign_ed25519_sk_to_curve25519(ed25519.privateKey);
-    x25519Public = sodium.crypto_sign_ed25519_pk_to_curve25519(ed25519.publicKey);
+    x25519Secret = sodium.crypto_sign_ed25519_sk_to_curve25519(
+      ed25519.privateKey,
+    );
+    x25519Public = sodium.crypto_sign_ed25519_pk_to_curve25519(
+      ed25519.publicKey,
+    );
   } catch (error) {
     throw new CryptoError(
       'Failed to convert Ed25519 to X25519',
       CryptoErrorCode.KEY_CONVERSION_FAILED,
-      error
+      error,
     );
   }
 
@@ -78,7 +87,7 @@ export function ed25519PubToX25519(ed25519Pub: Uint8Array): Uint8Array {
   if (ed25519Pub.length !== ED25519_PUBLIC_KEY_LENGTH) {
     throw new CryptoError(
       `Ed25519 public key must be ${ED25519_PUBLIC_KEY_LENGTH} bytes, got ${ed25519Pub.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -88,7 +97,7 @@ export function ed25519PubToX25519(ed25519Pub: Uint8Array): Uint8Array {
     throw new CryptoError(
       'Failed to convert Ed25519 public key to X25519',
       CryptoErrorCode.KEY_CONVERSION_FAILED,
-      error
+      error,
     );
   }
 }
@@ -105,7 +114,7 @@ export function ed25519SecretToX25519(ed25519Secret: Uint8Array): Uint8Array {
   if (ed25519Secret.length !== ED25519_SECRET_KEY_LENGTH) {
     throw new CryptoError(
       `Ed25519 secret key must be ${ED25519_SECRET_KEY_LENGTH} bytes, got ${ed25519Secret.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -115,7 +124,7 @@ export function ed25519SecretToX25519(ed25519Secret: Uint8Array): Uint8Array {
     throw new CryptoError(
       'Failed to convert Ed25519 secret key to X25519',
       CryptoErrorCode.KEY_CONVERSION_FAILED,
-      error
+      error,
     );
   }
 }

@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeAll, vi, afterEach } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
-import { deriveIdentityKeypair, ed25519PubToX25519, ed25519SecretToX25519, generateIdentitySeed, generateEd25519Keypair, isValidEd25519PublicKey } from '../src/identity';
+import {
+  deriveIdentityKeypair,
+  ed25519PubToX25519,
+  ed25519SecretToX25519,
+  generateIdentitySeed,
+  generateEd25519Keypair,
+  isValidEd25519PublicKey,
+} from '../src/identity';
 import { CryptoError, CryptoErrorCode } from '../src/types';
 
 beforeAll(async () => {
@@ -21,7 +28,9 @@ describe('identity', () => {
     const kp = deriveIdentityKeypair(seed);
     const message = new Uint8Array([1, 2, 3, 4]);
     const sig = sodium.crypto_sign_detached(message, kp.ed25519.secretKey);
-    expect(sodium.crypto_sign_verify_detached(sig, message, kp.ed25519.publicKey)).toBe(true);
+    expect(
+      sodium.crypto_sign_verify_detached(sig, message, kp.ed25519.publicKey),
+    ).toBe(true);
   });
 
   it('produces valid X25519 key exchange', () => {
@@ -29,9 +38,15 @@ describe('identity', () => {
     const seed2 = generateIdentitySeed();
     const kp1 = deriveIdentityKeypair(seed1);
     const kp2 = deriveIdentityKeypair(seed2);
-    
-    const shared1 = sodium.crypto_scalarmult(kp1.x25519.secretKey, kp2.x25519.publicKey);
-    const shared2 = sodium.crypto_scalarmult(kp2.x25519.secretKey, kp1.x25519.publicKey);
+
+    const shared1 = sodium.crypto_scalarmult(
+      kp1.x25519.secretKey,
+      kp2.x25519.publicKey,
+    );
+    const shared2 = sodium.crypto_scalarmult(
+      kp2.x25519.secretKey,
+      kp1.x25519.publicKey,
+    );
     expect(shared1).toEqual(shared2);
   });
 
@@ -67,7 +82,9 @@ describe('identity', () => {
       } catch (e) {
         expect((e as CryptoError).message).toContain('32 bytes');
         expect((e as CryptoError).message).toContain('got 16');
-        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+        expect((e as CryptoError).code).toBe(
+          CryptoErrorCode.INVALID_KEY_LENGTH,
+        );
       }
     });
 
@@ -98,7 +115,9 @@ describe('identity', () => {
       } catch (e) {
         expect((e as CryptoError).message).toContain('32 bytes');
         expect((e as CryptoError).message).toContain('got 16');
-        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+        expect((e as CryptoError).code).toBe(
+          CryptoErrorCode.INVALID_KEY_LENGTH,
+        );
       }
     });
 
@@ -115,11 +134,15 @@ describe('identity', () => {
 
   describe('ed25519SecretToX25519 validation', () => {
     it('rejects secret key that is too short (32 bytes)', () => {
-      expect(() => ed25519SecretToX25519(new Uint8Array(32))).toThrow(CryptoError);
+      expect(() => ed25519SecretToX25519(new Uint8Array(32))).toThrow(
+        CryptoError,
+      );
     });
 
     it('rejects secret key that is too long (96 bytes)', () => {
-      expect(() => ed25519SecretToX25519(new Uint8Array(96))).toThrow(CryptoError);
+      expect(() => ed25519SecretToX25519(new Uint8Array(96))).toThrow(
+        CryptoError,
+      );
     });
 
     it('error message includes expected byte count (64)', () => {
@@ -129,7 +152,9 @@ describe('identity', () => {
       } catch (e) {
         expect((e as CryptoError).message).toContain('64 bytes');
         expect((e as CryptoError).message).toContain('got 32');
-        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+        expect((e as CryptoError).code).toBe(
+          CryptoErrorCode.INVALID_KEY_LENGTH,
+        );
       }
     });
 
@@ -182,7 +207,9 @@ describe('identity', () => {
       // If length check is bypassed, libsodium function would be called
       const originalFn = sodium.crypto_sign_ed25519_pk_to_curve25519;
       const spy = vi.fn(originalFn);
-      (sodium as unknown as Record<string, unknown>).crypto_sign_ed25519_pk_to_curve25519 = spy;
+      (
+        sodium as unknown as Record<string, unknown>
+      ).crypto_sign_ed25519_pk_to_curve25519 = spy;
 
       try {
         // Too short key
@@ -208,7 +235,9 @@ describe('identity', () => {
       // Complementary test: correct length SHOULD call libsodium
       const originalFn = sodium.crypto_sign_ed25519_pk_to_curve25519;
       const spy = vi.fn(originalFn);
-      (sodium as unknown as Record<string, unknown>).crypto_sign_ed25519_pk_to_curve25519 = spy;
+      (
+        sodium as unknown as Record<string, unknown>
+      ).crypto_sign_ed25519_pk_to_curve25519 = spy;
 
       try {
         const seed = generateIdentitySeed();
@@ -248,14 +277,18 @@ describe('identity', () => {
       sodium.crypto_sign_ed25519_pk_to_curve25519 = vi.fn(() => {
         throw new Error('Simulated conversion failure');
       }) as typeof sodium.crypto_sign_ed25519_pk_to_curve25519;
-      
+
       try {
         expect(() => deriveIdentityKeypair(seed)).toThrow(CryptoError);
         try {
           deriveIdentityKeypair(seed);
         } catch (e) {
-          expect((e as CryptoError).message).toContain('Failed to convert Ed25519 to X25519');
-          expect((e as CryptoError).code).toBe(CryptoErrorCode.KEY_CONVERSION_FAILED);
+          expect((e as CryptoError).message).toContain(
+            'Failed to convert Ed25519 to X25519',
+          );
+          expect((e as CryptoError).code).toBe(
+            CryptoErrorCode.KEY_CONVERSION_FAILED,
+          );
           expect((e as CryptoError).cause).toBeInstanceOf(Error);
         }
       } finally {
@@ -269,14 +302,18 @@ describe('identity', () => {
       sodium.crypto_sign_ed25519_sk_to_curve25519 = vi.fn(() => {
         throw new Error('Simulated sk conversion failure');
       }) as typeof sodium.crypto_sign_ed25519_sk_to_curve25519;
-      
+
       try {
         expect(() => deriveIdentityKeypair(seed)).toThrow(CryptoError);
         try {
           deriveIdentityKeypair(seed);
         } catch (e) {
-          expect((e as CryptoError).message).toContain('Failed to convert Ed25519 to X25519');
-          expect((e as CryptoError).code).toBe(CryptoErrorCode.KEY_CONVERSION_FAILED);
+          expect((e as CryptoError).message).toContain(
+            'Failed to convert Ed25519 to X25519',
+          );
+          expect((e as CryptoError).code).toBe(
+            CryptoErrorCode.KEY_CONVERSION_FAILED,
+          );
         }
       } finally {
         sodium.crypto_sign_ed25519_sk_to_curve25519 = originalFn;
@@ -290,14 +327,20 @@ describe('identity', () => {
       sodium.crypto_sign_ed25519_sk_to_curve25519 = vi.fn(() => {
         throw new Error('Simulated conversion failure');
       }) as typeof sodium.crypto_sign_ed25519_sk_to_curve25519;
-      
+
       try {
-        expect(() => ed25519SecretToX25519(kp.ed25519.secretKey)).toThrow(CryptoError);
+        expect(() => ed25519SecretToX25519(kp.ed25519.secretKey)).toThrow(
+          CryptoError,
+        );
         try {
           ed25519SecretToX25519(kp.ed25519.secretKey);
         } catch (e) {
-          expect((e as CryptoError).message).toContain('Failed to convert Ed25519 secret key to X25519');
-          expect((e as CryptoError).code).toBe(CryptoErrorCode.KEY_CONVERSION_FAILED);
+          expect((e as CryptoError).message).toContain(
+            'Failed to convert Ed25519 secret key to X25519',
+          );
+          expect((e as CryptoError).code).toBe(
+            CryptoErrorCode.KEY_CONVERSION_FAILED,
+          );
           expect((e as CryptoError).cause).toBeInstanceOf(Error);
         }
       } finally {
@@ -312,14 +355,20 @@ describe('identity', () => {
       sodium.crypto_sign_ed25519_pk_to_curve25519 = vi.fn(() => {
         throw new Error('Simulated conversion failure');
       }) as typeof sodium.crypto_sign_ed25519_pk_to_curve25519;
-      
+
       try {
-        expect(() => ed25519PubToX25519(kp.ed25519.publicKey)).toThrow(CryptoError);
+        expect(() => ed25519PubToX25519(kp.ed25519.publicKey)).toThrow(
+          CryptoError,
+        );
         try {
           ed25519PubToX25519(kp.ed25519.publicKey);
         } catch (e) {
-          expect((e as CryptoError).message).toContain('Failed to convert Ed25519 public key to X25519');
-          expect((e as CryptoError).code).toBe(CryptoErrorCode.KEY_CONVERSION_FAILED);
+          expect((e as CryptoError).message).toContain(
+            'Failed to convert Ed25519 public key to X25519',
+          );
+          expect((e as CryptoError).code).toBe(
+            CryptoErrorCode.KEY_CONVERSION_FAILED,
+          );
           expect((e as CryptoError).cause).toBeInstanceOf(Error);
         }
       } finally {
@@ -334,7 +383,7 @@ describe('identity', () => {
       sodium.crypto_sign_ed25519_pk_to_curve25519 = vi.fn(() => {
         throw new Error('Simulated conversion failure');
       }) as typeof sodium.crypto_sign_ed25519_pk_to_curve25519;
-      
+
       try {
         // Even with a valid public key, if conversion fails, should return false
         expect(isValidEd25519PublicKey(kp.ed25519.publicKey)).toBe(false);

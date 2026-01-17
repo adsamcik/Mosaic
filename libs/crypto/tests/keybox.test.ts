@@ -1,7 +1,18 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
-import { wrapKey, unwrapKey, wrapSymmetricKey, unwrapSymmetricKey } from '../src/keybox';
-import { CryptoError, CryptoErrorCode, NONCE_SIZE, TAG_SIZE, KEY_SIZE } from '../src/types';
+import {
+  wrapKey,
+  unwrapKey,
+  wrapSymmetricKey,
+  unwrapSymmetricKey,
+} from '../src/keybox';
+import {
+  CryptoError,
+  CryptoErrorCode,
+  NONCE_SIZE,
+  TAG_SIZE,
+  KEY_SIZE,
+} from '../src/types';
 
 // MIN_WRAPPED_LENGTH = NONCE_SIZE + TAG_SIZE + 1 = 24 + 16 + 1 = 41
 const MIN_WRAPPED_LENGTH = NONCE_SIZE + TAG_SIZE + 1;
@@ -53,7 +64,9 @@ describe('keybox', () => {
 
     it('includes actual and expected length in error message', () => {
       const shortWrapper = new Uint8Array(16);
-      expect(() => wrapKey(key, shortWrapper)).toThrow(/Wrapper key must be 32 bytes, got 16/);
+      expect(() => wrapKey(key, shortWrapper)).toThrow(
+        /Wrapper key must be 32 bytes, got 16/,
+      );
     });
 
     it('throws with INVALID_KEY_LENGTH error code', () => {
@@ -63,7 +76,9 @@ describe('keybox', () => {
         expect.fail('should have thrown');
       } catch (e) {
         expect(e).toBeInstanceOf(CryptoError);
-        expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+        expect((e as CryptoError).code).toBe(
+          CryptoErrorCode.INVALID_KEY_LENGTH,
+        );
       }
     });
   });
@@ -84,7 +99,9 @@ describe('keybox', () => {
     it('includes actual and expected length in wrapper error message', () => {
       const wrapped = wrapKey(key, wrapper);
       const shortWrapper = new Uint8Array(16);
-      expect(() => unwrapKey(wrapped, shortWrapper)).toThrow(/Wrapper key must be 32 bytes, got 16/);
+      expect(() => unwrapKey(wrapped, shortWrapper)).toThrow(
+        /Wrapper key must be 32 bytes, got 16/,
+      );
     });
 
     it('rejects wrapped data shorter than MIN_WRAPPED_LENGTH', () => {
@@ -110,13 +127,17 @@ describe('keybox', () => {
 
     it('includes actual and minimum length in short data error message', () => {
       const tooShort = new Uint8Array(30);
-      expect(() => unwrapKey(tooShort, wrapper)).toThrow(/Wrapped key too short: 30 bytes, minimum 41/);
+      expect(() => unwrapKey(tooShort, wrapper)).toThrow(
+        /Wrapped key too short: 30 bytes, minimum 41/,
+      );
     });
 
     it('includes authentication failed message for tampered data', () => {
       const wrapped = wrapKey(key, wrapper);
       wrapped[30] ^= 0xff; // Corrupt a byte
-      expect(() => unwrapKey(wrapped, wrapper)).toThrow(/Failed to unwrap key - authentication failed/);
+      expect(() => unwrapKey(wrapped, wrapper)).toThrow(
+        /Failed to unwrap key - authentication failed/,
+      );
     });
 
     it('throws DECRYPTION_FAILED for short wrapped data', () => {
@@ -151,7 +172,9 @@ describe('keybox', () => {
 
       it('includes actual and expected length in error message', () => {
         const shortKey = new Uint8Array(16);
-        expect(() => wrapSymmetricKey(shortKey, wrapper)).toThrow(/Key must be 32 bytes, got 16/);
+        expect(() => wrapSymmetricKey(shortKey, wrapper)).toThrow(
+          /Key must be 32 bytes, got 16/,
+        );
       });
 
       it('throws with INVALID_KEY_LENGTH error code', () => {
@@ -161,7 +184,9 @@ describe('keybox', () => {
           expect.fail('should have thrown');
         } catch (e) {
           expect(e).toBeInstanceOf(CryptoError);
-          expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+          expect((e as CryptoError).code).toBe(
+            CryptoErrorCode.INVALID_KEY_LENGTH,
+          );
         }
       });
 
@@ -187,7 +212,9 @@ describe('keybox', () => {
       it('includes actual and expected length in error message', () => {
         const shortKey = new Uint8Array(16);
         const wrapped = wrapKey(shortKey, wrapper);
-        expect(() => unwrapSymmetricKey(wrapped, wrapper)).toThrow(/Unwrapped key expected to be 32 bytes, got 16/);
+        expect(() => unwrapSymmetricKey(wrapped, wrapper)).toThrow(
+          /Unwrapped key expected to be 32 bytes, got 16/,
+        );
       });
 
       it('throws with INVALID_KEY_LENGTH error code', () => {
@@ -198,7 +225,9 @@ describe('keybox', () => {
           expect.fail('should have thrown');
         } catch (e) {
           expect(e).toBeInstanceOf(CryptoError);
-          expect((e as CryptoError).code).toBe(CryptoErrorCode.INVALID_KEY_LENGTH);
+          expect((e as CryptoError).code).toBe(
+            CryptoErrorCode.INVALID_KEY_LENGTH,
+          );
         }
       });
 

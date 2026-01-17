@@ -24,7 +24,7 @@ export interface DeriveKeysResult {
 /**
  * Full key hierarchy from derivation (internal/testing only).
  * L0 (master) and L1 (root) are NEVER persisted - callers MUST call memzero() after use.
- * 
+ *
  * @internal This type is exported for testing purposes only.
  * Production code should use DeriveKeysResult from deriveKeys().
  */
@@ -309,7 +309,7 @@ export class CryptoError extends Error {
   constructor(
     message: string,
     public readonly code: CryptoErrorCode,
-    public readonly cause?: unknown
+    public readonly cause?: unknown,
   ) {
     super(message);
     this.name = 'CryptoError';
@@ -363,7 +363,7 @@ export const KEY_SIZE = 32;
 
 /**
  * Maximum shard payload size (100 MB).
- * 
+ *
  * Note: The server cannot perform image optimization (resize, convert to WebP)
  * because all content is end-to-end encrypted. Any image processing must happen
  * client-side before encryption. Consider using the browser's Canvas API or

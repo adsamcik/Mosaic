@@ -40,15 +40,21 @@ export async function deriveKeysInternal(
   password: string,
   userSalt: Uint8Array,
   accountSalt: Uint8Array,
-  params?: Argon2Params
+  params?: Argon2Params,
 ): Promise<DerivedKeys> {
   await sodium.ready;
 
   if (userSalt.length !== 16) {
-    throw new CryptoError('User salt must be 16 bytes', CryptoErrorCode.INVALID_INPUT);
+    throw new CryptoError(
+      'User salt must be 16 bytes',
+      CryptoErrorCode.INVALID_INPUT,
+    );
   }
   if (accountSalt.length !== 16) {
-    throw new CryptoError('Account salt must be 16 bytes', CryptoErrorCode.INVALID_INPUT);
+    throw new CryptoError(
+      'Account salt must be 16 bytes',
+      CryptoErrorCode.INVALID_INPUT,
+    );
   }
 
   const argon2Params = params ?? getArgon2Params();
@@ -60,7 +66,7 @@ export async function deriveKeysInternal(
     userSalt,
     argon2Params.iterations,
     argon2Params.memory * 1024, // Convert KiB to bytes
-    sodium.crypto_pwhash_ALG_ARGON2ID13
+    sodium.crypto_pwhash_ALG_ARGON2ID13,
   );
 
   // L1: Root Key - HKDF-style derivation using BLAKE2b
@@ -68,14 +74,14 @@ export async function deriveKeysInternal(
   const rootKeyIntermediate = sodium.crypto_generichash(
     32,
     ROOT_KEY_CONTEXT,
-    masterKey
+    masterKey,
   );
 
   // Mix in account salt for domain separation
   const rootKey = sodium.crypto_generichash(
     32,
     sodium.crypto_generichash(32, ACCOUNT_CONTEXT, accountSalt),
-    rootKeyIntermediate
+    rootKeyIntermediate,
   );
 
   // Clean intermediate key
@@ -122,9 +128,14 @@ export async function deriveKeys(
   password: string,
   userSalt: Uint8Array,
   accountSalt: Uint8Array,
-  params?: Argon2Params
+  params?: Argon2Params,
 ): Promise<DeriveKeysResult> {
-  const keys = await deriveKeysInternal(password, userSalt, accountSalt, params);
+  const keys = await deriveKeysInternal(
+    password,
+    userSalt,
+    accountSalt,
+    params,
+  );
 
   // Zero L0 and L1 before returning - they must never be stored
   memzero(keys.masterKey);
@@ -153,19 +164,28 @@ export async function unwrapAccountKey(
   userSalt: Uint8Array,
   accountSalt: Uint8Array,
   wrappedAccountKey: Uint8Array,
-  params?: Argon2Params
+  params?: Argon2Params,
 ): Promise<Uint8Array> {
   await sodium.ready;
 
   if (userSalt.length !== 16) {
-    throw new CryptoError('User salt must be 16 bytes', CryptoErrorCode.INVALID_INPUT);
+    throw new CryptoError(
+      'User salt must be 16 bytes',
+      CryptoErrorCode.INVALID_INPUT,
+    );
   }
   if (accountSalt.length !== 16) {
-    throw new CryptoError('Account salt must be 16 bytes', CryptoErrorCode.INVALID_INPUT);
+    throw new CryptoError(
+      'Account salt must be 16 bytes',
+      CryptoErrorCode.INVALID_INPUT,
+    );
   }
   if (wrappedAccountKey.length < 24 + 16 + 1) {
     // nonce + tag + at least 1 byte
-    throw new CryptoError('Wrapped account key too short', CryptoErrorCode.INVALID_INPUT);
+    throw new CryptoError(
+      'Wrapped account key too short',
+      CryptoErrorCode.INVALID_INPUT,
+    );
   }
 
   const argon2Params = params ?? getArgon2Params();
@@ -177,19 +197,19 @@ export async function unwrapAccountKey(
     userSalt,
     argon2Params.iterations,
     argon2Params.memory * 1024,
-    sodium.crypto_pwhash_ALG_ARGON2ID13
+    sodium.crypto_pwhash_ALG_ARGON2ID13,
   );
 
   const rootKeyIntermediate = sodium.crypto_generichash(
     32,
     ROOT_KEY_CONTEXT,
-    masterKey
+    masterKey,
   );
 
   const rootKey = sodium.crypto_generichash(
     32,
     sodium.crypto_generichash(32, ACCOUNT_CONTEXT, accountSalt),
-    rootKeyIntermediate
+    rootKeyIntermediate,
   );
 
   // Clean up
@@ -204,7 +224,7 @@ export async function unwrapAccountKey(
     const accountKey = sodium.crypto_secretbox_open_easy(
       ciphertext,
       nonce,
-      rootKey
+      rootKey,
     );
     memzero(rootKey);
     return accountKey;
@@ -213,7 +233,7 @@ export async function unwrapAccountKey(
     throw new CryptoError(
       'Failed to unwrap account key - wrong password or corrupted data',
       CryptoErrorCode.DECRYPTION_FAILED,
-      e
+      e,
     );
   }
 }
@@ -234,12 +254,15 @@ export async function rewrapAccountKey(
   newPassword: string,
   userSalt: Uint8Array,
   accountSalt: Uint8Array,
-  params?: Argon2Params
+  params?: Argon2Params,
 ): Promise<Uint8Array> {
   await sodium.ready;
 
   if (accountKey.length !== 32) {
-    throw new CryptoError('Account key must be 32 bytes', CryptoErrorCode.INVALID_INPUT);
+    throw new CryptoError(
+      'Account key must be 32 bytes',
+      CryptoErrorCode.INVALID_INPUT,
+    );
   }
 
   const argon2Params = params ?? getArgon2Params();
@@ -251,19 +274,19 @@ export async function rewrapAccountKey(
     userSalt,
     argon2Params.iterations,
     argon2Params.memory * 1024,
-    sodium.crypto_pwhash_ALG_ARGON2ID13
+    sodium.crypto_pwhash_ALG_ARGON2ID13,
   );
 
   const rootKeyIntermediate = sodium.crypto_generichash(
     32,
     ROOT_KEY_CONTEXT,
-    masterKey
+    masterKey,
   );
 
   const rootKey = sodium.crypto_generichash(
     32,
     sodium.crypto_generichash(32, ACCOUNT_CONTEXT, accountSalt),
-    rootKeyIntermediate
+    rootKeyIntermediate,
   );
 
   // Clean up intermediates
@@ -287,7 +310,10 @@ export async function rewrapAccountKey(
  *
  * @returns Object with userSalt and accountSalt (16 bytes each)
  */
-export function generateSalts(): { userSalt: Uint8Array; accountSalt: Uint8Array } {
+export function generateSalts(): {
+  userSalt: Uint8Array;
+  accountSalt: Uint8Array;
+} {
   return {
     userSalt: randomBytes(16),
     accountSalt: randomBytes(16),

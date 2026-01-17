@@ -41,12 +41,12 @@ const BUNDLE_VERSION = 1;
 export function sealAndSignBundle(
   bundle: EpochKeyBundle,
   recipientEd25519Pub: Uint8Array,
-  ownerIdentity: IdentityKeypair
+  ownerIdentity: IdentityKeypair,
 ): SealedBundle {
   if (recipientEd25519Pub.length !== 32) {
     throw new CryptoError(
       `Recipient Ed25519 public key must be 32 bytes, got ${recipientEd25519Pub.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -72,7 +72,10 @@ export function sealAndSignBundle(
 
   // Sign the sealed ciphertext with context
   const toSign = concat(BUNDLE_CONTEXT, sealed);
-  const signature = sodium.crypto_sign_detached(toSign, ownerIdentity.ed25519.secretKey);
+  const signature = sodium.crypto_sign_detached(
+    toSign,
+    ownerIdentity.ed25519.secretKey,
+  );
 
   return {
     sealed,
@@ -100,14 +103,16 @@ export function verifyAndOpenBundle(
   signature: Uint8Array,
   ownerEd25519Pub: Uint8Array,
   myIdentity: IdentityKeypair,
-  expectedContext: BundleValidationContext
+  expectedContext: BundleValidationContext,
 ): EpochKeyBundle {
   // Verify signature FIRST - reject forgeries before decryption
   const toVerify = concat(BUNDLE_CONTEXT, sealed);
-  if (!sodium.crypto_sign_verify_detached(signature, toVerify, ownerEd25519Pub)) {
+  if (
+    !sodium.crypto_sign_verify_detached(signature, toVerify, ownerEd25519Pub)
+  ) {
     throw new CryptoError(
       'Invalid bundle signature - not from claimed owner',
-      CryptoErrorCode.SIGNATURE_INVALID
+      CryptoErrorCode.SIGNATURE_INVALID,
     );
   }
 
@@ -117,12 +122,12 @@ export function verifyAndOpenBundle(
     bundleBytes = sodium.crypto_box_seal_open(
       sealed,
       myIdentity.x25519.publicKey,
-      myIdentity.x25519.secretKey
+      myIdentity.x25519.secretKey,
     );
   } catch {
     throw new CryptoError(
       'Failed to open sealed bundle - not intended for this recipient',
-      CryptoErrorCode.DECRYPTION_FAILED
+      CryptoErrorCode.DECRYPTION_FAILED,
     );
   }
 
@@ -144,17 +149,20 @@ export function verifyAndOpenBundle(
   } catch {
     throw new CryptoError(
       'Failed to parse bundle JSON',
-      CryptoErrorCode.INVALID_ENVELOPE
+      CryptoErrorCode.INVALID_ENVELOPE,
     );
   }
 
   // Validate album ID
   // Note: Empty albumId is allowed for bundles created at album creation time,
   // when the album ID was not yet known. The signature still provides integrity.
-  if (bundleJson.albumId !== '' && bundleJson.albumId !== expectedContext.albumId) {
+  if (
+    bundleJson.albumId !== '' &&
+    bundleJson.albumId !== expectedContext.albumId
+  ) {
     throw new CryptoError(
       `Bundle albumId mismatch: expected ${expectedContext.albumId}, got ${bundleJson.albumId}`,
-      CryptoErrorCode.CONTEXT_MISMATCH
+      CryptoErrorCode.CONTEXT_MISMATCH,
     );
   }
 
@@ -162,7 +170,7 @@ export function verifyAndOpenBundle(
   if (bundleJson.epochId < expectedContext.minEpochId) {
     throw new CryptoError(
       `Bundle epochId too old: ${bundleJson.epochId} < ${expectedContext.minEpochId}`,
-      CryptoErrorCode.CONTEXT_MISMATCH
+      CryptoErrorCode.CONTEXT_MISMATCH,
     );
   }
 
@@ -174,7 +182,7 @@ export function verifyAndOpenBundle(
   ) {
     throw new CryptoError(
       'Bundle not intended for this recipient',
-      CryptoErrorCode.CONTEXT_MISMATCH
+      CryptoErrorCode.CONTEXT_MISMATCH,
     );
   }
 
@@ -206,7 +214,7 @@ export function createEpochKeyBundle(
   epochId: number,
   epochSeed: Uint8Array,
   signKeypair: { publicKey: Uint8Array; secretKey: Uint8Array },
-  recipientPubkey: Uint8Array
+  recipientPubkey: Uint8Array,
 ): EpochKeyBundle {
   return {
     version: BUNDLE_VERSION,

@@ -1,6 +1,17 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
-import { concat, constantTimeEqual, sha256, sha256Sync, memzero, randomBytes, toBase64, fromBase64, toBytes, fromBytes } from '../src/utils';
+import {
+  concat,
+  constantTimeEqual,
+  sha256,
+  sha256Sync,
+  memzero,
+  randomBytes,
+  toBase64,
+  fromBase64,
+  toBytes,
+  fromBytes,
+} from '../src/utils';
 
 beforeAll(async () => {
   await sodium.ready;
@@ -17,7 +28,9 @@ describe('utils', () => {
 
     it('handles empty arrays', () => {
       expect(concat()).toEqual(new Uint8Array(0));
-      expect(concat(new Uint8Array([1]), new Uint8Array(0))).toEqual(new Uint8Array([1]));
+      expect(concat(new Uint8Array([1]), new Uint8Array(0))).toEqual(
+        new Uint8Array([1]),
+      );
     });
   });
 
@@ -29,11 +42,15 @@ describe('utils', () => {
     });
 
     it('returns false for different arrays', () => {
-      expect(constantTimeEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 4]))).toBe(false);
+      expect(
+        constantTimeEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 4])),
+      ).toBe(false);
     });
 
     it('returns false for different lengths', () => {
-      expect(constantTimeEqual(new Uint8Array([1, 2]), new Uint8Array([1, 2, 3]))).toBe(false);
+      expect(
+        constantTimeEqual(new Uint8Array([1, 2]), new Uint8Array([1, 2, 3])),
+      ).toBe(false);
     });
   });
 
@@ -107,7 +124,7 @@ describe('utils', () => {
     it('toBase64 produces URL-safe encoding without padding', () => {
       // Use data that would produce + and / in standard Base64
       // 0xFB 0xFF produces /w== in standard Base64
-      const data = new Uint8Array([0xFB, 0xFF]);
+      const data = new Uint8Array([0xfb, 0xff]);
       const encoded = toBase64(data);
       // Should not contain standard Base64 characters
       expect(encoded).not.toContain('+');
@@ -135,12 +152,12 @@ describe('utils', () => {
       // This is key: when .NET serializes byte[] to JSON, it uses standard Base64
       // which includes + and / characters instead of - and _
       // "0xFB 0xEF 0xBE" would encode to ++++ in standard Base64 (with special chars)
-      
+
       // Test data that produces + in standard Base64
       // 0xFB -> standard: +w==, urlsafe: -w
       const standardWithPlus = '+w==';
       const urlSafeEquiv = '-w';
-      
+
       // Both should decode to the same bytes
       const decodedStandard = fromBase64(standardWithPlus);
       const decodedUrlSafe = fromBase64(urlSafeEquiv);
@@ -152,7 +169,7 @@ describe('utils', () => {
       // Base64 "/" maps to "_" in URL-safe
       const standardWithSlash = '/w==';
       const urlSafeEquiv = '_w';
-      
+
       const decodedStandard = fromBase64(standardWithSlash);
       const decodedUrlSafe = fromBase64(urlSafeEquiv);
       expect(decodedStandard).toEqual(decodedUrlSafe);
@@ -162,14 +179,13 @@ describe('utils', () => {
       // Simulate what comes from .NET backend for a nonce (24 bytes)
       // Generate known test data that would have +, /, and = in standard Base64
       const testBytes = new Uint8Array([
-        0xFB, 0xEF, 0xBE, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-        0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10
+        0xfb, 0xef, 0xbe, 0xff, 0xff, 0xff, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04,
+        0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
       ]);
-      
+
       // Encode using standard Base64 (what .NET would produce)
       const standardBase64 = btoa(String.fromCharCode(...testBytes));
-      
+
       // This should decode correctly even with standard Base64
       const decoded = fromBase64(standardBase64);
       expect(decoded).toEqual(testBytes);
@@ -216,11 +232,11 @@ describe('utils', () => {
 
     it('fromBytes handles multi-byte UTF-8 sequences', () => {
       // "é" is 0xC3 0xA9 in UTF-8
-      const accentBytes = new Uint8Array([0xC3, 0xA9]);
+      const accentBytes = new Uint8Array([0xc3, 0xa9]);
       expect(fromBytes(accentBytes)).toBe('é');
-      
+
       // "€" is 0xE2 0x82 0xAC in UTF-8
-      const euroBytes = new Uint8Array([0xE2, 0x82, 0xAC]);
+      const euroBytes = new Uint8Array([0xe2, 0x82, 0xac]);
       expect(fromBytes(euroBytes)).toBe('€');
     });
 

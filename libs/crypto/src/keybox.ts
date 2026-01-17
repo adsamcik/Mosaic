@@ -6,7 +6,13 @@
  */
 
 import sodium from 'libsodium-wrappers-sumo';
-import { CryptoError, CryptoErrorCode, KEY_SIZE, NONCE_SIZE, TAG_SIZE } from './types';
+import {
+  CryptoError,
+  CryptoErrorCode,
+  KEY_SIZE,
+  NONCE_SIZE,
+  TAG_SIZE,
+} from './types';
 
 /** Minimum wrapped key length: nonce (24) + tag (16) + at least 1 byte */
 const MIN_WRAPPED_LENGTH = NONCE_SIZE + TAG_SIZE + 1;
@@ -26,7 +32,7 @@ export function wrapKey(key: Uint8Array, wrapper: Uint8Array): Uint8Array {
   if (wrapper.length !== KEY_SIZE) {
     throw new CryptoError(
       `Wrapper key must be ${KEY_SIZE} bytes, got ${wrapper.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -52,18 +58,21 @@ export function wrapKey(key: Uint8Array, wrapper: Uint8Array): Uint8Array {
  * @returns Unwrapped key bytes
  * @throws CryptoError if decryption fails or inputs are invalid
  */
-export function unwrapKey(wrapped: Uint8Array, wrapper: Uint8Array): Uint8Array {
+export function unwrapKey(
+  wrapped: Uint8Array,
+  wrapper: Uint8Array,
+): Uint8Array {
   if (wrapper.length !== KEY_SIZE) {
     throw new CryptoError(
       `Wrapper key must be ${KEY_SIZE} bytes, got ${wrapper.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
   if (wrapped.length < MIN_WRAPPED_LENGTH) {
     throw new CryptoError(
       `Wrapped key too short: ${wrapped.length} bytes, minimum ${MIN_WRAPPED_LENGTH}`,
-      CryptoErrorCode.DECRYPTION_FAILED
+      CryptoErrorCode.DECRYPTION_FAILED,
     );
   }
 
@@ -71,12 +80,16 @@ export function unwrapKey(wrapped: Uint8Array, wrapper: Uint8Array): Uint8Array 
   const ciphertext = wrapped.slice(NONCE_SIZE);
 
   try {
-    const plaintext = sodium.crypto_secretbox_open_easy(ciphertext, nonce, wrapper);
+    const plaintext = sodium.crypto_secretbox_open_easy(
+      ciphertext,
+      nonce,
+      wrapper,
+    );
     return plaintext;
   } catch {
     throw new CryptoError(
       'Failed to unwrap key - authentication failed',
-      CryptoErrorCode.DECRYPTION_FAILED
+      CryptoErrorCode.DECRYPTION_FAILED,
     );
   }
 }
@@ -89,11 +102,14 @@ export function unwrapKey(wrapped: Uint8Array, wrapper: Uint8Array): Uint8Array 
  * @param wrapper - Wrapping key (32 bytes)
  * @returns Wrapped key bytes
  */
-export function wrapSymmetricKey(key: Uint8Array, wrapper: Uint8Array): Uint8Array {
+export function wrapSymmetricKey(
+  key: Uint8Array,
+  wrapper: Uint8Array,
+): Uint8Array {
   if (key.length !== KEY_SIZE) {
     throw new CryptoError(
       `Key must be ${KEY_SIZE} bytes, got ${key.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
   return wrapKey(key, wrapper);
@@ -107,12 +123,15 @@ export function wrapSymmetricKey(key: Uint8Array, wrapper: Uint8Array): Uint8Arr
  * @param wrapper - Wrapping key (32 bytes)
  * @returns Unwrapped key (32 bytes)
  */
-export function unwrapSymmetricKey(wrapped: Uint8Array, wrapper: Uint8Array): Uint8Array {
+export function unwrapSymmetricKey(
+  wrapped: Uint8Array,
+  wrapper: Uint8Array,
+): Uint8Array {
   const key = unwrapKey(wrapped, wrapper);
   if (key.length !== KEY_SIZE) {
     throw new CryptoError(
       `Unwrapped key expected to be ${KEY_SIZE} bytes, got ${key.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
   return key;

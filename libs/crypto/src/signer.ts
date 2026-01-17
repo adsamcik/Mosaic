@@ -35,12 +35,12 @@ const SECRET_KEY_LENGTH = 64;
  */
 export function signManifest(
   manifest: Uint8Array,
-  signSecretKey: Uint8Array
+  signSecretKey: Uint8Array,
 ): Uint8Array {
   if (signSecretKey.length !== SECRET_KEY_LENGTH) {
     throw new CryptoError(
       `Signing secret key must be ${SECRET_KEY_LENGTH} bytes, got ${signSecretKey.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -60,7 +60,7 @@ export function signManifest(
 export function verifyManifest(
   manifest: Uint8Array,
   signature: Uint8Array,
-  signPublicKey: Uint8Array
+  signPublicKey: Uint8Array,
 ): boolean {
   if (signature.length !== SIGNATURE_LENGTH) {
     return false;
@@ -71,7 +71,11 @@ export function verifyManifest(
 
   try {
     const message = concat(MANIFEST_CONTEXT, manifest);
-    return sodium.crypto_sign_verify_detached(signature, message, signPublicKey);
+    return sodium.crypto_sign_verify_detached(
+      signature,
+      message,
+      signPublicKey,
+    );
   } catch {
     return false;
   }
@@ -90,12 +94,12 @@ export function verifyManifest(
 export function signShard(
   header: Uint8Array,
   ciphertext: Uint8Array,
-  signSecretKey: Uint8Array
+  signSecretKey: Uint8Array,
 ): Uint8Array {
   if (signSecretKey.length !== SECRET_KEY_LENGTH) {
     throw new CryptoError(
       `Signing secret key must be ${SECRET_KEY_LENGTH} bytes, got ${signSecretKey.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -117,7 +121,7 @@ export function verifyShard(
   header: Uint8Array,
   ciphertext: Uint8Array,
   signature: Uint8Array,
-  signPublicKey: Uint8Array
+  signPublicKey: Uint8Array,
 ): boolean {
   if (signature.length !== SIGNATURE_LENGTH) {
     return false;
@@ -128,7 +132,11 @@ export function verifyShard(
 
   try {
     const message = concat(SHARD_SIGN_CONTEXT, header, ciphertext);
-    return sodium.crypto_sign_verify_detached(signature, message, signPublicKey);
+    return sodium.crypto_sign_verify_detached(
+      signature,
+      message,
+      signPublicKey,
+    );
   } catch {
     return false;
   }
@@ -146,12 +154,12 @@ export function verifyShard(
 export function signWithContext(
   data: Uint8Array,
   context: string,
-  signSecretKey: Uint8Array
+  signSecretKey: Uint8Array,
 ): Uint8Array {
   if (signSecretKey.length !== SECRET_KEY_LENGTH) {
     throw new CryptoError(
       `Signing secret key must be ${SECRET_KEY_LENGTH} bytes, got ${signSecretKey.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -172,7 +180,7 @@ export function verifyWithContext(
   data: Uint8Array,
   signature: Uint8Array,
   context: string,
-  signPublicKey: Uint8Array
+  signPublicKey: Uint8Array,
 ): boolean {
   if (signature.length !== SIGNATURE_LENGTH) {
     return false;
@@ -183,7 +191,11 @@ export function verifyWithContext(
 
   try {
     const message = concat(toBytes(context), data);
-    return sodium.crypto_sign_verify_detached(signature, message, signPublicKey);
+    return sodium.crypto_sign_verify_detached(
+      signature,
+      message,
+      signPublicKey,
+    );
   } catch {
     return false;
   }

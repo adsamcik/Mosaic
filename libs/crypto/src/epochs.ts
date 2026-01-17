@@ -41,7 +41,9 @@ export function deriveTierKeys(epochSeed: Uint8Array): {
   fullKey: Uint8Array;
 } {
   if (epochSeed.length !== KEY_SIZE) {
-    throw new Error(`Epoch seed must be ${KEY_SIZE} bytes, got ${epochSeed.length}`);
+    throw new Error(
+      `Epoch seed must be ${KEY_SIZE} bytes, got ${epochSeed.length}`,
+    );
   }
   return {
     thumbKey: deriveTierKey(epochSeed, THUMB_KEY_CONTEXT),
@@ -115,7 +117,7 @@ export function serializeEpochKeyPublic(epochKey: EpochKey): {
     epochId: epochKey.epochId,
     signPublicKey: sodium.to_base64(
       epochKey.signKeypair.publicKey,
-      sodium.base64_variants.URLSAFE_NO_PADDING
+      sodium.base64_variants.URLSAFE_NO_PADDING,
     ),
   };
 }
@@ -133,7 +135,7 @@ export function serializeEpochKeyPublic(epochKey: EpochKey): {
  */
 export function wrapEpochKey(
   epochKey: EpochKey,
-  wrapper: Uint8Array
+  wrapper: Uint8Array,
 ): {
   epochId: number;
   signPublicKey: Uint8Array;
@@ -146,7 +148,9 @@ export function wrapEpochKey(
   const wrappedSignSecret = wrapKey(epochKey.signKeypair.secretKey, wrapper);
 
   // Combine: length(2) || wrappedSeed || wrappedSignSecret
-  const wrapped = new Uint8Array(2 + wrappedSeed.length + wrappedSignSecret.length);
+  const wrapped = new Uint8Array(
+    2 + wrappedSeed.length + wrappedSignSecret.length,
+  );
   const view = new DataView(wrapped.buffer);
   view.setUint16(0, wrappedSeed.length, true);
   wrapped.set(wrappedSeed, 2);
@@ -173,7 +177,7 @@ export function unwrapEpochKey(
   epochId: number,
   signPublicKey: Uint8Array,
   wrapped: Uint8Array,
-  wrapper: Uint8Array
+  wrapper: Uint8Array,
 ): EpochKey {
   const view = new DataView(wrapped.buffer, wrapped.byteOffset);
   const seedLen = view.getUint16(0, true);

@@ -50,7 +50,13 @@ describe('Security Invariant: Nonce Uniqueness', () => {
 
     // Encrypt 1000 times and collect nonces
     for (let i = 0; i < 1000; i++) {
-      const { ciphertext } = await encryptShard(data, key, 1, i, ShardTier.ORIGINAL);
+      const { ciphertext } = await encryptShard(
+        data,
+        key,
+        1,
+        i,
+        ShardTier.ORIGINAL,
+      );
       const header = peekHeader(ciphertext);
       // Extract nonce bytes (positions 13-36 in header)
       const nonceHex = Array.from(ciphertext.slice(13, 37))
@@ -77,7 +83,7 @@ describe('Security Invariant: Nonce Uniqueness', () => {
     const nonces = results.map((r) =>
       Array.from(r.ciphertext.slice(13, 37))
         .map((b) => b.toString(16).padStart(2, '0'))
-        .join('')
+        .join(''),
     );
 
     // All nonces must be different
@@ -103,7 +109,13 @@ describe('Security Invariant: Reserved Byte Validation', () => {
   it('rejects non-zero reserved byte at position 38', async () => {
     const key = sodium.randombytes_buf(32);
     const data = new Uint8Array([1, 2, 3]);
-    const { ciphertext } = await encryptShard(data, key, 1, 0, ShardTier.ORIGINAL);
+    const { ciphertext } = await encryptShard(
+      data,
+      key,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Corrupt reserved byte at position 38 (first after tier at 37)
     ciphertext[38] = 0x01;
@@ -114,7 +126,13 @@ describe('Security Invariant: Reserved Byte Validation', () => {
   it('rejects non-zero reserved byte at position 50', async () => {
     const key = sodium.randombytes_buf(32);
     const data = new Uint8Array([1, 2, 3]);
-    const { ciphertext } = await encryptShard(data, key, 1, 0, ShardTier.ORIGINAL);
+    const { ciphertext } = await encryptShard(
+      data,
+      key,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Corrupt reserved byte in middle
     ciphertext[50] = 0xff;
@@ -125,7 +143,13 @@ describe('Security Invariant: Reserved Byte Validation', () => {
   it('rejects non-zero reserved byte at position 63 (last)', async () => {
     const key = sodium.randombytes_buf(32);
     const data = new Uint8Array([1, 2, 3]);
-    const { ciphertext } = await encryptShard(data, key, 1, 0, ShardTier.ORIGINAL);
+    const { ciphertext } = await encryptShard(
+      data,
+      key,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Corrupt last reserved byte
     ciphertext[63] = 0x01;
@@ -136,7 +160,13 @@ describe('Security Invariant: Reserved Byte Validation', () => {
   it('rejects all non-zero reserved bytes', async () => {
     const key = sodium.randombytes_buf(32);
     const data = new Uint8Array([1, 2, 3]);
-    const { ciphertext } = await encryptShard(data, key, 1, 0, ShardTier.ORIGINAL);
+    const { ciphertext } = await encryptShard(
+      data,
+      key,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Set all reserved bytes (positions 38-63) to non-zero
     for (let i = 38; i < 64; i++) {
@@ -182,7 +212,12 @@ describe('Security Invariant: Key Wiping', () => {
     const fastParams = { memory: 1024, iterations: 1, parallelism: 1 };
 
     // Use deriveKeysInternal to test wiping of L0/L1 keys
-    const keys = await deriveKeysInternal('password', userSalt, accountSalt, fastParams);
+    const keys = await deriveKeysInternal(
+      'password',
+      userSalt,
+      accountSalt,
+      fastParams,
+    );
 
     // Store copies to verify wiping works
     const masterKeyBefore = new Uint8Array(keys.masterKey);
@@ -251,37 +286,43 @@ describe('Security Invariant: Key Length Validation', () => {
     const data = new Uint8Array([1, 2, 3]);
 
     it('rejects 0-byte key', async () => {
-      await expect(encryptShard(data, new Uint8Array(0), 1, 0, ShardTier.ORIGINAL)).rejects.toThrow(
-        '32 bytes'
-      );
+      await expect(
+        encryptShard(data, new Uint8Array(0), 1, 0, ShardTier.ORIGINAL),
+      ).rejects.toThrow('32 bytes');
     });
 
     it('rejects 16-byte key', async () => {
       await expect(
-        encryptShard(data, new Uint8Array(16), 1, 0, ShardTier.ORIGINAL)
+        encryptShard(data, new Uint8Array(16), 1, 0, ShardTier.ORIGINAL),
       ).rejects.toThrow('32 bytes');
     });
 
     it('rejects 31-byte key', async () => {
       await expect(
-        encryptShard(data, new Uint8Array(31), 1, 0, ShardTier.ORIGINAL)
+        encryptShard(data, new Uint8Array(31), 1, 0, ShardTier.ORIGINAL),
       ).rejects.toThrow('32 bytes');
     });
 
     it('rejects 33-byte key', async () => {
       await expect(
-        encryptShard(data, new Uint8Array(33), 1, 0, ShardTier.ORIGINAL)
+        encryptShard(data, new Uint8Array(33), 1, 0, ShardTier.ORIGINAL),
       ).rejects.toThrow('32 bytes');
     });
 
     it('rejects 64-byte key', async () => {
       await expect(
-        encryptShard(data, new Uint8Array(64), 1, 0, ShardTier.ORIGINAL)
+        encryptShard(data, new Uint8Array(64), 1, 0, ShardTier.ORIGINAL),
       ).rejects.toThrow('32 bytes');
     });
 
     it('accepts exactly 32-byte key', async () => {
-      const { ciphertext } = await encryptShard(data, validKey, 1, 0, ShardTier.ORIGINAL);
+      const { ciphertext } = await encryptShard(
+        data,
+        validKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
       expect(ciphertext.length).toBeGreaterThan(0);
     });
   });
@@ -321,8 +362,18 @@ describe('Security Invariant: Cryptographic Domain Separation', () => {
     const salts2 = generateSalts();
 
     // Use deriveKeysInternal to access L0/L1 for domain separation testing
-    const keys1 = await deriveKeysInternal(password, salts1.userSalt, salts1.accountSalt, fastParams);
-    const keys2 = await deriveKeysInternal(password, salts2.userSalt, salts2.accountSalt, fastParams);
+    const keys1 = await deriveKeysInternal(
+      password,
+      salts1.userSalt,
+      salts1.accountSalt,
+      fastParams,
+    );
+    const keys2 = await deriveKeysInternal(
+      password,
+      salts2.userSalt,
+      salts2.accountSalt,
+      fastParams,
+    );
 
     expect(keys1.masterKey).not.toEqual(keys2.masterKey);
     expect(keys1.rootKey).not.toEqual(keys2.rootKey);
@@ -331,7 +382,12 @@ describe('Security Invariant: Cryptographic Domain Separation', () => {
   it('root key differs from master key (context separation)', async () => {
     const { userSalt, accountSalt } = generateSalts();
     // Use deriveKeysInternal to access L0/L1 for domain separation testing
-    const keys = await deriveKeysInternal('password', userSalt, accountSalt, fastParams);
+    const keys = await deriveKeysInternal(
+      'password',
+      userSalt,
+      accountSalt,
+      fastParams,
+    );
 
     expect(keys.masterKey).not.toEqual(keys.rootKey);
   });
@@ -356,7 +412,9 @@ describe('Security Invariant: Cryptographic Domain Separation', () => {
 
     expect(epoch1.epochSeed).not.toEqual(epoch2.epochSeed);
     expect(epoch1.thumbKey).not.toEqual(epoch2.thumbKey);
-    expect(epoch1.signKeypair.publicKey).not.toEqual(epoch2.signKeypair.publicKey);
+    expect(epoch1.signKeypair.publicKey).not.toEqual(
+      epoch2.signKeypair.publicKey,
+    );
   });
 
   it('link keys are derived deterministically from secret', () => {
@@ -393,10 +451,14 @@ describe('Security Invariant: Signature Verification Before Decrypt', () => {
       epoch.epochId,
       epoch.epochSeed,
       epoch.signKeypair,
-      recipientIdentity.ed25519.publicKey
+      recipientIdentity.ed25519.publicKey,
     );
 
-    const sealed = sealAndSignBundle(bundle, recipientIdentity.ed25519.publicKey, ownerIdentity);
+    const sealed = sealAndSignBundle(
+      bundle,
+      recipientIdentity.ed25519.publicKey,
+      ownerIdentity,
+    );
 
     // Corrupt the signature
     sealed.signature[0] ^= 0xff;
@@ -409,8 +471,8 @@ describe('Security Invariant: Signature Verification Before Decrypt', () => {
         sealed.signature,
         ownerIdentity.ed25519.publicKey,
         recipientIdentity,
-        { albumId, minEpochId: 0 }
-      )
+        { albumId, minEpochId: 0 },
+      ),
     ).toThrow('signature');
   });
 
@@ -427,10 +489,14 @@ describe('Security Invariant: Signature Verification Before Decrypt', () => {
       epoch.epochId,
       epoch.epochSeed,
       epoch.signKeypair,
-      recipientIdentity.ed25519.publicKey
+      recipientIdentity.ed25519.publicKey,
     );
 
-    const sealed = sealAndSignBundle(bundle, recipientIdentity.ed25519.publicKey, ownerIdentity);
+    const sealed = sealAndSignBundle(
+      bundle,
+      recipientIdentity.ed25519.publicKey,
+      ownerIdentity,
+    );
 
     // Should reject wrong album ID
     expect(() =>
@@ -439,8 +505,8 @@ describe('Security Invariant: Signature Verification Before Decrypt', () => {
         sealed.signature,
         ownerIdentity.ed25519.publicKey,
         recipientIdentity,
-        { albumId: 'wrong-album', minEpochId: 0 }
-      )
+        { albumId: 'wrong-album', minEpochId: 0 },
+      ),
     ).toThrow('albumId');
   });
 });
@@ -449,7 +515,13 @@ describe('Security Invariant: AAD (Additional Authenticated Data)', () => {
   it('header is authenticated via AAD in encryption', async () => {
     const key = sodium.randombytes_buf(32);
     const data = new Uint8Array([1, 2, 3, 4, 5]);
-    const { ciphertext } = await encryptShard(data, key, 1, 0, ShardTier.ORIGINAL);
+    const { ciphertext } = await encryptShard(
+      data,
+      key,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Corrupt epochId in header (part of AAD)
     ciphertext[5] ^= 0xff;
@@ -461,7 +533,13 @@ describe('Security Invariant: AAD (Additional Authenticated Data)', () => {
   it('shardId is authenticated via AAD', async () => {
     const key = sodium.randombytes_buf(32);
     const data = new Uint8Array([1, 2, 3, 4, 5]);
-    const { ciphertext } = await encryptShard(data, key, 1, 0, ShardTier.ORIGINAL);
+    const { ciphertext } = await encryptShard(
+      data,
+      key,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Corrupt shardId in header (positions 9-12)
     ciphertext[9] ^= 0xff;
@@ -472,7 +550,13 @@ describe('Security Invariant: AAD (Additional Authenticated Data)', () => {
   it('tier is authenticated via AAD', async () => {
     const key = sodium.randombytes_buf(32);
     const data = new Uint8Array([1, 2, 3, 4, 5]);
-    const { ciphertext } = await encryptShard(data, key, 1, 0, ShardTier.ORIGINAL);
+    const { ciphertext } = await encryptShard(
+      data,
+      key,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Corrupt tier byte (position 37)
     ciphertext[37] ^= 0xff;
@@ -483,7 +567,13 @@ describe('Security Invariant: AAD (Additional Authenticated Data)', () => {
   it('magic bytes are authenticated', async () => {
     const key = sodium.randombytes_buf(32);
     const data = new Uint8Array([1, 2, 3, 4, 5]);
-    const { ciphertext } = await encryptShard(data, key, 1, 0, ShardTier.ORIGINAL);
+    const { ciphertext } = await encryptShard(
+      data,
+      key,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Corrupt magic bytes
     ciphertext[0] = 0x00;
@@ -495,7 +585,13 @@ describe('Security Invariant: AAD (Additional Authenticated Data)', () => {
   it('version byte is validated', async () => {
     const key = sodium.randombytes_buf(32);
     const data = new Uint8Array([1, 2, 3, 4, 5]);
-    const { ciphertext } = await encryptShard(data, key, 1, 0, ShardTier.ORIGINAL);
+    const { ciphertext } = await encryptShard(
+      data,
+      key,
+      1,
+      0,
+      ShardTier.ORIGINAL,
+    );
 
     // Set unsupported version
     ciphertext[4] = 0xff;
@@ -547,7 +643,9 @@ describe('Security Invariant: Epoch Key Rotation', () => {
     expect(epoch2.thumbKey).not.toEqual(epoch1.thumbKey);
     expect(epoch2.previewKey).not.toEqual(epoch1.previewKey);
     expect(epoch2.fullKey).not.toEqual(epoch1.fullKey);
-    expect(epoch2.signKeypair.secretKey).not.toEqual(epoch1.signKeypair.secretKey);
+    expect(epoch2.signKeypair.secretKey).not.toEqual(
+      epoch1.signKeypair.secretKey,
+    );
 
     // Verify statistical independence (XOR should still look random)
     const xoredKey = new Uint8Array(32);
@@ -557,7 +655,7 @@ describe('Security Invariant: Epoch Key Rotation', () => {
     // XOR of random keys should have roughly equal 0 and 1 bits
     const oneCount = Array.from(xoredKey).reduce(
       (count, byte) => count + (byte.toString(2).match(/1/g)?.length ?? 0),
-      0
+      0,
     );
     // Expect between 96 and 160 ones (256 bits * 0.375 to 0.625)
     expect(oneCount).toBeGreaterThan(80);
@@ -579,10 +677,14 @@ describe('Security Invariant: Epoch Key Rotation', () => {
       epoch.epochId,
       epoch.epochSeed,
       epoch.signKeypair,
-      recipientIdentity.ed25519.publicKey
+      recipientIdentity.ed25519.publicKey,
     );
 
-    const sealed = sealAndSignBundle(bundle, recipientIdentity.ed25519.publicKey, ownerIdentity);
+    const sealed = sealAndSignBundle(
+      bundle,
+      recipientIdentity.ed25519.publicKey,
+      ownerIdentity,
+    );
 
     // Client already has epoch 10, should reject epoch 5
     expect(() =>
@@ -591,8 +693,8 @@ describe('Security Invariant: Epoch Key Rotation', () => {
         sealed.signature,
         ownerIdentity.ed25519.publicKey,
         recipientIdentity,
-        { albumId, minEpochId: 10 }
-      )
+        { albumId, minEpochId: 10 },
+      ),
     ).toThrow('epochId');
   });
 });
@@ -614,10 +716,14 @@ describe('Security Invariant: Recipient Binding', () => {
       epoch.epochId,
       epoch.epochSeed,
       epoch.signKeypair,
-      recipientIdentity.ed25519.publicKey
+      recipientIdentity.ed25519.publicKey,
     );
 
-    const sealed = sealAndSignBundle(bundle, recipientIdentity.ed25519.publicKey, ownerIdentity);
+    const sealed = sealAndSignBundle(
+      bundle,
+      recipientIdentity.ed25519.publicKey,
+      ownerIdentity,
+    );
 
     // Attacker cannot open the bundle
     expect(() =>
@@ -626,8 +732,8 @@ describe('Security Invariant: Recipient Binding', () => {
         sealed.signature,
         ownerIdentity.ed25519.publicKey,
         attackerIdentity, // Wrong recipient
-        { albumId, minEpochId: 0 }
-      )
+        { albumId, minEpochId: 0 },
+      ),
     ).toThrow();
   });
 
@@ -648,11 +754,15 @@ describe('Security Invariant: Recipient Binding', () => {
       epoch.epochId,
       epoch.epochSeed,
       epoch.signKeypair,
-      anotherRecipient.ed25519.publicKey // Different recipient in bundle
+      anotherRecipient.ed25519.publicKey, // Different recipient in bundle
     );
 
     // Seal to original recipient
-    const sealed = sealAndSignBundle(bundle, recipientIdentity.ed25519.publicKey, ownerIdentity);
+    const sealed = sealAndSignBundle(
+      bundle,
+      recipientIdentity.ed25519.publicKey,
+      ownerIdentity,
+    );
 
     // Even if original recipient can decrypt, the binding check should fail
     expect(() =>
@@ -661,8 +771,8 @@ describe('Security Invariant: Recipient Binding', () => {
         sealed.signature,
         ownerIdentity.ed25519.publicKey,
         recipientIdentity,
-        { albumId, minEpochId: 0 }
-      )
+        { albumId, minEpochId: 0 },
+      ),
     ).toThrow('recipient');
   });
 });

@@ -1,6 +1,15 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
-import { generateEpochKey, serializeEpochKeyPublic, wrapEpochKey, unwrapEpochKey, rotateEpochKey, isValidEpochKey, deriveTierKeys, getTierKey } from '../src/epochs';
+import {
+  generateEpochKey,
+  serializeEpochKeyPublic,
+  wrapEpochKey,
+  unwrapEpochKey,
+  rotateEpochKey,
+  isValidEpochKey,
+  deriveTierKeys,
+  getTierKey,
+} from '../src/epochs';
 import { ShardTier } from '../src/types';
 
 beforeAll(async () => {
@@ -48,15 +57,24 @@ describe('epochs', () => {
   it('round-trips wrap/unwrap', () => {
     const epoch = generateEpochKey(5);
     const wrapped = wrapEpochKey(epoch, wrapper);
-    const unwrapped = unwrapEpochKey(wrapped.epochId, wrapped.signPublicKey, wrapped.wrapped, wrapper);
-    
+    const unwrapped = unwrapEpochKey(
+      wrapped.epochId,
+      wrapped.signPublicKey,
+      wrapped.wrapped,
+      wrapper,
+    );
+
     expect(unwrapped.epochId).toBe(epoch.epochId);
     expect(unwrapped.epochSeed).toEqual(epoch.epochSeed);
     expect(unwrapped.thumbKey).toEqual(epoch.thumbKey);
     expect(unwrapped.previewKey).toEqual(epoch.previewKey);
     expect(unwrapped.fullKey).toEqual(epoch.fullKey);
-    expect(unwrapped.signKeypair.publicKey).toEqual(epoch.signKeypair.publicKey);
-    expect(unwrapped.signKeypair.secretKey).toEqual(epoch.signKeypair.secretKey);
+    expect(unwrapped.signKeypair.publicKey).toEqual(
+      epoch.signKeypair.publicKey,
+    );
+    expect(unwrapped.signKeypair.secretKey).toEqual(
+      epoch.signKeypair.secretKey,
+    );
   });
 
   it('rotates epoch with incremented id', () => {
@@ -70,25 +88,51 @@ describe('epochs', () => {
   it('validates epoch key structure', () => {
     const valid = generateEpochKey(1);
     expect(isValidEpochKey(valid)).toBe(true);
-    
+
     expect(isValidEpochKey({ ...valid, epochId: -1 })).toBe(false);
-    expect(isValidEpochKey({ ...valid, epochSeed: new Uint8Array(16) })).toBe(false);
-    expect(isValidEpochKey({ ...valid, thumbKey: new Uint8Array(16) })).toBe(false);
-    expect(isValidEpochKey({ ...valid, previewKey: new Uint8Array(16) })).toBe(false);
-    expect(isValidEpochKey({ ...valid, fullKey: new Uint8Array(16) })).toBe(false);
-    expect(isValidEpochKey({ ...valid, signKeypair: { ...valid.signKeypair, publicKey: new Uint8Array(16) } })).toBe(false);
-    expect(isValidEpochKey({ ...valid, signKeypair: { ...valid.signKeypair, secretKey: new Uint8Array(16) } })).toBe(false);
+    expect(isValidEpochKey({ ...valid, epochSeed: new Uint8Array(16) })).toBe(
+      false,
+    );
+    expect(isValidEpochKey({ ...valid, thumbKey: new Uint8Array(16) })).toBe(
+      false,
+    );
+    expect(isValidEpochKey({ ...valid, previewKey: new Uint8Array(16) })).toBe(
+      false,
+    );
+    expect(isValidEpochKey({ ...valid, fullKey: new Uint8Array(16) })).toBe(
+      false,
+    );
+    expect(
+      isValidEpochKey({
+        ...valid,
+        signKeypair: { ...valid.signKeypair, publicKey: new Uint8Array(16) },
+      }),
+    ).toBe(false);
+    expect(
+      isValidEpochKey({
+        ...valid,
+        signKeypair: { ...valid.signKeypair, secretKey: new Uint8Array(16) },
+      }),
+    ).toBe(false);
   });
 
   it('validates epochId is a number (kills typeof mutation)', () => {
     const valid = generateEpochKey(1);
-    
+
     // Test non-number epochId values - these should all be invalid
     // This kills the mutation: typeof epochKey.epochId !== 'number' → false
-    expect(isValidEpochKey({ ...valid, epochId: '1' as unknown as number })).toBe(false);
-    expect(isValidEpochKey({ ...valid, epochId: undefined as unknown as number })).toBe(false);
-    expect(isValidEpochKey({ ...valid, epochId: null as unknown as number })).toBe(false);
-    expect(isValidEpochKey({ ...valid, epochId: {} as unknown as number })).toBe(false);
+    expect(
+      isValidEpochKey({ ...valid, epochId: '1' as unknown as number }),
+    ).toBe(false);
+    expect(
+      isValidEpochKey({ ...valid, epochId: undefined as unknown as number }),
+    ).toBe(false);
+    expect(
+      isValidEpochKey({ ...valid, epochId: null as unknown as number }),
+    ).toBe(false);
+    expect(
+      isValidEpochKey({ ...valid, epochId: {} as unknown as number }),
+    ).toBe(false);
   });
 
   it('accepts epochId=0 as valid (kills boundary mutation)', () => {
@@ -139,28 +183,40 @@ describe('epochs', () => {
     it('thumbKey matches expected snapshot (kills THUMB_KEY_CONTEXT mutation)', () => {
       const seed = new Uint8Array(32).fill(0x00);
       const { thumbKey } = deriveTierKeys(seed);
-      const thumbHex = Array.from(thumbKey).map(b => b.toString(16).padStart(2, '0')).join('');
+      const thumbHex = Array.from(thumbKey)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
       // This value was computed with THUMB_KEY_CONTEXT = 'mosaic:tier:thumb:v1'
       // If context is mutated to empty, this will NOT match.
-      expect(thumbHex).toBe('bf0269d2b1da019bb441ff453b911936794ebcdd3cb8a904f65edd969a124148');
+      expect(thumbHex).toBe(
+        'bf0269d2b1da019bb441ff453b911936794ebcdd3cb8a904f65edd969a124148',
+      );
     });
 
     it('previewKey matches expected snapshot (kills PREVIEW_KEY_CONTEXT mutation)', () => {
       const seed = new Uint8Array(32).fill(0x00);
       const { previewKey } = deriveTierKeys(seed);
-      const previewHex = Array.from(previewKey).map(b => b.toString(16).padStart(2, '0')).join('');
+      const previewHex = Array.from(previewKey)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
       // This value was computed with PREVIEW_KEY_CONTEXT = 'mosaic:tier:preview:v1'
       // If context is mutated to empty, this will NOT match.
-      expect(previewHex).toBe('d414a5f96fb87136dd1c55eee5520551cec4348a47ea2e39639bff23857f0244');
+      expect(previewHex).toBe(
+        'd414a5f96fb87136dd1c55eee5520551cec4348a47ea2e39639bff23857f0244',
+      );
     });
 
     it('fullKey matches expected snapshot (kills FULL_KEY_CONTEXT mutation)', () => {
       const seed = new Uint8Array(32).fill(0x00);
       const { fullKey } = deriveTierKeys(seed);
-      const fullHex = Array.from(fullKey).map(b => b.toString(16).padStart(2, '0')).join('');
+      const fullHex = Array.from(fullKey)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
       // This value was computed with FULL_KEY_CONTEXT = 'mosaic:tier:full:v1'
       // If context is mutated to empty, this will NOT match.
-      expect(fullHex).toBe('9b633d1b035a316d69a0724f8b99dde184dd38c392c0387bd65920af47273dcd');
+      expect(fullHex).toBe(
+        '9b633d1b035a316d69a0724f8b99dde184dd38c392c0387bd65920af47273dcd',
+      );
     });
   });
 
@@ -185,8 +241,12 @@ describe('epochs', () => {
 
     it('throws for invalid tier', () => {
       const epoch = generateEpochKey(1);
-      expect(() => getTierKey(epoch, 0 as ShardTier)).toThrow('Invalid shard tier');
-      expect(() => getTierKey(epoch, 99 as ShardTier)).toThrow('Invalid shard tier');
+      expect(() => getTierKey(epoch, 0 as ShardTier)).toThrow(
+        'Invalid shard tier',
+      );
+      expect(() => getTierKey(epoch, 99 as ShardTier)).toThrow(
+        'Invalid shard tier',
+      );
     });
   });
 });

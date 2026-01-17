@@ -98,7 +98,7 @@ export const mockCrypto: CryptoLib = {
   async deriveKeys(
     password: string,
     _salt: Uint8Array,
-    _accountSalt: Uint8Array
+    _accountSalt: Uint8Array,
   ): Promise<DerivedKeys> {
     // Generate deterministic mock keys based on password hash
     const pwHash = password.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -178,14 +178,12 @@ export const mockCrypto: CryptoLib = {
     data: Uint8Array,
     _readKey: Uint8Array,
     epochId: number,
-    shardIndex: number
+    shardIndex: number,
   ): Promise<EncryptedShard> {
     const header = buildMockHeader(epochId, shardIndex);
 
     // Mock ciphertext: header + data + 16-byte mock tag
-    const ciphertext = new Uint8Array(
-      ENVELOPE_HEADER_SIZE + data.length + 16
-    );
+    const ciphertext = new Uint8Array(ENVELOPE_HEADER_SIZE + data.length + 16);
     ciphertext.set(header, 0);
     ciphertext.set(data, ENVELOPE_HEADER_SIZE);
     // Mock tag
@@ -201,7 +199,7 @@ export const mockCrypto: CryptoLib = {
 
   async decryptShard(
     envelope: Uint8Array,
-    _readKey: Uint8Array
+    _readKey: Uint8Array,
   ): Promise<Uint8Array> {
     // Mock: strip header and tag, return payload
     if (envelope.length < ENVELOPE_HEADER_SIZE + 16) {
@@ -224,10 +222,12 @@ export const mockCrypto: CryptoLib = {
       envelope[0] ?? 0,
       envelope[1] ?? 0,
       envelope[2] ?? 0,
-      envelope[3] ?? 0
+      envelope[3] ?? 0,
     );
     if (magic !== ENVELOPE_MAGIC) {
-      throw new Error(`Invalid magic: expected ${ENVELOPE_MAGIC}, got ${magic}`);
+      throw new Error(
+        `Invalid magic: expected ${ENVELOPE_MAGIC}, got ${magic}`,
+      );
     }
 
     const epochId =
@@ -263,7 +263,7 @@ export const mockCrypto: CryptoLib = {
   verifyManifest(
     _manifest: Uint8Array,
     signature: Uint8Array,
-    _signPublicKey: Uint8Array
+    _signPublicKey: Uint8Array,
   ): boolean {
     // Mock: always return true for testing
     return signature.length === 64;
@@ -272,7 +272,7 @@ export const mockCrypto: CryptoLib = {
   sealAndSignBundle(
     bundle: EpochKeyBundle,
     _recipientEd25519Pub: Uint8Array,
-    ownerIdentityKeypair: IdentityKeypair
+    ownerIdentityKeypair: IdentityKeypair,
   ): SealedBundle {
     // Mock: create deterministic sealed output
     const bundleStr = JSON.stringify({
@@ -294,7 +294,7 @@ export const mockCrypto: CryptoLib = {
     _signature: Uint8Array,
     _ownerEd25519Pub: Uint8Array,
     myIdentityKeypair: IdentityKeypair,
-    expectedContext: BundleValidationContext
+    expectedContext: BundleValidationContext,
   ): EpochKeyBundle {
     // Mock: parse the mock sealed data and return a bundle
     const text = new TextDecoder().decode(sealed);
@@ -304,7 +304,11 @@ export const mockCrypto: CryptoLib = {
       parsed = JSON.parse(text);
     } catch {
       // Return a default mock bundle
-      parsed = { v: 1, a: expectedContext.albumId, e: expectedContext.minEpochId };
+      parsed = {
+        v: 1,
+        a: expectedContext.albumId,
+        e: expectedContext.minEpochId,
+      };
     }
 
     return {

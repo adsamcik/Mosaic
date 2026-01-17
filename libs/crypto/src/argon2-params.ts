@@ -16,7 +16,7 @@ export function isMobileDevice(): boolean {
     return false;
   }
   return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent
+    navigator.userAgent,
   );
 }
 
@@ -50,20 +50,22 @@ function isE2EWeakKeysMode(): boolean {
   // In Vite/browser context, check import.meta.env
   // Use unknown intermediate cast for TypeScript compatibility
   if (typeof import.meta !== 'undefined') {
-    const meta = import.meta as unknown as { env?: { PROD?: boolean; VITE_E2E_WEAK_KEYS?: string } };
-    
+    const meta = import.meta as unknown as {
+      env?: { PROD?: boolean; VITE_E2E_WEAK_KEYS?: string };
+    };
+
     // Debug logging for E2E troubleshooting
     console.log('[CRYPTO] isE2EWeakKeysMode check:', {
       hasMeta: true,
       PROD: meta.env?.PROD,
       VITE_E2E_WEAK_KEYS: meta.env?.VITE_E2E_WEAK_KEYS,
     });
-    
+
     // Safety: Never enable in production mode
     if (meta.env?.PROD) {
       return false;
     }
-    
+
     if (meta.env?.VITE_E2E_WEAK_KEYS === 'true') {
       return true;
     }
@@ -100,7 +102,7 @@ export function getArgon2Params(): Argon2Params {
     if (typeof console !== 'undefined') {
       console.warn(
         '[CRYPTO] ⚠️ WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. ' +
-          'This provides NO security and should ONLY be used for E2E testing.'
+          'This provides NO security and should ONLY be used for E2E testing.',
       );
     }
     return {
@@ -182,7 +184,7 @@ export const ARGON2_PRESETS = {
 export async function benchmarkArgon2(
   sodium: typeof import('libsodium-wrappers'),
   params: Argon2Params,
-  runs: number = 3
+  runs: number = 3,
 ): Promise<number> {
   const times: number[] = [];
   const testPassword = 'benchmark-password-test';
@@ -197,7 +199,7 @@ export async function benchmarkArgon2(
       testSalt,
       params.iterations,
       params.memory * 1024, // Convert KiB to bytes
-      sodium.crypto_pwhash_ALG_ARGON2ID13
+      sodium.crypto_pwhash_ALG_ARGON2ID13,
     );
 
     const elapsed = performance.now() - start;
@@ -227,7 +229,7 @@ export interface BenchmarkResult {
  */
 export async function benchmarkAllPresets(
   sodium: typeof import('libsodium-wrappers'),
-  runs: number = 3
+  runs: number = 3,
 ): Promise<BenchmarkResult[]> {
   const results: BenchmarkResult[] = [];
 
@@ -245,7 +247,7 @@ export async function benchmarkAllPresets(
         testSalt,
         params.iterations,
         params.memory * 1024,
-        sodium.crypto_pwhash_ALG_ARGON2ID13
+        sodium.crypto_pwhash_ALG_ARGON2ID13,
       );
 
       times.push(performance.now() - start);

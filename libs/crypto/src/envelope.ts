@@ -54,7 +54,11 @@ const RESERVED_LENGTH = 26;
  * @param tier - Shard content tier (thumb, preview, original)
  * @returns 64-byte header
  */
-function buildHeader(epochId: number, shardId: number, tier: ShardTier): Uint8Array {
+function buildHeader(
+  epochId: number,
+  shardId: number,
+  tier: ShardTier,
+): Uint8Array {
   const header = new Uint8Array(ENVELOPE_HEADER_SIZE);
   const view = new DataView(header.buffer);
 
@@ -93,7 +97,7 @@ function parseHeader(envelope: Uint8Array): ShardHeader {
   if (envelope.length < ENVELOPE_HEADER_SIZE) {
     throw new CryptoError(
       `Envelope too short: ${envelope.length} bytes, minimum ${ENVELOPE_HEADER_SIZE}`,
-      CryptoErrorCode.INVALID_ENVELOPE
+      CryptoErrorCode.INVALID_ENVELOPE,
     );
   }
 
@@ -109,7 +113,7 @@ function parseHeader(envelope: Uint8Array): ShardHeader {
     if (magic[i] !== MAGIC_BYTES[i]) {
       throw new CryptoError(
         'Invalid envelope magic bytes',
-        CryptoErrorCode.INVALID_ENVELOPE
+        CryptoErrorCode.INVALID_ENVELOPE,
       );
     }
   }
@@ -119,7 +123,7 @@ function parseHeader(envelope: Uint8Array): ShardHeader {
   if (version !== ENVELOPE_VERSION) {
     throw new CryptoError(
       `Unsupported envelope version: ${version}, expected ${ENVELOPE_VERSION}`,
-      CryptoErrorCode.INVALID_ENVELOPE
+      CryptoErrorCode.INVALID_ENVELOPE,
     );
   }
 
@@ -128,18 +132,21 @@ function parseHeader(envelope: Uint8Array): ShardHeader {
   if (tierByte < ShardTier.THUMB || tierByte > ShardTier.ORIGINAL) {
     throw new CryptoError(
       `Invalid shard tier: ${tierByte}`,
-      CryptoErrorCode.INVALID_ENVELOPE
+      CryptoErrorCode.INVALID_ENVELOPE,
     );
   }
   const tier = tierByte as ShardTier;
 
   // Validate reserved bytes are zero
-  const reserved = header.slice(OFFSET_RESERVED, OFFSET_RESERVED + RESERVED_LENGTH);
+  const reserved = header.slice(
+    OFFSET_RESERVED,
+    OFFSET_RESERVED + RESERVED_LENGTH,
+  );
   for (let i = 0; i < RESERVED_LENGTH; i++) {
     if (reserved[i] !== 0) {
       throw new CryptoError(
         'Invalid envelope: reserved bytes must be zero',
-        CryptoErrorCode.RESERVED_NOT_ZERO
+        CryptoErrorCode.RESERVED_NOT_ZERO,
       );
     }
   }
@@ -174,19 +181,19 @@ export async function encryptShard(
   tierKey: Uint8Array,
   epochId: number,
   shardIndex: number,
-  tier: ShardTier = ShardTier.ORIGINAL
+  tier: ShardTier = ShardTier.ORIGINAL,
 ): Promise<EncryptedShard> {
   if (tierKey.length !== KEY_SIZE) {
     throw new CryptoError(
       `Tier key must be ${KEY_SIZE} bytes, got ${tierKey.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
   if (data.length > MAX_SHARD_SIZE) {
     throw new CryptoError(
       `Shard data too large: ${data.length} bytes, maximum ${MAX_SHARD_SIZE}`,
-      CryptoErrorCode.INVALID_ENVELOPE
+      CryptoErrorCode.INVALID_ENVELOPE,
     );
   }
 
@@ -198,9 +205,9 @@ export async function encryptShard(
   const ciphertext = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
     data,
     header, // AAD - authenticated additional data
-    null,   // nsec (unused in this algorithm)
+    null, // nsec (unused in this algorithm)
     nonce,
-    tierKey
+    tierKey,
   );
 
   // Combine header + ciphertext
@@ -231,12 +238,12 @@ export async function encryptShard(
  */
 export async function decryptShard(
   envelope: Uint8Array,
-  tierKey: Uint8Array
+  tierKey: Uint8Array,
 ): Promise<Uint8Array> {
   if (tierKey.length !== KEY_SIZE) {
     throw new CryptoError(
       `Tier key must be ${KEY_SIZE} bytes, got ${tierKey.length}`,
-      CryptoErrorCode.INVALID_KEY_LENGTH
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -249,23 +256,23 @@ export async function decryptShard(
   if (ciphertext.length === 0) {
     throw new CryptoError(
       'Envelope has no ciphertext',
-      CryptoErrorCode.INVALID_ENVELOPE
+      CryptoErrorCode.INVALID_ENVELOPE,
     );
   }
 
   try {
     const plaintext = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
-      null,           // nsec (unused)
+      null, // nsec (unused)
       ciphertext,
-      header,         // AAD
+      header, // AAD
       headerData.nonce,
-      tierKey
+      tierKey,
     );
     return plaintext;
   } catch {
     throw new CryptoError(
       'Decryption failed - wrong key or tampered data',
-      CryptoErrorCode.DECRYPTION_FAILED
+      CryptoErrorCode.DECRYPTION_FAILED,
     );
   }
 }
@@ -312,7 +319,7 @@ export function parseShardHeader(envelope: Uint8Array): ShardHeader {
  */
 export async function verifyShard(
   envelope: Uint8Array,
-  expectedSha256: string
+  expectedSha256: string,
 ): Promise<boolean> {
   const actualHash = await sha256(envelope);
   return actualHash === expectedSha256;

@@ -158,11 +158,7 @@ export {
 } from './auth';
 
 // Re-export memory safety helpers
-export {
-  zeroEpochKey,
-  zeroIdentityKeypair,
-  zeroLinkKeys,
-} from './memory';
+export { zeroEpochKey, zeroIdentityKeypair, zeroLinkKeys } from './memory';
 
 import type {
   DeriveKeysResult,
@@ -214,7 +210,7 @@ export interface CryptoLib {
   deriveKeys(
     password: string,
     salt: Uint8Array,
-    accountSalt: Uint8Array
+    accountSalt: Uint8Array,
   ): Promise<DeriveKeysResult>;
 
   /**
@@ -275,7 +271,7 @@ export interface CryptoLib {
     data: Uint8Array,
     readKey: Uint8Array,
     epochId: number,
-    shardIndex: number
+    shardIndex: number,
   ): Promise<EncryptedShard>;
 
   /**
@@ -334,7 +330,7 @@ export interface CryptoLib {
   verifyManifest(
     manifest: Uint8Array,
     signature: Uint8Array,
-    signPublicKey: Uint8Array
+    signPublicKey: Uint8Array,
   ): boolean;
 
   // ===========================================================================
@@ -355,7 +351,7 @@ export interface CryptoLib {
   sealAndSignBundle(
     bundle: EpochKeyBundle,
     recipientEd25519Pub: Uint8Array,
-    ownerIdentityKeypair: IdentityKeypair
+    ownerIdentityKeypair: IdentityKeypair,
   ): SealedBundle;
 
   /**
@@ -377,7 +373,7 @@ export interface CryptoLib {
     signature: Uint8Array,
     ownerEd25519Pub: Uint8Array,
     myIdentityKeypair: IdentityKeypair,
-    expectedContext: BundleValidationContext
+    expectedContext: BundleValidationContext,
   ): EpochKeyBundle;
 
   // ===========================================================================

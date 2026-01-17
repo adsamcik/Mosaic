@@ -52,7 +52,7 @@ export async function sha256(data: Uint8Array): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
   return sodium.to_base64(
     new Uint8Array(hashBuffer),
-    sodium.base64_variants.URLSAFE_NO_PADDING
+    sodium.base64_variants.URLSAFE_NO_PADDING,
   );
 }
 
@@ -113,7 +113,10 @@ export function fromBase64(base64: string): Uint8Array {
   const normalized = base64.replace(/\+/g, '-').replace(/\//g, '_');
   // Strip padding (libsodium URLSAFE_NO_PADDING doesn't accept padding)
   const unpadded = normalized.replace(/=+$/, '');
-  return sodium.from_base64(unpadded, sodium.base64_variants.URLSAFE_NO_PADDING);
+  return sodium.from_base64(
+    unpadded,
+    sodium.base64_variants.URLSAFE_NO_PADDING,
+  );
 }
 
 /**
