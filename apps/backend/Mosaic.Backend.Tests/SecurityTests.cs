@@ -86,7 +86,7 @@ public class SecurityTests
         var member = await builder.CreateUserAsync(UserB);
         var album = await builder.CreateAlbumAsync(owner);
         var membership = await builder.AddMemberAsync(album, member, "viewer", owner);
-        
+
         // Revoke membership
         membership.RevokedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
@@ -144,12 +144,12 @@ public class SecurityTests
 
         var userA = await builder.CreateUserAsync(UserA);
         var userB = await builder.CreateUserAsync(UserB);
-        
+
         // UserA creates 3 albums
         await builder.CreateAlbumAsync(userA);
         await builder.CreateAlbumAsync(userA);
         await builder.CreateAlbumAsync(userA);
-        
+
         // UserB creates 1 album
         await builder.CreateAlbumAsync(userB);
 
@@ -308,7 +308,7 @@ public class SecurityTests
     // Note: Manifest Create tests require PostgreSQL due to row locking (FOR UPDATE).
     // These tests are covered in integration tests with a real PostgreSQL database.
     // The authorization logic is tested indirectly through Get endpoint tests.
-    
+
     [Fact(Skip = "Requires PostgreSQL - uses FOR UPDATE row locking")]
     public async Task Security_Manifests_NonMemberCannotCreateManifest()
     {
@@ -392,7 +392,7 @@ public class SecurityTests
         var member = await builder.CreateUserAsync(UserB);
         var album = await builder.CreateAlbumAsync(owner);
         var membership = await builder.AddMemberAsync(album, member, "contributor", owner);
-        
+
         // Revoke membership
         membership.RevokedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
@@ -491,10 +491,10 @@ public class SecurityTests
         var member = await builder.CreateUserAsync(UserB);
         var album = await builder.CreateAlbumAsync(owner, currentEpochId: 2);
         var membership = await builder.AddMemberAsync(album, member, "viewer", owner);
-        
+
         // Create epoch key for epoch 1 that member received
         await builder.CreateEpochKeyAsync(album, member, 1);
-        
+
         // Revoke membership
         membership.RevokedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
@@ -681,7 +681,7 @@ public class SecurityTests
         var owner = await builder.CreateUserAsync(UserA);
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(
-            album, 
+            album,
             expiresAt: DateTimeOffset.UtcNow.AddDays(-1)); // Expired
 
         var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))

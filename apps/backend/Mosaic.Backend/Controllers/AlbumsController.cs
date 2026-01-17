@@ -255,7 +255,9 @@ public class AlbumsController : ControllerBase
                 album.CurrentEpochId,
                 album.CurrentVersion,
                 album.CreatedAt,
-                album.EncryptedName,                album.EncryptedDescription,                album.ExpiresAt,
+                album.EncryptedName,
+                album.EncryptedDescription,
+                album.ExpiresAt,
                 album.ExpirationWarningDays
             });
         }
@@ -278,10 +280,16 @@ public class AlbumsController : ControllerBase
             .Where(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null)
             .FirstOrDefaultAsync();
 
-        if (membership == null) return Forbid();
+        if (membership == null)
+        {
+            return Forbid();
+        }
 
         var album = await _db.Albums.FindAsync(albumId);
-        if (album == null) return NotFound();
+        if (album == null)
+        {
+            return NotFound();
+        }
 
         return Ok(new
         {
@@ -307,10 +315,16 @@ public class AlbumsController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var album = await _db.Albums.FindAsync(albumId);
-        if (album == null) return NotFound();
+        if (album == null)
+        {
+            return NotFound();
+        }
 
         // Only owner can update expiration
-        if (album.OwnerId != user.Id) return Forbid();
+        if (album.OwnerId != user.Id)
+        {
+            return Forbid();
+        }
 
         // Validate expiresAt if provided (null is allowed to remove expiration)
         if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
@@ -359,7 +373,10 @@ public class AlbumsController : ControllerBase
         var hasAccess = await _db.AlbumMembers
             .AnyAsync(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null);
 
-        if (!hasAccess) return Forbid();
+        if (!hasAccess)
+        {
+            return Forbid();
+        }
 
         // Fetch album first to ensure it exists
         var album = await _db.Albums.FindAsync(albumId);
@@ -411,9 +428,15 @@ public class AlbumsController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var album = await _db.Albums.FindAsync(albumId);
-        if (album == null) return NotFound();
+        if (album == null)
+        {
+            return NotFound();
+        }
 
-        if (album.OwnerId != user.Id) return Forbid();
+        if (album.OwnerId != user.Id)
+        {
+            return Forbid();
+        }
 
         _db.Albums.Remove(album);
         await _db.SaveChangesAsync();

@@ -47,7 +47,7 @@ public static class TusEventHandlers
         var httpContext = context.HttpContext;
         var authSub = (string)httpContext.Items["AuthSub"]!;
         var fileId = context.FileId!;
-        
+
         // Get file size from the store
         long fileSize = 0;
         if (context.Store is ITusReadableStore readable)

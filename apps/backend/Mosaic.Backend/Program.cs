@@ -28,7 +28,7 @@ builder.Services.AddDbContext<MosaicDbContext>(options =>
     {
         options.UseNpgsql(connectionString);
     }
-    
+
     // Suppress the PendingModelChangesWarning - we handle migrations manually
     // This warning is new in EF Core 9 and can trigger false positives when the model
     // snapshot was generated with a different provider than the runtime provider
@@ -62,11 +62,11 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options 
                 kvp => kvp.Key,
                 kvp => kvp.Value!.Errors.Select(e => e.ErrorMessage).ToArray()
             );
-        
+
         var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
             .CreateLogger("ModelValidation");
         logger.LogWarning("Model validation failed for {Path}: {@Errors}", context.HttpContext.Request.Path, errors);
-        
+
         return builtInFactory(context);
     };
 });
@@ -179,7 +179,7 @@ if (runMigrations)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
-    
+
     // SQLite uses EnsureCreated (simpler for dev), PostgreSQL uses migrations
     // Note: SQLite pragmas (WAL mode, busy timeout) are configured via SqlitePragmaInterceptor
     if (useSqlite)

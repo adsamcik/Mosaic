@@ -18,7 +18,7 @@ public class GarbageCollectionService : BackgroundService
     {
         _services = services;
         _logger = logger;
-        
+
         var connectionString = configuration.GetConnectionString("Default");
         _useSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ?? false;
     }
@@ -33,17 +33,17 @@ public class GarbageCollectionService : BackgroundService
             try
             {
                 _logger.GarbageCollectionStarted();
-                
+
                 var orphanedBlobs = 0;
                 var expiredSessions = 0;
                 var expiredLinks = 0;
                 var expiredAlbums = 0;
-                
+
                 orphanedBlobs = await CleanExpiredPendingShards();
                 orphanedBlobs += await CleanTrashedShards();
                 expiredAlbums = await CleanExpiredAlbums();
                 expiredLinks = await CleanExpiredShareLinks();
-                
+
                 _logger.GarbageCollectionCompleted(orphanedBlobs, expiredSessions, expiredLinks, expiredAlbums);
             }
             catch (Exception ex)
@@ -73,7 +73,7 @@ public class GarbageCollectionService : BackgroundService
         {
             _logger.OrphanedBlobsCleaned(count);
         }
-        
+
         return count;
     }
 
@@ -127,7 +127,7 @@ public class GarbageCollectionService : BackgroundService
         var now = DateTimeOffset.UtcNow;
 
         var deletedCount = 0;
-        
+
         // Process expired albums in batches of 10
         // Note: SQLite doesn't support DateTimeOffset in WHERE or ORDER BY clauses,
         // so we load albums with expiration dates and filter/sort client-side.
@@ -185,7 +185,7 @@ public class GarbageCollectionService : BackgroundService
                 }
             }
         }
-        
+
         return deletedCount;
     }
 
@@ -222,7 +222,7 @@ public class GarbageCollectionService : BackgroundService
             totalDeleted += longExpiredLinks.Count;
             _logger.ExpiredLinksCleaned(longExpiredLinks.Count);
         }
-        
+
         return totalDeleted;
     }
 }

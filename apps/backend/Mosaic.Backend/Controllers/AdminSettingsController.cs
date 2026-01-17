@@ -55,13 +55,24 @@ public class AdminSettingsController : ControllerBase
         var admin = GetAdminUser();
 
         if (request.MaxStorageBytesPerUser <= 0)
+        {
             return BadRequest(new { error = "MaxStorageBytesPerUser must be positive" });
+        }
+
         if (request.MaxAlbumsPerUser <= 0)
+        {
             return BadRequest(new { error = "MaxAlbumsPerUser must be positive" });
+        }
+
         if (request.MaxPhotosPerAlbum <= 0)
+        {
             return BadRequest(new { error = "MaxPhotosPerAlbum must be positive" });
+        }
+
         if (request.MaxBytesPerAlbum <= 0)
+        {
             return BadRequest(new { error = "MaxBytesPerAlbum must be positive" });
+        }
 
         var defaults = new QuotaDefaults(
             request.MaxStorageBytesPerUser,

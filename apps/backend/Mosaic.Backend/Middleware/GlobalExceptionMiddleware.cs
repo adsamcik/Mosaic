@@ -46,8 +46,8 @@ public class GlobalExceptionMiddleware
         };
 
         // Log ALL exceptions during development for debugging
-        _logger.LogError(exception, 
-            "Exception in {Path}: {ExceptionType} - {Message}", 
+        _logger.LogError(exception,
+            "Exception in {Path}: {ExceptionType} - {Message}",
             path, exception.GetType().Name, exception.Message);
 
         // Return generic error to client - never expose exception details
@@ -56,8 +56,8 @@ public class GlobalExceptionMiddleware
 
         var response = new
         {
-            error = statusCode == HttpStatusCode.Unauthorized 
-                ? "Authentication required" 
+            error = statusCode == HttpStatusCode.Unauthorized
+                ? "Authentication required"
                 : "An unexpected error occurred",
             correlationId = correlationId
         };

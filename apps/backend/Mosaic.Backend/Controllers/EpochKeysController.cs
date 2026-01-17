@@ -55,7 +55,10 @@ public class EpochKeysController : ControllerBase
         var hasAccess = await _db.AlbumMembers
             .AnyAsync(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null);
 
-        if (!hasAccess) return Forbid();
+        if (!hasAccess)
+        {
+            return Forbid();
+        }
 
         var keys = await _db.EpochKeys
             .Where(ek => ek.AlbumId == albumId && ek.RecipientId == user.Id)
@@ -99,13 +102,22 @@ public class EpochKeysController : ControllerBase
                 am.UserId == user.Id &&
                 am.RevokedAt == null);
 
-        if (membership == null) return Forbid();
-        if (membership.Role != "owner" && membership.Role != "editor")
+        if (membership == null)
+        {
             return Forbid();
+        }
+
+        if (membership.Role != "owner" && membership.Role != "editor")
+        {
+            return Forbid();
+        }
 
         // Check recipient exists
         var recipient = await _db.Users.FindAsync(request.RecipientId);
-        if (recipient == null) return NotFound("Recipient not found");
+        if (recipient == null)
+        {
+            return NotFound("Recipient not found");
+        }
 
         // Check for existing key
         var existing = await _db.EpochKeys
@@ -115,7 +127,9 @@ public class EpochKeysController : ControllerBase
                 ek.EpochId == request.EpochId);
 
         if (existing != null)
+        {
             return Conflict("Epoch key already exists for this album/recipient/epoch");
+        }
 
         var epochKey = new EpochKey
         {
@@ -152,10 +166,16 @@ public class EpochKeysController : ControllerBase
 
         var key = await _db.EpochKeys
             .FirstOrDefaultAsync(ek => ek.Id == keyId && ek.AlbumId == albumId);
-        if (key == null) return NotFound();
+        if (key == null)
+        {
+            return NotFound();
+        }
 
         // Only recipient can view
-        if (key.RecipientId != user.Id) return Forbid();
+        if (key.RecipientId != user.Id)
+        {
+            return Forbid();
+        }
 
         return Ok(new
         {
@@ -202,9 +222,15 @@ public class EpochKeysController : ControllerBase
 
         // Verify album ownership
         var album = await _db.Albums.FindAsync(albumId);
-        if (album == null) return NotFound();
+        if (album == null)
+        {
+            return NotFound();
+        }
 
-        if (album.OwnerId != user.Id) return Forbid();
+        if (album.OwnerId != user.Id)
+        {
+            return Forbid();
+        }
 
         // Validate epoch ID is greater than current
         if (epochId <= album.CurrentEpochId)
@@ -225,8 +251,8 @@ public class EpochKeysController : ControllerBase
             {
                 // Check recipient exists and is a member
                 var isMember = await _db.AlbumMembers
-                    .AnyAsync(am => am.AlbumId == albumId && 
-                                   am.UserId == keyRequest.RecipientId && 
+                    .AnyAsync(am => am.AlbumId == albumId &&
+                                   am.UserId == keyRequest.RecipientId &&
                                    am.RevokedAt == null);
 
                 if (!isMember)

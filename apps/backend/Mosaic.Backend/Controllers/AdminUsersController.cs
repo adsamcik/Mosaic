@@ -89,7 +89,10 @@ public class AdminUsersController : ControllerBase
             .Include(u => u.Quota)
             .FirstOrDefaultAsync(u => u.Id == userId);
 
-        if (user == null) return NotFound(new { error = "User not found" });
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found" });
+        }
 
         return Ok(new UserQuotaResponse(
             user.Quota?.MaxStorageBytes ?? defaults.MaxStorageBytesPerUser,
@@ -118,7 +121,10 @@ public class AdminUsersController : ControllerBase
             .Include(u => u.Quota)
             .FirstOrDefaultAsync(u => u.Id == userId);
 
-        if (user == null) return NotFound(new { error = "User not found" });
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found" });
+        }
 
         if (user.Quota == null)
         {
@@ -133,7 +139,10 @@ public class AdminUsersController : ControllerBase
         else
         {
             if (request.MaxStorageBytes.HasValue)
+            {
                 user.Quota.MaxStorageBytes = request.MaxStorageBytes.Value;
+            }
+
             user.Quota.MaxAlbums = request.MaxAlbums;
             user.Quota.UpdatedAt = DateTime.UtcNow;
         }
@@ -161,7 +170,10 @@ public class AdminUsersController : ControllerBase
         var defaults = await _quotaService.GetDefaultsAsync();
 
         var quota = await _db.UserQuotas.FindAsync(userId);
-        if (quota == null) return NotFound(new { error = "User quota not found" });
+        if (quota == null)
+        {
+            return NotFound(new { error = "User quota not found" });
+        }
 
         // Reset to defaults but keep usage tracking
         quota.MaxStorageBytes = defaults.MaxStorageBytesPerUser;
@@ -184,10 +196,15 @@ public class AdminUsersController : ControllerBase
         var admin = GetAdminUser();
 
         var user = await _db.Users.FindAsync(userId);
-        if (user == null) return NotFound(new { error = "User not found" });
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found" });
+        }
 
         if (user.IsAdmin)
+        {
             return BadRequest(new { error = "User is already an admin" });
+        }
 
         user.IsAdmin = true;
         await _db.SaveChangesAsync();
@@ -206,15 +223,22 @@ public class AdminUsersController : ControllerBase
         var admin = GetAdminUser();
 
         var user = await _db.Users.FindAsync(userId);
-        if (user == null) return NotFound(new { error = "User not found" });
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found" });
+        }
 
         if (!user.IsAdmin)
+        {
             return BadRequest(new { error = "User is not an admin" });
+        }
 
         // Prevent demoting the last admin
         var adminCount = await _db.Users.CountAsync(u => u.IsAdmin);
         if (adminCount <= 1)
+        {
             return BadRequest(new { error = "Cannot demote the last admin" });
+        }
 
         user.IsAdmin = false;
         await _db.SaveChangesAsync();

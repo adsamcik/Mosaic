@@ -71,7 +71,7 @@ public class ShardsControllerTests
 
         // Assert
         Assert.IsType<FileStreamResult>(result);
-        
+
         // Verify caching headers are set (shards are immutable)
         Assert.Equal("public, max-age=31536000, immutable", httpContext.Response.Headers.CacheControl.ToString());
         Assert.Equal($"\"{shard.Id}\"", httpContext.Response.Headers.ETag.ToString());

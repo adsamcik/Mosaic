@@ -52,7 +52,7 @@ public partial class AuthController : ControllerBase
         _config = config;
         _logger = logger;
         _env = env;
-        
+
         // Check if LocalAuth mode is enabled (support both new and legacy config)
         var legacyMode = config["Auth:Mode"];
         if (config.GetValue<bool?>("Auth:LocalAuthEnabled") != null)
@@ -99,7 +99,7 @@ public partial class AuthController : ControllerBase
         {
             return NotFound();
         }
-        
+
         if (string.IsNullOrWhiteSpace(request.Username))
         {
             return BadRequest(new { error = "Username is required" });
@@ -113,8 +113,8 @@ public partial class AuthController : ControllerBase
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
 
         // Check rate limiting (max 10 challenges per IP per minute)
-        // Skip rate limiting in Development environment for easier testing
-        if (!_env.IsDevelopment())
+        // Skip rate limiting in Development and Testing environments for easier testing
+        if (!_env.IsDevelopment() && !_env.IsEnvironment("Testing"))
         {
             var oneMinuteAgo = DateTime.UtcNow.AddMinutes(-1);
             var recentChallenges = await _db.AuthChallenges
@@ -182,7 +182,7 @@ public partial class AuthController : ControllerBase
         {
             return NotFound();
         }
-        
+
         if (string.IsNullOrWhiteSpace(request.Username) ||
             string.IsNullOrWhiteSpace(request.Signature) ||
             request.ChallengeId == Guid.Empty)
@@ -302,7 +302,7 @@ public partial class AuthController : ControllerBase
         {
             return NotFound();
         }
-        
+
         if (string.IsNullOrWhiteSpace(request.Username) ||
             string.IsNullOrWhiteSpace(request.AuthPubkey) ||
             string.IsNullOrWhiteSpace(request.IdentityPubkey) ||
@@ -334,9 +334,14 @@ public partial class AuthController : ControllerBase
             wrappedIdentitySeed = Convert.FromBase64String(request.WrappedIdentitySeed ?? "");
 
             if (userSalt.Length != 16)
+            {
                 return BadRequest(new { error = "UserSalt must be 16 bytes" });
+            }
+
             if (accountSalt.Length != 16)
+            {
                 return BadRequest(new { error = "AccountSalt must be 16 bytes" });
+            }
         }
         catch (FormatException)
         {
@@ -388,7 +393,7 @@ public partial class AuthController : ControllerBase
         {
             return NotFound();
         }
-        
+
         var sessionToken = GetSessionToken();
         if (sessionToken == null)
         {
@@ -427,7 +432,7 @@ public partial class AuthController : ControllerBase
         {
             return NotFound();
         }
-        
+
         var userId = await GetCurrentUserId();
         if (userId == null)
         {
@@ -462,7 +467,7 @@ public partial class AuthController : ControllerBase
         {
             return NotFound();
         }
-        
+
         var userId = await GetCurrentUserId();
         if (userId == null)
         {
@@ -492,7 +497,7 @@ public partial class AuthController : ControllerBase
         {
             return NotFound();
         }
-        
+
         var userId = await GetCurrentUserId();
         if (userId == null)
         {
@@ -541,7 +546,10 @@ public partial class AuthController : ControllerBase
     private async Task<Guid?> GetCurrentUserId()
     {
         var token = GetSessionToken();
-        if (token == null) return null;
+        if (token == null)
+        {
+            return null;
+        }
 
         var tokenHash = SHA256.HashData(token);
         var session = await _db.Sessions
@@ -550,7 +558,10 @@ public partial class AuthController : ControllerBase
                 s.RevokedAt == null &&
                 s.ExpiresAt > DateTime.UtcNow);
 
-        if (session == null) return null;
+        if (session == null)
+        {
+            return null;
+        }
 
         // Check sliding expiration (7 days since last use)
         if (session.LastSeenAt < DateTime.UtcNow.Add(-SessionSlidingExpiry))
@@ -636,15 +647,41 @@ public partial class AuthController : ControllerBase
 
     private static string? ParseDeviceName(string userAgent)
     {
-        if (string.IsNullOrEmpty(userAgent)) return null;
+        if (string.IsNullOrEmpty(userAgent))
+        {
+            return null;
+        }
 
         // Simple device name extraction
-        if (userAgent.Contains("Windows")) return "Windows";
-        if (userAgent.Contains("Macintosh")) return "Mac";
-        if (userAgent.Contains("Linux")) return "Linux";
-        if (userAgent.Contains("iPhone")) return "iPhone";
-        if (userAgent.Contains("iPad")) return "iPad";
-        if (userAgent.Contains("Android")) return "Android";
+        if (userAgent.Contains("Windows"))
+        {
+            return "Windows";
+        }
+
+        if (userAgent.Contains("Macintosh"))
+        {
+            return "Mac";
+        }
+
+        if (userAgent.Contains("Linux"))
+        {
+            return "Linux";
+        }
+
+        if (userAgent.Contains("iPhone"))
+        {
+            return "iPhone";
+        }
+
+        if (userAgent.Contains("iPad"))
+        {
+            return "iPad";
+        }
+
+        if (userAgent.Contains("Android"))
+        {
+            return "Android";
+        }
 
         return "Unknown";
     }
@@ -653,7 +690,7 @@ public partial class AuthController : ControllerBase
     {
         // Delete challenges older than 5 minutes
         var cutoff = DateTime.UtcNow.AddMinutes(-5);
-        
+
         try
         {
             // Try bulk delete first (PostgreSQL)

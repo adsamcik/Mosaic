@@ -173,13 +173,13 @@ public class ShareLinksController : ControllerBase
             var base64 = base64Url
                 .Replace('-', '+')
                 .Replace('_', '/');
-            
+
             switch (base64.Length % 4)
             {
                 case 2: base64 += "=="; break;
                 case 3: base64 += "="; break;
             }
-            
+
             return Convert.FromBase64String(base64);
         }
         catch
@@ -200,8 +200,15 @@ public class ShareLinksController : ControllerBase
 
         // Verify album ownership
         var album = await _db.Albums.FindAsync(albumId);
-        if (album == null) return NotFound(new { error = "Album not found" });
-        if (album.OwnerId != user.Id) return Forbid();
+        if (album == null)
+        {
+            return NotFound(new { error = "Album not found" });
+        }
+
+        if (album.OwnerId != user.Id)
+        {
+            return Forbid();
+        }
 
         // Validate request
         if (request.AccessTier < 1 || request.AccessTier > 3)
@@ -315,8 +322,15 @@ public class ShareLinksController : ControllerBase
 
         // Verify album ownership
         var album = await _db.Albums.FindAsync(albumId);
-        if (album == null) return NotFound(new { error = "Album not found" });
-        if (album.OwnerId != user.Id) return Forbid();
+        if (album == null)
+        {
+            return NotFound(new { error = "Album not found" });
+        }
+
+        if (album.OwnerId != user.Id)
+        {
+            return Forbid();
+        }
 
         // Note: SQLite doesn't support DateTimeOffset in ORDER BY, so we order client-side
         var shareLinks = await _db.ShareLinks
@@ -434,8 +448,15 @@ public class ShareLinksController : ControllerBase
 
         // Verify album exists and user is owner
         var album = await _db.Albums.FindAsync(albumId);
-        if (album == null) return NotFound(new { error = "Album not found" });
-        if (album.OwnerId != user.Id) return Forbid();
+        if (album == null)
+        {
+            return NotFound(new { error = "Album not found" });
+        }
+
+        if (album.OwnerId != user.Id)
+        {
+            return Forbid();
+        }
 
         // Decode linkId from base64url
         var linkIdBytes = FromBase64Url(linkId);
@@ -660,7 +681,10 @@ public class ShareLinksController : ControllerBase
 
         // Validate link is still valid (but don't increment use count for key fetch)
         var validationResult = ValidateShareLink(shareLink);
-        if (validationResult != null) return validationResult;
+        if (validationResult != null)
+        {
+            return validationResult;
+        }
 
         // Get sign pubkeys from epoch keys table for each epoch
         var epochIds = shareLink.LinkEpochKeys.Select(k => k.EpochId).Distinct().ToList();
@@ -679,8 +703,8 @@ public class ShareLinksController : ControllerBase
                 Tier = k.Tier,
                 Nonce = k.WrappedNonce,
                 EncryptedKey = k.WrappedKey,
-                SignPubkey = epochSignPubkeys.TryGetValue(k.EpochId, out var pk) 
-                    ? Convert.ToBase64String(pk) 
+                SignPubkey = epochSignPubkeys.TryGetValue(k.EpochId, out var pk)
+                    ? Convert.ToBase64String(pk)
                     : null
             })
             .ToList();
@@ -710,7 +734,10 @@ public class ShareLinksController : ControllerBase
 
         // Validate link is still valid (but don't increment use count for photo fetch)
         var validationResult = ValidateShareLink(shareLink);
-        if (validationResult != null) return validationResult;
+        if (validationResult != null)
+        {
+            return validationResult;
+        }
 
         // Get all non-deleted manifests for the album
         var manifests = await _db.Manifests

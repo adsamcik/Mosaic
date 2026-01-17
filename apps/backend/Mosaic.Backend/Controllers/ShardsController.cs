@@ -22,7 +22,11 @@ public class ShardsController : ControllerBase
     private async Task<User?> GetUser()
     {
         var authSub = HttpContext.Items["AuthSub"] as string;
-        if (authSub == null) return null;
+        if (authSub == null)
+        {
+            return null;
+        }
+
         return await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
     }
 
@@ -33,11 +37,21 @@ public class ShardsController : ControllerBase
     public async Task<IActionResult> Download(Guid shardId)
     {
         var user = await GetUser();
-        if (user == null) return Unauthorized();
+        if (user == null)
+        {
+            return Unauthorized();
+        }
 
         var shard = await _db.Shards.FindAsync(shardId);
-        if (shard == null) return NotFound();
-        if (shard.Status != ShardStatus.ACTIVE) return NotFound();
+        if (shard == null)
+        {
+            return NotFound();
+        }
+
+        if (shard.Status != ShardStatus.ACTIVE)
+        {
+            return NotFound();
+        }
 
         // Verify user has access to at least one album containing this shard
         var hasAccess = await _db.ManifestShards
@@ -47,7 +61,10 @@ public class ShardsController : ControllerBase
                 am.UserId == user.Id &&
                 am.RevokedAt == null));
 
-        if (!hasAccess) return Forbid();
+        if (!hasAccess)
+        {
+            return Forbid();
+        }
 
         // Set aggressive caching headers - shards are immutable (content-addressed)
         Response.Headers.CacheControl = "public, max-age=31536000, immutable";
@@ -64,10 +81,16 @@ public class ShardsController : ControllerBase
     public async Task<IActionResult> GetMeta(Guid shardId)
     {
         var user = await GetUser();
-        if (user == null) return Unauthorized();
+        if (user == null)
+        {
+            return Unauthorized();
+        }
 
         var shard = await _db.Shards.FindAsync(shardId);
-        if (shard == null) return NotFound();
+        if (shard == null)
+        {
+            return NotFound();
+        }
 
         // Only uploader or users with access can view metadata
         if (shard.UploaderId != user.Id)
@@ -79,7 +102,10 @@ public class ShardsController : ControllerBase
                     am.UserId == user.Id &&
                     am.RevokedAt == null));
 
-            if (!hasAccess) return Forbid();
+            if (!hasAccess)
+            {
+                return Forbid();
+            }
         }
 
         return Ok(new

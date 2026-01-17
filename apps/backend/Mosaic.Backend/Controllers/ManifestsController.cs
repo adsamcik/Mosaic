@@ -30,7 +30,7 @@ public class ManifestsController : ControllerBase
         _quotaService = quotaService;
         _currentUserService = currentUserService;
         _logger = logger;
-        
+
         // Detect if we're using SQLite (no row locking support)
         var connectionString = config.GetConnectionString("Default");
         _useSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ?? false;
@@ -67,7 +67,7 @@ public class ManifestsController : ControllerBase
     {
         // Build shard info list with tiers - support both legacy ShardIds and new TieredShards
         var shardInfoList = new List<(Guid Id, int Tier)>();
-        
+
         if (request.TieredShards != null && request.TieredShards.Count > 0)
         {
             // New format: per-shard tier assignment
@@ -121,7 +121,10 @@ public class ManifestsController : ControllerBase
                     .FirstOrDefaultAsync();
             }
 
-            if (album == null) return NotFound("Album not found");
+            if (album == null)
+            {
+                return NotFound("Album not found");
+            }
 
             // 2. Verify membership
             var membership = await _db.AlbumMembers
@@ -130,8 +133,15 @@ public class ManifestsController : ControllerBase
                     am.UserId == user.Id &&
                     am.RevokedAt == null);
 
-            if (membership == null) return Forbid();
-            if (membership.Role == "viewer") return Forbid();
+            if (membership == null)
+            {
+                return Forbid();
+            }
+
+            if (membership.Role == "viewer")
+            {
+                return Forbid();
+            }
 
             // 3. Validate shards
             var shards = await _db.Shards
@@ -260,7 +270,10 @@ public class ManifestsController : ControllerBase
             .Include(m => m.ManifestShards.OrderBy(ms => ms.ChunkIndex))
             .FirstOrDefaultAsync(m => m.Id == manifestId);
 
-        if (manifest == null) return NotFound();
+        if (manifest == null)
+        {
+            return NotFound();
+        }
 
         // Verify access
         var hasAccess = await _db.AlbumMembers
@@ -269,7 +282,10 @@ public class ManifestsController : ControllerBase
                 am.UserId == user.Id &&
                 am.RevokedAt == null);
 
-        if (!hasAccess) return Forbid();
+        if (!hasAccess)
+        {
+            return Forbid();
+        }
 
         return Ok(new
         {
@@ -301,7 +317,10 @@ public class ManifestsController : ControllerBase
         try
         {
             var manifest = await _db.Manifests.FindAsync(manifestId);
-            if (manifest == null) return NotFound();
+            if (manifest == null)
+            {
+                return NotFound();
+            }
 
             // Lock album (FOR UPDATE is PostgreSQL-only; SQLite uses simpler locking)
             Album? album;
@@ -316,7 +335,10 @@ public class ManifestsController : ControllerBase
                     .FirstOrDefaultAsync();
             }
 
-            if (album == null) return NotFound();
+            if (album == null)
+            {
+                return NotFound();
+            }
 
             // Verify editor/owner access
             var membership = await _db.AlbumMembers
@@ -325,8 +347,15 @@ public class ManifestsController : ControllerBase
                     am.UserId == user.Id &&
                     am.RevokedAt == null);
 
-            if (membership == null) return Forbid();
-            if (membership.Role == "viewer") return Forbid();
+            if (membership == null)
+            {
+                return Forbid();
+            }
+
+            if (membership.Role == "viewer")
+            {
+                return Forbid();
+            }
 
             // Soft delete
             manifest.IsDeleted = true;

@@ -34,7 +34,7 @@ public class DevAuthController : ControllerBase
         _db = db;
         _logger = logger;
         _env = env;
-        
+
         // Check if LocalAuth mode is enabled (support both new and legacy config)
         var legacyMode = config["Auth:Mode"];
         if (config.GetValue<bool?>("Auth:LocalAuthEnabled") != null)
@@ -79,13 +79,13 @@ public class DevAuthController : ControllerBase
 
         // Find or create user
         var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == request.Username);
-        
+
         if (user == null)
         {
             // Create new user with deterministic dev salts
             var userSalt = GenerateDevSalt($"{request.Username}_user");
             var accountSalt = GenerateDevSalt($"{request.Username}_account");
-            
+
             user = new User
             {
                 Id = Guid.CreateVersion7(),
@@ -98,7 +98,7 @@ public class DevAuthController : ControllerBase
             };
             _db.Users.Add(user);
             await _db.SaveChangesAsync();
-            
+
             _logger.LogInformation("Created dev user: {Username}", request.Username);
         }
 
@@ -188,22 +188,22 @@ public class DevAuthController : ControllerBase
 
         // Update user's crypto keys
         var user = session.User;
-        
+
         if (!string.IsNullOrEmpty(request.AuthPubkey))
         {
             user.AuthPubkey = request.AuthPubkey;
         }
-        
+
         if (!string.IsNullOrEmpty(request.IdentityPubkey))
         {
             user.IdentityPubkey = request.IdentityPubkey;
         }
-        
+
         if (!string.IsNullOrEmpty(request.WrappedAccountKey))
         {
             user.WrappedAccountKey = Convert.FromBase64String(request.WrappedAccountKey);
         }
-        
+
         if (!string.IsNullOrEmpty(request.WrappedIdentitySeed))
         {
             user.WrappedIdentitySeed = Convert.FromBase64String(request.WrappedIdentitySeed);

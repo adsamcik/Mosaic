@@ -535,7 +535,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         // Create a link with owner-encrypted secret
         var ownerSecret = TestDataBuilder.GenerateRandomBytes(40); // nonce + ciphertext
         var shareLink = await builder.CreateShareLinkAsync(album, ownerEncryptedSecret: ownerSecret);
@@ -569,7 +569,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         var ownerSecret = TestDataBuilder.GenerateRandomBytes(40);
         await builder.CreateShareLinkAsync(album, isRevoked: true, ownerEncryptedSecret: ownerSecret);
 
@@ -600,7 +600,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         var ownerSecret = TestDataBuilder.GenerateRandomBytes(40);
         await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-1), ownerEncryptedSecret: ownerSecret);
 
@@ -631,7 +631,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         // Create a link without owner-encrypted secret
         await builder.CreateShareLinkAsync(album);
 
@@ -1306,7 +1306,7 @@ public class ShareLinksControllerTests
         var album = await builder.CreateAlbumAsync(owner, currentEpochId: 2);
         await builder.CreateEpochKeyAsync(album, owner, epochId: 1);
         await builder.CreateEpochKeyAsync(album, owner, epochId: 2);
-        
+
         var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
         await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
         await builder.CreateLinkEpochKeyAsync(shareLink, 1, 2);
@@ -1402,7 +1402,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         var shard1 = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
         var shard2 = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
         await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard1 });
@@ -1440,7 +1440,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         var shard1 = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
         var shard2 = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
         await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard1 });
@@ -1536,7 +1536,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
         storage.AddFile(shard.StorageKey, new byte[] { 0xDE, 0xAD, 0xBE, 0xEF });
         await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
@@ -1559,7 +1559,7 @@ public class ShareLinksControllerTests
         // Assert
         var fileResult = Assert.IsType<FileStreamResult>(result);
         Assert.Equal("application/octet-stream", fileResult.ContentType);
-        
+
         using var ms = new MemoryStream();
         await fileResult.FileStream.CopyToAsync(ms);
         var content = ms.ToArray();
@@ -1638,7 +1638,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         var shard = await builder.CreateShardAsync(owner, ShardStatus.TRASHED);
         await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
 
@@ -1676,7 +1676,7 @@ public class ShareLinksControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album1 = await builder.CreateAlbumAsync(owner);
         var album2 = await builder.CreateAlbumAsync(owner);
-        
+
         // Shard belongs to album2
         var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
         storage.AddFile(shard.StorageKey);
@@ -1713,7 +1713,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
         await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
 
@@ -1748,7 +1748,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
         await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
 
@@ -1783,7 +1783,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
         await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
 
@@ -1818,7 +1818,7 @@ public class ShareLinksControllerTests
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
-        
+
         var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
         storage.AddFile(shard.StorageKey);
         await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard }, isDeleted: true);

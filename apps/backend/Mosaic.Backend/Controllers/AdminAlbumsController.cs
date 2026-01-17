@@ -89,7 +89,10 @@ public class AdminAlbumsController : ControllerBase
             .Include(a => a.Limits)
             .FirstOrDefaultAsync(a => a.Id == albumId);
 
-        if (album == null) return NotFound(new { error = "Album not found" });
+        if (album == null)
+        {
+            return NotFound(new { error = "Album not found" });
+        }
 
         return Ok(new AlbumLimitsResponse(
             album.Limits?.MaxPhotos ?? defaults.MaxPhotosPerAlbum,
@@ -118,7 +121,10 @@ public class AdminAlbumsController : ControllerBase
             .Include(a => a.Limits)
             .FirstOrDefaultAsync(a => a.Id == albumId);
 
-        if (album == null) return NotFound(new { error = "Album not found" });
+        if (album == null)
+        {
+            return NotFound(new { error = "Album not found" });
+        }
 
         if (album.Limits == null)
         {
@@ -161,7 +167,10 @@ public class AdminAlbumsController : ControllerBase
         var admin = GetAdminUser();
 
         var limits = await _db.AlbumLimits.FindAsync(albumId);
-        if (limits == null) return NotFound(new { error = "Album limits not found" });
+        if (limits == null)
+        {
+            return NotFound(new { error = "Album limits not found" });
+        }
 
         // Reset to defaults but keep usage tracking
         limits.MaxPhotos = null;
