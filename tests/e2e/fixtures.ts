@@ -920,12 +920,39 @@ export class GalleryPage {
     const startTime = Date.now();
     
     // Set files on the hidden input - Playwright handles this even when display:none
-    console.log(`[GalleryPage] Setting files at T+0ms...`);
-    await fileInput.setInputFiles({
-      name: filename,
-      mimeType: 'image/png',
-      buffer: imageBuffer,
-    });
+    // WORKAROUND: Sometimes the first setInputFiles doesn't trigger the change event
+    // in Docker/CI environments. We try up to 3 times with verification.
+    let uploadTriggered = false;
+    for (let attempt = 1; attempt <= 3 && !uploadTriggered; attempt++) {
+      console.log(`[GalleryPage] Setting files attempt #${attempt} at T+${Date.now() - startTime}ms...`);
+      await fileInput.setInputFiles({
+        name: filename,
+        mimeType: 'image/png',
+        buffer: imageBuffer,
+      });
+      
+      // Give React time to process the change event
+      await this.page.waitForTimeout(100 * attempt);
+      
+      // Quick check if upload started
+      const buttonText = await uploadButton.textContent();
+      const currentCount = await this.photos.count();
+      const isUploading = buttonText?.includes('Uploading') || buttonText?.includes('Nahrávání') || /\d+%/.test(buttonText || '');
+      const hasNewPhoto = currentCount >= expectedCount;
+      
+      if (isUploading || hasNewPhoto) {
+        uploadTriggered = true;
+        console.log(`[GalleryPage] Upload triggered on attempt #${attempt} at T+${Date.now() - startTime}ms`);
+      } else {
+        console.log(`[GalleryPage] Attempt #${attempt}: button="${buttonText}", photos=${currentCount} - retrying...`);
+        // Clear and retry
+        if (attempt < 3) {
+          await fileInput.setInputFiles([]);
+          await this.page.waitForTimeout(50);
+        }
+      }
+    }
+    
     console.log(`[GalleryPage] Files set at T+${Date.now() - startTime}ms, waiting for upload to process...`);
     
     // CRITICAL: Give React time to process the change event and update state.
@@ -942,8 +969,8 @@ export class GalleryPage {
       pollCount++;
       const buttonText = await uploadButton.textContent();
       const currentCount = await this.photos.count();
-      // Button shows "Uploading..." or a percentage like "33%", "66%" during upload
-      const isUploading = buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
+      // Button shows "Uploading..." (EN), "Nahrávání..." (CS), or a percentage like "33%", "66%" during upload
+      const isUploading = buttonText?.includes('Uploading') || buttonText?.includes('Nahrávání') || /\d+%/.test(buttonText || '');
       const hasNewPhoto = currentCount >= expectedCount;
       
       // Log every poll to help debug timing issues
@@ -961,8 +988,8 @@ export class GalleryPage {
     await expect(async () => {
       completePollCount++;
       const buttonText = await uploadButton.textContent();
-      // Button shows "Uploading..." or a percentage like "33%", "66%" during upload
-      const isUploading = buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
+      // Button shows "Uploading..." (EN), "Nahrávání..." (CS), or a percentage like "33%", "66%" during upload
+      const isUploading = buttonText?.includes('Uploading') || buttonText?.includes('Nahrávání') || /\d+%/.test(buttonText || '');
       const currentCount = await this.photos.count();
       
       // Log completion polls
