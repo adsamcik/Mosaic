@@ -14,7 +14,7 @@
  * optimal compression (~50% smaller than JPEG at equivalent quality).
  *
  * HEIC/HEIF input: Files in HEIC/HEIF format are automatically decoded
- * to JPEG before processing using the heic2any library.
+ * to JPEG before processing using the heic-to library (libheif wrapper).
  *
  * AVIF output: All tiers are encoded as AVIF. Browsers that don't support
  * AVIF will use a fallback decoder at display time.
@@ -486,7 +486,7 @@ export async function generateThumbnail(
     const processableBlob = await prepareForBitmap(file, detectedMimeType);
 
     // Get EXIF orientation before creating bitmap
-    // Note: For HEIC files, EXIF may be lost after conversion, but heic2any preserves it
+    // Note: For HEIC files, EXIF may be lost after conversion, but heic-to preserves it
     const orientation = await getExifOrientation(file);
 
     // Create bitmap for efficient decoding
@@ -764,7 +764,7 @@ export async function generateTieredImages(
     const processableBlob = await prepareForBitmap(file, detectedMimeType);
 
     // Get EXIF orientation before creating bitmap
-    // Note: For HEIC files, EXIF may be lost after conversion, but heic2any preserves it
+    // Note: For HEIC files, EXIF may be lost after conversion, but heic-to preserves it
     const orientation = await getExifOrientation(file);
 
     // Create bitmap for efficient decoding

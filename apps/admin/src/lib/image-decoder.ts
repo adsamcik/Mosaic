@@ -2,7 +2,7 @@
  * Image Decoder Service
  *
  * Provides unified image decoding for formats that browsers may not natively support.
- * Currently focuses on HEIC/HEIF decoding using heic2any.
+ * Currently focuses on HEIC/HEIF decoding using heic-to (actively maintained libheif wrapper).
  *
  * The output of this service is always a format that can be used with
  * createImageBitmap() for canvas processing.
@@ -14,32 +14,32 @@ import { needsDecoding as checkNeedsDecoding } from './mime-type-detection';
 const log = createLogger('image-decoder');
 
 // =============================================================================
-// HEIC Decoding (via heic2any)
+// HEIC Decoding (via heic-to)
 // =============================================================================
 
-// Cache for heic2any module (lazy loaded)
-let heic2anyModule: typeof import('heic2any') | null = null;
-let heic2anyLoadPromise: Promise<typeof import('heic2any')> | null = null;
+// Cache for heic-to module (lazy loaded)
+let heicToModule: typeof import('heic-to') | null = null;
+let heicToLoadPromise: Promise<typeof import('heic-to')> | null = null;
 
 /**
- * Lazily load heic2any module
+ * Lazily load heic-to module
  * Only loads when actually needed (first HEIC file encountered)
  */
-async function getHeic2any(): Promise<typeof import('heic2any')> {
-  if (heic2anyModule) {
-    return heic2anyModule;
+async function getHeicTo(): Promise<typeof import('heic-to')> {
+  if (heicToModule) {
+    return heicToModule;
   }
 
-  if (!heic2anyLoadPromise) {
-    log.info('Loading heic2any library for HEIC decoding...');
-    heic2anyLoadPromise = import('heic2any').then((module) => {
-      heic2anyModule = module;
-      log.info('heic2any library loaded successfully');
+  if (!heicToLoadPromise) {
+    log.info('Loading heic-to library for HEIC decoding...');
+    heicToLoadPromise = import('heic-to').then((module) => {
+      heicToModule = module;
+      log.info('heic-to library loaded successfully');
       return module;
     });
   }
 
-  return heic2anyLoadPromise;
+  return heicToLoadPromise;
 }
 
 /**
@@ -47,7 +47,7 @@ async function getHeic2any(): Promise<typeof import('heic2any')> {
  */
 export async function isHeicDecodingAvailable(): Promise<boolean> {
   try {
-    await getHeic2any();
+    await getHeicTo();
     return true;
   } catch {
     return false;
@@ -61,29 +61,26 @@ export async function isHeicDecodingAvailable(): Promise<boolean> {
  * @returns JPEG blob
  */
 async function decodeHeicToJpeg(blob: Blob): Promise<Blob> {
-  const heic2any = await getHeic2any();
+  const heicTo = await getHeicTo();
 
   log.debug('Decoding HEIC image', { size: blob.size });
 
-  const result = await heic2any.default({
+  const result = await heicTo.heicTo({
     blob,
-    toType: 'image/jpeg',
+    type: 'image/jpeg',
     quality: 0.95, // High quality since we'll re-encode to AVIF
   });
 
-  // heic2any can return single Blob or array of Blobs (for multi-image HEIC)
-  const decodedBlob = Array.isArray(result) ? result[0] : result;
-
-  if (!decodedBlob) {
+  if (!result) {
     throw new Error('HEIC decoding returned empty result');
   }
 
   log.debug('HEIC decoded successfully', {
     originalSize: blob.size,
-    decodedSize: decodedBlob.size,
+    decodedSize: result.size,
   });
 
-  return decodedBlob;
+  return result;
 }
 
 // =============================================================================
