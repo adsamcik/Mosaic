@@ -56,8 +56,8 @@ vi.mock('../../src/lib/album-metadata-service', () => ({
   clearAllCachedMetadata: vi.fn(),
 }));
 
-vi.mock('../../src/lib/blurhash-decoder', () => ({
-  clearBlurhashCache: vi.fn(),
+vi.mock('../../src/lib/thumbhash-decoder', () => ({
+  clearPlaceholderCache: vi.fn(),
 }));
 
 vi.mock('../../src/lib/photo-service', () => ({
@@ -89,7 +89,7 @@ import { closeGeoClient } from '../../src/lib/geo-client';
 import { clearAllEpochKeys } from '../../src/lib/epoch-key-store';
 import { clearAllCovers } from '../../src/lib/album-cover-service';
 import { clearAllCachedMetadata } from '../../src/lib/album-metadata-service';
-import { clearBlurhashCache } from '../../src/lib/blurhash-decoder';
+import { clearPlaceholderCache } from '../../src/lib/thumbhash-decoder';
 import { clearPhotoCache } from '../../src/lib/photo-service';
 import { clearCacheEncryptionKey } from '../../src/lib/key-cache';
 import { getApi } from '../../src/lib/api';
@@ -136,8 +136,8 @@ async function getSessionModule() {
     clearAllCachedMetadata: vi.fn(),
   }));
 
-  vi.doMock('../../src/lib/blurhash-decoder', () => ({
-    clearBlurhashCache: vi.fn(),
+  vi.doMock('../../src/lib/thumbhash-decoder', () => ({
+    clearPlaceholderCache: vi.fn(),
   }));
 
   vi.doMock('../../src/lib/photo-service', () => ({
@@ -171,7 +171,7 @@ async function getSessionModule() {
   const albumCoverService = await import('../../src/lib/album-cover-service');
   const albumMetadataService =
     await import('../../src/lib/album-metadata-service');
-  const blurhashDecoder = await import('../../src/lib/blurhash-decoder');
+  const thumbhashDecoder = await import('../../src/lib/thumbhash-decoder');
   const photoService = await import('../../src/lib/photo-service');
   const keyCache = await import('../../src/lib/key-cache');
   const api = await import('../../src/lib/api');
@@ -184,7 +184,7 @@ async function getSessionModule() {
     clearAllEpochKeys: epochKeyStore.clearAllEpochKeys,
     clearAllCovers: albumCoverService.clearAllCovers,
     clearAllCachedMetadata: albumMetadataService.clearAllCachedMetadata,
-    clearBlurhashCache: blurhashDecoder.clearBlurhashCache,
+    clearPlaceholderCache: thumbhashDecoder.clearPlaceholderCache,
     clearPhotoCache: photoService.clearPhotoCache,
     clearCacheEncryptionKey: keyCache.clearCacheEncryptionKey,
     getApi: api.getApi,
@@ -252,7 +252,7 @@ describe('session', () => {
         session,
         clearAllCachedMetadata,
         clearAllCovers,
-        clearBlurhashCache,
+        clearPlaceholderCache,
         clearPhotoCache,
         clearAllEpochKeys,
         clearCacheEncryptionKey,
@@ -288,7 +288,7 @@ describe('session', () => {
       // Verify all cache clear functions were called
       expect(clearAllCachedMetadata).toHaveBeenCalledOnce();
       expect(clearAllCovers).toHaveBeenCalledOnce();
-      expect(clearBlurhashCache).toHaveBeenCalledOnce();
+      expect(clearPlaceholderCache).toHaveBeenCalledOnce();
       expect(clearPhotoCache).toHaveBeenCalledOnce();
       expect(clearAllEpochKeys).toHaveBeenCalledOnce();
       expect(clearCacheEncryptionKey).toHaveBeenCalledOnce();
@@ -308,7 +308,7 @@ describe('session', () => {
         session,
         clearAllCachedMetadata,
         clearAllCovers,
-        clearBlurhashCache,
+        clearPlaceholderCache,
         clearPhotoCache,
         clearAllEpochKeys,
         clearCacheEncryptionKey,
@@ -328,8 +328,8 @@ describe('session', () => {
       (clearAllCovers as Mock).mockImplementation(() => {
         callOrder.push('clearAllCovers');
       });
-      (clearBlurhashCache as Mock).mockImplementation(() => {
-        callOrder.push('clearBlurhashCache');
+      (clearPlaceholderCache as Mock).mockImplementation(() => {
+        callOrder.push('clearPlaceholderCache');
       });
       (clearPhotoCache as Mock).mockImplementation(() => {
         callOrder.push('clearPhotoCache');
@@ -366,7 +366,7 @@ describe('session', () => {
       // Verify data caches are cleared before crypto key operations
       const metadataIndex = callOrder.indexOf('clearAllCachedMetadata');
       const coversIndex = callOrder.indexOf('clearAllCovers');
-      const blurhashIndex = callOrder.indexOf('clearBlurhashCache');
+      const blurhashIndex = callOrder.indexOf('clearPlaceholderCache');
       const photoCacheIndex = callOrder.indexOf('clearPhotoCache');
       const epochKeysIndex = callOrder.indexOf('clearAllEpochKeys');
       const cacheEncryptionKeyIndex = callOrder.indexOf(
@@ -392,7 +392,7 @@ describe('session', () => {
         session,
         clearAllCachedMetadata,
         clearAllCovers,
-        clearBlurhashCache,
+        clearPlaceholderCache,
         clearPhotoCache,
         clearAllEpochKeys,
         clearCacheEncryptionKey,
@@ -405,7 +405,7 @@ describe('session', () => {
       } = await getSessionModule();
 
       // Make one clear function throw
-      (clearBlurhashCache as Mock).mockImplementation(() => {
+      (clearPlaceholderCache as Mock).mockImplementation(() => {
         throw new Error('BlurHash cache clear failed');
       });
 
@@ -424,7 +424,7 @@ describe('session', () => {
       vi.clearAllMocks();
 
       // Re-apply the throwing mock after clearing
-      (clearBlurhashCache as Mock).mockImplementation(() => {
+      (clearPlaceholderCache as Mock).mockImplementation(() => {
         throw new Error('BlurHash cache clear failed');
       });
 

@@ -25,12 +25,12 @@ vi.mock('../../src/lib/photo-service', () => ({
   releasePhoto: vi.fn(),
 }));
 
-// Mock the blurhash-decoder
-vi.mock('../../src/lib/blurhash-decoder', () => ({
-  getCachedBlurhashDataURL: vi
+// Mock the thumbhash-decoder
+vi.mock('../../src/lib/thumbhash-decoder', () => ({
+  getCachedPlaceholderDataURL: vi
     .fn()
-    .mockReturnValue('data:image/png;base64,blurhashMockData'),
-  isValidBlurhash: vi
+    .mockReturnValue('data:image/png;base64,thumbhashMockData'),
+  isValidPlaceholderHash: vi
     .fn()
     .mockImplementation((hash: string) => hash && hash.length > 4),
 }));

@@ -14,9 +14,9 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import {
-  getCachedBlurhashDataURL,
-  isValidBlurhash,
-} from '../../lib/blurhash-decoder';
+  getCachedPlaceholderDataURL,
+  isValidPlaceholderHash,
+} from '../../lib/thumbhash-decoder';
 import type { PhotoMeta } from '../../workers/types';
 
 export interface SharedPhotoThumbnailProps {
@@ -48,15 +48,12 @@ export const SharedPhotoThumbnail = memo(function SharedPhotoThumbnail({
 }: SharedPhotoThumbnailProps) {
   const [state, setState] = useState<ThumbnailState>({ status: 'idle' });
 
-  // BlurHash placeholder - instant, decoded in <1ms
-  const blurhashUrl = useMemo(() => {
-    if (!photo.blurhash || !isValidBlurhash(photo.blurhash)) return null;
-    try {
-      return getCachedBlurhashDataURL(photo.blurhash, 32, 32);
-    } catch {
-      return null;
-    }
-  }, [photo.blurhash]);
+  // Placeholder (ThumbHash or legacy BlurHash) - instant, decoded in <1ms
+  const placeholderUrl = useMemo(() => {
+    const hash = photo.thumbhash || photo.blurhash;
+    if (!hash || !isValidPlaceholderHash(hash)) return null;
+    return getCachedPlaceholderDataURL(hash);
+  }, [photo.thumbhash, photo.blurhash]);
 
   // Use embedded thumbnail immediately if available (no network request needed)
   const embeddedThumbnailUrl = useMemo(() => {
@@ -97,10 +94,10 @@ export const SharedPhotoThumbnail = memo(function SharedPhotoThumbnail({
     switch (state.status) {
       case 'idle':
         // Use blurhash placeholder if available, otherwise show icon placeholder
-        if (blurhashUrl) {
+        if (placeholderUrl) {
           return (
             <img
-              src={blurhashUrl}
+              src={placeholderUrl}
               alt={photo.filename}
               className="photo-image photo-blurhash"
               data-testid="photo-blurhash"
@@ -118,9 +115,9 @@ export const SharedPhotoThumbnail = memo(function SharedPhotoThumbnail({
       case 'loading':
         return (
           <div className="photo-loading" data-testid="photo-loading">
-            {blurhashUrl && (
+            {placeholderUrl && (
               <img
-                src={blurhashUrl}
+                src={placeholderUrl}
                 alt=""
                 className="photo-image photo-blurhash"
                 aria-hidden="true"

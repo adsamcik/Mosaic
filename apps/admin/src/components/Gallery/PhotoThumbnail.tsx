@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  getCachedBlurhashDataURL,
-  isValidBlurhash,
-} from '../../lib/blurhash-decoder';
+  getCachedPlaceholderDataURL,
+  isValidPlaceholderHash,
+} from '../../lib/thumbhash-decoder';
 import {
   loadPhoto,
   releasePhoto,
@@ -66,17 +66,12 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
   const [state, setState] = useState<ThumbnailState>({ status: 'idle' });
   const [isHovered, setIsHovered] = useState(false);
 
-  // BlurHash placeholder - instant, decoded in <1ms (highest priority placeholder)
-  const blurhashUrl = useMemo(() => {
-    if (!photo.blurhash || !isValidBlurhash(photo.blurhash)) return null;
-    try {
-      // Use small dimensions (32x32) for fast decoding, CSS will scale it
-      return getCachedBlurhashDataURL(photo.blurhash, 32, 32);
-    } catch {
-      // Invalid blurhash, ignore
-      return null;
-    }
-  }, [photo.blurhash]);
+  // Placeholder (ThumbHash or legacy BlurHash) - instant, decoded in <1ms
+  const placeholderUrl = useMemo(() => {
+    const hash = photo.thumbhash || photo.blurhash;
+    if (!hash || !isValidPlaceholderHash(hash)) return null;
+    return getCachedPlaceholderDataURL(hash);
+  }, [photo.thumbhash, photo.blurhash]);
 
   // Use embedded thumbnail immediately if available (no network request needed)
   const embeddedThumbnailUrl = useMemo(() => {
@@ -214,13 +209,13 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
 
     // If we have a blurhash, show it as instant placeholder while loading
     if (
-      blurhashUrl &&
+      placeholderUrl &&
       (state.status === 'idle' || state.status === 'loading')
     ) {
       return (
         <div className="photo-blurhash" data-testid="photo-blurhash">
           <img
-            src={blurhashUrl}
+            src={placeholderUrl}
             alt=""
             aria-hidden="true"
             className="photo-blurhash-image"
@@ -335,7 +330,7 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
 
   // Allow clicking when any visual is available (blurhash, embedded thumbnail, or fully loaded)
   const isClickable =
-    blurhashUrl || embeddedThumbnailUrl || state.status === 'loaded';
+    placeholderUrl || embeddedThumbnailUrl || state.status === 'loaded';
 
   // Handle click - in selection mode, toggle selection; otherwise open photo
   const handleClick = useCallback(

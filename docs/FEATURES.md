@@ -564,19 +564,21 @@ npx playwright test auth-modes.spec.ts --project=chromium
 
 ---
 
-### BlurHash Placeholders
+### ThumbHash Placeholders
 
-**Purpose:** Progressive image loading with blurred placeholders.
+**Purpose:** Progressive image loading with compact, high-quality placeholders that preserve aspect ratio.
 
 **Implementation:**
 | Layer    | Location                                                              |
 | -------- | --------------------------------------------------------------------- |
-| Frontend | [lib/blurhash-decoder.ts](../apps/admin/src/lib/blurhash-decoder.ts)  |
+| Frontend | [lib/thumbhash-decoder.ts](../apps/admin/src/lib/thumbhash-decoder.ts)  |
 
 **Features:**
-- BlurHash generation during upload
+- ThumbHash generation during upload (~25 bytes, base64-encoded)
+- Preserves aspect ratio information in placeholder
+- Supports alpha channel (transparency)
 - Fast placeholder rendering before thumbnails load
-- Improved perceived performance
+- Backward compatibility with legacy BlurHash data
 
 ---
 
@@ -614,6 +616,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-01-22 | ThumbHash Placeholders      | Modified | Migrated from BlurHash to ThumbHash for better quality and aspect ratio preservation |
 | 2026-01-21 | Documentation Update        | Modified | Updated file paths, added missing features (Admin, i18n, Format Conversion, BlurHash) |
 | 2026-01-06 | Gallery Animation Tests     | Added    | E2E tests for AnimatedTile, documented happy-dom limitations |
 | 2025-07-24 | Photo Grid Animation System | Added    | Enter/exit animations with TanStack Virtual compatibility    |

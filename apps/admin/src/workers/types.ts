@@ -31,7 +31,9 @@ export interface PhotoMeta {
   thumbHeight?: number;
   /** User-provided description for the photo */
   description?: string;
-  /** BlurHash string for instant placeholder (~30 chars, 4x3 components) */
+  /** ThumbHash string (base64-encoded, ~25 bytes) for instant placeholder */
+  thumbhash?: string;
+  /** @deprecated Legacy BlurHash string - use thumbhash for new uploads */
   blurhash?: string;
 
   // Tier-specific shard IDs (use these for new uploads)

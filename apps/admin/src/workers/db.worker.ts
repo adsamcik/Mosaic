@@ -335,6 +335,21 @@ class DbWorker implements DbWorkerApi {
       }
     }
 
+    // Version 4 -> 5: Add thumbhash column (replaces blurhash for new uploads)
+    if (currentVersion < 5) {
+      log.info('Running migration: v4 -> v5 (thumbhash column)');
+
+      try {
+        this.db.run(`ALTER TABLE photos ADD COLUMN thumbhash TEXT;`);
+
+        this.setSchemaVersion(5);
+        log.info('Thumbhash column migration complete');
+      } catch (error) {
+        log.error('Failed to add thumbhash column', error);
+        throw error;
+      }
+    }
+
     // Ensure FTS table exists (safety check for corrupted state)
     if (!this.ftsTableExists()) {
       log.warn('FTS table missing despite schema version, recreating...');
@@ -376,8 +391,8 @@ class DbWorker implements DbWorkerApi {
 
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO photos 
-      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description, thumbnail, thumb_width, thumb_height, blurhash, thumbnail_shard_id, thumbnail_shard_hash, preview_shard_id, preview_shard_hash, original_shard_ids, original_shard_hashes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description, thumbnail, thumb_width, thumb_height, blurhash, thumbnail_shard_id, thumbnail_shard_hash, preview_shard_id, preview_shard_hash, original_shard_ids, original_shard_hashes, thumbhash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const m of manifests) {
@@ -387,7 +402,7 @@ class DbWorker implements DbWorkerApi {
         log.debug('insertManifest', {
           id: m.id,
           hasThumbnail: !!m.meta.thumbnail,
-          hasBlurhash: !!m.meta.blurhash,
+          hasThumbhash: !!m.meta.thumbhash,
           shardCount: m.meta.shardIds?.length ?? 0,
           hasTierShards: !!(
             m.meta.thumbnailShardId ||
@@ -426,6 +441,8 @@ class DbWorker implements DbWorkerApi {
           m.meta.previewShardHash ?? null,
           JSON.stringify(m.meta.originalShardIds ?? []),
           JSON.stringify(m.meta.originalShardHashes ?? []),
+          // ThumbHash placeholder (v5)
+          m.meta.thumbhash ?? null,
         ]);
       }
     }

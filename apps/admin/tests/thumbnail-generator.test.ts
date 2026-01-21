@@ -282,28 +282,26 @@ describe('generateThumbnail', () => {
     expect(result.originalWidth).toBe(800);
     expect(result.originalHeight).toBe(600);
     expect(result.data).toBeInstanceOf(Uint8Array);
-    expect(result.blurhash).toBeDefined();
-    expect(typeof result.blurhash).toBe('string');
-    expect(result.blurhash.length).toBeGreaterThan(6); // BlurHash is at least 6 chars
+    expect(result.thumbhash).toBeDefined();
+    expect(typeof result.thumbhash).toBe('string');
+    // ThumbHash is base64-encoded, typically 27-40 characters
+    expect(result.thumbhash.length).toBeGreaterThan(20);
   });
 
-  it('generates blurhash with valid format and characters', async () => {
+  it('generates thumbhash with valid base64 format', async () => {
     const file = new File(['fake-image-data'], 'test.jpg', {
       type: 'image/jpeg',
     });
 
     const result = await generateThumbnail(file);
 
-    // BlurHash should be a string between 6-100 characters
-    expect(result.blurhash.length).toBeGreaterThanOrEqual(6);
-    expect(result.blurhash.length).toBeLessThanOrEqual(100);
+    // ThumbHash should be a base64 string between 20-50 characters
+    expect(result.thumbhash.length).toBeGreaterThanOrEqual(20);
+    expect(result.thumbhash.length).toBeLessThanOrEqual(50);
 
-    // BlurHash uses base83 encoding with specific characters
-    const validChars =
-      '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~';
-    for (const char of result.blurhash) {
-      expect(validChars).toContain(char);
-    }
+    // ThumbHash uses standard base64 encoding
+    const base64Regex = /^[A-Za-z0-9+/=]+$/;
+    expect(base64Regex.test(result.thumbhash)).toBe(true);
   });
 
   it('generates thumbnail from PNG file', async () => {

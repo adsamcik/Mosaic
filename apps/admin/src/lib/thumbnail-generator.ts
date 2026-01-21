@@ -20,7 +20,7 @@
  * AVIF will use a fallback decoder at display time.
  */
 
-import { encode as encodeBlurhash } from 'blurhash';
+import { rgbaToThumbHash } from 'thumbhash';
 import {
   encryptShard,
   ShardTier,
@@ -191,8 +191,8 @@ export interface ThumbnailResult {
   originalWidth: number;
   /** Original image height */
   originalHeight: number;
-  /** BlurHash string for instant placeholder (4x3 components, ~30 chars) */
-  blurhash: string;
+  /** ThumbHash string (base64-encoded, ~25 bytes) for instant placeholder */
+  thumbhash: string;
 }
 
 /**
@@ -535,35 +535,35 @@ export async function generateThumbnail(
     // Clean up bitmap
     bitmap.close();
 
-    // Generate blurhash from canvas image data (before JPEG encoding)
-    // Use smaller dimensions for faster encoding while maintaining quality
-    const blurhashWidth = Math.min(dims.width, 32);
-    const blurhashHeight = Math.min(dims.height, 32);
+    // Generate thumbhash from canvas image data (before JPEG encoding)
+    // ThumbHash works best with images around 100x100, but we use smaller for speed
+    const thumbhashWidth = Math.min(dims.width, 100);
+    const thumbhashHeight = Math.min(dims.height, 100);
 
-    // Create a small canvas for blurhash to speed up encoding
-    const blurhashCanvas = document.createElement('canvas');
-    blurhashCanvas.width = blurhashWidth;
-    blurhashCanvas.height = blurhashHeight;
-    const blurhashCtx = blurhashCanvas.getContext('2d');
-    if (!blurhashCtx) {
-      throw new ThumbnailError('Failed to get blurhash canvas 2D context');
+    // Create a small canvas for thumbhash to speed up encoding
+    const thumbhashCanvas = document.createElement('canvas');
+    thumbhashCanvas.width = thumbhashWidth;
+    thumbhashCanvas.height = thumbhashHeight;
+    const thumbhashCtx = thumbhashCanvas.getContext('2d');
+    if (!thumbhashCtx) {
+      throw new ThumbnailError('Failed to get thumbhash canvas 2D context');
     }
-    blurhashCtx.drawImage(canvas, 0, 0, blurhashWidth, blurhashHeight);
-    const blurhashImageData = blurhashCtx.getImageData(
+    thumbhashCtx.drawImage(canvas, 0, 0, thumbhashWidth, thumbhashHeight);
+    const thumbhashImageData = thumbhashCtx.getImageData(
       0,
       0,
-      blurhashWidth,
-      blurhashHeight,
+      thumbhashWidth,
+      thumbhashHeight,
     );
 
-    // Encode blurhash with 4x3 components for good quality/size balance (~30 chars)
-    const blurhash = encodeBlurhash(
-      blurhashImageData.data,
-      blurhashWidth,
-      blurhashHeight,
-      4, // componentX
-      3, // componentY
+    // Encode thumbhash - returns Uint8Array (~25 bytes)
+    const thumbhashBytes = rgbaToThumbHash(
+      thumbhashWidth,
+      thumbhashHeight,
+      thumbhashImageData.data,
     );
+    // Convert to base64 for storage
+    const thumbhash = uint8ArrayToBase64(thumbhashBytes);
 
     // Use WebP if supported (30-40% smaller), fallback to JPEG
     const outputFormat = getPreferredImageFormat();
@@ -601,7 +601,7 @@ export async function generateThumbnail(
       height: dims.height,
       originalWidth: logicalWidth,
       originalHeight: logicalHeight,
-      blurhash,
+      thumbhash,
     };
   } catch (error) {
     if (error instanceof ThumbnailError) {

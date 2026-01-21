@@ -1,7 +1,7 @@
 import { clearAllCovers } from './album-cover-service';
 import { clearAllCachedMetadata } from './album-metadata-service';
 import { fromBase64, getApi, toBase64 } from './api';
-import { clearBlurhashCache } from './blurhash-decoder';
+import { clearPlaceholderCache } from './thumbhash-decoder';
 import { clearPhotoCache } from './photo-service';
 import type { User } from './api-types';
 import { closeCryptoClient, getCryptoClient } from './crypto-client';
@@ -768,8 +768,8 @@ class SessionManager {
     // Clear album cover cache
     clearAllCovers();
 
-    // Clear blurhash cache
-    clearBlurhashCache();
+    // Clear placeholder hash cache (thumbhash/blurhash)
+    clearPlaceholderCache();
 
     // Clear photo cache (revokes decrypted blob URLs)
     clearPhotoCache();
