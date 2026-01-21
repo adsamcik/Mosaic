@@ -102,6 +102,7 @@ async function createManifestForUpload(
     ...(task.thumbnailBase64 && { thumbnail: task.thumbnailBase64 }),
     ...(task.thumbWidth && { thumbWidth: task.thumbWidth }),
     ...(task.thumbHeight && { thumbHeight: task.thumbHeight }),
+    ...(task.thumbhash && { thumbhash: task.thumbhash }),
     // New tier-specific shard IDs
     ...(tieredShards && {
       thumbnailShardId: tieredShards.thumbnail.shardId,

@@ -104,8 +104,8 @@ export interface UploadTask {
   originalWidth?: number;
   /** Original image height */
   originalHeight?: number;
-  /** BlurHash string for instant placeholder (~30 chars) */
-  blurhash?: string;
+  /** ThumbHash string for instant placeholder (~25 bytes base64) */
+  thumbhash?: string;
   /** Tiered shard IDs for the completed upload */
   tieredShards?: TieredShardIds;
   /** Detected MIME type from magic bytes (more reliable than file.type) */
@@ -136,8 +136,8 @@ interface PersistedTask {
   originalWidth?: number;
   /** Original image height */
   originalHeight?: number;
-  /** BlurHash string for instant placeholder (~30 chars) */
-  blurhash?: string;
+  /** ThumbHash string for instant placeholder (~25 bytes base64) */
+  thumbhash?: string;
 }
 
 /** IndexedDB schema */
@@ -464,7 +464,7 @@ class UploadQueue {
         const quality = getThumbnailQualityValue();
         const thumbResult = await generateThumbnail(task.file, { quality });
         task.thumbnailBase64 = uint8ArrayToBase64(thumbResult.data);
-        task.blurhash = thumbResult.blurhash;
+        task.thumbhash = thumbResult.thumbhash;
         log.info(`Base64 thumbnail generated successfully`);
       } catch (thumbError) {
         log.error('Thumbnail generation for manifest failed', thumbError);
@@ -557,7 +557,7 @@ class UploadQueue {
       };
       if (task.thumbnailBase64)
         persistedUpdate.thumbnailBase64 = task.thumbnailBase64;
-      if (task.blurhash) persistedUpdate.blurhash = task.blurhash;
+      if (task.thumbhash) persistedUpdate.thumbhash = task.thumbhash;
 
       await this.updatePersistedTask(task.id, persistedUpdate);
 
@@ -740,7 +740,7 @@ class UploadQueue {
       thumbHeight: persisted.thumbHeight,
       originalWidth: persisted.originalWidth,
       originalHeight: persisted.originalHeight,
-      blurhash: persisted.blurhash,
+      thumbhash: persisted.thumbhash,
     };
 
     this.queue.push(task);
