@@ -60,6 +60,12 @@ export function SquarePhotoGrid({
     [photos],
   );
 
+  // Memoized list of sorted photo IDs for range selection
+  const sortedPhotoIds = useMemo(
+    () => sortedPhotos.map((p) => p.id),
+    [sortedPhotos],
+  );
+
   const lightbox = useLightbox(sortedPhotos);
 
   // Get photo items from store for status checking
@@ -195,17 +201,27 @@ export function SquarePhotoGrid({
   );
 
   // Handle selection change for a single photo
+  // Supports shift-click for range selection
   const handleSelectionChange = useCallback(
-    (photoId: string, selected: boolean) => {
+    (
+      photoId: string,
+      selected: boolean,
+      event?: React.MouseEvent | React.KeyboardEvent,
+    ) => {
       if (selection) {
         if (selected) {
-          selection.selectPhoto(photoId);
+          // Check for shift-click range selection
+          if (event?.shiftKey && selection.lastSelectedId) {
+            selection.selectRange(photoId, sortedPhotoIds);
+          } else {
+            selection.selectPhoto(photoId);
+          }
         } else {
           selection.deselectPhoto(photoId);
         }
       }
     },
-    [selection],
+    [selection, sortedPhotoIds],
   );
 
   if (isLoading || keysLoading) {
@@ -295,18 +311,22 @@ export function SquarePhotoGrid({
                   // Render pending photo with progress overlay
                   const progress = pendingItem.uploadProgress ?? 0;
                   const isUploading = progress > 0 && progress < 1;
-                  const statusText = pendingItem.error
-                    ? 'Error'
-                    : isUploading
-                      ? 'Uploading...'
-                      : pendingItem.status === 'syncing'
-                        ? 'Finalizing...'
-                        : 'Queued';
+                  const isSyncing = pendingItem.status === 'syncing';
+                  const isEncrypting = progress === 0 && !isSyncing && !pendingItem.error;
                   const displayProgress = isUploading
                     ? 20 + progress * 70
-                    : pendingItem.status === 'syncing'
+                    : isSyncing
                       ? 95
-                      : 0;
+                      : isEncrypting
+                        ? 15
+                        : 0;
+                  
+                  // Determine progress bar class
+                  const progressBarClass = isEncrypting
+                    ? 'encrypting'
+                    : isSyncing
+                      ? 'syncing'
+                      : '';
 
                   return (
                     <div
@@ -326,34 +346,74 @@ export function SquarePhotoGrid({
                             alt={photo.filename}
                             className="photo-image"
                             style={{
-                              opacity: 0.7,
+                              opacity: 0.8,
                               width: '100%',
                               height: '100%',
                               objectFit: 'cover',
+                              filter: 'brightness(0.9)',
                             }}
                           />
                         )}
                         <div className="upload-overlay">
-                          {displayProgress > 0 ? (
-                            <div className="upload-progress-container">
-                              <div
-                                className={`upload-progress-bar ${progress === 0 ? 'encrypting' : ''}`}
-                                style={{ width: `${displayProgress}%` }}
-                              />
-                            </div>
+                          <div className="upload-progress-container">
+                            <div
+                              className={`upload-progress-bar ${progressBarClass}`}
+                              style={{ width: `${displayProgress}%` }}
+                            />
+                          </div>
+                          {pendingItem.error ? (
+                            <span className="upload-status upload-status--error">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10" />
+                                <line x1="15" y1="9" x2="9" y2="15" />
+                                <line x1="9" y1="9" x2="15" y2="15" />
+                              </svg>
+                              <span>Failed</span>
+                            </span>
+                          ) : isSyncing ? (
+                            <span className="upload-status upload-status--syncing">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="23 4 23 10 17 10" />
+                                <polyline points="1 20 1 14 7 14" />
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                              </svg>
+                              <span>Syncing</span>
+                            </span>
+                          ) : isEncrypting ? (
+                            <span className="upload-status upload-status--encrypting">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                              </svg>
+                              <span>Encrypting</span>
+                            </span>
+                          ) : isUploading ? (
+                            <span className="upload-status upload-status--uploading">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="17 8 12 3 7 8" />
+                                <line x1="12" y1="3" x2="12" y2="15" />
+                              </svg>
+                              <span>{Math.round(progress * 100)}%</span>
+                            </span>
                           ) : (
-                            !pendingItem.error && (
-                              <div className="upload-queued-badge"></div>
-                            )
+                            <span className="upload-status upload-status--queued">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10" />
+                                <polyline points="12 6 12 12 16 14" />
+                              </svg>
+                              <span>Queued</span>
+                            </span>
                           )}
-                          <span className="upload-status-text">
-                            {statusText}
-                          </span>
                         </div>
                       </div>
                       {pendingItem.error && (
                         <div className="photo-error-overlay">
-                          <span className="error-icon">⚠️</span>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                            <line x1="12" y1="9" x2="12" y2="13" />
+                            <line x1="12" y1="17" x2="12.01" y2="17" />
+                          </svg>
                         </div>
                       )}
                     </div>
@@ -370,8 +430,8 @@ export function SquarePhotoGrid({
                     {...(epochReadKey && { epochReadKey })}
                     onClick={() => handlePhotoClick(photo)}
                     isSelected={isSelected}
-                    onSelectionChange={(selected: boolean) =>
-                      handleSelectionChange(photo.id, selected)
+                    onSelectionChange={(selected, event) =>
+                      handleSelectionChange(photo.id, selected, event)
                     }
                     onDelete={(thumbnailUrl) =>
                       handleDeletePhoto(photo, thumbnailUrl)

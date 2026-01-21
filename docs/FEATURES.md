@@ -27,12 +27,12 @@
 **Purpose:** Development-only authentication using Ed25519 challenge-response.
 
 **Implementation:**
-| Layer    | Location                                                                                            |
-| -------- | --------------------------------------------------------------------------------------------------- |
+| Layer    | Location                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------ |
 | Backend  | [Controllers/DevAuthController.cs](../apps/backend/Mosaic.Backend/Controllers/DevAuthController.cs) |
-| Backend  | [Services/LocalAuthService.cs](../apps/backend/Mosaic.Backend/Services/LocalAuthService.cs)         |
-| Frontend | [lib/local-auth.ts](../apps/admin/src/lib/local-auth.ts)                                            |
-| Frontend | [components/Auth/LocalAuthLogin.tsx](../apps/admin/src/components/Auth/LocalAuthLogin.tsx)          |
+| Backend  | [Middleware/LocalAuthMiddleware.cs](../apps/backend/Mosaic.Backend/Middleware/LocalAuthMiddleware.cs) |
+| Frontend | [lib/local-auth.ts](../apps/admin/src/lib/local-auth.ts)                                         |
+| Frontend | [components/Auth/LoginForm.tsx](../apps/admin/src/components/Auth/LoginForm.tsx)                 |
 
 **Flow:**
 1. Client requests challenge with username
@@ -57,10 +57,10 @@ Auth__ProxyAuthEnabled=false  # Disable ProxyAuth
 **Purpose:** Production authentication via trusted reverse proxy (Authelia, Authentik, etc.).
 
 **Implementation:**
-| Layer   | Location                                                                        |
-| ------- | ------------------------------------------------------------------------------- |
-| Backend | [Middleware/ProxyAuthMiddleware.cs](../apps/backend/Mosaic.Backend/Middleware/) |
-| Backend | [Services/ProxyAuthService.cs](../apps/backend/Mosaic.Backend/Services/)        |
+| Layer   | Location                                                                                           |
+| ------- | -------------------------------------------------------------------------------------------------- |
+| Backend | [Middleware/TrustedProxyMiddleware.cs](../apps/backend/Mosaic.Backend/Middleware/TrustedProxyMiddleware.cs) |
+| Backend | [Middleware/CombinedAuthMiddleware.cs](../apps/backend/Mosaic.Backend/Middleware/CombinedAuthMiddleware.cs) |
 
 **Headers:**
 - `Remote-User`: Authenticated username
@@ -187,7 +187,8 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Implementation:**
 | Layer            | Location                                                                        |
 | ---------------- | ------------------------------------------------------------------------------- |
-| Backend          | [Controllers/UploadsController.cs](../apps/backend/Mosaic.Backend/Controllers/) |
+| Backend          | [Program.cs (Tus config)](../apps/backend/Mosaic.Backend/Program.cs)            |
+| Backend          | [Controllers/ShardsController.cs](../apps/backend/Mosaic.Backend/Controllers/ShardsController.cs) |
 | Frontend Context | [contexts/UploadContext.tsx](../apps/admin/src/contexts/UploadContext.tsx)      |
 | Frontend Hook    | [hooks/useUpload.ts](../apps/admin/src/hooks/useUpload.ts)                      |
 | Frontend UI      | [components/Upload/](../apps/admin/src/components/Upload/)                      |
@@ -228,7 +229,8 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Implementation:**
 | Layer         | Location                                                                       |
 | ------------- | ------------------------------------------------------------------------------ |
-| Backend       | [Controllers/PhotosController.cs](../apps/backend/Mosaic.Backend/Controllers/) |
+| Backend       | [Controllers/ManifestsController.cs](../apps/backend/Mosaic.Backend/Controllers/ManifestsController.cs) |
+| Frontend Hook | [hooks/usePhotoDelete.ts](../apps/admin/src/hooks/usePhotoDelete.ts)           |
 | Frontend Hook | [hooks/usePhotoActions.ts](../apps/admin/src/hooks/usePhotoActions.ts)         |
 
 ---
@@ -260,10 +262,10 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Full-screen photo viewing with navigation.
 
 **Implementation:**
-| Layer              | Location                                                                 |
-| ------------------ | ------------------------------------------------------------------------ |
-| Frontend Hook      | [hooks/useLightbox.ts](../apps/admin/src/hooks/useLightbox.ts)           |
-| Frontend Component | [components/Gallery/Lightbox.tsx](../apps/admin/src/components/Gallery/) |
+| Layer              | Location                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| Frontend Hook      | [hooks/useLightbox.ts](../apps/admin/src/hooks/useLightbox.ts)                     |
+| Frontend Component | [components/Gallery/PhotoViewer.tsx](../apps/admin/src/components/Gallery/PhotoViewer.tsx) |
 
 **Features:**
 - Full-resolution image loading
@@ -373,10 +375,10 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Client-side encrypted storage for offline access.
 
 **Implementation:**
-| Layer   | Location                                                       |
-| ------- | -------------------------------------------------------------- |
-| Worker  | [workers/db.worker.ts](../apps/admin/src/workers/db.worker.ts) |
-| Service | [lib/db-service.ts](../apps/admin/src/lib/db-service.ts)       |
+| Layer   | Location                                                         |
+| ------- | ---------------------------------------------------------------- |
+| Worker  | [workers/db.worker.ts](../apps/admin/src/workers/db.worker.ts)   |
+| Service | [lib/db-client.ts](../apps/admin/src/lib/db-client.ts)           |
 
 **Features:**
 - OPFS-backed SQLite database
@@ -463,6 +465,121 @@ npx playwright test auth-modes.spec.ts --project=chromium
 
 ---
 
+## Admin & System Features
+
+### Admin Dashboard
+
+**Purpose:** System administration panel for managing users, albums, and settings.
+
+**Implementation:**
+| Layer    | Location                                                                                        |
+| -------- | ----------------------------------------------------------------------------------------------- |
+| Backend  | [Controllers/AdminStatsController.cs](../apps/backend/Mosaic.Backend/Controllers/AdminStatsController.cs) |
+| Backend  | [Controllers/AdminUsersController.cs](../apps/backend/Mosaic.Backend/Controllers/AdminUsersController.cs) |
+| Backend  | [Controllers/AdminAlbumsController.cs](../apps/backend/Mosaic.Backend/Controllers/AdminAlbumsController.cs) |
+| Backend  | [Controllers/AdminSettingsController.cs](../apps/backend/Mosaic.Backend/Controllers/AdminSettingsController.cs) |
+| Frontend | [components/Admin/](../apps/admin/src/components/Admin/)                                        |
+
+**Features:**
+- System-wide statistics
+- User management (create, edit, delete)
+- Album management
+- Quota settings management
+- Near-limit warnings
+
+---
+
+### Quota & Storage Limits
+
+**Purpose:** Enforce per-user storage quotas and limits.
+
+**Implementation:**
+| Layer    | Location                                                                    |
+| -------- | --------------------------------------------------------------------------- |
+| Backend  | [Services/QuotaService.cs](../apps/backend/Mosaic.Backend/Services/)        |
+| Backend  | User quota fields in database                                               |
+| Frontend | Quota display in settings and upload UI                                     |
+
+**Features:**
+- Per-user storage quotas
+- Default quota settings
+- Near-quota warnings
+- Album-level limits
+
+---
+
+### Garbage Collection
+
+**Purpose:** Clean up orphaned shards and deleted data.
+
+**Implementation:**
+| Layer   | Location                                                                              |
+| ------- | ------------------------------------------------------------------------------------- |
+| Backend | [Services/GarbageCollectionService.cs](../apps/backend/Mosaic.Backend/Services/)      |
+
+**Features:**
+- Orphaned shard cleanup
+- Background cleanup of deleted data
+
+---
+
+## Internationalization (i18n)
+
+### Multi-Language Support
+
+**Purpose:** Localized user interface in multiple languages.
+
+**Implementation:**
+| Layer    | Location                                                     |
+| -------- | ------------------------------------------------------------ |
+| Frontend | [lib/i18n.ts](../apps/admin/src/lib/i18n.ts)                 |
+| Locales  | [locales/en.json](../apps/admin/src/locales/en.json)         |
+| Locales  | [locales/cs.json](../apps/admin/src/locales/cs.json)         |
+
+**Features:**
+- English and Czech language support
+- Browser language detection
+- Language switching in settings
+
+---
+
+## Format Conversion
+
+### Image Format Conversion Pipeline
+
+**Purpose:** Convert and optimize images for web display.
+
+**Implementation:**
+| Layer    | Location                                                                         |
+| -------- | -------------------------------------------------------------------------------- |
+| Frontend | [lib/image-conversion.ts](../apps/admin/src/lib/image-conversion.ts)             |
+| Frontend | [lib/format-conversion.ts](../apps/admin/src/lib/format-conversion.ts)           |
+| Tests    | [tests/e2e/tests/format-conversion.spec.ts](../tests/e2e/tests/format-conversion.spec.ts) |
+
+**Features:**
+- HEIC/HEIF decoding (iOS photos)
+- AVIF/WebP/JPEG output format selection
+- Browser capability detection
+- EXIF orientation handling
+
+---
+
+### BlurHash Placeholders
+
+**Purpose:** Progressive image loading with blurred placeholders.
+
+**Implementation:**
+| Layer    | Location                                                              |
+| -------- | --------------------------------------------------------------------- |
+| Frontend | [lib/blurhash-decoder.ts](../apps/admin/src/lib/blurhash-decoder.ts)  |
+
+**Features:**
+- BlurHash generation during upload
+- Fast placeholder rendering before thumbnails load
+- Improved perceived performance
+
+---
+
 ## Feature Documentation Template
 
 When adding new features, use this template:
@@ -495,11 +612,12 @@ ENV_VAR=value
 
 ## Changelog
 
-| Date       | Feature                     | Action | Notes                                                        |
-| ---------- | --------------------------- | ------ | ------------------------------------------------------------ |
-| 2026-01-06 | Gallery Animation Tests     | Added  | E2E tests for AnimatedTile, documented happy-dom limitations |
-| 2025-07-24 | Photo Grid Animation System | Added  | Enter/exit animations with TanStack Virtual compatibility    |
-| 2025-12-29 | Auth Mode E2E Tests         | Added  | Comprehensive tests for LocalAuth and ProxyAuth modes        |
-| 2025-12-29 | Photo Selection UX          | Added  | Floating action bar, keyboard shortcuts                      |
-| 2025-12-29 | Map View                    | Fixed  | Filter null GPS coordinates                                  |
-| 2025-12-29 | Photo Counts                | Fixed  | Load from local SQLite database                              |
+| Date       | Feature                     | Action   | Notes                                                        |
+| ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-01-21 | Documentation Update        | Modified | Updated file paths, added missing features (Admin, i18n, Format Conversion, BlurHash) |
+| 2026-01-06 | Gallery Animation Tests     | Added    | E2E tests for AnimatedTile, documented happy-dom limitations |
+| 2025-07-24 | Photo Grid Animation System | Added    | Enter/exit animations with TanStack Virtual compatibility    |
+| 2025-12-29 | Auth Mode E2E Tests         | Added    | Comprehensive tests for LocalAuth and ProxyAuth modes        |
+| 2025-12-29 | Photo Selection UX          | Added    | Floating action bar, keyboard shortcuts                      |
+| 2025-12-29 | Map View                    | Fixed    | Filter null GPS coordinates                                  |
+| 2025-12-29 | Photo Counts                | Fixed    | Load from local SQLite database                              |

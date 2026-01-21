@@ -232,6 +232,8 @@
   },
   "upload": {
     "button": "Upload",
+    "converting": "Converting...",
+    "encrypting": "Encrypting...",
     "uploading": "Uploading...",
     "dropHere": "Drop photos here",
     "failed": "Upload failed"

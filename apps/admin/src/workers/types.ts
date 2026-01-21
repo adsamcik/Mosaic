@@ -55,8 +55,8 @@ export interface PhotoMeta {
   isPending?: boolean;
   /** Upload progress (0-100) for pending photos */
   uploadProgress?: number;
-  /** Current upload action (waiting, encrypting, uploading, finalizing) */
-  uploadAction?: 'waiting' | 'encrypting' | 'uploading' | 'finalizing';
+  /** Current upload action (waiting, converting, encrypting, uploading, finalizing) */
+  uploadAction?: 'waiting' | 'converting' | 'encrypting' | 'uploading' | 'finalizing';
   /** True if this photo is syncing (upload complete, awaiting server confirmation) */
   isSyncing?: boolean;
   /** Error message if upload failed */

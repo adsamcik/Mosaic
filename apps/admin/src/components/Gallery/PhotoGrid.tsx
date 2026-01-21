@@ -182,6 +182,12 @@ export function PhotoGrid({
     [photos],
   );
 
+  // Memoized list of sorted photo IDs for range selection
+  const sortedPhotoIds = useMemo(
+    () => sortedPhotos.map((p) => p.id),
+    [sortedPhotos],
+  );
+
   // Animation system for photo tiles
   const {
     animatedItems,
@@ -368,22 +374,33 @@ export function PhotoGrid({
     [isSelectionMode, lightbox, sortedPhotos],
   );
 
-  // Handle selection change for a single photo (checkbox click)
+  // Handle selection change for a single photo (checkbox or thumbnail click)
+  // Supports shift-click for range selection
   const handleSelectionChange = useCallback(
-    (photoId: string, selected: boolean) => {
+    (
+      photoId: string,
+      selected: boolean,
+      event?: React.MouseEvent | React.KeyboardEvent,
+    ) => {
       if (selection) {
         if (selected) {
           // Enter selection mode if not already in it
           if (!selection.isSelectionMode) {
             selection.enterSelectionMode();
           }
-          selection.selectPhoto(photoId);
+
+          // Check for shift-click range selection
+          if (event?.shiftKey && selection.lastSelectedId) {
+            selection.selectRange(photoId, sortedPhotoIds);
+          } else {
+            selection.selectPhoto(photoId);
+          }
         } else {
           selection.deselectPhoto(photoId);
         }
       }
     },
-    [selection],
+    [selection, sortedPhotoIds],
   );
 
   // Loading state
@@ -515,7 +532,7 @@ export function PhotoGrid({
                           flexShrink: 0,
                         }}
                       >
-                        <JustifiedPhotoThumbnail
+                      <JustifiedPhotoThumbnail
                           photo={photo}
                           width={width}
                           height={height}
@@ -524,8 +541,8 @@ export function PhotoGrid({
                           selectionMode={isSelectionMode}
                           showDelete={permissions.canDelete && !photo.isPending}
                           onClick={() => handlePhotoClick(photo)}
-                          onSelectionChange={(selected: boolean) =>
-                            handleSelectionChange(photo.id, selected)
+                          onSelectionChange={(selected, event) =>
+                            handleSelectionChange(photo.id, selected, event)
                           }
                           onDelete={(thumbnailUrl) =>
                             handleDeletePhoto(photo, thumbnailUrl)

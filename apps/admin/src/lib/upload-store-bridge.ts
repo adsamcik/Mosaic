@@ -37,8 +37,10 @@ let initialized = false;
  */
 function mapAction(
   action: string,
-): 'waiting' | 'encrypting' | 'uploading' | 'finalizing' {
+): 'waiting' | 'converting' | 'encrypting' | 'uploading' | 'finalizing' {
   switch (action) {
+    case 'converting':
+      return 'converting';
     case 'encrypting':
       return 'encrypting';
     case 'uploading':

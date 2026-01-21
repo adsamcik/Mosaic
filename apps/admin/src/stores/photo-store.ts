@@ -10,6 +10,7 @@ export type PhotoStatus = 'stable' | 'pending' | 'syncing' | 'deleting';
 /** Current action during upload */
 export type UploadAction =
   | 'waiting'
+  | 'converting'
   | 'encrypting'
   | 'uploading'
   | 'finalizing';

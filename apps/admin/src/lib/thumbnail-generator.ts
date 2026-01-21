@@ -866,6 +866,80 @@ export async function generateTieredImages(
 }
 
 /**
+ * Encrypt already-converted tiered images.
+ *
+ * Takes the output of generateTieredImages and encrypts each tier
+ * with its corresponding key from the EpochKey.
+ *
+ * @param tieredImages - Pre-converted tiered images
+ * @param epochKey - Epoch key with thumbKey, previewKey, fullKey
+ * @param shardIndex - Shard index within photo (typically 0 for single-shard photos)
+ * @returns Three-tier encrypted shards with metadata
+ * @throws ThumbnailError if encryption fails
+ */
+export async function encryptTieredImages(
+  tieredImages: TieredImageResult,
+  epochKey: EpochKey,
+  shardIndex: number = 0,
+): Promise<TieredShardResult> {
+  try {
+    // Encrypt each tier with its corresponding key
+    const [thumbEncrypted, previewEncrypted, originalEncrypted] =
+      await Promise.all([
+        encryptShard(
+          tieredImages.thumbnail.data,
+          epochKey.thumbKey,
+          epochKey.epochId,
+          shardIndex,
+          ShardTier.THUMB,
+        ),
+        encryptShard(
+          tieredImages.preview.data,
+          epochKey.previewKey,
+          epochKey.epochId,
+          shardIndex,
+          ShardTier.PREVIEW,
+        ),
+        encryptShard(
+          tieredImages.original.data,
+          epochKey.fullKey,
+          epochKey.epochId,
+          shardIndex,
+          ShardTier.ORIGINAL,
+        ),
+      ]);
+
+    return {
+      thumbnail: {
+        encrypted: thumbEncrypted,
+        width: tieredImages.thumbnail.width,
+        height: tieredImages.thumbnail.height,
+        tier: ShardTier.THUMB,
+      },
+      preview: {
+        encrypted: previewEncrypted,
+        width: tieredImages.preview.width,
+        height: tieredImages.preview.height,
+        tier: ShardTier.PREVIEW,
+      },
+      original: {
+        encrypted: originalEncrypted,
+        width: tieredImages.original.width,
+        height: tieredImages.original.height,
+        tier: ShardTier.ORIGINAL,
+      },
+      originalWidth: tieredImages.originalWidth,
+      originalHeight: tieredImages.originalHeight,
+    };
+  } catch (error) {
+    if (error instanceof ThumbnailError) {
+      throw error;
+    }
+    throw new ThumbnailError('Failed to encrypt tiered shards', error);
+  }
+}
+
+/**
  * Generate three-tier encrypted shards from a photo file.
  *
  * Creates and encrypts thumbnail (300px), preview (1200px), and original.

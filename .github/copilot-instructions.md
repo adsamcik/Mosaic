@@ -21,6 +21,9 @@ Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal 
 - libsodium-wrappers for cryptography
 - Comlink for worker communication
 - TanStack Virtual for virtualized lists
+- Zustand for state management
+- i18next for internationalization
+- Leaflet + Supercluster for map features
 
 ### Crypto Library
 - XChaCha20-Poly1305 for encryption
@@ -39,9 +42,16 @@ apps/backend/          # .NET 10 ASP.NET Core API
   Mosaic.Backend.Tests/# Backend tests
 apps/admin/            # React 19 + Vite frontend
   src/components/      # React components
+  src/contexts/        # React contexts (auth, sync, upload, etc.)
   src/hooks/           # Custom hooks
+  src/lib/             # Utility libraries and services
+  src/locales/         # i18n translation files (en, cs)
+  src/stores/          # Zustand state stores
+  src/styles/          # CSS and style files
+  src/types/           # TypeScript type definitions
   src/workers/         # Web Workers (crypto, db, geo)
 tests/e2e/             # Playwright E2E tests
+tests/integration/     # API integration tests
 docs/                  # Documentation
 scripts/               # Build, test, and dev scripts
 ```
@@ -73,7 +83,7 @@ cd apps/admin && npm run build
 **Service URLs:**
 - Frontend: http://localhost:5173
 - Backend: http://localhost:5000
-- Swagger: http://localhost:5000/openapi/v1.json
+- API Docs (Scalar): http://localhost:5000/scalar
 
 ---
 
@@ -791,7 +801,7 @@ The `scripts/dev.ps1` script manages all services as background processes:
 **Service URLs:**
 - Frontend: http://localhost:5173
 - Backend: http://localhost:5000
-- Swagger: http://localhost:5000/openapi/v1.json
+- API Docs (Scalar): http://localhost:5000/scalar
 
 ### Method 3: Manual Commands
 

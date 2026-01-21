@@ -18,8 +18,11 @@ interface PhotoThumbnailProps {
   onClick?: () => void;
   /** Whether this photo is selected (for bulk operations) */
   isSelected?: boolean;
-  /** Callback when selection changes */
-  onSelectionChange?: (selected: boolean) => void;
+  /** Callback when selection changes (includes event for shift-click detection) */
+  onSelectionChange?: (
+    selected: boolean,
+    event?: React.MouseEvent | React.KeyboardEvent,
+  ) => void;
   /** Callback to delete this photo (receives thumbnail blob URL if loaded) */
   onDelete?: (thumbnailUrl?: string) => void;
   /** Whether selection mode is active */
@@ -335,20 +338,23 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
     blurhashUrl || embeddedThumbnailUrl || state.status === 'loaded';
 
   // Handle click - in selection mode, toggle selection; otherwise open photo
-  const handleClick = useCallback(() => {
-    if (selectionMode && onSelectionChange) {
-      onSelectionChange(!isSelected);
-    } else if (onClick && isClickable) {
-      onClick();
-    }
-  }, [selectionMode, onSelectionChange, isSelected, onClick, isClickable]);
+  const handleClick = useCallback(
+    (event: React.MouseEvent) => {
+      if (selectionMode && onSelectionChange) {
+        onSelectionChange(!isSelected, event);
+      } else if (onClick && isClickable) {
+        onClick();
+      }
+    },
+    [selectionMode, onSelectionChange, isSelected, onClick, isClickable],
+  );
 
   // Handle checkbox click in selection mode
   const handleCheckboxClick = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
       if (onSelectionChange) {
-        onSelectionChange(!isSelected);
+        onSelectionChange(!isSelected, event);
       }
     },
     [onSelectionChange, isSelected],
@@ -379,7 +385,7 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
       ) {
         event.preventDefault();
         if (selectionMode && onSelectionChange) {
-          onSelectionChange(!isSelected);
+          onSelectionChange(!isSelected, event);
         } else {
           onClick();
         }

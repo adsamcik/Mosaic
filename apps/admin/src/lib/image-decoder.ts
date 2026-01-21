@@ -6,6 +6,10 @@
  *
  * The output of this service is always a format that can be used with
  * createImageBitmap() for canvas processing.
+ *
+ * NOTE: We use 'heic-to/csp' instead of 'heic-to' because the project's CSP
+ * uses 'wasm-unsafe-eval' but NOT 'unsafe-eval'. The /csp variant is built
+ * without eval() usage, making it CSP-compliant.
  */
 
 import { createLogger } from './logger';
@@ -14,25 +18,25 @@ import { needsDecoding as checkNeedsDecoding } from './mime-type-detection';
 const log = createLogger('image-decoder');
 
 // =============================================================================
-// HEIC Decoding (via heic-to)
+// HEIC Decoding (via heic-to/csp)
 // =============================================================================
 
 // Cache for heic-to module (lazy loaded)
-let heicToModule: typeof import('heic-to') | null = null;
-let heicToLoadPromise: Promise<typeof import('heic-to')> | null = null;
+let heicToModule: typeof import('heic-to/csp') | null = null;
+let heicToLoadPromise: Promise<typeof import('heic-to/csp')> | null = null;
 
 /**
- * Lazily load heic-to module
+ * Lazily load heic-to module (CSP-safe variant)
  * Only loads when actually needed (first HEIC file encountered)
  */
-async function getHeicTo(): Promise<typeof import('heic-to')> {
+async function getHeicTo(): Promise<typeof import('heic-to/csp')> {
   if (heicToModule) {
     return heicToModule;
   }
 
   if (!heicToLoadPromise) {
     log.info('Loading heic-to library for HEIC decoding...');
-    heicToLoadPromise = import('heic-to').then((module) => {
+    heicToLoadPromise = import('heic-to/csp').then((module) => {
       heicToModule = module;
       log.info('heic-to library loaded successfully');
       return module;

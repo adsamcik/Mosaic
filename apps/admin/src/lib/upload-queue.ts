@@ -7,7 +7,8 @@ import { getMimeType } from './mime-type-detection';
 import { getThumbnailQualityValue } from './settings-service';
 import {
   generateThumbnail,
-  generateTieredShards,
+  generateTieredImages,
+  encryptTieredImages,
   isSupportedImageType,
 } from './thumbnail-generator';
 import type { TieredShardIds } from '../workers/types';
@@ -38,6 +39,7 @@ export type UploadStatus =
   | 'permanently_failed';
 export type UploadAction =
   | 'pending'
+  | 'converting'
   | 'encrypting'
   | 'uploading'
   | 'finalizing';
@@ -416,7 +418,7 @@ class UploadQueue {
       const tierKeys = deriveTierKeys(task.readKey);
       log.info(`Tier keys derived successfully`);
 
-      // Construct full EpochKey for generateTieredShards
+      // Construct full EpochKey for encryption
       const epochKey = {
         epochId: task.epochId,
         epochSeed: task.readKey,
@@ -430,15 +432,23 @@ class UploadQueue {
         },
       };
 
-      // Generate tiered shards (thumb, preview, original)
+      // Step 1: Convert image to tiered formats (thumb, preview, original)
+      task.currentAction = 'converting';
+      this.onProgress?.(task);
+
+      log.info(`Starting image conversion for ${task.file.name}`);
+      const tieredImages = await generateTieredImages(task.file);
+      log.info(
+        `Images converted: thumb=${tieredImages.thumbnail.width}x${tieredImages.thumbnail.height}, preview=${tieredImages.preview.width}x${tieredImages.preview.height}, original=${tieredImages.originalWidth}x${tieredImages.originalHeight}`,
+      );
+
+      // Step 2: Encrypt the converted images
       task.currentAction = 'encrypting';
       this.onProgress?.(task);
 
-      log.info(`Starting tiered shard generation for ${task.file.name}`);
-      const tieredResult = await generateTieredShards(task.file, epochKey, 0);
-      log.info(
-        `Tiered shards generated: thumb=${tieredResult.thumbnail.width}x${tieredResult.thumbnail.height}, preview=${tieredResult.preview.width}x${tieredResult.preview.height}, original=${tieredResult.originalWidth}x${tieredResult.originalHeight}`,
-      );
+      log.info(`Starting encryption for ${task.file.name}`);
+      const tieredResult = await encryptTieredImages(tieredImages, epochKey, 0);
+      log.info(`Tiered shards encrypted successfully`);
 
       // Extract dimensions and thumbnail for manifest
       log.info(`Extracting dimensions for manifest`);
@@ -460,7 +470,7 @@ class UploadQueue {
         log.error('Thumbnail generation for manifest failed', thumbError);
       }
 
-      // Upload all three tiers
+      // Step 3: Upload all three tiers
       log.info(`Setting task action to uploading`);
       task.currentAction = 'uploading';
       this.onProgress?.(task);

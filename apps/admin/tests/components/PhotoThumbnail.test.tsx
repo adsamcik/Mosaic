@@ -449,7 +449,7 @@ describe('PhotoThumbnail', () => {
         thumbnail?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
 
-      expect(onSelectionChange).toHaveBeenCalledWith(true);
+      expect(onSelectionChange).toHaveBeenCalledWith(true, expect.anything());
     });
 
     it('shows checkbox in selection mode with embedded thumbnail', () => {

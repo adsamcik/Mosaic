@@ -236,6 +236,8 @@
   },
   "upload": {
     "button": "Nahrát",
+    "converting": "Konverze...",
+    "encrypting": "Šifrování...",
     "uploading": "Nahrávání...",
     "dropHere": "Přetáhněte fotky sem",
     "failed": "Nahrávání selhalo"

@@ -1006,6 +1006,106 @@ export class GalleryPage {
     console.log(`[GalleryPage] Upload complete at T+${Date.now() - startTime}ms. Final photo count: ${finalCount}`);
   }
 
+  /**
+   * Upload a photo with explicit MIME type specification.
+   * Use this when uploading non-PNG formats (JPEG, WebP, HEIC, etc.)
+   * 
+   * @param imageBuffer - Image data as Buffer
+   * @param filename - Filename including extension
+   * @param mimeType - MIME type of the image (e.g., 'image/heic', 'image/jpeg')
+   */
+  async uploadPhotoWithMime(imageBuffer: Buffer, filename: string, mimeType: string) {
+    // Wait for upload button to be visible and enabled (ensures component is hydrated)
+    const uploadButton = this.page.getByTestId('upload-button');
+    await expect(uploadButton).toBeVisible({ timeout: 10000 });
+    await expect(uploadButton).toBeEnabled({ timeout: 10000 });
+    console.log(`[GalleryPage] Upload button ready for ${filename} (${mimeType})`);
+    
+    // Use the testid to find the hidden file input
+    const fileInput = this.page.getByTestId('upload-input');
+    await expect(fileInput).toBeAttached({ timeout: 10000 });
+    
+    // Capture current photo count before upload
+    const countBefore = await this.photos.count();
+    console.log(`[GalleryPage] Photo count before upload: ${countBefore}`);
+    
+    const expectedCount = countBefore + 1;
+    const startTime = Date.now();
+    
+    // Set files with explicit MIME type
+    let uploadTriggered = false;
+    for (let attempt = 1; attempt <= 3 && !uploadTriggered; attempt++) {
+      console.log(`[GalleryPage] Setting files attempt #${attempt} at T+${Date.now() - startTime}ms...`);
+      await fileInput.setInputFiles({
+        name: filename,
+        mimeType: mimeType,
+        buffer: imageBuffer,
+      });
+      
+      // Give React time to process the change event
+      await this.page.waitForTimeout(100 * attempt);
+      
+      // Quick check if upload started
+      const buttonText = await uploadButton.textContent();
+      const currentCount = await this.photos.count();
+      const isUploading = buttonText?.includes('Uploading') || buttonText?.includes('Nahrávání') || /\d+%/.test(buttonText || '');
+      const hasNewPhoto = currentCount >= expectedCount;
+      
+      if (isUploading || hasNewPhoto) {
+        uploadTriggered = true;
+        console.log(`[GalleryPage] Upload triggered on attempt #${attempt} at T+${Date.now() - startTime}ms`);
+      } else {
+        console.log(`[GalleryPage] Attempt #${attempt}: button="${buttonText}", photos=${currentCount} - retrying...`);
+        if (attempt < 3) {
+          await fileInput.setInputFiles([]);
+          await this.page.waitForTimeout(50);
+        }
+      }
+    }
+    
+    console.log(`[GalleryPage] Files set at T+${Date.now() - startTime}ms, waiting for ${mimeType} to process...`);
+    
+    // Give React time to process the change event
+    await this.page.waitForTimeout(50);
+    
+    // Wait for upload to start
+    let pollCount = 0;
+    await expect(async () => {
+      pollCount++;
+      const buttonText = await uploadButton.textContent();
+      const currentCount = await this.photos.count();
+      const isUploading = buttonText?.includes('Uploading') || buttonText?.includes('Nahrávání') || /\d+%/.test(buttonText || '');
+      const hasNewPhoto = currentCount >= expectedCount;
+      
+      if (pollCount <= 5 || pollCount % 10 === 0) {
+        console.log(`[GalleryPage] Poll #${pollCount} at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}`);
+      }
+      
+      expect(isUploading || hasNewPhoto).toBe(true);
+    }).toPass({ timeout: 30000, intervals: [100, 200, 500, 1000] });
+    console.log(`[GalleryPage] Upload started at T+${Date.now() - startTime}ms`);
+    
+    // Wait for upload to complete - use longer timeout for HEIC (decoding takes time)
+    const uploadTimeout = mimeType.includes('heic') || mimeType.includes('heif') ? 90000 : 60000;
+    let completePollCount = 0;
+    await expect(async () => {
+      completePollCount++;
+      const buttonText = await uploadButton.textContent();
+      const isUploading = buttonText?.includes('Uploading') || buttonText?.includes('Nahrávání') || /\d+%/.test(buttonText || '');
+      const currentCount = await this.photos.count();
+      
+      if (completePollCount <= 3 || completePollCount % 5 === 0) {
+        console.log(`[GalleryPage] Complete poll #${completePollCount} at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}`);
+      }
+      
+      expect(isUploading).toBe(false);
+      expect(currentCount).toBeGreaterThanOrEqual(expectedCount);
+    }).toPass({ timeout: uploadTimeout, intervals: [200, 500, 1000, 2000] });
+    
+    const finalCount = await this.photos.count();
+    console.log(`[GalleryPage] Upload complete at T+${Date.now() - startTime}ms. Final photo count: ${finalCount}`);
+  }
+
   async expectPhotoCount(count: number) {
     await expect(this.photos).toHaveCount(count, { timeout: 30000 });
   }

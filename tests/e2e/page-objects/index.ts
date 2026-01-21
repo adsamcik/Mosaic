@@ -563,6 +563,94 @@ export class GalleryPage {
     console.log(`[GalleryPage PO] Upload complete at T+${Date.now() - startTime}ms. Final count: ${await this.getPhotos().count()}`);
   }
 
+  /**
+   * Upload a photo with explicit MIME type specification.
+   * Use this when uploading non-PNG formats (JPEG, WebP, HEIC, etc.)
+   */
+  async uploadPhotoWithMime(
+    imageBuffer: Buffer,
+    filename: string,
+    mimeType: string
+  ): Promise<void> {
+    // Count photos before upload
+    const photoCountBefore = await this.getPhotos().count();
+    const startTime = Date.now();
+    console.log(`[GalleryPage PO] uploadPhotoWithMime: ${filename} (${mimeType}), photo count before: ${photoCountBefore}`);
+
+    await expect(this.uploadInput).toBeAttached({ timeout: 10000 });
+
+    const expectedCount = photoCountBefore + 1;
+
+    // Retry loop: sometimes setInputFiles doesn't trigger the change event
+    let attempt = 0;
+    const maxAttempts = 3;
+
+    while (attempt < maxAttempts) {
+      attempt++;
+      console.log(`[GalleryPage PO] Upload attempt ${attempt}/${maxAttempts} at T+${Date.now() - startTime}ms`);
+
+      // Set files on the input with explicit MIME type
+      await this.uploadInput.setInputFiles({
+        name: filename,
+        mimeType: mimeType,
+        buffer: imageBuffer,
+      });
+
+      // Give React time to process the change event
+      await this.page.waitForTimeout(100);
+
+      // Quick check: did upload start or photo appear?
+      const btn = this.page.getByTestId('upload-button');
+      const buttonText = await btn.textContent().catch(() => '');
+      const currentCount = await this.getPhotos().count();
+      const isUploading =
+        buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
+      const hasNewPhoto = currentCount >= expectedCount;
+
+      if (isUploading || hasNewPhoto) {
+        console.log(`[GalleryPage PO] Upload triggered on attempt ${attempt}`);
+        break;
+      }
+
+      // Wait a bit more and check again
+      await this.page.waitForTimeout(500);
+      const buttonText2 = await btn.textContent().catch(() => '');
+      const currentCount2 = await this.getPhotos().count();
+      const isUploading2 =
+        buttonText2?.includes('Uploading') || /\d+%/.test(buttonText2 || '');
+      const hasNewPhoto2 = currentCount2 >= expectedCount;
+
+      if (isUploading2 || hasNewPhoto2) {
+        console.log(
+          `[GalleryPage PO] Upload triggered on attempt ${attempt} (delayed detection)`
+        );
+        break;
+      }
+
+      if (attempt < maxAttempts) {
+        console.log(`[GalleryPage PO] Upload not triggered, will retry...`);
+        await this.uploadInput.evaluate((el: HTMLInputElement) => {
+          el.value = '';
+        });
+      }
+    }
+
+    // Wait for upload to complete
+    await expect(async () => {
+      const btn = this.page.getByTestId('upload-button');
+      const buttonText = await btn.textContent().catch(() => '');
+      const currentCount = await this.getPhotos().count();
+      const isUploading =
+        buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
+
+      expect(!isUploading && currentCount >= expectedCount).toBe(true);
+    }).toPass({ timeout: 90000, intervals: [100, 250, 500, 1000] });
+
+    console.log(
+      `[GalleryPage PO] Upload complete at T+${Date.now() - startTime}ms. Final count: ${await this.getPhotos().count()}`
+    );
+  }
+
   async uploadMultiplePhotos(
     images: Array<{ buffer: Buffer; filename: string }>
   ): Promise<void> {

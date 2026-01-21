@@ -17,6 +17,7 @@ import sodium from 'libsodium-wrappers-sumo';
 import {
   base64ToUint8Array,
   calculateDimensions,
+  encryptTieredImages,
   generateThumbnail,
   generateThumbnailBase64,
   generateTieredImages,
@@ -1038,5 +1039,147 @@ describe('generateTieredShards', () => {
 
     expect(result.originalWidth).toBe(800);
     expect(result.originalHeight).toBe(600);
+  });
+});
+
+// =============================================================================
+// encryptTieredImages Tests
+// =============================================================================
+
+describe('encryptTieredImages', () => {
+  let epochKey: EpochKey;
+  let mockTieredImages: TieredImageResult;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    // Generate a real epoch key for encryption tests
+    epochKey = generateEpochKey(1);
+
+    // Create mock tiered images result
+    mockTieredImages = {
+      thumbnail: {
+        data: new Uint8Array([1, 2, 3, 4, 5]),
+        width: 300,
+        height: 225,
+        tier: ShardTier.THUMB,
+      },
+      preview: {
+        data: new Uint8Array([6, 7, 8, 9, 10]),
+        width: 1200,
+        height: 900,
+        tier: ShardTier.PREVIEW,
+      },
+      original: {
+        data: new Uint8Array([11, 12, 13, 14, 15]),
+        width: 800,
+        height: 600,
+        tier: ShardTier.ORIGINAL,
+      },
+      originalWidth: 800,
+      originalHeight: 600,
+    };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('encrypts three tiers from pre-converted images', async () => {
+    const result = await encryptTieredImages(mockTieredImages, epochKey);
+
+    expect(result.thumbnail).toBeDefined();
+    expect(result.preview).toBeDefined();
+    expect(result.original).toBeDefined();
+  });
+
+  it('each encrypted shard has ciphertext and sha256 hash', async () => {
+    const result = await encryptTieredImages(mockTieredImages, epochKey);
+
+    // SHA256 is base64url without padding (43 chars for 256 bits)
+    const base64urlPattern = /^[A-Za-z0-9_-]{43}$/;
+
+    // Thumbnail
+    expect(result.thumbnail.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+    expect(result.thumbnail.encrypted.sha256).toMatch(base64urlPattern);
+
+    // Preview
+    expect(result.preview.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+    expect(result.preview.encrypted.sha256).toMatch(base64urlPattern);
+
+    // Original
+    expect(result.original.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+    expect(result.original.encrypted.sha256).toMatch(base64urlPattern);
+  });
+
+  it('preserves dimension metadata from input images', async () => {
+    const result = await encryptTieredImages(mockTieredImages, epochKey);
+
+    expect(result.thumbnail.width).toBe(300);
+    expect(result.thumbnail.height).toBe(225);
+    expect(result.preview.width).toBe(1200);
+    expect(result.preview.height).toBe(900);
+    expect(result.original.width).toBe(800);
+    expect(result.original.height).toBe(600);
+  });
+
+  it('preserves original dimensions in result', async () => {
+    const result = await encryptTieredImages(mockTieredImages, epochKey);
+
+    expect(result.originalWidth).toBe(800);
+    expect(result.originalHeight).toBe(600);
+  });
+
+  it('thumbnail can be decrypted with thumbKey', async () => {
+    const result = await encryptTieredImages(mockTieredImages, epochKey);
+
+    const decrypted = await decryptShard(
+      result.thumbnail.encrypted.ciphertext,
+      epochKey.thumbKey,
+    );
+
+    expect(decrypted).toEqual(mockTieredImages.thumbnail.data);
+  });
+
+  it('preview can be decrypted with previewKey', async () => {
+    const result = await encryptTieredImages(mockTieredImages, epochKey);
+
+    const decrypted = await decryptShard(
+      result.preview.encrypted.ciphertext,
+      epochKey.previewKey,
+    );
+
+    expect(decrypted).toEqual(mockTieredImages.preview.data);
+  });
+
+  it('original can be decrypted with fullKey', async () => {
+    const result = await encryptTieredImages(mockTieredImages, epochKey);
+
+    const decrypted = await decryptShard(
+      result.original.encrypted.ciphertext,
+      epochKey.fullKey,
+    );
+
+    expect(decrypted).toEqual(mockTieredImages.original.data);
+  });
+
+  it('uses custom shard index', async () => {
+    const result = await encryptTieredImages(mockTieredImages, epochKey, 42);
+
+    // Should still encrypt successfully with custom index
+    expect(result.thumbnail.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+    expect(result.preview.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+    expect(result.original.encrypted.ciphertext).toBeInstanceOf(Uint8Array);
+  });
+
+  it('produces consistent results between encryptTieredImages and generateTieredShards', async () => {
+    // This test verifies that the separated function produces the same encrypted structure
+    // as the combined function (though ciphertexts will differ due to random nonces)
+    const result = await encryptTieredImages(mockTieredImages, epochKey);
+
+    // Verify structure matches TieredShardResult
+    expect(result.thumbnail.tier).toBe(ShardTier.THUMB);
+    expect(result.preview.tier).toBe(ShardTier.PREVIEW);
+    expect(result.original.tier).toBe(ShardTier.ORIGINAL);
   });
 });

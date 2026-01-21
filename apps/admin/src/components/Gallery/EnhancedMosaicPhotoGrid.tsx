@@ -148,6 +148,12 @@ export function EnhancedMosaicPhotoGrid({
     [photos],
   );
 
+  // Memoized list of sorted photo IDs for range selection
+  const sortedPhotoIds = useMemo(
+    () => sortedPhotos.map((p) => p.id),
+    [sortedPhotos],
+  );
+
   const lightbox = useLightbox(sortedPhotos);
   const photoActions = usePhotoActions();
   const permissions = useAlbumPermissions();
@@ -288,14 +294,28 @@ export function EnhancedMosaicPhotoGrid({
     [isSelectionMode, lightbox, sortedPhotos],
   );
 
+  // Handle selection change for a single photo
+  // Supports shift-click for range selection
   const handleSelectionChange = useCallback(
-    (photoId: string, selected: boolean) => {
+    (
+      photoId: string,
+      selected: boolean,
+      event?: React.MouseEvent | React.KeyboardEvent,
+    ) => {
       if (selection) {
-        if (selected) selection.selectPhoto(photoId);
-        else selection.deselectPhoto(photoId);
+        if (selected) {
+          // Check for shift-click range selection
+          if (event?.shiftKey && selection.lastSelectedId) {
+            selection.selectRange(photoId, sortedPhotoIds);
+          } else {
+            selection.selectPhoto(photoId);
+          }
+        } else {
+          selection.deselectPhoto(photoId);
+        }
       }
     },
-    [selection],
+    [selection, sortedPhotoIds],
   );
 
   const handleDeletePhoto = useCallback(
@@ -437,8 +457,8 @@ export function EnhancedMosaicPhotoGrid({
           isSelected={isSelected}
           selectionMode={isSelectionMode}
           showDelete={!photo.isPending}
-          onSelectionChange={(selected) =>
-            handleSelectionChange(photo.id, selected)
+          onSelectionChange={(selected, event) =>
+            handleSelectionChange(photo.id, selected, event)
           }
           onClick={() => onClick?.()}
           width={width}
