@@ -1,4 +1,3 @@
-import { enableMapSet } from 'immer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { uploadQueue, type UploadTask } from '../src/lib/upload-queue';
 import {
@@ -10,9 +9,6 @@ import {
   retryUploadInStore,
 } from '../src/lib/upload-store-bridge';
 import { usePhotoStore } from '../src/stores/photo-store';
-
-// Enable Immer's MapSet plugin (required for photo-store which uses Map)
-enableMapSet();
 
 // Mock the sync coordinator
 vi.mock('../src/lib/sync-coordinator', () => ({

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
+import { mutative } from 'zustand-mutative';
 
 // ============================================================================
 // Types
@@ -135,7 +135,7 @@ const initialState: PhotoStoreState = {
 // ============================================================================
 
 export const usePhotoStore = create<PhotoStore>()(
-  immer((set, get) => ({
+  mutative((set, get) => ({
     ...initialState,
 
     // ------------------------------------------------------------------------
