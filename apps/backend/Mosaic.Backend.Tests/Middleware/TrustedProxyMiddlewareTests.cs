@@ -2,7 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Moq;
+using NSubstitute;
 using Mosaic.Backend.Middleware;
 using Xunit;
 
@@ -23,9 +23,9 @@ public class TrustedProxyMiddlewareTests
             .Build();
     }
 
-    private static Mock<ILogger<TrustedProxyMiddleware>> CreateLogger()
+    private static ILogger<TrustedProxyMiddleware> CreateLogger()
     {
-        return new Mock<ILogger<TrustedProxyMiddleware>>();
+        return Substitute.For<ILogger<TrustedProxyMiddleware>>();
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public class TrustedProxyMiddlewareTests
             return Task.CompletedTask;
         };
 
-        var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+        var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/health";
@@ -64,7 +64,7 @@ public class TrustedProxyMiddlewareTests
 
         RequestDelegate next = _ => Task.CompletedTask;
 
-        var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+        var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/albums";
@@ -86,7 +86,7 @@ public class TrustedProxyMiddlewareTests
 
         RequestDelegate next = _ => Task.CompletedTask;
 
-        var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+        var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/albums";
@@ -108,7 +108,7 @@ public class TrustedProxyMiddlewareTests
 
         RequestDelegate next = _ => Task.CompletedTask;
 
-        var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+        var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/albums";
@@ -131,7 +131,7 @@ public class TrustedProxyMiddlewareTests
 
         RequestDelegate next = _ => Task.CompletedTask;
 
-        var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+        var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/albums";
@@ -159,7 +159,7 @@ public class TrustedProxyMiddlewareTests
             return Task.CompletedTask;
         };
 
-        var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+        var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/albums";
@@ -200,7 +200,7 @@ public class TrustedProxyMiddlewareTests
                 return Task.CompletedTask;
             };
 
-            var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+            var middleware = new TrustedProxyMiddleware(next, config, logger);
 
             var context = new DefaultHttpContext();
             context.Request.Path = "/api/albums";
@@ -235,7 +235,7 @@ public class TrustedProxyMiddlewareTests
         {
             RequestDelegate next = _ => Task.CompletedTask;
 
-            var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+            var middleware = new TrustedProxyMiddleware(next, config, logger);
 
             var context = new DefaultHttpContext();
             context.Request.Path = "/api/albums";
@@ -275,7 +275,7 @@ public class TrustedProxyMiddlewareTests
                 return Task.CompletedTask;
             };
 
-            var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+            var middleware = new TrustedProxyMiddleware(next, config, logger);
 
             var context = new DefaultHttpContext();
             context.Request.Path = "/api/albums";
@@ -299,7 +299,7 @@ public class TrustedProxyMiddlewareTests
 
         RequestDelegate next = _ => Task.CompletedTask;
 
-        var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+        var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/albums";
@@ -328,7 +328,7 @@ public class TrustedProxyMiddlewareTests
             return Task.CompletedTask;
         };
 
-        var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+        var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/albums";
@@ -356,7 +356,7 @@ public class TrustedProxyMiddlewareTests
             return Task.CompletedTask;
         };
 
-        var middleware = new TrustedProxyMiddleware(next, config, logger.Object);
+        var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/albums";

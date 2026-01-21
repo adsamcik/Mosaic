@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Moq;
+using NSubstitute;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Middleware;
@@ -13,7 +13,7 @@ namespace Mosaic.Backend.Tests.Middleware;
 public class LocalAuthMiddlewareTests : IAsyncLifetime
 {
     private MosaicDbContext _db = null!;
-    private Mock<ILogger<LocalAuthMiddleware>> _logger = null!;
+    private ILogger<LocalAuthMiddleware> _logger = null!;
 
     public async Task InitializeAsync()
     {
@@ -22,7 +22,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
             .Options;
         _db = new MosaicDbContext(options);
         await _db.Database.EnsureCreatedAsync();
-        _logger = new Mock<ILogger<LocalAuthMiddleware>>();
+        _logger = Substitute.For<ILogger<LocalAuthMiddleware>>();
     }
 
     public Task DisposeAsync()
@@ -42,7 +42,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
             return Task.CompletedTask;
         };
 
-        var middleware = new LocalAuthMiddleware(next, _logger.Object);
+        var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/health";
@@ -65,7 +65,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
             return Task.CompletedTask;
         };
 
-        var middleware = new LocalAuthMiddleware(next, _logger.Object);
+        var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/dev-auth/login";
@@ -82,7 +82,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
     {
         // Arrange
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new LocalAuthMiddleware(next, _logger.Object);
+        var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/users/me";
@@ -99,7 +99,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
     {
         // Arrange
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new LocalAuthMiddleware(next, _logger.Object);
+        var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/users/me";
@@ -117,7 +117,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
     {
         // Arrange
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new LocalAuthMiddleware(next, _logger.Object);
+        var middleware = new LocalAuthMiddleware(next, _logger);
 
         var token = RandomNumberGenerator.GetBytes(32);
         var tokenBase64 = Convert.ToBase64String(token);
@@ -168,7 +168,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         await _db.SaveChangesAsync();
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new LocalAuthMiddleware(next, _logger.Object);
+        var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/users/me";
@@ -218,7 +218,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
             return Task.CompletedTask;
         };
 
-        var middleware = new LocalAuthMiddleware(next, _logger.Object);
+        var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/users/me";
@@ -261,7 +261,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         await _db.SaveChangesAsync();
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new LocalAuthMiddleware(next, _logger.Object);
+        var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/users/me";
@@ -304,7 +304,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         await _db.SaveChangesAsync();
 
         RequestDelegate next = _ => Task.CompletedTask;
-        var middleware = new LocalAuthMiddleware(next, _logger.Object);
+        var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/users/me";

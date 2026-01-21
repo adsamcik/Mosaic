@@ -20,7 +20,6 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
     <PackageReference Include="NSec.Cryptography" Version="25.4.0" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.12.11" />
-    <PackageReference Include="System.Linq.Async" Version="7.0.0" />
     <PackageReference Include="tusdotnet" Version="2.11.0" />
   </ItemGroup>
 

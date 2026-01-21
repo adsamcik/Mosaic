@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Tests.Helpers;
-using Moq;
+using NSubstitute;
 using NSec.Cryptography;
 using Xunit;
 
@@ -34,9 +34,9 @@ public class AuthControllerTests
         bool isDevelopment = false)
     {
         config ??= CreateConfig();
-        var logger = Mock.Of<ILogger<AuthController>>();
-        var env = Mock.Of<IWebHostEnvironment>(e =>
-            e.EnvironmentName == (isDevelopment ? "Development" : "Production"));
+        var logger = Substitute.For<ILogger<AuthController>>();
+        var env = Substitute.For<IWebHostEnvironment>();
+        env.EnvironmentName.Returns(isDevelopment ? "Development" : "Production");
 
         var httpContext = new DefaultHttpContext();
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(remoteIp ?? "127.0.0.1");
