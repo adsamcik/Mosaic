@@ -12,14 +12,34 @@ public class LocalStorageService : IStorageService
         Directory.CreateDirectory(_basePath);
     }
 
+    /// <summary>
+    /// Validates that a storage key doesn't contain path traversal sequences.
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown when the key contains invalid characters.</exception>
+    private static void ValidateKey(string key)
+    {
+        if (string.IsNullOrEmpty(key))
+            throw new ArgumentException("Storage key cannot be null or empty", nameof(key));
+
+        // Prevent path traversal attacks
+        if (key.Contains("..") ||
+            key.Contains(Path.DirectorySeparatorChar) ||
+            key.Contains(Path.AltDirectorySeparatorChar))
+        {
+            throw new ArgumentException("Storage key contains invalid path characters", nameof(key));
+        }
+    }
+
     public Task<Stream> OpenReadAsync(string key)
     {
+        ValidateKey(key);
         var path = Path.Combine(_basePath, key);
         return Task.FromResult<Stream>(File.OpenRead(path));
     }
 
     public Task DeleteAsync(string key)
     {
+        ValidateKey(key);
         var path = Path.Combine(_basePath, key);
         if (File.Exists(path))
         {

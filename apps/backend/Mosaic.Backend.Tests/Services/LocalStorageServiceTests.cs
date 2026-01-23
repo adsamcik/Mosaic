@@ -61,21 +61,52 @@ public class LocalStorageServiceTests : IDisposable
         await Assert.ThrowsAsync<FileNotFoundException>(() => _storage.OpenReadAsync(key));
     }
 
-    [Fact]
-    public async Task OpenReadAsync_WorksWithSubdirectories()
+    [Theory]
+    [InlineData("../escape")]
+    [InlineData("..\\escape")]
+    [InlineData("some/../traversal")]
+    [InlineData("path/to/file")]
+    [InlineData("path\\to\\file")]
+    public async Task OpenReadAsync_ThrowsArgumentException_ForPathTraversal(string key)
     {
-        // Arrange
-        var key = "subdir/nested/file.bin";
-        var fullPath = Path.Combine(_testPath, key);
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        var content = new byte[] { 0xAB, 0xCD, 0xEF };
-        await File.WriteAllBytesAsync(fullPath, content);
+        // Act & Assert
+        // Security: Prevent path traversal attacks
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => _storage.OpenReadAsync(key));
+        Assert.Contains("invalid path characters", ex.Message);
+    }
 
-        // Act
-        using var stream = await _storage.OpenReadAsync(key);
+    [Theory]
+    [InlineData("../escape")]
+    [InlineData("..\\escape")]
+    [InlineData("some/../traversal")]
+    [InlineData("path/to/file")]
+    [InlineData("path\\to\\file")]
+    public async Task DeleteAsync_ThrowsArgumentException_ForPathTraversal(string key)
+    {
+        // Act & Assert
+        // Security: Prevent path traversal attacks
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => _storage.DeleteAsync(key));
+        Assert.Contains("invalid path characters", ex.Message);
+    }
 
-        // Assert
-        Assert.NotNull(stream);
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task OpenReadAsync_ThrowsArgumentException_ForNullOrEmptyKey(string? key)
+    {
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => _storage.OpenReadAsync(key!));
+        Assert.Contains("cannot be null or empty", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task DeleteAsync_ThrowsArgumentException_ForNullOrEmptyKey(string? key)
+    {
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => _storage.DeleteAsync(key!));
+        Assert.Contains("cannot be null or empty", ex.Message);
     }
 
     [Fact]
@@ -104,25 +135,6 @@ public class LocalStorageServiceTests : IDisposable
         await _storage.DeleteAsync(key);
 
         // Assert - no exception means success
-    }
-
-    [Fact]
-    public async Task DeleteAsync_WorksWithSubdirectories()
-    {
-        // Arrange
-        var key = "subdir/file-to-delete.bin";
-        var fullPath = Path.Combine(_testPath, key);
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        await File.WriteAllBytesAsync(fullPath, new byte[] { 0x01 });
-        Assert.True(File.Exists(fullPath));
-
-        // Act
-        await _storage.DeleteAsync(key);
-
-        // Assert
-        Assert.False(File.Exists(fullPath));
-        // Directory should still exist
-        Assert.True(Directory.Exists(Path.GetDirectoryName(fullPath)));
     }
 
     [Fact]
