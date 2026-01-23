@@ -6,6 +6,7 @@
  */
 
 import { type Page, type Locator, expect } from '@playwright/test';
+import { UI_TIMEOUT, NETWORK_TIMEOUT, CRYPTO_TIMEOUT } from '../framework/timeouts';
 
 /**
  * Default test password
@@ -101,19 +102,19 @@ export class LoginPage {
     await this.loginButton.click();
   }
 
-  async expectLoginSuccess(timeout = 60000): Promise<void> {
+  async expectLoginSuccess(timeout = CRYPTO_TIMEOUT.BATCH): Promise<void> {
     await expect(this.page.getByTestId('app-shell')).toBeVisible({ timeout });
   }
 
   async expectError(text?: string | RegExp): Promise<void> {
-    await expect(this.errorMessage).toBeVisible({ timeout: 10000 });
+    await expect(this.errorMessage).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
     if (text) {
       await expect(this.errorMessage).toHaveText(text);
     }
   }
 
   async expectFormVisible(): Promise<void> {
-    await expect(this.form).toBeVisible({ timeout: 30000 });
+    await expect(this.form).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
   }
 
   /**
