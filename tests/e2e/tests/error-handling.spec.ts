@@ -112,7 +112,7 @@ test.describe('Error Handling @p1 @security', () => {
       
       if (needsLogin) {
         // Re-login using loginOrRegister to handle LocalAuth mode (which requires username)
-        await loginPage.loginOrRegister(TEST_PASSWORD, user.username);
+        await loginPage.loginOrRegister(TEST_PASSWORD, user.email);
         await loginPage.expectLoginSuccess();
       } else {
         await appShell.waitForLoad();
