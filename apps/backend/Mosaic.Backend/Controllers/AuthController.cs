@@ -190,6 +190,24 @@ public partial class AuthController : ControllerBase
             return BadRequest(new { error = "Missing required fields" });
         }
 
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+        // Rate limit verify attempts (max 10 per IP per minute)
+        // Skip rate limiting in Development and Testing environments for easier testing
+        if (!_env.IsDevelopment() && !_env.IsEnvironment("Testing"))
+        {
+            var oneMinuteAgo = DateTime.UtcNow.AddMinutes(-1);
+            var recentChallenges = await _db.AuthChallenges
+                .Where(c => c.IpAddress == ipAddress && c.IsUsed && c.CreatedAt > oneMinuteAgo)
+                .CountAsync();
+
+            if (recentChallenges >= 10)
+            {
+                _logger.AuthRateLimited(request.Username);
+                return StatusCode(429, new { error = "Too many attempts. Please wait." });
+            }
+        }
+
         // Look up and validate challenge
         var authChallenge = await _db.AuthChallenges.FindAsync(request.ChallengeId);
         if (authChallenge == null)

@@ -47,6 +47,10 @@ export function SquarePhotoGrid({
   selection,
 }: SquarePhotoGridProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
+
+  // Store ResizeObserver instance so we can clean it up
+  const observerRef = useRef<ResizeObserver | null>(null);
+
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
 
   // Sort photos by createdAt descending to match display order
@@ -115,6 +119,12 @@ export function SquarePhotoGrid({
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     parentRef.current = node;
 
+    // Clean up previous observer
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+
     if (node) {
       const observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
@@ -124,11 +134,10 @@ export function SquarePhotoGrid({
       });
 
       observer.observe(node);
+      observerRef.current = observer;
 
       // Set initial width
       setContainerWidth(node.clientWidth || node.getBoundingClientRect().width);
-
-      return () => observer.disconnect();
     }
   }, []);
 
