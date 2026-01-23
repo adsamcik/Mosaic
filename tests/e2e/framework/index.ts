@@ -52,7 +52,7 @@ export {
 } from './wait-utils';
 
 export {
-  getPoolUser,
+  getPoolUserByIndex,
   isPoolUser,
   createCustomUser,
   generateDynamicUserEmail,

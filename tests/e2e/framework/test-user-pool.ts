@@ -7,14 +7,16 @@
  * tests that don't modify user state. For tests that need to modify user data
  * (e.g., changing settings, deleting resources), use createCustomUser() to
  * get a fresh, isolated user.
+ *
+ * IMPORTANT: The authoritative POOL_USERS definition is in auth-setup.ts.
+ * This module re-exports it and provides helper functions.
  */
 
-import { TEST_PASSWORD } from './test-data-factory';
+import { API_URL, TEST_PASSWORD } from './constants';
+import { POOL_USERS } from '../auth-setup';
 
-/**
- * API URL for backend requests
- */
-const API_URL = process.env.API_URL || 'http://localhost:5000';
+// Re-export POOL_USERS from auth-setup.ts (single source of truth)
+export { POOL_USERS };
 
 /**
  * Authentication mode for users
@@ -31,37 +33,26 @@ export interface PoolUser {
 }
 
 /**
- * Pre-seeded pool users for each authentication mode
- * These users are created during test environment setup and should
- * be used for tests that don't modify user state.
- */
-export const POOL_USERS = {
-  proxy: {
-    email: 'pool-proxy@e2e.local',
-    authMode: 'proxy' as const,
-    password: TEST_PASSWORD,
-  },
-  local: {
-    email: 'pool-local@e2e.local',
-    authMode: 'local' as const,
-    password: TEST_PASSWORD,
-  },
-} as const;
-
-/**
- * Get the pre-seeded pool user for an auth mode
+ * Get a pool user by index.
  *
- * @param authMode - The authentication mode ('proxy' or 'local')
- * @returns The pool user for the specified auth mode
+ * Pool users are local auth users (pool-local-1 through pool-local-8).
+ * Use workerIndex to get a unique user per parallel worker.
+ *
+ * @param index - The index (usually workerIndex % POOL_USERS.length)
+ * @returns The pool user at that index
  *
  * @example
  * ```typescript
- * const user = getPoolUser('proxy');
- * // Use user.email for Remote-User header
+ * const user = getPoolUserByIndex(workerIndex);
  * ```
  */
-export function getPoolUser(authMode: AuthMode): PoolUser {
-  return POOL_USERS[authMode];
+export function getPoolUserByIndex(index: number): PoolUser {
+  const poolUser = POOL_USERS[index % POOL_USERS.length];
+  return {
+    email: poolUser.username,
+    authMode: 'local',
+    password: TEST_PASSWORD,
+  };
 }
 
 /**
@@ -78,7 +69,7 @@ export function getPoolUser(authMode: AuthMode): PoolUser {
  * ```
  */
 export function isPoolUser(email: string): boolean {
-  return email === POOL_USERS.proxy.email || email === POOL_USERS.local.email;
+  return POOL_USERS.some(user => user.username === email);
 }
 
 /**
