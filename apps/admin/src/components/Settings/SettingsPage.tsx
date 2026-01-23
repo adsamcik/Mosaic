@@ -197,7 +197,12 @@ export function SettingsPage() {
         try {
           const root = await navigator.storage.getDirectory();
           // Try to remove our database files
-          for await (const name of (root as any).keys()) {
+          // FileSystemDirectoryHandle.keys() returns AsyncIterable<string>
+          // Use type assertion as TypeScript's lib.dom.d.ts doesn't include OPFS iteration yet
+          const rootWithIterator = root as FileSystemDirectoryHandle & {
+            keys(): AsyncIterable<string>;
+          };
+          for await (const name of rootWithIterator.keys()) {
             if (name.startsWith('mosaic')) {
               await root.removeEntry(name, { recursive: true });
             }
