@@ -219,7 +219,7 @@ public class AlbumsController : ControllerBase
             {
                 AlbumId = album.Id,
                 UserId = user.Id,
-                Role = "owner"
+                Role = AlbumRoles.Owner
             });
 
             // Create initial epoch key for owner
@@ -472,7 +472,7 @@ public class AlbumsController : ControllerBase
         }
 
         // Only owner and editors can rename
-        if (membership.Role != "owner" && membership.Role != "editor")
+        if (!AlbumRoles.CanUpload(membership.Role))
         {
             return Forbid();
         }
@@ -528,7 +528,7 @@ public class AlbumsController : ControllerBase
         }
 
         // Only owner and editors can update description
-        if (membership.Role != "owner" && membership.Role != "editor")
+        if (!AlbumRoles.CanUpload(membership.Role))
         {
             return Forbid();
         }

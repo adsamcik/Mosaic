@@ -84,7 +84,7 @@ public class EpochKeysController : ControllerBase
             return Forbid();
         }
 
-        if (membership.Role != "owner" && membership.Role != "editor")
+        if (!AlbumRoles.CanUpload(membership.Role))
         {
             return Forbid();
         }

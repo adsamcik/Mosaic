@@ -87,7 +87,7 @@ public class MembersController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Validate role
-        if (request.Role != "viewer" && request.Role != "editor")
+        if (!AlbumRoles.IsValidForInvite(request.Role))
         {
             return BadRequest("Role must be 'viewer' or 'editor'");
         }
@@ -107,7 +107,7 @@ public class MembersController : ControllerBase
             return Forbid();
         }
 
-        if (membership.Role != "owner" && membership.Role != "editor")
+        if (!AlbumRoles.CanUpload(membership.Role))
         {
             return Forbid();
         }

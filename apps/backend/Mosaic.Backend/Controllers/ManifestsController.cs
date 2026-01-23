@@ -139,7 +139,7 @@ public class ManifestsController : ControllerBase
                 return Forbid();
             }
 
-            if (membership.Role == "viewer")
+            if (!AlbumRoles.CanUpload(membership.Role))
             {
                 return Forbid();
             }
@@ -353,7 +353,7 @@ public class ManifestsController : ControllerBase
                 return Forbid();
             }
 
-            if (membership.Role == "viewer")
+            if (!AlbumRoles.CanUpload(membership.Role))
             {
                 return Forbid();
             }
