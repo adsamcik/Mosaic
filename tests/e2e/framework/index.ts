@@ -8,6 +8,7 @@ export {
   API_URL,
   BASE_URL,
   TEST_PASSWORD,
+  TEST_CONSTANTS,
 } from './constants';
 
 export {

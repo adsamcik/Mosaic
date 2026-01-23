@@ -41,6 +41,9 @@ export { LogCollector, TestAPIClient } from './framework';
 // Re-export generateTestImage from framework (authoritative source)
 export { generateTestImage } from './framework';
 
+// Re-export TEST_CONSTANTS from framework (single source of truth)
+export { TEST_CONSTANTS } from './framework';
+
 // Import from centralized constants
 import { API_URL, BASE_URL, TEST_PASSWORD } from './framework/constants';
 
@@ -280,16 +283,6 @@ export const test = base.extend<{
 });
 
 export { expect };
-
-/**
- * Test constants
- */
-export const TEST_CONSTANTS = {
-  PASSWORD: TEST_PASSWORD,
-  WRONG_PASSWORD: 'wrong-password-12345',
-  EMPTY_PASSWORD: '',
-};
-
 
 /**
  * API helper for setting up test data

@@ -38,14 +38,8 @@ export { expect } from '@playwright/test';
 export * from './framework';
 export * from './page-objects';
 
-/**
- * Test constants
- */
-export const TEST_CONSTANTS = {
-  PASSWORD: TEST_PASSWORD,
-  WRONG_PASSWORD: 'wrong-password-12345',
-  EMPTY_PASSWORD: '',
-};
+// TEST_CONSTANTS is now exported via 'export * from ./framework'
+// Single source of truth is framework/constants.ts
 
 /**
  * Isolated test context fixture
