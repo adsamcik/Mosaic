@@ -115,7 +115,7 @@ public class MembersController : ControllerBase
         var targetUser = await _db.Users.FindAsync(request.RecipientId);
         if (targetUser == null)
         {
-            return NotFound("User not found");
+            return NotFound(new { error = "User not found" });
         }
 
         // Check if already a member

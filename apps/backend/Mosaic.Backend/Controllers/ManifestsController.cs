@@ -123,7 +123,7 @@ public class ManifestsController : ControllerBase
 
             if (album == null)
             {
-                return NotFound("Album not found");
+                return NotFound(new { error = "Album not found" });
             }
 
             // 2. Verify membership

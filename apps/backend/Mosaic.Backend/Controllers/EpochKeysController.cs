@@ -127,7 +127,7 @@ public class EpochKeysController : ControllerBase
         var recipient = await _db.Users.FindAsync(request.RecipientId);
         if (recipient == null)
         {
-            return NotFound("Recipient not found");
+            return NotFound(new { error = "Recipient not found" });
         }
 
         // Check for existing key
