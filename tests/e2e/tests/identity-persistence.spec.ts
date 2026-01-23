@@ -24,6 +24,7 @@ import {
   TEST_CONSTANTS,
 } from '../fixtures';
 import { waitForCondition, waitForNetworkIdle } from '../framework';
+import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT, UI_TIMEOUT } from '../framework/timeouts';
 import type { Page } from '@playwright/test';
 
 /**
@@ -93,7 +94,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
 
       // Wait for album to appear in list
       const albumCard = page.getByTestId('album-card').first();
-      await expect(albumCard).toBeVisible({ timeout: 30000 });
+      await expect(albumCard).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
 
       // Click to enter the album
       await albumCard.click();
@@ -110,7 +111,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       await gallery.uploadPhoto(testImage, 'identity-test-photo.png');
 
       // Wait for photo to appear in gallery
-      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+      await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
       const photoCountBefore = await gallery.photos.count();
       expect(photoCountBefore).toBeGreaterThanOrEqual(1);
@@ -118,7 +119,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       console.log(`[TEST] Photo uploaded successfully. Count: ${photoCountBefore}`);
       
       // Wait for all API calls to complete (manifest creation, sync)
-      await waitForNetworkIdle(page, { timeout: 30000, urlPattern: /\/api\// });
+      await waitForNetworkIdle(page, { timeout: NETWORK_TIMEOUT.NAVIGATION, urlPattern: /\/api\// });
 
       // ========== PHASE 3: Reload page and re-authenticate ==========
       console.log('[TEST] Phase 3: Reloading page and re-authenticating');
@@ -160,7 +161,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
 
       // THE CRITICAL CHECK: Can we still see the photo?
       // This fails if identity changed and epoch key cannot be decrypted
-      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+      await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
       const photoCountAfter = await gallery.photos.count();
       expect(photoCountAfter).toBe(photoCountBefore);
@@ -242,7 +243,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       // Wait for identity pubkey to be captured from /api/users/me response
       await waitForCondition(
         () => capturedPubkeys.first !== undefined,
-        { timeout: 10000, message: 'Identity pubkey not captured from first login' }
+        { timeout: UI_TIMEOUT.DIALOG, message: 'Identity pubkey not captured from first login' }
       );
 
       const firstPubkeyDisplay = capturedPubkeys.first ? capturedPubkeys.first.substring(0, 20) : 'not set';
@@ -263,7 +264,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       // Wait for second identity pubkey to be captured from /api/users/me response
       await waitForCondition(
         () => capturedPubkeys.second !== undefined,
-        { timeout: 10000, message: 'Identity pubkey not captured from second login' }
+        { timeout: UI_TIMEOUT.DIALOG, message: 'Identity pubkey not captured from second login' }
       );
 
       const secondPubkeyDisplay = capturedPubkeys.second ? capturedPubkeys.second.substring(0, 20) : 'not set';
@@ -366,7 +367,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       // Wait for wrapped key to be stored via PUT request or registration
       await waitForCondition(
         () => wrappedKeyStored,
-        { timeout: 15000, message: 'Wrapped account key was not stored on first login' }
+        { timeout: CRYPTO_TIMEOUT.KEY_DERIVATION, message: 'Wrapped account key was not stored on first login' }
       );
 
       expect(wrappedKeyStored).toBe(true);
@@ -386,7 +387,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       // Wait for wrapped key to be returned from /api/users/me response
       await waitForCondition(
         () => wrappedKeyReturned,
-        { timeout: 10000, message: 'Wrapped account key was not returned on second login' }
+        { timeout: UI_TIMEOUT.DIALOG, message: 'Wrapped account key was not returned on second login' }
       );
 
       expect(wrappedKeyReturned).toBe(true);
@@ -501,7 +502,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       if (!galleryVisible) {
         console.log('[TEST] Navigating to album from album list');
         const card = page.getByTestId('album-card').first();
-        await expect(card).toBeVisible({ timeout: 30000 });
+        await expect(card).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
         await card.click();
         await gallery.waitForLoad();
       } else {
@@ -509,24 +510,23 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       }
 
       // Verify ALL existing photos are still visible (not just the 3rd)
-      await expect(gallery.photos).toHaveCount(3, { timeout: 60000 });
+      await expect(gallery.photos).toHaveCount(3, { timeout: CRYPTO_TIMEOUT.BATCH });
       console.log(`[TEST] Verified all 3 photos visible after reload`);
       
       // Wait for any background sync to complete before starting uploads
-      await waitForNetworkIdle(page, { timeout: 30000, urlPattern: /\/api\// });
+      await waitForNetworkIdle(page, { timeout: NETWORK_TIMEOUT.NAVIGATION, urlPattern: /\/api\// });
       
       // Re-verify count after network idle to catch any late re-renders
       const countBeforeUpload = await gallery.photos.count();
       console.log(`[TEST] Count before phase 2 uploads: ${countBeforeUpload}`);
       expect(countBeforeUpload).toBe(3);
       
-      // Small delay to let React finish any pending re-renders
-      await page.waitForTimeout(1000);
-      
-      // Final count check
-      const stableCount = await gallery.photos.count();
-      console.log(`[TEST] Stable count after 1s delay: ${stableCount}`);
-      expect(stableCount).toBe(3);
+      // Wait for any pending React re-renders to complete by verifying count is stable
+      await expect(async () => {
+        const count = await gallery.photos.count();
+        expect(count).toBe(3);
+      }).toPass({ timeout: 5000, intervals: [100, 200, 500] });
+      console.log(`[TEST] Stable count verified: 3`);
 
       // Upload 2 more photos
       for (let i = 4; i <= 5; i++) {
@@ -703,9 +703,9 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       console.log('[TEST] Waiting for login form to appear after logout');
       await expect(loginPage.loginForm).toBeVisible({ timeout: 30000 });
       console.log('[TEST] Login form visible after logout');
-
-      // Additional wait for logout to fully complete (session cleanup)
-      await page.waitForTimeout(500);
+      
+      // Verify logout is complete by waiting for network to settle
+      await waitForNetworkIdle(page, { timeout: 10000, urlPattern: /\/api\// });
       console.log('[TEST] Logout complete - session cleared');
 
       // ========== PHASE 4: Re-login with same password ==========

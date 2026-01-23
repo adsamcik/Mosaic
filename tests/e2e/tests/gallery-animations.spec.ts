@@ -32,7 +32,7 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
 
       const gallery = new GalleryPage(user.page);
 
-      // Wait for gallery initial load to complete (animation system marks first render items as "seen")
+      // INTENTIONAL: Wait for gallery's animation system to mark first render items as "seen"
       // The gallery needs ~50ms after first render before new items will animate
       await user.page.waitForTimeout(200);
       
@@ -67,7 +67,7 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
 
       const gallery = new GalleryPage(user.page);
 
-      // Wait for gallery initial load to complete before uploading
+      // INTENTIONAL: Wait for gallery's animation system initialization before uploading
       await user.page.waitForTimeout(200);
 
       // Upload multiple photos
@@ -103,7 +103,7 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
       const gallery = new GalleryPage(user.page);
       const appShell = new AppShell(user.page);
 
-      // Wait for gallery initial load to complete before uploading
+      // INTENTIONAL: Wait for gallery's animation system initialization before uploading
       await user.page.waitForTimeout(200);
 
       // Upload photo
@@ -139,7 +139,7 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
 
       const gallery = new GalleryPage(user.page);
 
-      // Wait for gallery initial load to complete before uploading
+      // INTENTIONAL: Wait for gallery's animation system initialization before uploading
       await user.page.waitForTimeout(200);
 
       // Upload a photo
@@ -185,7 +185,7 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
 
       const gallery = new GalleryPage(user.page);
 
-      // Wait for gallery initial load to complete before uploading
+      // INTENTIONAL: Wait for gallery's animation system initialization before uploading
       await user.page.waitForTimeout(200);
 
       // Upload a photo
@@ -224,7 +224,7 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
       // Scroll to bottom
       await user.page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 
-      // Wait a moment for scroll to complete
+      // INTENTIONAL: Wait for scroll event to propagate and virtualization to update
       await user.page.waitForTimeout(500);
 
       // All visible tiles should eventually settle

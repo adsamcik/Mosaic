@@ -141,7 +141,9 @@ test.describe('UI Interactions @p2 @ui @fast', () => {
       // 4. Visible items recalculation (visibleItems useMemo)
       // 5. DOM update
       const waitForLayoutStable = async () => {
-        // Wait for any pending ResizeObserver callbacks and React updates
+        // INTENTIONAL: Wait for ResizeObserver callbacks and React layout updates
+        // This delay is necessary because ResizeObserver is asynchronous and triggers
+        // a cascade of state updates that can't be observed directly
         await user.page.waitForTimeout(200);
         // Wait for the grid container to be present and have positive dimensions
         await user.page.waitForFunction(() => {

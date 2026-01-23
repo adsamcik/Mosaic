@@ -20,7 +20,8 @@ import {
   test,
   TEST_CONSTANTS,
 } from '../fixtures';
-import { waitForCondition } from '../framework';
+import { waitForCondition, waitForNetworkIdle } from '../framework';
+import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT, UI_TIMEOUT } from '../framework/timeouts';
 
 test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
   // Run these tests serially to avoid resource contention between multi-browser sessions
@@ -59,7 +60,7 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
 
     // Navigate to the album
     const card1 = page1.getByTestId('album-card').first();
-    await expect(card1).toBeVisible({ timeout: 30000 });
+    await expect(card1).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
     await card1.click();
 
     const gallery1 = new GalleryPage(page1);
@@ -68,12 +69,12 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
     // Upload photos
     const testImage = generateTestImage();
     await gallery1.uploadPhoto(testImage, 'sync-photo-1.png');
-    await expect(gallery1.photos.first()).toBeVisible({ timeout: 60000 });
+    await expect(gallery1.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
     await gallery1.uploadPhoto(testImage, 'sync-photo-2.png');
     await expect(async () => {
       expect(await gallery1.photos.count()).toBeGreaterThanOrEqual(2);
-    }).toPass({ timeout: 60000 });
+    }).toPass({ timeout: CRYPTO_TIMEOUT.BATCH });
 
     const uploadedCount = await gallery1.photos.count();
 
@@ -154,12 +155,12 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
       // Upload photos
       const testImage = generateTestImage();
       await gallery.uploadPhoto(testImage, 'reload-photo-1.png');
-      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+      await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
       await gallery.uploadPhoto(testImage, 'reload-photo-2.png');
       await expect(async () => {
         expect(await gallery.photos.count()).toBeGreaterThanOrEqual(2);
-      }).toPass({ timeout: 60000 });
+      }).toPass({ timeout: CRYPTO_TIMEOUT.BATCH });
 
       const countBefore = await gallery.photos.count();
 
@@ -168,7 +169,7 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
 
       // Check if we need to re-login (session may persist)
       // Use longer timeout to allow for initial render
-      const needsLogin = await loginPage.loginForm.isVisible({ timeout: 10000 }).catch(() => false);
+      const needsLogin = await loginPage.loginForm.isVisible({ timeout: UI_TIMEOUT.DIALOG }).catch(() => false);
       if (needsLogin) {
         await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
         await loginPage.expectLoginSuccess();
@@ -183,17 +184,17 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
 
       // Navigate back to album (album sync happens during waitForLoad)
       const albumCardReload = page.getByTestId('album-card').first();
-      await expect(albumCardReload).toBeVisible({ timeout: 30000 });
+      await expect(albumCardReload).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
       await albumCardReload.click();
 
       await gallery.waitForLoad();
 
       // Photos should persist - use toPass for resilience against sync timing
-      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+      await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
       await expect(async () => {
         const countAfter = await gallery.photos.count();
         expect(countAfter).toBe(countBefore);
-      }).toPass({ timeout: 30000, intervals: [500, 1000, 2000] });
+      }).toPass({ timeout: NETWORK_TIMEOUT.NAVIGATION, intervals: [500, 1000, 2000] });
     } finally {
       await context.close();
     }
@@ -371,15 +372,8 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
     // Go offline
     await goOffline(page);
 
-    // Wait briefly for app to detect offline state
-    await page.waitForTimeout(500);
-
     // Go back online
     await goOnline(page);
-
-    // Wait for app to detect online state and stabilize
-    // The app needs time to detect 'online' event and re-establish connections
-    await page.waitForTimeout(1000);
 
     // After going offline/online, the app may need a refresh to restore full functionality
     // Wait for the upload button to appear, which indicates permissions are restored
@@ -696,8 +690,9 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
     await expect(gallery1.photos.first()).toBeVisible({ timeout: 60000 });
     await expect(gallery2.photos.first()).toBeVisible({ timeout: 60000 });
 
-    // Wait a bit for server to persist both uploads
-    await page1.waitForTimeout(3000);
+    // Wait for server to persist both uploads (API calls to complete)
+    await waitForNetworkIdle(page1, { timeout: 30000, urlPattern: /\/api\// });
+    await waitForNetworkIdle(page2, { timeout: 30000, urlPattern: /\/api\// });
 
     // Refresh both to sync - wait for DOM to be ready
     await Promise.all([
@@ -738,10 +733,7 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
     await gallery1.waitForLoad();
     await gallery2.waitForLoad();
 
-    // Allow time for photos to load from server
-    await page1.waitForTimeout(2000);
-
-    // Both should show both photos
+    // Both should show both photos (using polling wait instead of fixed timeout)
     await expect(async () => {
       const count1 = await gallery1.photos.count();
       const count2 = await gallery2.photos.count();

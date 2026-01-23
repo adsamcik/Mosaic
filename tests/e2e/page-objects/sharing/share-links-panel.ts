@@ -58,12 +58,16 @@ export class ShareLinksPanel {
 
   async revokeLink(index: number): Promise<void> {
     const links = await this.getLinkItems();
+    const initialCount = links.length;
     if (links[index]) {
       await links[index].getByTestId('revoke-link-button').click();
       // Wait for and click the confirmation button in the revoke dialog
       await this.page.getByTestId('confirm-revoke-button').click();
-      // Wait for the link to be removed from the list
-      await this.page.waitForTimeout(500);
+      // Wait for the link count to decrease (link removed from list)
+      await expect(async () => {
+        const newLinks = await this.getLinkItems();
+        expect(newLinks.length).toBeLessThan(initialCount);
+      }).toPass({ timeout: 5000 });
     }
   }
 

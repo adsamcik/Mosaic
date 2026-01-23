@@ -17,6 +17,7 @@ import {
     test,
     TEST_PASSWORD
 } from '../fixtures-enhanced';
+import { waitForNetworkIdle } from '../framework';
 
 test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
   test.describe('Photo Upload', () => {
@@ -199,9 +200,8 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
       await gallery.uploadPhoto(testImage, testContext.generatePhotoName(1));
       await gallery.expectPhotoCount(1);
       
-      // Wait for upload to be fully synced before reloading
-      // The sync engine needs time to finalize the upload
-      await user.page.waitForTimeout(2000);
+      // Wait for upload to be fully synced before reloading (API calls complete)
+      await waitForNetworkIdle(user.page, { timeout: 30000, urlPattern: /\/api\// });
 
       // Reload page
       await user.page.reload();

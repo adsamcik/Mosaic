@@ -12,12 +12,10 @@ import { chromium, type Browser, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { BASE_URL, TEST_PASSWORD } from './framework/constants';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const BASE_URL = process.env.BASE_URL || 'http://localhost:5173';
-const TEST_PASSWORD = 'test-password-e2e-2024';
 
 /**
  * Directory to store auth state files
@@ -192,6 +190,7 @@ async function authenticateUser(
     // Handle rate limiting with exponential backoff
     if (registerResult === 'rate_limited') {
       console.log(`[Auth Setup] Rate limited for ${username}, waiting 5s and retrying...`);
+      // INTENTIONAL: Rate limit backoff requires real delay, not element wait
       await page.waitForTimeout(5000);
       // Reload and try login instead (user may have been created)
       await page.reload();

@@ -20,6 +20,8 @@ import {
     test,
     TEST_CONSTANTS,
 } from '../fixtures';
+import { waitForNetworkIdle } from '../framework';
+import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT, UI_TIMEOUT } from '../framework/timeouts';
 
 test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypto', () => {
   test('P0-1: complete password login initializes crypto and shows app shell @smoke', async ({
@@ -51,7 +53,7 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
 
     // Step 3: Wait for app shell (indicates crypto worker initialized successfully)
     await expect(page.getByTestId('app-shell')).toBeVisible({
-      timeout: 60000,
+      timeout: CRYPTO_TIMEOUT.BATCH,
     });
 
     // Step 4: Verify app shell has critical elements
@@ -200,7 +202,7 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     // Wait for page to stabilize after reload
     await expect(
       page.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
-    ).toBeVisible({ timeout: 30000 });
+    ).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
 
     // Should still be logged in (or need to re-enter password depending on session impl)
     // Check for either app shell or login form
@@ -224,7 +226,7 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
     const { page } = poolUser;
 
     // App shell should already be visible from poolUser fixture
-    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
 
     // Create album through browser UI (generates real epoch keys)
     const appShell = new AppShell(page);
@@ -234,7 +236,7 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
 
     // Navigate to album
     const albumCard = page.getByTestId('album-card').first();
-    await expect(albumCard).toBeVisible({ timeout: 30000 });
+    await expect(albumCard).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
     await albumCard.click();
 
     // Wait for gallery
@@ -331,25 +333,25 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
     // Click Albums button in header to go to album list
     // Button visibility check has 10s timeout for sync to complete
     const albumsButton = page.getByRole('button', { name: 'Albums' });
-    await expect(albumsButton).toBeVisible({ timeout: 10000 });
+    await expect(albumsButton).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
     console.log('[Test] Clicking Albums button...');
     await albumsButton.click();
 
     // Wait for album list and find our specific album
     const albumCardAfterReload = page.getByTestId('album-card').filter({ hasText: albumName });
-    await expect(albumCardAfterReload).toBeVisible({ timeout: 30000 });
+    await expect(albumCardAfterReload).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
     console.log('[Test] Found album card after reload, clicking...');
     await albumCardAfterReload.click();
 
     // Wait for gallery and verify photo persisted
     await gallery.waitForLoad();
-    console.log('[Test] Gallery loaded, waiting for photo...');
+    console.log('[Test] Gallery loaded, waiting for photo sync to complete...');
     
-    // Wait longer for sync to complete after entering album
-    await page.waitForTimeout(5000);
-    console.log('[Test] Waited 5s for photo sync');
+    // Wait for sync to complete after entering album (network calls finish)
+    await waitForNetworkIdle(page, { timeout: 30000, urlPattern: /\/api\// });
+    console.log('[Test] Network idle, checking for photo');
 
-    await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+    await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
     const photoCountAfter = await gallery.photos.count();
     expect(photoCountAfter).toBe(1);

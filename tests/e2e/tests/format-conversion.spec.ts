@@ -22,6 +22,7 @@ import {
   expect,
   test,
 } from '../fixtures';
+import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT, UI_TIMEOUT } from '../framework/timeouts';
 
 /**
  * Get the directory name for ES modules (since __dirname is not available)
@@ -174,7 +175,7 @@ test.describe('Format Conversion @p1 @format', () => {
 
     // Navigate into the album
     const albumCard = page.getByTestId('album-card').first();
-    await expect(albumCard).toBeVisible({ timeout: 30000 });
+    await expect(albumCard).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
     await albumCard.click();
 
     // Wait for gallery to load
@@ -290,7 +291,7 @@ test.describe('Format Conversion @p1 @format', () => {
       const { buffer, filename } = getTestImage('avif');
       await gallery.uploadPhotoWithMime(buffer, filename, 'image/avif');
 
-      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+      await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
       const count = await gallery.photos.count();
       expect(count).toBeGreaterThanOrEqual(1);
     });
@@ -385,9 +386,6 @@ test.describe('Format Conversion @p1 @format', () => {
       for (const format of formats) {
         const { buffer, filename, mimeType } = getTestImage(format);
         await gallery.uploadPhotoWithMime(buffer, filename, mimeType);
-
-        // Wait briefly for upload to process
-        await page.waitForTimeout(500);
       }
 
       // Wait for all photos to appear
@@ -417,18 +415,18 @@ test.describe('Format Conversion @p1 @format', () => {
       await gallery.uploadPhotoWithMime(buffer, filename, mimeType);
 
       // Wait for photo to appear
-      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+      await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
       // Click to open lightbox
       await gallery.photos.first().click();
 
       // Wait for lightbox to open
       const lightbox = page.getByTestId('lightbox');
-      await expect(lightbox).toBeVisible({ timeout: 10000 });
+      await expect(lightbox).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
 
       // Verify an image is displayed in the lightbox
       const lightboxImage = lightbox.locator('img').first();
-      await expect(lightboxImage).toBeVisible({ timeout: 10000 });
+      await expect(lightboxImage).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
 
       // Image should have loaded (has dimensions)
       const naturalWidth = await lightboxImage.evaluate(
@@ -460,7 +458,7 @@ test.describe('Format Conversion @p1 @format', () => {
       await gallery.photos.first().click();
 
       const lightbox = page.getByTestId('lightbox');
-      await expect(lightbox).toBeVisible({ timeout: 10000 });
+      await expect(lightbox).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
 
       const lightboxImage = lightbox.locator('img').first();
       await expect(lightboxImage).toBeVisible({ timeout: 15000 });

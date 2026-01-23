@@ -228,6 +228,7 @@ export class LoginPage {
         // Handle rate limiting - wait and retry
         if (errorText?.toLowerCase().includes('too many requests')) {
           console.log('[LoginPage] Rate limited, waiting 5s and retrying with login');
+          // INTENTIONAL: Rate limit backoff requires real delay, not element wait
           await this.page.waitForTimeout(5000);
           // After rate limit, user may already exist, try login
           await this.switchToLoginMode();

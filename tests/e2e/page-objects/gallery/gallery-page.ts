@@ -119,6 +119,7 @@ export class GalleryPage {
       });
       console.log(`[GalleryPage PO] Files set at T+${Date.now() - startTime}ms`);
 
+      // INTENTIONAL: Brief poll delay in retry loop to detect async upload trigger
       await this.page.waitForTimeout(100);
       
       const btn = this.page.getByTestId('upload-button');
@@ -134,6 +135,7 @@ export class GalleryPage {
         break;
       }
       
+      // INTENTIONAL: Secondary poll delay in retry loop for delayed upload detection
       await this.page.waitForTimeout(500);
       const buttonText2 = await btn.textContent().catch(() => '');
       const currentCount2 = await this.getPhotos().count();
@@ -207,6 +209,7 @@ export class GalleryPage {
         buffer: imageBuffer,
       });
 
+      // INTENTIONAL: Brief poll delay in retry loop to detect async upload trigger
       await this.page.waitForTimeout(100);
 
       const btn = this.page.getByTestId('upload-button');
@@ -220,6 +223,7 @@ export class GalleryPage {
         break;
       }
 
+      // INTENTIONAL: Secondary poll delay in retry loop for delayed upload detection
       await this.page.waitForTimeout(500);
       const buttonText2 = await btn.textContent().catch(() => '');
       const currentCount2 = await this.getPhotos().count();
