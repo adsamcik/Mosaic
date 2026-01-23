@@ -2,7 +2,7 @@
 
 Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal use (≤50 users). The server never sees plaintext photos or metadata—all encryption/decryption happens client-side.
 
-> **Development Status:** Active development towards **v1**. All commits go directly to `master`—no pull requests, no feature branches. Move fast, commit often, keep the build green.
+> **Development Status:** Active development towards **v1**. All commits go directly to `main`—no pull requests, no feature branches. Move fast, commit often, keep the build green.
 
 ---
 
@@ -14,16 +14,17 @@ Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal 
 - Tus protocol for resumable uploads
 - Authentication via trusted reverse proxy (Remote-User header)
 
-### Frontend (React 19 + Vite)
+### Frontend (React 19 + Vite 7)
 - TypeScript strict mode
 - Web Workers for crypto and database operations
-- SQLite-WASM with OPFS for local storage
-- libsodium-wrappers for cryptography
+- SQLite-WASM (fts5-sql-bundle) with OPFS for local storage + full-text search
+- libsodium-wrappers-sumo for cryptography
 - Comlink for worker communication
 - TanStack Virtual for virtualized lists
-- Zustand for state management
+- Zustand + zustand-mutative for state management
 - i18next for internationalization
 - Leaflet + Supercluster for map features
+- Happy-DOM for testing (faster than jsdom)
 
 ### Crypto Library
 - XChaCha20-Poly1305 for encryption
@@ -41,12 +42,12 @@ apps/backend/          # .NET 10 ASP.NET Core API
   Mosaic.Backend/      # Main API project
   Mosaic.Backend.Tests/# Backend tests
 apps/admin/            # React 19 + Vite frontend
-  src/components/      # React components
-  src/contexts/        # React contexts (auth, sync, upload, etc.)
-  src/hooks/           # Custom hooks
-  src/lib/             # Utility libraries and services
+  src/components/      # React components (organized by feature: Admin/, Albums/, Auth/, Gallery/, etc.)
+  src/contexts/        # React contexts (AlbumPermissions, Sync, Upload)
+  src/hooks/           # Custom hooks (22+ hooks)
+  src/lib/             # Utility libraries and services (30+ modules)
   src/locales/         # i18n translation files (en, cs)
-  src/stores/          # Zustand state stores
+  src/stores/          # Zustand state stores (photo-store.ts)
   src/styles/          # CSS and style files
   src/types/           # TypeScript type definitions
   src/workers/         # Web Workers (crypto, db, geo)
@@ -69,10 +70,10 @@ scripts/               # Build, test, and dev scripts
 Ctrl+Shift+P → "Tasks: Run Task" → "start-all"
 
 # Run tests (non-interactive!)
-cd libs/crypto && npm test       # Crypto unit tests
-cd apps/admin && npm run test:run # Frontend unit tests
-dotnet test apps/backend/Mosaic.Backend.Tests  # Backend tests
-.\scripts\run-e2e-tests.ps1      # E2E tests
+cd libs/crypto && npm test                          # Crypto unit tests
+cd apps/admin && npm run test:run                   # Frontend unit tests
+dotnet test apps/backend/Mosaic.Backend.Tests       # Backend tests
+.\scripts\run-e2e-tests.ps1                         # E2E tests (full stack must be running)
 
 # Build
 cd libs/crypto && npm run build  # Build crypto library first
@@ -242,7 +243,7 @@ When debugging complex issues:
 
 **Development Status:** This project is in active development. When database schema issues arise, it's acceptable to drop all migrations and reset the database rather than writing complex migration fixes.
 
-**Version Target:** We are working towards **v1**. All commits go directly to `master`—no pull requests, no feature branches. Move fast, commit often, keep the build green.
+**Version Target:** We are working towards **v1**. All commits go directly to `main`—no pull requests, no feature branches. Move fast, commit often, keep the build green.
 
 ## Related Configuration Files
 

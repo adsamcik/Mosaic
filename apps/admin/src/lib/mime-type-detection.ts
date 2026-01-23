@@ -107,6 +107,9 @@ export async function detectMimeType(
  *
  * HEIC, HEIF, and AVIF are all ISOBMFF (ISO Base Media File Format) containers.
  * The brand code at offset 8 identifies the specific format.
+ *
+ * Note: Many HEIC files use 'mif1' as the major brand with 'heic' in compatible brands.
+ * We must check compatible brands to correctly identify these files.
  */
 function detectIsobmffFormat(bytes: Uint8Array): SupportedMimeType | null {
   // Brand starts at offset 8 (4 bytes)
@@ -117,21 +120,7 @@ function detectIsobmffFormat(bytes: Uint8Array): SupportedMimeType | null {
     bytes[11]!,
   );
 
-  // AVIF brands
-  if (brand === 'avif' || brand === 'avis' || brand === 'mif1') {
-    // Check compatible brands for more specific AVIF detection
-    // mif1 can also be HEIF, so check if avif is in compatible brands
-    if (brand === 'mif1') {
-      const compatBrands = getCompatibleBrands(bytes);
-      if (compatBrands.includes('avif')) {
-        return 'image/avif';
-      }
-    } else {
-      return 'image/avif';
-    }
-  }
-
-  // HEIC brands (HEVC-based)
+  // HEIC brands (HEVC-based) - check first since it's most specific
   if (
     brand === 'heic' ||
     brand === 'heix' ||
@@ -141,8 +130,32 @@ function detectIsobmffFormat(bytes: Uint8Array): SupportedMimeType | null {
     return 'image/heic';
   }
 
-  // HEIF brands (non-HEVC)
+  // AVIF brands - check before mif1 fallback
+  if (brand === 'avif' || brand === 'avis') {
+    return 'image/avif';
+  }
+
+  // mif1/msf1/miaf are generic ISOBMFF brands - need to check compatible brands
+  // Many Apple HEIC files use mif1 as major brand with heic in compatible brands
   if (brand === 'mif1' || brand === 'msf1' || brand === 'miaf') {
+    const compatBrands = getCompatibleBrands(bytes);
+
+    // Check for HEIC in compatible brands (common for Apple HEIC files)
+    if (
+      compatBrands.includes('heic') ||
+      compatBrands.includes('heix') ||
+      compatBrands.includes('hevc') ||
+      compatBrands.includes('hevx')
+    ) {
+      return 'image/heic';
+    }
+
+    // Check for AVIF in compatible brands
+    if (compatBrands.includes('avif') || compatBrands.includes('avis')) {
+      return 'image/avif';
+    }
+
+    // Default to HEIF for generic mif1 containers
     return 'image/heif';
   }
 
