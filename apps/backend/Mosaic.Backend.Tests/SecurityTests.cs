@@ -464,7 +464,7 @@ public class SecurityTests
         await builder.CreateUserAsync(UserB);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -499,7 +499,7 @@ public class SecurityTests
         membership.RevokedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {

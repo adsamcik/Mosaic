@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -10,48 +11,12 @@ namespace Mosaic.Backend.Controllers;
 public class EpochKeysController : ControllerBase
 {
     private readonly MosaicDbContext _db;
-    private readonly IConfiguration _config;
+    private readonly ICurrentUserService _currentUserService;
 
-    public EpochKeysController(MosaicDbContext db, IConfiguration config)
+    public EpochKeysController(MosaicDbContext db, ICurrentUserService currentUserService)
     {
         _db = db;
-        _config = config;
-    }
-
-    private async Task<User> GetOrCreateUser()
-    {
-        var authSub = HttpContext.Items["AuthSub"] as string
-            ?? throw new UnauthorizedAccessException();
-
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
-        if (user == null)
-        {
-            // Use transaction to ensure User and UserQuota are created atomically
-            await using var tx = await _db.Database.BeginTransactionAsync();
-            try
-            {
-                user = new User
-                {
-                    Id = Guid.CreateVersion7(),
-                    AuthSub = authSub,
-                    IdentityPubkey = ""
-                };
-                _db.Users.Add(user);
-                _db.UserQuotas.Add(new UserQuota
-                {
-                    UserId = user.Id,
-                    MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes")
-                });
-                await _db.SaveChangesAsync();
-                await tx.CommitAsync();
-            }
-            catch
-            {
-                await tx.RollbackAsync();
-                throw;
-            }
-        }
-        return user;
+        _currentUserService = currentUserService;
     }
 
     /// <summary>
@@ -60,7 +25,7 @@ public class EpochKeysController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> List(Guid albumId)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify user has access to album
         var hasAccess = await _db.AlbumMembers
@@ -104,7 +69,7 @@ public class EpochKeysController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(Guid albumId, [FromBody] CreateEpochKeyRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership or editor role
         var membership = await _db.AlbumMembers
@@ -173,7 +138,7 @@ public class EpochKeysController : ControllerBase
     [HttpGet("{keyId}")]
     public async Task<IActionResult> Get(Guid albumId, Guid keyId)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var key = await _db.EpochKeys
             .FirstOrDefaultAsync(ek => ek.Id == keyId && ek.AlbumId == albumId);
@@ -229,7 +194,7 @@ public class EpochKeysController : ControllerBase
     [HttpPost("/api/albums/{albumId}/epochs/{epochId}/rotate")]
     public async Task<IActionResult> Rotate(Guid albumId, int epochId, [FromBody] RotateEpochRequest request)
     {
-        var user = await GetOrCreateUser();
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
         var album = await _db.Albums.FindAsync(albumId);

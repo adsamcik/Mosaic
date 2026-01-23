@@ -15,7 +15,7 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
@@ -23,7 +23,7 @@ public class EpochKeysControllerTests
         await builder.CreateEpochKeyAsync(album, owner, epochId: 1);
         await builder.CreateEpochKeyAsync(album, owner, epochId: 2);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -45,14 +45,14 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         await builder.CreateUserAsync(MemberAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -72,7 +72,7 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
@@ -80,7 +80,7 @@ public class EpochKeysControllerTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, recipient, "viewer", owner);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -110,7 +110,7 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
@@ -120,7 +120,7 @@ public class EpochKeysControllerTests
         await builder.AddMemberAsync(album, editor, "editor", owner);
         await builder.AddMemberAsync(album, recipient, "viewer", owner);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -149,7 +149,7 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
@@ -159,7 +159,7 @@ public class EpochKeysControllerTests
         await builder.AddMemberAsync(album, viewer, "viewer", owner);
         await builder.AddMemberAsync(album, recipient, "viewer", owner);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -188,13 +188,13 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -223,7 +223,7 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
@@ -232,7 +232,7 @@ public class EpochKeysControllerTests
         await builder.AddMemberAsync(album, recipient, "viewer", owner);
         await builder.CreateEpochKeyAsync(album, recipient, epochId: 1);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -261,14 +261,14 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
         var epochKey = await builder.CreateEpochKeyAsync(album, owner, epochId: 1);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -289,7 +289,7 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
@@ -298,7 +298,7 @@ public class EpochKeysControllerTests
         await builder.AddMemberAsync(album, member, "viewer", owner);
         var epochKey = await builder.CreateEpochKeyAsync(album, owner, epochId: 1);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -318,13 +318,13 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -344,7 +344,7 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
@@ -352,7 +352,7 @@ public class EpochKeysControllerTests
         var album = await builder.CreateAlbumAsync(owner, currentEpochId: 1);
         await builder.AddMemberAsync(album, member, "viewer", owner);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -398,7 +398,7 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
@@ -406,7 +406,7 @@ public class EpochKeysControllerTests
         var album = await builder.CreateAlbumAsync(owner, currentEpochId: 1);
         await builder.AddMemberAsync(album, editor, "editor", owner);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -437,13 +437,13 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner, currentEpochId: 5);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -474,14 +474,14 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var nonMember = await builder.CreateUserAsync(MemberAuthSub);
         var album = await builder.CreateAlbumAsync(owner, currentEpochId: 1);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -512,12 +512,12 @@ public class EpochKeysControllerTests
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
-        var config = TestConfiguration.Create();
+
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
 
-        var controller = new EpochKeysController(db, config)
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
