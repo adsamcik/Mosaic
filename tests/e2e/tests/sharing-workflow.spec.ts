@@ -19,8 +19,9 @@ import {
   LoginPage,
   test,
   TEST_CONSTANTS,
-} from '../fixtures';
+} from '../fixtures-enhanced';
 import { waitForCondition } from '../framework';
+import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT, UI_TIMEOUT } from '../framework/timeouts';
 
 test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', () => {
   // Triple the timeout for slow multi-user sharing tests
@@ -49,7 +50,7 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
 
     // Navigate to album
     const aliceAlbumCard = alice.getByTestId('album-card').first();
-    await expect(aliceAlbumCard).toBeVisible({ timeout: 30000 });
+    await expect(aliceAlbumCard).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
     await aliceAlbumCard.click();
 
     const aliceGallery = new GalleryPage(alice);
@@ -58,12 +59,12 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
     // Upload photos
     const testImage = generateTestImage();
     await aliceGallery.uploadPhoto(testImage, 'shared-photo-1.png');
-    await expect(aliceGallery.photos.first()).toBeVisible({ timeout: 60000 });
+    await expect(aliceGallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
     await aliceGallery.uploadPhoto(testImage, 'shared-photo-2.png');
     await expect(async () => {
       expect(await aliceGallery.photos.count()).toBeGreaterThanOrEqual(2);
-    }).toPass({ timeout: 60000 });
+    }).toPass({ timeout: CRYPTO_TIMEOUT.BATCH });
 
     const alicePhotoCount = await aliceGallery.photos.count();
 

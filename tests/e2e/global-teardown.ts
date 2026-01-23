@@ -4,7 +4,7 @@
  * Runs once after all tests complete to clean up test data.
  */
 
-const API_URL = process.env.API_URL || 'http://localhost:5000';
+import { API_URL } from './framework/constants';
 
 /**
  * Reset test data after all tests complete

@@ -10,7 +10,7 @@
  * - Mode switching between login and registration
  */
 
-import { expect, LoginPage, test, TEST_CONSTANTS } from '../fixtures';
+import { expect, LoginPage, test, TEST_CONSTANTS } from '../fixtures-enhanced';
 
 test.describe('Registration @p1 @auth @crypto', () => {
   test.describe('Registration Form Display', () => {

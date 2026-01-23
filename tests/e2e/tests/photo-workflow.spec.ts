@@ -20,7 +20,7 @@ import {
   LoginPage,
   test,
   TEST_CONSTANTS,
-} from '../fixtures';
+} from '../fixtures-enhanced';
 
 test.describe('Photo Workflow: Upload & Display @p1 @photo @crypto @slow', () => {
   // Triple the timeout for slow crypto operations

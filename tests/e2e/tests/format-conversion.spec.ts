@@ -21,7 +21,7 @@ import {
   TEST_CONSTANTS,
   expect,
   test,
-} from '../fixtures';
+} from '../fixtures-enhanced';
 import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT, UI_TIMEOUT } from '../framework/timeouts';
 
 /**

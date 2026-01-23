@@ -7,7 +7,7 @@
  * Test IDs: P1-SHARE-1 through P1-SHARE-8
  */
 
-import { test, expect } from '../fixtures';
+import { test, expect } from '../fixtures-enhanced';
 import {
   AppShell,
   CreateAlbumDialog,

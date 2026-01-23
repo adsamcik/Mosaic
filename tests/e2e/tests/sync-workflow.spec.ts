@@ -19,7 +19,7 @@ import {
   LoginPage,
   test,
   TEST_CONSTANTS,
-} from '../fixtures';
+} from '../fixtures-enhanced';
 import { waitForCondition, waitForNetworkIdle } from '../framework';
 import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT, UI_TIMEOUT } from '../framework/timeouts';
 

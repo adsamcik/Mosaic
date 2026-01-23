@@ -23,7 +23,8 @@ import {
   LoginPage,
   test as base,
   TEST_CONSTANTS,
-} from '../fixtures';
+} from '../fixtures-enhanced';
+import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT } from '../framework/timeouts';
 import { BrowserContext, Page } from '@playwright/test';
 
 // Extend the base test to provide a shared context across all smoke tests
@@ -63,7 +64,7 @@ test.describe('Smoke Tests @smoke @p0 @fast', () => {
     await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, username);
 
     // Verify app shell loads (crypto initialized successfully)
-    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 60000 });
+    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
     // Verify app shell has critical elements
     const appShell = new AppShell(page);
@@ -96,11 +97,11 @@ test.describe('Smoke Tests @smoke @p0 @fast', () => {
       }
 
       expect(isDialogHidden).toBe(true);
-    }).toPass({ timeout: 30000 });
+    }).toPass({ timeout: NETWORK_TIMEOUT.NAVIGATION });
 
     // Verify album card appears
     const albumCard = page.getByTestId('album-card').first();
-    await expect(albumCard).toBeVisible({ timeout: 30000 });
+    await expect(albumCard).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
     await expect(albumCard).toContainText(albumName);
   });
 
@@ -109,7 +110,7 @@ test.describe('Smoke Tests @smoke @p0 @fast', () => {
 
     // Navigate to the album (we're still logged in)
     const albumCard = page.getByTestId('album-card').first();
-    await expect(albumCard).toBeVisible({ timeout: 30000 });
+    await expect(albumCard).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
     await albumCard.click();
 
     // Wait for gallery to load
@@ -121,7 +122,7 @@ test.describe('Smoke Tests @smoke @p0 @fast', () => {
     await gallery.uploadPhoto(testImage, 'smoke-test-photo.png');
 
     // Verify photo appears
-    await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+    await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
   });
 
   test('SMOKE-4: can view photo persists in gallery', async ({ sharedContext }) => {

@@ -4,7 +4,7 @@
  * Tests for WCAG compliance and accessibility.
  */
 
-import { test, expect } from '../fixtures';
+import { test, expect } from '../fixtures-enhanced';
 
 test.describe('Accessibility @p2 @a11y @fast', () => {
   test('has proper heading structure', async ({ page }) => {

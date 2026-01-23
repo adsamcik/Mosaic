@@ -7,9 +7,7 @@
  * Test IDs: P1-SETTINGS-1 through P1-SETTINGS-14
  */
 
-import { test, expect } from '../fixtures';
-import { LoginPage, AppShell, SettingsPage } from '../page-objects';
-import { TEST_CONSTANTS } from '../fixtures';
+import { test, expect, LoginPage, AppShell, SettingsPage, TEST_CONSTANTS } from '../fixtures-enhanced';
 
 test.describe('Settings Page @p2 @ui', () => {
   test.beforeEach(async ({ loggedInPage }) => {

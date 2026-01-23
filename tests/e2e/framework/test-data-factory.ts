@@ -8,16 +8,10 @@
 
 import { type Page } from '@playwright/test';
 import * as zlib from 'zlib';
+import { API_URL, TEST_PASSWORD } from './constants';
 
-/**
- * API URL for backend requests
- */
-const API_URL = process.env.API_URL || 'http://localhost:5000';
-
-/**
- * Default test password
- */
-export const TEST_PASSWORD = 'test-password-e2e-2024';
+// Re-export for backward compatibility
+export { TEST_PASSWORD };
 
 /**
  * Test image sizes for different use cases

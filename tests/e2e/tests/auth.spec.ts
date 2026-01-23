@@ -5,7 +5,7 @@
  * Phase 1: Fixed soft assertions, added complete login flow tests.
  */
 
-import { AppShell, expect, LoginPage, test, TEST_CONSTANTS } from '../fixtures';
+import { AppShell, expect, LoginPage, test, TEST_CONSTANTS } from '../fixtures-enhanced';
 
 test.describe('Authentication @p1 @auth @fast', () => {
   test.describe('Login Form Display', () => {

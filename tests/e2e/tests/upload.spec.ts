@@ -5,7 +5,8 @@
  * Phase 1: Fixed soft assertions, added photo round-trip test.
  */
 
-import { ApiHelper, AppShell, CreateAlbumDialogPage, GalleryPage, LoginPage, TEST_CONSTANTS, expect, generateTestImage, test } from '../fixtures';
+import { ApiHelper, AppShell, CreateAlbumDialogPage, GalleryPage, LoginPage, TEST_CONSTANTS, expect, generateTestImage, test } from '../fixtures-enhanced';
+import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT, UI_TIMEOUT } from '../framework/timeouts';
 
 test.describe('Photo Upload @p1 @photo', () => {
   const apiHelper = new ApiHelper();
@@ -55,7 +56,7 @@ test.describe('Photo Upload @p1 @photo', () => {
 
       // Navigate into the album
       const albumCard = page.getByTestId('album-card').first();
-      await expect(albumCard).toBeVisible({ timeout: 10000 });
+      await expect(albumCard).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
       await albumCard.click();
 
       const gallery = new GalleryPage(page);
@@ -89,7 +90,7 @@ test.describe('Photo Upload @p1 @photo', () => {
 
       // Navigate to album
       const albumCard = page.getByTestId('album-card').first();
-      await expect(albumCard).toBeVisible({ timeout: 10000 });
+      await expect(albumCard).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
       await albumCard.click();
 
       const gallery = new GalleryPage(page);
@@ -113,7 +114,7 @@ test.describe('Photo Upload @p1 @photo', () => {
         const hasText = await uploadingText.first().isVisible().catch(() => false);
         const isUploading = buttonText?.toLowerCase().includes('upload') || hasProgress || hasText;
         expect(isUploading).toBeTruthy();
-      }).toPass({ timeout: 10000 });
+      }).toPass({ timeout: UI_TIMEOUT.DIALOG });
     });
 
     /**
@@ -145,7 +146,7 @@ test.describe('Photo Upload @p1 @photo', () => {
 
       // Navigate to album
       const albumCard = page.getByTestId('album-card').first();
-      await expect(albumCard).toBeVisible({ timeout: 30000 });
+      await expect(albumCard).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
       await albumCard.click();
 
       // Wait for gallery to load
@@ -160,7 +161,7 @@ test.describe('Photo Upload @p1 @photo', () => {
       await gallery.uploadPhoto(testImage, 'round-trip-test.png');
 
       // Wait for upload to complete and photo to appear
-      await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
+      await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
       // Verify photo count increased
       const finalPhotoCount = await gallery.photos.count();
@@ -215,7 +216,7 @@ test.describe('Photo Upload @p1 @photo', () => {
         
         // Either error is shown or button is still available (graceful degradation)
         expect(hasAlert || hasError || buttonStillWorks).toBeTruthy();
-      }).toPass({ timeout: 10000 });
+      }).toPass({ timeout: UI_TIMEOUT.DIALOG });
     });
   });
 });

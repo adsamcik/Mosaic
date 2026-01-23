@@ -21,12 +21,7 @@
  * to the current mode. Run against both modes for full coverage.
  */
 
-import { test, expect, LoginPage, AppShell, TEST_CONSTANTS } from '../fixtures';
-
-/**
- * API base URL for direct API calls
- */
-const API_URL = process.env.API_URL || 'http://localhost:5000';
+import { test, expect, LoginPage, AppShell, TEST_CONSTANTS, API_URL } from '../fixtures-enhanced';
 
 /**
  * Detect which auth mode the backend is running in.

@@ -5,7 +5,7 @@
  * Phase 1: Fixed soft assertions, added proper waits.
  */
 
-import { AppShell, CreateAlbumDialogPage, expect, LoginPage, test, TEST_CONSTANTS } from '../fixtures';
+import { AppShell, CreateAlbumDialogPage, expect, LoginPage, test, TEST_CONSTANTS } from '../fixtures-enhanced';
 
 test.describe('Album Management @p1 @album', () => {
 

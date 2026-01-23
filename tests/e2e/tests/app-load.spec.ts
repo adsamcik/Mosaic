@@ -5,7 +5,7 @@
  * Phase 1: Fixed assertions and improved error handling.
  */
 
-import { expect, test, LoginPage } from '../fixtures';
+import { expect, test, LoginPage } from '../fixtures-enhanced';
 
 test.describe('App Loading @p1 @fast', () => {
   test('loads the application and shows login form', async ({ page }) => {

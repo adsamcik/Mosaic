@@ -9,8 +9,7 @@
  */
 
 import { clearAuthStates, setupPoolUsers } from './auth-setup';
-
-const API_URL = process.env.API_URL || 'http://localhost:5000';
+import { API_URL } from './framework/constants';
 const MAX_WAIT_MS = 60000;
 const POLL_INTERVAL_MS = 2000;
 
