@@ -39,7 +39,10 @@ export {
   waitForDialog,
   waitForDialogClosed,
   retry,
+  raceWithTimeout,
+  waitForLoginOutcome,
   type WaitOptions,
+  type LoginOutcome,
 } from './wait-utils';
 
 export {

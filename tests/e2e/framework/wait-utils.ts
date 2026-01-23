@@ -300,3 +300,105 @@ export async function retry<T>(
 
   throw lastError;
 }
+
+/**
+ * Result type for success/error/timeout detection patterns
+ */
+export type LoginOutcome = 'success' | 'error' | 'exists' | 'rate_limited' | 'timeout';
+
+/**
+ * Race multiple promises with a guaranteed timeout.
+ * 
+ * Unlike Promise.race with individual timeouts, this ensures we ALWAYS
+ * get a result within `timeout` ms, even if both promises hang.
+ * 
+ * @param promises - Object mapping outcome names to promises
+ * @param timeout - Maximum time to wait for any outcome
+ * @param fallback - Value to return if timeout is reached
+ * @returns The first resolved value or fallback on timeout
+ * 
+ * @example
+ * const result = await raceWithTimeout({
+ *   success: appShell.waitFor({ state: 'visible' }),
+ *   error: errorAlert.waitFor({ state: 'visible' }),
+ * }, 15000, 'timeout');
+ */
+export async function raceWithTimeout<T extends string>(
+  promises: Record<T, Promise<unknown>>,
+  timeout: number,
+  fallback: T | 'timeout' = 'timeout'
+): Promise<T | 'timeout'> {
+  const entries = Object.entries(promises) as [T, Promise<unknown>][];
+  
+  const racers = entries.map(([name, promise]) =>
+    promise.then(() => name).catch(() => null)
+  );
+  
+  const timeoutPromise = new Promise<'timeout'>((resolve) =>
+    setTimeout(() => resolve('timeout'), timeout)
+  );
+  
+  // Race all promises plus the timeout
+  const results = await Promise.race([
+    Promise.race(racers.filter((p): p is Promise<T> => p !== null)),
+    timeoutPromise,
+  ]);
+  
+  // If we got null (all promises rejected), return fallback
+  if (results === null) {
+    return fallback as T | 'timeout';
+  }
+  
+  return results;
+}
+
+/**
+ * Wait for either success (app-shell visible) or error (error message visible).
+ * 
+ * This is a common pattern used after login/registration to detect outcome.
+ * Has a built-in timeout guard to prevent indefinite hangs.
+ * 
+ * @param page - Playwright page
+ * @param options - Configuration options
+ * @returns The detected outcome
+ */
+export async function waitForLoginOutcome(
+  page: import('@playwright/test').Page,
+  options: {
+    timeout?: number;
+    successSelector?: string;
+    errorSelector?: string;
+  } = {}
+): Promise<LoginOutcome> {
+  const {
+    timeout = 15000,
+    successSelector = '[data-testid="app-shell"]',
+    errorSelector = '[role="alert"]',
+  } = options;
+  
+  const appShell = page.locator(successSelector);
+  const errorAlert = page.locator(errorSelector);
+  
+  // Create a timeout promise that always resolves (never rejects)
+  const timeoutPromise = new Promise<'timeout'>((resolve) =>
+    setTimeout(() => resolve('timeout'), timeout + 1000) // +1s buffer after element timeouts
+  );
+  
+  const result = await Promise.race([
+    appShell.waitFor({ state: 'visible', timeout }).then(() => 'success' as const),
+    errorAlert.waitFor({ state: 'visible', timeout }).then(async () => {
+      const text = await errorAlert.textContent();
+      const lowerText = text?.toLowerCase() ?? '';
+      if (lowerText.includes('already taken') || lowerText.includes('already exists')) {
+        return 'exists' as const;
+      }
+      if (lowerText.includes('too many requests') || lowerText.includes('rate limit')) {
+        return 'rate_limited' as const;
+      }
+      return 'error' as const;
+    }),
+    timeoutPromise,
+  ]).catch(() => 'timeout' as const);
+  
+  return result;
+}
