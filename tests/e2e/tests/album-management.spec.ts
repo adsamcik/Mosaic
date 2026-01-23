@@ -132,7 +132,7 @@ test.describe('Album Management @p1 @album', () => {
 
       // Refresh to see the album
       await user.page.reload();
-      await user.page.waitForLoadState('networkidle');
+      await user.page.waitForLoadState('domcontentloaded');
 
       // Click on album
       const appShell = new AppShell(user.page);
@@ -157,7 +157,7 @@ test.describe('Album Management @p1 @album', () => {
 
       // Refresh to see the album
       await user.page.reload();
-      await user.page.waitForLoadState('networkidle');
+      await user.page.waitForLoadState('domcontentloaded');
 
       // Navigate to album
       const appShell = new AppShell(user.page);
@@ -239,7 +239,7 @@ test.describe('Album Management @p1 @album', () => {
 
       // Refresh to see the album
       await user.page.reload();
-      await user.page.waitForLoadState('networkidle');
+      await user.page.waitForLoadState('domcontentloaded');
 
       // Navigate to album
       const appShell = new AppShell(user.page);
@@ -283,7 +283,7 @@ test.describe('Album Management @p1 @album', () => {
 
       // Refresh to see the album
       await user.page.reload();
-      await user.page.waitForLoadState('networkidle');
+      await user.page.waitForLoadState('domcontentloaded');
 
       // Verify album exists
       const appShell = new AppShell(user.page);
@@ -328,7 +328,7 @@ test.describe('Album Management @p1 @album', () => {
 
       // Refresh to see the album
       await user.page.reload();
-      await user.page.waitForLoadState('networkidle');
+      await user.page.waitForLoadState('domcontentloaded');
 
       // Verify album exists
       const appShell = new AppShell(user.page);

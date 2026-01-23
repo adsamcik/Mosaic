@@ -163,8 +163,8 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
 
       const countBefore = await gallery.photos.count();
 
-      // Reload page and wait for network to stabilize
-      await page.reload({ waitUntil: 'networkidle' });
+      // Reload page and wait for DOM to be ready
+      await page.reload({ waitUntil: 'domcontentloaded' });
 
       // Give the app time to initialize before checking login state
       await page.waitForTimeout(500);
@@ -181,7 +181,7 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
       }
 
       // Navigate to home to see albums list
-      await page.goto('/', { waitUntil: 'networkidle' });
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
       await appShell.waitForLoad();
 
       // Wait for albums to sync from server
@@ -395,7 +395,7 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
     const uploadButtonVisible = await uploadButton.isVisible({ timeout: 5000 }).catch(() => false);
     if (!uploadButtonVisible) {
       // Reload to restore full app state
-      await page.reload({ waitUntil: 'networkidle' });
+      await page.reload({ waitUntil: 'domcontentloaded' });
       await gallery.waitForLoad();
     }
 
@@ -705,10 +705,10 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
     // Wait a bit for server to persist both uploads
     await page1.waitForTimeout(3000);
 
-    // Refresh both to sync - wait for network to stabilize
+    // Refresh both to sync - wait for DOM to be ready
     await Promise.all([
-      page1.reload({ waitUntil: 'networkidle' }),
-      page2.reload({ waitUntil: 'networkidle' }),
+      page1.reload({ waitUntil: 'domcontentloaded' }),
+      page2.reload({ waitUntil: 'domcontentloaded' }),
     ]);
 
     // Give apps time to initialize before checking login state
@@ -728,8 +728,8 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
 
     // Navigate to home first to ensure we're on the album list
     await Promise.all([
-      page1.goto('/', { waitUntil: 'networkidle' }),
-      page2.goto('/', { waitUntil: 'networkidle' }),
+      page1.goto('/', { waitUntil: 'domcontentloaded' }),
+      page2.goto('/', { waitUntil: 'domcontentloaded' }),
     ]);
 
     // Wait for app shell and album cards on both pages

@@ -127,7 +127,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       console.log('[TEST] Phase 3: Reloading page and re-authenticating');
 
       // Hard reload to simulate page refresh
-      await page.reload({ waitUntil: 'networkidle' });
+      await page.reload({ waitUntil: 'domcontentloaded' });
 
       // Check if we need to re-login
       const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
@@ -487,7 +487,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       // ========== PHASE 2: Reload and upload 2 more ==========
       console.log('[TEST] Phase 2: Reloading and uploading 2 more photos');
 
-      await page.reload({ waitUntil: 'networkidle' });
+      await page.reload({ waitUntil: 'domcontentloaded' });
 
       // Re-login if needed
       const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
@@ -550,7 +550,7 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       // ========== PHASE 3: Final reload and verify all photos ==========
       console.log('[TEST] Phase 3: Final reload and verification');
 
-      await page.reload({ waitUntil: 'networkidle' });
+      await page.reload({ waitUntil: 'domcontentloaded' });
 
       // Re-login if needed
       const needsLoginFinal = await loginPage.loginForm.isVisible().catch(() => false);

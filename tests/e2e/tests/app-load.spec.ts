@@ -38,7 +38,7 @@ test.describe('App Loading @p1 @fast', () => {
     });
 
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Wait for deferred loading by ensuring no new errors appear for a stable period
     let lastErrorCount = errors.length;
@@ -74,7 +74,7 @@ test.describe('App Loading @p1 @fast', () => {
     await page.goto('/');
 
     // Wait for page to load
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Should have title element
     const title = page.locator('h1');

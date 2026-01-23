@@ -20,7 +20,7 @@ test.describe('Accessibility @p2 @a11y @fast', () => {
   test('images have alt text', async ({ page }) => {
     await page.goto('/');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const images = await page.locator('img').all();
     
@@ -36,7 +36,7 @@ test.describe('Accessibility @p2 @a11y @fast', () => {
   test('buttons have accessible names', async ({ page }) => {
     await page.goto('/');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const buttons = await page.locator('button').all();
     
@@ -52,7 +52,7 @@ test.describe('Accessibility @p2 @a11y @fast', () => {
   test('forms have associated labels', async ({ page }) => {
     await page.goto('/');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const inputs = await page.locator('input:not([type="hidden"])').all();
     
@@ -72,7 +72,7 @@ test.describe('Accessibility @p2 @a11y @fast', () => {
   test('interactive elements are focusable', async ({ page }) => {
     await page.goto('/');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Tab through the page
     const focusableElements: string[] = [];
@@ -95,7 +95,7 @@ test.describe('Accessibility @p2 @a11y @fast', () => {
   test('color contrast is sufficient', async ({ page }) => {
     await page.goto('/');
 
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check that text elements have visible color
     const textElements = await page.locator('p, span, h1, h2, h3, h4, button, a').all();
@@ -119,7 +119,7 @@ test.describe('Accessibility @p2 @a11y @fast', () => {
     await page.goto('/');
 
     // Page should load without issues
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     
     const body = page.locator('body');
     await expect(body).toBeVisible();
@@ -132,7 +132,7 @@ test.describe('Accessibility @p2 @a11y @fast', () => {
     await page.goto('/');
 
     // Page should load without issues
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     
     const body = page.locator('body');
     await expect(body).toBeVisible();
