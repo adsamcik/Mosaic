@@ -166,9 +166,6 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
       // Reload page and wait for DOM to be ready
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      // Give the app time to initialize before checking login state
-      await page.waitForTimeout(500);
-
       // Check if we need to re-login (session may persist)
       // Use longer timeout to allow for initial render
       const needsLogin = await loginPage.loginForm.isVisible({ timeout: 10000 }).catch(() => false);
@@ -184,10 +181,7 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
       await page.goto('/', { waitUntil: 'domcontentloaded' });
       await appShell.waitForLoad();
 
-      // Wait for albums to sync from server
-      await page.waitForTimeout(500);
-
-      // Navigate back to album
+      // Navigate back to album (album sync happens during waitForLoad)
       const albumCardReload = page.getByTestId('album-card').first();
       await expect(albumCardReload).toBeVisible({ timeout: 30000 });
       await albumCardReload.click();
@@ -711,11 +705,7 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
       page2.reload({ waitUntil: 'domcontentloaded' }),
     ]);
 
-    // Give apps time to initialize before checking login state
-    await page1.waitForTimeout(500);
-    await page2.waitForTimeout(500);
-
-    // Re-login if needed - use proper timeout
+    // Re-login if needed - login check has 10s timeout for app initialization
     if (await login1.loginForm.isVisible({ timeout: 10000 }).catch(() => false)) {
       await login1.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
       await login1.expectLoginSuccess();

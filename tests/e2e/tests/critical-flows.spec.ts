@@ -328,11 +328,8 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
     await appShell.waitForLoad();
     console.log('[Test] App shell loaded');
 
-    // Wait a moment for sync to complete
-    await page.waitForTimeout(3000);
-    console.log('[Test] Waited 3s for sync');
-
     // Click Albums button in header to go to album list
+    // Button visibility check has 10s timeout for sync to complete
     const albumsButton = page.getByRole('button', { name: 'Albums' });
     await expect(albumsButton).toBeVisible({ timeout: 10000 });
     console.log('[Test] Clicking Albums button...');

@@ -119,9 +119,6 @@ test.describe('Identity Persistence: Epoch Key Decryption After Reload @p1 @auth
       
       // Wait for all API calls to complete (manifest creation, sync)
       await waitForNetworkIdle(page, { timeout: 30000, urlPattern: /\/api\// });
-      
-      // Additional wait to ensure sync-complete has fired and DB is updated
-      await page.waitForTimeout(500);
 
       // ========== PHASE 3: Reload page and re-authenticate ==========
       console.log('[TEST] Phase 3: Reloading page and re-authenticating');
