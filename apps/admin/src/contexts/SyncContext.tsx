@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -183,17 +184,21 @@ export function SyncProvider({ children }: SyncProviderProps) {
     [syncAlbum],
   );
 
+  // Memoize context value to prevent unnecessary re-renders of consumers
+  const contextValue = useMemo<SyncContextValue>(
+    () => ({
+      autoSyncEnabled,
+      syncingAlbums,
+      lastSyncTime,
+      triggerSync,
+      registerAlbum,
+      unregisterAlbum,
+    }),
+    [autoSyncEnabled, syncingAlbums, lastSyncTime, triggerSync, registerAlbum, unregisterAlbum],
+  );
+
   return (
-    <SyncContext.Provider
-      value={{
-        autoSyncEnabled,
-        syncingAlbums,
-        lastSyncTime,
-        triggerSync,
-        registerAlbum,
-        unregisterAlbum,
-      }}
-    >
+    <SyncContext.Provider value={contextValue}>
       {children}
     </SyncContext.Provider>
   );

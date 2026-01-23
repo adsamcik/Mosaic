@@ -37,9 +37,10 @@ export function CreateAlbumDialog({
   useEffect(() => {
     if (isOpen) {
       // Small delay to ensure dialog is rendered
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 

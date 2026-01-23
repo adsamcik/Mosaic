@@ -26,19 +26,30 @@ public class EpochKeysController : ControllerBase
         var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
         {
-            user = new User
+            // Use transaction to ensure User and UserQuota are created atomically
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
             {
-                Id = Guid.NewGuid(),
-                AuthSub = authSub,
-                IdentityPubkey = ""
-            };
-            _db.Users.Add(user);
-            _db.UserQuotas.Add(new UserQuota
+                user = new User
+                {
+                    Id = Guid.CreateVersion7(),
+                    AuthSub = authSub,
+                    IdentityPubkey = ""
+                };
+                _db.Users.Add(user);
+                _db.UserQuotas.Add(new UserQuota
+                {
+                    UserId = user.Id,
+                    MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes")
+                });
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch
             {
-                UserId = user.Id,
-                MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes")
-            });
-            await _db.SaveChangesAsync();
+                await tx.RollbackAsync();
+                throw;
+            }
         }
         return user;
     }
@@ -133,7 +144,7 @@ public class EpochKeysController : ControllerBase
 
         var epochKey = new EpochKey
         {
-            Id = Guid.NewGuid(),
+            Id = Guid.CreateVersion7(),
             AlbumId = albumId,
             RecipientId = request.RecipientId,
             EpochId = request.EpochId,
@@ -238,6 +249,33 @@ public class EpochKeysController : ControllerBase
             return BadRequest($"New epoch ID must be greater than current ({album.CurrentEpochId})");
         }
 
+        // Batch load data to avoid N+1 queries
+        var requestedRecipientIds = request.EpochKeys.Select(k => k.RecipientId).ToHashSet();
+        
+        // Load all active members for this album in one query
+        var activeMembers = await _db.AlbumMembers
+            .Where(am => am.AlbumId == albumId && am.RevokedAt == null)
+            .Select(am => am.UserId)
+            .ToHashSetAsync();
+
+        // Load all existing epoch keys for this album/epoch in one query
+        var existingKeys = await _db.EpochKeys
+            .Where(ek => ek.AlbumId == albumId && ek.EpochId == epochId)
+            .Select(ek => ek.RecipientId)
+            .ToHashSetAsync();
+
+        // Batch load share links if needed
+        Dictionary<Guid, ShareLink>? shareLinksByLinkId = null;
+        if (request.ShareLinkKeys != null && request.ShareLinkKeys.Length > 0)
+        {
+            var shareLinkIds = request.ShareLinkKeys.Select(sl => sl.ShareLinkId).ToList();
+            shareLinksByLinkId = await _db.ShareLinks
+                .Include(sl => sl.LinkEpochKeys)
+                .Where(sl => shareLinkIds.Contains(sl.Id) && sl.AlbumId == albumId)
+                .AsSplitQuery()
+                .ToDictionaryAsync(sl => sl.Id);
+        }
+
         // Use a transaction for atomicity
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
@@ -246,29 +284,18 @@ public class EpochKeysController : ControllerBase
             album.CurrentEpochId = epochId;
             album.UpdatedAt = DateTime.UtcNow;
 
-            // Create epoch keys for all provided members
+            // Validate and create epoch keys for all provided members
             foreach (var keyRequest in request.EpochKeys)
             {
-                // Check recipient exists and is a member
-                var isMember = await _db.AlbumMembers
-                    .AnyAsync(am => am.AlbumId == albumId &&
-                                   am.UserId == keyRequest.RecipientId &&
-                                   am.RevokedAt == null);
-
-                if (!isMember)
+                // Check recipient is a member (using pre-loaded data)
+                if (!activeMembers.Contains(keyRequest.RecipientId))
                 {
                     await tx.RollbackAsync();
                     return BadRequest($"Recipient {keyRequest.RecipientId} is not a member of this album");
                 }
 
-                // Check for existing key
-                var existing = await _db.EpochKeys
-                    .FirstOrDefaultAsync(ek =>
-                        ek.AlbumId == albumId &&
-                        ek.RecipientId == keyRequest.RecipientId &&
-                        ek.EpochId == epochId);
-
-                if (existing != null)
+                // Check for existing key (using pre-loaded data)
+                if (existingKeys.Contains(keyRequest.RecipientId))
                 {
                     await tx.RollbackAsync();
                     return Conflict($"Epoch key already exists for recipient {keyRequest.RecipientId}");
@@ -276,7 +303,7 @@ public class EpochKeysController : ControllerBase
 
                 var epochKey = new EpochKey
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.CreateVersion7(),
                     AlbumId = albumId,
                     RecipientId = keyRequest.RecipientId,
                     EpochId = epochId,
@@ -291,16 +318,12 @@ public class EpochKeysController : ControllerBase
 
             // Update share link wrapped keys if provided
             var shareLinkKeysUpdated = 0;
-            if (request.ShareLinkKeys != null && request.ShareLinkKeys.Length > 0)
+            if (request.ShareLinkKeys != null && request.ShareLinkKeys.Length > 0 && shareLinksByLinkId != null)
             {
                 foreach (var linkUpdate in request.ShareLinkKeys)
                 {
-                    // Verify share link exists and belongs to this album
-                    var shareLink = await _db.ShareLinks
-                        .Include(sl => sl.LinkEpochKeys)
-                        .FirstOrDefaultAsync(sl => sl.Id == linkUpdate.ShareLinkId && sl.AlbumId == albumId);
-
-                    if (shareLink == null)
+                    // Verify share link exists (using pre-loaded data)
+                    if (!shareLinksByLinkId.TryGetValue(linkUpdate.ShareLinkId, out var shareLink))
                     {
                         await tx.RollbackAsync();
                         return BadRequest($"Share link {linkUpdate.ShareLinkId} not found or doesn't belong to this album");
@@ -333,7 +356,7 @@ public class EpochKeysController : ControllerBase
 
                         _db.LinkEpochKeys.Add(new LinkEpochKey
                         {
-                            Id = Guid.NewGuid(),
+                            Id = Guid.CreateVersion7(),
                             ShareLinkId = shareLink.Id,
                             EpochId = epochId,
                             Tier = wrappedKey.Tier,

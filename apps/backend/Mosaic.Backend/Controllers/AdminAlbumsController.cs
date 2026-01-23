@@ -57,6 +57,7 @@ public class AdminAlbumsController : ControllerBase
         var albums = await _db.Albums
             .Include(a => a.Owner)
             .Include(a => a.Limits)
+            .AsSplitQuery()
             .OrderByDescending(a => a.CreatedAt)
             .ToListAsync();
 

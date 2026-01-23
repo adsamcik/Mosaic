@@ -1,5 +1,8 @@
 import * as Comlink from 'comlink';
+import { createLogger } from './logger';
 import type { CryptoWorkerApi } from '../workers/types';
+
+const log = createLogger('CryptoClient');
 
 let worker: Worker | null = null;
 let api: Comlink.Remote<CryptoWorkerApi> | null = null;
@@ -17,6 +20,15 @@ export async function getCryptoClient(): Promise<
     type: 'module',
     name: 'mosaic-crypto-worker',
   });
+
+  // Add error handler for unhandled worker errors
+  worker.onerror = (event) => {
+    log.error('Crypto worker error:', event.message, {
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+    });
+  };
 
   api = Comlink.wrap<CryptoWorkerApi>(worker);
   return api;

@@ -59,9 +59,10 @@ export function Dialog({
   useEffect(() => {
     if (isOpen) {
       // Small timeout to allow render
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         dialogRef.current?.focus();
       }, 50);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 

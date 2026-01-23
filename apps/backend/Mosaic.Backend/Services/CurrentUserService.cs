@@ -43,22 +43,33 @@ public class CurrentUserService : ICurrentUserService
         var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
         {
-            user = new User
+            // Use transaction to ensure User and UserQuota are created atomically
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
             {
-                Id = Guid.NewGuid(),
-                AuthSub = authSub,
-                IdentityPubkey = ""  // Set on first key upload
-            };
-            _db.Users.Add(user);
+                user = new User
+                {
+                    Id = Guid.CreateVersion7(),
+                    AuthSub = authSub,
+                    IdentityPubkey = ""  // Set on first key upload
+                };
+                _db.Users.Add(user);
 
-            // Create quota with default settings
-            _db.UserQuotas.Add(new UserQuota
+                // Create quota with default settings
+                _db.UserQuotas.Add(new UserQuota
+                {
+                    UserId = user.Id,
+                    MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes")
+                });
+
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch
             {
-                UserId = user.Id,
-                MaxStorageBytes = _config.GetValue<long>("Quota:DefaultMaxBytes")
-            });
-
-            await _db.SaveChangesAsync();
+                await tx.RollbackAsync();
+                throw;
+            }
         }
         return user;
     }

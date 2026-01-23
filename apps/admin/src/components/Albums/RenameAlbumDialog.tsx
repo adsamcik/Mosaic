@@ -42,10 +42,11 @@ export function RenameAlbumDialog({
       setName(currentName);
       setLocalError(null);
       // Focus input when dialog opens
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
       }, 0);
+      return () => clearTimeout(timer);
     }
   }, [isOpen, currentName]);
 

@@ -251,7 +251,12 @@ class CryptoWorker implements CryptoWorkerApi {
     // Derive the fullKey (tier 3) from epochSeed for encryption
     // This ensures share link recipients with tier keys can decrypt
     const { fullKey } = deriveTierKeys(epochSeed);
-    return cryptoEncryptShard(data, fullKey, epochId, shardIndex);
+    try {
+      return await cryptoEncryptShard(data, fullKey, epochId, shardIndex);
+    } finally {
+      // Zero out derived key after use
+      memzero(fullKey);
+    }
   }
 
   /**
@@ -306,6 +311,11 @@ class CryptoWorker implements CryptoWorkerApi {
       // Fall back to epochSeed directly for backwards compatibility
       // (photos encrypted before tier key derivation was implemented)
       return await cryptoDecryptShard(envelope, epochSeed);
+    } finally {
+      // Zero out all derived keys after use
+      memzero(thumbKey);
+      memzero(previewKey);
+      memzero(fullKey);
     }
   }
 
@@ -393,6 +403,9 @@ class CryptoWorker implements CryptoWorkerApi {
       // Fall back to readKey directly for backwards compatibility
       // (manifests encrypted before tier key derivation was implemented)
       plaintext = await cryptoDecryptShard(encryptedMeta, readKey);
+    } finally {
+      // Zero out derived key after use
+      memzero(thumbKey);
     }
 
     // Parse JSON from decrypted bytes

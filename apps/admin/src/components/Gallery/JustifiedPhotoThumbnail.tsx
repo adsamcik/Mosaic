@@ -13,7 +13,7 @@
  * 3. Full resolution shards (slow, network + decryption)
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getCachedPlaceholderDataURL,
   isValidPlaceholderHash,
@@ -66,7 +66,7 @@ type ThumbnailState =
  * Justified Photo Thumbnail Component
  * Displays a single photo in the justified grid with encrypted loading
  */
-export function JustifiedPhotoThumbnail({
+export const JustifiedPhotoThumbnail = memo(function JustifiedPhotoThumbnail({
   photo,
   width,
   height,
@@ -639,4 +639,4 @@ export function JustifiedPhotoThumbnail({
       )}
     </div>
   );
-}
+});

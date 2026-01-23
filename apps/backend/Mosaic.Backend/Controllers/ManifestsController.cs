@@ -198,7 +198,7 @@ public class ManifestsController : ControllerBase
 
             var manifest = new Manifest
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 AlbumId = album.Id,
                 VersionCreated = album.CurrentVersion,
                 EncryptedMeta = request.EncryptedMeta,

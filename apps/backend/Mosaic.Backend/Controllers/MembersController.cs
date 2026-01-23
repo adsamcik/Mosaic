@@ -155,7 +155,7 @@ public class MembersController : ControllerBase
             {
                 _db.EpochKeys.Add(new EpochKey
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.CreateVersion7(),
                     AlbumId = albumId,
                     RecipientId = request.RecipientId,
                     EpochId = epochKey.EpochId,

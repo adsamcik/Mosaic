@@ -265,7 +265,7 @@ public class ShareLinksController : ControllerBase
         {
             var shareLink = new ShareLink
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 LinkId = request.LinkId,
                 AlbumId = albumId,
                 AccessTier = request.AccessTier,
@@ -281,7 +281,7 @@ public class ShareLinksController : ControllerBase
             {
                 _db.LinkEpochKeys.Add(new LinkEpochKey
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.CreateVersion7(),
                     ShareLinkId = shareLink.Id,
                     EpochId = wrappedKey.EpochId,
                     Tier = wrappedKey.Tier,
@@ -564,40 +564,51 @@ public class ShareLinksController : ControllerBase
             .Select(k => (k.EpochId, k.Tier))
             .ToHashSet();
 
-        var keysToAdd = new List<LinkEpochKey>();
-        foreach (var key in request.EpochKeys)
+        // Use transaction to ensure atomicity of key updates
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
         {
-            if (existingKeys.Contains((key.EpochId, key.Tier)))
+            var keysToAdd = new List<LinkEpochKey>();
+            foreach (var key in request.EpochKeys)
             {
-                // Update existing key
-                var existing = shareLink.LinkEpochKeys
-                    .First(k => k.EpochId == key.EpochId && k.Tier == key.Tier);
-                existing.WrappedNonce = key.Nonce;
-                existing.WrappedKey = key.EncryptedKey;
-            }
-            else
-            {
-                // Add new key
-                keysToAdd.Add(new LinkEpochKey
+                if (existingKeys.Contains((key.EpochId, key.Tier)))
                 {
-                    Id = Guid.NewGuid(),
-                    ShareLinkId = shareLink.Id,
-                    EpochId = key.EpochId,
-                    Tier = key.Tier,
-                    WrappedNonce = key.Nonce,
-                    WrappedKey = key.EncryptedKey
-                });
+                    // Update existing key
+                    var existing = shareLink.LinkEpochKeys
+                        .First(k => k.EpochId == key.EpochId && k.Tier == key.Tier);
+                    existing.WrappedNonce = key.Nonce;
+                    existing.WrappedKey = key.EncryptedKey;
+                }
+                else
+                {
+                    // Add new key
+                    keysToAdd.Add(new LinkEpochKey
+                    {
+                        Id = Guid.CreateVersion7(),
+                        ShareLinkId = shareLink.Id,
+                        EpochId = key.EpochId,
+                        Tier = key.Tier,
+                        WrappedNonce = key.Nonce,
+                        WrappedKey = key.EncryptedKey
+                    });
+                }
             }
-        }
 
-        if (keysToAdd.Count > 0)
+            if (keysToAdd.Count > 0)
+            {
+                _db.LinkEpochKeys.AddRange(keysToAdd);
+            }
+
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new { added = keysToAdd.Count, updated = request.EpochKeys.Count - keysToAdd.Count });
+        }
+        catch
         {
-            _db.LinkEpochKeys.AddRange(keysToAdd);
+            await tx.RollbackAsync();
+            throw;
         }
-
-        await _db.SaveChangesAsync();
-
-        return Ok(new { added = keysToAdd.Count, updated = request.EpochKeys.Count - keysToAdd.Count });
     }
 
     #endregion

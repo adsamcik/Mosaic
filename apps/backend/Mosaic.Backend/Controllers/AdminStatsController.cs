@@ -80,6 +80,7 @@ public class AdminStatsController : ControllerBase
         var albumsNearLimit = await _db.Albums
             .Include(a => a.Owner)
             .Include(a => a.Limits)
+            .AsSplitQuery()
             .Where(a => a.Limits != null)
             .Select(a => new
             {

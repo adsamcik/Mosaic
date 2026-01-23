@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react';
@@ -330,10 +331,14 @@ export function UploadProvider({ children }: UploadProviderProps) {
     setError(null);
   }, []);
 
+  // Memoize context value to prevent unnecessary re-renders of consumers
+  const contextValue = useMemo<UploadContextValue>(
+    () => ({ isUploading, progress, error, upload, clearError }),
+    [isUploading, progress, error, upload, clearError],
+  );
+
   return (
-    <UploadContext.Provider
-      value={{ isUploading, progress, error, upload, clearError }}
-    >
+    <UploadContext.Provider value={contextValue}>
       {children}
     </UploadContext.Provider>
   );

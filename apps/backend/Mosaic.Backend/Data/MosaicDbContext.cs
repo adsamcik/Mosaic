@@ -96,6 +96,9 @@ public class MosaicDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(m => new { m.AlbumId, m.VersionCreated });
+
+            // Global query filter to exclude soft-deleted manifests
+            e.HasQueryFilter(m => !m.IsDeleted);
         });
 
         // Shard

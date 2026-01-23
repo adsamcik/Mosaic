@@ -40,9 +40,10 @@ export function EditDescriptionDialog({
       setDescription(currentDescription ?? '');
       setLocalError(null);
       // Focus textarea when dialog opens
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         textareaRef.current?.focus();
       }, 0);
+      return () => clearTimeout(timer);
     }
   }, [isOpen, currentDescription]);
 

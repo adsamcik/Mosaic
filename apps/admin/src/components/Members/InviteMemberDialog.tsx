@@ -56,9 +56,10 @@ export function InviteMemberDialog({
   // Focus input when dialog opens
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 

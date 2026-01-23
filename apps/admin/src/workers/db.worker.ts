@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
+import { memzero } from '@mosaic/crypto';
 import { createLogger } from '../lib/logger';
 import type {
   Bounds,
@@ -123,8 +124,8 @@ class DbWorker implements DbWorkerApi {
       this.db = null;
     }
     if (this.sessionKey) {
-      // Clear sensitive key material
-      this.sessionKey.fill(0);
+      // Clear sensitive key material using libsodium's secure wipe
+      memzero(this.sessionKey);
       this.sessionKey = null;
     }
   }
@@ -689,13 +690,19 @@ const worker = new DbWorker();
 
 // For regular Worker, expose on self
 // For SharedWorker, expose on each connection's port
-// Check if we're in a SharedWorker context
-const isSharedWorker =
-  typeof (self as any).onconnect !== 'undefined' ||
-  self.constructor.name === 'SharedWorkerGlobalScope';
+// Type-safe SharedWorker detection
+interface SharedWorkerGlobalScopeWithConnect extends EventTarget {
+  onconnect: ((this: SharedWorkerGlobalScope, ev: MessageEvent) => void) | null;
+}
 
-if (isSharedWorker) {
-  (self as any).onconnect = (event: MessageEvent) => {
+function isSharedWorkerContext(
+  scope: typeof globalThis,
+): scope is typeof globalThis & SharedWorkerGlobalScopeWithConnect {
+  return 'onconnect' in scope || scope.constructor.name === 'SharedWorkerGlobalScope';
+}
+
+if (isSharedWorkerContext(self)) {
+  self.onconnect = (event: MessageEvent) => {
     const port = event.ports[0];
     Comlink.expose(worker, port);
   };

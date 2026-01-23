@@ -51,15 +51,8 @@ function isE2EWeakKeysMode(): boolean {
   // Use unknown intermediate cast for TypeScript compatibility
   if (typeof import.meta !== 'undefined') {
     const meta = import.meta as unknown as {
-      env?: { PROD?: boolean; VITE_E2E_WEAK_KEYS?: string };
+      env?: { PROD?: boolean; VITE_E2E_WEAK_KEYS?: string; DEV?: boolean };
     };
-
-    // Debug logging for E2E troubleshooting
-    console.log('[CRYPTO] isE2EWeakKeysMode check:', {
-      hasMeta: true,
-      PROD: meta.env?.PROD,
-      VITE_E2E_WEAK_KEYS: meta.env?.VITE_E2E_WEAK_KEYS,
-    });
 
     // Safety: Never enable in production mode
     if (meta.env?.PROD) {

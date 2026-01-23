@@ -16,6 +16,10 @@ export async function getGeoClient(): Promise<Comlink.Remote<GeoWorkerApi>> {
     name: 'mosaic-geo-worker',
   });
 
+  worker.onerror = (event) => {
+    console.error('Geo worker error:', event.message);
+  };
+
   api = Comlink.wrap<GeoWorkerApi>(worker);
   return api;
 }

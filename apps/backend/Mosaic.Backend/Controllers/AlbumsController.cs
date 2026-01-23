@@ -196,7 +196,7 @@ public class AlbumsController : ControllerBase
         {
             var album = new Album
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 OwnerId = user.Id,
                 CurrentEpochId = 1,
                 CurrentVersion = 1,
@@ -218,7 +218,7 @@ public class AlbumsController : ControllerBase
             // Create initial epoch key for owner
             _db.EpochKeys.Add(new EpochKey
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 AlbumId = album.Id,
                 RecipientId = user.Id,
                 EpochId = 1,
