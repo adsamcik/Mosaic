@@ -102,6 +102,41 @@ npx playwright test --grep @sharing
 | Security audit | `npx playwright test --grep @security` |
 | New feature testing | `npx playwright test --grep "@p1\|@p2"` |
 
+### Flaky Pattern Checker
+
+Run the flaky pattern checker before submitting PRs to catch common test anti-patterns:
+
+```powershell
+# Check for flaky patterns
+.\scripts\check-flaky-patterns.ps1
+
+# Show suggested fixes
+.\scripts\check-flaky-patterns.ps1 -Fix
+```
+
+**Blocked patterns** (errors - must fix):
+- `waitForTimeout(>=1000)` - Long arbitrary delays cause slow, flaky tests
+- `waitForLoadState('networkidle')` - Unreliable, use explicit element waits
+- `goto({ waitUntil: 'networkidle' })` - Same issue
+
+**Warned patterns** (warnings - consider fixing):
+- `waitForTimeout(200-999)` - Short animation delays, acceptable in some cases
+
+**Preferred alternatives**:
+```typescript
+// ❌ Bad: arbitrary delay
+await page.waitForTimeout(2000);
+
+// ✅ Good: explicit element wait
+await expect(element).toBeVisible({ timeout: 5000 });
+
+// ✅ Good: polling assertion
+await expect(async () => {
+  const count = await page.getByTestId('item').count();
+  expect(count).toBeGreaterThan(0);
+}).toPass({ timeout: 5000 });
+```
+
 ## Browser Configuration
 
 Tests run on **2 browser configurations** defined in `playwright.config.ts`:
