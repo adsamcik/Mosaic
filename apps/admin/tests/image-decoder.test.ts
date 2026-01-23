@@ -315,3 +315,66 @@ describe('mime-type-detection detectMimeType', () => {
     expect(result).toBe('image/png');
   });
 });
+
+describe('getMimeType end-to-end with real magic bytes', () => {
+  /**
+   * Helper to create a mock File from bytes with application/octet-stream type
+   * This simulates what browsers actually do with HEIC files
+   */
+  function createRealWorldFile(bytes: number[], name: string): File {
+    return new File([new Uint8Array(bytes)], name, {
+      type: 'application/octet-stream', // This is what browsers report for HEIC!
+    });
+  }
+
+  /**
+   * Build an ISOBMFF ftyp box - same as above but inlined for this test group
+   */
+  function buildFtypBox(
+    majorBrand: string,
+    compatibleBrands: string[],
+  ): number[] {
+    const boxSize = 8 + 4 + 4 + compatibleBrands.length * 4;
+    return [
+      (boxSize >> 24) & 0xff,
+      (boxSize >> 16) & 0xff,
+      (boxSize >> 8) & 0xff,
+      boxSize & 0xff,
+      0x66, 0x74, 0x79, 0x70, // 'ftyp'
+      majorBrand.charCodeAt(0),
+      majorBrand.charCodeAt(1),
+      majorBrand.charCodeAt(2),
+      majorBrand.charCodeAt(3),
+      0x00, 0x00, 0x00, 0x00, // minor version
+      ...compatibleBrands.flatMap((brand) => [
+        brand.charCodeAt(0),
+        brand.charCodeAt(1),
+        brand.charCodeAt(2),
+        brand.charCodeAt(3),
+      ]),
+    ];
+  }
+
+  it('detects Apple-style HEIC when browser reports application/octet-stream', async () => {
+    // This is the EXACT scenario that was broken:
+    // - Browser reports application/octet-stream (not image/heic)
+    // - File has mif1 major brand with heic in compatible brands
+    const bytes = buildFtypBox('mif1', ['mif1', 'heic']);
+    const file = createRealWorldFile(bytes, '20251231_235337.heic');
+
+    // Verify browser-provided type is NOT image/heic
+    expect(file.type).toBe('application/octet-stream');
+
+    // getMimeType should detect HEIC from magic bytes
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/heic');
+  });
+
+  it('falls back to extension when magic bytes are unrecognized', async () => {
+    const bytes = [0x00, 0x00, 0x00, 0x00]; // Unknown magic bytes
+    const file = createRealWorldFile(bytes, 'photo.heic');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/heic'); // Falls back to extension
+  });
+});
