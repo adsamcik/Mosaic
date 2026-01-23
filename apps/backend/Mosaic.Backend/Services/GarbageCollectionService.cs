@@ -129,19 +129,32 @@ public class GarbageCollectionService : BackgroundService
         var deletedCount = 0;
 
         // Process expired albums in batches of 10
-        // Note: SQLite doesn't support DateTimeOffset in WHERE or ORDER BY clauses,
-        // so we load albums with expiration dates and filter/sort client-side.
-        // This is acceptable for garbage collection on small datasets.
         while (true)
         {
-            // Load albums with expiration dates and filter/sort client-side for SQLite compatibility
-            var expiredAlbums = (await db.Albums
-                .Where(a => a.ExpiresAt != null)
-                .ToListAsync())
-                .Where(a => a.ExpiresAt <= now)
-                .OrderBy(a => a.ExpiresAt)
-                .Take(10)
-                .ToList();
+            List<Album> expiredAlbums;
+
+            if (_useSqlite)
+            {
+                // SQLite doesn't support DateTimeOffset in WHERE or ORDER BY clauses,
+                // so we load albums with expiration dates and filter/sort client-side.
+                // This is acceptable for garbage collection on small datasets.
+                expiredAlbums = (await db.Albums
+                    .Where(a => a.ExpiresAt != null)
+                    .ToListAsync())
+                    .Where(a => a.ExpiresAt <= now)
+                    .OrderBy(a => a.ExpiresAt)
+                    .Take(10)
+                    .ToList();
+            }
+            else
+            {
+                // PostgreSQL supports server-side DateTimeOffset filtering - much more efficient
+                expiredAlbums = await db.Albums
+                    .Where(a => a.ExpiresAt != null && a.ExpiresAt <= now)
+                    .OrderBy(a => a.ExpiresAt)
+                    .Take(10)
+                    .ToListAsync();
+            }
 
             if (expiredAlbums.Count == 0)
             {
