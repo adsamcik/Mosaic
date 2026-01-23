@@ -97,6 +97,14 @@ public class DevAuthController : ControllerBase
                 CreatedAt = DateTime.UtcNow
             };
             _db.Users.Add(user);
+
+            // Create quota with default settings (consistent with CurrentUserService)
+            _db.UserQuotas.Add(new UserQuota
+            {
+                UserId = user.Id,
+                MaxStorageBytes = 10737418240L // 10 GB default
+            });
+
             await _db.SaveChangesAsync();
 
             _logger.LogInformation("Created dev user: {Username}", request.Username);
