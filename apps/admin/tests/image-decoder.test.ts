@@ -355,6 +355,7 @@ describe('getMimeType end-to-end with real magic bytes', () => {
     ];
   }
 
+  // HEIC detection tests
   it('detects Apple-style HEIC when browser reports application/octet-stream', async () => {
     // This is the EXACT scenario that was broken:
     // - Browser reports application/octet-stream (not image/heic)
@@ -370,11 +371,139 @@ describe('getMimeType end-to-end with real magic bytes', () => {
     expect(result).toBe('image/heic');
   });
 
+  it('detects HEIC with heic major brand', async () => {
+    const bytes = buildFtypBox('heic', ['mif1', 'heic']);
+    const file = createRealWorldFile(bytes, 'photo.heic');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/heic');
+  });
+
+  it('detects HEIC sequence (hevc) format', async () => {
+    const bytes = buildFtypBox('hevc', ['msf1', 'hevc']);
+    const file = createRealWorldFile(bytes, 'burst.heic');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/heic');
+  });
+
+  // AVIF detection tests
+  it('detects AVIF with avif major brand', async () => {
+    const bytes = buildFtypBox('avif', ['mif1', 'miaf', 'avif']);
+    const file = createRealWorldFile(bytes, 'photo.avif');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/avif');
+  });
+
+  it('detects AVIF with mif1 major brand and avif compatible brand', async () => {
+    // Some encoders use mif1 as major brand with avif in compatible brands
+    const bytes = buildFtypBox('mif1', ['miaf', 'avif']);
+    const file = createRealWorldFile(bytes, 'photo.avif');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/avif');
+  });
+
+  it('detects AVIF sequence (avis) format', async () => {
+    const bytes = buildFtypBox('avis', ['msf1', 'avis', 'avif']);
+    const file = createRealWorldFile(bytes, 'animation.avif');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/avif');
+  });
+
+  // HEIF detection tests
+  it('detects HEIF with mif1 major brand (no heic/avif in compatible)', async () => {
+    const bytes = buildFtypBox('mif1', ['miaf', 'msf1']);
+    const file = createRealWorldFile(bytes, 'photo.heif');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/heif');
+  });
+
+  // Common format tests (JPEG, PNG, WebP, GIF)
+  it('detects JPEG when browser reports application/octet-stream', async () => {
+    const bytes = [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46];
+    const file = createRealWorldFile(bytes, 'photo.jpg');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/jpeg');
+  });
+
+  it('detects PNG when browser reports application/octet-stream', async () => {
+    const bytes = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    const file = createRealWorldFile(bytes, 'photo.png');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/png');
+  });
+
+  it('detects WebP when browser reports application/octet-stream', async () => {
+    // RIFF....WEBP
+    const bytes = [
+      0x52, 0x49, 0x46, 0x46, // RIFF
+      0x00, 0x00, 0x00, 0x00, // file size (placeholder)
+      0x57, 0x45, 0x42, 0x50, // WEBP
+    ];
+    const file = createRealWorldFile(bytes, 'photo.webp');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/webp');
+  });
+
+  it('detects GIF when browser reports application/octet-stream', async () => {
+    // GIF89a
+    const bytes = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61];
+    const file = createRealWorldFile(bytes, 'animation.gif');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/gif');
+  });
+
+  // Fallback tests
   it('falls back to extension when magic bytes are unrecognized', async () => {
     const bytes = [0x00, 0x00, 0x00, 0x00]; // Unknown magic bytes
     const file = createRealWorldFile(bytes, 'photo.heic');
 
     const result = await mimeDetection.getMimeType(file);
     expect(result).toBe('image/heic'); // Falls back to extension
+  });
+
+  it('falls back to extension for unknown format with avif extension', async () => {
+    const bytes = [0x00, 0x00, 0x00, 0x00]; // Unknown magic bytes
+    const file = createRealWorldFile(bytes, 'photo.avif');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/avif');
+  });
+
+  it('falls back to extension for unknown format with heif extension', async () => {
+    const bytes = [0x00, 0x00, 0x00, 0x00]; // Unknown magic bytes
+    const file = createRealWorldFile(bytes, 'photo.heif');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/heif');
+  });
+
+  // Priority tests - HEIC takes precedence over AVIF when both present
+  // (This is correct because heic is more specific than avif for HEVC-coded images)
+  it('prioritizes HEIC over AVIF when both are in compatible brands', async () => {
+    const bytes = buildFtypBox('mif1', ['heic', 'avif', 'miaf']);
+    const file = createRealWorldFile(bytes, 'photo.heic');
+    expect(file.type).toBe('application/octet-stream');
+
+    const result = await mimeDetection.getMimeType(file);
+    expect(result).toBe('image/heic'); // HEIC takes priority (checked first)
   });
 });
