@@ -375,7 +375,7 @@ export async function mockApiError(
 /**
  * Legacy API Helper (re-implemented for independence)
  */
-const API_URL = process.env.API_URL || 'http://localhost:5000';
+import { API_URL } from './framework/constants';
 
 export class ApiHelper {
   constructor(private baseUrl: string = API_URL) {}
@@ -452,48 +452,8 @@ export class ApiHelper {
   }
 }
 
-/**
- * Legacy LogCollector (simplified version)
- */
-export class LogCollector {
-  private logs: Array<{ timestamp: number; type: string; message: string }> = [];
-
-  constructor(private page: Page) {
-    this.attachListeners();
-  }
-
-  private attachListeners(): void {
-    this.page.on('console', (msg) => {
-      this.logs.push({
-        timestamp: Date.now(),
-        type: msg.type(),
-        message: msg.text(),
-      });
-    });
-
-    this.page.on('pageerror', (error) => {
-      this.logs.push({
-        timestamp: Date.now(),
-        type: 'error',
-        message: `Page error: ${error.message}`,
-      });
-    });
-  }
-
-  getLogs(): Array<{ timestamp: number; type: string; message: string }> {
-    return [...this.logs];
-  }
-
-  getFormattedLogs(): string {
-    return this.logs
-      .map((log) => `${new Date(log.timestamp).toISOString()} [${log.type}]: ${log.message}`)
-      .join('\n');
-  }
-
-  clear(): void {
-    this.logs = [];
-  }
-}
+// Re-export LogCollector from framework (authoritative implementation)
+export { LogCollector } from './framework';
 
 /**
  * Alias exports for backward compatibility

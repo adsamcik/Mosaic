@@ -5,6 +5,12 @@
  */
 
 export {
+  API_URL,
+  BASE_URL,
+  TEST_PASSWORD,
+} from './constants';
+
+export {
   TestContext,
   generateTestId,
   generateUserEmail,
@@ -14,7 +20,6 @@ export {
 } from './test-context';
 
 export {
-  TEST_PASSWORD,
   generateTestImage,
   createAlbumViaAPI,
   deleteAlbumViaAPI,
@@ -54,3 +59,9 @@ export {
   type AuthMode,
   type PoolUser,
 } from './test-user-pool';
+
+export {
+  LogCollector,
+  TestAPIClient,
+  type CreateAuthenticatedUserResponse,
+} from './test-api-client';
