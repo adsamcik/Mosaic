@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
@@ -38,10 +39,10 @@ public class ManifestsController : ControllerBase
 
     public record CreateManifestRequest(
         Guid AlbumId,
-        byte[] EncryptedMeta,
-        string Signature,
-        string SignerPubkey,
-        List<string> ShardIds,
+        [MaxLength(1048576)] byte[] EncryptedMeta, // 1 MB max for encrypted metadata
+        [MaxLength(256)] string Signature,
+        [MaxLength(128)] string SignerPubkey,
+        [MaxLength(1000)] List<string> ShardIds,
         /// <summary>
         /// Optional tier for all shards. Defaults to 3 (Original) if not provided.
         /// Use TieredShards for per-shard tier assignment.
@@ -51,13 +52,13 @@ public class ManifestsController : ControllerBase
         /// Optional list of shards with per-shard tier assignment.
         /// If provided, takes precedence over ShardIds.
         /// </summary>
-        List<TieredShardInfo>? TieredShards = null
+        [MaxLength(1000)] List<TieredShardInfo>? TieredShards = null
     );
 
     /// <summary>
     /// Shard info with tier assignment
     /// </summary>
-    public record TieredShardInfo(string ShardId, int Tier);
+    public record TieredShardInfo([MaxLength(64)] string ShardId, int Tier);
 
     /// <summary>
     /// Create a new manifest (photo) in an album

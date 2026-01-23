@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
@@ -57,10 +58,10 @@ public class EpochKeysController : ControllerBase
     public record CreateEpochKeyRequest(
         Guid RecipientId,
         int EpochId,
-        byte[] EncryptedKeyBundle,
-        byte[] OwnerSignature,
-        byte[] SharerPubkey,
-        byte[] SignPubkey
+        [MaxLength(4096)] byte[] EncryptedKeyBundle,
+        [MaxLength(128)] byte[] OwnerSignature,
+        [MaxLength(64)] byte[] SharerPubkey,
+        [MaxLength(64)] byte[] SignPubkey
     );
 
     /// <summary>

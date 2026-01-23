@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
@@ -62,10 +63,10 @@ public class MembersController : ControllerBase
     /// </summary>
     public record EpochKeyCreate(
         int EpochId,
-        string EncryptedKeyBundle,
-        string OwnerSignature,
-        string SharerPubkey,
-        string SignPubkey
+        [MaxLength(8192)] string EncryptedKeyBundle,
+        [MaxLength(256)] string OwnerSignature,
+        [MaxLength(128)] string SharerPubkey,
+        [MaxLength(128)] string SignPubkey
     );
 
     /// <summary>
@@ -73,8 +74,8 @@ public class MembersController : ControllerBase
     /// </summary>
     public record InviteRequest(
         Guid RecipientId,
-        string Role,
-        EpochKeyCreate[] EpochKeys
+        [MaxLength(32)] string Role,
+        [MaxLength(100)] EpochKeyCreate[] EpochKeys
     );
 
     /// <summary>

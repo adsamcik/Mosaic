@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
@@ -22,12 +23,14 @@ public class CreateAlbumRequest
     /// Base64-encoded encrypted album name (encrypted with epoch read key).
     /// Optional - if not provided, album name will not be stored.
     /// </summary>
+    [MaxLength(2048)]
     public string? EncryptedName { get; set; }
 
     /// <summary>
     /// Base64-encoded encrypted album description (encrypted with epoch read key).
     /// Optional - if not provided, album description will not be stored.
     /// </summary>
+    [MaxLength(8192)]
     public string? EncryptedDescription { get; set; }
 
     /// <summary>
@@ -49,12 +52,12 @@ public record UpdateExpirationRequest(DateTimeOffset? ExpiresAt, int? Expiration
 /// <summary>
 /// Request to rename an album (update encrypted name)
 /// </summary>
-public record RenameAlbumRequest(string EncryptedName);
+public record RenameAlbumRequest([MaxLength(2048)] string EncryptedName);
 
 /// <summary>
 /// Request to update album description
 /// </summary>
-public record UpdateDescriptionRequest(string? EncryptedDescription);
+public record UpdateDescriptionRequest([MaxLength(8192)] string? EncryptedDescription);
 
 /// <summary>
 /// Initial epoch key data for album creation
@@ -64,21 +67,25 @@ public class InitialEpochKeyRequest
     /// <summary>
     /// Base64-encoded sealed box containing encrypted epoch key bundle
     /// </summary>
+    [MaxLength(4096)]
     public required byte[] EncryptedKeyBundle { get; set; }
 
     /// <summary>
     /// Base64-encoded Ed25519 signature from owner
     /// </summary>
+    [MaxLength(128)]
     public required byte[] OwnerSignature { get; set; }
 
     /// <summary>
     /// Base64-encoded Ed25519 public key of sharer (owner for initial key)
     /// </summary>
+    [MaxLength(64)]
     public required byte[] SharerPubkey { get; set; }
 
     /// <summary>
     /// Base64-encoded Ed25519 epoch signing public key
     /// </summary>
+    [MaxLength(64)]
     public required byte[] SignPubkey { get; set; }
 }
 
