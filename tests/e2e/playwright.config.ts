@@ -102,9 +102,9 @@ export default defineConfig({
 
   // Worker configuration for parallelism
   // We have 8 pool users, so we can scale up to 8 workers
-  // Local: Use up to 6 workers for fast feedback (leaves CPU for backend/frontend)
+  // Local: Use all 8 workers for maximum parallelism
   // CI: 4 workers for balance of speed vs stability
-  workers: process.env.CI ? 4 : 6,
+  workers: process.env.CI ? 4 : 8,
 
   // Fail fast in CI - stop after N failures to save resources
   maxFailures: process.env.CI ? 5 : undefined,
