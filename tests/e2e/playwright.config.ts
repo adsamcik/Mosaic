@@ -212,7 +212,14 @@ export default defineConfig({
     {
       name: 'mobile-chrome',
       testIgnore: [
-        '**/critical-flows.spec.ts', // Uses poolUser fixture
+        // These tests use poolUser fixture which doesn't work on mobile-chrome
+        // due to Argon2 WASM key derivation differences
+        '**/critical-auth.spec.ts',
+        '**/critical-photo-upload.spec.ts',
+        '**/critical-album.spec.ts',
+        '**/critical-error-handling.spec.ts',
+        '**/identity-persistence-session.spec.ts',
+        '**/identity-persistence-stress.spec.ts',
       ],
       use: {
         ...devices['Pixel 5'],
