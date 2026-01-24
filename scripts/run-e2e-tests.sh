@@ -154,20 +154,31 @@ export Auth__TrustedProxies__1="::1/128"
 dotnet run --urls="http://localhost:8080" > /dev/null 2>&1 &
 BACKEND_PID=$!
 
-info "Waiting for backend to be ready..."
+info "Waiting for backend to be ready (max 60s)..."
 max_wait=60
 waited=0
+backend_ready=false
+
 while [ $waited -lt $max_wait ]; do
+    # Check if process died
+    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+        fail "Backend process died during startup"
+        exit 1
+    fi
+    
     # Use /health (not /api/health) - this endpoint bypasses auth
     if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
+        backend_ready=true
         break
     fi
-    sleep 1
-    waited=$((waited + 1))
+    sleep 2
+    waited=$((waited + 2))
 done
 
-if ! curl -sf http://localhost:8080/health > /dev/null 2>&1; then
+if [ "$backend_ready" = false ]; then
     fail "Backend did not become ready within ${max_wait}s"
+    # Kill the hung process
+    kill -9 "$BACKEND_PID" 2>/dev/null || true
     exit 1
 fi
 success "Backend is ready at http://localhost:8080"

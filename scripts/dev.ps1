@@ -194,12 +194,38 @@ dotnet watch run --no-hot-reload 2>&1
     
     $proc.Id | Out-File -FilePath $BackendPidFile -Encoding UTF8
     
-    # Wait a moment and check if it started
-    Start-Sleep -Seconds 3
-    if (Test-ProcessRunning $BackendPidFile) {
+    # Wait for backend to be ready with health check
+    $maxWait = 60
+    $waited = 0
+    $backendReady = $false
+    Write-Info "Waiting for backend to be ready (max ${maxWait}s)..."
+    
+    do {
+        Start-Sleep -Seconds 2
+        $waited += 2
+        
+        # Check if process is still running
+        if (-not (Test-ProcessRunning $BackendPidFile)) {
+            Write-Err "Backend process died during startup. Check logs with: .\dev.ps1 logs backend"
+            return
+        }
+        
+        # Check health endpoint
+        try {
+            $response = Invoke-WebRequest -Uri "http://localhost:$BackendPort/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
+            if ($response.StatusCode -eq 200) {
+                $backendReady = $true
+            }
+        } catch {
+            # Not ready yet
+        }
+    } while (-not $backendReady -and $waited -lt $maxWait)
+    
+    if ($backendReady) {
         Write-Done "Backend started (PID: $($proc.Id)) - http://localhost:$BackendPort"
     } else {
-        Write-Err "Backend failed to start. Check logs with: .\dev.ps1 logs backend"
+        Write-Err "Backend failed to become ready within ${maxWait}s. Check logs with: .\dev.ps1 logs backend"
+        Stop-ServiceByPidFile $BackendPidFile "Backend"
     }
 }
 

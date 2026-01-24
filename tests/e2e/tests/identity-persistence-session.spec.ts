@@ -135,9 +135,19 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
         // Use loginWithUsername directly since user was just logged in and definitely exists
         await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
         await loginPage.expectLoginSuccess();
+        // Wait for app shell to fully load after login
+        await appShell.waitForLoad();
       } else {
         console.log('[TEST] Session persisted, no re-login needed');
+        // Even with session restore, wait for app to fully initialize
+        await appShell.waitForLoad();
       }
+
+      // Wait for album list to finish loading (either cards appear or empty state)
+      // This ensures the /api/albums call has completed before we check for album-card
+      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {
+        console.log('[TEST] Network did not become fully idle, continuing...');
+      });
 
       // Check if we need to navigate to the album
       // After session restore, we might be in the album list OR already in the gallery
@@ -313,6 +323,9 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
       if (url.includes('/api/users/me/wrapped-key') && method === 'PUT') {
         console.log('[TEST] Wrapped key being stored on server via PUT');
         wrappedKeyStored = true;
+        // Continue without fetching response - we only need to detect the request
+        await route.continue({ headers });
+        return;
       }
       
       // Check for wrapped key in registration request (LocalAuth mode)
@@ -329,13 +342,16 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
         } catch {
           // Ignore parse errors
         }
+        // Continue without fetching - request body inspection is done
+        await route.continue({ headers });
+        return;
       }
 
-      const response = await route.fetch({ headers });
-      const responseBody = await response.text();
-
-      // Check if wrapped key is returned in user data
+      // For /api/users/me GET, we need to inspect the response
       if (url.includes('/api/users/me') && method === 'GET') {
+        const response = await route.fetch({ headers });
+        const responseBody = await response.text();
+
         try {
           const userData = JSON.parse(responseBody);
           if (userData.wrappedAccountKey) {
@@ -345,12 +361,16 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
         } catch {
           // Ignore parse errors
         }
+
+        await route.fulfill({
+          response,
+          body: responseBody,
+        });
+        return;
       }
 
-      await route.fulfill({
-        response,
-        body: responseBody,
-      });
+      // All other requests - just continue with headers (fastest path)
+      await route.continue({ headers });
     });
 
     try {

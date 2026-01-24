@@ -200,23 +200,37 @@ try {
         -WindowStyle Hidden
     
     # Wait for backend to be ready
-    Write-Info "Waiting for backend to be ready..."
+    Write-Info "Waiting for backend to be ready (max 60s)..."
     $maxWait = 60
     $waited = 0
+    $backendReady = $false
     do {
-        Start-Sleep -Seconds 1
-        $waited++
+        Start-Sleep -Seconds 2
+        $waited += 2
+        
+        # Check if process died
+        if ($script:BackendProcess.HasExited) {
+            Write-Fail "Backend process died during startup (exit code: $($script:BackendProcess.ExitCode))"
+            exit 1
+        }
+        
         try {
             # Use /health (not /api/health) - this endpoint bypasses auth
             $response = Invoke-WebRequest -Uri "http://localhost:8080/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
-            $backendReady = $response.StatusCode -eq 200
+            if ($response.StatusCode -eq 200) {
+                $backendReady = $true
+            }
         } catch {
-            $backendReady = $false
+            # Not ready yet
         }
     } while (-not $backendReady -and $waited -lt $maxWait)
     
     if (-not $backendReady) {
         Write-Fail "Backend did not become ready within ${maxWait}s"
+        # Kill the hung process
+        if (-not $script:BackendProcess.HasExited) {
+            Stop-Process -Id $script:BackendProcess.Id -Force -ErrorAction SilentlyContinue
+        }
         exit 1
     }
     Write-Success "Backend is ready at http://localhost:8080"

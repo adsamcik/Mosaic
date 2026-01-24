@@ -135,6 +135,14 @@ test.describe('Identity Persistence: Stress and Logout Tests @p1 @auth @crypto @
         await loginPage.expectLoginSuccess();
       }
 
+      // Wait for app to fully initialize after login/session restore
+      await appShell.waitForLoad();
+
+      // Wait for album list to finish loading before checking for album cards
+      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {
+        console.log('[TEST] Network did not become fully idle, continuing...');
+      });
+
       // Navigate back to album if needed
       // After session restore, we might be in the album list OR already in the gallery
       const galleryVisible = await gallery.gallery.isVisible().catch(() => false);
@@ -196,6 +204,14 @@ test.describe('Identity Persistence: Stress and Logout Tests @p1 @auth @crypto @
         await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
         await loginPage.expectLoginSuccess();
       }
+
+      // Wait for app to fully initialize after login/session restore
+      await appShell.waitForLoad();
+
+      // Wait for album list to finish loading before checking for album cards
+      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {
+        console.log('[TEST] Network did not become fully idle, continuing...');
+      });
 
       // Navigate to gallery - check if we're already there or need to navigate
       const galleryVisibleFinal = await gallery.gallery.isVisible().catch(() => false);
