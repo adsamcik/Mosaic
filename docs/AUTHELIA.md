@@ -21,6 +21,31 @@ Mosaic uses the `Remote-User` header for authentication. Authelia acts as an aut
                        │◀────────────────┘
 ```
 
+### Share Links (Anonymous Access)
+
+Mosaic supports share links that allow anonymous access to specific albums without authentication. These links use the `/s/` path prefix:
+
+- **Frontend**: `/s/{linkId}` - Renders the shared album viewer
+- **API**: `/api/s/{linkId}/*` - Backend endpoints for share link data
+
+**The following paths must bypass Authelia authentication** so that anyone with a valid share link can view the shared content:
+
+| Path | Purpose |
+|------|---------|
+| `/s/*` | Share link frontend routes |
+| `/api/s/*` | Share link API endpoints |
+| `/assets/*` | JavaScript, CSS bundles (Vite output) |
+| `/*.js`, `/*.css`, `/*.wasm` | Root-level static files |
+| `/index.html` | SPA entry point |
+
+All configuration examples in this guide include the proper bypass rules.
+
+```
+Share Link URL: https://photos.example.com/s/{linkId}#k={secret}
+                                           └──────────────────────┘
+                                           This path bypasses SSO
+```
+
 ---
 
 ## Prerequisites
@@ -195,14 +220,28 @@ auth.example.com {
 
 # Mosaic Application (protected by Authelia)
 photos.example.com {
-    # Forward authentication to Authelia
-    forward_auth authelia:9091 {
-        uri /api/authz/forward-auth
-        copy_headers Remote-User Remote-Groups Remote-Email Remote-Name
+    # Static assets and share links - bypass authentication
+    # Required for share link viewers to load the app
+    @public {
+        path /s/*
+        path /api/s/*
+        path /assets/*
+        path_regexp \.(js|css|wasm|woff2?|ttf|ico|png|svg)$
+    }
+    handle @public {
+        reverse_proxy frontend:8080
     }
 
-    # Proxy to Mosaic frontend (which proxies API to backend)
-    reverse_proxy frontend:8080
+    # All other routes require authentication
+    handle {
+        forward_auth authelia:9091 {
+            uri /api/authz/forward-auth
+            copy_headers Remote-User Remote-Groups Remote-Email Remote-Name
+        }
+
+        # Proxy to Mosaic frontend (which proxies API to backend)
+        reverse_proxy frontend:8080
+    }
 }
 ```
 
@@ -241,6 +280,22 @@ authentication_backend:
 access_control:
   default_policy: deny
   rules:
+    # Static assets - allow anonymous access for app loading
+    # Required for share link viewers to load JavaScript/CSS
+    - domain: 'photos.example.com'
+      resources:
+        - '^/assets/.*$'
+        - '.*\.(js|css|wasm|woff2?|ttf|ico|png|svg)$'
+      policy: bypass
+
+    # Share links - allow anonymous access for shared albums
+    # Users with a valid share link can view content without authentication
+    - domain: 'photos.example.com'
+      resources:
+        - '^/s/.*$'
+        - '^/api/s/.*$'
+      policy: bypass
+
     # Allow access to Mosaic for all authenticated users
     - domain: 'photos.example.com'
       policy: one_factor
@@ -485,6 +540,39 @@ server {
     # Include Authelia location block
     include /etc/nginx/snippets/authelia-location.conf;
 
+    # Static assets - bypass authentication for app loading
+    # Required for share link viewers to load JavaScript/CSS
+    location /assets/ {
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_pass http://frontend:8080;
+
+        # Required headers for SharedArrayBuffer
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Cross-Origin-Embedder-Policy "credentialless" always;
+    }
+
+    # Static files by extension - bypass authentication
+    location ~* \.(js|css|wasm|woff2?|ttf|ico|png|svg)$ {
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_pass http://frontend:8080;
+
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Cross-Origin-Embedder-Policy "credentialless" always;
+    }
+
+    # Share links - bypass authentication for anonymous access
+    # These paths allow unauthenticated users to view shared albums
+    location ~ ^/(s|api/s)/ {
+        # No auth_request - allow anonymous access
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_pass http://frontend:8080;
+
+        # Required headers for SharedArrayBuffer
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Cross-Origin-Embedder-Policy "credentialless" always;
+    }
+
+    # All other routes require authentication
     location / {
         # Authenticate with Authelia
         include /etc/nginx/snippets/authelia-authrequest.conf;
