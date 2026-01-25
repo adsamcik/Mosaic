@@ -22,9 +22,11 @@ public class LocalStorageService : IStorageService
             throw new ArgumentException("Storage key cannot be null or empty", nameof(key));
 
         // Prevent path traversal attacks
+        // Explicitly check for both separators regardless of platform
+        // (Path.AltDirectorySeparatorChar is '/' on both Windows and Linux)
         if (key.Contains("..") ||
-            key.Contains(Path.DirectorySeparatorChar) ||
-            key.Contains(Path.AltDirectorySeparatorChar))
+            key.Contains('/') ||
+            key.Contains('\\'))
         {
             throw new ArgumentException("Storage key contains invalid path characters", nameof(key));
         }
