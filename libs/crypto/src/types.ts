@@ -48,7 +48,7 @@ export interface EpochKey {
   epochId: number;
   /** 32 bytes - Master seed for deriving tier keys */
   epochSeed: Uint8Array;
-  /** 32 bytes - XChaCha20 key for thumbnail shards (450px) */
+  /** 32 bytes - XChaCha20 key for thumbnail shards (600px) */
   thumbKey: Uint8Array;
   /** 32 bytes - XChaCha20 key for preview shards (1200px) */
   previewKey: Uint8Array;
@@ -68,7 +68,7 @@ export interface EpochKey {
  * Each tier uses a different derived key.
  */
 export enum ShardTier {
-  /** 450px thumbnail (HiDPI quality for gallery grid) */
+  /** 600px thumbnail (HiDPI quality for gallery grid) */
   THUMB = 1,
   /** 1200px preview */
   PREVIEW = 2,

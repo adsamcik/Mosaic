@@ -2,12 +2,15 @@
  * Thumbnail Generator Service
  *
  * Generates three-tier images from photos using the Canvas API:
- * - Thumbnail: 450px max dimension, AVIF output (for shard)
+ * - Thumbnail: 600px max dimension, AVIF output (for shard, HiDPI quality)
  * - Preview: 1200px max dimension, AVIF output
  * - Original: AVIF (default) or preserved original format (configurable)
  *
- * Additionally generates a smaller embedded thumbnail (150px) for manifest
- * to reduce manifest size while maintaining HiDPI quality in gallery view.
+ * Additionally generates a smaller embedded thumbnail (300px) for manifest
+ * to provide crisp display at gallery row heights (~200-220px).
+ * ThumbHash (~25 bytes) provides instant blur placeholder before thumbnail loads.
+ *
+ * Progressive loading: ThumbHash → Embedded 300px → Shard 600px (on demand)
  *
  * Each tier is encrypted with its corresponding key (thumbKey, previewKey, fullKey).
  * Handles EXIF orientation, maintains aspect ratio, and outputs AVIF for
@@ -34,11 +37,19 @@ import { createLogger } from './logger';
 
 const log = createLogger('thumbnail-generator');
 
-/** Max dimension for embedded thumbnails in manifest (150px) - small for bandwidth */
-const EMBEDDED_MAX_SIZE = 150;
+/**
+ * Max dimension for embedded thumbnails in manifest (300px)
+ * Gallery cells are ~200-220px tall, so 300px provides crisp display
+ * on standard screens and acceptable quality on HiDPI (1.5x scaling).
+ * ThumbHash provides instant blur placeholder before this loads.
+ */
+const EMBEDDED_MAX_SIZE = 300;
 
-/** Default max dimension for thumbnail shards (450px) - HiDPI quality */
-const THUMB_MAX_SIZE = 450;
+/**
+ * Default max dimension for thumbnail shards (600px) - HiDPI quality
+ * At 2x device pixel ratio with ~300px display size, 600px is pixel-perfect.
+ */
+const THUMB_MAX_SIZE = 600;
 
 /** Default max dimension for previews (1200px) */
 const PREVIEW_MAX_SIZE = 1200;
@@ -49,11 +60,18 @@ const THUMB_QUALITY = 0.8;
 /** Default JPEG quality for previews (0-1) */
 const PREVIEW_QUALITY = 0.85;
 
-/** Maximum embedded thumbnail size in bytes (10KB) - for manifest */
-const MAX_EMBEDDED_BYTES = 10 * 1024;
+/**
+ * Maximum embedded thumbnail size in bytes (25KB) - for manifest
+ * Larger than before (was 10KB) to accommodate 300px thumbnails.
+ * Still small enough that manifest loading is fast.
+ */
+const MAX_EMBEDDED_BYTES = 25 * 1024;
 
-/** Maximum thumbnail shard size in bytes (80KB) - for HiDPI shards */
-const MAX_THUMBNAIL_BYTES = 80 * 1024;
+/**
+ * Maximum thumbnail shard size in bytes (120KB) - for HiDPI shards
+ * Larger than before (was 80KB) to accommodate 600px thumbnails.
+ */
+const MAX_THUMBNAIL_BYTES = 120 * 1024;
 
 /** Maximum preview size in bytes (500KB) */
 const MAX_PREVIEW_BYTES = 500 * 1024;
@@ -165,15 +183,15 @@ export function getPreferredImageFormat():
 
 /**
  * Options for thumbnail generation
- * Default settings are optimized for embedded manifest thumbnails (150px, 10KB max).
- * For larger thumbnail shards, use maxSize: 450 and maxBytes: 80*1024.
+ * Default settings are optimized for embedded manifest thumbnails (300px, 25KB max).
+ * For larger thumbnail shards, use maxSize: 600 and maxBytes: 120*1024.
  */
 export interface ThumbnailOptions {
-  /** Maximum dimension (width or height) in pixels. Default: 150 (for manifest) */
+  /** Maximum dimension (width or height) in pixels. Default: 300 (for manifest) */
   maxSize?: number;
   /** JPEG quality (0-1), default 0.8 */
   quality?: number;
-  /** Maximum output size in bytes. Default: 10KB (for manifest) */
+  /** Maximum output size in bytes. Default: 25KB (for manifest) */
   maxBytes?: number;
 }
 
@@ -438,8 +456,8 @@ function orientationSwapsDimensions(orientation: number): boolean {
  * Uses createImageBitmap for efficient image decoding and Canvas API
  * for resizing. Handles EXIF orientation for rotated photos.
  *
- * Default settings are optimized for embedded manifest thumbnails (150px, 10KB).
- * For larger thumbnail shards, the tiered generation uses THUMB_MAX_SIZE (450px).
+ * Default settings are optimized for embedded manifest thumbnails (300px, 25KB).
+ * For larger thumbnail shards, the tiered generation uses THUMB_MAX_SIZE (600px).
  *
  * HEIC/HEIF files are automatically decoded to JPEG before processing.
  *

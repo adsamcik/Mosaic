@@ -276,9 +276,9 @@ describe('generateThumbnail', () => {
     const result = await generateThumbnail(file);
 
     expect(globalThis.createImageBitmap).toHaveBeenCalledWith(file);
-    // Default is now 150px for embedded manifest thumbnails
-    expect(result.width).toBe(150); // Scaled from 800
-    expect(result.height).toBe(113); // Scaled proportionally from 600
+    // Default is now 300px for embedded manifest thumbnails (crisp at 200-220px gallery rows)
+    expect(result.width).toBe(300); // Scaled from 800
+    expect(result.height).toBe(225); // Scaled proportionally from 600
     expect(result.originalWidth).toBe(800);
     expect(result.originalHeight).toBe(600);
     expect(result.data).toBeInstanceOf(Uint8Array);
@@ -451,9 +451,9 @@ describe('generateThumbnail', () => {
 
     const result = await generateThumbnail(file);
 
-    // Portrait: 600x800 scaled to 150px max -> 113x150 (rounded)
-    expect(result.width).toBe(113);
-    expect(result.height).toBe(150);
+    // Portrait: 600x800 scaled to 300px max -> 225x300
+    expect(result.width).toBe(225);
+    expect(result.height).toBe(300);
   });
 
   it('handles square images correctly', async () => {
@@ -466,17 +466,17 @@ describe('generateThumbnail', () => {
 
     const result = await generateThumbnail(file);
 
-    // Square: 500x500 scaled to 150px max -> 150x150
-    expect(result.width).toBe(150);
-    expect(result.height).toBe(150);
+    // Square: 500x500 scaled to 300px max -> 300x300
+    expect(result.width).toBe(300);
+    expect(result.height).toBe(300);
   });
 
-  it('reduces quality if thumbnail exceeds 10KB (embedded max)', async () => {
+  it('reduces quality if thumbnail exceeds 25KB (embedded max)', async () => {
     let callCount = 0;
     mockCanvas.toBlob = vi.fn((callback: BlobCallback) => {
       callCount++;
       // First call returns large blob, subsequent calls return smaller
-      const size = callCount === 1 ? 15000 : 8000;
+      const size = callCount === 1 ? 30000 : 20000;
       const data = new Uint8Array(size).fill(0);
       const mockBlob = new Blob([data], { type: 'image/jpeg' });
       callback(mockBlob);
@@ -491,7 +491,7 @@ describe('generateThumbnail', () => {
     // toBlob should be called at least twice (once with original quality,
     // once with reduced quality)
     expect(callCount).toBeGreaterThan(1);
-    expect(result.data.length).toBeLessThanOrEqual(10 * 1024);
+    expect(result.data.length).toBeLessThanOrEqual(25 * 1024);
   });
 });
 
@@ -689,14 +689,14 @@ describe('generateTieredImages', () => {
     expect(result.original.tier).toBe(ShardTier.ORIGINAL);
   });
 
-  it('thumbnail is scaled to 450px max dimension', async () => {
+  it('thumbnail is scaled to 600px max dimension', async () => {
     const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
 
     const result = await generateTieredImages(file);
 
-    // 2000x1500 scaled to 450px max -> 450x338 (rounded: 450x337)
-    expect(result.thumbnail.width).toBe(450);
-    expect(result.thumbnail.height).toBe(338);
+    // 2000x1500 scaled to 600px max -> 600x450
+    expect(result.thumbnail.width).toBe(600);
+    expect(result.thumbnail.height).toBe(450);
   });
 
   it('preview is scaled to 1200px max dimension', async () => {
@@ -734,9 +734,9 @@ describe('generateTieredImages', () => {
 
     const result = await generateTieredImages(file);
 
-    // Portrait: 1500x2000 scaled to 450px max -> 338x450 (rounded)
-    expect(result.thumbnail.width).toBe(338);
-    expect(result.thumbnail.height).toBe(450);
+    // Portrait: 1500x2000 scaled to 600px max -> 450x600
+    expect(result.thumbnail.width).toBe(450);
+    expect(result.thumbnail.height).toBe(600);
 
     // Portrait: 1500x2000 scaled to 1200px max -> 900x1200
     expect(result.preview.width).toBe(900);
@@ -932,9 +932,9 @@ describe('generateTieredShards', () => {
 
     const result = await generateTieredShards(file, epochKey);
 
-    // 800x600 scaled to 450px max -> 450x338 (rounded)
-    expect(result.thumbnail.width).toBe(450);
-    expect(result.thumbnail.height).toBe(338);
+    // 800x600 scaled to 600px max -> 600x450
+    expect(result.thumbnail.width).toBe(600);
+    expect(result.thumbnail.height).toBe(450);
 
     // 800x600 scaled to 1200px max (smaller, no upscale) -> 800x600
     expect(result.preview.width).toBe(800);
