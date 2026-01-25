@@ -593,7 +593,7 @@ export function SettingsPage() {
                 rel="noopener noreferrer"
                 className="info-link"
               >
-                {t('settings.about.viewOnGithub')}
+                {t('settings.about.viewOnGitHub')}
               </a>
             </div>
             <div className="about-description">

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.4] - 2026-01-24
+## [0.0.4] - 2026-01-25
 
 ### Added
 
@@ -74,12 +74,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HEIC detection for files with mif1 major brand
 
 #### E2E Test Stability
+
 - Replaced networkidle with domcontentloaded for reliability
 - Retry mechanism for file upload trigger
 - Multi-language support in page objects
 - Improved sync and share link handling
+- Improved timeout handling and test stability
+
+#### UI
+
+- Settings page now properly styled with glassmorphism design
+- Fixed i18n key case mismatch for GitHub link in Settings
 
 ### Developer Experience
+
 - Applied consistent code formatting (Prettier, dotnet format)
 - Consolidated user creation logic with debug logging
 - Standardized NotFound response format across API
