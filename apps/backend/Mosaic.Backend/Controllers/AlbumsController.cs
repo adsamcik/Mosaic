@@ -445,12 +445,35 @@ public class AlbumsController : ControllerBase
             return Forbid();
         }
 
-        _db.Albums.Remove(album);
-        await _db.SaveChangesAsync();
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            // Get album limits to know photo count and size
+            var albumLimits = await _db.AlbumLimits.FindAsync(albumId);
+            var totalSizeBytes = albumLimits?.CurrentSizeBytes ?? 0;
 
-        _logger.AlbumDeleted(albumId, user.Id);
+            // Decrement user's storage usage and album count
+            var quota = await _db.UserQuotas.FindAsync(user.Id);
+            if (quota != null)
+            {
+                quota.UsedStorageBytes = Math.Max(0, quota.UsedStorageBytes - totalSizeBytes);
+                quota.CurrentAlbumCount = Math.Max(0, quota.CurrentAlbumCount - 1);
+                quota.UpdatedAt = DateTime.UtcNow;
+            }
 
-        return NoContent();
+            _db.Albums.Remove(album);
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            _logger.AlbumDeleted(albumId, user.Id);
+
+            return NoContent();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     /// <summary>

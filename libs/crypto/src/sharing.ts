@@ -69,6 +69,8 @@ export function sealAndSignBundle(
 
   // Seal (anonymous encryption - only recipient can open)
   const sealed = sodium.crypto_box_seal(bundleBytes, recipientX25519Pub);
+  sodium.memzero(bundleBytes); // Clear sensitive bundle content
+  sodium.memzero(recipientX25519Pub); // Clear derived key
 
   // Sign the sealed ciphertext with context
   const toSign = concat(BUNDLE_CONTEXT, sealed);

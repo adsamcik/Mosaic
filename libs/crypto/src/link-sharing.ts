@@ -8,6 +8,8 @@
 
 import sodium from 'libsodium-wrappers-sumo';
 import {
+  CryptoError,
+  CryptoErrorCode,
   KEY_SIZE,
   AccessTier,
   type LinkKeys,
@@ -48,8 +50,9 @@ export function generateLinkSecret(): Uint8Array {
  */
 export function deriveLinkKeys(linkSecret: Uint8Array): LinkKeys {
   if (linkSecret.length !== LINK_SECRET_SIZE) {
-    throw new Error(
+    throw new CryptoError(
       `Link secret must be ${LINK_SECRET_SIZE} bytes, got ${linkSecret.length}`,
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 
@@ -87,13 +90,15 @@ export function wrapTierKeyForLink(
   wrappingKey: Uint8Array,
 ): WrappedTierKey {
   if (wrappingKey.length !== KEY_SIZE) {
-    throw new Error(
+    throw new CryptoError(
       `Wrapping key must be ${KEY_SIZE} bytes, got ${wrappingKey.length}`,
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
   if (tierKey.length !== KEY_SIZE) {
-    throw new Error(
+    throw new CryptoError(
       `Tier key must be ${KEY_SIZE} bytes, got ${tierKey.length}`,
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
 

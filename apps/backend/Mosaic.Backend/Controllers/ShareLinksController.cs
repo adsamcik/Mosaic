@@ -650,15 +650,27 @@ public class ShareLinksController : ControllerBase
             return Gone(new { error = "This link has expired" });
         }
 
-        // Check max uses
-        if (shareLink.MaxUses.HasValue && shareLink.UseCount >= shareLink.MaxUses.Value)
+        // Use atomic update to prevent race conditions on MaxUses
+        var updated = await _db.ShareLinks
+            .Where(sl => sl.LinkId == linkIdBytes &&
+                         !sl.IsRevoked &&
+                         (!sl.MaxUses.HasValue || sl.UseCount < sl.MaxUses.Value))
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.UseCount, x => x.UseCount + 1));
+
+        if (updated == 0)
         {
+            // Re-fetch to determine specific reason (link was modified between initial fetch and update)
+            var link = await _db.ShareLinks.FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
+            if (link == null)
+            {
+                return NotFound(new { error = "Link not found" });
+            }
+            if (link.IsRevoked)
+            {
+                return Gone(new { error = "This link has been revoked" });
+            }
             return Gone(new { error = "This link has reached its maximum uses" });
         }
-
-        // Increment use count
-        shareLink.UseCount++;
-        await _db.SaveChangesAsync();
 
         return Ok(new LinkAccessResponse
         {

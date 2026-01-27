@@ -7,7 +7,7 @@
  */
 
 import sodium from 'libsodium-wrappers-sumo';
-import { KEY_SIZE, ShardTier, type EpochKey } from './types';
+import { CryptoError, CryptoErrorCode, KEY_SIZE, ShardTier, type EpochKey } from './types';
 import { randomBytes, toBytes } from './utils';
 import { wrapKey, unwrapKey } from './keybox';
 
@@ -41,8 +41,9 @@ export function deriveTierKeys(epochSeed: Uint8Array): {
   fullKey: Uint8Array;
 } {
   if (epochSeed.length !== KEY_SIZE) {
-    throw new Error(
+    throw new CryptoError(
       `Epoch seed must be ${KEY_SIZE} bytes, got ${epochSeed.length}`,
+      CryptoErrorCode.INVALID_KEY_LENGTH,
     );
   }
   return {
@@ -68,7 +69,7 @@ export function getTierKey(epochKey: EpochKey, tier: ShardTier): Uint8Array {
     case 3: // ORIGINAL
       return epochKey.fullKey;
     default:
-      throw new Error(`Invalid shard tier: ${tier}`);
+      throw new CryptoError(`Invalid shard tier: ${tier}`, CryptoErrorCode.INVALID_INPUT);
   }
 }
 

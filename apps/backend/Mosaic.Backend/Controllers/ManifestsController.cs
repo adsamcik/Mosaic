@@ -364,17 +364,30 @@ public class ManifestsController : ControllerBase
             album.CurrentVersion++;
             album.UpdatedAt = DateTime.UtcNow;
 
-            // Mark associated shards as TRASHED
-            var shardIds = await _db.ManifestShards
+            // Get shards with their sizes before marking as trashed
+            var shards = await _db.ManifestShards
                 .Where(ms => ms.ManifestId == manifestId)
-                .Select(ms => ms.ShardId)
+                .Join(_db.Shards, ms => ms.ShardId, s => s.Id, (ms, s) => s)
                 .ToListAsync();
 
+            var shardIds = shards.Select(s => s.Id).ToList();
+            var totalShardSize = shards.Sum(s => s.SizeBytes);
+
+            // Mark associated shards as TRASHED
             await _db.Shards
                 .Where(s => shardIds.Contains(s.Id))
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(x => x.Status, ShardStatus.TRASHED)
                     .SetProperty(x => x.StatusUpdatedAt, DateTime.UtcNow));
+
+            // Update album limits - decrement photo count and size
+            var albumLimits = await _db.AlbumLimits.FindAsync(album.Id);
+            if (albumLimits != null)
+            {
+                albumLimits.CurrentPhotoCount = Math.Max(0, albumLimits.CurrentPhotoCount - 1);
+                albumLimits.CurrentSizeBytes = Math.Max(0, albumLimits.CurrentSizeBytes - totalShardSize);
+                albumLimits.UpdatedAt = DateTime.UtcNow;
+            }
 
             await _db.SaveChangesAsync();
             await tx.CommitAsync();

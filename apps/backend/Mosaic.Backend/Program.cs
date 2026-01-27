@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -80,6 +81,12 @@ builder.Services.AddAuthentication(PassThroughAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, PassThroughAuthenticationHandler>(
         PassThroughAuthenticationHandler.SchemeName, null);
 
+// Configure forwarded headers for reverse proxy support
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+});
+
 var app = builder.Build();
 
 // Determine auth modes from configuration (independent toggles)
@@ -110,11 +117,13 @@ else
 }
 
 // Middleware order matters:
+// 0. ForwardedHeaders - process X-Forwarded-* headers from reverse proxy (must be first)
 // 1. GlobalExceptionMiddleware - catch all errors first
 // 2. CorrelationIdMiddleware - generate/extract correlation ID
 // 3. LogScopeMiddleware - create logging scope with request context
 // 4. RequestTimingMiddleware - log request timing
 // 5. Auth middleware - authenticate user
+app.UseForwardedHeaders();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseLogScope();
