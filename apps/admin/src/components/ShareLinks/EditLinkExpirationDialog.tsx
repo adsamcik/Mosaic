@@ -137,7 +137,7 @@ export function EditShareLinkView({
             <span className="info-label">Uses</span>
             <span className="info-value">
               {link.useCount}
-              {link.maxUses !== undefined && ` / ${link.maxUses}`}
+              {link.maxUses != null && ` / ${link.maxUses}`}
             </span>
           </div>
           <div className="info-item">

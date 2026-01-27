@@ -2624,9 +2624,53 @@ button {
   color: var(--color-text-primary);
 }
 
+.revoked-links-summary-text {
+  margin-left: var(--spacing-xs);
+}
+
 .share-link-item.revoked {
   opacity: 0.7;
   background: rgba(0, 0, 0, 0.2);
+  padding: var(--spacing-md);
+}
+
+.share-links-items.revoked-list {
+  gap: var(--spacing-sm);
+}
+
+.share-link-item.revoked:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.revoked-link-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.revoked-link-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.revoked-link-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.8rem;
+  color: var(--color-text-tertiary);
+}
+
+.revoked-stat {
+  white-space: nowrap;
+}
+
+.revoked-stat-separator {
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
 }
 
 .share-link-item.expired {
@@ -2652,6 +2696,10 @@ button {
   border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--glass-border);
+}
+
+.tier-badge.revoked {
+  opacity: 0.6;
 }
 
 /* Create Share Link View Styling */

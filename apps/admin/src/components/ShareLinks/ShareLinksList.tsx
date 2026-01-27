@@ -177,8 +177,7 @@ export function ShareLinksList({
                       <div className="share-link-stats">
                         <span className="stat" data-testid="use-count">
                           {link.useCount} uses
-                          {link.maxUses !== undefined &&
-                            ` / ${link.maxUses} max`}
+                          {link.maxUses != null && ` / ${link.maxUses} max`}
                         </span>
                         {link.expiryDisplay && (
                           <span className="stat" data-testid="expiry-date">
@@ -249,10 +248,12 @@ export function ShareLinksList({
               data-testid="revoked-links-section"
             >
               <summary className="revoked-links-summary">
-                Revoked Links ({revokedLinks.length})
+                <span className="revoked-links-summary-text">
+                  Revoked Links ({revokedLinks.length})
+                </span>
               </summary>
               <ul
-                className="share-links-items revoked"
+                className="share-links-items revoked-list"
                 data-testid="revoked-share-links"
               >
                 {revokedLinks.map((link) => (
@@ -261,8 +262,8 @@ export function ShareLinksList({
                     className="share-link-item revoked"
                     data-testid="revoked-link-item"
                   >
-                    <div className="share-link-info">
-                      <div className="share-link-tier">
+                    <div className="revoked-link-content">
+                      <div className="revoked-link-header">
                         <span
                           className={`tier-badge tier-${link.accessTier} revoked`}
                         >
@@ -270,12 +271,15 @@ export function ShareLinksList({
                         </span>
                         <span className="revoked-badge">Revoked</span>
                       </div>
-                      <div className="share-link-stats">
-                        <span className="stat">
-                          {link.useCount} uses before revocation
+                      <div className="revoked-link-meta">
+                        <span className="revoked-stat">
+                          {link.useCount}{' '}
+                          {link.useCount === 1 ? 'use' : 'uses'} before
+                          revocation
                         </span>
-                        <span className="stat">
-                          Created:{' '}
+                        <span className="revoked-stat-separator">•</span>
+                        <span className="revoked-stat">
+                          Created{' '}
                           {new Date(link.createdAt).toLocaleDateString(
                             undefined,
                             {
