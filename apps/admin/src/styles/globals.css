@@ -3373,6 +3373,87 @@ button {
 
 /* Responsive Adjustments */
 @media (max-width: 600px) {
+  /* Lightbox mobile adjustments */
+  .lightbox-nav {
+    width: 36px;
+    height: 36px;
+  }
+
+  .lightbox-nav-prev {
+    left: 8px;
+  }
+
+  .lightbox-nav-next {
+    right: 8px;
+  }
+
+  .lightbox-close {
+    top: 12px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .lightbox-counter {
+    top: 12px;
+    left: 12px;
+    font-size: 0.8rem;
+    padding: 3px 10px;
+    max-width: calc(100vw - 120px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lightbox-download-button {
+    top: 12px;
+    right: 56px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .lightbox-delete-button {
+    top: 12px;
+    right: 100px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .lightbox-info-toggle {
+    bottom: 12px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .lightbox-metadata {
+    bottom: 60px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: 50vh;
+  }
+
+  .lightbox-hints {
+    gap: 12px;
+    padding: 8px 14px;
+    font-size: 0.75rem;
+  }
+
+  .lightbox-hint kbd {
+    min-width: 20px;
+    padding: 1px 4px;
+    font-size: 0.7rem;
+  }
+
+  .lightbox-loading-overlay {
+    bottom: 80px;
+    padding: 12px 16px;
+  }
+
+  .lightbox-progress {
+    width: 140px;
+  }
+
   .settings-page {
     padding: var(--spacing-md);
   }
