@@ -224,6 +224,11 @@
     "download": "Stáhnout fotku",
     "delete": "Smazat fotku",
     "downloadOriginal": "Stáhnout originál",
+    "hints": {
+      "navigate": "Navigace",
+      "info": "Info",
+      "close": "Zavřít"
+    },
     "metadata": {
       "dateTaken": "Datum pořízení",
       "dimensions": "Rozměry",

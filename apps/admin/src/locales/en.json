@@ -220,6 +220,11 @@
     "download": "Download photo",
     "delete": "Delete photo",
     "downloadOriginal": "Download Original",
+    "hints": {
+      "navigate": "Navigate",
+      "info": "Info",
+      "close": "Close"
+    },
     "metadata": {
       "dateTaken": "Date Taken",
       "dimensions": "Dimensions",

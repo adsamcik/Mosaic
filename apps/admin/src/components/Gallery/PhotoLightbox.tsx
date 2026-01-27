@@ -98,8 +98,17 @@ export function PhotoLightbox({
     progress: 0,
   });
   const [showInfo, setShowInfo] = useState(false);
+  const [showHints, setShowHints] = useState(true);
   const backdropRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Auto-hide keyboard hints after 3 seconds
+  useEffect(() => {
+    if (showHints) {
+      const timer = setTimeout(() => setShowHints(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showHints]);
 
   // Generate a unique cache key for full-resolution photos (separate from thumbnails)
   const fullResPhotoId = `${photo.id}:full`;
@@ -656,6 +665,21 @@ export function PhotoLightbox({
 
       {/* Metadata panel */}
       {showMetadata && renderMetadata()}
+
+      {/* Keyboard hints - shown briefly on open */}
+      {showHints && (
+        <div className="lightbox-hints" data-testid="lightbox-hints">
+          <span className="lightbox-hint">
+            <kbd>←</kbd><kbd>→</kbd> {t('lightbox.hints.navigate')}
+          </span>
+          <span className="lightbox-hint">
+            <kbd>I</kbd> {t('lightbox.hints.info')}
+          </span>
+          <span className="lightbox-hint">
+            <kbd>Esc</kbd> {t('lightbox.hints.close')}
+          </span>
+        </div>
+      )}
 
       {/* Photo counter */}
       <div className="lightbox-counter" data-testid="lightbox-counter">

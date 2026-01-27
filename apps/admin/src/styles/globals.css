@@ -1306,6 +1306,18 @@ button {
   object-fit: contain;
   box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
   transition: transform 0.2s ease;
+  animation: lightboxFadeIn 0.3s ease-out;
+}
+
+@keyframes lightboxFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .lightbox-close,
@@ -1449,6 +1461,67 @@ button {
   backdrop-filter: blur(4px);
 }
 
+/* Keyboard hints overlay */
+.lightbox-hints {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 24px;
+  padding: 10px 20px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(8px);
+  animation: hintsSlideUp 0.3s ease-out, hintsFadeOut 0.5s ease-in 2.5s forwards;
+  z-index: 1015;
+}
+
+.lightbox-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.lightbox-hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+}
+
+@keyframes hintsSlideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes hintsFadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
 .lightbox-loading {
   display: flex;
   flex-direction: column;
@@ -1474,26 +1547,66 @@ button {
   max-width: 90vw;
   max-height: 90vh;
   object-fit: contain;
-  filter: blur(2px);
-  opacity: 0.8;
+  filter: blur(1px);
+  opacity: 0.9;
   transition: filter 0.3s ease, opacity 0.3s ease;
+  animation: thumbnailFadeIn 0.2s ease-out;
+}
+
+@keyframes thumbnailFadeIn {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+  }
+  to {
+    opacity: 0.9;
+    filter: blur(1px);
+  }
 }
 
 /* Loading overlay positioned over the thumbnail */
 .lightbox-loading-overlay {
   position: absolute;
-  top: 50%;
+  bottom: 60px;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   color: white;
-  background: rgba(0, 0, 0, 0.4);
-  padding: 24px 32px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 16px 24px;
   border-radius: var(--radius-lg);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Progress bar inside loading overlay */
+.lightbox-progress {
+  width: 180px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.lightbox-progress-bar {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 2px;
+  transition: width 0.15s ease-out;
+}
+
+.lightbox-progress-text {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* When no thumbnail, the overlay should fill the container */
