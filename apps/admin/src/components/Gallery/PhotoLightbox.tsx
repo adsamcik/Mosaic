@@ -3,12 +3,18 @@
  *
  * Full-screen overlay for viewing full-resolution photos.
  * Supports keyboard navigation, touch gestures, and preloading.
+ * 
+ * Features:
+ * - In-memory caching prevents re-downloading viewed photos
+ * - Shows embedded thumbnail immediately while loading full-res
+ * - Preloads adjacent photos for instant navigation
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import {
+  getCachedPhoto,
   loadPhoto,
   preloadPhotos,
   releasePhoto,
@@ -42,7 +48,7 @@ export interface PhotoLightboxProps {
 
 /** Loading state for the full-resolution photo */
 type LoadState =
-  | { status: 'loading'; progress: number }
+  | { status: 'loading'; progress: number; thumbnailUrl?: string | undefined }
   | { status: 'loaded'; result: PhotoLoadResult }
   | { status: 'error'; error: Error };
 
@@ -111,6 +117,12 @@ export function PhotoLightbox({
     return photo.shardIds; // Legacy format: all shards are original chunks
   }, [photo.originalShardIds, photo.shardIds]);
 
+  // Create a data URL from the embedded thumbnail for immediate display
+  const embeddedThumbnailUrl = useMemo(() => {
+    if (!photo.thumbnail) return undefined;
+    return `data:image/jpeg;base64,${photo.thumbnail}`;
+  }, [photo.thumbnail]);
+
   // Load the full-resolution photo
   useEffect(() => {
     if (!epochReadKey || !originalShards || originalShards.length === 0) {
@@ -121,10 +133,24 @@ export function PhotoLightbox({
       return;
     }
 
+    // Check if photo is already cached - if so, use it immediately without showing loading state
+    const cached = getCachedPhoto(fullResPhotoId);
+    if (cached) {
+      setLoadState({ status: 'loaded', result: cached });
+      return () => {
+        releasePhoto(fullResPhotoId);
+      };
+    }
+
     let cancelled = false;
 
     async function loadFullResolution() {
-      setLoadState({ status: 'loading', progress: 0 });
+      // Set loading state with embedded thumbnail for immediate display
+      setLoadState({ 
+        status: 'loading', 
+        progress: 0,
+        thumbnailUrl: embeddedThumbnailUrl,
+      });
 
       try {
         const result = await loadPhoto(
@@ -136,7 +162,11 @@ export function PhotoLightbox({
             onProgress: (loaded, total) => {
               if (!cancelled) {
                 const progress = total > 0 ? loaded / total : 0;
-                setLoadState({ status: 'loading', progress });
+                setLoadState({ 
+                  status: 'loading', 
+                  progress,
+                  thumbnailUrl: embeddedThumbnailUrl,
+                });
               }
             },
           },
@@ -161,7 +191,7 @@ export function PhotoLightbox({
       cancelled = true;
       releasePhoto(fullResPhotoId);
     };
-  }, [fullResPhotoId, originalShards, photo.mimeType, epochReadKey]);
+  }, [fullResPhotoId, originalShards, photo.mimeType, epochReadKey, embeddedThumbnailUrl]);
 
   // Preload next/previous photos - use original shards only
   useEffect(() => {
@@ -190,13 +220,13 @@ export function PhotoLightbox({
   const handleRetry = useCallback(() => {
     if (!epochReadKey || !originalShards?.length) return;
 
-    setLoadState({ status: 'loading', progress: 0 });
+    setLoadState({ status: 'loading', progress: 0, thumbnailUrl: embeddedThumbnailUrl });
 
     loadPhoto(fullResPhotoId, originalShards, epochReadKey, photo.mimeType, {
       skipCache: true,
       onProgress: (loaded, total) => {
         const progress = total > 0 ? loaded / total : 0;
-        setLoadState({ status: 'loading', progress });
+        setLoadState({ status: 'loading', progress, thumbnailUrl: embeddedThumbnailUrl });
       },
     })
       .then((result) => setLoadState({ status: 'loaded', result }))
@@ -206,7 +236,7 @@ export function PhotoLightbox({
           error: error instanceof Error ? error : new Error(String(error)),
         }),
       );
-  }, [fullResPhotoId, originalShards, photo.mimeType, epochReadKey]);
+  }, [fullResPhotoId, originalShards, photo.mimeType, epochReadKey, embeddedThumbnailUrl]);
 
   // Get album permissions for download capability
   const { canDownload } = useAlbumPermissions();
@@ -317,27 +347,45 @@ export function PhotoLightbox({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose, hasPrevious, onPrevious, hasNext, onNext, onDelete, toggleInfo]);
 
-  // Render loading state
-  const renderLoading = () => (
-    <div className="lightbox-loading" data-testid="lightbox-loading">
-      <div className="lightbox-spinner" />
-      <div className="lightbox-progress">
-        <div
-          className="lightbox-progress-bar"
-          style={{
-            width: `${(loadState as { progress: number }).progress * 100}%`,
-          }}
-        />
+  // Render loading state - shows thumbnail as background if available
+  const renderLoading = () => {
+    const loadingState = loadState as { progress: number; thumbnailUrl?: string };
+    const hasThumbnail = !!loadingState.thumbnailUrl;
+    
+    return (
+      <div 
+        className={`lightbox-loading ${hasThumbnail ? 'lightbox-loading-with-thumbnail' : ''}`} 
+        data-testid="lightbox-loading"
+      >
+        {/* Show thumbnail as placeholder while loading full-res */}
+        {hasThumbnail && (
+          <img
+            src={loadingState.thumbnailUrl}
+            alt={photo.filename}
+            className="lightbox-thumbnail-placeholder"
+            data-testid="lightbox-thumbnail-placeholder"
+          />
+        )}
+        {/* Loading overlay */}
+        <div className="lightbox-loading-overlay">
+          <div className="lightbox-spinner" />
+          <div className="lightbox-progress">
+            <div
+              className="lightbox-progress-bar"
+              style={{
+                width: `${loadingState.progress * 100}%`,
+              }}
+            />
+          </div>
+          <span className="lightbox-progress-text">
+            {t('lightbox.loadingProgress', {
+              percent: Math.round(loadingState.progress * 100),
+            })}
+          </span>
+        </div>
       </div>
-      <span className="lightbox-progress-text">
-        {t('lightbox.loadingProgress', {
-          percent: Math.round(
-            (loadState as { progress: number }).progress * 100,
-          ),
-        })}
-      </span>
-    </div>
-  );
+    );
+  };
 
   // Render error state
   const renderError = () => (

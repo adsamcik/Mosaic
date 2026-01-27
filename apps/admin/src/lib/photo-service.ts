@@ -387,6 +387,37 @@ export function clearPhotoCache(): void {
 }
 
 /**
+ * Check if a photo is in the cache
+ *
+ * @param photoId - The photo ID to check
+ * @returns true if the photo is cached
+ */
+export function isPhotoCached(photoId: string): boolean {
+  return photoCache.has(photoId);
+}
+
+/**
+ * Get a cached photo synchronously without triggering a load
+ * Useful for checking if we can show a cached image immediately
+ *
+ * @param photoId - The photo ID to get
+ * @returns The cached photo result, or null if not cached
+ */
+export function getCachedPhoto(photoId: string): PhotoLoadResult | null {
+  const entry = photoCache.get(photoId);
+  if (entry) {
+    entry.refCount++;
+    entry.lastAccess = Date.now();
+    return {
+      blobUrl: entry.blobUrl,
+      mimeType: entry.blob.type,
+      size: entry.blob.size,
+    };
+  }
+  return null;
+}
+
+/**
  * Get cache statistics
  */
 export function getCacheStats(): {

@@ -1453,8 +1453,56 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 16px;
   color: white;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* When loading with a thumbnail, make space for the image */
+.lightbox-loading-with-thumbnail {
+  width: auto;
+  height: auto;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+/* Thumbnail placeholder shown during full-res load */
+.lightbox-thumbnail-placeholder {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  filter: blur(2px);
+  opacity: 0.8;
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+/* Loading overlay positioned over the thumbnail */
+.lightbox-loading-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: white;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 24px 32px;
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(4px);
+}
+
+/* When no thumbnail, the overlay should fill the container */
+.lightbox-loading:not(.lightbox-loading-with-thumbnail) .lightbox-loading-overlay {
+  position: static;
+  transform: none;
+  background: transparent;
+  backdrop-filter: none;
+  padding: 0;
 }
 
 .lightbox-spinner {

@@ -8,8 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearPhotoCache,
   clearThumbnailCache,
+  getCachedPhoto,
   getCacheStats,
   getThumbnailCacheStats,
+  isPhotoCached,
   loadPhoto,
   loadThumbnailFromBase64,
   PhotoAssemblyError,
@@ -275,6 +277,85 @@ describe('Photo Service', () => {
       clearPhotoCache();
 
       expect(globalThis.URL.revokeObjectURL).toHaveBeenCalled();
+    });
+  });
+
+  describe('isPhotoCached', () => {
+    it('returns false for uncached photos', () => {
+      expect(isPhotoCached('non-existent-photo')).toBe(false);
+    });
+
+    it('returns true for cached photos', async () => {
+      const { downloadShards } = await import('../src/lib/shard-service');
+      const { getCryptoClient } = await import('../src/lib/crypto-client');
+
+      vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
+      vi.mocked(getCryptoClient).mockResolvedValue({
+        decryptShard: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+      } as any);
+
+      const epochKey = new Uint8Array(32).fill(42);
+      await loadPhoto('cached-photo', ['shard-1'], epochKey, 'image/jpeg');
+
+      expect(isPhotoCached('cached-photo')).toBe(true);
+    });
+  });
+
+  describe('getCachedPhoto', () => {
+    it('returns null for uncached photos', () => {
+      const result = getCachedPhoto('non-existent-photo');
+      expect(result).toBeNull();
+    });
+
+    it('returns photo result for cached photos', async () => {
+      const { downloadShards } = await import('../src/lib/shard-service');
+      const { getCryptoClient } = await import('../src/lib/crypto-client');
+
+      vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
+      vi.mocked(getCryptoClient).mockResolvedValue({
+        decryptShard: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+      } as any);
+
+      const epochKey = new Uint8Array(32).fill(42);
+      const loaded = await loadPhoto('get-cached-photo', ['shard-1'], epochKey, 'image/jpeg');
+
+      // Release the initial reference
+      releasePhoto('get-cached-photo');
+
+      // Now get from cache
+      const cached = getCachedPhoto('get-cached-photo');
+
+      expect(cached).not.toBeNull();
+      expect(cached!.blobUrl).toBe(loaded.blobUrl);
+      expect(cached!.size).toBe(loaded.size);
+    });
+
+    it('increments refCount when getting cached photo', async () => {
+      const { downloadShards } = await import('../src/lib/shard-service');
+      const { getCryptoClient } = await import('../src/lib/crypto-client');
+
+      vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
+      vi.mocked(getCryptoClient).mockResolvedValue({
+        decryptShard: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+      } as any);
+
+      const epochKey = new Uint8Array(32).fill(42);
+      await loadPhoto('refcount-photo', ['shard-1'], epochKey, 'image/jpeg');
+
+      // Get from cache multiple times
+      const cached1 = getCachedPhoto('refcount-photo');
+      const cached2 = getCachedPhoto('refcount-photo');
+
+      expect(cached1).not.toBeNull();
+      expect(cached2).not.toBeNull();
+      
+      // Release all references - 3 total (initial load + 2 getCachedPhoto)
+      releasePhoto('refcount-photo');
+      releasePhoto('refcount-photo');
+      releasePhoto('refcount-photo');
+      
+      // Photo should still be in cache (LRU eviction hasn't happened)
+      expect(isPhotoCached('refcount-photo')).toBe(true);
     });
   });
 

@@ -17,6 +17,7 @@ vi.mock('../src/lib/photo-service', () => ({
     .mockResolvedValue({ blobUrl: 'blob:test-full', size: 2048 }),
   preloadPhotos: vi.fn().mockResolvedValue(undefined),
   releasePhoto: vi.fn(),
+  getCachedPhoto: vi.fn().mockReturnValue(null), // Not cached by default
 }));
 
 // Mock the AlbumPermissionsContext
@@ -725,6 +726,97 @@ describe('PhotoLightbox Preloading', () => {
       const preloadItem = photosArg.find((p) => p.id === 'preload-1:full');
       expect(preloadItem).toBeDefined();
       expect(preloadItem?.shardIds).toEqual(['original']); // Only original shard
+    });
+  });
+
+  describe('Caching behavior', () => {
+    it('uses cached photo immediately without loading', async () => {
+      const cachedResult = { blobUrl: 'blob:cached', mimeType: 'image/jpeg', size: 4096 };
+      vi.mocked(photoService.getCachedPhoto).mockReturnValue(cachedResult);
+
+      const photo = createMockPhoto();
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      // Should not call loadPhoto since it's cached
+      expect(photoService.loadPhoto).not.toHaveBeenCalled();
+      
+      // Should show the image
+      const image = container.querySelector('[data-testid="lightbox-image"]');
+      expect(image).not.toBeNull();
+      expect((image as HTMLImageElement).src).toBe('blob:cached');
+    });
+
+    it('shows thumbnail placeholder while loading full-res', async () => {
+      // Not cached
+      vi.mocked(photoService.getCachedPhoto).mockReturnValue(null);
+      // Make loadPhoto take time
+      vi.mocked(photoService.loadPhoto).mockImplementation(() => {
+        return new Promise((resolve) => setTimeout(() => resolve({ 
+          blobUrl: 'blob:full', 
+          mimeType: 'image/jpeg', 
+          size: 8192 
+        }), 100));
+      });
+
+      const photo = createMockPhoto({ 
+        thumbnail: 'base64EncodedThumbnail' 
+      });
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          }),
+        );
+        // Allow initial render but not full load
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      // Should show loading state with thumbnail
+      const loading = container.querySelector('[data-testid="lightbox-loading"]');
+      expect(loading).not.toBeNull();
+      
+      const thumbnail = container.querySelector('[data-testid="lightbox-thumbnail-placeholder"]');
+      expect(thumbnail).not.toBeNull();
+      expect((thumbnail as HTMLImageElement).src).toContain('data:image/jpeg;base64');
+    });
+
+    it('releases photo on unmount', async () => {
+      const cachedResult = { blobUrl: 'blob:cached', mimeType: 'image/jpeg', size: 4096 };
+      vi.mocked(photoService.getCachedPhoto).mockReturnValue(cachedResult);
+
+      const photo = createMockPhoto();
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      // Unmount
+      await act(async () => {
+        root.unmount();
+      });
+
+      // Should release the photo
+      expect(photoService.releasePhoto).toHaveBeenCalledWith(`${photo.id}:full`);
     });
   });
 });
