@@ -50,14 +50,26 @@ public class AdminUsersController : ControllerBase
     /// <summary>
     /// List all users with quota info
     /// </summary>
+    /// <param name="skip">Number of records to skip (default: 0)</param>
+    /// <param name="take">Number of records to take (default: 50, max: 100)</param>
     [HttpGet]
-    public async Task<IActionResult> ListUsers()
+    public async Task<IActionResult> ListUsers([FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
+        // Validate pagination parameters
+        skip = Math.Max(0, skip);
+        take = Math.Clamp(take, 1, 100);
+
         var defaults = await _quotaService.GetDefaultsAsync();
 
+        // Get total count for pagination metadata
+        var totalCount = await _db.Users.CountAsync();
+
         var users = await _db.Users
+            .AsNoTracking()
             .Include(u => u.Quota)
             .OrderBy(u => u.AuthSub)
+            .Skip(skip)
+            .Take(take)
             .ToListAsync();
 
         var result = users.Select(u => new UserWithQuotaResponse(
@@ -74,7 +86,17 @@ public class AdminUsersController : ControllerBase
             )
         ));
 
-        return Ok(new { users = result });
+        return Ok(new 
+        { 
+            users = result,
+            pagination = new
+            {
+                skip,
+                take,
+                totalCount,
+                hasMore = skip + take < totalCount
+            }
+        });
     }
 
     /// <summary>
@@ -91,7 +113,9 @@ public class AdminUsersController : ControllerBase
 
         if (user == null)
         {
-            return NotFound(new { error = "User not found" });
+            return Problem(
+                detail: "User not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         return Ok(new UserQuotaResponse(
@@ -123,7 +147,9 @@ public class AdminUsersController : ControllerBase
 
         if (user == null)
         {
-            return NotFound(new { error = "User not found" });
+            return Problem(
+                detail: "User not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         if (user.Quota == null)
@@ -172,7 +198,9 @@ public class AdminUsersController : ControllerBase
         var quota = await _db.UserQuotas.FindAsync(userId);
         if (quota == null)
         {
-            return NotFound(new { error = "User quota not found" });
+            return Problem(
+                detail: "User quota not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         // Reset to defaults but keep usage tracking
@@ -198,12 +226,16 @@ public class AdminUsersController : ControllerBase
         var user = await _db.Users.FindAsync(userId);
         if (user == null)
         {
-            return NotFound(new { error = "User not found" });
+            return Problem(
+                detail: "User not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         if (user.IsAdmin)
         {
-            return BadRequest(new { error = "User is already an admin" });
+            return Problem(
+                detail: "User is already an admin",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         user.IsAdmin = true;
@@ -225,19 +257,25 @@ public class AdminUsersController : ControllerBase
         var user = await _db.Users.FindAsync(userId);
         if (user == null)
         {
-            return NotFound(new { error = "User not found" });
+            return Problem(
+                detail: "User not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         if (!user.IsAdmin)
         {
-            return BadRequest(new { error = "User is not an admin" });
+            return Problem(
+                detail: "User is not an admin",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Prevent demoting the last admin
         var adminCount = await _db.Users.CountAsync(u => u.IsAdmin);
         if (adminCount <= 1)
         {
-            return BadRequest(new { error = "Cannot demote the last admin" });
+            return Problem(
+                detail: "Cannot demote the last admin",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         user.IsAdmin = false;

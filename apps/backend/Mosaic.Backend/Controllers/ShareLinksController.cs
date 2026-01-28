@@ -138,6 +138,7 @@ public class ShareLinksController : ControllerBase
     private readonly IConfiguration _config;
     private readonly IStorageService _storage;
     private readonly ICurrentUserService _currentUserService;
+    private readonly bool _supportsExecuteUpdate;
 
     public ShareLinksController(
         MosaicDbContext db,
@@ -149,6 +150,8 @@ public class ShareLinksController : ControllerBase
         _config = config;
         _storage = storage;
         _currentUserService = currentUserService;
+        // InMemory provider doesn't support ExecuteUpdateAsync
+        _supportsExecuteUpdate = !db.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) ?? true;
     }
 
     /// <summary>
@@ -202,7 +205,9 @@ public class ShareLinksController : ControllerBase
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null)
         {
-            return NotFound(new { error = "Album not found" });
+            return Problem(
+                detail: "Album not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         if (album.OwnerId != user.Id)
@@ -213,43 +218,59 @@ public class ShareLinksController : ControllerBase
         // Validate request
         if (request.AccessTier < 1 || request.AccessTier > 3)
         {
-            return BadRequest(new { error = "accessTier must be 1, 2, or 3" });
+            return Problem(
+                detail: "accessTier must be 1, 2, or 3",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.LinkId == null || request.LinkId.Length != 16)
         {
-            return BadRequest(new { error = "linkId must be 16 bytes" });
+            return Problem(
+                detail: "linkId must be 16 bytes",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.WrappedKeys == null || request.WrappedKeys.Count == 0)
         {
-            return BadRequest(new { error = "wrappedKeys is required" });
+            return Problem(
+                detail: "wrappedKeys is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         foreach (var key in request.WrappedKeys)
         {
             if (key.Nonce == null || key.Nonce.Length != 24)
             {
-                return BadRequest(new { error = "Each wrapped key must have a 24-byte nonce" });
+                return Problem(
+                    detail: "Each wrapped key must have a 24-byte nonce",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
             if (key.EncryptedKey == null || key.EncryptedKey.Length == 0)
             {
-                return BadRequest(new { error = "Each wrapped key must have an encryptedKey" });
+                return Problem(
+                    detail: "Each wrapped key must have an encryptedKey",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
             if (key.Tier < 1 || key.Tier > 3)
             {
-                return BadRequest(new { error = "Each wrapped key tier must be 1, 2, or 3" });
+                return Problem(
+                    detail: "Each wrapped key tier must be 1, 2, or 3",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
         }
 
         if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
         {
-            return BadRequest(new { error = "expiresAt must be in the future" });
+            return Problem(
+                detail: "expiresAt must be in the future",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.MaxUses.HasValue && request.MaxUses.Value <= 0)
         {
-            return BadRequest(new { error = "maxUses must be positive" });
+            return Problem(
+                detail: "maxUses must be positive",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Check if linkId already exists
@@ -257,7 +278,9 @@ public class ShareLinksController : ControllerBase
             .AnyAsync(sl => sl.LinkId == request.LinkId);
         if (existingLink)
         {
-            return Conflict(new { error = "A link with this ID already exists" });
+            return Problem(
+                detail: "A link with this ID already exists",
+                statusCode: StatusCodes.Status409Conflict);
         }
 
         await using var tx = await _db.Database.BeginTransactionAsync();
@@ -324,7 +347,9 @@ public class ShareLinksController : ControllerBase
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null)
         {
-            return NotFound(new { error = "Album not found" });
+            return Problem(
+                detail: "Album not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         if (album.OwnerId != user.Id)
@@ -334,6 +359,7 @@ public class ShareLinksController : ControllerBase
 
         // Note: SQLite doesn't support DateTimeOffset in ORDER BY, so we order client-side
         var shareLinks = await _db.ShareLinks
+            .AsNoTracking()
             .Where(sl => sl.AlbumId == albumId)
             .ToListAsync();
 
@@ -366,7 +392,9 @@ public class ShareLinksController : ControllerBase
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null)
         {
-            return NotFound(new { error = "Album not found" });
+            return Problem(
+                detail: "Album not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
         if (album.OwnerId != user.Id)
         {
@@ -378,6 +406,7 @@ public class ShareLinksController : ControllerBase
         // since SQLite doesn't support DateTimeOffset comparisons in LINQ queries
         var now = DateTimeOffset.UtcNow;
         var allLinks = await _db.ShareLinks
+            .AsNoTracking()
             .Where(sl => sl.AlbumId == albumId &&
                          !sl.IsRevoked &&
                          sl.OwnerEncryptedSecret != null)
@@ -425,7 +454,9 @@ public class ShareLinksController : ControllerBase
 
         if (shareLink == null)
         {
-            return NotFound(new { error = "Share link not found" });
+            return Problem(
+                detail: "Share link not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
         if (shareLink.Album.OwnerId != user.Id)
         {
@@ -450,7 +481,9 @@ public class ShareLinksController : ControllerBase
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null)
         {
-            return NotFound(new { error = "Album not found" });
+            return Problem(
+                detail: "Album not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         if (album.OwnerId != user.Id)
@@ -462,7 +495,9 @@ public class ShareLinksController : ControllerBase
         var linkIdBytes = FromBase64Url(linkId);
         if (linkIdBytes == null)
         {
-            return BadRequest(new { error = "Invalid linkId format" });
+            return Problem(
+                detail: "Invalid linkId format",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Find the share link
@@ -471,24 +506,32 @@ public class ShareLinksController : ControllerBase
 
         if (shareLink == null)
         {
-            return NotFound(new { error = "Share link not found" });
+            return Problem(
+                detail: "Share link not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         if (shareLink.IsRevoked)
         {
-            return BadRequest(new { error = "Cannot update a revoked link" });
+            return Problem(
+                detail: "Cannot update a revoked link",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Validate ExpiresAt if provided and not null
         if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
         {
-            return BadRequest(new { error = "expiresAt must be in the future" });
+            return Problem(
+                detail: "expiresAt must be in the future",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Validate MaxUses if provided
         if (request.MaxUses.HasValue && request.MaxUses.Value <= 0)
         {
-            return BadRequest(new { error = "maxUses must be positive" });
+            return Problem(
+                detail: "maxUses must be positive",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Update expiration settings
@@ -526,7 +569,9 @@ public class ShareLinksController : ControllerBase
 
         if (shareLink == null)
         {
-            return NotFound(new { error = "Share link not found" });
+            return Problem(
+                detail: "Share link not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
         if (shareLink.Album.OwnerId != user.Id)
         {
@@ -534,28 +579,38 @@ public class ShareLinksController : ControllerBase
         }
         if (shareLink.IsRevoked)
         {
-            return BadRequest(new { error = "Cannot add keys to a revoked link" });
+            return Problem(
+                detail: "Cannot add keys to a revoked link",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Validate request
         if (request.EpochKeys == null || request.EpochKeys.Count == 0)
         {
-            return BadRequest(new { error = "epochKeys is required" });
+            return Problem(
+                detail: "epochKeys is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         foreach (var key in request.EpochKeys)
         {
             if (key.Nonce == null || key.Nonce.Length != 24)
             {
-                return BadRequest(new { error = "Each epoch key must have a 24-byte nonce" });
+                return Problem(
+                    detail: "Each epoch key must have a 24-byte nonce",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
             if (key.EncryptedKey == null || key.EncryptedKey.Length == 0)
             {
-                return BadRequest(new { error = "Each epoch key must have an encryptedKey" });
+                return Problem(
+                    detail: "Each epoch key must have an encryptedKey",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
             if (key.Tier < 1 || key.Tier > 3)
             {
-                return BadRequest(new { error = "Each epoch key tier must be 1, 2, or 3" });
+                return Problem(
+                    detail: "Each epoch key tier must be 1, 2, or 3",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
         }
 
@@ -624,7 +679,9 @@ public class ShareLinksController : ControllerBase
         var linkIdBytes = FromBase64Url(linkId);
         if (linkIdBytes == null)
         {
-            return BadRequest(new { error = "Invalid link ID format" });
+            return Problem(
+                detail: "Invalid link ID format",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         var shareLink = await _db.ShareLinks
@@ -635,7 +692,9 @@ public class ShareLinksController : ControllerBase
 
         if (shareLink == null)
         {
-            return NotFound(new { error = "Link not found" });
+            return Problem(
+                detail: "Link not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         // Check if revoked
@@ -650,20 +709,43 @@ public class ShareLinksController : ControllerBase
             return Gone(new { error = "This link has expired" });
         }
 
-        // Use atomic update to prevent race conditions on MaxUses
-        var updated = await _db.ShareLinks
-            .Where(sl => sl.LinkId == linkIdBytes &&
-                         !sl.IsRevoked &&
-                         (!sl.MaxUses.HasValue || sl.UseCount < sl.MaxUses.Value))
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.UseCount, x => x.UseCount + 1));
+        bool updateSucceeded;
 
-        if (updated == 0)
+        if (_supportsExecuteUpdate)
+        {
+            // Use atomic update to prevent race conditions on MaxUses (PostgreSQL/SQLite)
+            var updated = await _db.ShareLinks
+                .Where(sl => sl.LinkId == linkIdBytes &&
+                             !sl.IsRevoked &&
+                             (!sl.MaxUses.HasValue || sl.UseCount < sl.MaxUses.Value))
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.UseCount, x => x.UseCount + 1));
+
+            updateSucceeded = updated > 0;
+        }
+        else
+        {
+            // Fallback for InMemory provider (tests only)
+            if (shareLink.MaxUses.HasValue && shareLink.UseCount >= shareLink.MaxUses.Value)
+            {
+                updateSucceeded = false;
+            }
+            else
+            {
+                shareLink.UseCount++;
+                await _db.SaveChangesAsync();
+                updateSucceeded = true;
+            }
+        }
+
+        if (!updateSucceeded)
         {
             // Re-fetch to determine specific reason (link was modified between initial fetch and update)
             var link = await _db.ShareLinks.FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
             if (link == null)
             {
-                return NotFound(new { error = "Link not found" });
+                return Problem(
+                    detail: "Link not found",
+                    statusCode: StatusCodes.Status404NotFound);
             }
             if (link.IsRevoked)
             {
@@ -690,7 +772,9 @@ public class ShareLinksController : ControllerBase
         var linkIdBytes = FromBase64Url(linkId);
         if (linkIdBytes == null)
         {
-            return BadRequest(new { error = "Invalid link ID format" });
+            return Problem(
+                detail: "Invalid link ID format",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         var shareLink = await _db.ShareLinks
@@ -699,7 +783,9 @@ public class ShareLinksController : ControllerBase
 
         if (shareLink == null)
         {
-            return NotFound(new { error = "Link not found" });
+            return Problem(
+                detail: "Link not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         // Validate link is still valid (but don't increment use count for key fetch)
@@ -739,12 +825,16 @@ public class ShareLinksController : ControllerBase
     /// Get photo metadata for a share link (anonymous)
     /// </summary>
     [HttpGet("api/s/{linkId}/photos")]
-    public async Task<IActionResult> GetPhotos(string linkId)
+    public async Task<IActionResult> GetPhotos(string linkId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
+        take = Math.Clamp(take, 1, 100);
+
         var linkIdBytes = FromBase64Url(linkId);
         if (linkIdBytes == null)
         {
-            return BadRequest(new { error = "Invalid link ID format" });
+            return Problem(
+                detail: "Invalid link ID format",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         var shareLink = await _db.ShareLinks
@@ -752,7 +842,9 @@ public class ShareLinksController : ControllerBase
 
         if (shareLink == null)
         {
-            return NotFound(new { error = "Link not found" });
+            return Problem(
+                detail: "Link not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         // Validate link is still valid (but don't increment use count for photo fetch)
@@ -762,11 +854,14 @@ public class ShareLinksController : ControllerBase
             return validationResult;
         }
 
-        // Get all non-deleted manifests for the album
+        // Get non-deleted manifests for the album with pagination
         var manifests = await _db.Manifests
+            .AsNoTracking()
             .Where(m => m.AlbumId == shareLink.AlbumId && !m.IsDeleted)
             .Include(m => m.ManifestShards.OrderBy(ms => ms.ChunkIndex))
             .OrderBy(m => m.VersionCreated)
+            .Skip(skip)
+            .Take(take)
             .Select(m => new ShareLinkPhotoResponse
             {
                 Id = m.Id,
@@ -791,7 +886,9 @@ public class ShareLinksController : ControllerBase
         var linkIdBytes = FromBase64Url(linkId);
         if (linkIdBytes == null)
         {
-            return BadRequest(new { error = "Invalid link ID format" });
+            return Problem(
+                detail: "Invalid link ID format",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         var shareLink = await _db.ShareLinks
@@ -799,7 +896,9 @@ public class ShareLinksController : ControllerBase
 
         if (shareLink == null)
         {
-            return NotFound(new { error = "Link not found" });
+            return Problem(
+                detail: "Link not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         // Validate link is still valid (but don't increment use count for shard download)
@@ -813,11 +912,15 @@ public class ShareLinksController : ControllerBase
         var shard = await _db.Shards.FindAsync(shardId);
         if (shard == null)
         {
-            return NotFound(new { error = "Shard not found" });
+            return Problem(
+                detail: "Shard not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
         if (shard.Status != ShardStatus.ACTIVE)
         {
-            return NotFound(new { error = "Shard not available" });
+            return Problem(
+                detail: "Shard not available",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         // Verify the shard belongs to the linked album
@@ -828,6 +931,12 @@ public class ShareLinksController : ControllerBase
         if (!shardBelongsToAlbum)
         {
             return Forbid();
+        }
+
+        // Add SHA256 for client-side integrity verification
+        if (!string.IsNullOrEmpty(shard.Sha256))
+        {
+            Response.Headers["X-Content-SHA256"] = shard.Sha256;
         }
 
         var stream = await _storage.OpenReadAsync(shard.StorageKey);

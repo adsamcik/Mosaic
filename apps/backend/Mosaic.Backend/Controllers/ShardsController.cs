@@ -69,6 +69,12 @@ public class ShardsController : ControllerBase
         // Set aggressive caching headers - shards are immutable (content-addressed)
         Response.Headers.CacheControl = "public, max-age=31536000, immutable";
         Response.Headers.ETag = $"\"{shardId}\"";
+        
+        // Add SHA256 for client-side integrity verification
+        if (!string.IsNullOrEmpty(shard.Sha256))
+        {
+            Response.Headers["X-Content-SHA256"] = shard.Sha256;
+        }
 
         var stream = await _storage.OpenReadAsync(shard.StorageKey);
         return File(stream, "application/octet-stream");
@@ -113,7 +119,8 @@ public class ShardsController : ControllerBase
             shard.Id,
             shard.SizeBytes,
             shard.Status,
-            shard.StatusUpdatedAt
+            shard.StatusUpdatedAt,
+            shard.Sha256
         });
     }
 }

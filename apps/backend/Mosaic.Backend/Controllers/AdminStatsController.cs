@@ -58,6 +58,7 @@ public class AdminStatsController : ControllerBase
 
         // Find users near quota (>= 80% used)
         var usersNearQuota = await _db.Users
+            .AsNoTracking()
             .Include(u => u.Quota)
             .Where(u => u.Quota != null)
             .Select(u => new
@@ -78,6 +79,7 @@ public class AdminStatsController : ControllerBase
 
         // Find albums near limit (>= 80% photos or size)
         var albumsNearLimit = await _db.Albums
+            .AsNoTracking()
             .Include(a => a.Owner)
             .Include(a => a.Limits)
             .AsSplitQuery()

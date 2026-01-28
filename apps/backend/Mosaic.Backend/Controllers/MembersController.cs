@@ -30,8 +30,10 @@ public class MembersController : ControllerBase
     /// List album members
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> List(Guid albumId)
+    public async Task<IActionResult> List(Guid albumId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
+        take = Math.Clamp(take, 1, 100);
+
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify access
@@ -44,7 +46,10 @@ public class MembersController : ControllerBase
         }
 
         var members = await _db.AlbumMembers
+            .AsNoTracking()
             .Where(am => am.AlbumId == albumId)
+            .Skip(skip)
+            .Take(take)
             .Select(am => new
             {
                 am.UserId,
@@ -89,13 +94,17 @@ public class MembersController : ControllerBase
         // Validate role
         if (!AlbumRoles.IsValidForInvite(request.Role))
         {
-            return BadRequest("Role must be 'viewer' or 'editor'");
+            return Problem(
+                detail: "Role must be 'viewer' or 'editor'",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Validate epoch keys are provided
         if (request.EpochKeys == null || request.EpochKeys.Length == 0)
         {
-            return BadRequest("At least one epoch key is required");
+            return Problem(
+                detail: "At least one epoch key is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Verify caller has permission to invite
@@ -116,7 +125,9 @@ public class MembersController : ControllerBase
         var targetUser = await _db.Users.FindAsync(request.RecipientId);
         if (targetUser == null)
         {
-            return NotFound(new { error = "User not found" });
+            return Problem(
+                detail: "User not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         // Check if already a member
@@ -125,7 +136,9 @@ public class MembersController : ControllerBase
 
         if (existing != null && existing.RevokedAt == null)
         {
-            return Conflict("User is already a member");
+            return Problem(
+                detail: "User is already a member",
+                statusCode: StatusCodes.Status409Conflict);
         }
 
         // Use transaction for atomicity
@@ -184,7 +197,9 @@ public class MembersController : ControllerBase
         catch (FormatException)
         {
             await transaction.RollbackAsync();
-            return BadRequest("Invalid base64 encoding in epoch key data");
+            return Problem(
+                detail: "Invalid base64 encoding in epoch key data",
+                statusCode: StatusCodes.Status400BadRequest);
         }
         catch
         {
@@ -216,7 +231,9 @@ public class MembersController : ControllerBase
         // Cannot remove owner
         if (userId == album.OwnerId)
         {
-            return BadRequest("Cannot remove album owner");
+            return Problem(
+                detail: "Cannot remove album owner",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         var membership = await _db.AlbumMembers

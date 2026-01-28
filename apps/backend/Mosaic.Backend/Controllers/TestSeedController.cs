@@ -7,6 +7,7 @@ using System.Text.Json;
 
 namespace Mosaic.Backend.Controllers;
 
+#if DEBUG
 /// <summary>
 /// E2E test seeding controller for managing test users and data.
 /// This controller is ONLY available when ASPNETCORE_ENVIRONMENT is "Development" or "Testing".
@@ -578,3 +579,4 @@ public class TestSeedController : ControllerBase
 
     #endregion
 }
+#endif

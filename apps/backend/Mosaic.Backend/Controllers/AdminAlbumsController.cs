@@ -49,16 +49,28 @@ public class AdminAlbumsController : ControllerBase
     /// <summary>
     /// List all albums with limit info
     /// </summary>
+    /// <param name="skip">Number of records to skip (default: 0)</param>
+    /// <param name="take">Number of records to take (default: 50, max: 100)</param>
     [HttpGet]
-    public async Task<IActionResult> ListAlbums()
+    public async Task<IActionResult> ListAlbums([FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
+        // Validate pagination parameters
+        skip = Math.Max(0, skip);
+        take = Math.Clamp(take, 1, 100);
+
         var defaults = await _quotaService.GetDefaultsAsync();
 
+        // Get total count for pagination metadata
+        var totalCount = await _db.Albums.CountAsync();
+
         var albums = await _db.Albums
+            .AsNoTracking()
             .Include(a => a.Owner)
             .Include(a => a.Limits)
             .AsSplitQuery()
             .OrderByDescending(a => a.CreatedAt)
+            .Skip(skip)
+            .Take(take)
             .ToListAsync();
 
         var result = albums.Select(a => new AlbumWithLimitsResponse(
@@ -75,7 +87,17 @@ public class AdminAlbumsController : ControllerBase
             )
         ));
 
-        return Ok(new { albums = result });
+        return Ok(new 
+        { 
+            albums = result,
+            pagination = new
+            {
+                skip,
+                take,
+                totalCount,
+                hasMore = skip + take < totalCount
+            }
+        });
     }
 
     /// <summary>
@@ -92,7 +114,9 @@ public class AdminAlbumsController : ControllerBase
 
         if (album == null)
         {
-            return NotFound(new { error = "Album not found" });
+            return Problem(
+                detail: "Album not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         return Ok(new AlbumLimitsResponse(
@@ -124,7 +148,9 @@ public class AdminAlbumsController : ControllerBase
 
         if (album == null)
         {
-            return NotFound(new { error = "Album not found" });
+            return Problem(
+                detail: "Album not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         if (album.Limits == null)
@@ -170,7 +196,9 @@ public class AdminAlbumsController : ControllerBase
         var limits = await _db.AlbumLimits.FindAsync(albumId);
         if (limits == null)
         {
-            return NotFound(new { error = "Album limits not found" });
+            return Problem(
+                detail: "Album limits not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         // Reset to defaults but keep usage tracking

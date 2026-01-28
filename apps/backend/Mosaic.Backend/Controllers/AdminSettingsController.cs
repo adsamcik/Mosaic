@@ -56,22 +56,30 @@ public class AdminSettingsController : ControllerBase
 
         if (request.MaxStorageBytesPerUser <= 0)
         {
-            return BadRequest(new { error = "MaxStorageBytesPerUser must be positive" });
+            return Problem(
+                detail: "MaxStorageBytesPerUser must be positive",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.MaxAlbumsPerUser <= 0)
         {
-            return BadRequest(new { error = "MaxAlbumsPerUser must be positive" });
+            return Problem(
+                detail: "MaxAlbumsPerUser must be positive",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.MaxPhotosPerAlbum <= 0)
         {
-            return BadRequest(new { error = "MaxPhotosPerAlbum must be positive" });
+            return Problem(
+                detail: "MaxPhotosPerAlbum must be positive",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.MaxBytesPerAlbum <= 0)
         {
-            return BadRequest(new { error = "MaxBytesPerAlbum must be positive" });
+            return Problem(
+                detail: "MaxBytesPerAlbum must be positive",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         var defaults = new QuotaDefaults(

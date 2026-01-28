@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
@@ -40,18 +41,21 @@ public partial class AuthController : ControllerBase
     private static partial Regex ValidUsernamePattern();
 
     private readonly IWebHostEnvironment _env;
+    private readonly IMemoryCache _cache;
     private readonly bool _isProxyAuthMode;
 
     public AuthController(
         MosaicDbContext db,
         IConfiguration config,
         ILogger<AuthController> logger,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        IMemoryCache cache)
     {
         _db = db;
         _config = config;
         _logger = logger;
         _env = env;
+        _cache = cache;
 
         // Check if LocalAuth mode is enabled (support both new and legacy config)
         var legacyMode = config["Auth:Mode"];
@@ -102,12 +106,16 @@ public partial class AuthController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(request.Username))
         {
-            return BadRequest(new { error = "Username is required" });
+            return Problem(
+                detail: "Username is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (!ValidUsernamePattern().IsMatch(request.Username))
         {
-            return BadRequest(new { error = "Invalid username format" });
+            return Problem(
+                detail: "Invalid username format",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
@@ -187,7 +195,9 @@ public partial class AuthController : ControllerBase
             string.IsNullOrWhiteSpace(request.Signature) ||
             request.ChallengeId == Guid.Empty)
         {
-            return BadRequest(new { error = "Missing required fields" });
+            return Problem(
+                detail: "Missing required fields",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
@@ -212,22 +222,30 @@ public partial class AuthController : ControllerBase
         var authChallenge = await _db.AuthChallenges.FindAsync(request.ChallengeId);
         if (authChallenge == null)
         {
-            return Unauthorized(new { error = "Invalid or expired challenge" });
+            return Problem(
+                detail: "Invalid or expired challenge",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
 
         if (authChallenge.Username != request.Username)
         {
-            return Unauthorized(new { error = "Invalid challenge" });
+            return Problem(
+                detail: "Invalid challenge",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
 
         if (authChallenge.IsUsed)
         {
-            return Unauthorized(new { error = "Challenge already used" });
+            return Problem(
+                detail: "Challenge already used",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
 
         if (authChallenge.ExpiresAt < DateTime.UtcNow)
         {
-            return Unauthorized(new { error = "Challenge expired" });
+            return Problem(
+                detail: "Challenge expired",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
 
         // Mark challenge as used (single-use)
@@ -241,7 +259,9 @@ public partial class AuthController : ControllerBase
             // User doesn't exist or doesn't have local auth set up
             // Return same error to prevent enumeration
             _logger.AuthChallengeFailed(request.Username, "user not found or no local auth");
-            return Unauthorized(new { error = "Invalid credentials" });
+            return Problem(
+                detail: "Invalid credentials",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
 
         // Verify signature
@@ -258,13 +278,17 @@ public partial class AuthController : ControllerBase
             if (!isValid)
             {
                 _logger.AuthChallengeFailed(request.Username, "invalid signature");
-                return Unauthorized(new { error = "Invalid credentials" });
+                return Problem(
+                    detail: "Invalid credentials",
+                    statusCode: StatusCodes.Status401Unauthorized);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Signature verification error for {Username}", request.Username);
-            return Unauthorized(new { error = "Invalid credentials" });
+            return Problem(
+                detail: "Invalid credentials",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
 
         // Authentication successful - create session
@@ -327,19 +351,45 @@ public partial class AuthController : ControllerBase
             request.UserSalt == null ||
             request.AccountSalt == null)
         {
-            return BadRequest(new { error = "Missing required fields" });
+            return Problem(
+                detail: "Missing required fields",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (!ValidUsernamePattern().IsMatch(request.Username))
         {
-            return BadRequest(new { error = "Invalid username format" });
+            return Problem(
+                detail: "Invalid username format",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // Rate limit registration attempts per IP (max 5 per hour)
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var cacheKey = $"register_limit:{ipAddress}";
+        if (!_env.IsDevelopment() && !_env.IsEnvironment("Testing"))
+        {
+            var attempts = _cache.GetOrCreate(cacheKey, entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1);
+                return 0;
+            });
+
+            if (attempts >= 5)
+            {
+                _logger.LogWarning("Registration rate limited for IP {IpAddress}", ipAddress);
+                return StatusCode(429, new { error = "Too many registration attempts. Please try again later." });
+            }
+
+            _cache.Set(cacheKey, attempts + 1, TimeSpan.FromHours(1));
         }
 
         // Check if user already exists
         var existingUser = await _db.Users.AnyAsync(u => u.AuthSub == request.Username);
         if (existingUser)
         {
-            return Conflict(new { error = "Username already exists" });
+            return Problem(
+                detail: "Username already exists",
+                statusCode: StatusCodes.Status409Conflict);
         }
 
         // Validate key lengths
@@ -353,17 +403,23 @@ public partial class AuthController : ControllerBase
 
             if (userSalt.Length != 16)
             {
-                return BadRequest(new { error = "UserSalt must be 16 bytes" });
+                return Problem(
+                    detail: "UserSalt must be 16 bytes",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             if (accountSalt.Length != 16)
             {
-                return BadRequest(new { error = "AccountSalt must be 16 bytes" });
+                return Problem(
+                    detail: "AccountSalt must be 16 bytes",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
         }
         catch (FormatException)
         {
-            return BadRequest(new { error = "Invalid base64 encoding" });
+            return Problem(
+                detail: "Invalid base64 encoding",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Check if this is the first user (make them admin)
@@ -457,7 +513,12 @@ public partial class AuthController : ControllerBase
             return Unauthorized();
         }
 
-        var sessions = await _db.Sessions
+        // Get current token hash ONCE before the query to avoid timing attacks
+        var currentTokenHash = GetCurrentTokenHash();
+
+        // Load session data without IsCurrent flag (can't do constant-time comparison in SQL)
+        var sessionsData = await _db.Sessions
+            .AsNoTracking()
             .Where(s => s.UserId == userId && s.RevokedAt == null && s.ExpiresAt > DateTime.UtcNow)
             .OrderByDescending(s => s.LastSeenAt)
             .Select(s => new
@@ -467,9 +528,21 @@ public partial class AuthController : ControllerBase
                 s.IpAddress,
                 s.CreatedAt,
                 s.LastSeenAt,
-                IsCurrent = s.TokenHash == GetCurrentTokenHash()
+                s.TokenHash
             })
             .ToListAsync();
+
+        // Map with constant-time comparison to prevent timing attacks
+        var sessions = sessionsData.Select(s => new
+        {
+            s.Id,
+            s.DeviceName,
+            s.IpAddress,
+            s.CreatedAt,
+            s.LastSeenAt,
+            IsCurrent = currentTokenHash != null &&
+                       CryptographicOperations.FixedTimeEquals(s.TokenHash, currentTokenHash)
+        }).ToList();
 
         return Ok(sessions);
     }

@@ -38,6 +38,7 @@ public class EpochKeysController : ControllerBase
         }
 
         var keys = await _db.EpochKeys
+            .AsNoTracking()
             .Where(ek => ek.AlbumId == albumId && ek.RecipientId == user.Id)
             .Select(ek => new
             {
@@ -93,19 +94,23 @@ public class EpochKeysController : ControllerBase
         var recipient = await _db.Users.FindAsync(request.RecipientId);
         if (recipient == null)
         {
-            return NotFound(new { error = "Recipient not found" });
+            return Problem(
+                detail: "Recipient not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
-        // Check for existing key
-        var existing = await _db.EpochKeys
-            .FirstOrDefaultAsync(ek =>
+        // Check for existing key (fast path - handles normal duplicates)
+        var existingKey = await _db.EpochKeys
+            .AnyAsync(ek =>
                 ek.AlbumId == albumId &&
                 ek.RecipientId == request.RecipientId &&
                 ek.EpochId == request.EpochId);
 
-        if (existing != null)
+        if (existingKey)
         {
-            return Conflict("Epoch key already exists for this album/recipient/epoch");
+            return Problem(
+                detail: "Epoch key already exists for this album/recipient/epoch",
+                statusCode: StatusCodes.Status409Conflict);
         }
 
         var epochKey = new EpochKey
@@ -121,7 +126,18 @@ public class EpochKeysController : ControllerBase
         };
 
         _db.EpochKeys.Add(epochKey);
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // Handle race condition: another request created this key concurrently
+            // The database unique constraint prevents duplicates even if the check above passed
+            return Problem(
+                detail: "Epoch key already exists for this album/recipient/epoch",
+                statusCode: StatusCodes.Status409Conflict);
+        }
 
         return Created($"/api/albums/{albumId}/epoch-keys/{epochKey.Id}", new
         {
@@ -212,7 +228,9 @@ public class EpochKeysController : ControllerBase
         // Validate epoch ID is greater than current
         if (epochId <= album.CurrentEpochId)
         {
-            return BadRequest($"New epoch ID must be greater than current ({album.CurrentEpochId})");
+            return Problem(
+                detail: $"New epoch ID must be greater than current ({album.CurrentEpochId})",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Batch load data to avoid N+1 queries
@@ -257,14 +275,18 @@ public class EpochKeysController : ControllerBase
                 if (!activeMembers.Contains(keyRequest.RecipientId))
                 {
                     await tx.RollbackAsync();
-                    return BadRequest($"Recipient {keyRequest.RecipientId} is not a member of this album");
+                    return Problem(
+                        detail: $"Recipient {keyRequest.RecipientId} is not a member of this album",
+                        statusCode: StatusCodes.Status400BadRequest);
                 }
 
                 // Check for existing key (using pre-loaded data)
                 if (existingKeys.Contains(keyRequest.RecipientId))
                 {
                     await tx.RollbackAsync();
-                    return Conflict($"Epoch key already exists for recipient {keyRequest.RecipientId}");
+                    return Problem(
+                        detail: $"Epoch key already exists for recipient {keyRequest.RecipientId}",
+                        statusCode: StatusCodes.Status409Conflict);
                 }
 
                 var epochKey = new EpochKey
@@ -292,7 +314,9 @@ public class EpochKeysController : ControllerBase
                     if (!shareLinksByLinkId.TryGetValue(linkUpdate.ShareLinkId, out var shareLink))
                     {
                         await tx.RollbackAsync();
-                        return BadRequest($"Share link {linkUpdate.ShareLinkId} not found or doesn't belong to this album");
+                        return Problem(
+                            detail: $"Share link {linkUpdate.ShareLinkId} not found or doesn't belong to this album",
+                            statusCode: StatusCodes.Status400BadRequest);
                     }
 
                     // Verify link is not revoked
@@ -307,17 +331,23 @@ public class EpochKeysController : ControllerBase
                         if (wrappedKey.Nonce == null || wrappedKey.Nonce.Length != 24)
                         {
                             await tx.RollbackAsync();
-                            return BadRequest("Each wrapped key must have a 24-byte nonce");
+                            return Problem(
+                                detail: "Each wrapped key must have a 24-byte nonce",
+                                statusCode: StatusCodes.Status400BadRequest);
                         }
                         if (wrappedKey.EncryptedKey == null || wrappedKey.EncryptedKey.Length == 0)
                         {
                             await tx.RollbackAsync();
-                            return BadRequest("Each wrapped key must have an encryptedKey");
+                            return Problem(
+                                detail: "Each wrapped key must have an encryptedKey",
+                                statusCode: StatusCodes.Status400BadRequest);
                         }
                         if (wrappedKey.Tier < 1 || wrappedKey.Tier > shareLink.AccessTier)
                         {
                             await tx.RollbackAsync();
-                            return BadRequest($"Wrapped key tier must be between 1 and {shareLink.AccessTier}");
+                            return Problem(
+                                detail: $"Wrapped key tier must be between 1 and {shareLink.AccessTier}",
+                                statusCode: StatusCodes.Status400BadRequest);
                         }
 
                         _db.LinkEpochKeys.Add(new LinkEpochKey
@@ -344,6 +374,23 @@ public class EpochKeysController : ControllerBase
                 KeyCount = request.EpochKeys.Length,
                 ShareLinkKeysUpdated = shareLinkKeysUpdated
             });
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("unique", StringComparison.OrdinalIgnoreCase) == true ||
+                                            ex.InnerException?.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            // Handle race condition: another request created keys for this epoch concurrently
+            await tx.RollbackAsync();
+            return Problem(
+                detail: "Epoch keys already exist for this epoch. Another request may have created them concurrently.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Handle optimistic concurrency violations
+            await tx.RollbackAsync();
+            return Problem(
+                detail: "Album was modified by another request. Please retry.",
+                statusCode: StatusCodes.Status409Conflict);
         }
         catch
         {

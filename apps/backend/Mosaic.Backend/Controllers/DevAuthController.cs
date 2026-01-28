@@ -7,6 +7,7 @@ using Mosaic.Backend.Logging;
 
 namespace Mosaic.Backend.Controllers;
 
+#if DEBUG
 /// <summary>
 /// Development-only authentication controller.
 /// Provides quick login without cryptographic verification for local testing.
@@ -72,7 +73,9 @@ public class DevAuthController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(request.Username))
         {
-            return BadRequest(new { error = "Username is required" });
+            return Problem(
+                detail: "Username is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         Log.DevAuthLogin(_logger, request.Username);
@@ -168,7 +171,9 @@ public class DevAuthController : ControllerBase
         // Get session from cookie
         if (!Request.Cookies.TryGetValue("mosaic_session", out var tokenBase64))
         {
-            return Unauthorized(new { error = "Not authenticated" });
+            return Problem(
+                detail: "Not authenticated",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
 
         byte[] token;
@@ -178,7 +183,9 @@ public class DevAuthController : ControllerBase
         }
         catch
         {
-            return Unauthorized(new { error = "Invalid session" });
+            return Problem(
+                detail: "Invalid session",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
 
         var tokenHash = SHA256.HashData(token);
@@ -191,7 +198,9 @@ public class DevAuthController : ControllerBase
 
         if (session?.User == null)
         {
-            return Unauthorized(new { error = "Session not found" });
+            return Problem(
+                detail: "Session not found",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
 
         // Update user's crypto keys
@@ -256,3 +265,4 @@ public record DevUpdateKeysRequest
     public string? WrappedAccountKey { get; init; }
     public string? WrappedIdentitySeed { get; init; }
 }
+#endif

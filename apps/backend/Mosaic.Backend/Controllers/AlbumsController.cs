@@ -117,12 +117,17 @@ public class AlbumsController : ControllerBase
     /// List all albums the user has access to
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> List()
+    public async Task<IActionResult> List([FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
+        take = Math.Clamp(take, 1, 100);
+
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var albums = await _db.AlbumMembers
+            .AsNoTracking()
             .Where(am => am.UserId == user.Id && am.RevokedAt == null)
+            .Skip(skip)
+            .Take(take)
             .Select(am => new
             {
                 am.Album.Id,
@@ -152,38 +157,52 @@ public class AlbumsController : ControllerBase
         // Validate request
         if (request.InitialEpochKey == null)
         {
-            return BadRequest(new { error = "initialEpochKey is required" });
+            return Problem(
+                detail: "initialEpochKey is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.InitialEpochKey.EncryptedKeyBundle == null || request.InitialEpochKey.EncryptedKeyBundle.Length == 0)
         {
-            return BadRequest(new { error = "encryptedKeyBundle is required" });
+            return Problem(
+                detail: "encryptedKeyBundle is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.InitialEpochKey.OwnerSignature == null || request.InitialEpochKey.OwnerSignature.Length == 0)
         {
-            return BadRequest(new { error = "ownerSignature is required" });
+            return Problem(
+                detail: "ownerSignature is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.InitialEpochKey.SharerPubkey == null || request.InitialEpochKey.SharerPubkey.Length == 0)
         {
-            return BadRequest(new { error = "sharerPubkey is required" });
+            return Problem(
+                detail: "sharerPubkey is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.InitialEpochKey.SignPubkey == null || request.InitialEpochKey.SignPubkey.Length == 0)
         {
-            return BadRequest(new { error = "signPubkey is required" });
+            return Problem(
+                detail: "signPubkey is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Validate expiration if provided
         if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
         {
-            return BadRequest(new { error = "expiresAt must be in the future" });
+            return Problem(
+                detail: "expiresAt must be in the future",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.ExpirationWarningDays.HasValue && request.ExpirationWarningDays.Value < 0)
         {
-            return BadRequest(new { error = "expirationWarningDays must be non-negative" });
+            return Problem(
+                detail: "expirationWarningDays must be non-negative",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Check album count limit
@@ -194,7 +213,9 @@ public class AlbumsController : ControllerBase
         if (currentAlbumCount >= maxAlbums)
         {
             _logger.AlbumCountLimitExceeded(user.Id, currentAlbumCount, maxAlbums);
-            return BadRequest(new { error = "ALBUM_LIMIT_EXCEEDED", message = $"Maximum album limit ({maxAlbums}) reached" });
+            return Problem(
+                detail: $"ALBUM_LIMIT_EXCEEDED: Maximum album limit ({maxAlbums}) reached",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Create album, member, and epoch key in single transaction
@@ -284,6 +305,7 @@ public class AlbumsController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var membership = await _db.AlbumMembers
+            .AsNoTracking()
             .Where(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null)
             .FirstOrDefaultAsync();
 
@@ -336,12 +358,16 @@ public class AlbumsController : ControllerBase
         // Validate expiresAt if provided (null is allowed to remove expiration)
         if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
         {
-            return BadRequest(new { error = "expiresAt must be in the future" });
+            return Problem(
+                detail: "expiresAt must be in the future",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         if (request.ExpirationWarningDays.HasValue && request.ExpirationWarningDays.Value < 0)
         {
-            return BadRequest(new { error = "expirationWarningDays must be non-negative" });
+            return Problem(
+                detail: "expirationWarningDays must be non-negative",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Update expiration settings
@@ -394,6 +420,7 @@ public class AlbumsController : ControllerBase
         }
 
         var manifests = await _db.Manifests
+            .AsNoTracking()
             .Where(m => m.AlbumId == albumId && m.VersionCreated > since)
             .OrderBy(m => m.VersionCreated)
             .Take(100)
@@ -486,6 +513,7 @@ public class AlbumsController : ControllerBase
 
         // Check membership - owner or editor can rename
         var membership = await _db.AlbumMembers
+            .AsNoTracking()
             .Where(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null)
             .FirstOrDefaultAsync();
 
@@ -509,7 +537,9 @@ public class AlbumsController : ControllerBase
         // Validate encrypted name
         if (string.IsNullOrWhiteSpace(request.EncryptedName))
         {
-            return BadRequest(new { error = "encryptedName is required" });
+            return Problem(
+                detail: "encryptedName is required",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Update encrypted name
@@ -542,6 +572,7 @@ public class AlbumsController : ControllerBase
 
         // Check membership - owner or editor can update description
         var membership = await _db.AlbumMembers
+            .AsNoTracking()
             .Where(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null)
             .FirstOrDefaultAsync();
 

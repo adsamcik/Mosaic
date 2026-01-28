@@ -77,7 +77,9 @@ public class ManifestsController : ControllerBase
                 if (!Guid.TryParse(tieredShard.ShardId, out var shardGuid))
                 {
                     _logger.LogWarning("Invalid shard ID format: {ShardId}", tieredShard.ShardId);
-                    return BadRequest($"Invalid shard ID format: {tieredShard.ShardId}");
+                    return Problem(
+                        detail: $"Invalid shard ID format: {tieredShard.ShardId}",
+                        statusCode: StatusCodes.Status400BadRequest);
                 }
                 shardInfoList.Add((shardGuid, tieredShard.Tier));
             }
@@ -91,7 +93,9 @@ public class ManifestsController : ControllerBase
                 if (!Guid.TryParse(shardIdStr, out var shardGuid))
                 {
                     _logger.LogWarning("Invalid shard ID format: {ShardId}", shardIdStr);
-                    return BadRequest($"Invalid shard ID format: {shardIdStr}");
+                    return Problem(
+                        detail: $"Invalid shard ID format: {shardIdStr}",
+                        statusCode: StatusCodes.Status400BadRequest);
                 }
                 shardInfoList.Add((shardGuid, defaultTier));
             }
@@ -124,7 +128,9 @@ public class ManifestsController : ControllerBase
 
             if (album == null)
             {
-                return NotFound(new { error = "Album not found" });
+                return Problem(
+                    detail: "Album not found",
+                    statusCode: StatusCodes.Status404NotFound);
             }
 
             // 2. Verify membership
@@ -154,7 +160,9 @@ public class ManifestsController : ControllerBase
                 _logger.LogWarning("Shards not found: requested {Requested}, found {Found}. Missing: {Missing}",
                     shardGuids.Count, shards.Count,
                     string.Join(",", shardGuids.Except(shards.Select(s => s.Id))));
-                return BadRequest("Some shards not found");
+                return Problem(
+                    detail: "Some shards not found",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             if (shards.Any(s => s.UploaderId != user.Id))
@@ -169,7 +177,9 @@ public class ManifestsController : ControllerBase
                 var nonPending = shards.Where(s => s.Status != ShardStatus.PENDING);
                 _logger.LogWarning("Shards already linked: {Shards}",
                     string.Join(",", nonPending.Select(s => $"{s.Id}={s.Status}")));
-                return BadRequest("Some shards already linked to a manifest");
+                return Problem(
+                    detail: "Some shards already linked to a manifest",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             // 4. Check album limits
@@ -184,13 +194,17 @@ public class ManifestsController : ControllerBase
             if (currentPhotoCount >= maxPhotos)
             {
                 _logger.PhotoCountLimitExceeded(album.Id, currentPhotoCount, maxPhotos);
-                return BadRequest(new { error = "ALBUM_PHOTOS_EXCEEDED", message = $"Album photo limit ({maxPhotos}) reached" });
+                return Problem(
+                    detail: $"ALBUM_PHOTOS_EXCEEDED: Album photo limit ({maxPhotos}) reached",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             if (currentSizeBytes + shardsTotalSize > maxSize)
             {
                 _logger.PhotoSizeLimitExceeded(album.Id, currentSizeBytes + shardsTotalSize, maxSize);
-                return BadRequest(new { error = "ALBUM_SIZE_EXCEEDED", message = "Album size limit exceeded" });
+                return Problem(
+                    detail: "ALBUM_SIZE_EXCEEDED: Album size limit exceeded",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             // 5. Create manifest

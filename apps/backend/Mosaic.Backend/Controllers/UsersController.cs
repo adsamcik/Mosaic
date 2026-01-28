@@ -68,7 +68,9 @@ public class UsersController : ControllerBase
             // Only allow setting identity pubkey once (or if empty)
             if (!string.IsNullOrEmpty(user.IdentityPubkey) && user.IdentityPubkey != request.IdentityPubkey)
             {
-                return BadRequest(new { error = "Identity pubkey already set" });
+                return Problem(
+                    detail: "Identity pubkey already set",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
             user.IdentityPubkey = request.IdentityPubkey;
         }
@@ -85,11 +87,15 @@ public class UsersController : ControllerBase
                 // Nonce should be 12 bytes for AES-GCM
                 if (saltNonceBytes.Length != 12)
                 {
-                    return BadRequest(new { error = "Invalid salt nonce length, expected 12 bytes" });
+                    return Problem(
+                        detail: "Invalid salt nonce length, expected 12 bytes",
+                        statusCode: StatusCodes.Status400BadRequest);
                 }
                 if (encryptedSaltBytes.Length < 16)
                 {
-                    return BadRequest(new { error = "Invalid encrypted salt length" });
+                    return Problem(
+                        detail: "Invalid encrypted salt length",
+                        statusCode: StatusCodes.Status400BadRequest);
                 }
 
                 user.EncryptedSalt = encryptedSaltBytes;
@@ -97,13 +103,17 @@ public class UsersController : ControllerBase
             }
             catch (FormatException)
             {
-                return BadRequest(new { error = "Invalid base64 encoding for salt or nonce" });
+                return Problem(
+                    detail: "Invalid base64 encoding for salt or nonce",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
         }
         else if (request.EncryptedSalt != null || request.SaltNonce != null)
         {
             // Both must be provided together
-            return BadRequest(new { error = "Both encryptedSalt and saltNonce must be provided together" });
+            return Problem(
+                detail: "Both encryptedSalt and saltNonce must be provided together",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         await _db.SaveChangesAsync();
@@ -136,7 +146,9 @@ public class UsersController : ControllerBase
             // Validate length: wrapped key should be 24 nonce + 32 key + 16 tag = 72 bytes
             if (wrappedKeyBytes.Length < 48)
             {
-                return BadRequest(new { error = "Invalid wrapped key length" });
+                return Problem(
+                    detail: "Invalid wrapped key length",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             user.WrappedAccountKey = wrappedKeyBytes;
@@ -146,7 +158,9 @@ public class UsersController : ControllerBase
         }
         catch (FormatException)
         {
-            return BadRequest(new { error = "Invalid base64 encoding for wrapped key" });
+            return Problem(
+                detail: "Invalid base64 encoding for wrapped key",
+                statusCode: StatusCodes.Status400BadRequest);
         }
     }
 
@@ -159,7 +173,9 @@ public class UsersController : ControllerBase
         var user = await _db.Users.FindAsync(userId);
         if (user == null)
         {
-            return NotFound(new { error = "User not found" });
+            return Problem(
+                detail: "User not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         return Ok(new
@@ -179,7 +195,9 @@ public class UsersController : ControllerBase
         var user = await _db.Users.FirstOrDefaultAsync(u => u.IdentityPubkey == pubkey);
         if (user == null)
         {
-            return NotFound(new { error = "User not found" });
+            return Problem(
+                detail: "User not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         return Ok(new
