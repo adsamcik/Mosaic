@@ -15,7 +15,7 @@ Mosaic is a self-hosted, end-to-end encrypted photo gallery where all encryption
 |------------|---------|---------|
 | **React** | 19.0 | UI component library with the latest concurrent features |
 | **TypeScript** | 5.7 | Type-safe JavaScript with strict mode enabled |
-| **Vite** | 6.0 | Fast build tool and dev server with HMR |
+| **Vite** | 7.x | Fast build tool and dev server with HMR |
 
 ### Key Libraries
 | Library | Purpose |
@@ -58,7 +58,7 @@ Mosaic is a self-hosted, end-to-end encrypted photo gallery where all encryption
 | Library | Version | Purpose |
 |---------|---------|---------|
 | **tusdotnet** | 2.11 | Server-side Tus protocol for resumable uploads |
-| **NSec.Cryptography** | 24.4 | Ed25519 signature verification |
+| **NSec.Cryptography** | 25.4 | Ed25519 signature verification |
 | **System.Linq.Async** | 7.0 | Async LINQ extensions |
 | **Microsoft.AspNetCore.OpenApi** | 10.0 | OpenAPI/Swagger documentation |
 

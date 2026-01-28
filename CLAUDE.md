@@ -24,7 +24,7 @@
 
 | Layer | Technologies |
 |-------|--------------|
-| **Frontend** | React 19, TypeScript, Vite 6, Web Workers, SQLite-WASM, libsodium |
+| **Frontend** | React 19, TypeScript, Vite 7, Web Workers, SQLite-WASM, libsodium |
 | **Backend** | .NET 10, ASP.NET Core, EF Core, PostgreSQL, Tus uploads |
 | **Crypto** | XChaCha20-Poly1305, Ed25519, Argon2id, HKDF-SHA256 |
 
