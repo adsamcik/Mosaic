@@ -1,11 +1,11 @@
-import { useMemo, useEffect, useState } from 'react';
+import { memo, useMemo, useEffect, useState } from 'react';
 import type { UploadTask } from '../../lib/upload-queue';
 
 interface PendingPhotoThumbnailProps {
   task: UploadTask;
 }
 
-export function PendingPhotoThumbnail({ task }: PendingPhotoThumbnailProps) {
+export const PendingPhotoThumbnail = memo(function PendingPhotoThumbnail({ task }: PendingPhotoThumbnailProps) {
   // Create a local URL for previewing the file with proper cleanup
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -157,4 +157,4 @@ export function PendingPhotoThumbnail({ task }: PendingPhotoThumbnailProps) {
       )}
     </div>
   );
-}
+});

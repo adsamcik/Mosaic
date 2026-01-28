@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
@@ -48,8 +49,10 @@ public static class TusEventHandlers
         var authSub = (string)httpContext.Items["AuthSub"]!;
         var fileId = context.FileId!;
 
-        // Get file size from the store
+        // Get file size and compute SHA256 from the store
         long fileSize = 0;
+        string? sha256Hex = null;
+        
         if (context.Store is ITusReadableStore readable)
         {
             var file = await readable.GetFileAsync(fileId, context.CancellationToken);
@@ -57,6 +60,12 @@ public static class TusEventHandlers
             {
                 using var stream = await file.GetContentAsync(context.CancellationToken);
                 fileSize = stream.Length;
+                
+                // Compute SHA256 for transport integrity verification
+                stream.Position = 0;
+                using var sha256 = SHA256.Create();
+                var hashBytes = await sha256.ComputeHashAsync(stream, context.CancellationToken);
+                sha256Hex = Convert.ToHexString(hashBytes).ToLowerInvariant();
             }
         }
 
@@ -68,7 +77,7 @@ public static class TusEventHandlers
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
 
-        // Create PENDING shard
+        // Create PENDING shard with computed SHA256
         db.Shards.Add(new Shard
         {
             Id = Guid.Parse(fileId),
@@ -76,7 +85,8 @@ public static class TusEventHandlers
             StorageKey = fileId,
             SizeBytes = fileSize,
             Status = ShardStatus.PENDING,
-            PendingExpiresAt = DateTime.UtcNow.AddHours(24)
+            PendingExpiresAt = DateTime.UtcNow.AddHours(24),
+            Sha256 = sha256Hex
         });
 
         // Update quota - use database-specific NOW() function

@@ -28,6 +28,7 @@ public class MosaicDbContext : DbContext
         modelBuilder.Entity<User>(e =>
         {
             e.HasIndex(u => u.AuthSub).IsUnique();
+            e.Property(u => u.RowVersion).IsConcurrencyToken();
         });
 
         // Album
@@ -43,6 +44,8 @@ public class MosaicDbContext : DbContext
             // Index for efficient expired album cleanup queries
             e.HasIndex(a => a.ExpiresAt)
                 .HasFilter("expires_at IS NOT NULL");
+
+            e.Property(a => a.RowVersion).IsConcurrencyToken();
         });
 
         // AlbumMember
@@ -99,6 +102,8 @@ public class MosaicDbContext : DbContext
 
             // Global query filter to exclude soft-deleted manifests
             e.HasQueryFilter(m => !m.IsDeleted);
+
+            e.Property(m => m.RowVersion).IsConcurrencyToken();
         });
 
         // Shard

@@ -1,5 +1,8 @@
 import * as Comlink from 'comlink';
 import type { GeoWorkerApi } from '../workers/types';
+import { createLogger } from './logger';
+
+const log = createLogger('GeoClient');
 
 let worker: Worker | null = null;
 let api: Comlink.Remote<GeoWorkerApi> | null = null;
@@ -17,7 +20,7 @@ export async function getGeoClient(): Promise<Comlink.Remote<GeoWorkerApi>> {
   });
 
   worker.onerror = (event) => {
-    console.error('Geo worker error:', event.message);
+    log.error('Geo worker error', { message: event.message });
   };
 
   api = Comlink.wrap<GeoWorkerApi>(worker);

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { type TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useAlbumCover } from '../../hooks/useAlbumCover';
@@ -88,7 +89,7 @@ export function formatExpirationBadge(
  * - Decrypted name when available
  * - Placeholder name on error
  */
-export function AlbumCard({ album, onClick }: AlbumCardProps) {
+export const AlbumCard = memo(function AlbumCard({ album, onClick }: AlbumCardProps) {
   const { t } = useTranslation();
   const displayName = getDisplayName(album);
   const isLoading = album.isDecrypting;
@@ -193,6 +194,6 @@ export function AlbumCard({ album, onClick }: AlbumCardProps) {
       </div>
     </button>
   );
-}
+});
 
 export type { Album, ExpirationBadge };

@@ -4,12 +4,14 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Infrastructure;
 using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
 using Scalar.AspNetCore;
 using tusdotnet;
 using tusdotnet.Stores;
 using System.Data.Common;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +44,8 @@ builder.Services.AddScoped<IQuotaSettingsService, QuotaSettingsService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
+builder.Services.AddExceptionHandler<DatabaseExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 // Controllers with camelCase JSON to match JavaScript conventions
 builder.Services.AddControllers()
@@ -74,6 +78,29 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options 
 
 builder.Services.AddOpenApi();
 
+// Global rate limiting - 100 requests per minute per IP
+builder.Services.AddRateLimiter(options =>
+{
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(remoteIp, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 100,
+            Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 5
+        });
+    });
+
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = 429;
+        await context.HttpContext.Response.WriteAsync(
+            "Too many requests. Please try again later.", token);
+    };
+});
+
 // Add authentication handler for Forbid() support
 // The actual authentication is done by CombinedAuthMiddleware, this just provides
 // a scheme for the Forbid() calls in controllers to work properly
@@ -88,6 +115,22 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 
 var app = builder.Build();
+
+// Security environment validation
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
+{
+    app.Logger.LogWarning(
+        "⚠️  SECURITY WARNING: Running in {Environment} mode. " +
+        "Rate limiting and some security protections are DISABLED. " +
+        "DO NOT use this configuration in production!",
+        app.Environment.EnvironmentName);
+}
+else
+{
+    app.Logger.LogInformation(
+        "Running in {Environment} mode with full security protections enabled",
+        app.Environment.EnvironmentName);
+}
 
 // Determine auth modes from configuration (independent toggles)
 // Support both new format (LocalAuthEnabled/ProxyAuthEnabled) and legacy format (Mode)
@@ -118,12 +161,16 @@ else
 
 // Middleware order matters:
 // 0. ForwardedHeaders - process X-Forwarded-* headers from reverse proxy (must be first)
-// 1. GlobalExceptionMiddleware - catch all errors first
-// 2. CorrelationIdMiddleware - generate/extract correlation ID
-// 3. LogScopeMiddleware - create logging scope with request context
-// 4. RequestTimingMiddleware - log request timing
-// 5. Auth middleware - authenticate user
+// 1. RateLimiter - global rate limiting (100 req/min per IP)
+// 2. ExceptionHandler - handle database concurrency exceptions gracefully
+// 3. GlobalExceptionMiddleware - catch all other errors
+// 4. CorrelationIdMiddleware - generate/extract correlation ID
+// 5. LogScopeMiddleware - create logging scope with request context
+// 6. RequestTimingMiddleware - log request timing
+// 7. Auth middleware - authenticate user
 app.UseForwardedHeaders();
+app.UseRateLimiter();
+app.UseExceptionHandler();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseLogScope();

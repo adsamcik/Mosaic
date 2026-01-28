@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
+using Mosaic.Backend.Tests.TestHelpers;
+
 
 namespace Mosaic.Backend.Tests.Controllers;
 
@@ -156,8 +158,8 @@ public class AlbumsControllerTests
         var result = await controller.Create(request);
 
         // Assert
-        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("initialEpochKey", badRequestResult.Value?.ToString());
+        var badRequestResult = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("initialEpochKey", ProblemDetailsAssertions.GetDetail(badRequestResult));
     }
 
     [Fact]
@@ -189,8 +191,8 @@ public class AlbumsControllerTests
         var result = await controller.Create(request);
 
         // Assert
-        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("encryptedKeyBundle", badRequestResult.Value?.ToString());
+        var badRequestResult = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("encryptedKeyBundle", ProblemDetailsAssertions.GetDetail(badRequestResult));
     }
 
     [Fact]
@@ -694,8 +696,8 @@ public class AlbumsControllerTests
         var result = await controller.Create(request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("future", badRequest.Value?.ToString() ?? "");
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("future", ProblemDetailsAssertions.GetDetail(badRequest) ?? "");
     }
 
     [Fact]
@@ -728,8 +730,8 @@ public class AlbumsControllerTests
         var result = await controller.Create(request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("non-negative", badRequest.Value?.ToString() ?? "");
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("non-negative", ProblemDetailsAssertions.GetDetail(badRequest) ?? "");
     }
 
     [Fact]
@@ -879,8 +881,8 @@ public class AlbumsControllerTests
         var result = await controller.UpdateExpiration(album.Id, request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("future", badRequest.Value?.ToString() ?? "");
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("future", ProblemDetailsAssertions.GetDetail(badRequest) ?? "");
     }
 
     [Fact]
@@ -908,8 +910,8 @@ public class AlbumsControllerTests
         var result = await controller.UpdateExpiration(album.Id, request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("non-negative", badRequest.Value?.ToString() ?? "");
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("non-negative", ProblemDetailsAssertions.GetDetail(badRequest) ?? "");
     }
 
     [Fact]
@@ -1162,7 +1164,7 @@ public class AlbumsControllerTests
         var result = await controller.Rename(album.Id, request);
 
         // Assert
-        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("encryptedName", badRequestResult.Value?.ToString()!);
+        var badRequestResult = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("encryptedName", ProblemDetailsAssertions.GetDetail(badRequestResult)!);
     }
 }

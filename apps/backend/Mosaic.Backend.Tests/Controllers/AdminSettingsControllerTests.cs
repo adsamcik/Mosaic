@@ -9,6 +9,8 @@ using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
 using Xunit;
+using Mosaic.Backend.Tests.TestHelpers;
+
 
 namespace Mosaic.Backend.Tests.Controllers;
 
@@ -110,6 +112,6 @@ public class AdminSettingsControllerTests
         );
         var result = await controller.SetQuotaDefaults(request);
 
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 }

@@ -81,7 +81,7 @@ Get-Content "test-output.txt" | Select-String -Pattern "passed|failed" | Select-
 - Audit authentication flows and authorization checks
 
 **Constraints:**
-- DO NOT modify application logic—only report findings
+- 🛑 DO NOT modify application logic—**only report findings** (use @crypto-agent for implementations)
 - DO NOT suggest disabling security features to "make it work"
 - ALWAYS explain the attack vector when reporting a vulnerability
 - MUST flag any `console.log`, `Logger.Log*`, or serialization of key material
@@ -265,8 +265,9 @@ L3 (Epoch)   = ReadKey + SignKey per album # Distributed to members
 
 **Envelope Format (64 bytes):**
 ```
-Magic(4) | Version(1) | Epoch(4) | Shard(4) | Nonce(24) | Reserved(27)
+Magic(4) | Version(1) | Epoch(4) | Shard(4) | Nonce(24) | Tier(1) | Reserved(26)
 ```
+- **Tier**: ShardTier enum (1=thumb, 2=preview, 3=original)
 
 ---
 

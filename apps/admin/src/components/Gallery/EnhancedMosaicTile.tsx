@@ -8,7 +8,7 @@
  * - Map cluster tiles (mini-map showing photo locations)
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { EnhancedMosaicItem } from '../../lib/mosaic-layout-v2';
 import type { PhotoMeta } from '../../workers/types';
 
@@ -37,7 +37,7 @@ interface EnhancedMosaicTileProps {
  * Mini-map component for map cluster tiles
  * Uses a simple canvas-based approach for lightweight rendering
  */
-function MiniMap({
+const MiniMap = memo(function MiniMap({
   coordinates,
   width,
   height,
@@ -225,9 +225,9 @@ function MiniMap({
       )}
     </div>
   );
-}
+});
 
-export function EnhancedMosaicTile({
+export const EnhancedMosaicTile = memo(function EnhancedMosaicTile({
   item,
   photo,
   onClick,
@@ -448,4 +448,4 @@ export function EnhancedMosaicTile({
       }}
     />
   );
-}
+});

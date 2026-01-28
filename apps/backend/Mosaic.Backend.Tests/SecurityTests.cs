@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
+using Mosaic.Backend.Tests.TestHelpers;
+
 
 namespace Mosaic.Backend.Tests;
 
@@ -270,8 +272,8 @@ public class SecurityTests
         var result = await controller.Remove(album.Id, owner.Id);
 
         // Assert - Owner cannot be removed
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("owner", badRequest.Value?.ToString()?.ToLower() ?? "");
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("owner", ProblemDetailsAssertions.GetDetail(badRequest)?.ToLower() ?? "");
     }
 
     [Fact]
@@ -772,7 +774,7 @@ public class SecurityTests
         var result = await controller.Create(request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -800,7 +802,7 @@ public class SecurityTests
         var result = await controller.Create(request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     #endregion

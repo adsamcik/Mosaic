@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { AppShell } from './components/App/AppShell';
 import { LoginForm } from './components/Auth/LoginForm';
 import { SharedAlbumViewer } from './components/Shared/SharedAlbumViewer';
+import { ToastContainer } from './components/Toast';
+import { ToastProvider } from './contexts/ToastContext';
 import { useTheme } from './hooks';
 import type { User } from './lib/api-types';
 import { session } from './lib/session';
@@ -161,8 +163,9 @@ export function App() {
   // Crypto error - show error message instead of app
   if (cryptoError) {
     return (
-      <div className="login-container" data-testid="crypto-error">
-        <div className="login-card">
+      <ToastProvider>
+        <div className="login-container" data-testid="crypto-error">
+          <div className="login-card">
           <h1
             className="login-title"
             style={{ color: 'var(--color-error, #dc2626)' }}
@@ -192,31 +195,46 @@ export function App() {
             </pre>
           </details>
         </div>
+        <ToastContainer />
       </div>
+      </ToastProvider>
     );
   }
 
   // Share link route - no authentication required
   if (isShareLink && shareLinkId) {
-    return <SharedAlbumViewer linkId={shareLinkId} />;
+    return (
+      <ToastProvider>
+        <SharedAlbumViewer linkId={shareLinkId} />
+        <ToastContainer />
+      </ToastProvider>
+    );
   }
 
   // Show loading state while checking session
   if (isCheckingSession) {
     return (
-      <div className="login-container" data-testid="session-check">
-        <div className="login-card">
-          <h1 className="login-title">{t('common.appName')}</h1>
-          <p className="login-subtitle">{t('auth.checkingSession')}</p>
+      <ToastProvider>
+        <div className="login-container" data-testid="session-check">
+          <div className="login-card">
+            <h1 className="login-title">{t('common.appName')}</h1>
+            <p className="login-subtitle">{t('auth.checkingSession')}</p>
+          </div>
         </div>
-      </div>
+        <ToastContainer />
+      </ToastProvider>
     );
   }
 
   // Standard authenticated routes
-  if (!isLoggedIn) {
-    return <LoginForm pendingSessionUser={pendingSessionUser} />;
-  }
-
-  return <AppShell />;
+  return (
+    <ToastProvider>
+      {!isLoggedIn ? (
+        <LoginForm pendingSessionUser={pendingSessionUser} />
+      ) : (
+        <AppShell />
+      )}
+      <ToastContainer />
+    </ToastProvider>
+  );
 }

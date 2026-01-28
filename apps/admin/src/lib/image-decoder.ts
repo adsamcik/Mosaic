@@ -15,7 +15,7 @@
 import { createLogger } from './logger';
 import { needsDecoding as checkNeedsDecoding } from './mime-type-detection';
 
-const log = createLogger('image-decoder');
+const log = createLogger('ImageDecoder');
 
 // =============================================================================
 // HEIC Decoding (via heic-to/csp)

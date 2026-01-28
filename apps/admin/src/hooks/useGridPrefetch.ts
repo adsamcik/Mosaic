@@ -17,7 +17,7 @@ import { preloadPhotos, getCacheStats } from '../lib/photo-service';
 import { createLogger } from '../lib/logger';
 import type { PhotoMeta } from '../workers/types';
 
-const log = createLogger('grid-prefetch');
+const log = createLogger('GridPrefetch');
 
 /** Maximum number of photos to prefetch at once */
 const MAX_PREFETCH_BATCH = 4;

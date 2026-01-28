@@ -31,6 +31,11 @@ public class Album
     /// </summary>
     public int ExpirationWarningDays { get; set; } = 7;
 
+    /// <summary>
+    /// Concurrency token for optimistic locking. Automatically incremented on update.
+    /// </summary>
+    public uint RowVersion { get; set; }
+
     // Navigation
     public User Owner { get; set; } = null!;
     public ICollection<AlbumMember> Members { get; set; } = [];

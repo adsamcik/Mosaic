@@ -5,6 +5,10 @@
  * Keys are cleared on logout for security.
  */
 
+import { createLogger } from './logger';
+
+const log = createLogger('EpochKeyStore');
+
 /** Unwrapped epoch key bundle containing seed and sign keys */
 export interface EpochKeyBundle {
   epochId: number;
@@ -100,9 +104,9 @@ export function setEpochKey(albumId: string, bundle: EpochKeyBundle): void {
         return;
       }
       // Different seed with no signKeypair - this shouldn't happen, but log it
-      console.warn(
-        `[epoch-key-store] Overwriting epoch ${bundle.epochId} with different seed but empty signKeypair`,
-      );
+      log.warn('Overwriting epoch with different seed but empty signKeypair', {
+        epochId: bundle.epochId,
+      });
     }
   }
 

@@ -17,7 +17,7 @@ import {
 } from './epoch-key-store';
 import { createLogger } from './logger';
 
-const log = createLogger('epoch-key-service');
+const log = createLogger('EpochKeyService');
 
 /** Error thrown when epoch key operations fail */
 export class EpochKeyError extends Error {

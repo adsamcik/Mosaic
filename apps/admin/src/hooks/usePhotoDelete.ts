@@ -14,6 +14,9 @@ import type { PhotoMeta } from '../workers/types';
 import type { UseLightboxResult } from './useLightbox';
 import { usePhotoActions } from './usePhotoActions';
 import type { UseSelectionReturn } from './useSelection';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('usePhotoDelete');
 
 /**
  * Options for the usePhotoDelete hook
@@ -174,7 +177,7 @@ export function usePhotoDelete({
     } catch (err) {
       // Error is already set in photoActions.error and displayed in DeletePhotoDialog
       // Log for debugging purposes
-      console.error('[usePhotoDelete] Photo deletion failed:', err);
+      log.error('Photo deletion failed', err);
       // Keep dialog open so user can see the error message and retry
     }
   }, [

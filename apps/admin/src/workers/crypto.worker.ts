@@ -310,7 +310,8 @@ class CryptoWorker implements CryptoWorkerApi {
     } catch (err) {
       // Fall back to epochSeed directly for backwards compatibility
       // (photos encrypted before tier key derivation was implemented)
-      console.debug('[CryptoWorker] Tier key decrypt failed, falling back to epochSeed:', err);
+      const errorType = err instanceof Error ? err.constructor.name : 'Unknown';
+      log.debug('Tier key decrypt failed, falling back to epochSeed', { errorType });
       return await cryptoDecryptShard(envelope, epochSeed);
     } finally {
       // Zero out all derived keys after use
@@ -403,7 +404,8 @@ class CryptoWorker implements CryptoWorkerApi {
     } catch (err) {
       // Fall back to readKey directly for backwards compatibility
       // (manifests encrypted before tier key derivation was implemented)
-      console.debug('[CryptoWorker] ThumbKey decrypt failed, falling back to readKey:', err);
+      const errorType = err instanceof Error ? err.constructor.name : 'Unknown';
+      log.debug('ThumbKey decrypt failed, falling back to readKey', { errorType });
       plaintext = await cryptoDecryptShard(encryptedMeta, readKey);
     } finally {
       // Zero out derived key after use

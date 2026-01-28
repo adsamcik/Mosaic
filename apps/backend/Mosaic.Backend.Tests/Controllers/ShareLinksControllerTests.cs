@@ -3,6 +3,8 @@ using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
+using Mosaic.Backend.Tests.TestHelpers;
+
 
 namespace Mosaic.Backend.Tests.Controllers;
 
@@ -180,7 +182,7 @@ public class ShareLinksControllerTests
         var result = await controller.Create(Guid.NewGuid(), request);
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -239,8 +241,8 @@ public class ShareLinksControllerTests
         var result = await controller.Create(album.Id, request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("accessTier", badRequest.Value?.ToString());
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("accessTier", ProblemDetailsAssertions.GetDetail(badRequest));
     }
 
     [Fact]
@@ -268,8 +270,8 @@ public class ShareLinksControllerTests
         var result = await controller.Create(album.Id, request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("linkId", badRequest.Value?.ToString());
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("linkId", ProblemDetailsAssertions.GetDetail(badRequest));
     }
 
     [Fact]
@@ -311,8 +313,8 @@ public class ShareLinksControllerTests
         var result = await controller.Create(album.Id, request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("nonce", badRequest.Value?.ToString());
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("nonce", ProblemDetailsAssertions.GetDetail(badRequest));
     }
 
     [Fact]
@@ -341,8 +343,8 @@ public class ShareLinksControllerTests
         var result = await controller.Create(album.Id, request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("expiresAt", badRequest.Value?.ToString());
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("expiresAt", ProblemDetailsAssertions.GetDetail(badRequest));
     }
 
     [Fact]
@@ -371,8 +373,8 @@ public class ShareLinksControllerTests
         var result = await controller.Create(album.Id, request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("maxUses", badRequest.Value?.ToString());
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("maxUses", ProblemDetailsAssertions.GetDetail(badRequest));
     }
 
     [Fact]
@@ -402,7 +404,7 @@ public class ShareLinksControllerTests
         var result = await controller.Create(album.Id, request);
 
         // Assert
-        Assert.IsType<ConflictObjectResult>(result);
+        ProblemDetailsAssertions.AssertConflict(result);
     }
 
     #endregion
@@ -490,7 +492,7 @@ public class ShareLinksControllerTests
         var result = await controller.List(Guid.NewGuid());
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -674,7 +676,7 @@ public class ShareLinksControllerTests
         var result = await controller.ListWithSecrets(Guid.NewGuid());
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -761,7 +763,7 @@ public class ShareLinksControllerTests
         var result = await controller.Revoke(Guid.NewGuid());
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -905,7 +907,7 @@ public class ShareLinksControllerTests
         var result = await controller.AddEpochKeys(Guid.NewGuid(), request);
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -976,8 +978,8 @@ public class ShareLinksControllerTests
         var result = await controller.AddEpochKeys(shareLink.Id, request);
 
         // Assert
-        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("revoked", badRequestResult.Value?.ToString()?.ToLower());
+        var badRequestResult = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("revoked", ProblemDetailsAssertions.GetDetail(badRequestResult)?.ToLower());
     }
 
     [Fact]
@@ -1012,8 +1014,8 @@ public class ShareLinksControllerTests
         var result = await controller.AddEpochKeys(shareLink.Id, request);
 
         // Assert
-        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("24-byte", badRequestResult.Value?.ToString()?.ToLower());
+        var badRequestResult = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("24-byte", ProblemDetailsAssertions.GetDetail(badRequestResult)?.ToLower());
     }
 
     [Fact]
@@ -1048,8 +1050,8 @@ public class ShareLinksControllerTests
         var result = await controller.AddEpochKeys(shareLink.Id, request);
 
         // Assert
-        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("tier", badRequestResult.Value?.ToString()?.ToLower());
+        var badRequestResult = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("tier", ProblemDetailsAssertions.GetDetail(badRequestResult)?.ToLower());
     }
 
     [Fact]
@@ -1081,8 +1083,8 @@ public class ShareLinksControllerTests
         var result = await controller.AddEpochKeys(shareLink.Id, request);
 
         // Assert
-        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("required", badRequestResult.Value?.ToString()?.ToLower());
+        var badRequestResult = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("required", ProblemDetailsAssertions.GetDetail(badRequestResult)?.ToLower());
     }
 
     #endregion
@@ -1175,7 +1177,7 @@ public class ShareLinksControllerTests
         var result = await controller.Access(linkIdBase64);
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -1197,7 +1199,7 @@ public class ShareLinksControllerTests
         var result = await controller.Access("invalid!!!base64");
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -1355,7 +1357,7 @@ public class ShareLinksControllerTests
         var result = await controller.GetKeys(linkIdBase64);
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -1488,7 +1490,7 @@ public class ShareLinksControllerTests
         var result = await controller.GetPhotos(linkIdBase64);
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -1591,7 +1593,7 @@ public class ShareLinksControllerTests
         var result = await controller.DownloadShard(linkIdBase64, Guid.NewGuid());
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -1621,7 +1623,7 @@ public class ShareLinksControllerTests
         var result = await controller.DownloadShard(linkIdBase64, Guid.NewGuid());
 
         // Assert
-        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var notFound = ProblemDetailsAssertions.AssertNotFound(result);
         Assert.NotNull(notFound.Value);
         var json = System.Text.Json.JsonSerializer.Serialize(notFound.Value);
         Assert.Contains("Shard not found", json);
@@ -1658,7 +1660,7 @@ public class ShareLinksControllerTests
         var result = await controller.DownloadShard(linkIdBase64, shard.Id);
 
         // Assert
-        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var notFound = ProblemDetailsAssertions.AssertNotFound(result);
         Assert.NotNull(notFound.Value);
         var json = System.Text.Json.JsonSerializer.Serialize(notFound.Value);
         Assert.Contains("Shard not available", json);
@@ -1862,7 +1864,7 @@ public class ShareLinksControllerTests
         var result = await controller.DownloadShard("!!!invalid!!!", Guid.NewGuid());
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
         Assert.NotNull(badRequest.Value);
         var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
         Assert.Contains("Invalid link ID format", json);
@@ -1972,7 +1974,7 @@ public class ShareLinksControllerTests
         var result = await controller.UpdateLinkExpiration(Guid.NewGuid(), "validBase64Url", request);
 
         // Assert
-        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var notFound = ProblemDetailsAssertions.AssertNotFound(result);
         var json = System.Text.Json.JsonSerializer.Serialize(notFound.Value);
         Assert.Contains("Album not found", json);
     }
@@ -2034,7 +2036,7 @@ public class ShareLinksControllerTests
         var result = await controller.UpdateLinkExpiration(album.Id, fakeLinkId, request);
 
         // Assert
-        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var notFound = ProblemDetailsAssertions.AssertNotFound(result);
         var json = System.Text.Json.JsonSerializer.Serialize(notFound.Value);
         Assert.Contains("Share link not found", json);
     }
@@ -2069,7 +2071,7 @@ public class ShareLinksControllerTests
         var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
         var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
         Assert.Contains("Cannot update a revoked link", json);
     }
@@ -2101,7 +2103,7 @@ public class ShareLinksControllerTests
         var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
         var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
         Assert.Contains("expiresAt must be in the future", json);
     }
@@ -2133,7 +2135,7 @@ public class ShareLinksControllerTests
         var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
         var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
         Assert.Contains("maxUses must be positive", json);
     }
@@ -2163,7 +2165,7 @@ public class ShareLinksControllerTests
         var result = await controller.UpdateLinkExpiration(album.Id, "!!!invalid!!!", request);
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
         var json = System.Text.Json.JsonSerializer.Serialize(badRequest.Value);
         Assert.Contains("Invalid linkId format", json);
     }
@@ -2196,7 +2198,7 @@ public class ShareLinksControllerTests
         var result = await controller.UpdateLinkExpiration(album2.Id, linkIdBase64, request);
 
         // Assert
-        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var notFound = ProblemDetailsAssertions.AssertNotFound(result);
         var json = System.Text.Json.JsonSerializer.Serialize(notFound.Value);
         Assert.Contains("Share link not found", json);
     }

@@ -15,7 +15,7 @@
 import { createLogger } from './logger';
 import { getKeyCacheDurationMs } from './settings-service';
 
-const log = createLogger('key-cache');
+const log = createLogger('KeyCache');
 
 /** Storage key for cached keys */
 const KEY_CACHE_STORAGE_KEY = 'mosaic:keyCache';

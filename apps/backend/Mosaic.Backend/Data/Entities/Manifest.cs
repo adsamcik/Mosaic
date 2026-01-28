@@ -12,6 +12,11 @@ public class Manifest
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Concurrency token for optimistic locking. Automatically incremented on update.
+    /// </summary>
+    public uint RowVersion { get; set; }
+
     // Navigation
     public Album Album { get; set; } = null!;
     public ICollection<ManifestShard> ManifestShards { get; set; } = [];

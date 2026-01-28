@@ -59,6 +59,11 @@ public class User
     /// </summary>
     public string? AuthPubkey { get; set; }
 
+    /// <summary>
+    /// Concurrency token for optimistic locking. Automatically incremented on update.
+    /// </summary>
+    public uint RowVersion { get; set; }
+
     // Navigation
     public ICollection<Album> OwnedAlbums { get; set; } = [];
     public ICollection<AlbumMember> Memberships { get; set; } = [];

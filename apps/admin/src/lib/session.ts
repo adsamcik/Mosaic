@@ -15,6 +15,7 @@ import {
   hasCachedKeys,
   type CachedKeys,
 } from './key-cache';
+import { clearLinkKeyEncryption } from './link-tier-key-store';
 import { localAuthLogin, localAuthRegister } from './local-auth';
 import { createLogger } from './logger';
 import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
@@ -220,6 +221,7 @@ class SessionManager {
 
     // Clear any cached keys from memory
     clearCacheEncryptionKey();
+    clearLinkKeyEncryption();
 
     // Clear cached metadata and covers from memory
     clearAllCachedMetadata();
@@ -311,6 +313,7 @@ class SessionManager {
       log.error('Failed to restore session from cache:', error);
       // Clear invalid cache
       clearCacheEncryptionKey();
+      clearLinkKeyEncryption();
       return false;
     }
   }
@@ -782,6 +785,7 @@ class SessionManager {
 
     // Clear key cache encryption key
     clearCacheEncryptionKey();
+    clearLinkKeyEncryption();
 
     // Close all workers and clear keys
     await closeDbClient();

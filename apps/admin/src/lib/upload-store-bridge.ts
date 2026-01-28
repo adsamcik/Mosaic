@@ -21,7 +21,7 @@ import { createLogger } from './logger';
 import { syncCoordinator } from './sync-coordinator';
 import { uploadQueue, type UploadTask } from './upload-queue';
 
-const log = createLogger('upload-store-bridge');
+const log = createLogger('UploadStoreBridge');
 
 /** Track which tasks have been registered to prevent duplicates */
 const registeredTasks = new Set<string>();

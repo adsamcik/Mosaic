@@ -158,11 +158,22 @@ describe('translation files', () => {
 });
 
 describe('useTranslation mock verification', () => {
-  it('mock is configured in setup.ts and verified by component tests', () => {
-    // The mock is set up in setup.ts and verified by all component tests
-    // that use useTranslation and expect translation keys to be returned
-    // This test is a placeholder - the actual verification happens in
-    // component tests like album-card.test.tsx, login-form.test.tsx, etc.
-    expect(true).toBe(true);
+  it('mock returns translation keys as-is for testing', async () => {
+    // Verify the mock behavior matches what's configured in setup.ts
+    const { useTranslation } = await import('react-i18next');
+    const { t, i18n } = useTranslation();
+
+    // t() should return the key directly (not the translated value)
+    expect(t('common.save')).toBe('common.save');
+    expect(t('auth.signInButton')).toBe('auth.signInButton');
+
+    // With params, should append JSON
+    const result = t('error.message', { count: 5 });
+    expect(result).toContain('error.message');
+    expect(result).toContain('count');
+
+    // i18n object should have expected properties
+    expect(i18n.language).toBe('en');
+    expect(typeof i18n.changeLanguage).toBe('function');
   });
 });

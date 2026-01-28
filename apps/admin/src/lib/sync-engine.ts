@@ -14,7 +14,7 @@ import {
 } from './epoch-key-store';
 import { createLogger } from './logger';
 
-const log = createLogger('sync-engine');
+const log = createLogger('SyncEngine');
 
 /**
  * Get epoch thumb key for manifest decryption.

@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
+using Mosaic.Backend.Tests.TestHelpers;
+
 
 namespace Mosaic.Backend.Tests.Controllers;
 
@@ -215,7 +217,7 @@ public class EpochKeysControllerTests
         var result = await controller.Create(album.Id, request);
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -253,7 +255,7 @@ public class EpochKeysControllerTests
         var result = await controller.Create(album.Id, request);
 
         // Assert
-        Assert.IsType<ConflictObjectResult>(result);
+        ProblemDetailsAssertions.AssertConflict(result);
     }
 
     [Fact]
@@ -466,7 +468,7 @@ public class EpochKeysControllerTests
         var result = await controller.Rotate(album.Id, 3, request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -504,7 +506,7 @@ public class EpochKeysControllerTests
         var result = await controller.Rotate(album.Id, 2, request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]

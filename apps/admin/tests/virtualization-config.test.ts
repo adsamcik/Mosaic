@@ -85,21 +85,59 @@ describe('Virtualization Configuration', () => {
 });
 
 describe('Performance constraints documentation', () => {
-  it('should document the overscan configuration rationale', () => {
-    // This test documents WHY the overscan value matters:
-    // - TanStack Virtual interprets 'overscan' as number of ITEMS (rows)
-    // - A value of 500 would render ~500 extra rows above/below viewport
-    // - For a typical album with 3-5 photos per row, this means ~1500-2500 extra DOM elements
-    // - Correct value of 3-5 rows provides smooth scrolling without excessive rendering
-    expect(true).toBe(true);
+  it('should ensure overscan values are consistent across grid components', () => {
+    // This test verifies that overscan values are consistent
+    // to avoid rendering behavior inconsistencies between components
+    const mosaicGridFiles = [
+      { name: 'MosaicPhotoGrid', path: 'Gallery/MosaicPhotoGrid.tsx' },
+      {
+        name: 'EnhancedMosaicPhotoGrid',
+        path: 'Gallery/EnhancedMosaicPhotoGrid.tsx',
+      },
+      {
+        name: 'SharedMosaicPhotoGrid',
+        path: 'Shared/SharedMosaicPhotoGrid.tsx',
+      },
+    ];
+
+    const componentsDir = path.resolve(__dirname, '../src/components');
+    const overscanValues: number[] = [];
+
+    for (const { path: filePath } of mosaicGridFiles) {
+      const fullPath = path.join(componentsDir, filePath);
+      const content = fs.readFileSync(fullPath, 'utf-8');
+      const overscan = extractOverscanValue(content);
+      if (overscan !== null) {
+        overscanValues.push(overscan);
+      }
+    }
+
+    // All files should have the same overscan value for consistency
+    expect(overscanValues.length).toBeGreaterThan(0);
+    const uniqueValues = new Set(overscanValues);
+    expect(uniqueValues.size).toBe(1);
   });
 
-  it('should document React.memo benefits for thumbnails', () => {
-    // This test documents WHY React.memo matters for thumbnails:
-    // - Parent grid components re-render on scroll, selection changes, etc.
-    // - Without memo, every visible thumbnail re-renders on each parent render
-    // - With memo, thumbnails only re-render when their specific props change
-    // - This is critical for smooth scrolling in large galleries
-    expect(true).toBe(true);
+  it('should verify all thumbnail components use React.memo', () => {
+    // Verify React.memo is consistently applied to prevent unnecessary re-renders
+    // during scroll, selection, and other frequent parent updates
+    const componentsDir = path.resolve(__dirname, '../src/components');
+    const thumbnailComponents = [
+      { name: 'PhotoThumbnail', path: 'Gallery/PhotoThumbnail.tsx' },
+      { name: 'MosaicTile', path: 'Gallery/MosaicTile.tsx' },
+      { name: 'SharedPhotoThumbnail', path: 'Shared/SharedPhotoThumbnail.tsx' },
+    ];
+
+    const memoUsage: boolean[] = [];
+
+    for (const { path: filePath } of thumbnailComponents) {
+      const fullPath = path.join(componentsDir, filePath);
+      const content = fs.readFileSync(fullPath, 'utf-8');
+      memoUsage.push(usesReactMemo(content));
+    }
+
+    // All thumbnail components should use React.memo
+    expect(memoUsage.every((uses) => uses)).toBe(true);
+    expect(memoUsage.length).toBe(thumbnailComponents.length);
   });
 });

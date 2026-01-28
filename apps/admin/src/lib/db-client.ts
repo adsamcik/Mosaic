@@ -2,7 +2,7 @@ import * as Comlink from 'comlink';
 import type { DbWorkerApi } from '../workers/types';
 import { createLogger } from './logger';
 
-const log = createLogger('db-client');
+const log = createLogger('DbClient');
 
 // Import worker constructor via Vite's ?worker suffix
 // This ensures Vite properly bundles and transforms the worker

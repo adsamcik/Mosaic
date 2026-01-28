@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
+using Mosaic.Backend.Tests.TestHelpers;
+
 
 namespace Mosaic.Backend.Tests.Controllers;
 
@@ -112,7 +114,7 @@ public class UsersControllerTests
         var result = await controller.UpdateMe(request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -199,7 +201,7 @@ public class UsersControllerTests
         var result = await controller.UpdateMe(request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -227,7 +229,7 @@ public class UsersControllerTests
         var result = await controller.UpdateMe(request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -255,7 +257,7 @@ public class UsersControllerTests
         var result = await controller.UpdateMe(request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -302,7 +304,7 @@ public class UsersControllerTests
         var result = await controller.GetUser(Guid.NewGuid());
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -349,6 +351,6 @@ public class UsersControllerTests
         var result = await controller.GetUserByPubkey("nonexistent-pubkey");
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 }

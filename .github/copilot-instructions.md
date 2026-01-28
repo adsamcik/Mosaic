@@ -6,6 +6,19 @@ Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal 
 
 ---
 
+## 🧭 Quick Route (What Are You Doing?)
+
+| Task | Jump To | Key Rules |
+|------|---------|----------|
+| Implementing a feature | [SPEC Workflow](#the-prime-directive-spec-then-code) | SPEC if >2 files or crypto |
+| Fixing a bug | [Debugging](#mosaic-sentinel-debugging-protocol) | Reproduce first, then fix |
+| Writing tests | [TDD Requirements](#-test-driven-development-tdd---mandatory) | Red → Green → Refactor |
+| Running commands | [Terminal Rules](#-critical-non-interactive-terminal-commands) | ALWAYS non-interactive |
+| Security-sensitive work | [Crypto Guidelines](#cryptographic-guidelines) | Never log keys, always memzero |
+| Before completing ANY task | [Definition of Done](#definition-of-done) | ALL criteria must pass |
+
+---
+
 ## Tech Stack
 
 ### Backend (.NET 10)
@@ -283,7 +296,9 @@ Level 3:           ├── src/components/.instructions.md  ← Component work
 
 ## THE PRIME DIRECTIVE: "Spec-Then-Code"
 
-You typically fail when you attempt to code complex features in a single pass. For any task involving >2 files or cryptographic operations, you MUST follow this strictly sequential workflow:
+You typically fail when you attempt to code complex features in a single pass. For any task involving **>2 files** or **cryptographic operations**, you MUST follow this strictly sequential workflow:
+
+> **Clarity Note:** The ">2 files" threshold means 3+ files require SPEC. For crypto: SPEC is required for *new* crypto operations or key handling changes; single-file crypto bug fixes can proceed with TDD only.
 
 ### Phase 1: The Specification (Mandatory for Complex Tasks)
 
@@ -348,8 +363,9 @@ L3 (Epoch)   = ReadKey + SignKey per album  # Distributed to members
 
 ### Envelope Format (64 bytes header)
 ```
-Magic(4) | Version(1) | Epoch(4) | Shard(4) | Nonce(24) | Reserved(27)
+Magic(4) | Version(1) | Epoch(4) | Shard(4) | Nonce(24) | Tier(1) | Reserved(26)
 ```
+- **Tier**: ShardTier enum (1=thumb, 2=preview, 3=original)
 - Reserved bytes MUST be zero and validated on decrypt
 - AAD = entire 64-byte header
 
@@ -517,6 +533,7 @@ If a task has multiple parts, complete ALL parts before responding. Do not ask p
 - [ ] Tests executed locally with output reported (e.g., "23 passed, 94% coverage")
 - [ ] No TypeScript/C#/ESLint errors or warnings
 - [ ] **Feature documented in `docs/FEATURES.md`** (if new user-facing feature)
+- [ ] **Security implications documented in commit message** (if auth/crypto/API changes)
 - [ ] Committed with conventional format: `type(scope): description`
 
 This applies equally to quick fixes, new features, and refactors. No exceptions.
@@ -891,7 +908,9 @@ Before first run, ensure:
 
 ### Recursive Decomposition
 
-If a task involves >3 files, break it into a numbered checklist and execute one item at a time. This prevents context overload and ensures completeness.
+If a task involves **>4 files**, break it into a numbered checklist and execute one item at a time. This prevents context overload and ensures completeness.
+
+> **Note:** SPEC is required at >2 files; checklist decomposition adds structure for larger tasks.
 
 ### Self-Correction Audit
 
@@ -1141,6 +1160,16 @@ Only after Phase 2 confirms the failure:
 |----------|------|------------|
 | **Networking** | Inside a container, `localhost` is the container itself. | Use `host.docker.internal` for host, or service names (`db`) for siblings. |
 | **Health Checks** | Use `127.0.0.1` not `localhost` in health checks. | IPv4/IPv6 resolution issues. |
+
+#### Edge Case Recovery Patterns
+
+| Scenario | Detection | Recovery |
+|----------|-----------|----------|
+| **Worker initialization fails** | `Comlink.wrap()` throws or worker `onError` fires | Log error, show user fallback UI, do NOT retry indefinitely |
+| **WASM/SharedArrayBuffer unavailable** | Check for `crossOriginIsolated === false` | Display "browser not supported" or "headers misconfigured" |
+| **Crypto operation throws** | Catch `SodiumError` specifically | Zero any partial key material, propagate error with context |
+| **Worker message dropped** | Promise hangs (no resolve/reject) | Use timeout wrapper, terminate worker, recreate |
+| **Flaky unit test** | Test passes/fails inconsistently | Isolate test, check for shared state, add explicit cleanup |
 
 ---
 

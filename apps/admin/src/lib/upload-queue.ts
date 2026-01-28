@@ -13,7 +13,7 @@ import {
 } from './thumbnail-generator';
 import type { TieredShardIds } from '../workers/types';
 
-const log = createLogger('upload-queue');
+const log = createLogger('UploadQueue');
 
 /**
  * Convert Uint8Array to base64 string

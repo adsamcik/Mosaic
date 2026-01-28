@@ -27,7 +27,7 @@ import {
 } from './epoch-key-store';
 import { createLogger } from './logger';
 
-const log = createLogger('epoch-rotation-service');
+const log = createLogger('EpochRotationService');
 
 /** Error thrown when epoch rotation fails */
 export class EpochRotationError extends Error {

@@ -18,7 +18,7 @@ import { downloadShards, type ProgressCallback } from './shard-service';
 import { base64ToUint8Array } from './thumbnail-generator';
 import { createLogger } from './logger';
 
-const log = createLogger('photo-service');
+const log = createLogger('PhotoService');
 
 /**
  * Cached photo entry with blob URL and reference count

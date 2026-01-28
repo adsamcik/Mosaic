@@ -5,23 +5,23 @@
  * - Parsing link secret from URL fragment
  * - Deriving wrapping key from link secret
  * - Unwrapping tier keys from server response
- * - IndexedDB persistence for return visits
+ * - Encrypted IndexedDB persistence for return visits
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../lib/api-types';
+import {
+  getTierKeys,
+  saveTierKeys,
+  removeTierKeys as _removeTierKeys,
+  type TierKey,
+} from '../lib/link-tier-key-store';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('useLinkKeys');
 
-/** Unwrapped tier key */
-export interface TierKey {
-  epochId: number;
-  tier: AccessTierType;
-  key: Uint8Array;
-  /** Sign public key for manifest verification */
-  signPubkey?: Uint8Array | undefined;
-}
+// Re-export TierKey for backward compatibility
+export type { TierKey } from '../lib/link-tier-key-store';
 
 /** Link key state */
 export interface LinkKeyState {
@@ -60,162 +60,10 @@ export interface LinkAccessResponse {
   encryptedName?: string | null;
 }
 
-/** IndexedDB database name for link keys */
-const DB_NAME = 'mosaic-link-keys';
-const DB_VERSION = 1;
-const STORE_NAME = 'keys';
-
 /**
- * Open IndexedDB for link key storage
+ * Clear cached tier keys for a link (re-export for backward compatibility)
  */
-async function openLinkKeysDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        // Store keyed by linkId, contains serialized tier keys
-        db.createObjectStore(STORE_NAME, { keyPath: 'linkId' });
-      }
-    };
-  });
-}
-
-/**
- * Serialize tier keys for IndexedDB storage
- */
-interface StoredLinkKeys {
-  linkId: string;
-  albumId: string;
-  accessTier: AccessTierType;
-  keys: Array<{
-    epochId: number;
-    tier: AccessTierType;
-    key: string; // Base64
-    signPubkey?: string; // Base64
-  }>;
-  storedAt: number;
-}
-
-/**
- * Save tier keys to IndexedDB
- */
-async function saveTierKeys(
-  linkId: string,
-  albumId: string,
-  accessTier: AccessTierType,
-  tierKeys: Map<number, Map<AccessTierType, TierKey>>,
-): Promise<void> {
-  const db = await openLinkKeysDb();
-
-  // Import toBase64 dynamically
-  const { toBase64 } = await import('@mosaic/crypto');
-
-  const keys: StoredLinkKeys['keys'] = [];
-  for (const [epochId, tierMap] of tierKeys) {
-    for (const [tier, tierKey] of tierMap) {
-      const entry: StoredLinkKeys['keys'][number] = {
-        epochId,
-        tier,
-        key: toBase64(tierKey.key),
-      };
-      if (tierKey.signPubkey) {
-        entry.signPubkey = toBase64(tierKey.signPubkey);
-      }
-      keys.push(entry);
-    }
-  }
-
-  const stored: StoredLinkKeys = {
-    linkId,
-    albumId,
-    accessTier,
-    keys,
-    storedAt: Date.now(),
-  };
-
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.put(stored);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
-    tx.oncomplete = () => db.close();
-  });
-}
-
-/**
- * Load tier keys from IndexedDB
- */
-async function loadTierKeys(linkId: string): Promise<{
-  albumId: string;
-  accessTier: AccessTierType;
-  tierKeys: Map<number, Map<AccessTierType, TierKey>>;
-} | null> {
-  const db = await openLinkKeysDb();
-
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.get(linkId);
-
-    request.onerror = () => {
-      db.close();
-      reject(request.error);
-    };
-
-    request.onsuccess = async () => {
-      db.close();
-      const stored = request.result as StoredLinkKeys | undefined;
-      if (!stored) {
-        resolve(null);
-        return;
-      }
-
-      // Import fromBase64 dynamically
-      const { fromBase64 } = await import('@mosaic/crypto');
-
-      const tierKeys = new Map<number, Map<AccessTierType, TierKey>>();
-      for (const key of stored.keys) {
-        if (!tierKeys.has(key.epochId)) {
-          tierKeys.set(key.epochId, new Map());
-        }
-        tierKeys.get(key.epochId)!.set(key.tier, {
-          epochId: key.epochId,
-          tier: key.tier,
-          key: fromBase64(key.key),
-          signPubkey: key.signPubkey ? fromBase64(key.signPubkey) : undefined,
-        });
-      }
-
-      resolve({
-        albumId: stored.albumId,
-        accessTier: stored.accessTier,
-        tierKeys,
-      });
-    };
-  });
-}
-
-/**
- * Clear cached tier keys for a link
- */
-export async function clearLinkKeys(linkId: string): Promise<void> {
-  const db = await openLinkKeysDb();
-
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.delete(linkId);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
-    tx.oncomplete = () => db.close();
-  });
-}
+export const clearLinkKeys = _removeTierKeys;
 
 /** Result of the useLinkKeys hook */
 export interface UseLinkKeysResult extends LinkKeyState {
@@ -293,8 +141,8 @@ export function useLinkKeys(
         throw new Error('Link has been tampered with');
       }
 
-      // Check IndexedDB cache first
-      const cached = await loadTierKeys(linkId);
+      // Check IndexedDB cache first (encrypted)
+      const cached = await getTierKeys(linkId);
       if (cached) {
         setState({
           isLoading: false,

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Mosaic.Backend.Controllers;
@@ -10,6 +11,8 @@ using Mosaic.Backend.Tests.Helpers;
 using NSubstitute;
 using NSec.Cryptography;
 using Xunit;
+using Mosaic.Backend.Tests.TestHelpers;
+
 
 namespace Mosaic.Backend.Tests.Controllers;
 
@@ -37,11 +40,12 @@ public class AuthControllerTests
         var logger = Substitute.For<ILogger<AuthController>>();
         var env = Substitute.For<IWebHostEnvironment>();
         env.EnvironmentName.Returns(isDevelopment ? "Development" : "Production");
+        var cache = new MemoryCache(new MemoryCacheOptions());
 
         var httpContext = new DefaultHttpContext();
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(remoteIp ?? "127.0.0.1");
 
-        return new AuthController(db, config, logger, env)
+        return new AuthController(db, config, logger, env, cache)
         {
             ControllerContext = new ControllerContext
             {
@@ -122,8 +126,8 @@ public class AuthControllerTests
         var result = await controller.InitAuth(new AuthController.AuthInitRequest(""));
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("required", badRequest.Value?.ToString(), StringComparison.OrdinalIgnoreCase);
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("required", ProblemDetailsAssertions.GetDetail(badRequest), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -137,8 +141,8 @@ public class AuthControllerTests
         var result = await controller.InitAuth(new AuthController.AuthInitRequest("user with spaces!"));
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("Invalid username format", badRequest.Value?.ToString());
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("Invalid username format", ProblemDetailsAssertions.GetDetail(badRequest));
     }
 
     [Fact]
@@ -269,8 +273,8 @@ public class AuthControllerTests
         ));
 
         // Assert
-        var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
-        Assert.Contains("Invalid credentials", unauthorized.Value?.ToString());
+        var unauthorized = ProblemDetailsAssertions.AssertUnauthorized(result);
+        Assert.Contains("Invalid credentials", ProblemDetailsAssertions.GetDetail(unauthorized));
     }
 
     [Fact]
@@ -293,8 +297,8 @@ public class AuthControllerTests
         ));
 
         // Assert
-        var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
-        Assert.Contains("Invalid credentials", unauthorized.Value?.ToString());
+        var unauthorized = ProblemDetailsAssertions.AssertUnauthorized(result);
+        Assert.Contains("Invalid credentials", ProblemDetailsAssertions.GetDetail(unauthorized));
     }
 
     [Fact]
@@ -338,8 +342,8 @@ public class AuthControllerTests
         ));
 
         // Assert
-        var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
-        Assert.Contains("expired", unauthorized.Value?.ToString(), StringComparison.OrdinalIgnoreCase);
+        var unauthorized = ProblemDetailsAssertions.AssertUnauthorized(result);
+        Assert.Contains("expired", ProblemDetailsAssertions.GetDetail(unauthorized), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -383,8 +387,8 @@ public class AuthControllerTests
         ));
 
         // Assert
-        var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
-        Assert.Contains("already used", unauthorized.Value?.ToString(), StringComparison.OrdinalIgnoreCase);
+        var unauthorized = ProblemDetailsAssertions.AssertUnauthorized(result);
+        Assert.Contains("already used", ProblemDetailsAssertions.GetDetail(unauthorized), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -441,8 +445,8 @@ public class AuthControllerTests
         ));
 
         // Assert
-        var conflictResult = Assert.IsType<ConflictObjectResult>(result);
-        Assert.Contains("already exists", conflictResult.Value?.ToString());
+        var conflictResult = ProblemDetailsAssertions.AssertConflict(result);
+        Assert.Contains("already exists", ProblemDetailsAssertions.GetDetail(conflictResult));
     }
 
     [Fact]
@@ -464,8 +468,8 @@ public class AuthControllerTests
         ));
 
         // Assert
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("16 bytes", badRequest.Value?.ToString());
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("16 bytes", ProblemDetailsAssertions.GetDetail(badRequest));
     }
 
     [Fact]

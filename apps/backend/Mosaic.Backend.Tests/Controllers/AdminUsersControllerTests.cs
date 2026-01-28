@@ -9,6 +9,8 @@ using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
 using Xunit;
+using Mosaic.Backend.Tests.TestHelpers;
+
 
 namespace Mosaic.Backend.Tests.Controllers;
 
@@ -100,7 +102,7 @@ public class AdminUsersControllerTests
         var controller = CreateController(db, admin);
         var result = await controller.GetUserQuota(Guid.NewGuid());
 
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -170,7 +172,7 @@ public class AdminUsersControllerTests
         var controller = CreateController(db, admin);
         var result = await controller.PromoteUser(admin.Id);
 
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -201,7 +203,7 @@ public class AdminUsersControllerTests
         var controller = CreateController(db, admin);
         var result = await controller.DemoteUser(admin.Id);
 
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("last admin", badRequest.Value!.ToString()!.ToLower());
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("last admin", ProblemDetailsAssertions.GetDetail(badRequest)?.ToLower() ?? "");
     }
 }

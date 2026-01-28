@@ -35,7 +35,7 @@ import { getMimeType } from './mime-type-detection';
 import { shouldStoreOriginalsAsAvif } from './settings-service';
 import { createLogger } from './logger';
 
-const log = createLogger('thumbnail-generator');
+const log = createLogger('ThumbnailGenerator');
 
 /**
  * Max dimension for embedded thumbnails in manifest (300px)

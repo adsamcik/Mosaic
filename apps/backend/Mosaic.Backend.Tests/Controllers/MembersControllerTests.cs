@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
+using Mosaic.Backend.Tests.TestHelpers;
+
 
 namespace Mosaic.Backend.Tests.Controllers;
 
@@ -235,7 +237,7 @@ public class MembersControllerTests
         var result = await controller.Invite(album.Id, request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -268,7 +270,7 @@ public class MembersControllerTests
         var result = await controller.Invite(album.Id, request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -308,7 +310,7 @@ public class MembersControllerTests
         var result = await controller.Invite(album.Id, request);
 
         // Assert
-        Assert.IsType<NotFoundObjectResult>(result);
+        ProblemDetailsAssertions.AssertNotFound(result);
     }
 
     [Fact]
@@ -350,7 +352,7 @@ public class MembersControllerTests
         var result = await controller.Invite(album.Id, request);
 
         // Assert
-        Assert.IsType<ConflictObjectResult>(result);
+        ProblemDetailsAssertions.AssertConflict(result);
     }
 
     [Fact]
@@ -438,7 +440,7 @@ public class MembersControllerTests
         var result = await controller.Invite(album.Id, request);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
@@ -524,7 +526,7 @@ public class MembersControllerTests
         var result = await controller.Remove(album.Id, owner.Id);
 
         // Assert
-        Assert.IsType<BadRequestObjectResult>(result);
+        ProblemDetailsAssertions.AssertBadRequest(result);
     }
 
     [Fact]
