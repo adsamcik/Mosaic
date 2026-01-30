@@ -1,8 +1,9 @@
 # SPEC: Album Content System (Story Blocks)
 
 > **Feature:** User descriptions, groupings, titles, and storytelling capabilities for albums
-> **Status:** Draft - Brainstorm & Research Complete
+> **Status:** Draft - Full Feature Design Complete
 > **Created:** 2026-01-28
+> **Updated:** 2026-01-29
 > **Authors:** Copilot Research
 
 ---
@@ -11,7 +12,7 @@
 
 Add a **modular content block system** to Mosaic albums, enabling users to tell stories through encrypted text blocks, section groupings, maps, and timeline markers—all while maintaining zero-knowledge encryption.
 
-**Recommended approach:** Start with **Section-Based MVP** (2-3 weeks), evolve to **full Block System** if user demand warrants (6+ weeks).
+**Target:** Full block-based system with phased rollout (v1 Core → v1.5 Geographic → v2 Rich Layouts).
 
 ---
 
@@ -24,7 +25,10 @@ Add a **modular content block system** to Mosaic albums, enabling users to tell 
 5. [Data Models](#data-models)
 6. [Security Analysis](#security-analysis)
 7. [Implementation Plan](#implementation-plan)
-8. [Open Questions](#open-questions)
+8. [Multi-Perspective Design Research](#multi-perspective-design-research)
+9. [Block Type Catalog](#block-type-catalog)
+10. [Resolved Design Decisions](#resolved-design-decisions)
+11. [Success Metrics](#success-metrics)
 
 ---
 
@@ -587,104 +591,398 @@ async function rotateEpochWithContent(
 
 ## Implementation Plan
 
-### Phase 1: Section-Based MVP (2-3 weeks)
+### Phase 1: Core Block System (3-4 weeks)
 
-**Goal:** Users can organize photos into titled sections with descriptions.
+**Goal:** Full block-based editor with essential block types.
+
+**Block Types for v1:**
+
+| Block | Priority | Effort | Description |
+|-------|----------|--------|-------------|
+| **HeadingBlock** | P0 | 1d | H1, H2, H3 section titles |
+| **TextBlock** | P0 | 3d | Rich text with bold/italic/links |
+| **PhotoBlock** | P0 | 2d | Single photo with optional caption |
+| **PhotoGroupBlock** | P0 | 5d | Grid/masonry/carousel layouts |
+| **DividerBlock** | P0 | 0.5d | Line, dots, or whitespace |
+| **SectionBlock** | P0 | 3d | Container for grouping blocks |
 
 **Backend:**
+
 - [ ] Add `AlbumContent` entity and migration
 - [ ] Add `GET/PUT /api/albums/{id}/content` endpoints
 - [ ] Include content in album sync response
 - [ ] Add content to epoch rotation logic
+- [ ] Version-based concurrency control
 
-**Frontend:**
-- [ ] Add content key derivation to crypto worker
-- [ ] Extend sync context to handle album content
-- [ ] Create `AlbumContentProvider` context
-- [ ] Build `SectionEditor` component
-- [ ] Build `SectionView` component for album display
-- [ ] Add section CRUD operations
-- [ ] Implement drag-and-drop section/photo reordering
+**Frontend - Editor:**
+
+- [ ] TipTap integration for rich text editing
+- [ ] Block type registry with schemas (Zod validation)
+- [ ] `@dnd-kit` for block reordering
+- [ ] Fractional indexing for position management
+- [ ] Slash command (`/`) for adding blocks
+- [ ] Block toolbar (hover controls)
+- [ ] Debounced autosave (1500ms)
+
+**Frontend - Rendering:**
+
+- [ ] `AlbumContentProvider` context
+- [ ] Block renderers for each type
+- [ ] Read-only view mode
+- [ ] Photo picker modal for PhotoBlock/PhotoGroupBlock
+
+**Crypto:**
+
+- [ ] `deriveContentKey()` with HKDF domain separation
+- [ ] Encrypt/decrypt album content document
+- [ ] Signature verification before decrypt
+- [ ] Key rotation with content re-encryption
 
 **Tests:**
-- [ ] Crypto: Content encryption/decryption round-trip
-- [ ] Sync: Content version handling
-- [ ] E2E: Create section, add photos, reorder
 
-### Phase 2: Enhanced Sections (2 weeks)
+- [ ] Crypto: Round-trip encryption/decryption
+- [ ] Validation: Block schema validation with malformed data
+- [ ] Sync: Version conflict handling
+- [ ] E2E: Create blocks, reorder, edit, delete
 
-**Goal:** Add map and timeline views to sections.
+### Phase 1.5: Geographic & Temporal (3 weeks)
 
-- [ ] Section map view (photos with GPS in section)
-- [ ] Section timeline view
-- [ ] Auto-compute section date range from photos
-- [ ] Auto-generate section suggestions from photo clusters
+**Goal:** Location and time-based storytelling features.
 
-### Phase 3: Full Block System (4-6 weeks)
+| Block | Priority | Effort | Description |
+|-------|----------|--------|-------------|
+| **MapBlock** | P1 | 5d | Leaflet map showing photo locations |
+| **TimelineMarker** | P1 | 2d | Date waypoint in content flow |
+| **DateRangeBlock** | P1 | 1d | Trip duration display |
+| **TableOfContentsBlock** | P1 | 2d | Auto-generated from headings |
+| **HeroBlock** | P1 | 2d | Full-width banner image |
 
-**Goal:** Full editorial control with inline blocks.
+**Features:**
 
-**Only implement if:**
-- User feedback requests more flexibility
-- Section system proves limiting
-- Resources available for extended development
+- [ ] Map integration with existing Leaflet/Supercluster
+- [ ] Auto-compute location/date metadata from photos in section
+- [ ] Collapsible sections (expand/collapse)
+- [ ] Quote and callout blocks
 
-- [ ] Block type registry and renderers
-- [ ] Rich text editor integration (Slate.js or TipTap)
-- [ ] Block drag-and-drop
-- [ ] Keyboard navigation
-- [ ] Mobile touch editing
+### Phase 2: Rich Layouts & Interaction (4-6 weeks)
+
+**Goal:** Advanced layouts and interactive features.
+
+| Block | Priority | Effort | Description |
+|-------|----------|--------|-------------|
+| **JourneyMapBlock** | P2 | 8d | Route visualization with photo waypoints |
+| **BeforeAfterBlock** | P2 | 4d | Comparison slider for two photos |
+| **SlideshowBlock** | P2 | 5d | Auto-playing presentation mode |
+| **ColumnLayoutBlock** | P2 | 3d | 2/3 column layouts |
+| **TabbedContentBlock** | P2 | 4d | Multi-view sections |
+
+**Features:**
+
+- [ ] Column layouts for text + photo side-by-side
+- [ ] Slideshow presentation mode
+- [ ] Before/after comparison slider
+- [ ] Album linking (related albums)
+- [ ] Photo statistics block
+
+### Future Vision (v3+)
+
+| Block | Notes |
+|-------|-------|
+| **VideoBlock** | Requires video upload support |
+| **AudioBlock** | Voice notes, ambient audio |
+| **TimelapseMapBlock** | Animated journey replay |
+| **WeatherBlock** | Historical weather at photo time/place |
+| **PanoramaViewer** | 360° photo support |
+| **AutoCaptionBlock** | Client-side AI captions (on-device inference) |
 
 ---
 
-## Open Questions
+## Multi-Perspective Design Research
 
-### Design Decisions
+### UX/Editor Design
 
-1. **Should sections support nesting?**
-   - Pro: More organizational flexibility
-   - Con: Complexity, harder mobile UX
-   - **Recommendation:** No for MVP, evaluate for Phase 2
+**Editor Mode Decision:**
+No explicit View/Edit toggle. Follow Notion/Apple Notes model where content is always editable for authorized users. Controls appear contextually:
+- Viewing: Clean, minimal UI
+- Focused: Block outline + drag handle
+- Editing: Caret visible + inline toolbar
 
-2. **How to handle photos not in any section?**
-   - Option A: Implicit "Unsorted" section at end
-   - Option B: Grid view before first section
-   - **Recommendation:** Option A with ability to hide
+**Block Manipulation UX:**
 
-3. **Should content sync independently of photos?**
-   - Pro: Smaller sync payloads for content-only edits
-   - Con: More complex version management
-   - **Recommendation:** Include in album sync bundle
+| Action | Desktop | Mobile |
+|--------|---------|--------|
+| Add block | Slash command `/` or hover `(+)` | Floating Action Button (FAB) |
+| Reorder | Drag handle on left | Long-press + drag, or "Reorder Mode" |
+| Delete | Immediate with undo toast (5s) | Same |
+| Multi-select | Shift+click range | Enter selection mode |
 
-### Technical Decisions
+**Rich Text:**
+Minimal but polished: Bold, italic, links, quotes only. Support both inline toolbar on selection and Markdown shortcuts (`**bold**`, `*italic*`).
 
-4. **Rich text format for descriptions?**
-   - Option A: Plain text only (MVP)
-   - Option B: Basic markdown (bold, italic, links)
-   - Option C: Full rich text (Slate.js/TipTap format)
-   - **Recommendation:** Option B for MVP
+**Recommended Libraries:**
 
-5. **Mobile editing experience?**
-   - Touch drag-and-drop is notoriously difficult
-   - Consider: Hold-to-reorder, dedicated "edit mode"
-   - **Recommendation:** Research mobile patterns before Phase 1
+| Need | Library | Rationale |
+|------|---------|-----------|
+| Rich text | **TipTap** | Excellent block customization, TypeScript-first, Y.js support |
+| Drag & drop | **@dnd-kit** | Touch-native, keyboard support, works with virtualization |
+| Ordering | **fractional-indexing** | Efficient reordering without array shifts |
 
-6. **Conflict resolution for concurrent edits?**
-   - LWW is sufficient for small user base (≤50)
-   - Future: Block-level CRDT if collaboration grows
-   - **Recommendation:** LWW with conflict UI
+**Mobile Considerations:**
+- FAB button for adding blocks (always visible)
+- Long-press for context menus
+- Formatting toolbar fixed above keyboard
+- Explicit "Reorder Mode" toggle (touch drag-drop is notoriously difficult)
 
-### User Experience
+### Performance Analysis
 
-7. **How to onboard users to sections?**
-   - Auto-suggest sections from date clusters?
-   - Empty state with "Add Section" prompt?
-   - Tutorial overlay on first visit?
+**Key Benchmarks:**
 
-8. **What's the default album view?**
-   - New albums: Grid (existing behavior)
-   - After adding sections: Sections view
-   - User preference stored in content settings
+| Operation | 50 Blocks (~40KB) | 500 Blocks (~400KB) |
+|-----------|-------------------|---------------------|
+| Encrypt time | <2 ms | 10-15 ms |
+| Decrypt time | <2 ms | 10-15 ms |
+| Full render | <50 ms | <200 ms |
+
+**Performance Budgets:**
+
+| Metric | Target | Warning | Error |
+|--------|--------|---------|-------|
+| Content encryption | <15ms | >50ms | >200ms |
+| Initial render | <100ms | >200ms | >500ms |
+| Sync latency | <2s | >3s | >10s |
+| Memory (blocks) | <50MB | >100MB | >200MB |
+
+**Optimizations:**
+
+- Debounced autosave (1500ms) with force-save on blur
+- TanStack Virtual only for >50 blocks
+- Lazy-load photo thumbnails in PhotoGroupBlock
+- Undo stack limit: 20 states / 5MB max
+- Clear content cache on album navigation
+
+### Sync & Conflict Resolution
+
+**Strategy: Block-Level Merge with LWW Fallback**
+
+| Scenario | Resolution |
+|----------|------------|
+| Two users add blocks at same position | Fractional indexing handles |
+| Two users edit same block | Block-level merge with LWW fallback |
+| Offline edits reconnecting | Three-way merge + conflict notification |
+| Edit during key rotation | Detect epoch mismatch, re-encrypt |
+
+**Sync Protocol:**
+
+```typescript
+interface AlbumContentSync {
+  albumId: string;
+  version: number;
+  encryptedContent: Uint8Array;
+  signature: Uint8Array;
+  signerPubkey: Uint8Array;
+  expectedVersion: number; // For optimistic concurrency
+}
+```
+
+**Conflict UX:**
+- 95% of conflicts auto-merge (different blocks, additions, reorderings)
+- Toast notification + optional resolution dialog for remaining 5%
+- Version history snapshots for recovery
+
+**Future Path to CRDTs:**
+Design allows migration to Yjs/Secsync for real-time collaboration if needed.
+
+### Security Requirements
+
+**Must Have (P0):**
+
+| ID | Requirement |
+|----|-------------|
+| S-001 | URL scheme allowlist for hrefs (no `javascript:`, `data:`, `vbscript:`) |
+| S-002 | Never use `dangerouslySetInnerHTML` for block content |
+| S-003 | Strict Zod schema validation on every decrypt |
+| S-004 | Graceful handling of malformed blocks (no crashes) |
+| S-005 | Content size limits enforced client-side |
+| S-006 | Fresh `randombytes_buf(24)` nonce per encryption call |
+| S-007 | Signature verification BEFORE decryption |
+| S-008 | No external resource loading in rich text |
+| S-009 | `memzero()` on all key material after use |
+| S-010 | Strip HTML on paste, extract plain text only |
+
+**Should Have (P1):**
+
+| ID | Requirement |
+|----|-------------|
+| S-011 | Minimum padding for small blocks (512 bytes) |
+| S-012 | Version binding in signatures (replay prevention) |
+| S-013 | Separate `contentKey` derivation for share link tiers |
+| S-014 | Read-only mode enforcement for share link viewers |
+| S-015 | Rate limiting on block creation |
+| S-016 | Soft delete with retention period |
+| S-017 | CSP headers blocking inline scripts and external images |
+
+**XSS Prevention:**
+
+```typescript
+// REQUIRED: URL scheme allowlist
+const ALLOWED_URL_SCHEMES = ['https:', 'http:', 'mailto:'];
+
+function sanitizeHref(href: string): string | null {
+  try {
+    const url = new URL(href);
+    if (!ALLOWED_URL_SCHEMES.includes(url.protocol)) {
+      return null;
+    }
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+```
+
+**Size Correlation Attack Mitigation:**
+
+```typescript
+// Pad small blocks to prevent type inference
+const MIN_ENCRYPTED_SIZE = 512;
+
+function encryptWithPadding(plaintext: Uint8Array, key: Uint8Array): Uint8Array {
+  const targetSize = Math.max(MIN_ENCRYPTED_SIZE, 1 << Math.ceil(Math.log2(plaintext.length + 1)));
+  const padded = new Uint8Array(Math.min(targetSize, 64 * 1024));
+  padded.set(plaintext);
+  // Random fill remainder
+  crypto.getRandomValues(padded.subarray(plaintext.length + 4));
+  new DataView(padded.buffer).setUint32(plaintext.length, plaintext.length, true);
+  return encrypt(padded, key);
+}
+```
+
+---
+
+## Block Type Catalog
+
+### Category 1: Core Content (v1)
+
+```typescript
+interface HeadingBlock {
+  type: 'heading';
+  id: string;
+  level: 1 | 2 | 3;
+  text: string;
+  position: string;
+}
+
+interface TextBlock {
+  type: 'text';
+  id: string;
+  segments: RichTextSegment[];
+  position: string;
+}
+
+interface RichTextSegment {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  code?: boolean;
+  href?: string; // Must pass sanitizeHref()
+}
+
+interface PhotoBlock {
+  type: 'photo';
+  id: string;
+  manifestId: string;
+  caption?: RichTextSegment[];
+  position: string;
+}
+
+interface PhotoGroupBlock {
+  type: 'photo-group';
+  id: string;
+  manifestIds: string[];
+  layout: 'grid' | 'masonry' | 'carousel' | 'row';
+  columns?: 2 | 3 | 4;
+  position: string;
+}
+
+interface DividerBlock {
+  type: 'divider';
+  id: string;
+  style: 'line' | 'dots' | 'space';
+  position: string;
+}
+
+interface SectionBlock {
+  type: 'section';
+  id: string;
+  title?: string;
+  collapsed?: boolean;
+  childIds: string[]; // References to other blocks
+  position: string;
+}
+```
+
+### Category 2: Geographic (v1.5)
+
+```typescript
+interface MapBlock {
+  type: 'map';
+  id: string;
+  photoIds: string[] | 'all';
+  center?: { lat: number; lng: number; zoom: number };
+  position: string;
+}
+
+interface TimelineMarkerBlock {
+  type: 'timeline';
+  id: string;
+  date: string; // ISO 8601
+  label?: string;
+  position: string;
+}
+```
+
+### Category 3: Layout (v2)
+
+```typescript
+interface HeroBlock {
+  type: 'hero';
+  id: string;
+  manifestId: string;
+  overlayText?: string;
+  position: string;
+}
+
+interface ColumnLayoutBlock {
+  type: 'columns';
+  id: string;
+  columns: 2 | 3;
+  childIds: string[][]; // Array of block IDs per column
+  position: string;
+}
+
+interface BeforeAfterBlock {
+  type: 'before-after';
+  id: string;
+  beforeManifestId: string;
+  afterManifestId: string;
+  position: string;
+}
+```
+
+---
+
+## Resolved Design Decisions
+
+| Question | Decision | Rationale |
+|----------|----------|-----------|
+| Section nesting? | **Max 2 levels** (Section → Blocks) | Simpler UX, mobile-friendly |
+| Photos not in blocks? | **Implicit "Unsorted" section** at end | Backwards compatible |
+| Content sync? | **With album sync bundle** | Simpler version management |
+| Rich text format? | **TipTap internal format** (not Markdown) | Richer editing, better UX |
+| Mobile editing? | **Explicit "Reorder Mode"** toggle | Touch drag-drop is unreliable |
+| Conflict resolution? | **Block-level merge + LWW** | Balance of simplicity and correctness |
+| Onboarding? | **Templates + slash commands** | Guided but not restrictive |
+| Default view? | **Grid until user adds blocks** | Preserve existing behavior |
 
 ---
 
@@ -692,10 +990,12 @@ async function rotateEpochWithContent(
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Section creation rate | 30% of albums with ≥1 section | Analytics |
-| Section with description | 20% of sections have text | Analytics |
+| Block adoption | 40% of albums with ≥1 block | Analytics |
+| Text block usage | 25% of albums with narrative text | Analytics |
+| Map block usage | 15% of albums with map | Analytics |
 | Content sync latency | <500ms for content update | Performance monitoring |
 | Key rotation time | <2s with content included | Performance monitoring |
+| Editor performance | <100ms initial render | Performance monitoring |
 | User satisfaction | Positive feedback on storytelling | User interviews |
 
 ---
@@ -771,3 +1071,4 @@ function migrateToBlocks(sections: Section[]): ContentBlock[] {
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-01-28 | Copilot | Initial brainstorm and research |
+| 2026-01-29 | Copilot | Full feature design with multi-perspective research (UX, Data Model, Performance, Sync, Block Types, Security). Replaced phased MVP approach with comprehensive block system. Added resolved design decisions, security requirements, and performance budgets. |

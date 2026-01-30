@@ -176,6 +176,48 @@ npx playwright test auth-modes.spec.ts --project=chromium
 
 ---
 
+### Album Content System (Story Blocks)
+
+**Purpose:** Rich, block-based content editing for albums - allows adding headings, text, photo groups, and dividers alongside photos.
+
+**Implementation:**
+| Layer    | Location                                                                                      |
+| -------- | --------------------------------------------------------------------------------------------- |
+| Backend  | [Controllers/AlbumContentController.cs](../apps/backend/Mosaic.Backend/Controllers/AlbumContentController.cs) |
+| Backend  | [Models/AlbumContent.cs](../apps/backend/Mosaic.Backend/Models/AlbumContent.cs)               |
+| Crypto   | [libs/crypto/src/content.ts](../libs/crypto/src/content.ts) - deriveContentKey, encryptContent |
+| Frontend | [contexts/AlbumContentContext.tsx](../apps/admin/src/contexts/AlbumContentContext.tsx)        |
+| Frontend | [lib/content-blocks.ts](../apps/admin/src/lib/content-blocks.ts) - Zod schemas & types        |
+| Frontend | [components/Content/](../apps/admin/src/components/Content/) - BlockRenderers & BlockEditor   |
+
+**Block Types:**
+- `heading` - H1/H2/H3 section headings
+- `text` - Rich text paragraphs with formatting (bold, italic, code, links)
+- `photo` - Single photo with optional caption
+- `photo-group` - Grid/row/masonry layouts of multiple photos
+- `divider` - Visual separators (line, dots, space)
+- `section` - Collapsible sections with nested blocks
+
+**Features:**
+- Zero-knowledge encryption (content encrypted client-side with derived key)
+- WYSIWYG editing with TipTap editor
+- Drag-and-drop block reordering with @dnd-kit
+- Optimistic concurrency control (version-based)
+- XSS protection via URL sanitization
+
+**Key Derivation:**
+Content is encrypted using a key derived from the album's epoch key:
+```typescript
+contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
+```
+
+**Tests:**
+- Backend: `Mosaic.Backend.Tests/AlbumContentTests/`
+- Crypto: `libs/crypto/tests/content.test.ts`
+- Frontend: `apps/admin/tests/lib/content-blocks.test.ts`, `apps/admin/tests/components/BlockRenderers.test.tsx`
+
+---
+
 ## Photo Management
 
 ### Photo Upload
@@ -616,6 +658,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-01-29 | Album Content System        | Added    | Block-based content editor with TipTap, dnd-kit, Zod schemas |
 | 2026-01-22 | ThumbHash Placeholders      | Modified | Migrated from BlurHash to ThumbHash for better quality and aspect ratio preservation |
 | 2026-01-21 | Documentation Update        | Modified | Updated file paths, added missing features (Admin, i18n, Format Conversion, BlurHash) |
 | 2026-01-06 | Gallery Animation Tests     | Added    | E2E tests for AnimatedTile, documented happy-dom limitations |

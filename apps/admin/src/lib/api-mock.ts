@@ -19,6 +19,8 @@ import type {
   RenameAlbumResponse,
   UpdateDescriptionRequest,
   UpdateDescriptionResponse,
+  AlbumContentResponse,
+  UpdateAlbumContentRequest,
   SyncResponse,
   AlbumMember,
   InviteRequest,
@@ -58,6 +60,7 @@ interface MockStore {
   currentUser: User;
   users: Map<string, User>;
   albums: Map<string, Album>;
+  albumContent: Map<string, AlbumContentResponse>;
   members: Map<string, AlbumMember[]>;
   epochKeys: Map<string, EpochKeyRecord[]>;
   manifests: Map<string, ManifestRecord>;
@@ -180,6 +183,7 @@ function createMockStore(): MockStore {
     currentUser,
     users,
     albums,
+    albumContent: new Map<string, AlbumContentResponse>(),
     members,
     epochKeys: new Map(),
     manifests: new Map(),
@@ -425,6 +429,55 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
         albumVersion: album.currentVersion,
         hasMore: since + count < album.currentVersion,
       };
+    },
+
+    // =========================================================================
+    // Album Content
+    // =========================================================================
+    async getAlbumContent(albumId: string): Promise<AlbumContentResponse> {
+      await delay();
+      const album = store.albums.get(albumId);
+      if (!album) {
+        throw new Error(`Album not found: ${albumId}`);
+      }
+      
+      const content = store.albumContent.get(albumId);
+      if (!content) {
+        throw new Error(`Album content not found: ${albumId}`);
+      }
+      
+      return { ...content };
+    },
+
+    async updateAlbumContent(
+      albumId: string,
+      request: UpdateAlbumContentRequest,
+    ): Promise<AlbumContentResponse> {
+      await delay();
+      const album = store.albums.get(albumId);
+      if (!album) {
+        throw new Error(`Album not found: ${albumId}`);
+      }
+      
+      // Check version for optimistic concurrency
+      const existingContent = store.albumContent.get(albumId);
+      const currentVersion = existingContent?.version ?? 0;
+      
+      if (request.expectedVersion !== currentVersion) {
+        throw new Error('Version mismatch - content was modified');
+      }
+      
+      // Create/update content
+      const newContent: AlbumContentResponse = {
+        encryptedContent: request.encryptedContent,
+        nonce: request.nonce,
+        epochId: request.epochId,
+        version: currentVersion + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      
+      store.albumContent.set(albumId, newContent);
+      return { ...newContent };
     },
 
     // =========================================================================

@@ -1,0 +1,280 @@
+/**
+ * Album Content Block Renderers Styles
+ */
+
+/* =============================================================================
+   Album Content Container
+   ============================================================================= */
+
+.album-content {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.album-content-block {
+  margin-bottom: 1.5rem;
+}
+
+/* =============================================================================
+   Heading Block
+   ============================================================================= */
+
+.block-heading {
+  font-family: var(--font-display, 'Outfit', sans-serif);
+  color: var(--color-text-primary, #1a1a2e);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.block-heading-1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.block-heading-2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.block-heading-3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+/* =============================================================================
+   Text Block
+   ============================================================================= */
+
+.block-text {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--color-text-secondary, #4a4a68);
+  margin: 0;
+}
+
+.block-code {
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.875em;
+  background: var(--color-bg-secondary, #f5f5f7);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+}
+
+.block-link {
+  color: var(--color-primary, #6366f1);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.block-link:hover {
+  color: var(--color-primary-hover, #4f46e5);
+  text-decoration: underline;
+}
+
+/* =============================================================================
+   Photo Block
+   ============================================================================= */
+
+.block-photo {
+  margin: 0;
+}
+
+.block-photo-container {
+  position: relative;
+  cursor: pointer;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-bg-secondary, #f5f5f7);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.block-photo-container:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.block-photo-container:focus {
+  outline: 2px solid var(--color-primary, #6366f1);
+  outline-offset: 2px;
+}
+
+.block-photo-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+.block-photo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  background: var(--color-bg-tertiary, #e5e5ea);
+  color: var(--color-text-tertiary, #8e8ea0);
+  font-size: 0.875rem;
+}
+
+.block-photo-caption {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary, #4a4a68);
+  text-align: center;
+  font-style: italic;
+}
+
+/* =============================================================================
+   Photo Group Block
+   ============================================================================= */
+
+.block-photo-group {
+  display: grid;
+  gap: 0.5rem;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.block-photo-group-row {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.block-photo-group-grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.block-photo-group-masonry {
+  columns: 2;
+  column-gap: 0.5rem;
+}
+
+.block-photo-group-masonry .block-photo-group-item {
+  break-inside: avoid;
+  margin-bottom: 0.5rem;
+}
+
+.block-photo-group-item {
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--color-bg-secondary, #f5f5f7);
+  transition: transform 0.2s ease;
+}
+
+.block-photo-group-item:hover {
+  transform: scale(1.02);
+}
+
+.block-photo-group-item:focus {
+  outline: 2px solid var(--color-primary, #6366f1);
+  outline-offset: 2px;
+}
+
+.block-photo-group-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+.block-photo-group-placeholder {
+  aspect-ratio: 1;
+  background: var(--color-bg-tertiary, #e5e5ea);
+}
+
+/* =============================================================================
+   Divider Block
+   ============================================================================= */
+
+.block-divider {
+  border: none;
+  margin: 2rem 0;
+}
+
+.block-divider-line {
+  height: 1px;
+  background: var(--color-border, #e5e5ea);
+}
+
+.block-divider-dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.block-divider-dots::before,
+.block-divider-dots::after {
+  content: '•';
+  color: var(--color-text-tertiary, #8e8ea0);
+}
+
+.block-divider-space {
+  height: 2rem;
+}
+
+/* =============================================================================
+   Section Block
+   ============================================================================= */
+
+.block-section {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  background: var(--color-bg-secondary, #f5f5f7);
+  border-radius: 12px;
+}
+
+.block-section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary, #1a1a2e);
+  margin: 0 0 1rem 0;
+}
+
+.block-section-content {
+  /* Container for nested blocks */
+}
+
+/* =============================================================================
+   Dark Mode
+   ============================================================================= */
+
+@media (prefers-color-scheme: dark) {
+  .block-heading {
+    color: var(--color-text-primary-dark, #f5f5f7);
+  }
+
+  .block-text {
+    color: var(--color-text-secondary-dark, #a1a1aa);
+  }
+
+  .block-code {
+    background: var(--color-bg-secondary-dark, #27272a);
+  }
+
+  .block-photo-container,
+  .block-photo-placeholder,
+  .block-photo-group-item {
+    background: var(--color-bg-secondary-dark, #27272a);
+  }
+
+  .block-photo-placeholder {
+    background: var(--color-bg-tertiary-dark, #3f3f46);
+    color: var(--color-text-tertiary-dark, #71717a);
+  }
+
+  .block-divider-line {
+    background: var(--color-border-dark, #3f3f46);
+  }
+
+  .block-section {
+    background: var(--color-bg-secondary-dark, #27272a);
+  }
+
+  .block-section-title {
+    color: var(--color-text-primary-dark, #f5f5f7);
+  }
+}

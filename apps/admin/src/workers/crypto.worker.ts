@@ -27,6 +27,9 @@ import {
   deriveIdentityKeypair,
   deriveKeys,
   deriveTierKeys,
+  deriveContentKey,
+  encryptContent as cryptoEncryptContent,
+  decryptContent as cryptoDecryptContent,
   getArgon2Params,
   memzero,
   sealAndSignBundle,
@@ -941,6 +944,66 @@ class CryptoWorker implements CryptoWorkerApi {
     }
     // Return a copy to prevent external modification
     return new Uint8Array(this.authKeypair.publicKey);
+  }
+
+  // =========================================================================
+  // Album Content Encryption (Story Blocks)
+  // =========================================================================
+
+  /**
+   * Encrypt album content (story blocks document).
+   * Uses epoch key to derive a content-specific key via HKDF.
+   * Binds epochId as AAD to prevent cross-epoch replay.
+   */
+  async encryptAlbumContent(
+    content: Uint8Array,
+    epochSeed: Uint8Array,
+    epochId: number,
+  ): Promise<{ nonce: Uint8Array; ciphertext: Uint8Array }> {
+    await this.ensureSodiumReady();
+
+    // Derive content key from epoch seed
+    const contentKey = deriveContentKey(epochSeed);
+
+    try {
+      // Encrypt content with the derived key
+      const result = cryptoEncryptContent(content, contentKey, epochId);
+      return {
+        nonce: result.nonce,
+        ciphertext: result.ciphertext,
+      };
+    } finally {
+      // Always zero the derived key
+      memzero(contentKey);
+    }
+  }
+
+  /**
+   * Decrypt album content.
+   */
+  async decryptAlbumContent(
+    ciphertext: Uint8Array,
+    nonce: Uint8Array,
+    epochSeed: Uint8Array,
+    epochId: number,
+  ): Promise<Uint8Array> {
+    await this.ensureSodiumReady();
+
+    // Derive content key from epoch seed
+    const contentKey = deriveContentKey(epochSeed);
+
+    try {
+      // Decrypt content
+      return cryptoDecryptContent(
+        ciphertext,
+        nonce,
+        contentKey,
+        epochId,
+      );
+    } finally {
+      // Always zero the derived key
+      memzero(contentKey);
+    }
   }
 }
 

@@ -17,6 +17,8 @@ import type {
   RenameAlbumResponse,
   UpdateDescriptionRequest,
   UpdateDescriptionResponse,
+  AlbumContentResponse,
+  UpdateAlbumContentRequest,
   SyncResponse,
   AlbumMember,
   InviteRequest,
@@ -225,6 +227,23 @@ export function createApiClient(): MosaicApi {
         params.set('limit', String(limit));
       }
       return apiRequest(`/albums/${albumId}/sync?${params}`);
+    },
+
+    // =========================================================================
+    // Album Content
+    // =========================================================================
+    async getAlbumContent(albumId: string): Promise<AlbumContentResponse> {
+      return apiRequest(`/albums/${albumId}/content`);
+    },
+
+    async updateAlbumContent(
+      albumId: string,
+      request: UpdateAlbumContentRequest,
+    ): Promise<AlbumContentResponse> {
+      return apiRequest(`/albums/${albumId}/content`, {
+        method: 'PUT',
+        body: request,
+      });
     },
 
     // =========================================================================

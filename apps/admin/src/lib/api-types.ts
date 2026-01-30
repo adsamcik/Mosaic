@@ -141,6 +141,36 @@ export interface UpdateDescriptionResponse {
   updatedAt: string;
 }
 
+// =============================================================================
+// Album Content Types (Story Blocks)
+// =============================================================================
+
+/** Response containing encrypted album content */
+export interface AlbumContentResponse {
+  /** Base64-encoded encrypted content document */
+  encryptedContent: string;
+  /** Base64-encoded 24-byte nonce */
+  nonce: string;
+  /** Epoch ID used for encryption */
+  epochId: number;
+  /** Content version (for optimistic concurrency) */
+  version: number;
+  /** When content was last updated (ISO 8601) */
+  updatedAt: string;
+}
+
+/** Request to update album content */
+export interface UpdateAlbumContentRequest {
+  /** Base64-encoded encrypted content document */
+  encryptedContent: string;
+  /** Base64-encoded 24-byte nonce */
+  nonce: string;
+  /** Epoch ID used for encryption */
+  epochId: number;
+  /** Expected current version (0 for new content) */
+  expectedVersion: number;
+}
+
 /** Request to update share link expiration settings */
 export interface UpdateLinkExpirationRequest {
   /** ISO 8601 date when link expires, or null to remove expiration */
@@ -558,4 +588,11 @@ export interface MosaicApi {
   // Admin - Stats
   getStats(): Promise<AdminStatsResponse>;
   getNearLimits(): Promise<NearLimitsResponse>;
+
+  // Album Content
+  getAlbumContent(albumId: string): Promise<AlbumContentResponse>;
+  updateAlbumContent(
+    albumId: string,
+    request: UpdateAlbumContentRequest,
+  ): Promise<AlbumContentResponse>;
 }

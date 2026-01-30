@@ -481,6 +481,41 @@ export interface CryptoWorkerApi {
    * @param keys - Keys previously exported via exportKeys()
    */
   importKeys(keys: ExportedKeys): Promise<void>;
+
+  // =========================================================================
+  // Album Content Encryption (Story Blocks)
+  // =========================================================================
+
+  /**
+   * Encrypt album content (story blocks document).
+   * Uses epoch key to derive a content-specific key via HKDF.
+   * Binds epochId as AAD to prevent cross-epoch replay.
+   *
+   * @param content - Plaintext content (JSON-encoded document)
+   * @param epochSeed - Epoch seed for key derivation (32 bytes)
+   * @param epochId - Epoch ID for AAD binding
+   * @returns Encrypted content with nonce
+   */
+  encryptAlbumContent(
+    content: Uint8Array,
+    epochSeed: Uint8Array,
+    epochId: number,
+  ): Promise<{ nonce: Uint8Array; ciphertext: Uint8Array }>;
+
+  /**
+   * Decrypt album content.
+   * @param ciphertext - Encrypted content
+   * @param nonce - 24-byte nonce from encryption
+   * @param epochSeed - Epoch seed for key derivation (32 bytes)
+   * @param epochId - Epoch ID for AAD verification
+   * @returns Decrypted plaintext content
+   */
+  decryptAlbumContent(
+    ciphertext: Uint8Array,
+    nonce: Uint8Array,
+    epochSeed: Uint8Array,
+    epochId: number,
+  ): Promise<Uint8Array>;
 }
 
 /** Exported keys structure for session caching */

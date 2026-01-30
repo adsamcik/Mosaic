@@ -17,6 +17,8 @@ const THUMB_KEY_CONTEXT = toBytes('mosaic:tier:thumb:v1');
 const PREVIEW_KEY_CONTEXT = toBytes('mosaic:tier:preview:v1');
 /** HKDF context for full tier key derivation */
 const FULL_KEY_CONTEXT = toBytes('mosaic:tier:full:v1');
+/** HKDF context for album content key derivation */
+const CONTENT_KEY_CONTEXT = toBytes('mosaic:tier:content:v1');
 
 /**
  * Derive a tier key from epoch seed using HKDF-style BLAKE2b.
@@ -51,6 +53,26 @@ export function deriveTierKeys(epochSeed: Uint8Array): {
     previewKey: deriveTierKey(epochSeed, PREVIEW_KEY_CONTEXT),
     fullKey: deriveTierKey(epochSeed, FULL_KEY_CONTEXT),
   };
+}
+
+/**
+ * Derive the content key for album content encryption.
+ * Uses HKDF-style BLAKE2b with domain separation.
+ *
+ * Content key is used for encrypting album narrative content (blocks, text, etc.)
+ * and is derived on-demand rather than stored in EpochKey to keep the interface lean.
+ *
+ * @param epochSeed - 32-byte master seed from epoch
+ * @returns 32-byte content encryption key
+ */
+export function deriveContentKey(epochSeed: Uint8Array): Uint8Array {
+  if (epochSeed.length !== KEY_SIZE) {
+    throw new CryptoError(
+      `Epoch seed must be ${KEY_SIZE} bytes, got ${epochSeed.length}`,
+      CryptoErrorCode.INVALID_KEY_LENGTH,
+    );
+  }
+  return deriveTierKey(epochSeed, CONTENT_KEY_CONTEXT);
 }
 
 /**

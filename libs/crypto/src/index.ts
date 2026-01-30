@@ -120,7 +120,11 @@ export {
   isValidEpochKey,
   deriveTierKeys,
   getTierKey,
+  deriveContentKey,
 } from './epochs';
+
+// Re-export content encryption
+export { encryptContent, decryptContent, type EncryptedContent } from './content';
 
 // Re-export sharing
 export {

@@ -1,0 +1,466 @@
+/**
+ * Block Editor Styles
+ *
+ * Styles for the WYSIWYG block editor and drag-drop functionality.
+ */
+
+/* ==============================================================================
+   TipTap Editor Base Styles
+   ============================================================================== */
+
+.text-editor {
+  min-height: 2rem;
+}
+
+.text-editor .tiptap {
+  min-height: 1.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  outline: none;
+}
+
+.text-editor .tiptap:focus {
+  border-color: var(--primary-color, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.text-editor .tiptap p {
+  margin: 0;
+}
+
+.text-editor .tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text-secondary, #9ca3af);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* ==============================================================================
+   Heading Editor
+   ============================================================================== */
+
+.heading-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.heading-editor-controls {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.heading-level-btn {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  background: var(--bg-secondary, #f9fafb);
+  color: var(--text-primary, #1f2937);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.heading-level-btn:hover {
+  background: var(--bg-hover, #f3f4f6);
+}
+
+.heading-level-btn.active {
+  background: var(--primary-color, #3b82f6);
+  border-color: var(--primary-color, #3b82f6);
+  color: white;
+}
+
+.heading-input {
+  padding: 0.5rem;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-family: inherit;
+  outline: none;
+}
+
+.heading-input:focus {
+  border-color: var(--primary-color, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.heading-input.heading-level-1 {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.heading-input.heading-level-2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.heading-input.heading-level-3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+/* ==============================================================================
+   Sortable Block
+   ============================================================================== */
+
+.sortable-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  background: var(--bg-primary, #ffffff);
+  transition: all 0.15s ease;
+}
+
+.sortable-block:hover {
+  border-color: var(--primary-color, #3b82f6);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.sortable-block.dragging {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  cursor: grabbing;
+}
+
+.sortable-block-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  cursor: grab;
+  color: var(--text-tertiary, #9ca3af);
+  flex-shrink: 0;
+}
+
+.sortable-block-handle:hover {
+  color: var(--text-secondary, #6b7280);
+}
+
+.drag-handle {
+  font-size: 1rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.sortable-block-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.sortable-block-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary, #9ca3af);
+  font-size: 1.25rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.sortable-block:hover .sortable-block-delete {
+  opacity: 1;
+}
+
+.sortable-block-delete:hover {
+  color: var(--error-color, #ef4444);
+}
+
+/* ==============================================================================
+   Photo Block Editor
+   ============================================================================== */
+
+.photo-block-editor {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.photo-block-preview {
+  max-width: 200px;
+  max-height: 150px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.photo-block-placeholder {
+  width: 200px;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, #f9fafb);
+  border: 2px dashed var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  color: var(--text-tertiary, #9ca3af);
+  font-size: 0.875rem;
+}
+
+/* ==============================================================================
+   Photo Group Editor
+   ============================================================================== */
+
+.photo-group-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.photo-group-preview {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.photo-group-thumb {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.photo-group-placeholder {
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, #f9fafb);
+  border: 1px dashed var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  color: var(--text-tertiary, #9ca3af);
+  font-size: 0.625rem;
+}
+
+.photo-group-more {
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary, #f3f4f6);
+  border-radius: 4px;
+  color: var(--text-secondary, #6b7280);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.photo-group-layout-select {
+  width: fit-content;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-size: 0.875rem;
+  background: var(--bg-primary, #ffffff);
+}
+
+/* ==============================================================================
+   Divider Editor
+   ============================================================================== */
+
+.divider-editor {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+}
+
+.divider-style-select {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-size: 0.875rem;
+  background: var(--bg-primary, #ffffff);
+}
+
+/* ==============================================================================
+   Section Editor
+   ============================================================================== */
+
+.section-editor {
+  padding: 0.5rem;
+  background: var(--bg-secondary, #f9fafb);
+  border-radius: 4px;
+}
+
+.section-title-input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 600;
+  background: var(--bg-primary, #ffffff);
+}
+
+.section-title-input:focus {
+  outline: none;
+  border-color: var(--primary-color, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+/* ==============================================================================
+   Add Block Menu
+   ============================================================================== */
+
+.add-block-menu {
+  padding: 1rem 0;
+  text-align: center;
+}
+
+.add-block-btn {
+  padding: 0.75rem 1.5rem;
+  border: 2px dashed var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary, #6b7280);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.add-block-btn:hover {
+  border-color: var(--primary-color, #3b82f6);
+  color: var(--primary-color, #3b82f6);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.add-block-options {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.add-block-options button {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 6px;
+  background: var(--bg-primary, #ffffff);
+  color: var(--text-primary, #1f2937);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.add-block-options button:hover {
+  border-color: var(--primary-color, #3b82f6);
+  color: var(--primary-color, #3b82f6);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.add-block-cancel {
+  color: var(--text-tertiary, #9ca3af) !important;
+}
+
+.add-block-cancel:hover {
+  color: var(--text-secondary, #6b7280) !important;
+  border-color: var(--border-color, #e0e0e0) !important;
+}
+
+/* ==============================================================================
+   Content Editor Container
+   ============================================================================== */
+
+.content-editor {
+  padding: 1rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.unknown-block {
+  padding: 1rem;
+  background: var(--warning-bg, #fef3c7);
+  border-radius: 4px;
+  color: var(--warning-text, #92400e);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+/* ==============================================================================
+   Dark Mode
+   ============================================================================== */
+
+@media (prefers-color-scheme: dark) {
+  .text-editor .tiptap {
+    background: var(--bg-secondary, #1f2937);
+    border-color: var(--border-color, #374151);
+    color: var(--text-primary, #f9fafb);
+  }
+
+  .text-editor .tiptap:focus {
+    border-color: var(--primary-color, #60a5fa);
+  }
+
+  .heading-level-btn {
+    background: var(--bg-tertiary, #374151);
+    border-color: var(--border-color, #4b5563);
+    color: var(--text-primary, #f9fafb);
+  }
+
+  .heading-level-btn:hover {
+    background: var(--bg-hover, #4b5563);
+  }
+
+  .heading-input {
+    background: var(--bg-secondary, #1f2937);
+    border-color: var(--border-color, #374151);
+    color: var(--text-primary, #f9fafb);
+  }
+
+  .sortable-block {
+    background: var(--bg-secondary, #1f2937);
+    border-color: var(--border-color, #374151);
+  }
+
+  .sortable-block:hover {
+    border-color: var(--primary-color, #60a5fa);
+  }
+
+  .photo-block-placeholder,
+  .photo-group-placeholder {
+    background: var(--bg-tertiary, #374151);
+    border-color: var(--border-color, #4b5563);
+  }
+
+  .photo-group-layout-select,
+  .divider-style-select,
+  .section-title-input {
+    background: var(--bg-secondary, #1f2937);
+    border-color: var(--border-color, #374151);
+    color: var(--text-primary, #f9fafb);
+  }
+
+  .section-editor {
+    background: var(--bg-tertiary, #374151);
+  }
+
+  .add-block-btn {
+    border-color: var(--border-color, #4b5563);
+    color: var(--text-secondary, #9ca3af);
+  }
+
+  .add-block-options button {
+    background: var(--bg-secondary, #1f2937);
+    border-color: var(--border-color, #4b5563);
+    color: var(--text-primary, #f9fafb);
+  }
+
+  .unknown-block {
+    background: var(--warning-bg, #78350f);
+    color: var(--warning-text, #fef3c7);
+  }
+}

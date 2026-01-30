@@ -21,6 +21,7 @@ public class MosaicDbContext : DbContext
     public DbSet<AuthChallenge> AuthChallenges => Set<AuthChallenge>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<AlbumLimits> AlbumLimits => Set<AlbumLimits>();
+    public DbSet<AlbumContent> AlbumContents => Set<AlbumContent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -46,6 +47,17 @@ public class MosaicDbContext : DbContext
                 .HasFilter("expires_at IS NOT NULL");
 
             e.Property(a => a.RowVersion).IsConcurrencyToken();
+        });
+
+        // AlbumContent (1:1 with Album)
+        modelBuilder.Entity<AlbumContent>(e =>
+        {
+            e.HasKey(ac => ac.AlbumId);
+
+            e.HasOne(ac => ac.Album)
+                .WithOne()
+                .HasForeignKey<AlbumContent>(ac => ac.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // AlbumMember
