@@ -36,6 +36,7 @@ import {
   createPhotoBlock,
   createPhotoGroupBlock,
   createQuoteBlock,
+  createMapBlock,
 } from '../../lib/content-blocks';
 import { PhotoPickerDialog } from './PhotoPickerDialog';
 import './BlockEditor.css';
@@ -408,6 +409,82 @@ export const BlockEditorItem = memo(function BlockEditorItem({
           </div>
         );
 
+      case 'map':
+        return (
+          <div className="map-block-editor">
+            <div className="map-editor-row">
+              <label className="map-editor-label">
+                Center
+                <div className="map-editor-coords">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="-90"
+                    max="90"
+                    value={block.center.lat}
+                    onChange={(e) =>
+                      onUpdate({
+                        center: { ...block.center, lat: parseFloat(e.target.value) || 0 },
+                      })
+                    }
+                    placeholder="Latitude"
+                    className="map-coord-input"
+                  />
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="-180"
+                    max="180"
+                    value={block.center.lng}
+                    onChange={(e) =>
+                      onUpdate({
+                        center: { ...block.center, lng: parseFloat(e.target.value) || 0 },
+                      })
+                    }
+                    placeholder="Longitude"
+                    className="map-coord-input"
+                  />
+                </div>
+              </label>
+            </div>
+            <div className="map-editor-row">
+              <label className="map-editor-label">
+                Zoom: {block.zoom ?? 10}
+                <input
+                  type="range"
+                  min="1"
+                  max="18"
+                  value={block.zoom ?? 10}
+                  onChange={(e) => onUpdate({ zoom: parseInt(e.target.value, 10) })}
+                  className="map-zoom-slider"
+                />
+              </label>
+            </div>
+            <div className="map-editor-row">
+              <label className="map-editor-label">
+                Height: {block.height ?? 400}px
+                <input
+                  type="range"
+                  min="200"
+                  max="600"
+                  step="50"
+                  value={block.height ?? 400}
+                  onChange={(e) => onUpdate({ height: parseInt(e.target.value, 10) })}
+                  className="map-height-slider"
+                />
+              </label>
+            </div>
+            <div className="map-preview-container">
+              <div className="map-preview-placeholder">
+                📍 Map: {block.center.lat.toFixed(4)}, {block.center.lng.toFixed(4)}
+                {block.markers && block.markers.length > 0 && (
+                  <span> • {block.markers.length} marker(s)</span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+
       case 'section':
         return (
           <div className="section-editor">
@@ -484,6 +561,9 @@ export const AddBlockMenu = memo(function AddBlockMenu({
           </button>
           <button type="button" onClick={() => handleAdd('quote')}>
             Quote
+          </button>
+          <button type="button" onClick={() => handleAdd('map')}>
+            Map
           </button>
           {onAddPhotoBlock && (
             <button type="button" onClick={handleAddPhoto}>
@@ -588,6 +668,9 @@ export const ContentEditor = memo(function ContentEditor({
           break;
         case 'quote':
           newBlock = createQuoteBlock([{ text: '' }], position);
+          break;
+        case 'map':
+          newBlock = createMapBlock({ lat: 51.505, lng: -0.09 }, position, { zoom: 10 });
           break;
         default:
           // Photo blocks are handled via picker dialog

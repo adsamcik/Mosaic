@@ -5,7 +5,9 @@
  * Edit mode components are separate (using TipTap).
  */
 
-import { memo, type ReactNode } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { memo, useEffect, useRef, type ReactNode } from 'react';
 import type {
   ContentBlock,
   HeadingBlock,
@@ -14,10 +16,24 @@ import type {
   PhotoGroupBlock,
   DividerBlock,
   QuoteBlock,
+  MapBlock,
   SectionBlock,
   RichTextSegment,
 } from '../../lib/content-blocks';
 import './BlockRenderers.css';
+
+// Fix for default marker icons in Vite/Webpack bundlers
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })
+  ._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+});
 
 // =============================================================================
 // Rich Text Renderer
@@ -249,6 +265,85 @@ export const QuoteBlockRenderer = memo(function QuoteBlockRenderer({
 });
 
 // =============================================================================
+// Map Block
+// =============================================================================
+
+interface MapBlockRendererProps {
+  block: MapBlock;
+}
+
+const DEFAULT_MAP_HEIGHT = 400;
+const DEFAULT_ZOOM = 10;
+
+export const MapBlockRenderer = memo(function MapBlockRenderer({
+  block,
+}: MapBlockRendererProps) {
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+
+  const height = block.height ?? DEFAULT_MAP_HEIGHT;
+  const zoom = block.zoom ?? DEFAULT_ZOOM;
+
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) return;
+
+    // Initialize the map
+    const map = L.map(mapContainerRef.current, {
+      center: [block.center.lat, block.center.lng],
+      zoom: zoom,
+      zoomControl: true,
+      scrollWheelZoom: false, // Disable scroll zoom for embedded maps
+    });
+
+    // Add OpenStreetMap tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 18,
+    }).addTo(map);
+
+    // Add markers if provided
+    if (block.markers && block.markers.length > 0) {
+      block.markers.forEach((marker) => {
+        const leafletMarker = L.marker([marker.lat, marker.lng]).addTo(map);
+        if (marker.label) {
+          leafletMarker.bindPopup(marker.label);
+        }
+      });
+    }
+
+    mapRef.current = map;
+
+    // Cleanup
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [block.center.lat, block.center.lng, zoom, block.markers]);
+
+  // Update map center when block changes
+  useEffect(() => {
+    if (mapRef.current) {
+      mapRef.current.setView([block.center.lat, block.center.lng], zoom);
+    }
+  }, [block.center.lat, block.center.lng, zoom]);
+
+  return (
+    <div
+      className="block-map"
+      style={{ height: `${height}px` }}
+      data-testid="map-block"
+    >
+      <div
+        ref={mapContainerRef}
+        className="block-map-container"
+        style={{ height: '100%', width: '100%' }}
+      />
+    </div>
+  );
+});
+
+// =============================================================================
 // Section Block
 // =============================================================================
 
@@ -316,6 +411,8 @@ export const BlockRenderer = memo(function BlockRenderer({
       return <DividerBlockRenderer block={block} />;
     case 'quote':
       return <QuoteBlockRenderer block={block} />;
+    case 'map':
+      return <MapBlockRenderer block={block} />;
     case 'section':
       // Section blocks contain children - for now render title only
       return <SectionBlockRenderer block={block} />;

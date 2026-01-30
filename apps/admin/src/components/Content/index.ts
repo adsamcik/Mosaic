@@ -13,6 +13,8 @@ export {
   PhotoBlockRenderer,
   PhotoGroupBlockRenderer,
   DividerBlockRenderer,
+  QuoteBlockRenderer,
+  MapBlockRenderer,
   SectionBlockRenderer,
   RichText,
   type BlockRendererProps,

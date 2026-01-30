@@ -173,6 +173,46 @@ export const QuoteBlockSchema = BlockBaseSchema.extend({
 export type QuoteBlock = z.infer<typeof QuoteBlockSchema>;
 
 // =============================================================================
+// Map Block
+// =============================================================================
+
+/**
+ * A map marker with coordinates and optional label.
+ */
+export const MapMarkerSchema = z.object({
+  /** Latitude */
+  lat: z.number().min(-90).max(90),
+  /** Longitude */
+  lng: z.number().min(-180).max(180),
+  /** Optional marker label */
+  label: z.string().optional(),
+});
+
+export type MapMarker = z.infer<typeof MapMarkerSchema>;
+
+/**
+ * A map block for displaying locations.
+ */
+export const MapBlockSchema = BlockBaseSchema.extend({
+  type: z.literal('map'),
+  /** Map center coordinates */
+  center: z.object({
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+  }),
+  /** Zoom level (1-18) */
+  zoom: z.number().min(1).max(18).default(10),
+  /** Optional custom markers */
+  markers: z.array(MapMarkerSchema).optional(),
+  /** Whether to show geotagged album photos on the map */
+  showPhotoMarkers: z.boolean().optional(),
+  /** Map height in pixels */
+  height: z.number().min(100).max(1000).optional(),
+});
+
+export type MapBlock = z.infer<typeof MapBlockSchema>;
+
+// =============================================================================
 // Section Block
 // =============================================================================
 
@@ -205,6 +245,7 @@ export const ContentBlockSchema = z.discriminatedUnion('type', [
   PhotoGroupBlockSchema,
   DividerBlockSchema,
   QuoteBlockSchema,
+  MapBlockSchema,
   SectionBlockSchema,
 ]);
 
@@ -408,6 +449,31 @@ export function createQuoteBlock(
     text,
     position,
     attribution,
+  };
+}
+
+/**
+ * Create a map block.
+ */
+export function createMapBlock(
+  center: { lat: number; lng: number },
+  position: string,
+  options?: {
+    zoom?: number;
+    markers?: MapMarker[];
+    showPhotoMarkers?: boolean;
+    height?: number;
+  },
+): MapBlock {
+  return {
+    type: 'map',
+    id: generateBlockId(),
+    center,
+    position,
+    zoom: options?.zoom ?? 10,
+    markers: options?.markers,
+    showPhotoMarkers: options?.showPhotoMarkers,
+    height: options?.height,
   };
 }
 

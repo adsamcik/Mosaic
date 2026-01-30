@@ -561,11 +561,17 @@
     "text": "Text",
     "divider": "Oddělovač",
     "quote": "Citát",
+    "map": "Mapa",
     "photo": "Fotka",
     "photoGroup": "Mřížka fotek",
     "addBlock": "Přidat blok",
     "cancel": "Zrušit",
     "quotePlaceholder": "Zadejte citát...",
-    "quoteAttributionPlaceholder": "Zdroj (volitelné)"
+    "quoteAttributionPlaceholder": "Zdroj (volitelné)",
+    "mapCenter": "Střed",
+    "mapZoom": "Přiblížení",
+    "mapHeight": "Výška",
+    "mapLatitude": "Zeměpisná šířka",
+    "mapLongitude": "Zeměpisná délka"
   }
 }

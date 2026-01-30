@@ -556,11 +556,17 @@
     "text": "Text",
     "divider": "Divider",
     "quote": "Quote",
+    "map": "Map",
     "photo": "Photo",
     "photoGroup": "Photo Grid",
     "addBlock": "Add Block",
     "cancel": "Cancel",
     "quotePlaceholder": "Enter quote...",
-    "quoteAttributionPlaceholder": "Attribution (optional)"
+    "quoteAttributionPlaceholder": "Attribution (optional)",
+    "mapCenter": "Center",
+    "mapZoom": "Zoom",
+    "mapHeight": "Height",
+    "mapLatitude": "Latitude",
+    "mapLongitude": "Longitude"
   }
 }
