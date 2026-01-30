@@ -564,6 +564,7 @@
     "map": "Mapa",
     "photo": "Fotka",
     "photoGroup": "Mřížka fotek",
+    "section": "Sekce",
     "addBlock": "Přidat blok",
     "cancel": "Zrušit",
     "quotePlaceholder": "Zadejte citát...",
@@ -573,5 +574,16 @@
     "mapHeight": "Výška",
     "mapLatitude": "Zeměpisná šířka",
     "mapLongitude": "Zeměpisná délka"
+  },
+  "content": {
+    "slashMenu": {
+      "title": "Vložit blok",
+      "hint": "↑↓ navigace • Enter vybrat • Esc zavřít",
+      "categories": {
+        "text": "Text",
+        "media": "Média",
+        "layout": "Rozložení"
+      }
+    }
   }
 }

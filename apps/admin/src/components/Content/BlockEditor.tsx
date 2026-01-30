@@ -5,7 +5,7 @@
  * Provides WYSIWYG editing for text blocks and block management.
  */
 
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -37,8 +37,14 @@ import {
   createPhotoGroupBlock,
   createQuoteBlock,
   createMapBlock,
+  createSectionBlock,
 } from '../../lib/content-blocks';
 import { PhotoPickerDialog } from './PhotoPickerDialog';
+import {
+  SlashCommandMenu,
+  useSlashCommand,
+  type InsertableBlockType,
+} from './SlashCommandMenu';
 import './BlockEditor.css';
 
 // ==============================================================================
@@ -64,6 +70,12 @@ export interface TextEditorProps {
   content: RichTextSegment[];
   onChange: (segments: RichTextSegment[]) => void;
   placeholder?: string | undefined;
+  /** Called when "/" is typed at start of empty content */
+  onSlashCommand?: ((rect: DOMRect) => void) | undefined;
+  /** Called when slash command query updates (text after /) */
+  onSlashQueryChange?: ((query: string) => void) | undefined;
+  /** Called when slash command is cancelled (e.g., space or backspace clears) */
+  onSlashCancel?: (() => void) | undefined;
 }
 
 /**
@@ -140,7 +152,13 @@ export const TextEditor = memo(function TextEditor({
   content,
   onChange,
   placeholder = 'Type something...',
+  onSlashCommand,
+  onSlashQueryChange,
+  onSlashCancel,
 }: TextEditorProps) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const slashActiveRef = useRef(false);
+
   const editor = useEditor({
     extensions: createEditorExtensions(placeholder),
     content: `<p>${segmentsToHtml(content)}</p>`,
@@ -149,12 +167,37 @@ export const TextEditor = memo(function TextEditor({
       // Extract content from paragraph wrapper
       const match = html.match(/<p>(.*)<\/p>/s);
       const innerHtml = match ? match[1] ?? '' : html;
+      const text = editor.getText();
+      
+      // Check for slash command
+      if (text.startsWith('/')) {
+        if (!slashActiveRef.current && text === '/') {
+          // Just typed "/", activate slash command
+          slashActiveRef.current = true;
+          // Get cursor position for menu
+          const selection = window.getSelection();
+          if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            onSlashCommand?.(rect);
+          }
+        } else if (slashActiveRef.current) {
+          // Update query (text after /)
+          const query = text.slice(1);
+          onSlashQueryChange?.(query);
+        }
+      } else if (slashActiveRef.current) {
+        // Slash was cleared (e.g., backspace)
+        slashActiveRef.current = false;
+        onSlashCancel?.();
+      }
+      
       onChange(htmlToSegments(innerHtml));
     },
   });
 
   return (
-    <div className="text-editor">
+    <div className="text-editor" ref={editorRef}>
       <EditorContent editor={editor} />
     </div>
   );
@@ -282,6 +325,10 @@ export interface BlockEditorItemProps {
   onUpdate: (updates: Partial<ContentBlock>) => void;
   onDelete: () => void;
   getThumbnailUrl?: ((manifestId: string) => string | undefined) | undefined;
+  /** Slash command handlers for text blocks */
+  onSlashCommand?: ((blockId: string, rect: DOMRect) => void) | undefined;
+  onSlashQueryChange?: ((query: string) => void) | undefined;
+  onSlashCancel?: (() => void) | undefined;
 }
 
 export const BlockEditorItem = memo(function BlockEditorItem({
@@ -289,7 +336,17 @@ export const BlockEditorItem = memo(function BlockEditorItem({
   onUpdate,
   onDelete,
   getThumbnailUrl,
+  onSlashCommand,
+  onSlashQueryChange,
+  onSlashCancel,
 }: BlockEditorItemProps) {
+  const handleSlashCommand = useCallback(
+    (rect: DOMRect) => {
+      onSlashCommand?.(block.id, rect);
+    },
+    [block.id, onSlashCommand],
+  );
+
   const renderBlockEditor = () => {
     switch (block.type) {
       case 'heading':
@@ -306,6 +363,9 @@ export const BlockEditorItem = memo(function BlockEditorItem({
           <TextEditor
             content={block.segments}
             onChange={(segments) => onUpdate({ segments })}
+            onSlashCommand={handleSlashCommand}
+            onSlashQueryChange={onSlashQueryChange}
+            onSlashCancel={onSlashCancel}
           />
         );
 
@@ -628,6 +688,11 @@ export const ContentEditor = memo(function ContentEditor({
   // Photo picker state
   const [pickerOpen, setPickerOpen] = useState(false);
   const [photoBlockType, setPhotoBlockType] = useState<PhotoBlockCreationType>(null);
+  
+  // Slash command state
+  const slashCommand = useSlashCommand();
+  const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
+  
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -727,6 +792,99 @@ export const ContentEditor = memo(function ContentEditor({
     setPhotoBlockType(null);
   }, []);
 
+  // Slash command: triggered when "/" is typed at start of empty text block
+  const handleSlashCommand = useCallback(
+    (blockId: string, rect: DOMRect) => {
+      setSlashBlockId(blockId);
+      slashCommand.open(rect);
+    },
+    [slashCommand],
+  );
+
+  // Slash command: query updated as user types after "/"
+  const handleSlashQueryChange = useCallback(
+    (query: string) => {
+      slashCommand.setQuery(query);
+    },
+    [slashCommand],
+  );
+
+  // Slash command: close menu and clear state
+  const handleSlashCancel = useCallback(() => {
+    slashCommand.close();
+    setSlashBlockId(null);
+  }, [slashCommand]);
+
+  // Slash command: block type selected from menu
+  const handleSlashSelect = useCallback(
+    (type: InsertableBlockType) => {
+      if (!slashBlockId) return;
+
+      // Find the block to replace
+      const blockIndex = blocks.findIndex((b) => b.id === slashBlockId);
+      if (blockIndex === -1) {
+        slashCommand.close();
+        setSlashBlockId(null);
+        return;
+      }
+
+      const position = blocks[blockIndex]!.position;
+
+      // Handle photo types specially - open picker
+      if (type === 'photo') {
+        onBlockRemove(slashBlockId);
+        setPhotoBlockType('photo');
+        setPickerOpen(true);
+        slashCommand.close();
+        setSlashBlockId(null);
+        return;
+      }
+
+      if (type === 'photo-group') {
+        onBlockRemove(slashBlockId);
+        setPhotoBlockType('photo-group');
+        setPickerOpen(true);
+        slashCommand.close();
+        setSlashBlockId(null);
+        return;
+      }
+
+      // Create the new block
+      let newBlock: ContentBlock;
+      switch (type) {
+        case 'heading':
+          newBlock = createHeadingBlock(2, '', position);
+          break;
+        case 'text':
+          newBlock = createTextBlock([{ text: '' }], position);
+          break;
+        case 'divider':
+          newBlock = createDividerBlock('line', position);
+          break;
+        case 'quote':
+          newBlock = createQuoteBlock([{ text: '' }], position);
+          break;
+        case 'map':
+          newBlock = createMapBlock({ lat: 51.505, lng: -0.09 }, position, { zoom: 10 });
+          break;
+        case 'section':
+          newBlock = createSectionBlock(undefined, [], position);
+          break;
+        default:
+          slashCommand.close();
+          setSlashBlockId(null);
+          return;
+      }
+
+      // Remove old text block and add new block
+      onBlockRemove(slashBlockId);
+      onBlockAdd(newBlock);
+      slashCommand.close();
+      setSlashBlockId(null);
+    },
+    [blocks, slashBlockId, slashCommand, onBlockRemove, onBlockAdd],
+  );
+
   return (
     <div className={`content-editor ${className || ''}`}>
       <DndContext
@@ -742,6 +900,9 @@ export const ContentEditor = memo(function ContentEditor({
               onUpdate={(updates) => onBlockUpdate(block.id, updates)}
               onDelete={() => onBlockRemove(block.id)}
               getThumbnailUrl={getThumbnailUrl}
+              onSlashCommand={handleSlashCommand}
+              onSlashQueryChange={handleSlashQueryChange}
+              onSlashCancel={handleSlashCancel}
             />
           ))}
         </SortableContext>
@@ -768,6 +929,16 @@ export const ContentEditor = memo(function ContentEditor({
           }
         />
       )}
+
+      {/* Slash command menu */}
+      <SlashCommandMenu
+        isOpen={slashCommand.isOpen}
+        position={slashCommand.position}
+        query={slashCommand.query}
+        onSelect={handleSlashSelect}
+        onClose={handleSlashCancel}
+        hasPhotoBlocks={!!albumId}
+      />
     </div>
   );
 });
