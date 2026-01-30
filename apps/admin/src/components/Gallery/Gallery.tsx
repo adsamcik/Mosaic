@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import {
+  AlbumContentProvider,
+  useAlbumContent,
+} from '../../contexts/AlbumContentContext';
 import { AlbumPermissionsProvider } from '../../contexts/AlbumPermissionsContext';
 import { useAutoSync } from '../../contexts/SyncContext';
 import { UploadProvider } from '../../contexts/UploadContext';
@@ -14,6 +18,7 @@ import { createLogger } from '../../lib/logger';
 import { SyncCoordinatorProvider } from '../../lib/sync-coordinator';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
 import { DeleteAlbumDialog, RenameAlbumDialog } from '../Albums';
+import { ContentEditor } from '../Content';
 import { MemberList } from '../Members/MemberList';
 import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
 import { DropZone } from '../Upload/DropZone';
@@ -30,7 +35,178 @@ import { SquarePhotoGrid } from './SquarePhotoGrid';
 const log = createLogger('Gallery');
 
 /** View mode for the gallery */
-export type GalleryViewMode = 'grid' | 'justified' | 'mosaic' | 'map';
+export type GalleryViewMode = 'grid' | 'justified' | 'mosaic' | 'map' | 'story';
+
+/**
+ * Inner story view component that uses the AlbumContentContext
+ */
+function StoryViewContent() {
+  const { t } = useTranslation();
+  const {
+    loadState,
+    saveState,
+    document,
+    isDirty,
+    canEdit,
+    loadContent,
+    updateBlock,
+    addBlock,
+    removeBlock,
+    moveBlock,
+    saveContent,
+    createInitialContent,
+    errorMessage,
+  } = useAlbumContent();
+
+  // Load content on mount
+  useEffect(() => {
+    if (loadState === 'idle') {
+      void loadContent();
+    }
+  }, [loadState, loadContent]);
+
+  // Auto-save when content is dirty (debounced)
+  useEffect(() => {
+    if (!isDirty || saveState === 'saving') return;
+
+    const timer = setTimeout(() => {
+      void saveContent();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [isDirty, saveState, saveContent]);
+
+  // Loading state
+  if (loadState === 'loading') {
+    return (
+      <div className="story-view story-view--loading">
+        <div className="loading-spinner" />
+        <p>{t('gallery.story.loading', 'Loading story...')}</p>
+      </div>
+    );
+  }
+
+  // Error state
+  if (loadState === 'error') {
+    return (
+      <div className="story-view story-view--error">
+        <p>{t('gallery.story.error', 'Failed to load story')}</p>
+        {errorMessage && <p className="error-message">{errorMessage}</p>}
+        <button onClick={() => loadContent()} className="btn btn-secondary">
+          {t('common.retry', 'Retry')}
+        </button>
+      </div>
+    );
+  }
+
+  // Not found - show create option
+  if (loadState === 'not-found') {
+    return (
+      <div className="story-view story-view--empty">
+        <div className="story-view__empty-state">
+          <h3>{t('gallery.story.noContent', 'No story yet')}</h3>
+          <p>
+            {t(
+              'gallery.story.createDescription',
+              'Create a story to add narrative to your album.',
+            )}
+          </p>
+          {canEdit && (
+            <button
+              onClick={() => createInitialContent()}
+              className="btn btn-primary"
+            >
+              {t('gallery.story.create', 'Create Story')}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // No document yet (shouldn't happen after loading)
+  if (!document) {
+    return null;
+  }
+
+  const handleBlockMove = (fromIndex: number, toIndex: number) => {
+    const block = document.blocks[fromIndex];
+    if (block) {
+      moveBlock(block.id, toIndex);
+    }
+  };
+
+  return (
+    <div className="story-view">
+      {/* Save status indicator */}
+      <div className="story-view__status">
+        {saveState === 'saving' && (
+          <span className="status-saving">
+            {t('gallery.story.saving', 'Saving...')}
+          </span>
+        )}
+        {saveState === 'saved' && (
+          <span className="status-saved">
+            {t('gallery.story.saved', 'Saved')}
+          </span>
+        )}
+        {saveState === 'error' && (
+          <span className="status-error">
+            {t('gallery.story.saveError', 'Save failed')}
+          </span>
+        )}
+        {saveState === 'conflict' && (
+          <span className="status-conflict">
+            {t('gallery.story.conflict', 'Conflict detected')}
+          </span>
+        )}
+      </div>
+
+      <ContentEditor
+        blocks={document.blocks}
+        onBlockUpdate={updateBlock}
+        onBlockAdd={addBlock}
+        onBlockRemove={removeBlock}
+        onBlockMove={handleBlockMove}
+        className="story-view__editor"
+      />
+    </div>
+  );
+}
+
+/**
+ * Story view wrapper that provides the AlbumContentProvider context
+ */
+function StoryView({
+  albumId,
+  currentEpochId,
+}: {
+  albumId: string;
+  currentEpochId: number | null;
+}) {
+  const { t } = useTranslation();
+
+  // No epoch key available yet
+  if (currentEpochId === null) {
+    return (
+      <div className="story-view story-view--no-key">
+        <div className="loading-spinner" />
+        <p>
+          {t(
+            'gallery.story.loadingKeys',
+            'Loading encryption keys...',
+          )}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <AlbumContentProvider albumId={albumId} epochId={currentEpochId}>
+      <StoryViewContent />
+    </AlbumContentProvider>
+  );
+}
 
 interface GalleryProps {
   albumId: string;
@@ -99,6 +275,14 @@ export function Gallery({
     refetch: reloadPhotos,
   } = usePhotoList(albumId, searchQuery);
   const { epochKeys, isLoading: epochKeysLoading } = useAlbumEpochKeys(albumId);
+
+  // Get the current (most recent) epoch ID for story content
+  const currentEpochId = useMemo(() => {
+    if (epochKeysLoading || epochKeys.size === 0) return null;
+    // Return the highest epoch ID (most recent)
+    return Math.max(...epochKeys.keys());
+  }, [epochKeys, epochKeysLoading]);
+
   const { currentUserRole, isOwner, canEdit } = useAlbumMembers(albumId);
   const photoActions = usePhotoActions();
 
@@ -445,6 +629,11 @@ export function Gallery({
                   refetch={reloadPhotos}
                   selection={selection}
                   onPhotosDeleted={handleBulkDeleteComplete}
+                />
+              ) : viewMode === 'story' ? (
+                <StoryView
+                  albumId={albumId}
+                  currentEpochId={currentEpochId}
                 />
               ) : (
                 <MapView
