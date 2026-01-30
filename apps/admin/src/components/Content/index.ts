@@ -34,3 +34,9 @@ export {
   type SortableBlockProps,
   type AddBlockMenuProps,
 } from './BlockEditor';
+
+// Photo Picker Dialog
+export {
+  PhotoPickerDialog,
+  type PhotoPickerDialogProps,
+} from './PhotoPickerDialog';

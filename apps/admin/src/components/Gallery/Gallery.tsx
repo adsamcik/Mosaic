@@ -43,6 +43,7 @@ export type GalleryViewMode = 'grid' | 'justified' | 'mosaic' | 'map' | 'story';
 function StoryViewContent() {
   const { t } = useTranslation();
   const {
+    albumId,
     loadState,
     saveState,
     document,
@@ -168,6 +169,7 @@ function StoryViewContent() {
         onBlockAdd={addBlock}
         onBlockRemove={removeBlock}
         onBlockMove={handleBlockMove}
+        albumId={albumId}
         className="story-view__editor"
       />
     </div>

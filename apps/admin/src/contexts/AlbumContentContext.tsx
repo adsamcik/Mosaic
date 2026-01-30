@@ -52,6 +52,8 @@ export type ContentSaveState = 'idle' | 'saving' | 'saved' | 'error' | 'conflict
 
 /** Album content context value */
 export interface AlbumContentContextValue {
+  /** Album ID */
+  albumId: string;
   /** Current loading state */
   loadState: ContentLoadState;
   /** Current save state */
@@ -342,6 +344,7 @@ export function AlbumContentProvider({
   // Context value
   const value = useMemo<AlbumContentContextValue>(
     () => ({
+      albumId,
       loadState,
       saveState,
       errorMessage,
@@ -359,6 +362,7 @@ export function AlbumContentProvider({
       createInitialContent,
     }),
     [
+      albumId,
       loadState,
       saveState,
       errorMessage,

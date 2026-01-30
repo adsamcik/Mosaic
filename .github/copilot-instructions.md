@@ -10,12 +10,66 @@ Mosaic is a **zero-knowledge encrypted photo gallery** for small-scale personal 
 
 | Task | Jump To | Key Rules |
 |------|---------|----------|
-| Implementing a feature | [SPEC Workflow](#the-prime-directive-spec-then-code) | SPEC if >2 files or crypto |
-| Fixing a bug | [Debugging](#mosaic-sentinel-debugging-protocol) | Reproduce first, then fix |
-| Writing tests | [TDD Requirements](#-test-driven-development-tdd---mandatory) | Red → Green → Refactor |
+| **ANY task** | [Specialized Skills](#️-specialized-skills-use-these) | Read skill file first, follow its workflow |
+| Implementing a feature | [SPEC Workflow](#the-prime-directive-spec-then-code) + `swe` skill | SPEC if >2 files or crypto |
+| Fixing a bug | [Debugging](#mosaic-sentinel-debugging-protocol) + `swe` skill | Reproduce first, then fix |
+| Writing tests | [TDD Requirements](#-test-driven-development-tdd---mandatory) + `test-gen` skill | Red → Green → Refactor |
+| Reviewing code | `code-review` skill | Multi-dimensional adversarial review |
+| Security-sensitive work | [Crypto Guidelines](#cryptographic-guidelines) + `security-audit` skill | Never log keys, always memzero |
 | Running commands | [Terminal Rules](#-critical-non-interactive-terminal-commands) | ALWAYS non-interactive |
-| Security-sensitive work | [Crypto Guidelines](#cryptographic-guidelines) | Never log keys, always memzero |
 | Before completing ANY task | [Definition of Done](#definition-of-done) | ALL criteria must pass |
+
+---
+
+## 🛠️ Specialized Skills (USE THESE!)
+
+You have access to specialized skills that dramatically improve output quality. **Activate the appropriate skill for each task type.** Read the skill file before starting work.
+
+### Skill Reference
+
+| Skill | When to Use | Activation |
+|-------|-------------|------------|
+| **swe** | ANY coding task—writing, editing, debugging, refactoring | Default for all code work |
+| **test-gen** | Writing tests, improving coverage, mutation testing | "Generate tests for X" |
+| **code-review** | Reviewing PRs, auditing code quality, evaluating changes | "Review this code" |
+| **security-audit** | Finding vulnerabilities, threat modeling, OWASP checks | "Audit security of X" |
+| **deep-research** | Investigating options, comparing approaches, technical research | "Research how to X" |
+| **brainstorming** | Generating feature ideas, solutions, creative approaches | "Brainstorm ways to X" |
+| **idea-stress-test** | Validating ideas, finding flaws, critiquing proposals | "Critique this idea" |
+| **problem-discovery** | Clarifying vague requirements, understanding the real problem | "Help me figure out what I need" |
+| **prompt-engineer** | Improving prompts, agent instructions, AI tooling | "Improve this prompt" |
+
+### Mandatory Skill Usage
+
+| Task Type | Required Skill | Why |
+|-----------|---------------|-----|
+| Implementing features | `swe` | Ensures TDD, verification loops, incremental changes |
+| Writing/improving tests | `test-gen` | Uses mutation testing, edge case discovery |
+| Any security-sensitive code | `security-audit` | Systematic vulnerability discovery |
+| Code review requests | `code-review` | Multi-dimensional analysis, adversarial review |
+| Unclear requirements | `problem-discovery` | Prevents building the wrong thing |
+
+### How to Use Skills
+
+1. **Read the skill file first**: `read_file` the skill's `SKILL.md` before starting
+2. **Follow the skill's workflow**: Each skill has specific phases and outputs
+3. **Don't skip steps**: Skills are designed as complete methodologies
+4. **Combine when appropriate**: Use `problem-discovery` → `brainstorming` → `swe` for new features
+
+### Skill File Locations
+
+```
+c:\Users\adam-\.copilot\skills\
+├── swe\SKILL.md              # Coding (default)
+├── test-gen\SKILL.md         # Test generation
+├── code-review\SKILL.md      # Code review
+├── security-audit\SKILL.md   # Security auditing
+├── deep-research\SKILL.md    # Research
+├── brainstorming\SKILL.md    # Idea generation
+├── idea-stress-test\SKILL.md # Idea validation
+├── problem-discovery\SKILL.md # Requirements clarification
+└── prompt-engineer\SKILL.md  # Prompt improvement
+```
 
 ---
 

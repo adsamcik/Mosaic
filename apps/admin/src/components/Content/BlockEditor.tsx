@@ -33,7 +33,10 @@ import {
   createTextBlock,
   createHeadingBlock,
   createDividerBlock,
+  createPhotoBlock,
+  createPhotoGroupBlock,
 } from '../../lib/content-blocks';
+import { PhotoPickerDialog } from './PhotoPickerDialog';
 import './BlockEditor.css';
 
 // ==============================================================================
@@ -402,11 +405,15 @@ export const BlockEditorItem = memo(function BlockEditorItem({
 
 export interface AddBlockMenuProps {
   onAddBlock: (type: ContentBlock['type']) => void;
+  onAddPhotoBlock?: (() => void) | undefined;
+  onAddPhotoGroupBlock?: (() => void) | undefined;
   availablePhotoIds?: string[] | undefined;
 }
 
 export const AddBlockMenu = memo(function AddBlockMenu({
   onAddBlock,
+  onAddPhotoBlock,
+  onAddPhotoGroupBlock,
 }: AddBlockMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -417,6 +424,16 @@ export const AddBlockMenu = memo(function AddBlockMenu({
     },
     [onAddBlock],
   );
+
+  const handleAddPhoto = useCallback(() => {
+    onAddPhotoBlock?.();
+    setIsOpen(false);
+  }, [onAddPhotoBlock]);
+
+  const handleAddPhotoGroup = useCallback(() => {
+    onAddPhotoGroupBlock?.();
+    setIsOpen(false);
+  }, [onAddPhotoGroupBlock]);
 
   return (
     <div className="add-block-menu">
@@ -431,6 +448,16 @@ export const AddBlockMenu = memo(function AddBlockMenu({
           <button type="button" onClick={() => handleAdd('divider')}>
             Divider
           </button>
+          {onAddPhotoBlock && (
+            <button type="button" onClick={handleAddPhoto}>
+              Photo
+            </button>
+          )}
+          {onAddPhotoGroupBlock && (
+            <button type="button" onClick={handleAddPhotoGroup}>
+              Photo Grid
+            </button>
+          )}
           <button
             type="button"
             className="add-block-cancel"
@@ -456,6 +483,9 @@ export const AddBlockMenu = memo(function AddBlockMenu({
 // Content Editor Component
 // ==============================================================================
 
+/** Type of photo block being created */
+type PhotoBlockCreationType = 'photo' | 'photo-group' | null;
+
 export interface ContentEditorProps {
   blocks: ContentBlock[];
   onBlockUpdate: (blockId: string, updates: Partial<ContentBlock>) => void;
@@ -464,6 +494,8 @@ export interface ContentEditorProps {
   onBlockMove: (fromIndex: number, toIndex: number) => void;
   getThumbnailUrl?: ((manifestId: string) => string | undefined) | undefined;
   className?: string | undefined;
+  /** Album ID for loading photos in the picker */
+  albumId?: string | undefined;
 }
 
 export const ContentEditor = memo(function ContentEditor({
@@ -474,7 +506,11 @@ export const ContentEditor = memo(function ContentEditor({
   onBlockMove,
   getThumbnailUrl,
   className,
+  albumId,
 }: ContentEditorProps) {
+  // Photo picker state
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [photoBlockType, setPhotoBlockType] = useState<PhotoBlockCreationType>(null);
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -514,7 +550,7 @@ export const ContentEditor = memo(function ContentEditor({
           newBlock = createDividerBlock('line', position);
           break;
         default:
-          // For photo types, would need photo selection UI
+          // Photo blocks are handled via picker dialog
           return;
       }
 
@@ -522,6 +558,51 @@ export const ContentEditor = memo(function ContentEditor({
     },
     [blocks.length, onBlockAdd],
   );
+
+  // Open picker for single photo block
+  const handleAddPhotoBlock = useCallback(() => {
+    setPhotoBlockType('photo');
+    setPickerOpen(true);
+  }, []);
+
+  // Open picker for photo group block
+  const handleAddPhotoGroupBlock = useCallback(() => {
+    setPhotoBlockType('photo-group');
+    setPickerOpen(true);
+  }, []);
+
+  // Handle photo selection from picker
+  const handlePhotoSelect = useCallback(
+    (manifestIds: string[]) => {
+      if (manifestIds.length === 0) {
+        setPickerOpen(false);
+        setPhotoBlockType(null);
+        return;
+      }
+
+      const position = String.fromCharCode(97 + blocks.length);
+
+      if (photoBlockType === 'photo') {
+        // Create single photo block with first selected photo
+        const newBlock = createPhotoBlock(manifestIds[0]!, position);
+        onBlockAdd(newBlock);
+      } else if (photoBlockType === 'photo-group') {
+        // Create photo group block with all selected photos
+        const newBlock = createPhotoGroupBlock(manifestIds, 'grid', position);
+        onBlockAdd(newBlock);
+      }
+
+      setPickerOpen(false);
+      setPhotoBlockType(null);
+    },
+    [blocks.length, onBlockAdd, photoBlockType],
+  );
+
+  // Close picker without adding
+  const handlePickerClose = useCallback(() => {
+    setPickerOpen(false);
+    setPhotoBlockType(null);
+  }, []);
 
   return (
     <div className={`content-editor ${className || ''}`}>
@@ -543,7 +624,27 @@ export const ContentEditor = memo(function ContentEditor({
         </SortableContext>
       </DndContext>
 
-      <AddBlockMenu onAddBlock={handleAddBlock} />
+      <AddBlockMenu
+        onAddBlock={handleAddBlock}
+        onAddPhotoBlock={albumId ? handleAddPhotoBlock : undefined}
+        onAddPhotoGroupBlock={albumId ? handleAddPhotoGroupBlock : undefined}
+      />
+
+      {/* Photo picker dialog */}
+      {albumId && (
+        <PhotoPickerDialog
+          isOpen={pickerOpen}
+          onClose={handlePickerClose}
+          onSelect={handlePhotoSelect}
+          albumId={albumId}
+          maxSelection={photoBlockType === 'photo' ? 1 : 20}
+          title={
+            photoBlockType === 'photo'
+              ? 'Select Photo'
+              : 'Select Photos for Grid'
+          }
+        />
+      )}
     </div>
   );
 });
