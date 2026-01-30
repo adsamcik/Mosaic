@@ -156,6 +156,23 @@ export const DividerBlockSchema = BlockBaseSchema.extend({
 export type DividerBlock = z.infer<typeof DividerBlockSchema>;
 
 // =============================================================================
+// Quote Block
+// =============================================================================
+
+/**
+ * A pull quote with optional attribution.
+ */
+export const QuoteBlockSchema = BlockBaseSchema.extend({
+  type: z.literal('quote'),
+  /** Quote text as rich text segments */
+  text: z.array(RichTextSegmentSchema),
+  /** Optional attribution (source/author) */
+  attribution: z.string().optional(),
+});
+
+export type QuoteBlock = z.infer<typeof QuoteBlockSchema>;
+
+// =============================================================================
 // Section Block
 // =============================================================================
 
@@ -187,6 +204,7 @@ export const ContentBlockSchema = z.discriminatedUnion('type', [
   PhotoBlockSchema,
   PhotoGroupBlockSchema,
   DividerBlockSchema,
+  QuoteBlockSchema,
   SectionBlockSchema,
 ]);
 
@@ -373,6 +391,23 @@ export function createDividerBlock(
     id: generateBlockId(),
     style,
     position,
+  };
+}
+
+/**
+ * Create a quote block.
+ */
+export function createQuoteBlock(
+  text: RichTextSegment[],
+  position: string,
+  attribution?: string,
+): QuoteBlock {
+  return {
+    type: 'quote',
+    id: generateBlockId(),
+    text,
+    position,
+    attribution,
   };
 }
 

@@ -35,6 +35,7 @@ import {
   createDividerBlock,
   createPhotoBlock,
   createPhotoGroupBlock,
+  createQuoteBlock,
 } from '../../lib/content-blocks';
 import { PhotoPickerDialog } from './PhotoPickerDialog';
 import './BlockEditor.css';
@@ -385,6 +386,28 @@ export const BlockEditorItem = memo(function BlockEditorItem({
           </div>
         );
 
+      case 'quote':
+        return (
+          <div className="quote-block-editor">
+            <div className="quote-text-editor">
+              <TextEditor
+                content={block.text}
+                onChange={(segments) => onUpdate({ text: segments })}
+                placeholder="Enter quote..."
+              />
+            </div>
+            <input
+              type="text"
+              className="quote-attribution-input"
+              value={block.attribution || ''}
+              onChange={(e) =>
+                onUpdate({ attribution: e.target.value || undefined })
+              }
+              placeholder="Attribution (optional)"
+            />
+          </div>
+        );
+
       case 'section':
         return (
           <div className="section-editor">
@@ -458,6 +481,9 @@ export const AddBlockMenu = memo(function AddBlockMenu({
           </button>
           <button type="button" onClick={() => handleAdd('divider')}>
             Divider
+          </button>
+          <button type="button" onClick={() => handleAdd('quote')}>
+            Quote
           </button>
           {onAddPhotoBlock && (
             <button type="button" onClick={handleAddPhoto}>
@@ -559,6 +585,9 @@ export const ContentEditor = memo(function ContentEditor({
           break;
         case 'divider':
           newBlock = createDividerBlock('line', position);
+          break;
+        case 'quote':
+          newBlock = createQuoteBlock([{ text: '' }], position);
           break;
         default:
           // Photo blocks are handled via picker dialog

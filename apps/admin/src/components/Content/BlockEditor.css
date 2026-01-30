@@ -299,6 +299,41 @@
 }
 
 /* ==============================================================================
+   Quote Editor
+   ============================================================================== */
+
+.quote-block-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 4px solid var(--primary-color, #3b82f6);
+}
+
+.quote-text-editor .text-editor .tiptap {
+  font-style: italic;
+}
+
+.quote-attribution-input {
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+  background: var(--bg-primary, #ffffff);
+}
+
+.quote-attribution-input:focus {
+  outline: none;
+  border-color: var(--primary-color, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.quote-attribution-input::placeholder {
+  color: var(--text-tertiary, #9ca3af);
+}
+
+/* ==============================================================================
    Section Editor
    ============================================================================== */
 
@@ -475,5 +510,15 @@
   .unknown-block {
     background: var(--warning-bg, #78350f);
     color: var(--warning-text, #fef3c7);
+  }
+
+  .quote-block-editor {
+    border-left-color: var(--primary-color, #60a5fa);
+  }
+
+  .quote-attribution-input {
+    background: var(--bg-secondary, #1f2937);
+    border-color: var(--border-color, #374151);
+    color: var(--text-secondary, #9ca3af);
   }
 }

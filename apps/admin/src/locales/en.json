@@ -550,5 +550,17 @@
     "somethingWentWrong": "Something went wrong",
     "unexpectedError": "An unexpected error occurred. Please try refreshing the page.",
     "technicalDetails": "Technical Details"
+  },
+  "blocks": {
+    "heading": "Heading",
+    "text": "Text",
+    "divider": "Divider",
+    "quote": "Quote",
+    "photo": "Photo",
+    "photoGroup": "Photo Grid",
+    "addBlock": "Add Block",
+    "cancel": "Cancel",
+    "quotePlaceholder": "Enter quote...",
+    "quoteAttributionPlaceholder": "Attribution (optional)"
   }
 }

@@ -555,5 +555,17 @@
     "somethingWentWrong": "Něco se pokazilo",
     "unexpectedError": "Došlo k neočekávané chybě. Zkuste obnovit stránku.",
     "technicalDetails": "Technické detaily"
+  },
+  "blocks": {
+    "heading": "Nadpis",
+    "text": "Text",
+    "divider": "Oddělovač",
+    "quote": "Citát",
+    "photo": "Fotka",
+    "photoGroup": "Mřížka fotek",
+    "addBlock": "Přidat blok",
+    "cancel": "Zrušit",
+    "quotePlaceholder": "Zadejte citát...",
+    "quoteAttributionPlaceholder": "Zdroj (volitelné)"
   }
 }

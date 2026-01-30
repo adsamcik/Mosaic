@@ -13,6 +13,7 @@ import type {
   PhotoBlock,
   PhotoGroupBlock,
   DividerBlock,
+  QuoteBlock,
   SectionBlock,
   RichTextSegment,
 } from '../../lib/content-blocks';
@@ -225,6 +226,29 @@ export const DividerBlockRenderer = memo(function DividerBlockRenderer({
 });
 
 // =============================================================================
+// Quote Block
+// =============================================================================
+
+interface QuoteBlockRendererProps {
+  block: QuoteBlock;
+}
+
+export const QuoteBlockRenderer = memo(function QuoteBlockRenderer({
+  block,
+}: QuoteBlockRendererProps) {
+  return (
+    <blockquote className="block-quote">
+      <div className="block-quote-text">
+        <RichText segments={block.text} />
+      </div>
+      {block.attribution && (
+        <cite className="block-quote-attribution">— {block.attribution}</cite>
+      )}
+    </blockquote>
+  );
+});
+
+// =============================================================================
 // Section Block
 // =============================================================================
 
@@ -290,6 +314,8 @@ export const BlockRenderer = memo(function BlockRenderer({
       );
     case 'divider':
       return <DividerBlockRenderer block={block} />;
+    case 'quote':
+      return <QuoteBlockRenderer block={block} />;
     case 'section':
       // Section blocks contain children - for now render title only
       return <SectionBlockRenderer block={block} />;
