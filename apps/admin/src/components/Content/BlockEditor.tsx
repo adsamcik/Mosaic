@@ -318,6 +318,17 @@ export const BlockEditorItem = memo(function BlockEditorItem({
                 Photo: {block.manifestId.slice(0, 8)}...
               </div>
             )}
+            <div className="photo-caption-editor">
+              <TextEditor
+                content={block.caption ?? [{ text: '' }]}
+                onChange={(segments) => {
+                  // Only store caption if non-empty
+                  const hasContent = segments.some((s) => s.text.trim().length > 0);
+                  onUpdate({ caption: hasContent ? segments : undefined });
+                }}
+                placeholder="Add a caption..."
+              />
+            </div>
           </div>
         );
       }

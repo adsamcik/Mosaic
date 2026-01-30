@@ -184,8 +184,8 @@
 
 .photo-block-editor {
   display: flex;
-  align-items: center;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .photo-block-preview {
@@ -206,6 +206,19 @@
   border-radius: 4px;
   color: var(--text-tertiary, #9ca3af);
   font-size: 0.875rem;
+}
+
+.photo-caption-editor {
+  width: 100%;
+}
+
+.photo-caption-editor .text-editor {
+  min-height: 1.5rem;
+}
+
+.photo-caption-editor .tiptap {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
 }
 
 /* ==============================================================================
