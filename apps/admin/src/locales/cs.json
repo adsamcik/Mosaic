@@ -573,7 +573,16 @@
     "mapZoom": "Přiblížení",
     "mapHeight": "Výška",
     "mapLatitude": "Zeměpisná šířka",
-    "mapLongitude": "Zeměpisná délka"
+    "mapLongitude": "Zeměpisná délka",
+    "photoGrid": {
+      "add": "Přidat",
+      "addPhotos": "Přidat fotky do mřížky",
+      "removePhoto": "Odebrat fotku",
+      "photoCount": "{{count}}/{{max}} fotek",
+      "layoutGrid": "Mřížka",
+      "layoutRow": "Řádek",
+      "layoutMasonry": "Mozaika"
+    }
   },
   "content": {
     "slashMenu": {

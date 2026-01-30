@@ -6,6 +6,7 @@
  */
 
 import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -19,10 +20,12 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import {
+  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type {
@@ -265,6 +268,176 @@ export const HeadingEditor = memo(function HeadingEditor({
 });
 
 // ==============================================================================
+// Photo Grid Editor Component
+// ==============================================================================
+
+export interface PhotoGridEditorProps {
+  manifestIds: string[];
+  layout: 'grid' | 'masonry' | 'carousel' | 'row';
+  onUpdate: (updates: { manifestIds?: string[]; layout?: 'grid' | 'masonry' | 'carousel' | 'row' }) => void;
+  getThumbnailUrl?: ((manifestId: string) => string | undefined) | undefined;
+  onAddPhotos: () => void;
+}
+
+interface SortablePhotoItemProps {
+  id: string;
+  thumbnailUrl: string | undefined;
+  onRemove: () => void;
+}
+
+const SortablePhotoItem = memo(function SortablePhotoItem({
+  id,
+  thumbnailUrl,
+  onRemove,
+}: SortablePhotoItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`grid-photo-item ${isDragging ? 'dragging' : ''}`}
+      {...attributes}
+      {...listeners}
+    >
+      {thumbnailUrl ? (
+        <img src={thumbnailUrl} alt="" className="grid-photo-thumb" />
+      ) : (
+        <div className="grid-photo-placeholder">
+          {id.slice(0, 4)}
+        </div>
+      )}
+      <button
+        type="button"
+        className="grid-photo-remove"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        aria-label="Remove photo"
+      >
+        ×
+      </button>
+    </div>
+  );
+});
+
+export const PhotoGridEditor = memo(function PhotoGridEditor({
+  manifestIds,
+  layout,
+  onUpdate,
+  getThumbnailUrl,
+  onAddPhotos,
+}: PhotoGridEditorProps) {
+  const { t } = useTranslation();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px of movement before drag starts
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (over && active.id !== over.id) {
+        const oldIndex = manifestIds.indexOf(String(active.id));
+        const newIndex = manifestIds.indexOf(String(over.id));
+        if (oldIndex !== -1 && newIndex !== -1) {
+          const newManifestIds = arrayMove(manifestIds, oldIndex, newIndex);
+          onUpdate({ manifestIds: newManifestIds });
+        }
+      }
+    },
+    [manifestIds, onUpdate],
+  );
+
+  const handleRemovePhoto = useCallback(
+    (manifestId: string) => {
+      const newManifestIds = manifestIds.filter((id) => id !== manifestId);
+      onUpdate({ manifestIds: newManifestIds });
+    },
+    [manifestIds, onUpdate],
+  );
+
+  const handleLayoutChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      onUpdate({ layout: e.target.value as 'grid' | 'row' | 'masonry' });
+    },
+    [onUpdate],
+  );
+
+  const canAddMore = manifestIds.length < 12;
+
+  return (
+    <div className="photo-grid-editor">
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={manifestIds} strategy={horizontalListSortingStrategy}>
+          <div className="photo-grid-items">
+            {manifestIds.map((id) => (
+              <SortablePhotoItem
+                key={id}
+                id={id}
+                thumbnailUrl={getThumbnailUrl?.(id)}
+                onRemove={() => handleRemovePhoto(id)}
+              />
+            ))}
+            {canAddMore && (
+              <button
+                type="button"
+                className="grid-photo-add"
+                onClick={onAddPhotos}
+                aria-label={t('blocks.photoGrid.addPhotos')}
+              >
+                <span className="grid-photo-add-icon">+</span>
+                <span className="grid-photo-add-label">{t('blocks.photoGrid.add')}</span>
+              </button>
+            )}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      <div className="photo-grid-controls">
+        <select
+          value={layout}
+          onChange={handleLayoutChange}
+          className="photo-group-layout-select"
+        >
+          <option value="grid">{t('blocks.photoGrid.layoutGrid')}</option>
+          <option value="row">{t('blocks.photoGrid.layoutRow')}</option>
+          <option value="masonry">{t('blocks.photoGrid.layoutMasonry')}</option>
+        </select>
+        <span className="photo-grid-count">
+          {t('blocks.photoGrid.photoCount', { count: manifestIds.length, max: 12 })}
+        </span>
+      </div>
+    </div>
+  );
+});
+
+// ==============================================================================
 // Sortable Block Wrapper
 // ==============================================================================
 
@@ -329,6 +502,8 @@ export interface BlockEditorItemProps {
   onSlashCommand?: ((blockId: string, rect: DOMRect) => void) | undefined;
   onSlashQueryChange?: ((query: string) => void) | undefined;
   onSlashCancel?: (() => void) | undefined;
+  /** Handler to open photo picker for adding photos to a photo-group block */
+  onAddPhotos?: ((blockId: string) => void) | undefined;
 }
 
 export const BlockEditorItem = memo(function BlockEditorItem({
@@ -339,6 +514,7 @@ export const BlockEditorItem = memo(function BlockEditorItem({
   onSlashCommand,
   onSlashQueryChange,
   onSlashCancel,
+  onAddPhotos,
 }: BlockEditorItemProps) {
   const handleSlashCommand = useCallback(
     (rect: DOMRect) => {
@@ -396,37 +572,17 @@ export const BlockEditorItem = memo(function BlockEditorItem({
       }
 
       case 'photo-group': {
+        const handleAddPhotosClick = () => {
+          onAddPhotos?.(block.id);
+        };
         return (
-          <div className="photo-group-editor">
-            <div className="photo-group-preview">
-              {block.manifestIds.slice(0, 4).map((id) => {
-                const url = getThumbnailUrl?.(id);
-                return url ? (
-                  <img key={id} src={url} alt="" className="photo-group-thumb" />
-                ) : (
-                  <div key={id} className="photo-group-placeholder">
-                    {id.slice(0, 4)}
-                  </div>
-                );
-              })}
-              {block.manifestIds.length > 4 && (
-                <div className="photo-group-more">
-                  +{block.manifestIds.length - 4}
-                </div>
-              )}
-            </div>
-            <select
-              value={block.layout}
-              onChange={(e) =>
-                onUpdate({ layout: e.target.value as 'grid' | 'row' | 'masonry' })
-              }
-              className="photo-group-layout-select"
-            >
-              <option value="grid">Grid</option>
-              <option value="row">Row</option>
-              <option value="masonry">Masonry</option>
-            </select>
-          </div>
+          <PhotoGridEditor
+            manifestIds={block.manifestIds}
+            layout={block.layout}
+            onUpdate={onUpdate}
+            getThumbnailUrl={getThumbnailUrl}
+            onAddPhotos={handleAddPhotosClick}
+          />
         );
       }
 
@@ -688,6 +844,8 @@ export const ContentEditor = memo(function ContentEditor({
   // Photo picker state
   const [pickerOpen, setPickerOpen] = useState(false);
   const [photoBlockType, setPhotoBlockType] = useState<PhotoBlockCreationType>(null);
+  /** Block ID when editing an existing photo-group block's photos */
+  const [editingPhotoGroupBlockId, setEditingPhotoGroupBlockId] = useState<string | null>(null);
   
   // Slash command state
   const slashCommand = useSlashCommand();
@@ -759,12 +917,37 @@ export const ContentEditor = memo(function ContentEditor({
     setPickerOpen(true);
   }, []);
 
+  // Open picker for adding photos to existing photo-group block
+  const handleAddPhotosToBlock = useCallback((blockId: string) => {
+    setEditingPhotoGroupBlockId(blockId);
+    setPhotoBlockType('photo-group');
+    setPickerOpen(true);
+  }, []);
+
   // Handle photo selection from picker
   const handlePhotoSelect = useCallback(
     (manifestIds: string[]) => {
       if (manifestIds.length === 0) {
         setPickerOpen(false);
         setPhotoBlockType(null);
+        setEditingPhotoGroupBlockId(null);
+        return;
+      }
+
+      // Check if we're editing an existing photo-group block
+      if (editingPhotoGroupBlockId) {
+        // Update existing block with new photos (append to existing)
+        const existingBlock = blocks.find((b) => b.id === editingPhotoGroupBlockId);
+        if (existingBlock && existingBlock.type === 'photo-group') {
+          // Merge existing manifestIds with new selections (remove duplicates)
+          const existingIds = new Set(existingBlock.manifestIds);
+          const newIds = manifestIds.filter((id) => !existingIds.has(id));
+          const mergedIds = [...existingBlock.manifestIds, ...newIds].slice(0, 12);
+          onBlockUpdate(editingPhotoGroupBlockId, { manifestIds: mergedIds });
+        }
+        setPickerOpen(false);
+        setPhotoBlockType(null);
+        setEditingPhotoGroupBlockId(null);
         return;
       }
 
@@ -783,13 +966,14 @@ export const ContentEditor = memo(function ContentEditor({
       setPickerOpen(false);
       setPhotoBlockType(null);
     },
-    [blocks.length, onBlockAdd, photoBlockType],
+    [blocks, onBlockAdd, onBlockUpdate, photoBlockType, editingPhotoGroupBlockId],
   );
 
   // Close picker without adding
   const handlePickerClose = useCallback(() => {
     setPickerOpen(false);
     setPhotoBlockType(null);
+    setEditingPhotoGroupBlockId(null);
   }, []);
 
   // Slash command: triggered when "/" is typed at start of empty text block
@@ -903,6 +1087,7 @@ export const ContentEditor = memo(function ContentEditor({
               onSlashCommand={handleSlashCommand}
               onSlashQueryChange={handleSlashQueryChange}
               onSlashCancel={handleSlashCancel}
+              onAddPhotos={albumId ? handleAddPhotosToBlock : undefined}
             />
           ))}
         </SortableContext>
@@ -915,20 +1100,37 @@ export const ContentEditor = memo(function ContentEditor({
       />
 
       {/* Photo picker dialog */}
-      {albumId && (
-        <PhotoPickerDialog
-          isOpen={pickerOpen}
-          onClose={handlePickerClose}
-          onSelect={handlePhotoSelect}
-          albumId={albumId}
-          maxSelection={photoBlockType === 'photo' ? 1 : 20}
-          title={
-            photoBlockType === 'photo'
-              ? 'Select Photo'
-              : 'Select Photos for Grid'
+      {albumId && (() => {
+        // Get max selection based on current state
+        let maxSelection = 20;
+        if (photoBlockType === 'photo') {
+          maxSelection = 1;
+        } else if (editingPhotoGroupBlockId) {
+          // When editing, limit to remaining slots
+          const existingBlock = blocks.find((b) => b.id === editingPhotoGroupBlockId);
+          if (existingBlock && existingBlock.type === 'photo-group') {
+            maxSelection = 12 - existingBlock.manifestIds.length;
           }
-        />
-      )}
+        } else {
+          maxSelection = 12;
+        }
+        return (
+          <PhotoPickerDialog
+            isOpen={pickerOpen}
+            onClose={handlePickerClose}
+            onSelect={handlePhotoSelect}
+            albumId={albumId}
+            maxSelection={maxSelection}
+            title={
+              editingPhotoGroupBlockId
+                ? 'Add Photos to Grid'
+                : photoBlockType === 'photo'
+                  ? 'Select Photo'
+                  : 'Select Photos for Grid'
+            }
+          />
+        );
+      })()}
 
       {/* Slash command menu */}
       <SlashCommandMenu

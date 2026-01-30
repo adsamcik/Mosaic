@@ -568,7 +568,16 @@
     "mapZoom": "Zoom",
     "mapHeight": "Height",
     "mapLatitude": "Latitude",
-    "mapLongitude": "Longitude"
+    "mapLongitude": "Longitude",
+    "photoGrid": {
+      "add": "Add",
+      "addPhotos": "Add photos to grid",
+      "removePhoto": "Remove photo",
+      "photoCount": "{{count}}/{{max}} photos",
+      "layoutGrid": "Grid",
+      "layoutRow": "Row",
+      "layoutMasonry": "Masonry"
+    }
   },
   "content": {
     "slashMenu": {

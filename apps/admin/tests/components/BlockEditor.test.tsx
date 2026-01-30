@@ -11,6 +11,7 @@ import {
   BlockEditorItem,
   TextEditor,
   HeadingEditor,
+  PhotoGridEditor,
 } from '../../src/components/Content/BlockEditor';
 import type {
   PhotoBlock,
@@ -18,6 +19,23 @@ import type {
   TextBlock,
   RichTextSegment,
 } from '../../src/lib/content-blocks';
+
+// Mock react-i18next
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) => {
+      // Return key with any interpolated values
+      if (opts) {
+        return Object.entries(opts).reduce(
+          (acc, [k, v]) => acc.replace(`{{${k}}}`, String(v)),
+          key
+        );
+      }
+      return key;
+    },
+    i18n: { language: 'en' },
+  }),
+}));
 
 // Mock TipTap - it doesn't work well in happy-dom
 vi.mock('@tiptap/react', () => ({
@@ -55,6 +73,13 @@ vi.mock('@dnd-kit/sortable', () => ({
     isDragging: false,
   })),
   verticalListSortingStrategy: vi.fn(),
+  horizontalListSortingStrategy: vi.fn(),
+  arrayMove: vi.fn((arr: unknown[], from: number, to: number) => {
+    const result = [...arr];
+    const [removed] = result.splice(from, 1);
+    result.splice(to, 0, removed);
+    return result;
+  }),
 }));
 
 vi.mock('@dnd-kit/utilities', () => ({
@@ -110,6 +135,7 @@ describe('BlockEditorItem', () => {
         id: 'photo-1',
         type: 'photo',
         manifestId: 'manifest-123',
+        position: 'a',
       };
       const onUpdate = vi.fn();
       const onDelete = vi.fn();
@@ -132,6 +158,7 @@ describe('BlockEditorItem', () => {
         id: 'photo-1',
         type: 'photo',
         manifestId: 'manifest-123',
+        position: 'a',
       };
       const onUpdate = vi.fn();
       const onDelete = vi.fn();
@@ -152,6 +179,7 @@ describe('BlockEditorItem', () => {
         id: 'photo-1',
         type: 'photo',
         manifestId: 'manifest-123',
+        position: 'a',
       };
       const onUpdate = vi.fn();
       const onDelete = vi.fn();
@@ -173,6 +201,7 @@ describe('BlockEditorItem', () => {
         id: 'photo-1',
         type: 'photo',
         manifestId: 'manifest-123',
+        position: 'a',
         caption: [{ text: 'Test caption' }],
       };
       const onUpdate = vi.fn();
@@ -193,6 +222,7 @@ describe('BlockEditorItem', () => {
         id: 'photo-1',
         type: 'photo',
         manifestId: 'manifest-123',
+        position: 'a',
         caption: [{ text: 'Existing caption' }],
       };
       const onUpdate = vi.fn();
@@ -222,6 +252,7 @@ describe('BlockEditorItem', () => {
         type: 'heading',
         level: 1,
         text: 'Test Heading',
+        position: 'a',
       };
       const onUpdate = vi.fn();
       const onDelete = vi.fn();
@@ -243,6 +274,7 @@ describe('BlockEditorItem', () => {
         id: 'text-1',
         type: 'text',
         segments: [{ text: 'Test text' }],
+        position: 'a',
       };
       const onUpdate = vi.fn();
       const onDelete = vi.fn();
@@ -328,5 +360,106 @@ describe('HeadingEditor', () => {
     const activeButton = container.querySelector('.heading-level-btn.active');
     expect(activeButton).not.toBeNull();
     expect(activeButton?.textContent).toBe('H2');
+  });
+});
+
+describe('PhotoGridEditor', () => {
+  it('renders photo thumbnails', () => {
+    const onUpdate = vi.fn();
+    const onAddPhotos = vi.fn();
+    const getThumbnailUrl = vi.fn((id: string) => `https://example.com/${id}.jpg`);
+
+    const { container } = render(PhotoGridEditor, {
+      manifestIds: ['photo-1', 'photo-2'],
+      layout: 'grid',
+      onUpdate,
+      getThumbnailUrl,
+      onAddPhotos,
+    });
+
+    // Should have thumbnail images
+    const thumbs = container.querySelectorAll('.grid-photo-thumb');
+    expect(thumbs.length).toBe(2);
+  });
+
+  it('renders add button when under limit', () => {
+    const onUpdate = vi.fn();
+    const onAddPhotos = vi.fn();
+
+    const { container } = render(PhotoGridEditor, {
+      manifestIds: ['photo-1'],
+      layout: 'grid',
+      onUpdate,
+      onAddPhotos,
+    });
+
+    // Should have add button
+    const addButton = container.querySelector('.grid-photo-add');
+    expect(addButton).not.toBeNull();
+  });
+
+  it('hides add button at max capacity', () => {
+    const onUpdate = vi.fn();
+    const onAddPhotos = vi.fn();
+    // Create 12 photos (max)
+    const manifestIds = Array.from({ length: 12 }, (_, i) => `photo-${i}`);
+
+    const { container } = render(PhotoGridEditor, {
+      manifestIds,
+      layout: 'grid',
+      onUpdate,
+      onAddPhotos,
+    });
+
+    // Should NOT have add button at max capacity
+    const addButton = container.querySelector('.grid-photo-add');
+    expect(addButton).toBeNull();
+  });
+
+  it('renders remove buttons on photos', () => {
+    const onUpdate = vi.fn();
+    const onAddPhotos = vi.fn();
+
+    const { container } = render(PhotoGridEditor, {
+      manifestIds: ['photo-1', 'photo-2'],
+      layout: 'grid',
+      onUpdate,
+      onAddPhotos,
+    });
+
+    // Should have remove buttons
+    const removeButtons = container.querySelectorAll('.grid-photo-remove');
+    expect(removeButtons.length).toBe(2);
+  });
+
+  it('renders layout selector with current value', () => {
+    const onUpdate = vi.fn();
+    const onAddPhotos = vi.fn();
+
+    const { container } = render(PhotoGridEditor, {
+      manifestIds: ['photo-1'],
+      layout: 'masonry',
+      onUpdate,
+      onAddPhotos,
+    });
+
+    const select = container.querySelector('.photo-group-layout-select') as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    expect(select?.value).toBe('masonry');
+  });
+
+  it('renders photo count', () => {
+    const onUpdate = vi.fn();
+    const onAddPhotos = vi.fn();
+
+    const { container } = render(PhotoGridEditor, {
+      manifestIds: ['photo-1', 'photo-2', 'photo-3'],
+      layout: 'grid',
+      onUpdate,
+      onAddPhotos,
+    });
+
+    const countElement = container.querySelector('.photo-grid-count');
+    expect(countElement).not.toBeNull();
   });
 });
