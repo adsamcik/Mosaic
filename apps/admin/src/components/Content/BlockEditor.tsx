@@ -48,6 +48,7 @@ import {
   useSlashCommand,
   type InsertableBlockType,
 } from './SlashCommandMenu';
+import { useToast } from '../../contexts/ToastContext';
 import './BlockEditor.css';
 
 // ==============================================================================
@@ -841,6 +842,9 @@ export const ContentEditor = memo(function ContentEditor({
   className,
   albumId,
 }: ContentEditorProps) {
+  const { t } = useTranslation();
+  const { addToast } = useToast();
+  
   // Photo picker state
   const [pickerOpen, setPickerOpen] = useState(false);
   const [photoBlockType, setPhotoBlockType] = useState<PhotoBlockCreationType>(null);
@@ -850,6 +854,59 @@ export const ContentEditor = memo(function ContentEditor({
   // Slash command state
   const slashCommand = useSlashCommand();
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
+  
+  // Undo deletion state - stores pending undo data
+  const pendingUndoRef = useRef<{ block: ContentBlock; index: number } | null>(null);
+  
+  /**
+   * Handle block deletion with undo toast.
+   * Shows a toast with an undo action that restores the block at its original position.
+   */
+  const handleBlockDelete = useCallback(
+    (blockId: string) => {
+      // Find the block and its index before deletion
+      const blockIndex = blocks.findIndex((b) => b.id === blockId);
+      if (blockIndex === -1) return;
+      
+      const deletedBlock = blocks[blockIndex]!;
+      
+      // Clear any previous pending undo (new delete takes precedence)
+      pendingUndoRef.current = { block: deletedBlock, index: blockIndex };
+      
+      // Remove the block immediately
+      onBlockRemove(blockId);
+      
+      // Show toast with undo action
+      addToast({
+        message: t('content.blockDeleted', 'Block deleted'),
+        type: 'info',
+        duration: 5000,
+        action: {
+          label: t('common.undo', 'Undo'),
+          onClick: () => {
+            const pending = pendingUndoRef.current;
+            if (!pending) return;
+            
+            // Add the block back
+            onBlockAdd(pending.block);
+            
+            // Move it to the original position (it was added at the end)
+            // After adding, the block is at position blocks.length (current length after delete)
+            // We need to move it from that position to the original index
+            const currentLength = blocks.length; // This is after the delete, so it's original - 1
+            if (pending.index < currentLength) {
+              // Block was added at end, move to original position
+              onBlockMove(currentLength, pending.index);
+            }
+            
+            // Clear pending undo
+            pendingUndoRef.current = null;
+          },
+        },
+      });
+    },
+    [blocks, onBlockRemove, onBlockAdd, onBlockMove, addToast, t],
+  );
   
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -1082,7 +1139,7 @@ export const ContentEditor = memo(function ContentEditor({
               key={block.id}
               block={block}
               onUpdate={(updates) => onBlockUpdate(block.id, updates)}
-              onDelete={() => onBlockRemove(block.id)}
+              onDelete={() => handleBlockDelete(block.id)}
               getThumbnailUrl={getThumbnailUrl}
               onSlashCommand={handleSlashCommand}
               onSlashQueryChange={handleSlashQueryChange}

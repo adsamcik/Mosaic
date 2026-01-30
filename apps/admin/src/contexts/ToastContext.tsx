@@ -6,6 +6,14 @@ import React, { createContext, useContext, useState, useCallback, useRef, useEff
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
 /**
+ * Toast action button
+ */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+/**
  * Individual toast notification
  */
 export interface Toast {
@@ -13,6 +21,8 @@ export interface Toast {
   message: string;
   type: ToastType;
   duration?: number;
+  /** Optional action button */
+  action?: ToastAction;
 }
 
 /**

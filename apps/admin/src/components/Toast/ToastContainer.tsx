@@ -141,7 +141,21 @@ export function ToastContainer() {
           <span className={styles.icon}>
             <ToastIcon type={toast.type} />
           </span>
-          <div className={styles.message}>{toast.message}</div>
+          <div className={styles.content}>
+            <div className={styles.message}>{toast.message}</div>
+            {toast.action && (
+              <button
+                className={styles.action}
+                onClick={() => {
+                  toast.action!.onClick();
+                  removeToast(toast.id);
+                }}
+                data-testid="toast-action"
+              >
+                {toast.action.label}
+              </button>
+            )}
+          </div>
           <button
             className={styles.close}
             onClick={() => removeToast(toast.id)}

@@ -12,13 +12,17 @@ import {
   TextEditor,
   HeadingEditor,
   PhotoGridEditor,
+  ContentEditor,
 } from '../../src/components/Content/BlockEditor';
 import type {
   PhotoBlock,
   HeadingBlock,
   TextBlock,
   RichTextSegment,
+  ContentBlock,
 } from '../../src/lib/content-blocks';
+import { ToastProvider } from '../../src/contexts/ToastContext';
+import { ToastContainer } from '../../src/components/Toast';
 
 // Mock react-i18next
 vi.mock('react-i18next', () => ({
@@ -461,5 +465,182 @@ describe('PhotoGridEditor', () => {
 
     const countElement = container.querySelector('.photo-grid-count');
     expect(countElement).not.toBeNull();
+  });
+});
+
+describe('ContentEditor', () => {
+  // Helper to render ContentEditor wrapped in ToastProvider with ToastContainer
+  function renderWithToast<P extends object>(
+    Component: React.ComponentType<P>,
+    props: P,
+  ) {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    let root: ReturnType<typeof createRoot>;
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        createElement(ToastProvider, null,
+          createElement('div', null,
+            createElement(Component, props),
+            createElement(ToastContainer)
+          )
+        )
+      );
+    });
+
+    const cleanup = () => {
+      act(() => {
+        root!.unmount();
+      });
+      container.remove();
+    };
+
+    cleanupFns.push(cleanup);
+    return { container, cleanup };
+  }
+
+  describe('block deletion with undo', () => {
+    it('calls onBlockRemove when delete button is clicked', () => {
+      const blocks: ContentBlock[] = [
+        {
+          id: 'heading-1',
+          type: 'heading',
+          text: 'Test Heading',
+          level: 2,
+          position: 'a',
+        },
+      ];
+      const onBlockUpdate = vi.fn();
+      const onBlockAdd = vi.fn();
+      const onBlockRemove = vi.fn();
+      const onBlockMove = vi.fn();
+
+      const { container } = renderWithToast(ContentEditor, {
+        blocks,
+        onBlockUpdate,
+        onBlockAdd,
+        onBlockRemove,
+        onBlockMove,
+      });
+
+      // Find and click the delete button
+      const deleteButton = container.querySelector('.sortable-block-delete');
+      expect(deleteButton).not.toBeNull();
+      
+      act(() => {
+        (deleteButton as HTMLButtonElement)?.click();
+      });
+
+      expect(onBlockRemove).toHaveBeenCalledWith('heading-1');
+    });
+
+    it('shows toast notification when block is deleted', () => {
+      const blocks: ContentBlock[] = [
+        {
+          id: 'text-1',
+          type: 'text',
+          segments: [{ text: 'Test' }],
+          position: 'a',
+        },
+      ];
+      const onBlockUpdate = vi.fn();
+      const onBlockAdd = vi.fn();
+      const onBlockRemove = vi.fn();
+      const onBlockMove = vi.fn();
+
+      const { container } = renderWithToast(ContentEditor, {
+        blocks,
+        onBlockUpdate,
+        onBlockAdd,
+        onBlockRemove,
+        onBlockMove,
+      });
+
+      // Click delete button
+      const deleteButton = container.querySelector('.sortable-block-delete');
+      act(() => {
+        (deleteButton as HTMLButtonElement)?.click();
+      });
+
+      // Toast should appear in the document (ToastContainer renders to body)
+      const toast = document.querySelector('[data-testid="toast-info"]');
+      expect(toast).not.toBeNull();
+      // Mock returns translation key, not the value
+      expect(toast?.textContent).toContain('content.blockDeleted');
+    });
+
+    it('shows undo button in toast', () => {
+      const blocks: ContentBlock[] = [
+        {
+          id: 'divider-1',
+          type: 'divider',
+          style: 'line',
+          position: 'a',
+        },
+      ];
+      const onBlockUpdate = vi.fn();
+      const onBlockAdd = vi.fn();
+      const onBlockRemove = vi.fn();
+      const onBlockMove = vi.fn();
+
+      renderWithToast(ContentEditor, {
+        blocks,
+        onBlockUpdate,
+        onBlockAdd,
+        onBlockRemove,
+        onBlockMove,
+      });
+
+      // Click delete button
+      const deleteButton = document.querySelector('.sortable-block-delete');
+      act(() => {
+        (deleteButton as HTMLButtonElement)?.click();
+      });
+
+      // Undo button should be present
+      const undoButton = document.querySelector('[data-testid="toast-action"]');
+      expect(undoButton).not.toBeNull();
+      // Mock returns translation key, not the value
+      expect(undoButton?.textContent).toContain('common.undo');
+    });
+
+    it('calls onBlockAdd when undo is clicked', () => {
+      const originalBlock: ContentBlock = {
+        id: 'quote-1',
+        type: 'quote',
+        text: [{ text: 'Famous quote' }],
+        position: 'a',
+      };
+      const blocks: ContentBlock[] = [originalBlock];
+      const onBlockUpdate = vi.fn();
+      const onBlockAdd = vi.fn();
+      const onBlockRemove = vi.fn();
+      const onBlockMove = vi.fn();
+
+      renderWithToast(ContentEditor, {
+        blocks,
+        onBlockUpdate,
+        onBlockAdd,
+        onBlockRemove,
+        onBlockMove,
+      });
+
+      // Click delete button
+      const deleteButton = document.querySelector('.sortable-block-delete');
+      act(() => {
+        (deleteButton as HTMLButtonElement)?.click();
+      });
+
+      // Click undo button
+      const undoButton = document.querySelector('[data-testid="toast-action"]');
+      act(() => {
+        (undoButton as HTMLButtonElement)?.click();
+      });
+
+      // onBlockAdd should be called with the original block
+      expect(onBlockAdd).toHaveBeenCalledWith(originalBlock);
+    });
   });
 });

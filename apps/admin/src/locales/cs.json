@@ -23,6 +23,7 @@
     "processing": "Zpracování...",
     "notSet": "(nenastaveno)",
     "unknown": "Neznámé",
+    "undo": "Zpět",
     "percent": "{{value}} %",
     "characterCount": "{{count}}/{{max}} znaků",
     "permanentAction": "⚠️ Tato akce je nevratná.",
@@ -585,6 +586,7 @@
     }
   },
   "content": {
+    "blockDeleted": "Blok smazán",
     "slashMenu": {
       "title": "Vložit blok",
       "hint": "↑↓ navigace • Enter vybrat • Esc zavřít",

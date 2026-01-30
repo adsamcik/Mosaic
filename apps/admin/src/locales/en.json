@@ -23,6 +23,7 @@
     "processing": "Processing...",
     "notSet": "(not set)",
     "unknown": "Unknown",
+    "undo": "Undo",
     "percent": "{{value}}%",
     "characterCount": "{{count}}/{{max}} characters",
     "permanentAction": "⚠️ This action is permanent and cannot be undone.",
@@ -580,6 +581,7 @@
     }
   },
   "content": {
+    "blockDeleted": "Block deleted",
     "slashMenu": {
       "title": "Insert Block",
       "hint": "↑↓ navigate • Enter select • Esc close",
