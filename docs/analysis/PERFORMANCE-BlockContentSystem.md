@@ -595,7 +595,7 @@ editor.on('paste', ({ clipboardData }) => {
 **Photo re-encryption is already solved:**
 
 ```typescript
-// Current epoch rotation in apps/admin/src/lib/epoch-rotation-service.ts
+// Current epoch rotation in apps/web/src/lib/epoch-rotation-service.ts
 // Re-encrypts all manifests and metadata
 ```
 
@@ -670,7 +670,7 @@ async function* chunkReencrypt(
 ### 6.2 Implementation
 
 ```typescript
-// New file: apps/admin/src/lib/block-metrics.ts
+// New file: apps/web/src/lib/block-metrics.ts
 import { createLogger } from './logger';
 
 const log = createLogger('BlockMetrics');

@@ -31,8 +31,8 @@
 | -------- | ------------------------------------------------------------------------------------------------ |
 | Backend  | [Controllers/DevAuthController.cs](../apps/backend/Mosaic.Backend/Controllers/DevAuthController.cs) |
 | Backend  | [Middleware/LocalAuthMiddleware.cs](../apps/backend/Mosaic.Backend/Middleware/LocalAuthMiddleware.cs) |
-| Frontend | [lib/local-auth.ts](../apps/admin/src/lib/local-auth.ts)                                         |
-| Frontend | [components/Auth/LoginForm.tsx](../apps/admin/src/components/Auth/LoginForm.tsx)                 |
+| Frontend | [lib/local-auth.ts](../apps/web/src/lib/local-auth.ts)                                         |
+| Frontend | [components/Auth/LoginForm.tsx](../apps/web/src/components/Auth/LoginForm.tsx)                 |
 
 **Flow:**
 1. Client requests challenge with username
@@ -48,7 +48,7 @@ Auth__ProxyAuthEnabled=false  # Disable ProxyAuth
 
 **Tests:**
 - Backend: `Mosaic.Backend.Tests/AuthTests/`
-- Frontend: `apps/admin/tests/local-auth.test.ts`
+- Frontend: `apps/web/tests/local-auth.test.ts`
 
 ---
 
@@ -132,8 +132,8 @@ npx playwright test auth-modes.spec.ts --project=chromium
 | Layer               | Location                                                                                          |
 | ------------------- | ------------------------------------------------------------------------------------------------- |
 | Backend             | [Controllers/AlbumsController.cs](../apps/backend/Mosaic.Backend/Controllers/AlbumsController.cs) |
-| Frontend Hook       | [hooks/useAlbums.ts](../apps/admin/src/hooks/useAlbums.ts)                                        |
-| Frontend Components | [components/Albums/](../apps/admin/src/components/Albums/)                                        |
+| Frontend Hook       | [hooks/useAlbums.ts](../apps/web/src/hooks/useAlbums.ts)                                        |
+| Frontend Components | [components/Albums/](../apps/web/src/components/Albums/)                                        |
 
 **Features:**
 - Album creation with encrypted metadata
@@ -142,7 +142,7 @@ npx playwright test auth-modes.spec.ts --project=chromium
 
 **Tests:**
 - Backend: `Mosaic.Backend.Tests/AlbumTests/`
-- Frontend: `apps/admin/tests/album-*.test.ts`
+- Frontend: `apps/web/tests/album-*.test.ts`
 
 ---
 
@@ -153,8 +153,8 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Implementation:**
 | Layer            | Location                                                                   |
 | ---------------- | -------------------------------------------------------------------------- |
-| Frontend Hook    | [hooks/useAlbumCover.ts](../apps/admin/src/hooks/useAlbumCover.ts)         |
-| Frontend Service | [lib/album-cover-service.ts](../apps/admin/src/lib/album-cover-service.ts) |
+| Frontend Hook    | [hooks/useAlbumCover.ts](../apps/web/src/hooks/useAlbumCover.ts)         |
+| Frontend Service | [lib/album-cover-service.ts](../apps/web/src/lib/album-cover-service.ts) |
 
 **Behavior:**
 - Selects most recent photo or explicit cover selection
@@ -172,7 +172,7 @@ npx playwright test auth-modes.spec.ts --project=chromium
 | Layer    | Location                                                                              |
 | -------- | ------------------------------------------------------------------------------------- |
 | Backend  | Album entity `ExpiresAt` field                                                        |
-| Frontend | [components/Albums/AlbumExpirationSettings.tsx](../apps/admin/src/components/Albums/) |
+| Frontend | [components/Albums/AlbumExpirationSettings.tsx](../apps/web/src/components/Albums/) |
 
 ---
 
@@ -186,10 +186,10 @@ npx playwright test auth-modes.spec.ts --project=chromium
 | Backend  | [Controllers/AlbumContentController.cs](../apps/backend/Mosaic.Backend/Controllers/AlbumContentController.cs) |
 | Backend  | [Models/AlbumContent.cs](../apps/backend/Mosaic.Backend/Models/AlbumContent.cs)               |
 | Crypto   | [libs/crypto/src/content.ts](../libs/crypto/src/content.ts) - deriveContentKey, encryptContent |
-| Frontend | [contexts/AlbumContentContext.tsx](../apps/admin/src/contexts/AlbumContentContext.tsx)        |
-| Frontend | [lib/content-blocks.ts](../apps/admin/src/lib/content-blocks.ts) - Zod schemas & types        |
-| Frontend | [components/Content/](../apps/admin/src/components/Content/) - BlockRenderers, BlockEditor, SlashCommandMenu, PhotoPickerDialog |
-| Frontend | [components/Gallery/Gallery.tsx](../apps/admin/src/components/Gallery/Gallery.tsx) - StoryView integration |
+| Frontend | [contexts/AlbumContentContext.tsx](../apps/web/src/contexts/AlbumContentContext.tsx)        |
+| Frontend | [lib/content-blocks.ts](../apps/web/src/lib/content-blocks.ts) - Zod schemas & types        |
+| Frontend | [components/Content/](../apps/web/src/components/Content/) - BlockRenderers, BlockEditor, SlashCommandMenu, PhotoPickerDialog |
+| Frontend | [components/Gallery/Gallery.tsx](../apps/web/src/components/Gallery/Gallery.tsx) - StoryView integration |
 
 **Block Types:**
 - `heading` - H1/H2/H3 section headings
@@ -228,7 +228,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Tests:**
 - Backend: `Mosaic.Backend.Tests/AlbumContentTests/`
 - Crypto: `libs/crypto/tests/content.test.ts`
-- Frontend: `apps/admin/tests/lib/content-blocks.test.ts`, `apps/admin/tests/components/BlockRenderers.test.tsx`, `apps/admin/tests/components/BlockEditor.test.tsx`, `apps/admin/tests/components/SlashCommandMenu.test.tsx`, `apps/admin/tests/components/PhotoPickerDialog.test.tsx`
+- Frontend: `apps/web/tests/lib/content-blocks.test.ts`, `apps/web/tests/components/BlockRenderers.test.tsx`, `apps/web/tests/components/BlockEditor.test.tsx`, `apps/web/tests/components/SlashCommandMenu.test.tsx`, `apps/web/tests/components/PhotoPickerDialog.test.tsx`
 
 ---
 
@@ -245,9 +245,9 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | ---------------- | ------------------------------------------------------------------------------- |
 | Backend          | [Program.cs (Tus config)](../apps/backend/Mosaic.Backend/Program.cs)            |
 | Backend          | [Controllers/ShardsController.cs](../apps/backend/Mosaic.Backend/Controllers/ShardsController.cs) |
-| Frontend Context | [contexts/UploadContext.tsx](../apps/admin/src/contexts/UploadContext.tsx)      |
-| Frontend Hook    | [hooks/useUpload.ts](../apps/admin/src/hooks/useUpload.ts)                      |
-| Frontend UI      | [components/Upload/](../apps/admin/src/components/Upload/)                      |
+| Frontend Context | [contexts/UploadContext.tsx](../apps/web/src/contexts/UploadContext.tsx)      |
+| Frontend Hook    | [hooks/useUpload.ts](../apps/web/src/hooks/useUpload.ts)                      |
+| Frontend UI      | [components/Upload/](../apps/web/src/components/Upload/)                      |
 
 **Features:**
 - Client-side encryption before upload
@@ -265,10 +265,10 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer         | Location                                                                           |
 | ------------- | ---------------------------------------------------------------------------------- |
-| Frontend Hook | [hooks/useSelection.ts](../apps/admin/src/hooks/useSelection.ts)                   |
-| Frontend Hook | [hooks/usePhotoActions.ts](../apps/admin/src/hooks/usePhotoActions.ts)             |
-| Frontend UI   | [components/Gallery/SelectionActionBar.tsx](../apps/admin/src/components/Gallery/) |
-| Styles        | [styles/selection-ux.css](../apps/admin/src/styles/selection-ux.css)               |
+| Frontend Hook | [hooks/useSelection.ts](../apps/web/src/hooks/useSelection.ts)                   |
+| Frontend Hook | [hooks/usePhotoActions.ts](../apps/web/src/hooks/usePhotoActions.ts)             |
+| Frontend UI   | [components/Gallery/SelectionActionBar.tsx](../apps/web/src/components/Gallery/) |
+| Styles        | [styles/selection-ux.css](../apps/web/src/styles/selection-ux.css)               |
 
 **Features:**
 - Long-press or checkbox selection
@@ -286,8 +286,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Layer         | Location                                                                       |
 | ------------- | ------------------------------------------------------------------------------ |
 | Backend       | [Controllers/ManifestsController.cs](../apps/backend/Mosaic.Backend/Controllers/ManifestsController.cs) |
-| Frontend Hook | [hooks/usePhotoDelete.ts](../apps/admin/src/hooks/usePhotoDelete.ts)           |
-| Frontend Hook | [hooks/usePhotoActions.ts](../apps/admin/src/hooks/usePhotoActions.ts)         |
+| Frontend Hook | [hooks/usePhotoDelete.ts](../apps/web/src/hooks/usePhotoDelete.ts)           |
+| Frontend Hook | [hooks/usePhotoActions.ts](../apps/web/src/hooks/usePhotoActions.ts)         |
 
 ---
 
@@ -302,8 +302,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer              | Location                                                                               |
 | ------------------ | -------------------------------------------------------------------------------------- |
-| Frontend Component | [components/Gallery/PhotoGrid.tsx](../apps/admin/src/components/Gallery/PhotoGrid.tsx) |
-| Frontend Hook      | [hooks/usePhotos.ts](../apps/admin/src/hooks/usePhotos.ts)                             |
+| Frontend Component | [components/Gallery/PhotoGrid.tsx](../apps/web/src/components/Gallery/PhotoGrid.tsx) |
+| Frontend Hook      | [hooks/usePhotos.ts](../apps/web/src/hooks/usePhotos.ts)                             |
 
 **Features:**
 - TanStack Virtual for viewport-based rendering
@@ -320,8 +320,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer              | Location                                                                           |
 | ------------------ | ---------------------------------------------------------------------------------- |
-| Frontend Hook      | [hooks/useLightbox.ts](../apps/admin/src/hooks/useLightbox.ts)                     |
-| Frontend Component | [components/Gallery/PhotoViewer.tsx](../apps/admin/src/components/Gallery/PhotoViewer.tsx) |
+| Frontend Hook      | [hooks/useLightbox.ts](../apps/web/src/hooks/useLightbox.ts)                     |
+| Frontend Component | [components/Gallery/PhotoViewer.tsx](../apps/web/src/components/Gallery/PhotoViewer.tsx) |
 
 **Features:**
 - Full-resolution image loading
@@ -338,8 +338,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer              | Location                                                                |
 | ------------------ | ----------------------------------------------------------------------- |
-| Frontend Component | [components/Gallery/MapView.tsx](../apps/admin/src/components/Gallery/) |
-| Worker             | [workers/geo.worker.ts](../apps/admin/src/workers/geo.worker.ts)        |
+| Frontend Component | [components/Gallery/MapView.tsx](../apps/web/src/components/Gallery/) |
+| Worker             | [workers/geo.worker.ts](../apps/web/src/workers/geo.worker.ts)        |
 
 **Features:**
 - Leaflet-based map rendering
@@ -358,10 +358,10 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Layer            | Location                                                                                       |
 | ---------------- | ---------------------------------------------------------------------------------------------- |
 | Backend          | [Controllers/AlbumMembersController.cs](../apps/backend/Mosaic.Backend/Controllers/)           |
-| Frontend Hook    | [hooks/useAlbumMembers.ts](../apps/admin/src/hooks/useAlbumMembers.ts)                         |
-| Frontend Hook    | [hooks/useMemberManagement.ts](../apps/admin/src/hooks/useMemberManagement.ts)                 |
-| Frontend Context | [contexts/AlbumPermissionsContext.tsx](../apps/admin/src/contexts/AlbumPermissionsContext.tsx) |
-| Frontend UI      | [components/Members/](../apps/admin/src/components/Members/)                                   |
+| Frontend Hook    | [hooks/useAlbumMembers.ts](../apps/web/src/hooks/useAlbumMembers.ts)                         |
+| Frontend Hook    | [hooks/useMemberManagement.ts](../apps/web/src/hooks/useMemberManagement.ts)                 |
+| Frontend Context | [contexts/AlbumPermissionsContext.tsx](../apps/web/src/contexts/AlbumPermissionsContext.tsx) |
+| Frontend UI      | [components/Members/](../apps/web/src/components/Members/)                                   |
 
 **Features:**
 - Add members by username
@@ -378,9 +378,9 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Layer         | Location                                                                           |
 | ------------- | ---------------------------------------------------------------------------------- |
 | Backend       | [Controllers/ShareLinksController.cs](../apps/backend/Mosaic.Backend/Controllers/) |
-| Frontend Hook | [hooks/useShareLinks.ts](../apps/admin/src/hooks/useShareLinks.ts)                 |
-| Frontend Hook | [hooks/useLinkKeys.ts](../apps/admin/src/hooks/useLinkKeys.ts)                     |
-| Frontend UI   | [components/ShareLinks/](../apps/admin/src/components/ShareLinks/)                 |
+| Frontend Hook | [hooks/useShareLinks.ts](../apps/web/src/hooks/useShareLinks.ts)                 |
+| Frontend Hook | [hooks/useLinkKeys.ts](../apps/web/src/hooks/useLinkKeys.ts)                     |
+| Frontend UI   | [components/ShareLinks/](../apps/web/src/components/ShareLinks/)                 |
 
 **Features:**
 - Time-limited share links
@@ -408,7 +408,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | ------------------- | ---------------------------------------------------------------- |
 | Key derivation      | [libs/crypto/src/key-derivation.ts](../libs/crypto/src/)         |
 | Envelope encryption | [libs/crypto/src/envelope.ts](../libs/crypto/src/)               |
-| Epoch keys          | [hooks/useEpochKeys.ts](../apps/admin/src/hooks/useEpochKeys.ts) |
+| Epoch keys          | [hooks/useEpochKeys.ts](../apps/web/src/hooks/useEpochKeys.ts) |
 
 ---
 
@@ -433,8 +433,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer   | Location                                                         |
 | ------- | ---------------------------------------------------------------- |
-| Worker  | [workers/db.worker.ts](../apps/admin/src/workers/db.worker.ts)   |
-| Service | [lib/db-client.ts](../apps/admin/src/lib/db-client.ts)           |
+| Worker  | [workers/db.worker.ts](../apps/web/src/workers/db.worker.ts)   |
+| Service | [lib/db-client.ts](../apps/web/src/lib/db-client.ts)           |
 
 **Features:**
 - OPFS-backed SQLite database
@@ -451,8 +451,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer            | Location                                                               |
 | ---------------- | ---------------------------------------------------------------------- |
-| Frontend Context | [contexts/SyncContext.tsx](../apps/admin/src/contexts/SyncContext.tsx) |
-| Frontend Hook    | [hooks/useSync.ts](../apps/admin/src/hooks/useSync.ts)                 |
+| Frontend Context | [contexts/SyncContext.tsx](../apps/web/src/contexts/SyncContext.tsx) |
+| Frontend Hook    | [hooks/useSync.ts](../apps/web/src/hooks/useSync.ts)                 |
 
 **Features:**
 - Incremental sync with server
@@ -471,8 +471,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer         | Location                                                                        |
 | ------------- | ------------------------------------------------------------------------------- |
-| Frontend Hook | [hooks/useTheme.ts](../apps/admin/src/hooks/useTheme.ts)                        |
-| Frontend UI   | [components/Settings/ThemeSettings.tsx](../apps/admin/src/components/Settings/) |
+| Frontend Hook | [hooks/useTheme.ts](../apps/web/src/hooks/useTheme.ts)                        |
+| Frontend UI   | [components/Settings/ThemeSettings.tsx](../apps/web/src/components/Settings/) |
 
 ---
 
@@ -483,7 +483,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer         | Location                                                     |
 | ------------- | ------------------------------------------------------------ |
-| Frontend Hook | [hooks/useSession.ts](../apps/admin/src/hooks/useSession.ts) |
+| Frontend Hook | [hooks/useSession.ts](../apps/web/src/hooks/useSession.ts) |
 
 ---
 
@@ -494,11 +494,11 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer       | Location                                                                                                           |
 | ----------- | ------------------------------------------------------------------------------------------------------------------ |
-| CSS         | [styles/animations.css](../apps/admin/src/styles/animations.css)                                                   |
-| Hook        | [hooks/useAnimatedItems.ts](../apps/admin/src/hooks/useAnimatedItems.ts)                                           |
-| Component   | [components/Gallery/AnimatedTile.tsx](../apps/admin/src/components/Gallery/AnimatedTile.tsx)                       |
-| Component   | [components/Gallery/PhotoGridSkeleton.tsx](../apps/admin/src/components/Gallery/PhotoGridSkeleton.tsx)             |
-| Integration | [components/Gallery/EnhancedMosaicPhotoGrid.tsx](../apps/admin/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx) |
+| CSS         | [styles/animations.css](../apps/web/src/styles/animations.css)                                                   |
+| Hook        | [hooks/useAnimatedItems.ts](../apps/web/src/hooks/useAnimatedItems.ts)                                           |
+| Component   | [components/Gallery/AnimatedTile.tsx](../apps/web/src/components/Gallery/AnimatedTile.tsx)                       |
+| Component   | [components/Gallery/PhotoGridSkeleton.tsx](../apps/web/src/components/Gallery/PhotoGridSkeleton.tsx)             |
+| Integration | [components/Gallery/EnhancedMosaicPhotoGrid.tsx](../apps/web/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx) |
 | Spec        | [docs/specs/SPEC-AnimationSystem.md](./specs/SPEC-AnimationSystem.md)                                              |
 
 **Features:**
@@ -511,8 +511,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 - Skeleton loading state with shimmer animation
 
 **Tests:**
-- Frontend: `apps/admin/tests/use-animated-items.test.ts`
-- Frontend: `apps/admin/tests/animated-tile.test.ts` (hook + CSS class documentation)
+- Frontend: `apps/web/tests/use-animated-items.test.ts`
+- Frontend: `apps/web/tests/animated-tile.test.ts` (hook + CSS class documentation)
 - E2E: `tests/e2e/tests/gallery-animations.spec.ts`
 
 **Known Issues:**
@@ -534,7 +534,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Backend  | [Controllers/AdminUsersController.cs](../apps/backend/Mosaic.Backend/Controllers/AdminUsersController.cs) |
 | Backend  | [Controllers/AdminAlbumsController.cs](../apps/backend/Mosaic.Backend/Controllers/AdminAlbumsController.cs) |
 | Backend  | [Controllers/AdminSettingsController.cs](../apps/backend/Mosaic.Backend/Controllers/AdminSettingsController.cs) |
-| Frontend | [components/Admin/](../apps/admin/src/components/Admin/)                                        |
+| Frontend | [components/Admin/](../apps/web/src/components/Admin/)                                        |
 
 **Features:**
 - System-wide statistics
@@ -588,9 +588,9 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer    | Location                                                     |
 | -------- | ------------------------------------------------------------ |
-| Frontend | [lib/i18n.ts](../apps/admin/src/lib/i18n.ts)                 |
-| Locales  | [locales/en.json](../apps/admin/src/locales/en.json)         |
-| Locales  | [locales/cs.json](../apps/admin/src/locales/cs.json)         |
+| Frontend | [lib/i18n.ts](../apps/web/src/lib/i18n.ts)                 |
+| Locales  | [locales/en.json](../apps/web/src/locales/en.json)         |
+| Locales  | [locales/cs.json](../apps/web/src/locales/cs.json)         |
 
 **Features:**
 - English and Czech language support
@@ -608,8 +608,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer    | Location                                                                         |
 | -------- | -------------------------------------------------------------------------------- |
-| Frontend | [lib/image-conversion.ts](../apps/admin/src/lib/image-conversion.ts)             |
-| Frontend | [lib/format-conversion.ts](../apps/admin/src/lib/format-conversion.ts)           |
+| Frontend | [lib/image-conversion.ts](../apps/web/src/lib/image-conversion.ts)             |
+| Frontend | [lib/format-conversion.ts](../apps/web/src/lib/format-conversion.ts)           |
 | Tests    | [tests/e2e/tests/format-conversion.spec.ts](../tests/e2e/tests/format-conversion.spec.ts) |
 
 **Features:**
@@ -627,7 +627,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer    | Location                                                              |
 | -------- | --------------------------------------------------------------------- |
-| Frontend | [lib/thumbhash-decoder.ts](../apps/admin/src/lib/thumbhash-decoder.ts)  |
+| Frontend | [lib/thumbhash-decoder.ts](../apps/web/src/lib/thumbhash-decoder.ts)  |
 
 **Features:**
 - ThumbHash generation during upload (~25 bytes, base64-encoded)

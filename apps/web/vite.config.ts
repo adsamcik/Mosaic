@@ -61,7 +61,7 @@ export default defineConfig(({ mode }) => {
 
     build: {
       target: 'es2022',
-      sourcemap: true,
+      sourcemap: mode !== 'production',
     },
 
     // Dependency optimization

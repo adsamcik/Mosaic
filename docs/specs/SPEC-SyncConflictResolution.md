@@ -66,7 +66,7 @@ Mosaic uses a **version-based delta sync** model for photo manifests:
 | `SyncEngine` | Frontend | Fetches delta, decrypts, stores locally |
 | `SyncCoordinator` | Frontend | Single listener, dispatches updates to store |
 
-### 1.2 Current Sync Flow (from [sync-engine.ts](../../apps/admin/src/lib/sync-engine.ts))
+### 1.2 Current Sync Flow (from [sync-engine.ts](../../apps/web/src/lib/sync-engine.ts))
 
 ```typescript
 // Simplified sync flow
@@ -1332,7 +1332,7 @@ export const conflictScenarios = {
 ### 8.3 Code Example: Complete Sync Flow
 
 ```typescript
-// apps/admin/src/lib/content-sync.ts
+// apps/web/src/lib/content-sync.ts
 
 import { useContentStore } from '../stores/content-store';
 import { encryptContent, decryptContent } from './crypto-client';

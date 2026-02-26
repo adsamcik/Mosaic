@@ -136,7 +136,7 @@ start_frontend() {
         npm run build
     fi
     
-    cd "$PROJECT_ROOT/apps/admin"
+    cd "$PROJECT_ROOT/apps/web"
     
     # Install dependencies if needed
     if [ ! -d "node_modules" ]; then
@@ -363,7 +363,7 @@ case "$COMMAND" in
         
         step "Cleaning node_modules (optional)..."
         if [[ "$*" == *"--full"* ]] || [[ "$*" == *"-f"* ]]; then
-            rm -rf "$PROJECT_ROOT/apps/admin/node_modules"
+            rm -rf "$PROJECT_ROOT/apps/web/node_modules"
             rm -rf "$PROJECT_ROOT/libs/crypto/node_modules"
             done_msg "Full reset complete"
         else
@@ -385,7 +385,7 @@ case "$COMMAND" in
                 popd > /dev/null
                 
                 step "Running frontend tests..."
-                pushd "$PROJECT_ROOT/apps/admin" > /dev/null
+                pushd "$PROJECT_ROOT/apps/web" > /dev/null
                 npm run test:run
                 popd > /dev/null
                 

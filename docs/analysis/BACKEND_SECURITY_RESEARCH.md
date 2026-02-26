@@ -538,7 +538,7 @@ options.KnownNetworks.Add(new IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
 From `docs/DOCKER.md`:
 > Pre-configured CORS headers for SharedArrayBuffer
 
-The application requires COOP/COEP headers for SharedArrayBuffer access, which are configured in `apps/admin/nginx.conf` and the reverse proxy.
+The application requires COOP/COEP headers for SharedArrayBuffer access, which are configured in `apps/web/nginx.conf` and the reverse proxy.
 
 **Security Note:** This is acceptable for the intended deployment model (behind reverse proxy), but the backend should NOT be exposed directly to the internet.
 

@@ -33,7 +33,7 @@
 cd libs/crypto ; npm test           # Already configured to run and exit
 
 # ✅ Frontend tests (non-interactive)
-cd apps/admin ; npm run test:run    # Use test:run, NOT test (which may watch)
+cd apps/web ; npm run test:run    # Use test:run, NOT test (which may watch)
 
 # ✅ Backend tests (non-interactive)
 dotnet test apps/backend/Mosaic.Backend.Tests
@@ -44,11 +44,11 @@ cd tests/e2e ; npx playwright test --reporter=list
 # ✅ Build commands (non-interactive)
 cd libs/crypto ; npm run build
 dotnet build apps/backend/Mosaic.Backend
-cd apps/admin ; npm run build
+cd apps/web ; npm run build
 
 # ✅ Background servers (use isBackground=true in run_in_terminal)
 dotnet run --project apps/backend/Mosaic.Backend  # Only with isBackground=true
-cd apps/admin ; npm run dev                        # Only with isBackground=true
+cd apps/web ; npm run dev                        # Only with isBackground=true
 ```
 
 ### Output Capture Pattern
@@ -387,7 +387,7 @@ docs/
 apps/backend/
 └── .instructions.md           # .NET 10 patterns
 
-apps/admin/
+apps/web/
 ├── .instructions.md           # React 19 patterns
 └── src/
     ├── components/.instructions.md
@@ -513,7 +513,7 @@ Run full suite twice to catch flakes.
 
 ```
 # Invoke security review
-@security-agent Review the authentication flow in apps/admin/src/lib/local-auth.ts
+@security-agent Review the authentication flow in apps/web/src/lib/local-auth.ts
 
 # Generate tests
 @test-agent Write unit tests for the new EpochKeyBundle validation in libs/crypto
@@ -522,7 +522,7 @@ Run full suite twice to catch flakes.
 @docs-agent Create API documentation for the /api/albums endpoint
 
 # Refactor for clarity
-@refactor-agent Simplify the upload flow in apps/admin/src/contexts/UploadContext.tsx
+@refactor-agent Simplify the upload flow in apps/web/src/contexts/UploadContext.tsx
 
 # Crypto implementation
 @crypto-agent Implement key rotation for epoch keys

@@ -131,7 +131,7 @@ services:
     # Or build from source:
     # build:
     #   context: ./Mosaic
-    #   dockerfile: apps/admin/Dockerfile
+    #   dockerfile: apps/web/Dockerfile
     container_name: mosaic-frontend
     restart: unless-stopped
     networks:

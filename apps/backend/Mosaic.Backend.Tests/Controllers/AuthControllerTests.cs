@@ -425,12 +425,15 @@ public class AuthControllerTests
         {
             Id = Guid.CreateVersion7(),
             AuthSub = "existing",
-            IdentityPubkey = "pubkey"
+            IdentityPubkey = "pubkey",
+            IsAdmin = true
         };
         db.Users.Add(existingUser);
         await db.SaveChangesAsync();
 
         var controller = CreateController(db);
+        // Simulate authenticated admin (middleware populates HttpContext.Items)
+        controller.ControllerContext.HttpContext.Items["AuthSub"] = "existing";
 
         var userSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
         var accountSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
@@ -444,15 +447,15 @@ public class AuthControllerTests
             accountSalt
         ));
 
-        // Assert
-        var conflictResult = ProblemDetailsAssertions.AssertConflict(result);
-        Assert.Contains("already exists", ProblemDetailsAssertions.GetDetail(conflictResult));
+        // Assert - should return generic 200 OK to prevent username enumeration
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.NotNull(okResult.Value);
     }
 
     [Fact]
     public async Task Register_RejectsInvalidSaltLength()
     {
-        // Arrange
+        // Arrange - first user (bootstrap), no auth required
         using var db = TestDbContextFactory.Create();
         var controller = CreateController(db);
 
@@ -470,6 +473,109 @@ public class AuthControllerTests
         // Assert
         var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
         Assert.Contains("16 bytes", ProblemDetailsAssertions.GetDetail(badRequest));
+    }
+
+    [Fact]
+    public async Task Register_RejectsUnauthenticatedAfterFirstUser()
+    {
+        // Arrange - an existing user means this is not the first registration
+        using var db = TestDbContextFactory.Create();
+        db.Users.Add(new User
+        {
+            Id = Guid.CreateVersion7(),
+            AuthSub = "admin",
+            IdentityPubkey = "pubkey",
+            IsAdmin = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db);
+        // No AuthSub in HttpContext.Items → unauthenticated
+
+        var userSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+        var accountSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+
+        // Act
+        var result = await controller.Register(new AuthController.AuthRegisterRequest(
+            "newuser",
+            "auth-pubkey",
+            "identity-pubkey",
+            userSalt,
+            accountSalt
+        ));
+
+        // Assert
+        var problem = ProblemDetailsAssertions.AssertUnauthorized(result);
+        Assert.Contains("Authentication required", ProblemDetailsAssertions.GetDetail(problem));
+    }
+
+    [Fact]
+    public async Task Register_RejectsNonAdminAfterFirstUser()
+    {
+        // Arrange - authenticated as a non-admin user
+        using var db = TestDbContextFactory.Create();
+        db.Users.Add(new User
+        {
+            Id = Guid.CreateVersion7(),
+            AuthSub = "regularuser",
+            IdentityPubkey = "pubkey",
+            IsAdmin = false
+        });
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db);
+        controller.ControllerContext.HttpContext.Items["AuthSub"] = "regularuser";
+
+        var userSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+        var accountSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+
+        // Act
+        var result = await controller.Register(new AuthController.AuthRegisterRequest(
+            "anotheruser",
+            "auth-pubkey",
+            "identity-pubkey",
+            userSalt,
+            accountSalt
+        ));
+
+        // Assert
+        var problem = ProblemDetailsAssertions.AssertForbidden(result);
+        Assert.Contains("Admin privileges required", ProblemDetailsAssertions.GetDetail(problem));
+    }
+
+    [Fact]
+    public async Task Register_AllowsAdminToCreateUserAfterFirstUser()
+    {
+        // Arrange - authenticated as admin
+        using var db = TestDbContextFactory.Create();
+        db.Users.Add(new User
+        {
+            Id = Guid.CreateVersion7(),
+            AuthSub = "admin",
+            IdentityPubkey = "pubkey",
+            IsAdmin = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db);
+        controller.ControllerContext.HttpContext.Items["AuthSub"] = "admin";
+
+        var userSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+        var accountSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+
+        // Act
+        var result = await controller.Register(new AuthController.AuthRegisterRequest(
+            "newuser",
+            "auth-pubkey",
+            "identity-pubkey",
+            userSalt,
+            accountSalt
+        ));
+
+        // Assert
+        var createdResult = Assert.IsType<CreatedResult>(result);
+        Assert.Equal(2, db.Users.Count());
+        Assert.Equal("newuser", db.Users.OrderBy(u => u.CreatedAt).Last().AuthSub);
     }
 
     [Fact]

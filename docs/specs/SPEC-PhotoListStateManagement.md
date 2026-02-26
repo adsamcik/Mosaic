@@ -3,16 +3,16 @@
 > **Status:** Design Proposal  
 > **Author:** GitHub Copilot  
 > **Date:** 2024-12-31  
-> **Scope:** `apps/admin/src/` photo/album list state management
+> **Scope:** `apps/web/src/` photo/album list state management
 
 ## 1. Problem Statement
 
 ### Current Issues
 
 1. **Scattered Sync Listeners:** Multiple components independently subscribe to `sync-complete`:
-   - [Gallery.tsx](../../apps/admin/src/components/Gallery/Gallery.tsx#L138-L150)
-   - [EnhancedMosaicPhotoGrid.tsx](../../apps/admin/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx#L187-L192)
-   - [useAlbums.ts](../../apps/admin/src/hooks/useAlbums.ts#L441-L453)
+   - [Gallery.tsx](../../apps/web/src/components/Gallery/Gallery.tsx#L138-L150)
+   - [EnhancedMosaicPhotoGrid.tsx](../../apps/web/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx#L187-L192)
+   - [useAlbums.ts](../../apps/web/src/hooks/useAlbums.ts#L441-L453)
 
 2. **Full Array Replacement:** `setPhotos(result)` triggers complete re-renders:
    ```typescript
@@ -101,7 +101,7 @@ Data Flow:
 ### 3.1 Core Types
 
 ```typescript
-// File: apps/admin/src/stores/photo-store.ts
+// File: apps/web/src/stores/photo-store.ts
 
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
@@ -190,7 +190,7 @@ Using `Map<string, PhotoMeta>` instead of arrays provides:
 ## 4. Store Implementation
 
 ```typescript
-// File: apps/admin/src/stores/photo-store.ts
+// File: apps/web/src/stores/photo-store.ts
 
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
@@ -343,7 +343,7 @@ export const usePhotoStore = create<PhotoStore>()(
 ### 5.1 Core Selectors
 
 ```typescript
-// File: apps/admin/src/hooks/usePhotoSelectors.ts
+// File: apps/web/src/hooks/usePhotoSelectors.ts
 
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/shallow';
@@ -523,7 +523,7 @@ export function usePhotoCount(albumId: string): number {
 ### 5.2 Action Hooks
 
 ```typescript
-// File: apps/admin/src/hooks/usePhotoActions.ts
+// File: apps/web/src/hooks/usePhotoActions.ts
 
 import { useCallback } from 'react';
 import { usePhotoStore } from '../stores/photo-store';
@@ -577,7 +577,7 @@ export function usePhotoStoreActions() {
 Single listener that handles all sync events and dispatches incremental updates:
 
 ```typescript
-// File: apps/admin/src/lib/sync-coordinator.ts
+// File: apps/web/src/lib/sync-coordinator.ts
 
 import { syncEngine, type SyncEventDetail } from './sync-engine';
 import { getDbClient } from './db-client';
@@ -711,7 +711,7 @@ export function initSyncCoordinator(): () => void {
 Update UploadContext to dispatch to PhotoStore:
 
 ```typescript
-// File: apps/admin/src/contexts/UploadContext.tsx (modifications)
+// File: apps/web/src/contexts/UploadContext.tsx (modifications)
 
 import { usePhotoStore } from '../stores/photo-store';
 
@@ -736,7 +736,7 @@ store.clearPending(albumId, task.id);
 ### 8.1 useTransition for Non-Urgent Updates
 
 ```typescript
-// File: apps/admin/src/components/Gallery/Gallery.tsx
+// File: apps/web/src/components/Gallery/Gallery.tsx
 
 import { useTransition } from 'react';
 
@@ -767,7 +767,7 @@ function Gallery({ albumId }: GalleryProps) {
 ### 8.2 useDeferredValue for Expensive Computations
 
 ```typescript
-// File: apps/admin/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx
+// File: apps/web/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx
 
 import { useDeferredValue, useMemo } from 'react';
 
@@ -803,7 +803,7 @@ function EnhancedMosaicPhotoGrid({ albumId }: Props) {
 Each photo component subscribes only to its own data:
 
 ```typescript
-// File: apps/admin/src/components/Gallery/PhotoThumbnail.tsx
+// File: apps/web/src/components/Gallery/PhotoThumbnail.tsx
 
 interface PhotoThumbnailProps {
   albumId: string;
@@ -830,7 +830,7 @@ export function PhotoThumbnail({ albumId, photoId }: PhotoThumbnailProps) {
 ### 9.2 Virtualized List with ID-Only Subscription
 
 ```typescript
-// File: apps/admin/src/components/Gallery/VirtualPhotoList.tsx
+// File: apps/web/src/components/Gallery/VirtualPhotoList.tsx
 
 function VirtualPhotoList({ albumId }: Props) {
   // Only re-renders when photo IDs change (add/remove)
@@ -869,7 +869,7 @@ function VirtualPhotoList({ albumId }: Props) {
 ### Phase 1: Add Zustand + Immer Dependencies
 
 ```bash
-cd apps/admin
+cd apps/web
 npm install zustand immer
 ```
 
@@ -882,7 +882,7 @@ npm install zustand immer
 ### Phase 3: Initialize Coordinator
 
 ```typescript
-// File: apps/admin/src/main.tsx
+// File: apps/web/src/main.tsx
 
 import { initSyncCoordinator } from './lib/sync-coordinator';
 
@@ -923,7 +923,7 @@ if (import.meta.hot) {
 ### Unit Tests
 
 ```typescript
-// File: apps/admin/tests/photo-store.test.ts
+// File: apps/web/tests/photo-store.test.ts
 
 describe('PhotoStore', () => {
   beforeEach(() => {
@@ -960,7 +960,7 @@ describe('PhotoStore', () => {
 ### Integration Tests
 
 ```typescript
-// File: apps/admin/tests/sync-coordinator.test.ts
+// File: apps/web/tests/sync-coordinator.test.ts
 
 describe('SyncCoordinator', () => {
   it('should apply incremental updates on sync-complete', async () => {

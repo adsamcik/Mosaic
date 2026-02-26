@@ -185,11 +185,11 @@ The cost-benefit analysis strongly favors this approach:
 
 | File | Relevance |
 |------|-----------|
-| [crypto.worker.ts](apps/admin/src/workers/crypto.worker.ts) | Crypto worker implementation |
-| [local-auth.ts](apps/admin/src/lib/local-auth.ts) | Registration/login flow |
+| [crypto.worker.ts](apps/web/src/workers/crypto.worker.ts) | Crypto worker implementation |
+| [local-auth.ts](apps/web/src/lib/local-auth.ts) | Registration/login flow |
 | [argon2-params.ts](libs/crypto/src/argon2-params.ts) | Argon2id parameter selection |
 | [keychain.ts](libs/crypto/src/keychain.ts) | Key derivation logic |
-| [db.worker.ts](apps/admin/src/workers/db.worker.ts) | Database worker (OPFS) |
+| [db.worker.ts](apps/web/src/workers/db.worker.ts) | Database worker (OPFS) |
 | [playwright.config.ts](tests/e2e/playwright.config.ts) | Test configuration |
 
 ---

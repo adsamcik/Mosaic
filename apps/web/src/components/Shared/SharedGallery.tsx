@@ -212,9 +212,6 @@ export function SharedGallery({
         log.debug('Found exact tier key', {
           epochId,
           tier,
-          keyPrefix: Array.from(tierKey.key.slice(0, 4))
-            .map((b) => b.toString(16).padStart(2, '0'))
-            .join(''),
         });
         return tierKey.key;
       }

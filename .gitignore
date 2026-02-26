@@ -50,7 +50,7 @@ artifacts/
 !.vscode/extensions.json
 
 # sql.js WASM files (copied from node_modules at install time)
-apps/admin/public/sql-wasm.*
+apps/web/public/sql-wasm.*
 
 # OS
 .DS_Store
@@ -114,3 +114,19 @@ temp/
 
 # Local dev environment state
 .mosaic/
+
+# Android / Gradle
+.gradle/
+*.apk
+*.aab
+*.ap_
+*.dex
+local.properties
+*.hprof
+*.jks
+*.keystore
+captures/
+.cxx/
+apps/android/.idea/
+apps/android/build/
+apps/android/**/build/

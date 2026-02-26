@@ -56,7 +56,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: apps/admin/Dockerfile
+      dockerfile: apps/web/Dockerfile
       args:
         VITE_E2E_WEAK_KEYS: "true"
     container_name: mosaic-test-frontend

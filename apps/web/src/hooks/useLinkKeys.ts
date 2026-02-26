@@ -214,9 +214,6 @@ export function useLinkKeys(
             epochId: wrapped.epochId,
             tier: wrapped.tier,
             keyLength: unwrapped.length,
-            keyPrefix: Array.from(unwrapped.slice(0, 4))
-              .map((b) => b.toString(16).padStart(2, '0'))
-              .join(''),
           });
         } catch (err) {
           log.error(

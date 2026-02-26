@@ -733,7 +733,7 @@ By default, packages inherit repository visibility. To make images public:
 
 Pull requests that modify Docker-related files automatically trigger build validation:
 
-- Changed paths: `apps/backend/**`, `apps/admin/**`, `libs/crypto/**`, `**/Dockerfile`, `docker-compose*.yml`
+- Changed paths: `apps/backend/**`, `apps/web/**`, `libs/crypto/**`, `**/Dockerfile`, `docker-compose*.yml`
 - Builds both images (without pushing)
 - Runs integration test: starts containers and verifies `/health` endpoint
 

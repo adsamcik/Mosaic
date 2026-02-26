@@ -239,7 +239,7 @@ With C2PA (NEW step between 1 and 2):
 ### 4.2 Proposed Implementation (TypeScript)
 
 ```typescript
-// apps/admin/src/lib/c2pa-service.ts
+// apps/web/src/lib/c2pa-service.ts
 import { createC2pa, type C2paSdk, type Signer } from '@contentauth/c2pa-web';
 
 let c2paInstance: C2paSdk | null = null;
@@ -333,7 +333,7 @@ async function signWithEphemeralKey(bytes: Uint8Array): Promise<Uint8Array> {
 ### 4.3 Integration with Upload Queue
 
 ```typescript
-// Modification to apps/admin/src/lib/upload-queue.ts
+// Modification to apps/web/src/lib/upload-queue.ts
 
 private async processTieredUpload(task: UploadTask): Promise<void> {
   // Check if C2PA signing is enabled

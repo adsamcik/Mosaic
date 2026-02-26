@@ -71,7 +71,7 @@ export function getArgon2Params(): Argon2Params {
 ```
 
 ### Test Page
-Create `apps/admin/benchmark.html` that:
+Create `apps/web/benchmark.html` that:
 1. Loads libsodium-wrappers
 2. Runs Argon2id with each config 3 times
 3. Reports median time
@@ -656,7 +656,7 @@ export const mockCrypto: CryptoLib = {
 };
 ```
 
-### Deliverable: `apps/admin/src/lib/api-mock.ts`
+### Deliverable: `apps/web/src/lib/api-mock.ts`
 
 ```typescript
 import type { Album, SyncResponse, ManifestRecord } from './api-types';

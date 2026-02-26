@@ -65,31 +65,37 @@ public partial class CombinedAuthMiddleware
     public async Task InvokeAsync(HttpContext context, MosaicDbContext db)
     {
         var path = context.Request.Path.Value ?? "";
+        var isPublicPath = IsPublicPath(path);
 
-        // Handle public paths
-        if (IsPublicPath(path))
+        // Special case: /api/auth/init returns 404 when LocalAuth is disabled
+        if (isPublicPath && path.StartsWith("/api/auth/init", StringComparison.OrdinalIgnoreCase) && !_localAuthEnabled)
         {
-            // Special case: /api/auth/init returns 404 when LocalAuth is disabled
-            if (path.StartsWith("/api/auth/init", StringComparison.OrdinalIgnoreCase) && !_localAuthEnabled)
-            {
-                context.Response.StatusCode = 404;
-                await context.Response.WriteAsJsonAsync(new { error = "Not found" });
-                return;
-            }
-
-            await _next(context);
+            context.Response.StatusCode = 404;
+            await context.Response.WriteAsJsonAsync(new { error = "Not found" });
             return;
         }
 
-        // Try LocalAuth first (session cookie)
+        // Always attempt authentication to populate context items.
+        // This enables public endpoints (e.g. /api/auth/register) to
+        // perform their own authorization checks when needed.
+        var authenticated = false;
         if (_localAuthEnabled && await TryLocalAuth(context, db))
         {
+            authenticated = true;
+        }
+        else if (_proxyAuthEnabled && TryProxyAuth(context))
+        {
+            authenticated = true;
+        }
+
+        // Public paths proceed regardless of auth result
+        if (isPublicPath)
+        {
             await _next(context);
             return;
         }
 
-        // Try ProxyAuth second (Remote-User header)
-        if (_proxyAuthEnabled && TryProxyAuth(context))
+        if (authenticated)
         {
             await _next(context);
             return;

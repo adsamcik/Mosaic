@@ -24,9 +24,9 @@
       "name": "Frontend (Vite)",
       "type": "chrome",
       "request": "launch",
-      "preLaunchTask": "npm: dev - apps/admin",
+      "preLaunchTask": "npm: dev - apps/web",
       "url": "http://localhost:5173",
-      "webRoot": "${workspaceFolder}/apps/admin/src"
+      "webRoot": "${workspaceFolder}/apps/web/src"
     },
     {
       "name": "Backend + Frontend",

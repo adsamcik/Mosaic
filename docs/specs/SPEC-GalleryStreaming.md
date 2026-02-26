@@ -109,7 +109,7 @@ Full resolution preload: none (lightbox only)
 ### 1. `usePhotosInfinite` Hook (NEW)
 
 ```typescript
-// File: apps/admin/src/hooks/usePhotosInfinite.ts
+// File: apps/web/src/hooks/usePhotosInfinite.ts
 
 interface UsePhotosInfiniteOptions {
   pageSize?: number;
@@ -135,7 +135,7 @@ export function usePhotosInfinite(
 ### 2. `PhotoThumbnail` Changes
 
 ```diff
-// File: apps/admin/src/components/Gallery/PhotoThumbnail.tsx
+// File: apps/web/src/components/Gallery/PhotoThumbnail.tsx
 
 function PhotoThumbnail({ photo, epochReadKey, ... }) {
 + // Phase 1: Use embedded thumbnail if available
@@ -173,7 +173,7 @@ Same pattern as PhotoThumbnail.
 ### 4. `PhotoGrid` Changes
 
 ```diff
-// File: apps/admin/src/components/Gallery/PhotoGrid.tsx
+// File: apps/web/src/components/Gallery/PhotoGrid.tsx
 
 - const { photos, isLoading, error, refetch } = usePhotos(albumId, searchQuery);
 + const { 
@@ -219,7 +219,7 @@ Same infinite scroll pattern.
 ### 6. Database Client Changes
 
 ```diff
-// File: apps/admin/src/lib/db-client.ts (or db-worker)
+// File: apps/web/src/lib/db-client.ts (or db-worker)
 
 interface DbClient {
 - getPhotos(albumId: string, limit: number, offset: number): Promise<PhotoMeta[]>;

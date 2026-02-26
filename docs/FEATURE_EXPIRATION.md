@@ -251,7 +251,7 @@ public record UpdateExpirationRequest(
 Create a new settings section in album details:
 
 ```tsx
-// apps/admin/src/components/AlbumExpirationSettings.tsx
+// apps/web/src/components/AlbumExpirationSettings.tsx
 interface Props {
   album: Album;
   onUpdate: () => void;

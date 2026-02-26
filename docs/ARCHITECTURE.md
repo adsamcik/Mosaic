@@ -246,7 +246,7 @@ The middleware order is critical:
 ### Directory Structure
 
 ```
-apps/admin/src/
+apps/web/src/
 ├── components/
 │   ├── Admin/          # Admin panel
 │   ├── Albums/         # Album list, dialogs
@@ -450,7 +450,7 @@ Session management:
 | Layer | Framework | Location | Coverage Target |
 |-------|-----------|----------|-----------------|
 | Crypto | Vitest | libs/crypto/tests/ | 85% lines/functions |
-| Frontend | Vitest + happy-dom | apps/admin/tests/ | - |
+| Frontend | Vitest + happy-dom | apps/web/tests/ | - |
 | Backend | xUnit + InMemory EF | apps/backend/*.Tests/ | - |
 | E2E | Playwright | tests/e2e/ | - |
 
@@ -462,7 +462,7 @@ cd libs/crypto && npm test
 cd libs/crypto && npm run test:coverage
 
 # Frontend
-cd apps/admin && npm run test:run
+cd apps/web && npm run test:run
 
 # Backend
 cd apps/backend/Mosaic.Backend.Tests && dotnet test

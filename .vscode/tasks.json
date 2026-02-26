@@ -116,14 +116,14 @@
       "label": "install-frontend",
       "type": "npm",
       "script": "install",
-      "path": "apps/admin",
+      "path": "apps/web",
       "problemMatcher": []
     },
     {
       "label": "watch-frontend",
       "type": "npm",
       "script": "dev",
-      "path": "apps/admin",
+      "path": "apps/web",
       "options": {
         "env": {
           "VITE_E2E_WEAK_KEYS": "true"
@@ -145,7 +145,7 @@
       "label": "watch-frontend-production-crypto",
       "type": "npm",
       "script": "dev",
-      "path": "apps/admin",
+      "path": "apps/web",
       "isBackground": true,
       "problemMatcher": {
         "pattern": {
@@ -179,7 +179,7 @@
       "label": "test-frontend",
       "type": "npm",
       "script": "test:run",
-      "path": "apps/admin",
+      "path": "apps/web",
       "problemMatcher": [],
       "group": "test"
     },

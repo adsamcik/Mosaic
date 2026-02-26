@@ -108,7 +108,7 @@ libs/crypto/           # Shared crypto library (TypeScript)
 apps/backend/          # .NET 10 ASP.NET Core API
   Mosaic.Backend/      # Main API project
   Mosaic.Backend.Tests/# Backend tests
-apps/admin/            # React 19 + Vite frontend
+apps/web/            # React 19 + Vite frontend
   src/components/      # React components (organized by feature: Admin/, Albums/, Auth/, Gallery/, etc.)
   src/contexts/        # React contexts (AlbumPermissions, Sync, Upload)
   src/hooks/           # Custom hooks (22+ hooks)
@@ -138,14 +138,14 @@ Ctrl+Shift+P → "Tasks: Run Task" → "start-all"
 
 # Run tests (non-interactive!)
 cd libs/crypto && npm test                          # Crypto unit tests
-cd apps/admin && npm run test:run                   # Frontend unit tests
+cd apps/web && npm run test:run                   # Frontend unit tests
 dotnet test apps/backend/Mosaic.Backend.Tests       # Backend tests
 .\scripts\run-e2e-tests.ps1                         # E2E tests (full stack must be running)
 
 # Build
 cd libs/crypto && npm run build  # Build crypto library first
 dotnet build apps/backend/Mosaic.Backend
-cd apps/admin && npm run build
+cd apps/web && npm run build
 ```
 
 **Service URLs:**
@@ -247,12 +247,12 @@ For detailed guidance on specific areas, see:
 | Area | Instructions File |
 |------|-------------------|
 | Backend | `apps/backend/.instructions.md` |
-| Frontend | `apps/admin/.instructions.md` |
+| Frontend | `apps/web/.instructions.md` |
 | Crypto | `libs/crypto/.instructions.md` |
 | E2E Tests | `tests/e2e/.instructions.md` |
-| Components | `apps/admin/src/components/.instructions.md` |
-| Hooks | `apps/admin/src/hooks/.instructions.md` |
-| Workers | `apps/admin/src/workers/.instructions.md` |
+| Components | `apps/web/src/components/.instructions.md` |
+| Hooks | `apps/web/src/hooks/.instructions.md` |
+| Workers | `apps/web/src/workers/.instructions.md` |
 
 ---
 
@@ -274,7 +274,7 @@ For detailed guidance on specific areas, see:
 |-----------|--------------|
 | Complex feature (>2 files) | "THE PRIME DIRECTIVE: Spec-Then-Code" |
 | Cryptographic operations | "Cryptographic Guidelines" + `libs/crypto/.instructions.md` |
-| Frontend work | "Technology Invariants: Frontend" + `apps/admin/.instructions.md` |
+| Frontend work | "Technology Invariants: Frontend" + `apps/web/.instructions.md` |
 | Backend work | "Technology Invariants: Backend" + `apps/backend/.instructions.md` |
 | Debugging failures | "Mosaic Sentinel: Debugging Protocol" |
 | Before completing a task | "Definition of Done" + "Self-Correction Audit" |
@@ -331,7 +331,7 @@ Mosaic uses a hierarchical instruction system. Read the appropriate level based 
 Level 1: .github/copilot-instructions.md    ← You are here (always read)
          │
 Level 2: ├── apps/backend/.instructions.md  ← Backend tasks
-         ├── apps/admin/.instructions.md    ← Frontend tasks
+         ├── apps/web/.instructions.md    ← Frontend tasks
          ├── libs/crypto/.instructions.md   ← Crypto tasks
          └── tests/e2e/.instructions.md     ← E2E test tasks
                    │
@@ -651,7 +651,7 @@ cd libs/crypto && npm test
 cd libs/crypto && npm run test:coverage  # Verify 85% threshold
 
 # Frontend
-cd apps/admin && npm test
+cd apps/web && npm test
 
 # Backend
 cd apps/backend/Mosaic.Backend && dotnet test
@@ -789,7 +789,7 @@ Use these conventional paths for captured output:
 | Command Type | Output File |
 |--------------|-------------|
 | Playwright tests | `tests/e2e/playwright-output.txt` |
-| Vitest tests | `apps/admin/vitest-output.txt` |
+| Vitest tests | `apps/web/vitest-output.txt` |
 | .NET tests | `apps/backend/dotnet-test-output.txt` |
 | Build output | `build-output.txt` (in project root) |
 
@@ -894,7 +894,7 @@ $env:ConnectionStrings__Default="Host=localhost;Database=mosaic;Username=mosaic;
 dotnet run
 
 # 4. Start frontend (in separate terminal)
-cd apps/admin ; npm install ; npm run dev
+cd apps/web ; npm install ; npm run dev
 ```
 
 ### Running Tests
@@ -910,7 +910,7 @@ cd apps/admin ; npm install ; npm run dev
 
 # Individual test commands (non-interactive!)
 cd libs/crypto ; npm test                 # Crypto unit tests
-cd apps/admin ; npm run test:run          # Frontend unit tests  
+cd apps/web ; npm run test:run          # Frontend unit tests  
 cd apps/backend/Mosaic.Backend.Tests ; dotnet test  # Backend tests
 
 # E2E tests (full stack must be running)
@@ -944,7 +944,7 @@ Before first run, ensure:
 1. **Docker Desktop** is running (for PostgreSQL)
 2. **Node.js 20+** is installed
 3. **.NET 10 SDK** is installed
-4. **npm dependencies** are installed: `cd libs/crypto && npm install && cd ../../apps/admin && npm install`
+4. **npm dependencies** are installed: `cd libs/crypto && npm install && cd ../../apps/web && npm install`
 
 ---
 
@@ -1175,7 +1175,7 @@ For every debugging request, follow this strict sequence. Do not skip steps.
 
 **You must prove the bug exists before fixing it.**
 
-- **Frontend**: Write a minimal Vitest test case in `apps/admin/tests/` that mocks the failing component/worker and asserts the failure.
+- **Frontend**: Write a minimal Vitest test case in `apps/web/tests/` that mocks the failing component/worker and asserts the failure.
 - **Backend**: Write a minimal xUnit test in `Mosaic.Backend.Tests/` using `WebApplicationFactory` that reproduces the error state.
 - *If you cannot write a test, add specific `console.log` or `Logger.LogInformation` statements to trace the execution path and report findings.*
 

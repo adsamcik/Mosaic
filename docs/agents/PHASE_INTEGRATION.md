@@ -15,7 +15,7 @@
 | Task | ✅ Correct Command | Notes |
 |------|-------------------|-------|
 | Build crypto | `cd libs/crypto ; npm run build` | Must build before linking |
-| Link crypto | `npm install ./libs/crypto --save -w apps/admin` | Workspaces link |
+| Link crypto | `npm install ./libs/crypto --save -w apps/web` | Workspaces link |
 | Run all tests | See below | Each suite separately |
 | E2E tests | `npx playwright test --reporter=list` | Use list reporter |
 
@@ -26,7 +26,7 @@
 cd libs/crypto ; npm test
 
 # ✅ Frontend tests
-cd apps/admin ; npm run test:run
+cd apps/web ; npm run test:run
 
 # ✅ Backend tests
 dotnet test apps/backend/Mosaic.Backend.Tests
@@ -50,7 +50,7 @@ Get-Content "playwright-output.txt" | Select-String -Pattern "passed|failed"
 All three parallel streams are complete with mock/interface boundaries:
 - **Stream A:** `libs/crypto/` - Real cryptographic operations
 - **Stream B:** `apps/backend/` - .NET API with database
-- **Stream C:** `apps/admin/` - React UI with mock crypto/API
+- **Stream C:** `apps/web/` - React UI with mock crypto/API
 
 This phase wires everything together and validates the full data flow.
 
@@ -64,12 +64,12 @@ This phase wires everything together and validates the full data flow.
 cd libs/crypto
 npm run build
 cd ../..
-npm install ./libs/crypto --save -w apps/admin
+npm install ./libs/crypto --save -w apps/web
 ```
 
 ### 1.2: Update Crypto Worker
 
-**File:** `apps/admin/src/workers/crypto.worker.ts`
+**File:** `apps/web/src/workers/crypto.worker.ts`
 
 Replace mock implementation with real crypto:
 
@@ -184,7 +184,7 @@ Comlink.expose(worker);
 
 ### 1.3: Add Database Encryption
 
-**Update:** `apps/admin/src/workers/db.worker.ts`
+**Update:** `apps/web/src/workers/db.worker.ts`
 
 Add encryption to OPFS persistence:
 
@@ -221,7 +221,7 @@ private async decryptBlob(data: Uint8Array): Promise<Uint8Array> {
 
 ### 2.1: Create API Client
 
-**File:** `apps/admin/src/lib/api.ts`
+**File:** `apps/web/src/lib/api.ts`
 
 ```typescript
 const API_BASE = '/api';
@@ -404,11 +404,11 @@ export async function removeMember(albumId: string, userId: string) {
 
 **Install:**
 ```bash
-cd apps/admin
+cd apps/web
 npm install tus-js-client
 ```
 
-**Update:** `apps/admin/src/lib/upload-queue.ts`
+**Update:** `apps/web/src/lib/upload-queue.ts`
 
 ```typescript
 import * as tus from 'tus-js-client';
@@ -449,7 +449,7 @@ private async tusUpload(
 
 ## Task 3: Wire Sync Engine
 
-**Update:** `apps/admin/src/lib/sync-engine.ts`
+**Update:** `apps/web/src/lib/sync-engine.ts`
 
 ```typescript
 import { getDbClient } from './db-client';
@@ -578,7 +578,7 @@ export const syncEngine = new SyncEngine();
 
 ## Task 4: Update Session Management
 
-**Update:** `apps/admin/src/lib/session.ts`
+**Update:** `apps/web/src/lib/session.ts`
 
 ```typescript
 import * as api from './api';
@@ -838,7 +838,7 @@ services:
       - "traefik.http.routers.api.middlewares=authelia@docker"
 
   frontend:
-    build: ./apps/admin
+    build: ./apps/web
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=Host(`${DOMAIN}`)"
@@ -865,7 +865,7 @@ volumes:
 
 ### Frontend Dockerfile
 
-**File:** `apps/admin/Dockerfile`
+**File:** `apps/web/Dockerfile`
 
 ```dockerfile
 FROM node:22-alpine AS builder
@@ -883,7 +883,7 @@ EXPOSE 80
 
 ### Nginx Config
 
-**File:** `apps/admin/nginx.conf`
+**File:** `apps/web/nginx.conf`
 
 ```nginx
 server {

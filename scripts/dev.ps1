@@ -260,7 +260,7 @@ function Start-FrontendService {
     }
     
     # Check if frontend dependencies are installed
-    $frontendPath = Join-Path $ProjectRoot "apps/admin"
+    $frontendPath = Join-Path $ProjectRoot "apps/web"
     $nodeModulesPath = Join-Path $frontendPath "node_modules"
     if (-not (Test-Path $nodeModulesPath)) {
         Write-Step "Installing frontend dependencies..."
@@ -539,7 +539,7 @@ try {
             
             if ($ExtraArgs -contains "--full" -or $ExtraArgs -contains "-f") {
                 Write-Step "Removing node_modules..."
-                Remove-Item -Path (Join-Path $ProjectRoot "apps/admin/node_modules") -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path (Join-Path $ProjectRoot "apps/web/node_modules") -Recurse -Force -ErrorAction SilentlyContinue
                 Remove-Item -Path (Join-Path $ProjectRoot "libs/crypto/node_modules") -Recurse -Force -ErrorAction SilentlyContinue
                 Remove-Item -Path (Join-Path $ProjectRoot "libs/crypto/dist") -Recurse -Force -ErrorAction SilentlyContinue
             }
@@ -562,7 +562,7 @@ try {
                     Pop-Location
                     
                     Write-Step "Running frontend tests..."
-                    Push-Location (Join-Path $ProjectRoot "apps/admin")
+                    Push-Location (Join-Path $ProjectRoot "apps/web")
                     npm run test:run 2>&1
                     $frontendExit = $LASTEXITCODE
                     Pop-Location
@@ -589,7 +589,7 @@ try {
                     Pop-Location
                     
                     Write-Step "Running frontend tests..."
-                    Push-Location (Join-Path $ProjectRoot "apps/admin")
+                    Push-Location (Join-Path $ProjectRoot "apps/web")
                     npm run test:run 2>&1
                     Pop-Location
                     

@@ -693,15 +693,15 @@ function PhotoGallery({ albumId }: Props) {
 ### Phase 1: Foundation (Day 1)
 
 - [ ] **1.1** Install Zustand: `npm install zustand`
-- [ ] **1.2** Create `apps/admin/src/stores/photo-store.types.ts`
-- [ ] **1.3** Create `apps/admin/src/stores/photo-store.ts`
+- [ ] **1.2** Create `apps/web/src/stores/photo-store.types.ts`
+- [ ] **1.3** Create `apps/web/src/stores/photo-store.ts`
 - [ ] **1.4** Add unit tests for PhotoStore actions
 
 ### Phase 2: Coordination (Day 1-2)
 
-- [ ] **2.1** Create `apps/admin/src/lib/sync-coordinator.ts`
-- [ ] **2.2** Create `apps/admin/src/lib/upload-store-bridge.ts`
-- [ ] **2.3** Create `apps/admin/src/hooks/usePhotoList.ts`
+- [ ] **2.1** Create `apps/web/src/lib/sync-coordinator.ts`
+- [ ] **2.2** Create `apps/web/src/lib/upload-store-bridge.ts`
+- [ ] **2.3** Create `apps/web/src/hooks/usePhotoList.ts`
 - [ ] **2.4** Initialize SyncCoordinator in App.tsx
 
 ### Phase 3: Component Migration (Day 2)

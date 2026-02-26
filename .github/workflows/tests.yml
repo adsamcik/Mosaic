@@ -22,7 +22,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             libs/crypto/package-lock.json
-            apps/admin/package-lock.json
+            apps/web/package-lock.json
       
       - name: Install crypto library dependencies
         working-directory: libs/crypto
@@ -33,11 +33,11 @@ jobs:
         run: npm run test:coverage
       
       - name: Install admin dependencies
-        working-directory: apps/admin
+        working-directory: apps/web
         run: npm ci
       
       - name: Run admin tests
-        working-directory: apps/admin
+        working-directory: apps/web
         run: npm run test:run
 
   integration-tests:
@@ -168,7 +168,7 @@ jobs:
           npm run build
       
       - name: Build frontend
-        working-directory: apps/admin
+        working-directory: apps/web
         run: |
           npm ci
           npm run build

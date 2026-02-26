@@ -17,7 +17,7 @@ This document describes how to release a new version of Mosaic.
 - [ ] Docker images build successfully locally:
   ```bash
   docker build -t mosaic-backend-test -f apps/backend/Mosaic.Backend/Dockerfile apps/backend/Mosaic.Backend
-  docker build -t mosaic-frontend-test -f apps/admin/Dockerfile .
+  docker build -t mosaic-frontend-test -f apps/web/Dockerfile .
   ```
 - [ ] Full stack smoke test:
   ```bash
@@ -29,7 +29,7 @@ This document describes how to release a new version of Mosaic.
   ```
 - [ ] CHANGELOG.md has entry for new version with today's date
 - [ ] Version numbers synchronized:
-  - [ ] `apps/admin/package.json` - version field
+  - [ ] `apps/web/package.json` - version field
   - [ ] `libs/crypto/package.json` - version field  
   - [ ] `apps/backend/Mosaic.Backend/Mosaic.Backend.csproj` - Version, AssemblyVersion, FileVersion
 
@@ -139,7 +139,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 docker buildx build --platform linux/amd64,linux/arm64 \
   -t ghcr.io/eivindholvik/mosaic-frontend:0.0.1 \
-  -f apps/admin/Dockerfile . --push
+  -f apps/web/Dockerfile . --push
 ```
 
 ## Files Updated Per Release
@@ -147,6 +147,6 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | File | Update Needed |
 |------|---------------|
 | `CHANGELOG.md` | Add release section with date |
-| `apps/admin/package.json` | Update `version` field |
+| `apps/web/package.json` | Update `version` field |
 | `libs/crypto/package.json` | Update `version` field |
 | `apps/backend/Mosaic.Backend/Mosaic.Backend.csproj` | Update version properties |

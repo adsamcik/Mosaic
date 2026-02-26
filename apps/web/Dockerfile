@@ -20,11 +20,11 @@ COPY libs/crypto/ ./
 RUN npm run build
 
 # Setup admin frontend
-WORKDIR /app/apps/admin
-COPY apps/admin/package*.json ./
+WORKDIR /app/apps/web
+COPY apps/web/package*.json ./
 
 # Copy admin source first (needed for postinstall to have public/ folder)
-COPY apps/admin/ ./
+COPY apps/web/ ./
 
 # Install dependencies (postinstall copies sql.js files to public/)
 RUN npm ci
@@ -48,10 +48,10 @@ LABEL org.opencontainers.image.title="Mosaic Frontend" \
       org.opencontainers.image.licenses="MIT"
 
 # Copy custom nginx configuration
-COPY apps/admin/nginx.conf /etc/nginx/nginx.conf
+COPY apps/web/nginx.conf /etc/nginx/nginx.conf
 
 # Copy built assets
-COPY --from=build /app/apps/admin/dist /usr/share/nginx/html
+COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S mosaic && \

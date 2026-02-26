@@ -5,6 +5,7 @@
  * Keys are cleared on logout for security.
  */
 
+import { memzero } from '@mosaic/crypto';
 import { createLogger } from './logger';
 
 const log = createLogger('EpochKeyStore');
@@ -146,8 +147,8 @@ export function clearAlbumKeys(albumId: string): void {
   if (albumKeys) {
     // Wipe key material before clearing
     for (const bundle of albumKeys.values()) {
-      bundle.epochSeed.fill(0);
-      bundle.signKeypair.secretKey.fill(0);
+      memzero(bundle.epochSeed);
+      memzero(bundle.signKeypair.secretKey);
     }
     albumKeys.clear();
     epochKeyCache.delete(albumId);
@@ -162,8 +163,8 @@ export function clearAllEpochKeys(): void {
   // Wipe all key material before clearing
   for (const albumKeys of epochKeyCache.values()) {
     for (const bundle of albumKeys.values()) {
-      bundle.epochSeed.fill(0);
-      bundle.signKeypair.secretKey.fill(0);
+      memzero(bundle.epochSeed);
+      memzero(bundle.signKeypair.secretKey);
     }
     albumKeys.clear();
   }

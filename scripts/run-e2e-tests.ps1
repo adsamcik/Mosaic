@@ -160,7 +160,7 @@ try {
         Write-Step "Installing dependencies..."
         
         # Frontend
-        Push-Location "$RepoRoot/apps/admin"
+        Push-Location "$RepoRoot/apps/web"
         npm install --silent 2>$null
         Pop-Location
         
@@ -248,7 +248,7 @@ try {
         Start-Sleep -Seconds 1
     }
     
-    $frontendPath = "$RepoRoot/apps/admin"
+    $frontendPath = "$RepoRoot/apps/web"
     
     # Set weak keys mode for fast E2E testing
     $env:VITE_E2E_WEAK_KEYS = "true"

@@ -248,7 +248,7 @@ try {
             }
             else {
                 $buildxArgs += "-f"
-                $buildxArgs += "apps/admin/Dockerfile"
+                $buildxArgs += "apps/web/Dockerfile"
                 $buildxArgs += "."
             }
             

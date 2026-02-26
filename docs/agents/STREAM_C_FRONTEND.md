@@ -3,7 +3,7 @@
 **Duration:** 3 weeks  
 **Depends On:** Phase 0 (interfaces + mocks)  
 **Parallel With:** Stream A (Crypto), Stream B (Backend)  
-**Deliverable:** `apps/admin/` - React 19 + Vite application
+**Deliverable:** `apps/web/` - React 19 + Vite application
 
 > **Parent:** `.github/copilot-instructions.md`
 
@@ -15,7 +15,7 @@
 
 | Task | ❌ NEVER USE | ✅ ALWAYS USE |
 |------|--------------|---------------|
-| Create project | `npm create vite@latest` (prompts) | `npm create vite@latest apps/admin -- --template react-ts` |
+| Create project | `npm create vite@latest` (prompts) | `npm create vite@latest apps/web -- --template react-ts` |
 | Run tests | `npm test` (may watch) | `npm run test:run` |
 | Dev server | `npm run dev` (foreground) | `npm run dev` with `isBackground=true` |
 | Build | — | `npm run build` |
@@ -26,10 +26,10 @@
 
 ```powershell
 # ✅ Create project (non-interactive with template flag)
-npm create vite@latest apps/admin -- --template react-ts
+npm create vite@latest apps/web -- --template react-ts
 
 # ✅ Install dependencies
-cd apps/admin ; npm install
+cd apps/web ; npm install
 
 # ✅ Run tests (non-interactive)
 npm run test:run
@@ -76,7 +76,7 @@ You are implementing the "thick client" frontend for Mosaic. The browser:
 ## Project Structure
 
 ```
-apps/admin/
+apps/web/
 ├── index.html
 ├── vite.config.ts
 ├── tsconfig.json
@@ -149,8 +149,8 @@ apps/admin/
 ### Create Project
 
 ```bash
-npm create vite@latest apps/admin -- --template react-ts
-cd apps/admin
+npm create vite@latest apps/web -- --template react-ts
+cd apps/web
 npm install
 npm install comlink sql.js libsodium-wrappers supercluster @tanstack/react-virtual idb
 npm install -D @types/libsodium-wrappers

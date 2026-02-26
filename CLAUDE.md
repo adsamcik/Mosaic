@@ -12,7 +12,7 @@
 | `.\scripts\dev.ps1 start` | Start full dev stack (Windows) |
 | `./scripts/dev.sh start` | Start full dev stack (Linux/Mac) |
 | `cd libs/crypto && npm test` | Crypto unit tests |
-| `cd apps/admin && npm run test:run` | Frontend unit tests |
+| `cd apps/web && npm run test:run` | Frontend unit tests |
 | `dotnet test apps/backend/Mosaic.Backend.Tests` | Backend tests |
 | `.\scripts\run-e2e-tests.ps1` | E2E tests (stack must be running) |
 
@@ -45,7 +45,7 @@
 ```
 libs/crypto/           # Shared TypeScript crypto library
 apps/backend/          # .NET 10 API (ASP.NET Core)
-apps/admin/            # React 19 frontend
+apps/web/            # React 19 frontend
   src/components/      # UI components by feature
   src/hooks/           # 22+ custom hooks
   src/workers/         # Web Workers (crypto, db, geo)
@@ -64,7 +64,7 @@ This project uses a multi-level instruction system. **Always read these based on
 | **Root** | `.github/copilot-instructions.md` | Every task |
 | **Features** | `docs/FEATURES.md` | Check before implementing |
 | **Backend** | `apps/backend/.instructions.md` | .NET work |
-| **Frontend** | `apps/admin/.instructions.md` | React work |
+| **Frontend** | `apps/web/.instructions.md` | React work |
 | **Crypto** | `libs/crypto/.instructions.md` | Crypto operations |
 | **E2E Tests** | `tests/e2e/.instructions.md` | Test modifications |
 | **Agents** | `.github/agents.md` | Security/test personas |

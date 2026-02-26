@@ -25,7 +25,7 @@ docs/
 apps/backend/
 └── .instructions.md           # 🔧 BACKEND: .NET 10 specific patterns
 
-apps/admin/
+apps/web/
 ├── .instructions.md           # 💻 FRONTEND ROOT: React 19 + Vite patterns
 └── src/
     ├── components/.instructions.md  # 🧩 COMPONENTS: UI component patterns
@@ -55,7 +55,7 @@ tests/e2e/
 | Task | Additional Files to Read |
 |------|--------------------------|
 | **Backend work** | `apps/backend/.instructions.md` |
-| **Frontend work** | `apps/admin/.instructions.md` + relevant subdirectory |
+| **Frontend work** | `apps/web/.instructions.md` + relevant subdirectory |
 | **Crypto operations** | `libs/crypto/.instructions.md` |
 | **E2E testing** | `tests/e2e/.instructions.md` |
 | **New feature** | Check `docs/specs/SPEC-*.md` for existing design |

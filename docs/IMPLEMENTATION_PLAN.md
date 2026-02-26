@@ -720,14 +720,14 @@ CREATE INDEX idx_album_members_active ON album_members(album_id) WHERE revoked_a
 
 ## Phase 4: Frontend
 
-**Location:** `apps/admin/`  
+**Location:** `apps/web/`  
 **Runtime:** React 19 + Vite  
 **Duration:** ~3 weeks
 
 ### 4.1 Project Structure
 
 ```
-apps/admin/
+apps/web/
 ├── index.html
 ├── vite.config.ts
 ├── tsconfig.json
@@ -1302,7 +1302,7 @@ services:
       retries: 5
 
   frontend:
-    build: ./apps/admin
+    build: ./apps/web
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=Host(`${DOMAIN}`)"

@@ -104,7 +104,7 @@ if (!_env.IsDevelopment() && !_env.IsEnvironment("Testing"))
 
 ### 🟠 HIGH: IndexedDB Tier Keys Stored Unencrypted
 
-**Location:** `apps/admin/src/lib/link-tier-key-store.ts`  
+**Location:** `apps/web/src/lib/link-tier-key-store.ts`  
 **Issue:** Share link tier keys are stored in IndexedDB in plaintext (base64-encoded), unlike the key-cache which encrypts with a session key.
 
 **Risk:** Persistent key exposure if device is compromised.  

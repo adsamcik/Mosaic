@@ -255,7 +255,7 @@ if [ -n "$PLATFORM" ]; then
             buildx_args+=("-f" "apps/backend/Mosaic.Backend/Dockerfile")
             buildx_args+=("apps/backend/Mosaic.Backend")
         else
-            buildx_args+=("-f" "apps/admin/Dockerfile")
+            buildx_args+=("-f" "apps/web/Dockerfile")
             buildx_args+=(".")
         fi
         

@@ -213,7 +213,7 @@ Or use launch configurations (F5):
 1. Open `Mosaic.slnx` in Visual Studio
 2. Set **Mosaic.Backend** as startup project
 3. Press **F5** to run (Swagger opens automatically)
-4. For frontend: Run `cd apps/admin && npm install && npm run dev` in terminal
+4. For frontend: Run `cd apps/web && npm install && npm run dev` in terminal
 
 ### Manual Setup (Without Scripts)
 
@@ -231,7 +231,7 @@ cd apps/backend/Mosaic.Backend
 dotnet run
 
 # 4. In terminal 2: Run frontend
-cd apps/admin && npm install && npm run dev
+cd apps/web && npm install && npm run dev
 ```
 
 ## Security Model

@@ -98,6 +98,7 @@ public class AlbumsController : ControllerBase
     private readonly IQuotaSettingsService _quotaService;
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<AlbumsController> _logger;
+    private readonly bool _useSqlite;
 
     public AlbumsController(
         MosaicDbContext db,
@@ -111,6 +112,10 @@ public class AlbumsController : ControllerBase
         _quotaService = quotaService;
         _currentUserService = currentUserService;
         _logger = logger;
+
+        // Detect if we're using SQLite or InMemory (no row locking support)
+        var connectionString = config.GetConnectionString("Default");
+        _useSqlite = connectionString == null || connectionString.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -205,23 +210,33 @@ public class AlbumsController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        // Check album count limit
-        var quota = await _db.UserQuotas.FindAsync(user.Id);
-        var maxAlbums = await _quotaService.GetEffectiveMaxAlbumsAsync(user.Id);
-        var currentAlbumCount = quota?.CurrentAlbumCount ?? await _db.Albums.CountAsync(a => a.OwnerId == user.Id);
-
-        if (currentAlbumCount >= maxAlbums)
-        {
-            _logger.AlbumCountLimitExceeded(user.Id, currentAlbumCount, maxAlbums);
-            return Problem(
-                detail: $"ALBUM_LIMIT_EXCEEDED: Maximum album limit ({maxAlbums}) reached",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
         // Create album, member, and epoch key in single transaction
         await using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
+            // Check album count limit inside transaction with row locking to prevent race conditions
+            var maxAlbums = await _quotaService.GetEffectiveMaxAlbumsAsync(user.Id);
+            UserQuota? quota;
+            if (_useSqlite)
+            {
+                quota = await _db.UserQuotas.FindAsync(user.Id);
+            }
+            else
+            {
+                quota = await _db.UserQuotas
+                    .FromSqlRaw("SELECT * FROM user_quotas WHERE user_id = {0} FOR UPDATE", user.Id)
+                    .FirstOrDefaultAsync();
+            }
+            var currentAlbumCount = quota?.CurrentAlbumCount ?? await _db.Albums.CountAsync(a => a.OwnerId == user.Id);
+
+            if (currentAlbumCount >= maxAlbums)
+            {
+                _logger.AlbumCountLimitExceeded(user.Id, currentAlbumCount, maxAlbums);
+                return Problem(
+                    detail: $"ALBUM_LIMIT_EXCEEDED: Maximum album limit ({maxAlbums}) reached",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var album = new Album
             {
                 Id = Guid.CreateVersion7(),

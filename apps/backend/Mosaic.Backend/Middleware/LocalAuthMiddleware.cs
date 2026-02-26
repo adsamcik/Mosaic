@@ -43,19 +43,35 @@ public class LocalAuthMiddleware
     public async Task InvokeAsync(HttpContext context, MosaicDbContext db)
     {
         var path = context.Request.Path.Value ?? "";
+        var isPublicPath = IsPublicPath(path);
 
-        // Check if path is public
-        if (IsPublicPath(path))
+        // Always attempt authentication to populate context items.
+        // This enables public endpoints to perform their own authorization checks.
+        await TryAuthenticate(context, db);
+
+        // Public paths proceed regardless of auth result
+        if (isPublicPath)
         {
             await _next(context);
             return;
         }
 
+        // Non-public paths require successful authentication
+        if (context.Items.ContainsKey("AuthSub"))
+        {
+            await _next(context);
+            return;
+        }
+
+        context.Response.StatusCode = 401;
+        await context.Response.WriteAsJsonAsync(new { error = "Authentication required" });
+    }
+
+    private async Task TryAuthenticate(HttpContext context, MosaicDbContext db)
+    {
         // Get session token from cookie
         if (!context.Request.Cookies.TryGetValue("mosaic_session", out var tokenBase64))
         {
-            context.Response.StatusCode = 401;
-            await context.Response.WriteAsJsonAsync(new { error = "Authentication required" });
             return;
         }
 
@@ -66,8 +82,7 @@ public class LocalAuthMiddleware
         }
         catch
         {
-            context.Response.StatusCode = 401;
-            await context.Response.WriteAsJsonAsync(new { error = "Invalid session" });
+            _logger.LogDebug("Invalid session cookie format");
             return;
         }
 
@@ -82,16 +97,12 @@ public class LocalAuthMiddleware
 
         if (session == null || session.User == null)
         {
-            context.Response.StatusCode = 401;
-            await context.Response.WriteAsJsonAsync(new { error = "Session expired or invalid" });
             return;
         }
 
         // Check sliding expiration
         if (session.LastSeenAt < DateTime.UtcNow.Add(-SessionSlidingExpiry))
         {
-            context.Response.StatusCode = 401;
-            await context.Response.WriteAsJsonAsync(new { error = "Session expired due to inactivity" });
             return;
         }
 
@@ -105,8 +116,6 @@ public class LocalAuthMiddleware
         // Set user identity in HttpContext (same format as TrustedProxyMiddleware)
         context.Items["AuthSub"] = session.User.AuthSub;
         context.Items["UserId"] = session.UserId;
-
-        await _next(context);
     }
 
     private static bool IsPublicPath(string path)

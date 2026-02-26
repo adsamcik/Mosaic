@@ -109,7 +109,7 @@ try {
 
         Write-Info ""
         Write-Info "🧩 Running admin frontend tests..."
-        Push-Location "$ProjectRoot/apps/admin"
+        Push-Location "$ProjectRoot/apps/web"
         npm test -- run
         if ($LASTEXITCODE -ne 0) { 
             Write-Err "❌ Admin tests failed"

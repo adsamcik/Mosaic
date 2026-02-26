@@ -41,7 +41,7 @@ When a React component uses `requestAnimationFrame` inside a `useEffect`, the ha
 
 Even with `skipAnimation: true` props, the component's useEffect still runs `setState` calls during the effect phase, which happens outside the test's `act()` wrapper.
 
-**Affected Component:** `AnimatedTile` (`apps/admin/src/components/Gallery/AnimatedTile.tsx`)
+**Affected Component:** `AnimatedTile` (`apps/web/src/components/Gallery/AnimatedTile.tsx`)
 
 **Solutions:**
 
@@ -49,7 +49,7 @@ Even with `skipAnimation: true` props, the component's useEffect still runs `set
    - Test hooks separately (`usePrefersReducedMotion`)
    - Test pure functions (animation class logic)
    - Document expected CSS classes without rendering
-   - See: `apps/admin/tests/animated-tile.test.tsx`
+   - See: `apps/web/tests/animated-tile.test.tsx`
 
 2. **E2E Tests (Recommended):** Use Playwright for animation testing
    - Real browser environment handles RAF correctly
@@ -75,7 +75,7 @@ Even with `skipAnimation: true` props, the component's useEffect still runs `set
 - Using `skipAnimation: true` prop alone - useEffect still runs setState
 
 **File Changes:**
-- `apps/admin/tests/animated-tile.test.tsx` - Restructured to avoid rendering AnimatedTile
+- `apps/web/tests/animated-tile.test.tsx` - Restructured to avoid rendering AnimatedTile
 - `tests/e2e/tests/gallery-animations.spec.ts` - E2E tests for animation behavior
 
 **References:**

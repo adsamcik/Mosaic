@@ -61,7 +61,7 @@ This document specifies a comprehensive animation system for Mosaic's photo gall
 ### 2.2 AnimatedTile Wrapper Component
 
 ```tsx
-// apps/admin/src/components/Gallery/AnimatedTile.tsx
+// apps/web/src/components/Gallery/AnimatedTile.tsx
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -155,7 +155,7 @@ export function AnimatedTile({
 ### 2.3 Animation Tracking Hook
 
 ```tsx
-// apps/admin/src/hooks/useAnimatedItems.ts
+// apps/web/src/hooks/useAnimatedItems.ts
 
 import { useRef, useMemo, useCallback, useState } from 'react';
 
@@ -300,7 +300,7 @@ export function useAnimatedItems<T>(
 ## 3. CSS Keyframe Definitions
 
 ```css
-/* apps/admin/src/styles/animations.css */
+/* apps/web/src/styles/animations.css */
 
 /* =============================================================================
    TILE ANIMATIONS
@@ -888,18 +888,18 @@ const debouncedRecalcLayout = useMemo(
 
 ### Files to Create
 
-- [x] `apps/admin/src/styles/animations.css` - CSS keyframes and classes
-- [x] `apps/admin/src/components/Gallery/AnimatedTile.tsx` - Animation wrapper
-- [x] `apps/admin/src/hooks/useAnimatedItems.ts` - Animation state tracking
-- [x] `apps/admin/src/components/Gallery/PhotoGridSkeleton.tsx` - Loading skeleton
+- [x] `apps/web/src/styles/animations.css` - CSS keyframes and classes
+- [x] `apps/web/src/components/Gallery/AnimatedTile.tsx` - Animation wrapper
+- [x] `apps/web/src/hooks/useAnimatedItems.ts` - Animation state tracking
+- [x] `apps/web/src/components/Gallery/PhotoGridSkeleton.tsx` - Loading skeleton
 
 ### Files to Modify
 
-- [x] `apps/admin/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx` - Add animation wrappers
-- [ ] `apps/admin/src/components/Gallery/SquarePhotoGrid.tsx` - Add animation wrappers
-- [ ] `apps/admin/src/components/Gallery/PhotoThumbnail.tsx` - Add upload complete detection
-- [ ] `apps/admin/src/components/Gallery/PendingPhotoThumbnail.tsx` - Add pending→complete transition
-- [x] `apps/admin/src/styles/globals.css` - Import animations.css
+- [x] `apps/web/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx` - Add animation wrappers
+- [ ] `apps/web/src/components/Gallery/SquarePhotoGrid.tsx` - Add animation wrappers
+- [ ] `apps/web/src/components/Gallery/PhotoThumbnail.tsx` - Add upload complete detection
+- [ ] `apps/web/src/components/Gallery/PendingPhotoThumbnail.tsx` - Add pending→complete transition
+- [x] `apps/web/src/styles/globals.css` - Import animations.css
 
 ### Testing Requirements
 

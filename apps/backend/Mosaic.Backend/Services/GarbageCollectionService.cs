@@ -60,14 +60,18 @@ public class GarbageCollectionService : BackgroundService
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
 
-        // Use database-specific NOW function
-        var nowFunc = _useSqlite ? "datetime('now')" : "NOW()";
-        var sql = $@"
-            UPDATE shards 
-            SET status = 'TRASHED', status_updated_at = {nowFunc} 
-            WHERE status = 'PENDING' AND pending_expires_at < {nowFunc}";
-
-        var count = await db.Database.ExecuteSqlRawAsync(sql);
+        // Use parameterized SQL with database-specific NOW function
+        int count;
+        if (_useSqlite)
+        {
+            count = await db.Database.ExecuteSqlAsync(
+                $"UPDATE shards SET status = 'TRASHED', status_updated_at = datetime('now') WHERE status = 'PENDING' AND pending_expires_at < datetime('now')");
+        }
+        else
+        {
+            count = await db.Database.ExecuteSqlAsync(
+                $"UPDATE shards SET status = 'TRASHED', status_updated_at = NOW() WHERE status = 'PENDING' AND pending_expires_at < NOW()");
+        }
 
         if (count > 0)
         {

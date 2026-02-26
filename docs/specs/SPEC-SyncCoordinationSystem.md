@@ -3,7 +3,7 @@
 > **Status:** Design Proposal  
 > **Author:** GitHub Copilot  
 > **Date:** 2026-01-02  
-> **Scope:** `apps/admin/src/` sync coordination, upload lifecycle, refetch deduplication
+> **Scope:** `apps/web/src/` sync coordination, upload lifecycle, refetch deduplication
 
 ## 1. Problem Statement
 
@@ -13,7 +13,7 @@ The Mosaic photo gallery has four critical race conditions in its sync/upload fl
 
 #### Race 1: Dual Sync Listeners (Duplicate Refetch)
 
-**Location:** [Gallery.tsx#L138-150](../../apps/admin/src/components/Gallery/Gallery.tsx#L138-L150) and [EnhancedMosaicPhotoGrid.tsx#L218-223](../../apps/admin/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx#L218-L223)
+**Location:** [Gallery.tsx#L138-150](../../apps/web/src/components/Gallery/Gallery.tsx#L138-L150) and [EnhancedMosaicPhotoGrid.tsx#L218-223](../../apps/web/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx#L218-L223)
 
 Both components independently listen to `sync-complete` events and call `refetch()`:
 
@@ -47,7 +47,7 @@ useEffect(() => {
 
 #### Race 2: Batch Upload Sync Collision
 
-**Location:** [UploadContext.tsx#L176-192](../../apps/admin/src/contexts/UploadContext.tsx#L176-L192)
+**Location:** [UploadContext.tsx#L176-192](../../apps/web/src/contexts/UploadContext.tsx#L176-L192)
 
 When uploading multiple files, each `onComplete` triggers `syncEngine.sync()`:
 
@@ -75,7 +75,7 @@ async sync(albumId: string, readKey?: Uint8Array): Promise<void> {
 
 #### Race 3: Premature Pending Removal
 
-**Location:** [UploadContext.tsx#L177](../../apps/admin/src/contexts/UploadContext.tsx#L177)
+**Location:** [UploadContext.tsx#L177](../../apps/web/src/contexts/UploadContext.tsx#L177)
 
 Pending upload is removed BEFORE sync completes:
 
@@ -94,7 +94,7 @@ uploadQueue.onComplete = async (task, shardIds) => {
 
 #### Race 4: Competing onComplete Handlers
 
-**Location:** [useUpload.ts#L137](../../apps/admin/src/hooks/useUpload.ts#L137) and [UploadContext.tsx#L176](../../apps/admin/src/contexts/UploadContext.tsx#L176)
+**Location:** [useUpload.ts#L137](../../apps/web/src/hooks/useUpload.ts#L137) and [UploadContext.tsx#L176](../../apps/web/src/contexts/UploadContext.tsx#L176)
 
 Both modules set `uploadQueue.onComplete`, but only the last assignment wins:
 
@@ -377,7 +377,7 @@ uploadQueue.onComplete = async (task, shardIds) => { ... };
 ### 4.2 State Types
 
 ```typescript
-// File: apps/admin/src/lib/upload-lifecycle.ts
+// File: apps/web/src/lib/upload-lifecycle.ts
 
 /**
  * Upload lifecycle states with strict progression.
@@ -472,7 +472,7 @@ export interface TrackedUpload {
 ### 5.1 SyncRequestQueue (Debouncing/Coalescing)
 
 ```typescript
-// File: apps/admin/src/lib/sync-request-queue.ts
+// File: apps/web/src/lib/sync-request-queue.ts
 
 import { syncEngine } from './sync-engine';
 import { createLogger } from './logger';
@@ -648,7 +648,7 @@ export const syncRequestQueue = new SyncRequestQueue();
 ### 5.2 UploadLifecycleManager
 
 ```typescript
-// File: apps/admin/src/lib/upload-lifecycle-manager.ts
+// File: apps/web/src/lib/upload-lifecycle-manager.ts
 
 import { createLogger } from './logger';
 import { syncRequestQueue } from './sync-request-queue';
@@ -1011,7 +1011,7 @@ export const uploadLifecycleManager = new UploadLifecycleManager();
 ### 5.3 SyncCoordinator (Single Listener)
 
 ```typescript
-// File: apps/admin/src/lib/sync-coordinator.ts
+// File: apps/web/src/lib/sync-coordinator.ts
 
 import { getDbClient } from './db-client';
 import { createLogger } from './logger';
@@ -1169,11 +1169,11 @@ export const syncCoordinator = new SyncCoordinator();
 
 | File | Change |
 |------|--------|
-| [Gallery.tsx](../../apps/admin/src/components/Gallery/Gallery.tsx) | **REMOVE** sync-complete listener (lines 138-150) |
-| [EnhancedMosaicPhotoGrid.tsx](../../apps/admin/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx) | **REMOVE** sync-complete listener (lines 218-223) |
-| [UploadContext.tsx](../../apps/admin/src/contexts/UploadContext.tsx) | **REMOVE** onComplete/onError handlers, use lifecycle manager |
-| [useUpload.ts](../../apps/admin/src/hooks/useUpload.ts) | **REMOVE** onComplete/onError handlers, use lifecycle manager |
-| [main.tsx](../../apps/admin/src/main.tsx) | **ADD** initialization of syncCoordinator and uploadLifecycleManager |
+| [Gallery.tsx](../../apps/web/src/components/Gallery/Gallery.tsx) | **REMOVE** sync-complete listener (lines 138-150) |
+| [EnhancedMosaicPhotoGrid.tsx](../../apps/web/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx) | **REMOVE** sync-complete listener (lines 218-223) |
+| [UploadContext.tsx](../../apps/web/src/contexts/UploadContext.tsx) | **REMOVE** onComplete/onError handlers, use lifecycle manager |
+| [useUpload.ts](../../apps/web/src/hooks/useUpload.ts) | **REMOVE** onComplete/onError handlers, use lifecycle manager |
+| [main.tsx](../../apps/web/src/main.tsx) | **ADD** initialization of syncCoordinator and uploadLifecycleManager |
 
 ### 6.2 New Files
 
@@ -1189,7 +1189,7 @@ export const syncCoordinator = new SyncCoordinator();
 ### 6.3 Initialization Order
 
 ```typescript
-// File: apps/admin/src/main.tsx
+// File: apps/web/src/main.tsx
 
 import { syncCoordinator } from './lib/sync-coordinator';
 import { uploadLifecycleManager } from './lib/upload-lifecycle-manager';
@@ -1214,7 +1214,7 @@ if (import.meta.hot) {
 ### 7.1 Unit Tests
 
 ```typescript
-// File: apps/admin/tests/sync-request-queue.test.ts
+// File: apps/web/tests/sync-request-queue.test.ts
 
 describe('SyncRequestQueue', () => {
   beforeEach(() => {
@@ -1281,7 +1281,7 @@ describe('SyncRequestQueue', () => {
 ### 7.2 Upload Lifecycle Tests
 
 ```typescript
-// File: apps/admin/tests/upload-lifecycle-manager.test.ts
+// File: apps/web/tests/upload-lifecycle-manager.test.ts
 
 describe('UploadLifecycleManager', () => {
   beforeEach(() => {
@@ -1370,7 +1370,7 @@ describe('UploadLifecycleManager', () => {
 ### 7.3 Integration Test
 
 ```typescript
-// File: apps/admin/tests/sync-coordination-integration.test.ts
+// File: apps/web/tests/sync-coordination-integration.test.ts
 
 describe('Sync Coordination Integration', () => {
   it('should handle batch upload with single consolidated sync', async () => {

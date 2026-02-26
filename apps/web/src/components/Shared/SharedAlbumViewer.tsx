@@ -149,9 +149,6 @@ export function SharedAlbumViewer({
         log.debug('Using tier key for album name', {
           epochId: usedEpoch,
           tier: usedTier,
-          keyPrefix: Array.from(tierKey.slice(0, 4))
-            .map((b) => b.toString(16).padStart(2, '0'))
-            .join(''),
         });
 
         // Use decryptAlbumNameWithTierKey for share links since we have

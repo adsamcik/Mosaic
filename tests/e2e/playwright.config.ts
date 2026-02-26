@@ -234,7 +234,7 @@ export default defineConfig({
   webServer: process.env.CI
     ? undefined
     : {
-        command: 'cd ../../apps/admin && npm run dev',
+        command: 'cd ../../apps/web && npm run dev',
         url: 'http://localhost:5173',
         reuseExistingServer: !process.env.CI,
         timeout: 120000,

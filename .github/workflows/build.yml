@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'apps/backend/**'
-      - 'apps/admin/**'
+      - 'apps/web/**'
       - 'libs/crypto/**'
       - 'docker-compose*.yml'
       - '.github/workflows/build.yml'
@@ -48,7 +48,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./apps/admin/Dockerfile
+          file: ./apps/web/Dockerfile
           push: false
           tags: mosaic-frontend:pr-${{ github.event.number }}
           cache-from: type=gha

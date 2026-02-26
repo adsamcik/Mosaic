@@ -120,7 +120,7 @@ success "Database migrations applied"
 if [ "$SKIP_BUILD" = false ]; then
     step "Installing dependencies..."
     
-    cd "$REPO_ROOT/apps/admin"
+    cd "$REPO_ROOT/apps/web"
     npm install --silent 2>/dev/null
     
     cd "$REPO_ROOT/tests/e2e"
@@ -192,7 +192,7 @@ step "Starting Vite frontend on port 5173..."
 lsof -ti:5173 | xargs kill -9 2>/dev/null || true
 sleep 1
 
-cd "$REPO_ROOT/apps/admin"
+cd "$REPO_ROOT/apps/web"
 
 # Set weak keys mode for fast E2E testing
 export VITE_E2E_WEAK_KEYS="true"

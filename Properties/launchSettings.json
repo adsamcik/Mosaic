@@ -16,7 +16,7 @@
         {
           "actionType": "StartProcess",
           "fileName": "cmd.exe",
-          "arguments": "/c cd apps\\admin && npm run dev",
+          "arguments": "/c cd apps\\web && npm run dev",
           "workingDirectory": "$(SolutionDir)"
         }
       ]

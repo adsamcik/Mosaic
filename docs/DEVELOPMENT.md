@@ -249,7 +249,7 @@ dotnet run
 ### Step 4: Start Frontend
 
 ```bash
-cd apps/admin
+cd apps/web
 npm install
 npm run dev
 ```
@@ -266,7 +266,7 @@ For .NET-focused development:
 4. For frontend, open a terminal and run:
 
    ```bash
-   cd apps/admin && npm install && npm run dev
+   cd apps/web && npm install && npm run dev
    ```
 
 ---
@@ -474,7 +474,7 @@ Host=localhost;Database=mosaic;Username=mosaic;Password=dev
 
 # Or individually:
 cd libs/crypto && npm test        # Crypto tests
-cd apps/admin && npm run test:run # Frontend tests
+cd apps/web && npm run test:run # Frontend tests
 cd apps/backend/Mosaic.Backend.Tests && dotnet test  # Backend tests
 ```
 
@@ -495,7 +495,7 @@ cd apps/backend/Mosaic.Backend.Tests && dotnet test  # Backend tests
 
 ```bash
 cd libs/crypto && npm run test:coverage
-cd apps/admin && npm run test:coverage
+cd apps/web && npm run test:coverage
 ```
 
 ---
