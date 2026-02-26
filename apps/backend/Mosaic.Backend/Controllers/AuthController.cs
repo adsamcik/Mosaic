@@ -363,6 +363,28 @@ public partial class AuthController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
+        // After the first user is created, registration requires admin authentication.
+        // The first registration (bootstrap) remains public so the initial admin can be created.
+        var isFirstUser = !await _db.Users.AnyAsync();
+        if (!isFirstUser)
+        {
+            var authSub = HttpContext.Items["AuthSub"] as string;
+            if (string.IsNullOrEmpty(authSub))
+            {
+                return Problem(
+                    detail: "Authentication required",
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
+
+            var callingUser = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+            if (callingUser == null || !callingUser.IsAdmin)
+            {
+                return Problem(
+                    detail: "Admin privileges required",
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+        }
+
         // Rate limit registration attempts per IP (max 5 per hour)
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var cacheKey = $"register_limit:{ipAddress}";
@@ -423,7 +445,7 @@ public partial class AuthController : ControllerBase
         }
 
         // Check if this is the first user (make them admin)
-        var isFirstUser = !await _db.Users.AnyAsync();
+        // Note: isFirstUser was already determined above for the admin auth check
 
         var user = new User
         {
@@ -667,16 +689,19 @@ public partial class AuthController : ControllerBase
         return session.UserId;
     }
 
+    // Random fallback secret generated once per process lifetime.
+    // Used only when Auth:ServerSecret is not configured (should not happen - Program.cs sets it).
+    private static readonly Lazy<byte[]> FallbackServerSecret = new(() => RandomNumberGenerator.GetBytes(32));
+
     private byte[] GenerateFakeSalt(string username)
     {
-        // Get server secret from config, or use a default for development
         var serverSecretBase64 = _config["Auth:ServerSecret"];
         byte[] serverSecret;
 
         if (string.IsNullOrEmpty(serverSecretBase64))
         {
-            // In development, use a deterministic secret
-            serverSecret = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("mosaic-dev-secret"));
+            // No configured secret - use random fallback (non-deterministic, changes on restart)
+            serverSecret = FallbackServerSecret.Value;
         }
         else
         {

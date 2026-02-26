@@ -10,7 +10,7 @@ services:
     environment:
       POSTGRES_DB: mosaic
       POSTGRES_USER: mosaic
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -32,13 +32,12 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       RUN_MIGRATIONS: "true"
-      ConnectionStrings__Default: "Host=postgres;Database=mosaic;Username=mosaic;Password=${POSTGRES_PASSWORD:-changeme}"
+      ConnectionStrings__Default: "Host=postgres;Database=mosaic;Username=mosaic;Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
       Storage__Path: /app/data/blobs
       Auth__LocalAuthEnabled: ${LOCAL_AUTH_ENABLED:-true}
       Auth__ProxyAuthEnabled: ${PROXY_AUTH_ENABLED:-true}
-      Auth__TrustedProxies__0: "172.16.0.0/12"
-      Auth__TrustedProxies__1: "10.0.0.0/8"
-      Auth__TrustedProxies__2: "192.168.0.0/16"
+      Auth__TrustedProxies__0: "127.0.0.1/32"
+      Auth__TrustedProxies__1: "::1/128"
       Quota__DefaultMaxBytes: ${DEFAULT_QUOTA_BYTES:-10737418240}
     volumes:
       - blob_data:/app/data/blobs
@@ -58,7 +57,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: apps/admin/Dockerfile
+      dockerfile: apps/web/Dockerfile
     container_name: mosaic-frontend
     restart: unless-stopped
     ports:

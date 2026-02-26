@@ -11,6 +11,7 @@ using Scalar.AspNetCore;
 using tusdotnet;
 using tusdotnet.Stores;
 using System.Data.Common;
+using System.Security.Cryptography;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -114,7 +115,30 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
 });
 
+// Ensure Auth:ServerSecret is set - generate random one if missing
+var serverSecretMissing = string.IsNullOrEmpty(builder.Configuration["Auth:ServerSecret"]);
+if (serverSecretMissing)
+{
+    var secret = RandomNumberGenerator.GetBytes(32);
+    builder.Configuration["Auth:ServerSecret"] = Convert.ToBase64String(secret);
+}
+
 var app = builder.Build();
+
+if (serverSecretMissing)
+{
+    if (app.Environment.IsProduction())
+    {
+        app.Logger.LogWarning(
+            "⚠️  Auth:ServerSecret is not configured. A random secret has been generated for this session. " +
+            "Fake salts will change on restart, which may enable user enumeration detection. " +
+            "Set Auth:ServerSecret to a persistent base64-encoded 32-byte value in production.");
+    }
+    else
+    {
+        app.Logger.LogInformation("Auth:ServerSecret not configured - using auto-generated random secret for this session");
+    }
+}
 
 // Security environment validation
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
