@@ -405,12 +405,13 @@ public partial class AuthController : ControllerBase
             _cache.Set(cacheKey, attempts + 1, TimeSpan.FromHours(1));
         }
 
-        // Check if user already exists — return generic response to prevent username enumeration
+        // Check if user already exists
         var existingUser = await _db.Users.AnyAsync(u => u.AuthSub == request.Username);
         if (existingUser)
         {
-            _logger.LogWarning("Registration attempted for existing username");
-            return Ok(new { message = "Registration request received" });
+            return Problem(
+                detail: "Username already exists",
+                statusCode: StatusCodes.Status409Conflict);
         }
 
         // Validate key lengths
