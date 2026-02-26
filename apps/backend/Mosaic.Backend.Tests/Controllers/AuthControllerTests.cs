@@ -447,9 +447,9 @@ public class AuthControllerTests
             accountSalt
         ));
 
-        // Assert - should return generic 200 OK to prevent username enumeration
-        var okResult = Assert.IsType<OkObjectResult>(result);
-        Assert.NotNull(okResult.Value);
+        // Assert
+        var conflictResult = ProblemDetailsAssertions.AssertConflict(result);
+        Assert.Contains("already exists", ProblemDetailsAssertions.GetDetail(conflictResult));
     }
 
     [Fact]
