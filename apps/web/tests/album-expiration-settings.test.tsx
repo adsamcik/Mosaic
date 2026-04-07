@@ -121,8 +121,8 @@ describe('AlbumExpirationSettings', () => {
     it('renders title and description', () => {
       const { container, cleanup } = renderComponent();
 
-      expect(container.textContent).toContain('Album Expiration');
-      expect(container.textContent).toContain('Set an expiration date');
+      expect(container.textContent).toContain('album.expiration.title');
+      expect(container.textContent).toContain('album.expiration.description');
       cleanup();
     });
 
@@ -261,17 +261,18 @@ describe('AlbumExpirationSettings', () => {
 
       const daysRemaining = getByTestId('days-remaining');
       expect(daysRemaining?.textContent).toContain('15');
-      expect(daysRemaining?.textContent).toContain('days remaining');
+      expect(daysRemaining?.textContent).toContain('album.expiration.daysRemaining');
       cleanup();
     });
 
-    it('uses singular "day" when 1 day remaining', () => {
+    it('uses singular form when 1 day remaining', () => {
       const { getByTestId, cleanup } = renderComponent({
         album: createMockAlbum({ expiresAt: daysFromNow(1) }),
       });
 
       const daysRemaining = getByTestId('days-remaining');
-      expect(daysRemaining?.textContent).toContain('1 day remaining');
+      expect(daysRemaining?.textContent).toContain('album.expiration.daysRemaining');
+      expect(daysRemaining?.textContent).toContain('"days":1');
       cleanup();
     });
   });
@@ -284,7 +285,7 @@ describe('AlbumExpirationSettings', () => {
 
       expect(getByTestId('expiration-warning')).not.toBeNull();
       expect(getByTestId('expiration-warning')?.textContent).toContain(
-        '5 days',
+        'album.expiration.warningDaysPlural',
       );
       cleanup();
     });
@@ -305,7 +306,7 @@ describe('AlbumExpirationSettings', () => {
 
       expect(getByTestId('expiration-expired')).not.toBeNull();
       expect(getByTestId('expiration-expired')?.textContent).toContain(
-        'expired',
+        'album.expiration.expiredWarning',
       );
       cleanup();
     });
@@ -416,12 +417,20 @@ describe('AlbumExpirationSettings', () => {
         checkbox.click();
       });
 
-      // Save
+      // Click save — triggers confirmation flow
       const saveButton = getByTestId(
         'save-expiration-button',
       ) as HTMLButtonElement;
-      await act(async () => {
+      act(() => {
         saveButton.click();
+      });
+
+      // Confirm the save
+      const confirmButton = getByTestId(
+        'confirm-expiration-button',
+      ) as HTMLButtonElement;
+      await act(async () => {
+        confirmButton.click();
       });
 
       expect(mockUpdateAlbumExpiration).toHaveBeenCalledWith(
@@ -450,7 +459,7 @@ describe('AlbumExpirationSettings', () => {
         checkbox.click();
       });
 
-      // Save
+      // Save — disabling does NOT require confirmation
       const saveButton = getByTestId(
         'save-expiration-button',
       ) as HTMLButtonElement;
@@ -475,7 +484,7 @@ describe('AlbumExpirationSettings', () => {
         album: createMockAlbum({ expiresAt: daysFromNow(30) }),
       });
 
-      // Disable to create a change
+      // Disable to create a change (no confirmation needed)
       const checkbox = getByTestId(
         'expiration-enabled-checkbox',
       ) as HTMLInputElement;
@@ -491,7 +500,7 @@ describe('AlbumExpirationSettings', () => {
         saveButton.click();
       });
 
-      expect(saveButton.textContent).toBe('Saving...');
+      expect(saveButton.textContent).toBe('common.saving');
       expect(saveButton.disabled).toBe(true);
       cleanup();
     });
@@ -501,7 +510,7 @@ describe('AlbumExpirationSettings', () => {
         album: createMockAlbum({ expiresAt: daysFromNow(30) }),
       });
 
-      // Disable to create a change
+      // Disable to create a change (no confirmation needed)
       const checkbox = getByTestId(
         'expiration-enabled-checkbox',
       ) as HTMLInputElement;
@@ -519,7 +528,7 @@ describe('AlbumExpirationSettings', () => {
 
       expect(getByTestId('expiration-success')).not.toBeNull();
       expect(getByTestId('expiration-success')?.textContent).toContain(
-        'saved successfully',
+        'common.settingsSaved',
       );
       cleanup();
     });
@@ -531,7 +540,7 @@ describe('AlbumExpirationSettings', () => {
         album: createMockAlbum({ expiresAt: daysFromNow(30) }),
       });
 
-      // Disable to create a change
+      // Disable to create a change (no confirmation needed)
       const checkbox = getByTestId(
         'expiration-enabled-checkbox',
       ) as HTMLInputElement;
@@ -588,7 +597,7 @@ describe('AlbumExpirationSettings', () => {
 
       expect(getByTestId('expiration-error')).not.toBeNull();
       expect(getByTestId('expiration-error')?.textContent).toContain(
-        'select an expiration date',
+        'album.expiration.error.dateRequired',
       );
       expect(mockUpdateAlbumExpiration).not.toHaveBeenCalled();
       cleanup();
@@ -813,6 +822,206 @@ describe('AlbumExpirationSettings', () => {
           .disabled,
       ).toBe(true);
       cleanup();
+    });
+  });
+
+  describe('confirmation flow', () => {
+    it('shows confirmation banner when enabling expiration and clicking Save', async () => {
+      const { getByTestId, queryByTestId, cleanup } = renderComponent({
+        album: createMockAlbum(),
+      });
+
+      // Enable expiration
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
+      act(() => {
+        checkbox.click();
+      });
+
+      // Click save — should show confirmation, not save yet
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
+      act(() => {
+        saveButton.click();
+      });
+
+      // Confirmation banner should appear
+      expect(getByTestId('expiration-confirmation')).not.toBeNull();
+      expect(getByTestId('confirm-expiration-button')).not.toBeNull();
+      expect(getByTestId('cancel-expiration-button')).not.toBeNull();
+
+      // API should NOT have been called yet
+      expect(mockUpdateAlbumExpiration).not.toHaveBeenCalled();
+
+      // Save button should be hidden during confirmation
+      expect(queryByTestId('save-expiration-button')).toBeNull();
+
+      cleanup();
+    });
+
+    it('cancels confirmation and does not save', async () => {
+      const { getByTestId, queryByTestId, cleanup } = renderComponent({
+        album: createMockAlbum(),
+      });
+
+      // Enable expiration
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
+      act(() => {
+        checkbox.click();
+      });
+
+      // Click save to trigger confirmation
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
+      act(() => {
+        saveButton.click();
+      });
+
+      // Click cancel on confirmation
+      const cancelButton = getByTestId(
+        'cancel-expiration-button',
+      ) as HTMLButtonElement;
+      act(() => {
+        cancelButton.click();
+      });
+
+      // Confirmation should disappear
+      expect(queryByTestId('expiration-confirmation')).toBeNull();
+
+      // API should NOT have been called
+      expect(mockUpdateAlbumExpiration).not.toHaveBeenCalled();
+
+      // Save button should reappear
+      expect(getByTestId('save-expiration-button')).not.toBeNull();
+
+      cleanup();
+    });
+
+    it('confirms and calls API to save', async () => {
+      const onUpdate = vi.fn();
+      const { getByTestId, cleanup } = renderComponent({
+        album: createMockAlbum(),
+        onUpdate,
+      });
+
+      // Enable expiration
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
+      act(() => {
+        checkbox.click();
+      });
+
+      // Click save to trigger confirmation
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
+      act(() => {
+        saveButton.click();
+      });
+
+      // Click confirm
+      const confirmButton = getByTestId(
+        'confirm-expiration-button',
+      ) as HTMLButtonElement;
+      await act(async () => {
+        confirmButton.click();
+      });
+
+      // API should have been called
+      expect(mockUpdateAlbumExpiration).toHaveBeenCalledWith(
+        'album-123',
+        expect.objectContaining({
+          expiresAt: expect.any(String),
+          expirationWarningDays: expect.any(Number),
+        }),
+      );
+      expect(onUpdate).toHaveBeenCalled();
+
+      cleanup();
+    });
+
+    it('does not show confirmation when disabling expiration', async () => {
+      const onUpdate = vi.fn();
+      const { getByTestId, queryByTestId, cleanup } = renderComponent({
+        album: createMockAlbum({ expiresAt: daysFromNow(30) }),
+        onUpdate,
+      });
+
+      // Disable expiration
+      const checkbox = getByTestId(
+        'expiration-enabled-checkbox',
+      ) as HTMLInputElement;
+      act(() => {
+        checkbox.click();
+      });
+
+      // Click save — should save immediately
+      const saveButton = getByTestId(
+        'save-expiration-button',
+      ) as HTMLButtonElement;
+      await act(async () => {
+        saveButton.click();
+      });
+
+      // No confirmation banner
+      expect(queryByTestId('expiration-confirmation')).toBeNull();
+
+      // API should have been called directly
+      expect(mockUpdateAlbumExpiration).toHaveBeenCalledWith(
+        'album-123',
+        expect.objectContaining({
+          expiresAt: null,
+        }),
+      );
+      expect(onUpdate).toHaveBeenCalled();
+
+      cleanup();
+    });
+  });
+
+  describe('warning days clamping', () => {
+    it('shows clamped hint when warning days exceed days remaining', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-06-01T12:00:00Z'));
+
+      const { getByTestId, cleanup } = renderComponent({
+        album: createMockAlbum({
+          expiresAt: '2024-06-04T12:00:00Z', // 3 days away
+          expirationWarningDays: 30,
+        }),
+      });
+
+      // Warning days (30) exceeds days remaining (3), so clamp hint should show
+      expect(getByTestId('warning-days-clamped')).not.toBeNull();
+
+      cleanup();
+      vi.useRealTimers();
+    });
+  });
+
+  describe('days remaining display', () => {
+    it('shows correct days remaining for a future date', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-06-01T12:00:00Z'));
+
+      const { getByTestId, cleanup } = renderComponent({
+        album: createMockAlbum({
+          expiresAt: '2024-06-16T12:00:00Z', // 15 days away
+        }),
+      });
+
+      const daysRemainingEl = getByTestId('days-remaining');
+      expect(daysRemainingEl).not.toBeNull();
+      expect(daysRemainingEl?.textContent).toContain('15');
+
+      cleanup();
+      vi.useRealTimers();
     });
   });
 });

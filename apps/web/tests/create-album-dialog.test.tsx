@@ -265,4 +265,194 @@ describe('CreateAlbumDialog', () => {
       cleanup();
     });
   });
+
+  describe('expiration section', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('expiration section is collapsed by default', () => {
+      const { queryByTestId, cleanup } = renderDialog();
+
+      // Preset buttons should NOT be visible initially
+      expect(queryByTestId('expiration-content')).toBeNull();
+      expect(queryByTestId('expiration-7d')).toBeNull();
+      expect(queryByTestId('expiration-30d')).toBeNull();
+
+      cleanup();
+    });
+
+    it('expands temporary album section when toggle clicked', () => {
+      const { getByTestId, cleanup } = renderDialog();
+
+      // Click the toggle button
+      const toggle = getByTestId('expiration-toggle') as HTMLButtonElement;
+      act(() => {
+        toggle.click();
+      });
+
+      // Preset buttons should now be visible
+      expect(getByTestId('expiration-content')).not.toBeNull();
+      expect(getByTestId('expiration-7d')).not.toBeNull();
+      expect(getByTestId('expiration-30d')).not.toBeNull();
+      expect(getByTestId('expiration-90d')).not.toBeNull();
+      expect(getByTestId('expiration-custom')).not.toBeNull();
+
+      cleanup();
+    });
+
+    it('selects preset and shows date preview', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-06-01T12:00:00Z'));
+
+      const { getByTestId, cleanup } = renderDialog();
+
+      // Expand expiration section
+      const toggle = getByTestId('expiration-toggle') as HTMLButtonElement;
+      act(() => {
+        toggle.click();
+      });
+
+      // Click "30 days" preset
+      const preset30d = getByTestId('expiration-30d') as HTMLButtonElement;
+      act(() => {
+        preset30d.click();
+      });
+
+      // Should become active
+      expect(preset30d.className).toContain('active');
+
+      // Date preview should appear
+      expect(getByTestId('expiration-preview')).not.toBeNull();
+
+      cleanup();
+      vi.useRealTimers();
+    });
+
+    it('shows date picker when Custom is selected', () => {
+      const { getByTestId, queryByTestId, cleanup } = renderDialog();
+
+      // Expand expiration section
+      const toggle = getByTestId('expiration-toggle') as HTMLButtonElement;
+      act(() => {
+        toggle.click();
+      });
+
+      // Date input should NOT be visible with default preset
+      expect(queryByTestId('expiration-date-input')).toBeNull();
+
+      // Click "Custom" preset
+      const customBtn = getByTestId('expiration-custom') as HTMLButtonElement;
+      act(() => {
+        customBtn.click();
+      });
+
+      // Date input should now appear
+      expect(getByTestId('expiration-date-input')).not.toBeNull();
+
+      cleanup();
+    });
+
+    it('submits form with expiration options when enabled', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-06-01T12:00:00Z'));
+
+      const onCreate = vi.fn().mockResolvedValue(undefined);
+      const { getByTestId, cleanup } = renderDialog({ onCreate });
+
+      // Enter a name
+      const input = getByTestId('album-name-input') as HTMLInputElement;
+      act(() => {
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        nativeInputValueSetter.call(input, 'Temp Album');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
+      // Expand expiration section
+      const toggle = getByTestId('expiration-toggle') as HTMLButtonElement;
+      act(() => {
+        toggle.click();
+      });
+
+      // Click "30 days" preset
+      const preset30d = getByTestId('expiration-30d') as HTMLButtonElement;
+      act(() => {
+        preset30d.click();
+      });
+
+      // Submit the form
+      const form = getByTestId('create-button') as HTMLButtonElement;
+      await act(async () => {
+        form.click();
+      });
+
+      // onCreate should be called with name AND expiration options
+      expect(onCreate).toHaveBeenCalledWith(
+        'Temp Album',
+        expect.objectContaining({
+          expiresAt: expect.any(String),
+          expirationWarningDays: 7,
+        }),
+      );
+
+      cleanup();
+      vi.useRealTimers();
+    });
+
+    it('submits form without expiration when section not toggled', async () => {
+      const onCreate = vi.fn().mockResolvedValue(undefined);
+      const { getByTestId, cleanup } = renderDialog({ onCreate });
+
+      // Enter a name
+      const input = getByTestId('album-name-input') as HTMLInputElement;
+      act(() => {
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        nativeInputValueSetter.call(input, 'Regular Album');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
+      // Submit without enabling expiration
+      const form = getByTestId('create-button') as HTMLButtonElement;
+      await act(async () => {
+        form.click();
+      });
+
+      // onCreate should be called with just the name (no expiration options)
+      expect(onCreate).toHaveBeenCalledWith('Regular Album', undefined);
+
+      cleanup();
+    });
+
+    it('resets expiration state when dialog closes and reopens', () => {
+      const { getByTestId, queryByTestId, rerender, cleanup } = renderDialog();
+
+      // Expand expiration section
+      const toggle = getByTestId('expiration-toggle') as HTMLButtonElement;
+      act(() => {
+        toggle.click();
+      });
+
+      // Verify it's expanded
+      expect(getByTestId('expiration-content')).not.toBeNull();
+
+      // Close dialog
+      rerender({ isOpen: false });
+
+      // Reopen dialog
+      rerender({ isOpen: true });
+
+      // Expiration section should be collapsed again
+      expect(queryByTestId('expiration-content')).toBeNull();
+
+      cleanup();
+    });
+  });
 });

@@ -6,8 +6,8 @@
  * but verify the client utilities and error classes work correctly.
  */
 
-import { describe, it, expect } from 'vitest';
-import { ApiError, toBase64, fromBase64 } from '../src/lib/api';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { ApiError, toBase64, fromBase64, getApi } from '../src/lib/api';
 
 describe('ApiError', () => {
   it('creates error with status and message', () => {
@@ -90,5 +90,61 @@ describe('base64 utilities', () => {
     const decoded = fromBase64(encoded);
 
     expect(decoded).toEqual(original);
+  });
+});
+
+describe('updateAlbumExpiration', () => {
+  const mockAlbumResponse = {
+    id: 'album-123',
+    ownerId: 'user-456',
+    currentVersion: 1,
+    currentEpochId: 1,
+    createdAt: new Date().toISOString(),
+    expiresAt: '2024-12-25T23:59:59Z',
+    expirationWarningDays: 7,
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockAlbumResponse),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('uses PATCH method, not PUT', async () => {
+    const api = getApi();
+    await api.updateAlbumExpiration('album-123', {
+      expiresAt: '2024-12-25T23:59:59Z',
+      expirationWarningDays: 7,
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(init.method).toBe('PATCH');
+  });
+
+  it('calls the correct URL pattern', async () => {
+    const api = getApi();
+    await api.updateAlbumExpiration('album-123', {
+      expiresAt: '2024-12-25T23:59:59Z',
+      expirationWarningDays: 7,
+    });
+
+    const [url] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe('/api/albums/album-123/expiration');
   });
 });
