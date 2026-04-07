@@ -39,7 +39,7 @@ export function UploadButton({ albumId }: UploadButtonProps) {
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*"
         multiple
         onChange={handleChange}
         style={{ display: 'none' }}

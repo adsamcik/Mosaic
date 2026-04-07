@@ -75,18 +75,19 @@ export function DropZone({
       const files = e.dataTransfer.files;
       if (!files || files.length === 0) return;
 
-      // Filter for image files
-      const imageFiles = Array.from(files).filter((file) =>
-        file.type.startsWith('image/'),
+      // Filter for supported media files (images and videos)
+      const mediaFiles = Array.from(files).filter(
+        (file) =>
+          file.type.startsWith('image/') || file.type.startsWith('video/'),
       );
 
-      if (imageFiles.length === 0) {
-        log.warn('No image files found in drop');
+      if (mediaFiles.length === 0) {
+        log.warn('No supported media files found in drop');
         return;
       }
 
-      // Upload all image files
-      for (const file of imageFiles) {
+      // Upload all media files
+      for (const file of mediaFiles) {
         await upload(file, albumId);
       }
     },

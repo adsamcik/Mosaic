@@ -79,7 +79,7 @@ describe('UploadButton', () => {
     ) as HTMLInputElement;
     expect(input).not.toBeNull();
     expect(input.type).toBe('file');
-    expect(input.accept).toBe('image/*');
+    expect(input.accept).toBe('image/*,video/*');
     expect(input.multiple).toBe(true);
     expect(input.style.display).toBe('none');
   });
