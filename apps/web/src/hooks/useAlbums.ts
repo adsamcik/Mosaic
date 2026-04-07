@@ -10,7 +10,7 @@ import type { Album as ApiAlbum } from '../lib/api-types';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getDbClient } from '../lib/db-client';
 import { ensureEpochKeysLoaded } from '../lib/epoch-key-service';
-import { getCurrentEpochKey, setEpochKey } from '../lib/epoch-key-store';
+import { clearAlbumKeys, getCurrentEpochKey, setEpochKey } from '../lib/epoch-key-store';
 import { createLogger } from '../lib/logger';
 import { syncEngine } from '../lib/sync-engine';
 
@@ -254,9 +254,16 @@ export function useAlbums() {
       // Remove from local state
       setAlbums((prev) => prev.filter((a) => a.id !== albumId));
 
-      // Clear cached epoch keys for this album
-      // Note: The epoch key store doesn't have a clear function yet,
-      // so we just let it expire naturally
+      // Wipe epoch keys from memory (calls sodium.memzero on key material)
+      clearAlbumKeys(albumId);
+
+      // Clear local database photos for this album
+      try {
+        const db = await getDbClient();
+        await db.clearAlbumPhotos(albumId);
+      } catch (dbErr) {
+        log.error(`Failed to clear local DB data for album ${albumId}:`, dbErr);
+      }
 
       log.info(`Album ${albumId} deleted successfully`);
       return true;
@@ -344,10 +351,11 @@ export function useAlbums() {
    * 5. Caches the epoch key locally for immediate use
    *
    * @param name - Plain text album name
+   * @param options - Optional expiration settings
    * @returns Created album or null if creation failed
    */
   const createAlbum = useCallback(
-    async (name: string): Promise<Album | null> => {
+    async (name: string, options?: { expiresAt?: string; expirationWarningDays?: number }): Promise<Album | null> => {
       setIsCreating(true);
       setCreateError(null);
 
@@ -396,6 +404,8 @@ export function useAlbums() {
             signPubkey: toBase64(epochKey.signPublicKey),
           },
           encryptedName, // Send encrypted name to server
+          ...(options?.expiresAt ? { expiresAt: options.expiresAt } : {}),
+          ...(options?.expirationWarningDays ? { expirationWarningDays: options.expirationWarningDays } : {}),
         });
 
         // Also store in localStorage as a fallback for older server versions

@@ -110,6 +110,15 @@
       "namePlaceholder": "My Photos",
       "creating": "Creating...",
       "submit": "Create Album",
+      "temporaryAlbum": "Temporary album",
+      "temporaryWarning": "Photos will be permanently deleted when this album expires",
+      "duration": "Duration",
+      "days_7": "7 days",
+      "days_30": "30 days",
+      "days_90": "90 days",
+      "custom": "Custom",
+      "expiresOn": "Expires on: {{date}}",
+      "expirationDate": "Expiration date",
       "error": {
         "nameRequired": "Album name is required",
         "nameTooLong": "Album name must be 100 characters or less"
@@ -152,6 +161,7 @@
       "warningDaysLabel": "Warning notification (days before)",
       "warningDaysHint": "Show a warning when the album is within this many days of expiring",
       "error": {
+        "dateRequired": "Please select an expiration date",
         "futureDateRequired": "Expiration date must be in the future",
         "saveFailed": "Failed to save expiration settings"
       }
@@ -164,6 +174,7 @@
       "shareLinks": "Share Links",
       "editAlbum": "Edit Album",
       "editDescription": "Edit Description",
+      "expirationSettings": "Expiration Settings",
       "deleteAlbum": "Delete Album"
     }
   },

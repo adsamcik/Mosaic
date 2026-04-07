@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dialog } from '../Shared/Dialog';
+
+type ExpirationMode = '7d' | '30d' | '90d' | 'custom';
+
+interface CreateAlbumExpirationOptions {
+  expiresAt?: string;
+  expirationWarningDays?: number;
+}
 
 interface CreateAlbumDialogProps {
   /** Whether the dialog is open */
@@ -8,17 +15,45 @@ interface CreateAlbumDialogProps {
   /** Called when dialog should close */
   onClose: () => void;
   /** Called to create an album */
-  onCreate: (name: string) => Promise<void>;
+  onCreate: (name: string, options?: CreateAlbumExpirationOptions) => Promise<void>;
   /** Whether creation is in progress */
   isCreating: boolean;
   /** Error message to display */
   error: string | null;
 }
 
+const PRESET_DAYS: Record<Exclude<ExpirationMode, 'custom'>, number> = {
+  '7d': 7,
+  '30d': 30,
+  '90d': 90,
+};
+
+function computeExpirationDate(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
+
+function getMinDate(): string {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.toISOString().slice(0, 10);
+}
+
+function formatDate(isoString: string, locale: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleDateString(locale, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
 /**
  * Create Album Dialog Component
  *
  * Modal dialog for creating a new album with encrypted name.
+ * Supports optional expiration for temporary albums.
  * Handles form state, validation, and accessibility.
  */
 export function CreateAlbumDialog({
@@ -28,15 +63,35 @@ export function CreateAlbumDialog({
   isCreating,
   error,
 }: CreateAlbumDialogProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [name, setName] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
+  const [showExpiration, setShowExpiration] = useState(false);
+  const [expirationMode, setExpirationMode] = useState<ExpirationMode>('7d');
+  const [customDate, setCustomDate] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Compute the expiration ISO string based on current mode
+  const expiresAt = useMemo(() => {
+    if (!showExpiration) return undefined;
+    if (expirationMode === 'custom') {
+      if (!customDate) return undefined;
+      // Custom date is YYYY-MM-DD; set to end of day in local timezone
+      const date = new Date(customDate + 'T23:59:59');
+      return date.toISOString();
+    }
+    return computeExpirationDate(PRESET_DAYS[expirationMode]);
+  }, [showExpiration, expirationMode, customDate]);
+
+  // Human-readable preview of expiration date
+  const expirationPreview = useMemo(() => {
+    if (!expiresAt) return null;
+    return formatDate(expiresAt, i18n.language);
+  }, [expiresAt, i18n.language]);
 
   // Focus input when dialog opens
   useEffect(() => {
     if (isOpen) {
-      // Small delay to ensure dialog is rendered
       const timer = setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
@@ -49,6 +104,9 @@ export function CreateAlbumDialog({
     if (!isOpen) {
       setName('');
       setLocalError(null);
+      setShowExpiration(false);
+      setExpirationMode('7d');
+      setCustomDate('');
     }
   }, [isOpen]);
 
@@ -80,9 +138,13 @@ export function CreateAlbumDialog({
 
     setLocalError(null);
 
+    const options: CreateAlbumExpirationOptions | undefined =
+      showExpiration && expiresAt
+        ? { expiresAt, expirationWarningDays: 7 }
+        : undefined;
+
     try {
-      await onCreate(trimmedName);
-      // onCreate should close the dialog on success
+      await onCreate(trimmedName, options);
     } catch {
       // Error is handled by parent via error prop
     }
@@ -150,6 +212,75 @@ export function CreateAlbumDialog({
             aria-describedby={displayError ? 'album-error' : undefined}
             data-testid="album-name-input"
           />
+        </div>
+
+        {/* Temporary album expiration section */}
+        <div className="expiration-section">
+          <button
+            type="button"
+            className="expiration-toggle"
+            onClick={() => setShowExpiration(!showExpiration)}
+            aria-expanded={showExpiration}
+            disabled={isCreating}
+            data-testid="expiration-toggle"
+          >
+            <span className={`expiration-toggle-icon ${showExpiration ? 'expanded' : ''}`}>
+              ▶
+            </span>
+            {t('album.create.temporaryAlbum')}
+          </button>
+
+          {showExpiration && (
+            <div className="expiration-content" data-testid="expiration-content">
+              <div className="expiration-warning" role="alert">
+                ⚠️ {t('album.create.temporaryWarning')}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">{t('album.create.duration')}</label>
+                <div className="expiration-presets" role="group" aria-label={t('album.create.duration')}>
+                  {(['7d', '30d', '90d', 'custom'] as ExpirationMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={`expiration-preset-btn ${expirationMode === mode ? 'active' : ''}`}
+                      onClick={() => setExpirationMode(mode)}
+                      disabled={isCreating}
+                      data-testid={`expiration-${mode}`}
+                    >
+                      {mode === 'custom'
+                        ? t('album.create.custom')
+                        : t(`album.create.days_${PRESET_DAYS[mode as Exclude<ExpirationMode, 'custom'>]}`)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {expirationMode === 'custom' && (
+                <div className="form-group">
+                  <label htmlFor="expiration-date" className="form-label">
+                    {t('album.create.expirationDate')}
+                  </label>
+                  <input
+                    id="expiration-date"
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    min={getMinDate()}
+                    disabled={isCreating}
+                    className="form-input"
+                    data-testid="expiration-date-input"
+                  />
+                </div>
+              )}
+
+              {expirationPreview && (
+                <div className="expiration-preview" data-testid="expiration-preview">
+                  {t('album.create.expiresOn', { date: expirationPreview })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {displayError && (

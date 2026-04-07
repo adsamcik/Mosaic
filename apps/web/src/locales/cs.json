@@ -111,6 +111,15 @@
       "namePlaceholder": "Moje fotky",
       "creating": "Vytváření...",
       "submit": "Vytvořit album",
+      "temporaryAlbum": "Dočasné album",
+      "temporaryWarning": "Fotky budou trvale smazány po vypršení tohoto alba",
+      "duration": "Trvání",
+      "days_7": "7 dní",
+      "days_30": "30 dní",
+      "days_90": "90 dní",
+      "custom": "Vlastní",
+      "expiresOn": "Vyprší: {{date}}",
+      "expirationDate": "Datum vypršení",
       "error": {
         "nameRequired": "Název alba je povinný",
         "nameTooLong": "Název alba může mít maximálně 100 znaků"
@@ -155,6 +164,7 @@
       "warningDaysLabel": "Upozornění (dny před vypršením)",
       "warningDaysHint": "Zobrazit varování, když album bude vypršovat za tento počet dní",
       "error": {
+        "dateRequired": "Vyberte prosím datum vypršení",
         "futureDateRequired": "Datum vypršení musí být v budoucnosti",
         "saveFailed": "Nepodařilo se uložit nastavení vypršení"
       }
@@ -167,6 +177,7 @@
       "shareLinks": "Sdílecí odkazy",
       "editAlbum": "Upravit album",
       "editDescription": "Upravit popis",
+      "expirationSettings": "Nastavení vypršení",
       "deleteAlbum": "Smazat album"
     }
   },

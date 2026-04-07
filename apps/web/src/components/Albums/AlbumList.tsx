@@ -15,7 +15,7 @@ interface AlbumListProps {
   /** Refresh albums */
   refetch: () => Promise<void>;
   /** Create a new album */
-  createAlbum: (name: string) => Promise<Album | null>;
+  createAlbum: (name: string, options?: { expiresAt?: string; expirationWarningDays?: number }) => Promise<Album | null>;
   /** Whether album creation is in progress */
   isCreating: boolean;
   /** Error from album creation */
@@ -39,8 +39,8 @@ export function AlbumList({
   const { t } = useTranslation();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
-  const handleCreate = async (name: string) => {
-    const album = await createAlbum(name);
+  const handleCreate = async (name: string, options?: { expiresAt?: string; expirationWarningDays?: number }) => {
+    const album = await createAlbum(name, options);
     if (album) {
       setShowCreateDialog(false);
     }

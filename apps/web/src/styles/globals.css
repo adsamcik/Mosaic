@@ -865,6 +865,120 @@ button {
   border-top: 1px solid var(--color-border);
 }
 
+/* Expiration section in Create Album dialog */
+.expiration-section {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-md);
+}
+
+.expiration-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: var(--spacing-xs) 0;
+  transition: color 0.2s;
+}
+
+.expiration-toggle:hover {
+  color: var(--color-text-primary);
+}
+
+.expiration-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.expiration-toggle-icon {
+  display: inline-block;
+  font-size: 0.7rem;
+  transition: transform 0.2s;
+}
+
+.expiration-toggle-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.expiration-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+  padding-left: var(--spacing-md);
+}
+
+.expiration-warning {
+  font-size: 0.85rem;
+  color: var(--color-warning, #e6a700);
+  background: rgba(230, 167, 0, 0.1);
+  border: 1px solid rgba(230, 167, 0, 0.25);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+[data-theme="light"] .expiration-warning {
+  background: rgba(230, 167, 0, 0.08);
+  border-color: rgba(230, 167, 0, 0.3);
+}
+
+.expiration-presets {
+  display: flex;
+  gap: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.expiration-preset-btn {
+  flex: 1;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.85rem;
+  border: none;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-secondary, #1a1a2e);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.expiration-preset-btn:last-child {
+  border-right: none;
+}
+
+.expiration-preset-btn:hover {
+  background: var(--color-bg-tertiary, #252540);
+  color: var(--color-text-primary);
+}
+
+.expiration-preset-btn.active {
+  background: var(--color-primary);
+  color: white;
+}
+
+.expiration-preset-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+[data-theme="light"] .expiration-preset-btn {
+  background: var(--color-bg-secondary, #f0f0f5);
+}
+
+[data-theme="light"] .expiration-preset-btn:hover {
+  background: var(--color-bg-tertiary, #e0e0ea);
+}
+
+.expiration-preview {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
 .upload-button {
   background: var(--color-primary);
   color: white;
