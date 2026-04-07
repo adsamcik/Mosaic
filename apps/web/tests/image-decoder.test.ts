@@ -188,6 +188,94 @@ describe('image-decoder', () => {
       expect(needsDecoding('image/png')).toBe(false);
     });
   });
+
+  describe('isVideoMimeType', () => {
+    it('returns true for video MIME types', async () => {
+      const { isVideoMimeType } = await import('../src/lib/image-decoder');
+
+      expect(isVideoMimeType('video/mp4')).toBe(true);
+      expect(isVideoMimeType('video/webm')).toBe(true);
+      expect(isVideoMimeType('video/quicktime')).toBe(true);
+      expect(isVideoMimeType('video/x-matroska')).toBe(true);
+    });
+
+    it('returns false for image MIME types', async () => {
+      const { isVideoMimeType } = await import('../src/lib/image-decoder');
+
+      expect(isVideoMimeType('image/jpeg')).toBe(false);
+      expect(isVideoMimeType('image/png')).toBe(false);
+      expect(isVideoMimeType('image/heic')).toBe(false);
+    });
+
+    it('returns false for non-media MIME types', async () => {
+      const { isVideoMimeType } = await import('../src/lib/image-decoder');
+
+      expect(isVideoMimeType('application/pdf')).toBe(false);
+      expect(isVideoMimeType('text/plain')).toBe(false);
+    });
+  });
+
+  describe('prepareForBitmap – video passthrough', () => {
+    it('returns original file for video MIME types (no decoding)', async () => {
+      const { prepareForBitmap } = await import('../src/lib/image-decoder');
+
+      const file = new File(['video-data'], 'clip.mp4', { type: 'video/mp4' });
+      const result = await prepareForBitmap(file, 'video/mp4');
+
+      expect(result).toBe(file);
+      expect(heicToMock).not.toHaveBeenCalled();
+    });
+
+    it('returns original file for WebM videos', async () => {
+      const { prepareForBitmap } = await import('../src/lib/image-decoder');
+
+      const file = new File(['webm-data'], 'clip.webm', { type: 'video/webm' });
+      const result = await prepareForBitmap(file, 'video/webm');
+
+      expect(result).toBe(file);
+    });
+
+    it('returns original file for QuickTime videos', async () => {
+      const { prepareForBitmap } = await import('../src/lib/image-decoder');
+
+      const file = new File(['mov-data'], 'clip.mov', { type: 'video/quicktime' });
+      const result = await prepareForBitmap(file, 'video/quicktime');
+
+      expect(result).toBe(file);
+    });
+  });
+
+  describe('createDisplayableUrl – video passthrough', () => {
+    it('creates blob URL for video/mp4 without conversion', async () => {
+      const { createDisplayableUrl } = await import('../src/lib/image-decoder');
+
+      const data = new Uint8Array([0, 1, 2, 3]);
+      const result = await createDisplayableUrl(data, 'video/mp4');
+
+      expect(result.mimeType).toBe('video/mp4');
+      expect(result.url).toMatch(/^blob:/);
+    });
+
+    it('creates blob URL for video/webm without conversion', async () => {
+      const { createDisplayableUrl } = await import('../src/lib/image-decoder');
+
+      const data = new Uint8Array([0, 1, 2, 3]);
+      const result = await createDisplayableUrl(data, 'video/webm');
+
+      expect(result.mimeType).toBe('video/webm');
+      expect(result.url).toMatch(/^blob:/);
+    });
+
+    it('creates blob URL for video/quicktime without conversion', async () => {
+      const { createDisplayableUrl } = await import('../src/lib/image-decoder');
+
+      const data = new Uint8Array([0, 1, 2, 3]);
+      const result = await createDisplayableUrl(data, 'video/quicktime');
+
+      expect(result.mimeType).toBe('video/quicktime');
+      expect(result.url).toMatch(/^blob:/);
+    });
+  });
 });
 
 describe('mime-type-detection needsDecoding', () => {
