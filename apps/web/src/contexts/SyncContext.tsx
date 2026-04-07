@@ -8,8 +8,10 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { getApi } from '../lib/api';
+import { ApiError, getApi } from '../lib/api';
+import { getDbClient } from '../lib/db-client';
 import { getOrFetchEpochKey } from '../lib/epoch-key-service';
+import { clearAlbumKeys } from '../lib/epoch-key-store';
 import { createLogger } from '../lib/logger';
 import {
   getSettings,
@@ -110,7 +112,21 @@ export function SyncProvider({ children }: SyncProviderProps) {
       setLastSyncTime((prev) => new Map([...prev, [albumId, new Date()]]));
       log.info(`Auto-sync complete for album ${albumId}`);
     } catch (err) {
-      log.error(`Auto-sync failed for album ${albumId}:`, err);
+      if (err instanceof ApiError && err.status === 404) {
+        log.warn(`Album ${albumId} no longer exists (404), cleaning up`);
+        registeredAlbums.current.delete(albumId);
+
+        // Clear local data for the deleted album
+        try {
+          clearAlbumKeys(albumId);
+          const db = await getDbClient();
+          await db.clearAlbumPhotos(albumId);
+        } catch (cleanupErr) {
+          log.error(`Failed to clean up local data for album ${albumId}:`, cleanupErr);
+        }
+      } else {
+        log.error(`Auto-sync failed for album ${albumId}:`, err);
+      }
     } finally {
       // Release lock synchronously
       syncLockRef.current.delete(albumId);

@@ -210,7 +210,7 @@ export function createApiClient(): MosaicApi {
       request: UpdateExpirationRequest,
     ): Promise<Album> {
       return apiRequest(`/albums/${albumId}/expiration`, {
-        method: 'PUT',
+        method: 'PATCH',
         body: request,
       });
     },
