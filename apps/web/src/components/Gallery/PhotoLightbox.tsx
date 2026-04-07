@@ -20,6 +20,7 @@ import {
   releasePhoto,
   type PhotoLoadResult,
 } from '../../lib/photo-service';
+import { isVideoMimeType } from '../../lib/image-decoder';
 import type { PhotoMeta } from '../../workers/types';
 
 /** Props for the PhotoLightbox component */
@@ -101,6 +102,9 @@ export function PhotoLightbox({
   const [showHints, setShowHints] = useState(true);
   const backdropRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const isVideo = photo.isVideo === true || isVideoMimeType(photo.mimeType);
 
   // Auto-hide keyboard hints after 3 seconds
   useEffect(() => {
@@ -321,20 +325,46 @@ export function PhotoLightbox({
     }
   }, [onDelete]);
 
+  // Pause video when navigating away or closing
+  const pauseVideo = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
+  }, []);
+
+  // Pause video on close or navigation
+  useEffect(() => {
+    return () => {
+      pauseVideo();
+    };
+  }, [photo.id, pauseVideo]);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Let the video element handle its own keyboard events (space, etc.)
+      if (isVideo && event.target instanceof HTMLVideoElement) {
+        if (event.key === 'Escape') {
+          pauseVideo();
+          onClose();
+        }
+        return;
+      }
+
       switch (event.key) {
         case 'Escape':
+          pauseVideo();
           onClose();
           break;
         case 'ArrowLeft':
           if (hasPrevious && onPrevious) {
+            pauseVideo();
             onPrevious();
           }
           break;
         case 'ArrowRight':
           if (hasNext && onNext) {
+            pauseVideo();
             onNext();
           }
           break;
@@ -349,12 +379,25 @@ export function PhotoLightbox({
         case 'I':
           toggleInfo();
           break;
+        case ' ':
+          // Prevent spacebar from scrolling when video is playing
+          if (isVideo) {
+            event.preventDefault();
+            if (videoRef.current) {
+              if (videoRef.current.paused) {
+                void videoRef.current.play();
+              } else {
+                videoRef.current.pause();
+              }
+            }
+          }
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, hasPrevious, onPrevious, hasNext, onNext, onDelete, toggleInfo]);
+  }, [onClose, hasPrevious, onPrevious, hasNext, onNext, onDelete, toggleInfo, isVideo, pauseVideo]);
 
   // Render loading state - shows thumbnail as background if available
   const renderLoading = () => {
@@ -429,15 +472,39 @@ export function PhotoLightbox({
     </div>
   );
 
-  // Render loaded photo
-  const renderPhoto = () => (
-    <img
-      src={(loadState as { result: PhotoLoadResult }).result.blobUrl}
-      alt={photo.filename}
-      className="lightbox-image"
-      data-testid="lightbox-image"
-    />
-  );
+  // Render loaded photo or video
+  const renderPhoto = () => {
+    const blobUrl = (loadState as { result: PhotoLoadResult }).result.blobUrl;
+
+    if (isVideo) {
+      return (
+        <video
+          ref={videoRef}
+          controls
+          autoPlay
+          playsInline
+          className="lightbox-video"
+          src={blobUrl}
+          data-testid="lightbox-video"
+          onError={() => {
+            setLoadState({
+              status: 'error',
+              error: new Error('Video playback failed'),
+            });
+          }}
+        />
+      );
+    }
+
+    return (
+      <img
+        src={blobUrl}
+        alt={photo.filename}
+        className="lightbox-image"
+        data-testid="lightbox-image"
+      />
+    );
+  };
 
   // Render photo metadata panel
   const renderMetadata = () => (

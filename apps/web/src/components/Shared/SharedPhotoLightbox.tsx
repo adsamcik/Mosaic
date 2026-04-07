@@ -8,9 +8,10 @@
  * on browsers that don't natively support them.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { createLogger } from '../../lib/logger';
+import { isVideoMimeType } from '../../lib/image-decoder';
 import type { PhotoMeta } from '../../workers/types';
 import { downloadShardViaShareLink } from '../../lib/shard-service';
 import { getCryptoClient } from '../../lib/crypto-client';
@@ -69,6 +70,10 @@ export function SharedPhotoLightbox({
 }: SharedPhotoLightboxProps) {
   const [state, setState] = useState<PhotoState>({ status: 'loading' });
   const [loadProgress, setLoadProgress] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const isVideo = photo.isVideo === true || isVideoMimeType(photo.mimeType);
+  const videoNeedsOriginal = isVideo && accessTier < 3;
 
   // Load photo when it changes
   // Strategy: Show thumbnail immediately, then load full-res shards in background
@@ -436,25 +441,66 @@ export function SharedPhotoLightbox({
     getTierKey,
   ]);
 
+  const pauseVideo = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
+  }, []);
+
+  // Pause video on navigation/close cleanup
+  useEffect(() => {
+    return () => {
+      pauseVideo();
+    };
+  }, [photo.id, pauseVideo]);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Let the video element handle its own keyboard events
+      if (isVideo && e.target instanceof HTMLVideoElement) {
+        if (e.key === 'Escape') {
+          pauseVideo();
+          onClose();
+        }
+        return;
+      }
+
       switch (e.key) {
         case 'Escape':
+          pauseVideo();
           onClose();
           break;
         case 'ArrowRight':
-          if (hasNext && onNext) onNext();
+          if (hasNext && onNext) {
+            pauseVideo();
+            onNext();
+          }
           break;
         case 'ArrowLeft':
-          if (hasPrevious && onPrevious) onPrevious();
+          if (hasPrevious && onPrevious) {
+            pauseVideo();
+            onPrevious();
+          }
+          break;
+        case ' ':
+          if (isVideo) {
+            e.preventDefault();
+            if (videoRef.current) {
+              if (videoRef.current.paused) {
+                void videoRef.current.play();
+              } else {
+                videoRef.current.pause();
+              }
+            }
+          }
           break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, onNext, onPrevious, hasNext, hasPrevious]);
+  }, [onClose, onNext, onPrevious, hasNext, hasPrevious, isVideo, pauseVideo]);
 
   // Prevent body scroll when lightbox is open
   useEffect(() => {
@@ -527,12 +573,41 @@ export function SharedPhotoLightbox({
 
           {state.status === 'loaded' && (
             <>
-              <img
-                src={state.blobUrl}
-                alt={photo.filename}
-                className="lightbox-image"
-                data-testid="lightbox-image"
-              />
+              {isVideo && videoNeedsOriginal ? (
+                <div className="lightbox-error" data-testid="lightbox-video-restricted">
+                  {/* Show thumbnail as preview but block playback */}
+                  <img
+                    src={state.blobUrl}
+                    alt={photo.filename}
+                    className="lightbox-image"
+                    style={{ opacity: 0.5 }}
+                  />
+                  <div className="lightbox-video-restricted-overlay">
+                    <span className="error-icon">🎬</span>
+                    <p>Video playback requires full access</p>
+                  </div>
+                </div>
+              ) : isVideo ? (
+                <video
+                  ref={videoRef}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="lightbox-video"
+                  src={state.blobUrl}
+                  data-testid="lightbox-video"
+                  onError={() => {
+                    setState({ status: 'error', message: 'Video playback failed' });
+                  }}
+                />
+              ) : (
+                <img
+                  src={state.blobUrl}
+                  alt={photo.filename}
+                  className="lightbox-image"
+                  data-testid="lightbox-image"
+                />
+              )}
               {/* Show progress overlay while loading full-res */}
               {!state.isFullRes && loadProgress > 0 && loadProgress < 100 && (
                 <div
