@@ -33,6 +33,21 @@ public static class TusEventHandlers
             return;
         }
 
+        // Check if the target album has expired
+        if (context.Metadata.ContainsKey("albumId"))
+        {
+            var albumIdStr = context.Metadata["albumId"].GetString(Encoding.UTF8);
+            if (Guid.TryParse(albumIdStr, out var albumId))
+            {
+                var album = await db.Albums.AsNoTracking().FirstOrDefaultAsync(a => a.Id == albumId);
+                if (album != null && album.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+                {
+                    context.FailRequest("Album has expired");
+                    return;
+                }
+            }
+        }
+
         // Atomic quota reservation: prevents TOCTOU race condition with parallel uploads.
         // Uses conditional UPDATE so concurrent requests cannot all pass the check.
         var uploadLength = context.UploadLength;

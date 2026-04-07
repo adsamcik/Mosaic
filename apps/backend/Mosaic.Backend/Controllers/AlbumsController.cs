@@ -434,6 +434,12 @@ public class AlbumsController : ControllerBase
             return NotFound();
         }
 
+        // Reject sync for expired albums
+        if (album.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return StatusCode(StatusCodes.Status410Gone);
+        }
+
         var manifests = await _db.Manifests
             .AsNoTracking()
             .Where(m => m.AlbumId == albumId && m.VersionCreated > since)

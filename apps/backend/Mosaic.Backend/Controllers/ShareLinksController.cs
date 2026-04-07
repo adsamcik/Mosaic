@@ -215,6 +215,12 @@ public class ShareLinksController : ControllerBase
             return Forbid();
         }
 
+        // Reject creating share links for expired albums
+        if (album.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return Gone(new { error = "Album has expired" });
+        }
+
         // Validate request
         if (request.AccessTier < 1 || request.AccessTier > 3)
         {
@@ -701,6 +707,12 @@ public class ShareLinksController : ControllerBase
         if (shareLink.IsRevoked)
         {
             return Gone(new { error = "This link has been revoked" });
+        }
+
+        // Check if album has expired
+        if (shareLink.Album.ExpiresAt.HasValue && shareLink.Album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return Gone(new { error = "Album has expired" });
         }
 
         // Check if expired
