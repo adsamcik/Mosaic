@@ -1,16 +1,18 @@
 /**
  * MIME Type Detection Utility
  *
- * Detects image MIME types from file magic bytes, which is more reliable
+ * Detects image and video MIME types from file magic bytes, which is more reliable
  * than relying on browser-provided file.type (especially for HEIC/HEIF files).
  *
- * Supports: JPEG, PNG, GIF, WebP, AVIF, HEIC/HEIF, BMP, TIFF, SVG
+ * Supports:
+ *   Images: JPEG, PNG, GIF, WebP, AVIF, HEIC/HEIF, BMP, TIFF, SVG
+ *   Videos: MP4, WebM, QuickTime (MOV), Matroska (MKV)
  */
 
 /**
  * Supported image MIME types that can be detected
  */
-export type SupportedMimeType =
+export type SupportedImageMimeType =
   | 'image/jpeg'
   | 'image/png'
   | 'image/gif'
@@ -21,6 +23,54 @@ export type SupportedMimeType =
   | 'image/bmp'
   | 'image/tiff'
   | 'image/svg+xml';
+
+/**
+ * Supported video MIME types that can be detected
+ */
+export type SupportedVideoMimeType =
+  | 'video/mp4'
+  | 'video/webm'
+  | 'video/quicktime'
+  | 'video/x-matroska';
+
+/**
+ * All supported MIME types (images + videos)
+ */
+export type SupportedMimeType = SupportedImageMimeType | SupportedVideoMimeType;
+
+/**
+ * Supported video MIME types
+ */
+export const SUPPORTED_VIDEO_TYPES: SupportedVideoMimeType[] = [
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'video/x-matroska',
+];
+
+/**
+ * Supported image MIME types
+ */
+export const SUPPORTED_IMAGE_TYPES: SupportedImageMimeType[] = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/heic',
+  'image/heif',
+  'image/bmp',
+  'image/tiff',
+  'image/svg+xml',
+];
+
+/**
+ * All supported media types (images + videos)
+ */
+export const SUPPORTED_MEDIA_TYPES: SupportedMimeType[] = [
+  ...SUPPORTED_IMAGE_TYPES,
+  ...SUPPORTED_VIDEO_TYPES,
+];
 
 /**
  * Magic byte signatures for image format detection
@@ -69,8 +119,8 @@ const SIMPLE_SIGNATURES: MagicSignature[] = [
 export async function detectMimeType(
   file: File | Blob,
 ): Promise<SupportedMimeType | null> {
-  // Read first 32 bytes for detection
-  const slice = file.slice(0, 32);
+  // Read first 64 bytes for detection (EBML DocType needs more than 32)
+  const slice = file.slice(0, 64);
   const buffer = await slice.arrayBuffer();
   const bytes = new Uint8Array(buffer);
 
@@ -88,10 +138,16 @@ export async function detectMimeType(
     }
   }
 
-  // Check for ISOBMFF-based formats (HEIC, HEIF, AVIF)
+  // Check for ISOBMFF-based formats (HEIC, HEIF, AVIF, MP4, MOV)
   // These have "ftyp" at offset 4
   if (matchBytes(bytes, [0x66, 0x74, 0x79, 0x70], 4)) {
     return detectIsobmffFormat(bytes);
+  }
+
+  // Check for EBML-based formats (WebM, MKV)
+  // EBML header: 1A 45 DF A3
+  if (matchBytes(bytes, [0x1a, 0x45, 0xdf, 0xa3], 0)) {
+    return detectEbmlFormat(bytes);
   }
 
   // Check SVG (XML-based, look for <?xml or <svg)
@@ -133,6 +189,23 @@ function detectIsobmffFormat(bytes: Uint8Array): SupportedMimeType | null {
   // AVIF brands - check before mif1 fallback
   if (brand === 'avif' || brand === 'avis') {
     return 'image/avif';
+  }
+
+  // QuickTime brand
+  if (brand === 'qt  ') {
+    return 'video/quicktime';
+  }
+
+  // MP4 video brands
+  if (
+    brand === 'isom' ||
+    brand === 'iso2' ||
+    brand === 'mp41' ||
+    brand === 'mp42' ||
+    brand === 'avc1' ||
+    brand === 'dash'
+  ) {
+    return 'video/mp4';
   }
 
   // mif1/msf1/miaf are generic ISOBMFF brands - need to check compatible brands
@@ -184,6 +257,29 @@ function getCompatibleBrands(bytes: Uint8Array): string[] {
   }
 
   return brands;
+}
+
+/**
+ * Detect EBML-based format (WebM or Matroska) from header
+ *
+ * EBML files start with 0x1A45DFA3. The DocType element inside the header
+ * identifies the specific format: "webm" or "matroska".
+ */
+function detectEbmlFormat(bytes: Uint8Array): SupportedMimeType {
+  // Search for DocType string within the EBML header bytes
+  // DocType is encoded as an EBML string element; look for the ASCII text
+  const str = new TextDecoder('ascii').decode(bytes);
+
+  if (str.includes('matroska')) {
+    return 'video/x-matroska';
+  }
+
+  if (str.includes('webm')) {
+    return 'video/webm';
+  }
+
+  // Default to WebM if DocType can't be determined (more common)
+  return 'video/webm';
 }
 
 /**
@@ -260,6 +356,11 @@ export function getMimeTypeFromExtension(filename: string): string {
     tiff: 'image/tiff',
     tif: 'image/tiff',
     svg: 'image/svg+xml',
+    mp4: 'video/mp4',
+    m4v: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    mkv: 'video/x-matroska',
   };
 
   return extensionMap[ext] || 'application/octet-stream';
@@ -278,6 +379,31 @@ export function getMimeTypeFromExtension(filename: string): string {
 export function needsDecoding(mimeType: string): boolean {
   const lowerMime = mimeType.toLowerCase();
   return lowerMime === 'image/heic' || lowerMime === 'image/heif';
+}
+
+/**
+ * Check if a MIME type represents a video format
+ */
+export function isVideoType(mimeType: string): boolean {
+  return mimeType.toLowerCase().startsWith('video/');
+}
+
+/**
+ * Check if a MIME type is a supported video type
+ */
+export function isSupportedVideoType(mimeType: string): boolean {
+  return (SUPPORTED_VIDEO_TYPES as readonly string[]).includes(
+    mimeType.toLowerCase(),
+  );
+}
+
+/**
+ * Check if a MIME type is a supported image type
+ */
+export function isSupportedImageType(mimeType: string): boolean {
+  return (SUPPORTED_IMAGE_TYPES as readonly string[]).includes(
+    mimeType.toLowerCase(),
+  );
 }
 
 /**
@@ -302,6 +428,10 @@ export function getFormatName(mimeType: string): string {
     'image/bmp': 'BMP',
     'image/tiff': 'TIFF',
     'image/svg+xml': 'SVG',
+    'video/mp4': 'MP4',
+    'video/webm': 'WebM',
+    'video/quicktime': 'MOV',
+    'video/x-matroska': 'MKV',
   };
 
   return formatNames[mimeType.toLowerCase()] || mimeType;
