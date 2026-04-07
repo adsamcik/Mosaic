@@ -2204,4 +2204,73 @@ public class ShareLinksControllerTests
     }
 
     #endregion
+
+    #region Album Expiration — Share Links
+
+    [Fact]
+    public async Task Create_Returns410_WhenAlbumExpired()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        album.ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1);
+        await db.SaveChangesAsync();
+
+        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = CreateValidRequest();
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task Access_Returns410_WhenAlbumExpired()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album);
+
+        // Expire the album after link creation
+        album.ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1);
+        await db.SaveChangesAsync();
+
+        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Act
+        var result = await controller.Access(linkIdBase64);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    #endregion
 }

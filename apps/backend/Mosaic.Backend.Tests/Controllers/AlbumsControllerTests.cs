@@ -336,6 +336,35 @@ public class AlbumsControllerTests
     }
 
     [Fact]
+    public async Task Sync_Returns410ForExpiredAlbum()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+        album.ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1);
+        await db.SaveChangesAsync();
+
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.Sync(album.Id, 0);
+
+        // Assert
+        var statusResult = Assert.IsType<StatusCodeResult>(result);
+        Assert.Equal(410, statusResult.StatusCode);
+    }
+
+    [Fact]
     public async Task Delete_DeletesAlbum_WhenOwner()
     {
         // Arrange

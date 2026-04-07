@@ -143,7 +143,7 @@ public class GarbageCollectionService : BackgroundService
         return successfulShards.Count;
     }
 
-    private async Task<int> CleanExpiredAlbums()
+    internal async Task<int> CleanExpiredAlbums()
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
@@ -208,6 +208,18 @@ public class GarbageCollectionService : BackgroundService
                         {
                             _logger.StorageError(ex, $"delete shard {storageKey} for expired album {album.Id}");
                         }
+                    }
+
+                    // Reclaim owner's quota before deleting
+                    var albumLimits = await db.AlbumLimits.FindAsync(album.Id);
+                    var totalSizeBytes = albumLimits?.CurrentSizeBytes ?? 0;
+
+                    var quota = await db.UserQuotas.FindAsync(album.OwnerId);
+                    if (quota != null)
+                    {
+                        quota.UsedStorageBytes = Math.Max(0, quota.UsedStorageBytes - totalSizeBytes);
+                        quota.CurrentAlbumCount = Math.Max(0, quota.CurrentAlbumCount - 1);
+                        quota.UpdatedAt = DateTime.UtcNow;
                     }
 
                     // Remove the album from database (cascade will handle related entities)
