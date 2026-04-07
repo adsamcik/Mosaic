@@ -162,17 +162,41 @@ npx playwright test auth-modes.spec.ts --project=chromium
 
 ---
 
-### Album Expiration
+### Temporary Albums (TTL Expiration)
 
-**Purpose:** Time-limited album access with automatic cleanup.
-
-**Documentation:** [FEATURE_EXPIRATION.md](./FEATURE_EXPIRATION.md)
+**Purpose:** Albums can be configured to automatically expire and be permanently deleted after a set period, useful for temporary sharing of event photos.
 
 **Implementation:**
-| Layer    | Location                                                                              |
-| -------- | ------------------------------------------------------------------------------------- |
-| Backend  | Album entity `ExpiresAt` field                                                        |
-| Frontend | [components/Albums/AlbumExpirationSettings.tsx](../apps/web/src/components/Albums/) |
+| Layer            | Location                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Backend Entity   | [Album.cs](../apps/backend/Mosaic.Backend/Data/Entities/Album.cs) — `ExpiresAt`, `ExpirationWarningDays`          |
+| Backend GC       | [GarbageCollectionService.cs](../apps/backend/Mosaic.Backend/Services/GarbageCollectionService.cs) — `CleanExpiredAlbums()` |
+| Backend API      | `PATCH /api/albums/{albumId}/expiration`                                                                          |
+| Frontend Settings| [AlbumExpirationSettings.tsx](../apps/web/src/components/Albums/AlbumExpirationSettings.tsx)                     |
+| Frontend Create  | [CreateAlbumDialog.tsx](../apps/web/src/components/Albums/CreateAlbumDialog.tsx)                                 |
+| Frontend Display | [AlbumCard.tsx](../apps/web/src/components/Albums/AlbumCard.tsx) — expiration badges                             |
+
+**Features:**
+- Set expiration at album creation (preset durations: 7, 30, 90 days, or custom date)
+- Modify/remove expiration on existing albums via settings
+- Visual badges on album cards (info/warning/expired states)
+- Warning banners when approaching expiration
+- Automatic server-side cleanup via GarbageCollectionService (hourly, batched)
+- Cascade deletion: all photos (shards), manifests, epoch keys, members cleaned up
+- Storage quota reclaimed automatically on expiration
+- Share links blocked for expired albums
+- Upload prevention for expired albums
+- Client-side cleanup (epoch keys wiped, local DB cleared) when album disappears
+
+**Limitations (v1):**
+- No proactive member notifications — members see warnings only when opening the album
+- GC runs hourly — up to ~60 minute delay before actual deletion
+- Batch processing: max 10 expired albums per GC cycle
+- No minimum TTL enforcement
+
+**Tests:**
+- Backend: `apps/backend/Mosaic.Backend.Tests/` (GC service tests, expiration endpoint tests)
+- Frontend: `apps/web/tests/` (expiration settings, create dialog, badge formatting)
 
 ---
 
@@ -703,6 +727,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-04-07 | Temporary Albums (TTL)      | Added    | Auto-expiring albums with preset durations, visual badges, server-side GC cleanup |
 | 2026-04-07 | Album Download (ZIP Export) | Added    | Download all/selected photos as ZIP with streaming, progress tracking, and cancellation |
 | 2026-01-30 | Album Content System Phase 2| Added    | Gallery Story view integration, SlashCommandMenu, PhotoPickerDialog, PhotoGridEditor, QuoteBlock, MapBlock, delete with undo toast |
 | 2026-01-29 | Album Content System        | Added    | Block-based content editor with TipTap, dnd-kit, Zod schemas |
