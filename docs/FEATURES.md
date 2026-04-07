@@ -12,11 +12,12 @@
 1. [Authentication & Identity](#authentication--identity)
 2. [Albums & Organization](#albums--organization)
 3. [Photo Management](#photo-management)
-4. [Gallery & Viewing](#gallery--viewing)
-5. [Sharing & Collaboration](#sharing--collaboration)
-6. [Encryption & Security](#encryption--security)
-7. [Sync & Offline](#sync--offline)
-8. [UI/UX Features](#uiux-features)
+4. [Video Support](#video-support)
+5. [Gallery & Viewing](#gallery--viewing)
+6. [Sharing & Collaboration](#sharing--collaboration)
+7. [Encryption & Security](#encryption--security)
+8. [Sync & Offline](#sync--offline)
+9. [UI/UX Features](#uiux-features)
 
 ---
 
@@ -279,6 +280,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 - Progress tracking per file
 - EXIF extraction (date, GPS, camera info)
 - Thumbnail generation (256px, 512px)
+- Video file support (MP4, WebM, MOV, MKV) with automatic frame extraction
 
 ---
 
@@ -312,6 +314,54 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Backend       | [Controllers/ManifestsController.cs](../apps/backend/Mosaic.Backend/Controllers/ManifestsController.cs) |
 | Frontend Hook | [hooks/usePhotoDelete.ts](../apps/web/src/hooks/usePhotoDelete.ts)           |
 | Frontend Hook | [hooks/usePhotoActions.ts](../apps/web/src/hooks/usePhotoActions.ts)         |
+
+---
+
+## Video Support
+
+### Video Support
+
+**Purpose:** Upload, store, and play back video files with the same zero-knowledge encryption as photos.
+
+**Implementation:**
+| Layer            | Location                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------- |
+| MIME Detection   | [lib/mime-type-detection.ts](../apps/web/src/lib/mime-type-detection.ts)                   |
+| Frame Extraction | [lib/video-frame-extractor.ts](../apps/web/src/lib/video-frame-extractor.ts)              |
+| Upload Pipeline  | [lib/upload-queue.ts](../apps/web/src/lib/upload-queue.ts)                                |
+| Manifest         | [lib/manifest-service.ts](../apps/web/src/lib/manifest-service.ts)                        |
+| Gallery Overlay  | [components/Gallery/PhotoThumbnail.tsx](../apps/web/src/components/Gallery/PhotoThumbnail.tsx), [JustifiedPhotoThumbnail.tsx](../apps/web/src/components/Gallery/JustifiedPhotoThumbnail.tsx) |
+| Lightbox Player  | [components/Gallery/PhotoLightbox.tsx](../apps/web/src/components/Gallery/PhotoLightbox.tsx) |
+| Shared Viewer    | [components/Shared/SharedPhotoLightbox.tsx](../apps/web/src/components/Shared/SharedPhotoLightbox.tsx) |
+| Schema           | [workers/types.ts](../apps/web/src/workers/types.ts), [workers/db.worker.ts](../apps/web/src/workers/db.worker.ts) |
+
+**Supported Formats:**
+- MP4 (H.264) — Universal browser playback
+- WebM (VP8/VP9) — Chrome/Firefox
+- MOV — Safari primarily
+- MKV — Limited browser playback
+
+**Features:**
+- Automatic video detection via magic byte analysis (ISOBMFF, EBML headers)
+- Client-side thumbnail extraction using HTMLVideoElement frame capture
+- ThumbHash generation for instant blur placeholders
+- Play icon overlay + duration badge on gallery thumbnails
+- Native browser video player with controls in lightbox
+- Encrypted storage using same tier system (Tier 1: thumbnail, Tier 3: original chunks)
+- Chunked upload for large files (6MB chunks via Tus protocol)
+- Zero-knowledge: server never sees video content or metadata
+- Share link support with access tier gating (requires ORIGINAL access for playback)
+
+**Limitations (Phase 1):**
+- No video preview tier (only thumbnail + original)
+- Full video downloaded to memory for playback (no streaming decryption)
+- No server-side transcoding (all processing client-side)
+- No video-specific metadata extraction (GPS, creation date from MP4 atoms) — deferred to Phase 2
+
+**Tests:**
+- Unit: `apps/web/tests/video-frame-extractor.test.ts`, `apps/web/tests/manifest-service.test.ts`
+- Format: `apps/web/src/lib/__tests__/format-duration.test.ts`
+- MIME: `apps/web/tests/mime-type-detection.test.ts`
 
 ---
 
@@ -727,6 +777,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-04-07 | Video Support             | Added    | Upload, view, and share encrypted videos (MP4, WebM, MOV, MKV) with automatic thumbnail extraction |
 | 2026-04-07 | Temporary Albums (TTL)      | Added    | Auto-expiring albums with preset durations, visual badges, server-side GC cleanup |
 | 2026-04-07 | Album Download (ZIP Export) | Added    | Download all/selected photos as ZIP with streaming, progress tracking, and cancellation |
 | 2026-01-30 | Album Content System Phase 2| Added    | Gallery Story view integration, SlashCommandMenu, PhotoPickerDialog, PhotoGridEditor, QuoteBlock, MapBlock, delete with undo toast |

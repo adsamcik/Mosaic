@@ -202,6 +202,13 @@ export async function createDisplayableUrl(
   data: Uint8Array,
   mimeType: string,
 ): Promise<{ url: string; mimeType: string }> {
+  // Videos don't need format conversion — pass through directly
+  if (isVideoMimeType(mimeType)) {
+    const blob = new Blob([data], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    return { url, mimeType };
+  }
+
   // Check if we need AVIF fallback
   if (mimeType === 'image/avif') {
     const canDecode = await canDecodeAvif();
@@ -224,6 +231,13 @@ export async function createDisplayableUrl(
   const blob = new Blob([buffer], { type: mimeType });
   const url = URL.createObjectURL(blob);
   return { url, mimeType };
+}
+
+/**
+ * Check if a MIME type is a video type
+ */
+export function isVideoMimeType(mimeType: string): boolean {
+  return mimeType.startsWith('video/');
 }
 
 /**

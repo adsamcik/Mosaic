@@ -36,6 +36,14 @@ export interface PhotoMeta {
   /** @deprecated Legacy BlurHash string - use thumbhash for new uploads */
   blurhash?: string;
 
+  // Video-specific metadata (Phase 1)
+  /** True for video files */
+  isVideo?: boolean;
+  /** Duration in seconds (e.g., 62.5) */
+  duration?: number;
+  /** Video codec (e.g., "h264", "vp9", "av1") — stored in manifest only, not local DB */
+  videoCodec?: string;
+
   // Tier-specific shard IDs (use these for new uploads)
   /** Shard ID for 300px thumbnail (tier 1) */
   thumbnailShardId?: string;

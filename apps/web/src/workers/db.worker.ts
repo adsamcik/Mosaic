@@ -351,6 +351,22 @@ class DbWorker implements DbWorkerApi {
       }
     }
 
+    // Version 5 -> 6: Add video support columns
+    if (currentVersion < 6) {
+      log.info('Running migration: v5 -> v6 (video support)');
+
+      try {
+        this.db.run(`ALTER TABLE photos ADD COLUMN is_video INTEGER DEFAULT 0;`);
+        this.db.run(`ALTER TABLE photos ADD COLUMN duration REAL;`);
+
+        this.setSchemaVersion(6);
+        log.info('Video support migration complete');
+      } catch (error) {
+        log.error('Failed to add video support columns', error);
+        throw error;
+      }
+    }
+
     // Ensure FTS table exists (safety check for corrupted state)
     if (!this.ftsTableExists()) {
       log.warn('FTS table missing despite schema version, recreating...');
@@ -392,8 +408,8 @@ class DbWorker implements DbWorkerApi {
 
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO photos 
-      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description, thumbnail, thumb_width, thumb_height, blurhash, thumbnail_shard_id, thumbnail_shard_hash, preview_shard_id, preview_shard_hash, original_shard_ids, original_shard_hashes, thumbhash)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description, thumbnail, thumb_width, thumb_height, blurhash, thumbnail_shard_id, thumbnail_shard_hash, preview_shard_id, preview_shard_hash, original_shard_ids, original_shard_hashes, thumbhash, is_video, duration)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const m of manifests) {
@@ -444,6 +460,9 @@ class DbWorker implements DbWorkerApi {
           JSON.stringify(m.meta.originalShardHashes ?? []),
           // ThumbHash placeholder (v5)
           m.meta.thumbhash ?? null,
+          // Video support (v6)
+          m.meta.isVideo ? 1 : 0,
+          m.meta.duration ?? null,
         ]);
       }
     }
@@ -593,6 +612,9 @@ class DbWorker implements DbWorkerApi {
           (obj['originalShardHashes'] as string) || '[]',
         ) as string[];
       }
+      // Convert is_video INTEGER to boolean (v6)
+      obj['isVideo'] = !!(obj['isVideo']);
+      // duration is already REAL → number (or null), no conversion needed
       return obj as unknown as PhotoMeta;
     });
   }
