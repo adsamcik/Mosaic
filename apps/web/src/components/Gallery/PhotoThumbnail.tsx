@@ -9,6 +9,7 @@ import {
   type PhotoLoadResult,
 } from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
+import { formatDuration } from '../../lib/video-frame-extractor';
 
 interface PhotoThumbnailProps {
   photo: PhotoMeta;
@@ -471,6 +472,23 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
       )}
 
       <div className="photo-content">{renderContent()}</div>
+
+      {/* Video indicators */}
+      {photo.isVideo && (
+        <>
+          <div className="video-play-overlay" data-testid="video-play-overlay">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+              <polygon points="6,3 20,12 6,21" />
+            </svg>
+          </div>
+          {photo.duration != null && photo.duration > 0 && (
+            <span className="video-duration-badge" data-testid="video-duration-badge">
+              {formatDuration(photo.duration)}
+            </span>
+          )}
+        </>
+      )}
+
       <div className="photo-info">
         <span className="photo-filename" title={photo.filename}>
           {photo.filename}
