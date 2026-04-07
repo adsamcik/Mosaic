@@ -160,6 +160,11 @@
       "expiredWarning": "⚠️ This album has expired and is scheduled for deletion.",
       "warningDaysLabel": "Warning notification (days before)",
       "warningDaysHint": "Show a warning when the album is within this many days of expiring",
+      "warningDaysClamped": "Warning period adjusted — album expires sooner than the configured warning period",
+      "confirmTitle": "Confirm Expiration",
+      "confirmMessage": "All photos in this album will be permanently deleted on {{date}}. This cannot be undone.",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
       "error": {
         "dateRequired": "Please select an expiration date",
         "futureDateRequired": "Expiration date must be in the future",

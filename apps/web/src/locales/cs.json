@@ -163,6 +163,11 @@
       "expiredWarning": "⚠️ Toto album vypršelo a je naplánováno ke smazání.",
       "warningDaysLabel": "Upozornění (dny před vypršením)",
       "warningDaysHint": "Zobrazit varování, když album bude vypršovat za tento počet dní",
+      "warningDaysClamped": "Období upozornění bylo upraveno — album vyprší dříve než nastavené období upozornění",
+      "confirmTitle": "Potvrdit vypršení",
+      "confirmMessage": "Všechny fotky v tomto albu budou trvale smazány {{date}}. Tuto akci nelze vrátit zpět.",
+      "confirm": "Potvrdit",
+      "cancel": "Zrušit",
       "error": {
         "dateRequired": "Vyberte prosím datum vypršení",
         "futureDateRequired": "Datum vypršení musí být v budoucnosti",
