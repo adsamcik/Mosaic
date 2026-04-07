@@ -37,6 +37,7 @@ interface GalleryHeaderProps {
   onRenameAlbum?: (() => void) | undefined;
   onEditDescription?: (() => void) | undefined;
   onDeleteAlbum?: (() => void) | undefined;
+  onDownloadAll?: (() => void) | undefined;
   /** Selection state for batch operations */
   selection?: SelectionState;
   /** Selection actions for batch operations */
@@ -58,6 +59,7 @@ export function GalleryHeader({
   onRenameAlbum,
   onEditDescription,
   onDeleteAlbum,
+  onDownloadAll,
   selection,
   selectionActions,
 }: GalleryHeaderProps) {
@@ -302,6 +304,7 @@ export function GalleryHeader({
               onRenameAlbum={onRenameAlbum}
               onEditDescription={onEditDescription}
               onDeleteAlbum={onDeleteAlbum}
+              onDownloadAll={onDownloadAll}
             />
 
             {/* Upload button - editors and owners only */}

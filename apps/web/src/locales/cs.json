@@ -215,6 +215,22 @@
       "unknown": "Neznámé datum"
     }
   },
+  "download": {
+    "title": "Stahování alba",
+    "preparing": "Připravuji stahování...",
+    "downloading": "Stahuji",
+    "complete": "Stahování dokončeno",
+    "completeMessage": "Úspěšně stažena {{count}} fotka",
+    "completeMessage_few": "Úspěšně staženy {{count}} fotky",
+    "completeMessage_other": "Úspěšně staženo {{count}} fotek",
+    "downloadAll": "Stáhnout všechny fotky",
+    "downloadAllTitle": "Stáhnout všechny fotky jako ZIP",
+    "downloadSelectedTitle": "Stáhnout vybrané fotky jako ZIP",
+    "downloadCount": "Stáhnout ({{count}})",
+    "largeAlbumWarning": "Toto album je velké. Pro nejlepší výsledky použijte Chrome nebo Edge.",
+    "cancelled": "Stahování zrušeno",
+    "failed": "Stahování selhalo"
+  },
   "lightbox": {
     "previous": "Předchozí fotka",
     "next": "Další fotka",

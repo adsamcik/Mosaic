@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 
 interface AlbumSettingsDropdownProps {
@@ -19,6 +20,7 @@ interface AlbumSettingsDropdownProps {
   onRenameAlbum?: (() => void) | undefined;
   onEditDescription?: (() => void) | undefined;
   onDeleteAlbum?: (() => void) | undefined;
+  onDownloadAll?: (() => void) | undefined;
 }
 
 /**
@@ -30,7 +32,9 @@ export function AlbumSettingsDropdown({
   onRenameAlbum,
   onEditDescription,
   onDeleteAlbum,
+  onDownloadAll,
 }: AlbumSettingsDropdownProps) {
+  const { t } = useTranslation();
   const permissions = useAlbumPermissions();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -259,6 +263,35 @@ export function AlbumSettingsDropdown({
                 </svg>
               </span>
               <span className="menu-label">Edit Description</span>
+            </button>
+          )}
+
+          {/* Download All - visible to all members */}
+          {onDownloadAll && (
+            <button
+              className="album-settings-item"
+              onClick={() => handleAction(onDownloadAll)}
+              role="menuitem"
+              data-testid="menu-download-all-button"
+            >
+              <span className="menu-icon">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </span>
+              <span className="menu-label">{t('download.downloadAll')}</span>
             </button>
           )}
 

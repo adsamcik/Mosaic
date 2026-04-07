@@ -11,6 +11,7 @@ import { useAlbumMembers } from '../../hooks/useAlbumMembers';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
+import { useAlbumDownload } from '../../hooks/useAlbumDownload';
 import { usePhotoList } from '../../hooks/usePhotoList';
 import { useSelection } from '../../hooks/useSelection';
 import { useSync } from '../../hooks/useSync';
@@ -24,6 +25,7 @@ import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
 import { DropZone } from '../Upload/DropZone';
 import { UploadErrorToast } from '../Upload/UploadErrorToast';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
+import { DownloadProgressOverlay } from './DownloadProgressOverlay';
 import { GalleryHeader } from './GalleryHeader';
 import { MapView } from './MapView';
 import { MosaicPhotoGrid } from './MosaicPhotoGrid';
@@ -287,6 +289,7 @@ export function Gallery({
 
   const { currentUserRole, isOwner, canEdit } = useAlbumMembers(albumId);
   const photoActions = usePhotoActions();
+  const albumDownload = useAlbumDownload();
 
   // Sort photos by createdAt descending to match display order
   // This ensures lightbox navigation follows the visual order
@@ -477,6 +480,19 @@ export function Gallery({
     selection.selectAll(photos.map((p) => p.id));
   }, [photos, selection]);
 
+  // Handle download all photos
+  const handleDownloadAll = useCallback(() => {
+    if (photos.length === 0) return;
+    void albumDownload.startDownload(albumId, albumName ?? 'Album', photos);
+  }, [photos, albumId, albumName, albumDownload]);
+
+  // Handle download selected photos
+  const handleDownloadSelected = useCallback(() => {
+    const selectedPhotos = photos.filter((p) => selection.selectedIds.has(p.id));
+    if (selectedPhotos.length === 0) return;
+    void albumDownload.startDownload(albumId, albumName ?? 'Album', selectedPhotos);
+  }, [photos, selection.selectedIds, albumId, albumName, albumDownload]);
+
   // Handle album rename
   const handleRenameAlbum = useCallback(() => {
     setRenameError(null);
@@ -584,6 +600,7 @@ export function Gallery({
               onShowShareLinks={() => setShowShareLinks(true)}
               onRenameAlbum={onRenameAlbum ? handleRenameAlbum : undefined}
               onDeleteAlbum={onDeleteAlbum ? handleDeleteAlbum : undefined}
+              onDownloadAll={handleDownloadAll}
               selection={{
                 isSelectionMode: selection.isSelectionMode,
                 selectedCount: selection.selectedCount,
@@ -709,6 +726,14 @@ export function Gallery({
             {/* Upload Error Toast */}
             <UploadErrorToast />
 
+            {/* Download Progress Overlay */}
+            {albumDownload.isDownloading && albumDownload.progress && (
+              <DownloadProgressOverlay
+                progress={albumDownload.progress}
+                onCancel={albumDownload.cancel}
+              />
+            )}
+
             {/* Bulk Delete Photo Confirmation Dialog */}
             {showBulkDeleteDialog && bulkDeletePhotos.length > 0 && (
               <DeletePhotoDialog
@@ -728,6 +753,7 @@ export function Gallery({
               onClearSelection={selection.clearSelection}
               onExitSelectionMode={selection.exitSelectionMode}
               onDeleteSelected={handleBulkDeleteClick}
+              onDownloadSelected={handleDownloadSelected}
               totalPhotos={photos.length}
             />
           </div>

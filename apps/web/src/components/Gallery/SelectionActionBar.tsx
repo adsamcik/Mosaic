@@ -25,6 +25,8 @@ interface SelectionActionBarProps {
   onDeleteSelected: () => void;
   /** Total number of photos available */
   totalPhotos: number;
+  /** Callback to download selected photos */
+  onDownloadSelected?: () => void;
 }
 
 /**
@@ -38,6 +40,7 @@ export function SelectionActionBar({
   onExitSelectionMode,
   onDeleteSelected,
   totalPhotos,
+  onDownloadSelected,
 }: SelectionActionBarProps) {
   const { t } = useTranslation();
   const permissions = useAlbumPermissions();
@@ -182,6 +185,33 @@ export function SelectionActionBar({
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
               <span>{t('common.clear')}</span>
+            </button>
+          )}
+
+          {/* Download selected */}
+          {someSelected && onDownloadSelected && (
+            <button
+              className="action-bar-button action-bar-button-secondary"
+              onClick={onDownloadSelected}
+              data-testid="action-bar-download"
+              title={t('download.downloadSelectedTitle')}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>{t('download.downloadCount', { count: selectedCount })}</span>
             </button>
           )}
 

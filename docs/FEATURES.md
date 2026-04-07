@@ -636,6 +636,37 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 - Fast placeholder rendering before thumbnails load
 - Backward compatibility with legacy BlurHash data
 
+### Album Download (ZIP Export)
+
+**Purpose:** Download all photos from an album (or selected photos) as a ZIP file with original quality.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Service | `apps/web/src/lib/album-download-service.ts` |
+| Hook | `apps/web/src/hooks/useAlbumDownload.ts` |
+| Progress UI | `apps/web/src/components/Gallery/DownloadProgressOverlay.tsx` |
+| Integration | `apps/web/src/components/Gallery/Gallery.tsx` |
+
+**Features:**
+- Downloads original-quality photos (no re-encoding)
+- Streaming ZIP creation via `client-zip` — constant memory usage
+- File System Access API for true streaming to disk (Chrome/Edge)
+- Blob URL fallback for Firefox/Safari
+- Progress tracking with file count and current filename
+- Cancellation support via AbortController
+- Filename deduplication for duplicate names
+- Handles photos across multiple epochs (key rotation)
+- Multi-shard photo reassembly for large originals
+- Zero-knowledge preserved: all decryption client-side
+
+**Access Points:**
+- Album Settings dropdown → "Download All Photos"
+- Selection Action Bar → "Download (N)" for selected photos
+
+**Tests:**
+- Service: `apps/web/src/lib/__tests__/album-download-service.test.ts`
+
 ---
 
 ## Feature Documentation Template
@@ -672,6 +703,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-04-07 | Album Download (ZIP Export) | Added    | Download all/selected photos as ZIP with streaming, progress tracking, and cancellation |
 | 2026-01-30 | Album Content System Phase 2| Added    | Gallery Story view integration, SlashCommandMenu, PhotoPickerDialog, PhotoGridEditor, QuoteBlock, MapBlock, delete with undo toast |
 | 2026-01-29 | Album Content System        | Added    | Block-based content editor with TipTap, dnd-kit, Zod schemas |
 | 2026-01-22 | ThumbHash Placeholders      | Modified | Migrated from BlurHash to ThumbHash for better quality and aspect ratio preservation |

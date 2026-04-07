@@ -211,6 +211,21 @@
       "unknown": "Unknown Date"
     }
   },
+  "download": {
+    "title": "Downloading Album",
+    "preparing": "Preparing download...",
+    "downloading": "Downloading",
+    "complete": "Download Complete",
+    "completeMessage": "Successfully downloaded {{count}} photo",
+    "completeMessage_other": "Successfully downloaded {{count}} photos",
+    "downloadAll": "Download All Photos",
+    "downloadAllTitle": "Download all photos as ZIP",
+    "downloadSelectedTitle": "Download selected photos as ZIP",
+    "downloadCount": "Download ({{count}})",
+    "largeAlbumWarning": "This album is large. For best results, use Chrome or Edge.",
+    "cancelled": "Download cancelled",
+    "failed": "Download failed"
+  },
   "lightbox": {
     "previous": "Previous photo",
     "next": "Next photo",
