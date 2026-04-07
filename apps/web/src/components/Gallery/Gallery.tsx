@@ -16,9 +16,12 @@ import { usePhotoList } from '../../hooks/usePhotoList';
 import { useSelection } from '../../hooks/useSelection';
 import { useSync } from '../../hooks/useSync';
 import { createLogger } from '../../lib/logger';
+import { getApi } from '../../lib/api';
+import type { Album as ApiAlbum } from '../../lib/api-types';
+import { Dialog } from '../Shared/Dialog';
 import { SyncCoordinatorProvider } from '../../lib/sync-coordinator';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
-import { DeleteAlbumDialog, RenameAlbumDialog } from '../Albums';
+import { DeleteAlbumDialog, RenameAlbumDialog, AlbumExpirationSettings } from '../Albums';
 import { ContentEditor } from '../Content';
 import { MemberList } from '../Members/MemberList';
 import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
@@ -260,6 +263,8 @@ export function Gallery({
   const [showShareLinks, setShowShareLinks] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
+  const [showExpirationDialog, setShowExpirationDialog] = useState(false);
+  const [expirationAlbum, setExpirationAlbum] = useState<ApiAlbum | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -531,6 +536,33 @@ export function Gallery({
     }
   }, [isRenaming]);
 
+  // Handle expiration settings
+  const handleExpiration = useCallback(async () => {
+    try {
+      const api = getApi();
+      const album = await api.getAlbum(albumId);
+      setExpirationAlbum(album);
+      setShowExpirationDialog(true);
+    } catch (err) {
+      log.error('Failed to load album for expiration settings:', err);
+    }
+  }, [albumId]);
+
+  const handleExpirationUpdate = useCallback(async () => {
+    try {
+      const api = getApi();
+      const album = await api.getAlbum(albumId);
+      setExpirationAlbum(album);
+    } catch (err) {
+      log.error('Failed to refresh album after expiration update:', err);
+    }
+  }, [albumId]);
+
+  const handleCloseExpiration = useCallback(() => {
+    setShowExpirationDialog(false);
+    setExpirationAlbum(null);
+  }, []);
+
   // Compute preload queue for lightbox
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
@@ -600,6 +632,7 @@ export function Gallery({
               onShowShareLinks={() => setShowShareLinks(true)}
               onRenameAlbum={onRenameAlbum ? handleRenameAlbum : undefined}
               onDeleteAlbum={onDeleteAlbum ? handleDeleteAlbum : undefined}
+              onExpiration={handleExpiration}
               onDownloadAll={handleDownloadAll}
               selection={{
                 isSelectionMode: selection.isSelectionMode,
@@ -722,6 +755,21 @@ export function Gallery({
               error={renameError}
               currentName={albumName ?? `Album ${albumId.slice(0, 8)}`}
             />
+
+            {/* Expiration Settings Dialog */}
+            {showExpirationDialog && expirationAlbum && (
+              <Dialog
+                isOpen={showExpirationDialog}
+                onClose={handleCloseExpiration}
+                title={t('album.menu.expirationSettings')}
+                testId="expiration-dialog"
+              >
+                <AlbumExpirationSettings
+                  album={expirationAlbum}
+                  onUpdate={handleExpirationUpdate}
+                />
+              </Dialog>
+            )}
 
             {/* Upload Error Toast */}
             <UploadErrorToast />

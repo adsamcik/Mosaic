@@ -36,6 +36,7 @@ interface GalleryHeaderProps {
   onShowShareLinks: () => void;
   onRenameAlbum?: (() => void) | undefined;
   onEditDescription?: (() => void) | undefined;
+  onExpiration?: (() => void) | undefined;
   onDeleteAlbum?: (() => void) | undefined;
   onDownloadAll?: (() => void) | undefined;
   /** Selection state for batch operations */
@@ -58,6 +59,7 @@ export function GalleryHeader({
   onShowShareLinks,
   onRenameAlbum,
   onEditDescription,
+  onExpiration,
   onDeleteAlbum,
   onDownloadAll,
   selection,
@@ -303,6 +305,7 @@ export function GalleryHeader({
               onShowShareLinks={onShowShareLinks}
               onRenameAlbum={onRenameAlbum}
               onEditDescription={onEditDescription}
+              onExpiration={onExpiration}
               onDeleteAlbum={onDeleteAlbum}
               onDownloadAll={onDownloadAll}
             />

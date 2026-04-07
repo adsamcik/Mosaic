@@ -19,6 +19,7 @@ interface AlbumSettingsDropdownProps {
   onShowShareLinks: () => void;
   onRenameAlbum?: (() => void) | undefined;
   onEditDescription?: (() => void) | undefined;
+  onExpiration?: (() => void) | undefined;
   onDeleteAlbum?: (() => void) | undefined;
   onDownloadAll?: (() => void) | undefined;
 }
@@ -31,6 +32,7 @@ export function AlbumSettingsDropdown({
   onShowShareLinks,
   onRenameAlbum,
   onEditDescription,
+  onExpiration,
   onDeleteAlbum,
   onDownloadAll,
 }: AlbumSettingsDropdownProps) {
@@ -263,6 +265,34 @@ export function AlbumSettingsDropdown({
                 </svg>
               </span>
               <span className="menu-label">Edit Description</span>
+            </button>
+          )}
+
+          {/* Expiration Settings - owners only */}
+          {permissions.isOwner && onExpiration && (
+            <button
+              className="album-settings-item"
+              onClick={() => handleAction(onExpiration)}
+              role="menuitem"
+              data-testid="menu-expiration-button"
+            >
+              <span className="menu-icon">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              </span>
+              <span className="menu-label">{t('album.menu.expirationSettings')}</span>
             </button>
           )}
 
