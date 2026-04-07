@@ -35,14 +35,16 @@ export async function createManifestForUpload(
 
   // Build photo metadata with tier-specific shard IDs
   const now = new Date().toISOString();
+  const vm = task.videoMetadata;
+
   const photoMeta: PhotoMeta = {
     id: globalThis.crypto.randomUUID(),
     assetId: task.id,
     albumId: task.albumId,
     filename: task.file.name,
     mimeType,
-    width: task.originalWidth ?? 0,
-    height: task.originalHeight ?? 0,
+    width: vm?.width ?? task.originalWidth ?? 0,
+    height: vm?.height ?? task.originalHeight ?? 0,
     tags: [],
     createdAt: now,
     updatedAt: now,
@@ -50,10 +52,20 @@ export async function createManifestForUpload(
     shardHashes: shardHashes, // For integrity verification during download
     epochId: task.epochId,
     // Only set optional fields if they have values
-    ...(task.thumbnailBase64 && { thumbnail: task.thumbnailBase64 }),
-    ...(task.thumbWidth && { thumbWidth: task.thumbWidth }),
-    ...(task.thumbHeight && { thumbHeight: task.thumbHeight }),
-    ...(task.thumbhash && { thumbhash: task.thumbhash }),
+    ...(vm?.thumbnail
+      ? { thumbnail: vm.thumbnail }
+      : task.thumbnailBase64
+        ? { thumbnail: task.thumbnailBase64 }
+        : {}),
+    ...(vm?.thumbWidth ?? task.thumbWidth
+      ? { thumbWidth: vm?.thumbWidth ?? task.thumbWidth }
+      : {}),
+    ...(vm?.thumbHeight ?? task.thumbHeight
+      ? { thumbHeight: vm?.thumbHeight ?? task.thumbHeight }
+      : {}),
+    ...(vm?.thumbhash ?? task.thumbhash
+      ? { thumbhash: vm?.thumbhash ?? task.thumbhash }
+      : {}),
     // New tier-specific shard IDs
     ...(tieredShards && {
       thumbnailShardId: tieredShards.thumbnail.shardId,
@@ -62,6 +74,12 @@ export async function createManifestForUpload(
       previewShardHash: tieredShards.preview.sha256,
       originalShardIds: tieredShards.original.map((s) => s.shardId),
       originalShardHashes: tieredShards.original.map((s) => s.sha256),
+    }),
+    // Video-specific fields (only set for videos)
+    ...(vm && {
+      isVideo: vm.isVideo,
+      duration: vm.duration,
+      ...(vm.videoCodec ? { videoCodec: vm.videoCodec } : {}),
     }),
   };
 

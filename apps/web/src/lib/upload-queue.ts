@@ -3,7 +3,7 @@ import * as tus from 'tus-js-client';
 import { TUS_ENDPOINT } from './api';
 import { getCryptoClient } from './crypto-client';
 import { createLogger } from './logger';
-import { getMimeType } from './mime-type-detection';
+import { getMimeType, isSupportedVideoType } from './mime-type-detection';
 import { getThumbnailQualityValue } from './settings-service';
 import {
   generateThumbnail,
@@ -11,6 +11,7 @@ import {
   encryptTieredImages,
   isSupportedImageType,
 } from './thumbnail-generator';
+import { extractVideoFrame } from './video-frame-extractor';
 import type { TieredShardIds } from '../workers/types';
 
 const log = createLogger('UploadQueue');
@@ -79,6 +80,28 @@ export interface TieredUploadResult {
 }
 
 /** In-memory upload task */
+/** Video-specific metadata extracted during upload (from HTMLVideoElement) */
+export interface VideoUploadMetadata {
+  /** Always true for video files */
+  isVideo: true;
+  /** Duration in seconds (e.g., 62.5) */
+  duration: number;
+  /** Native video width in pixels */
+  width: number;
+  /** Native video height in pixels */
+  height: number;
+  /** Video codec (e.g., "h264", "vp9") — best-effort detection */
+  videoCodec?: string;
+  /** Base64-encoded embedded thumbnail extracted from video frame */
+  thumbnail?: string;
+  /** Embedded thumbnail width */
+  thumbWidth?: number;
+  /** Embedded thumbnail height */
+  thumbHeight?: number;
+  /** ThumbHash for instant placeholder */
+  thumbhash?: string;
+}
+
 export interface UploadTask {
   id: string;
   file: File;
@@ -110,6 +133,8 @@ export interface UploadTask {
   tieredShards?: TieredShardIds;
   /** Detected MIME type from magic bytes (more reliable than file.type) */
   detectedMimeType?: string;
+  /** Video metadata (set during upload for video files) */
+  videoMetadata?: VideoUploadMetadata;
 }
 
 /** Persisted task state (for resume after reload) */
@@ -138,6 +163,8 @@ interface PersistedTask {
   originalHeight?: number;
   /** ThumbHash string for instant placeholder (~25 bytes base64) */
   thumbhash?: string;
+  /** Video metadata (persisted for resume) */
+  videoMetadata?: VideoUploadMetadata;
 }
 
 /** IndexedDB schema */
@@ -336,13 +363,17 @@ class UploadQueue {
         `Detected MIME type: ${detectedMimeType} (browser reported: ${task.file.type})`,
       );
 
-      // Check if this is a supported image type for tiered upload
-      if (isSupportedImageType(detectedMimeType)) {
-        // New tiered upload flow - generates thumb, preview, and original shards
+      // Route to the appropriate upload path based on detected file type
+      if (isSupportedVideoType(detectedMimeType)) {
+        // Video upload: extract frame thumbnail + chunked original
+        log.info(`Using video upload for: ${task.file.name}`);
+        await this.processVideoUpload(task);
+      } else if (isSupportedImageType(detectedMimeType)) {
+        // Tiered image upload: thumb, preview, and original shards
         log.info(`Using tiered upload for image: ${task.file.name}`);
         await this.processTieredUpload(task);
       } else {
-        // Legacy flow for non-image files - single original shard
+        // Legacy flow for unsupported formats - chunked original only
         log.info(`Using legacy upload for non-image: ${task.file.name}`);
         await this.processLegacyUpload(task, crypto);
       }
@@ -558,6 +589,8 @@ class UploadQueue {
       if (task.thumbnailBase64)
         persistedUpdate.thumbnailBase64 = task.thumbnailBase64;
       if (task.thumbhash) persistedUpdate.thumbhash = task.thumbhash;
+      if (task.videoMetadata)
+        persistedUpdate.videoMetadata = task.videoMetadata;
 
       await this.updatePersistedTask(task.id, persistedUpdate);
 
@@ -573,6 +606,226 @@ class UploadQueue {
       this.onComplete?.(task, shardIds, tieredShards);
     } catch (error) {
       log.error(`processTieredUpload failed for ${task.file.name}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process video upload — hybrid of tiered (thumbnail) and legacy (chunked original).
+   *
+   * 1. Extract a frame from the video → thumbnail (tier 1)
+   * 2. Encrypt and upload the thumbnail shard
+   * 3. Encrypt and upload the original video in 6MB chunks (tier 3)
+   * 4. Build tiered shard references for manifest
+   *
+   * Falls back to legacy upload (no thumbnail) if frame extraction fails.
+   */
+  private async processVideoUpload(task: UploadTask): Promise<void> {
+    log.info(`processVideoUpload started for ${task.file.name}`);
+
+    // Step 1: Extract video frame + metadata (0-10% progress)
+    task.currentAction = 'converting';
+    task.progress = 0;
+    this.onProgress?.(task);
+
+    let frameResult: Awaited<ReturnType<typeof extractVideoFrame>>;
+    try {
+      frameResult = await extractVideoFrame(task.file);
+      log.info(
+        `Video frame extracted: ${frameResult.metadata.width}x${frameResult.metadata.height}, ` +
+        `duration=${frameResult.metadata.duration}s, codec=${frameResult.metadata.codec ?? 'unknown'}`,
+      );
+    } catch (frameError: unknown) {
+      // Frame extraction failed — fall back to legacy chunked upload without thumbnail
+      const errMsg = frameError instanceof Error ? frameError.message : String(frameError);
+      log.warn(
+        `Video frame extraction failed for ${task.file.name}, falling back to legacy upload: ${errMsg}`,
+      );
+      const crypto = await getCryptoClient();
+      await this.processLegacyUpload(task, crypto);
+      return;
+    }
+
+    task.progress = 0.1;
+    this.onProgress?.(task);
+
+    // Store video metadata on the task for manifest creation
+    const videoMeta: VideoUploadMetadata = {
+      isVideo: true,
+      duration: frameResult.metadata.duration,
+      width: frameResult.metadata.width,
+      height: frameResult.metadata.height,
+      thumbnail: frameResult.embeddedThumbnail,
+      thumbWidth: frameResult.embeddedWidth,
+      thumbHeight: frameResult.embeddedHeight,
+      thumbhash: frameResult.thumbhash,
+    };
+    if (frameResult.metadata.codec) {
+      videoMeta.videoCodec = frameResult.metadata.codec;
+    }
+    task.videoMetadata = videoMeta;
+
+    // Also set top-level fields used by manifest-service
+    task.originalWidth = frameResult.metadata.width;
+    task.originalHeight = frameResult.metadata.height;
+    task.thumbnailBase64 = frameResult.embeddedThumbnail;
+    task.thumbWidth = frameResult.embeddedWidth;
+    task.thumbHeight = frameResult.embeddedHeight;
+    task.thumbhash = frameResult.thumbhash;
+
+    try {
+      // Import crypto library for direct shard encryption with tier keys
+      const { deriveTierKeys, encryptShard, ShardTier } = await import('@mosaic/crypto');
+
+      // Derive tier keys from epochSeed (stored as readKey)
+      const tierKeys = deriveTierKeys(task.readKey);
+
+      // Step 2: Encrypt and upload thumbnail shard (10-20% progress)
+      task.currentAction = 'encrypting';
+      task.progress = 0.1;
+      this.onProgress?.(task);
+
+      // Convert thumbnail blob to Uint8Array
+      const thumbBuffer = await frameResult.thumbnailBlob.arrayBuffer();
+      const thumbData = new Uint8Array(thumbBuffer);
+
+      log.info(`Encrypting video thumbnail (${thumbData.byteLength} bytes)`);
+      const thumbEncrypted = await encryptShard(
+        thumbData,
+        tierKeys.thumbKey,
+        task.epochId,
+        0,
+        ShardTier.THUMB,
+      );
+
+      task.currentAction = 'uploading';
+      task.progress = 0.15;
+      this.onProgress?.(task);
+
+      const thumbShardId = await this.tusUpload(
+        task.albumId,
+        thumbEncrypted.ciphertext,
+        thumbEncrypted.sha256,
+        0,
+      );
+      log.info(`Video thumbnail shard uploaded: ${thumbShardId}`);
+
+      task.completedShards.push({
+        index: 0,
+        shardId: thumbShardId,
+        sha256: thumbEncrypted.sha256,
+        tier: 1,
+      });
+      task.progress = 0.2;
+      this.onProgress?.(task);
+
+      // Step 3: Encrypt and upload original video in chunks (20-95% progress)
+      const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
+      const originalShards: CompletedShard[] = [];
+
+      for (let i = 0; i < totalChunks; i++) {
+        // Read chunk from file using slice (avoids loading entire video into memory)
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, task.file.size);
+        const chunk = await task.file.slice(start, end).arrayBuffer();
+
+        // Encrypt the chunk with fullKey (tier 3)
+        task.currentAction = 'encrypting';
+        this.onProgress?.(task);
+
+        const chunkEncrypted = await encryptShard(
+          new Uint8Array(chunk),
+          tierKeys.fullKey,
+          task.epochId,
+          i,
+          ShardTier.ORIGINAL,
+        );
+
+        // Upload via Tus
+        task.currentAction = 'uploading';
+        this.onProgress?.(task);
+
+        const chunkShardId = await this.tusUpload(
+          task.albumId,
+          chunkEncrypted.ciphertext,
+          chunkEncrypted.sha256,
+          i,
+        );
+
+        const completedShard: CompletedShard = {
+          index: i,
+          shardId: chunkShardId,
+          sha256: chunkEncrypted.sha256,
+          tier: 3,
+        };
+        task.completedShards.push(completedShard);
+        originalShards.push(completedShard);
+
+        // Persist progress for resume
+        await this.updatePersistedTask(task.id, {
+          completedShards: task.completedShards,
+          ...(task.videoMetadata ? { videoMetadata: task.videoMetadata } : {}),
+        });
+
+        // Scale progress: 20% to 95% across all chunks
+        task.progress = 0.2 + ((i + 1) / totalChunks) * 0.75;
+        this.onProgress?.(task);
+
+        log.debug(
+          `Video chunk ${i + 1}/${totalChunks} uploaded for ${task.file.name}: ${chunkShardId}`,
+        );
+      }
+
+      // Step 4: Build tiered shard references for manifest (95-100%)
+      task.progress = 0.95;
+      task.currentAction = 'finalizing';
+      this.onProgress?.(task);
+
+      const tieredShards: TieredShardIds = {
+        thumbnail: {
+          shardId: thumbShardId,
+          sha256: thumbEncrypted.sha256,
+        },
+        // No preview tier for video Phase 1 — use thumbnail as placeholder
+        preview: {
+          shardId: thumbShardId,
+          sha256: thumbEncrypted.sha256,
+        },
+        original: originalShards.map((s) => ({
+          shardId: s.shardId,
+          sha256: s.sha256,
+        })),
+      };
+      task.tieredShards = tieredShards;
+
+      // Persist completion
+      const persistedUpdate: Partial<PersistedTask> = {
+        status: 'complete',
+        completedShards: task.completedShards,
+        thumbWidth: task.thumbWidth,
+        thumbHeight: task.thumbHeight,
+        originalWidth: task.originalWidth,
+        originalHeight: task.originalHeight,
+        ...(task.videoMetadata ? { videoMetadata: task.videoMetadata } : {}),
+      };
+      if (task.thumbnailBase64) persistedUpdate.thumbnailBase64 = task.thumbnailBase64;
+      if (task.thumbhash) persistedUpdate.thumbhash = task.thumbhash;
+
+      await this.updatePersistedTask(task.id, persistedUpdate);
+
+      task.status = 'complete';
+      task.progress = 1;
+      this.onProgress?.(task);
+
+      // Legacy shardIds: thumbnail + all original chunks
+      const allShardIds = [thumbShardId, ...originalShards.map((s) => s.shardId)];
+      log.info(
+        `Video upload complete for ${task.file.name}: ${allShardIds.length} shards ` +
+        `(1 thumbnail + ${originalShards.length} original chunks)`,
+      );
+      this.onComplete?.(task, allShardIds, tieredShards);
+    } catch (error) {
+      log.error(`processVideoUpload failed for ${task.file.name}:`, error);
       throw error;
     }
   }
@@ -741,6 +994,7 @@ class UploadQueue {
       originalWidth: persisted.originalWidth,
       originalHeight: persisted.originalHeight,
       thumbhash: persisted.thumbhash,
+      ...(persisted.videoMetadata ? { videoMetadata: persisted.videoMetadata } : {}),
     };
 
     this.queue.push(task);
