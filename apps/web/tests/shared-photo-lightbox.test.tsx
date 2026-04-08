@@ -695,4 +695,247 @@ describe('SharedPhotoLightbox', () => {
       );
     });
   });
+
+  // ===== Video + Access Tier Gating Tests =====
+
+  const mockVideoPhoto: PhotoMeta = {
+    ...mockPhoto,
+    filename: 'clip.mp4',
+    mimeType: 'video/mp4',
+    isVideo: true,
+    thumbnail: tinyJpegBase64,
+    shardIds: ['shard-video'],
+  };
+
+  /** Helper: render component, wait for async loading, return container */
+  async function renderLightbox(
+    props: Partial<import('../src/components/Shared/SharedPhotoLightbox').SharedPhotoLightboxProps> = {},
+  ) {
+    const c = document.createElement('div');
+    document.body.appendChild(c);
+    container = c;
+
+    const merged = {
+      photo: mockVideoPhoto,
+      linkId: 'link-1',
+      tierKey: new Uint8Array(32),
+      accessTier: 3 as import('../src/lib/api-types').AccessTier,
+      onClose: vi.fn(),
+      onNext: vi.fn(),
+      onPrevious: vi.fn(),
+      hasNext: true,
+      hasPrevious: true,
+      ...props,
+    };
+
+    await act(async () => {
+      root = createRoot(c);
+      root!.render(createElement(SharedPhotoLightbox, merged));
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    return { container: c, ...merged };
+  }
+
+  describe('Video access tier gating', () => {
+    it('blocks video playback when accessTier is THUMB (1)', async () => {
+      const { container: c } = await renderLightbox({ accessTier: 1 as import('../src/lib/api-types').AccessTier });
+
+      const restricted = c.querySelector('[data-testid="lightbox-video-restricted"]');
+      expect(restricted).toBeTruthy();
+
+      const video = c.querySelector('[data-testid="lightbox-video"]');
+      expect(video).toBeNull();
+    });
+
+    it('blocks video playback when accessTier is PREVIEW (2)', async () => {
+      const { container: c } = await renderLightbox({ accessTier: 2 as import('../src/lib/api-types').AccessTier });
+
+      const restricted = c.querySelector('[data-testid="lightbox-video-restricted"]');
+      expect(restricted).toBeTruthy();
+
+      const video = c.querySelector('[data-testid="lightbox-video"]');
+      expect(video).toBeNull();
+    });
+
+    it('allows video playback when accessTier is ORIGINAL (3)', async () => {
+      const { container: c } = await renderLightbox({ accessTier: 3 as import('../src/lib/api-types').AccessTier });
+
+      const video = c.querySelector('[data-testid="lightbox-video"]');
+      expect(video).toBeTruthy();
+
+      const restricted = c.querySelector('[data-testid="lightbox-video-restricted"]');
+      expect(restricted).toBeNull();
+    });
+
+    it('shows "requires full access" message for restricted videos', async () => {
+      const { container: c } = await renderLightbox({ accessTier: 1 as import('../src/lib/api-types').AccessTier });
+
+      const restricted = c.querySelector('[data-testid="lightbox-video-restricted"]');
+      expect(restricted?.textContent).toContain('requires full access');
+    });
+
+    it('still shows thumbnail behind restricted overlay', async () => {
+      const { container: c } = await renderLightbox({ accessTier: 1 as import('../src/lib/api-types').AccessTier });
+
+      const restricted = c.querySelector('[data-testid="lightbox-video-restricted"]');
+      expect(restricted).toBeTruthy();
+
+      // The <img> inside the restricted overlay should be visible
+      const img = restricted!.querySelector('img');
+      expect(img).toBeTruthy();
+      expect(img!.src).toBeTruthy();
+    });
+  });
+
+  describe('Video rendering with full access', () => {
+    it('renders <video> with controls, autoPlay, playsInline when accessTier=3', async () => {
+      const { container: c } = await renderLightbox({ accessTier: 3 as import('../src/lib/api-types').AccessTier });
+
+      const video = c.querySelector('[data-testid="lightbox-video"]') as HTMLVideoElement | null;
+      expect(video).toBeTruthy();
+      expect(video!.tagName).toBe('VIDEO');
+      expect(video!.controls).toBe(true);
+      expect(video!.autoplay).toBe(true);
+      expect(video!.getAttribute('playsinline')).not.toBeNull();
+    });
+
+    it('renders <img> for photos regardless of accessTier', async () => {
+      // Render with a photo (not video)
+      const { container: c } = await renderLightbox({
+        photo: mockPhotoWithThumbnail,
+        accessTier: 1 as import('../src/lib/api-types').AccessTier,
+      });
+
+      const img = c.querySelector('[data-testid="lightbox-image"]');
+      expect(img).toBeTruthy();
+
+      const video = c.querySelector('[data-testid="lightbox-video"]');
+      expect(video).toBeNull();
+
+      const restricted = c.querySelector('[data-testid="lightbox-video-restricted"]');
+      expect(restricted).toBeNull();
+    });
+  });
+
+  describe('Video pause on navigation', () => {
+    let mockPause: ReturnType<typeof vi.fn>;
+    let mockPlay: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      mockPause = vi.fn();
+      mockPlay = vi.fn().mockResolvedValue(undefined);
+      HTMLVideoElement.prototype.pause = mockPause;
+      HTMLVideoElement.prototype.play = mockPlay;
+    });
+
+    it('pauses video on next navigation', async () => {
+      const { onNext } = await renderLightbox();
+
+      // Simulate ArrowRight
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      });
+
+      expect(mockPause).toHaveBeenCalled();
+      expect(onNext).toHaveBeenCalled();
+    });
+
+    it('pauses video on previous navigation', async () => {
+      const { onPrevious } = await renderLightbox();
+
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      });
+
+      expect(mockPause).toHaveBeenCalled();
+      expect(onPrevious).toHaveBeenCalled();
+    });
+
+    it('pauses video on Escape/close', async () => {
+      const { onClose } = await renderLightbox();
+
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      });
+
+      expect(mockPause).toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it('pauses video when photo changes (cleanup effect)', async () => {
+      const c = document.createElement('div');
+      document.body.appendChild(c);
+      container = c;
+
+      const props = {
+        photo: mockVideoPhoto,
+        linkId: 'link-1',
+        tierKey: new Uint8Array(32),
+        accessTier: 3 as import('../src/lib/api-types').AccessTier,
+        onClose: vi.fn(),
+        onNext: vi.fn(),
+        onPrevious: vi.fn(),
+        hasNext: true,
+        hasPrevious: true,
+      };
+
+      await act(async () => {
+        root = createRoot(c);
+        root!.render(createElement(SharedPhotoLightbox, props));
+        await new Promise((r) => setTimeout(r, 100));
+      });
+
+      // Change to a different photo — the cleanup effect should pause video
+      const newPhoto: PhotoMeta = {
+        ...mockVideoPhoto,
+        id: 'photo-2',
+        filename: 'clip2.mp4',
+      };
+
+      await act(async () => {
+        root!.render(createElement(SharedPhotoLightbox, { ...props, photo: newPhoto }));
+        await new Promise((r) => setTimeout(r, 100));
+      });
+
+      expect(mockPause).toHaveBeenCalled();
+    });
+  });
+
+  describe('Spacebar handling for video', () => {
+    let mockPause: ReturnType<typeof vi.fn>;
+    let mockPlay: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      mockPause = vi.fn();
+      mockPlay = vi.fn().mockResolvedValue(undefined);
+      HTMLVideoElement.prototype.pause = mockPause;
+      HTMLVideoElement.prototype.play = mockPlay;
+    });
+
+    it('spacebar toggles play/pause for video', async () => {
+      await renderLightbox({ accessTier: 3 as import('../src/lib/api-types').AccessTier });
+
+      const video = container!.querySelector('[data-testid="lightbox-video"]') as HTMLVideoElement;
+      expect(video).toBeTruthy();
+
+      // Video starts as paused in the DOM by default (paused property is true)
+      // Simulate spacebar → should call play()
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      });
+
+      expect(mockPlay).toHaveBeenCalledTimes(1);
+
+      // Now simulate the video playing (paused = false)
+      Object.defineProperty(video, 'paused', { value: false, writable: true, configurable: true });
+
+      // Spacebar again → should call pause()
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      });
+
+      expect(mockPause).toHaveBeenCalled();
+    });
+  });
 });
