@@ -115,15 +115,31 @@ builder.Services.AddAuthentication(PassThroughAuthenticationHandler.SchemeName)
 // Configure forwarded headers for reverse proxy support
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-
-    // Trust only configured proxy networks for X-Forwarded-For
     var trustedProxies = builder.Configuration.GetSection("Auth:TrustedProxies").Get<string[]>() ?? [];
-    foreach (var cidr in trustedProxies)
+
+    // Always clear ASP.NET Core's built-in defaults (127.0.0.0/8 and ::1/128).
+    // Only the explicitly-configured proxy list should be trusted — never implicit loopback defaults.
+    // This ensures X-Forwarded-For spoofing cannot occur from connections that happen to originate
+    // on loopback but are not part of our intended reverse-proxy topology.
+    options.KnownIPNetworks.Clear();  // clears all network-range entries (new .NET 8+ API)
+    options.KnownProxies.Clear();     // clears loopback IPs added by the ASP.NET Core defaults
+
+    if (trustedProxies.Length == 0)
     {
-        if (System.Net.IPNetwork.TryParse(cidr, out var network))
+        // No proxies configured: disable forwarded header processing entirely.
+        // Without a known upstream proxy there is no basis for trusting any X-Forwarded-* header.
+        options.ForwardedHeaders = ForwardedHeaders.None;
+    }
+    else
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+        foreach (var cidr in trustedProxies)
         {
-            options.KnownIPNetworks.Add(network);
+            if (System.Net.IPNetwork.TryParse(cidr, out var network))
+            {
+                options.KnownIPNetworks.Add(network);
+            }
         }
     }
 });
@@ -150,6 +166,24 @@ if (serverSecretMissing)
     else
     {
         app.Logger.LogInformation("Auth:ServerSecret not configured - using auto-generated random secret for this session");
+    }
+}
+
+// Validate proxy trust configuration in Production.
+// Broad catch-all CIDRs (0.0.0.0/0 or ::/0) are only appropriate for test environments.
+// If they appear in Production the entire X-Forwarded-For trust model is broken, enabling
+// rate-limit bypass and auth spoofing via a spoofed X-Forwarded-For header.
+if (app.Environment.IsProduction())
+{
+    var productionProxies = app.Configuration.GetSection("Auth:TrustedProxies").Get<string[]>() ?? [];
+    var broadCidrs = productionProxies.Where(c => c is "0.0.0.0/0" or "::/0").ToList();
+    if (broadCidrs.Count > 0)
+    {
+        app.Logger.LogCritical(
+            "⛔ SECURITY MISCONFIGURATION: Auth:TrustedProxies contains {Cidrs} in Production. " +
+            "This trusts ALL IP addresses to set X-Forwarded-For, enabling rate-limit bypass " +
+            "and auth spoofing. Restrict TrustedProxies to your actual reverse proxy addresses.",
+            string.Join(", ", broadCidrs));
     }
 }
 
