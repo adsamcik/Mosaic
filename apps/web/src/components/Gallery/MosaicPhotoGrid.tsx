@@ -3,12 +3,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { useAnimatedItems } from '../../hooks/useAnimatedItems';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
+import { useGridSelection } from '../../hooks/useGridSelection';
 import { useLightbox } from '../../hooks/useLightbox';
+import { useLightboxPreload } from '../../hooks/useLightboxPreload';
 import { usePhotoDelete } from '../../hooks/usePhotoDelete';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
 import { computeMosaicLayout, type MosaicItem } from '../../lib/mosaic-layout';
 import { usePhotoStore, type PhotoItem } from '../../stores/photo-store';
 import '../../styles/upload.css';
+import { formatDateHeader, groupPhotosByDate } from '../../lib/photo-date-utils';
 import type { PhotoMeta } from '../../workers/types';
 import { AnimatedTile } from './AnimatedTile';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
@@ -25,8 +28,7 @@ const TARGET_ROW_HEIGHT = 220;
 /** Height of the date header in pixels */
 const HEADER_HEIGHT = 44;
 
-/** Number of photos to preload */
-const PRELOAD_COUNT = 2;
+
 
 interface MosaicPhotoGridProps {
   albumId: string;
@@ -52,44 +54,6 @@ type VirtualItem =
       id: string;
       top: number;
     };
-
-function formatDateHeader(dateString: string): string {
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return 'Unknown Date';
-
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  if (date.toDateString() === today.toDateString()) return 'Today';
-  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
-  }).format(date);
-}
-
-function groupPhotosByDate(photos: PhotoMeta[]) {
-  const groups: Record<string, PhotoMeta[]> = {};
-  const sorted = [...photos].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
-
-  for (const photo of sorted) {
-    const dateKey = new Date(photo.createdAt).toDateString();
-    if (!groups[dateKey]) {
-      groups[dateKey] = [];
-    }
-    groups[dateKey].push(photo);
-  }
-
-  return Object.entries(groups).sort(
-    (a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime(),
-  );
-}
 
 export function MosaicPhotoGrid({
   albumId,
@@ -276,45 +240,17 @@ export function MosaicPhotoGrid({
 
   // Handle selection change for a single photo
   // Supports shift-click for range selection
-  const handleSelectionChange = useCallback(
-    (
-      photoId: string,
-      selected: boolean,
-      event?: React.MouseEvent | React.KeyboardEvent,
-    ) => {
-      if (selection) {
-        if (selected) {
-          // Check for shift-click range selection
-          if (event?.shiftKey && selection.lastSelectedId) {
-            selection.selectRange(photoId, sortedPhotoIds);
-          } else {
-            selection.selectPhoto(photoId);
-          }
-        } else {
-          selection.deselectPhoto(photoId);
-        }
-      }
-    },
-    [selection, sortedPhotoIds],
-  );
+  const handleSelectionChange = useGridSelection({
+    selection,
+    sortedPhotoIds,
+  });
 
-  const preloadQueue = useMemo((): PhotoMeta[] => {
-    if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
-    const queue: PhotoMeta[] = [];
-    const currentIdx = lightbox.currentIndex;
-    for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-      const prev = sortedPhotos[currentIdx - offset];
-      const next = sortedPhotos[currentIdx + offset];
-      if (prev) queue.push(prev);
-      if (next) queue.push(next);
-    }
-    return queue;
-  }, [
-    lightbox.isOpen,
-    lightbox.currentIndex,
-    lightbox.currentPhoto,
-    sortedPhotos,
-  ]);
+  const preloadQueue = useLightboxPreload({
+    isOpen: lightbox.isOpen,
+    currentIndex: lightbox.currentIndex,
+    navigationDirection: lightbox.navigationDirection,
+    photos: sortedPhotos,
+  });
 
   const currentEpochReadKey = lightbox.currentPhoto
     ? epochKeys.get(lightbox.currentPhoto.epochId)

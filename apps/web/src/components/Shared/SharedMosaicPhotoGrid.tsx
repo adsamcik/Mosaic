@@ -2,7 +2,9 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { computeMosaicLayout, type MosaicItem } from '../../lib/mosaic-layout';
+import { useLightboxPreload } from '../../hooks/useLightboxPreload';
 import type { NavigationDirection } from '../../hooks/useLightbox';
+import { formatDateHeader, groupPhotosByDate } from '../../lib/photo-date-utils';
 import type { PhotoMeta } from '../../workers/types';
 import { MosaicTile } from '../Gallery/MosaicTile';
 import { SharedPhotoLightbox } from './SharedPhotoLightbox';
@@ -17,8 +19,7 @@ const TARGET_ROW_HEIGHT = 220;
 /** Height of the date header in pixels */
 const HEADER_HEIGHT = 44;
 
-/** Number of photos to preload */
-const PRELOAD_COUNT = 2;
+
 
 interface SharedMosaicPhotoGridProps {
   photos: PhotoMeta[];
@@ -38,44 +39,6 @@ type VirtualItem =
       id: string;
       top: number;
     };
-
-function formatDateHeader(dateString: string): string {
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return 'Unknown Date';
-
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  if (date.toDateString() === today.toDateString()) return 'Today';
-  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
-  }).format(date);
-}
-
-function groupPhotosByDate(photos: PhotoMeta[]) {
-  const groups: Record<string, PhotoMeta[]> = {};
-  const sorted = [...photos].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
-
-  for (const photo of sorted) {
-    const dateKey = new Date(photo.createdAt).toDateString();
-    if (!groups[dateKey]) {
-      groups[dateKey] = [];
-    }
-    groups[dateKey].push(photo);
-  }
-
-  return Object.entries(groups).sort(
-    (a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime(),
-  );
-}
 
 export function SharedMosaicPhotoGrid({
   photos,
@@ -176,42 +139,12 @@ export function SharedMosaicPhotoGrid({
 
   const currentPhoto = lightboxIndex !== null ? photos[lightboxIndex] : null;
 
-  // Direction-aware preload queue
-  // When navigating forward: prioritize N+1, N+2, then N-1
-  // When navigating backward: prioritize N-1, N-2, then N+1
-  // When initial (just opened): preload equally in both directions
-  const preloadQueue = useMemo((): PhotoMeta[] => {
-    if (lightboxIndex === null) return [];
-    const queue: PhotoMeta[] = [];
-
-    if (navigationDirection === 'forward') {
-      // Moving forward: prioritize ahead, then add one behind
-      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-        const next = photos[lightboxIndex + offset];
-        if (next?.shardIds?.length) queue.push(next);
-      }
-      const prev = photos[lightboxIndex - 1];
-      if (prev?.shardIds?.length) queue.push(prev);
-    } else if (navigationDirection === 'backward') {
-      // Moving backward: prioritize behind, then add one ahead
-      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-        const prev = photos[lightboxIndex - offset];
-        if (prev?.shardIds?.length) queue.push(prev);
-      }
-      const next = photos[lightboxIndex + 1];
-      if (next?.shardIds?.length) queue.push(next);
-    } else {
-      // Initial open: preload equally in both directions
-      for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-        const prev = photos[lightboxIndex - offset];
-        const next = photos[lightboxIndex + offset];
-        if (next?.shardIds?.length) queue.push(next);
-        if (prev?.shardIds?.length) queue.push(prev);
-      }
-    }
-
-    return queue;
-  }, [lightboxIndex, navigationDirection, photos]);
+  const preloadQueue = useLightboxPreload({
+    isOpen: lightboxIndex !== null,
+    currentIndex: lightboxIndex ?? 0,
+    navigationDirection,
+    photos,
+  });
 
   if (isLoadingKeys) {
     return (

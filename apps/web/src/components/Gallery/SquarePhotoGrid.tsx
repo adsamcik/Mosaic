@@ -1,7 +1,9 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
+import { useGridSelection } from '../../hooks/useGridSelection';
 import { useLightbox } from '../../hooks/useLightbox';
+import { useLightboxPreload } from '../../hooks/useLightboxPreload';
 import { usePhotoDelete } from '../../hooks/usePhotoDelete';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
 import { type PhotoItem, usePhotoStore } from '../../stores/photo-store';
@@ -13,8 +15,7 @@ import { PhotoThumbnail } from './PhotoThumbnail';
 /** Estimated row height for virtualization fallback */
 const ROW_HEIGHT = 200;
 
-/** Number of photos to preload ahead/behind in lightbox */
-const PRELOAD_COUNT = 2;
+
 
 interface SquarePhotoGridProps {
   albumId: string;
@@ -168,32 +169,12 @@ export function SquarePhotoGrid({
     overscan: 5,
   });
 
-  // Compute preload queue for lightbox (photos around current)
-  const preloadQueue = useMemo((): PhotoMeta[] => {
-    if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
-
-    const queue: PhotoMeta[] = [];
-    const currentIdx = lightbox.currentIndex;
-
-    // Add photos before and after current
-    for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-      const prevPhoto = sortedPhotos[currentIdx - offset];
-      const nextPhoto = sortedPhotos[currentIdx + offset];
-      if (prevPhoto) {
-        queue.push(prevPhoto);
-      }
-      if (nextPhoto) {
-        queue.push(nextPhoto);
-      }
-    }
-
-    return queue;
-  }, [
-    lightbox.isOpen,
-    lightbox.currentIndex,
-    lightbox.currentPhoto,
-    sortedPhotos,
-  ]);
+  const preloadQueue = useLightboxPreload({
+    isOpen: lightbox.isOpen,
+    currentIndex: lightbox.currentIndex,
+    navigationDirection: lightbox.navigationDirection,
+    photos: sortedPhotos,
+  });
 
   // Handle photo click to open lightbox
   const handlePhotoClick = useCallback(
@@ -211,27 +192,10 @@ export function SquarePhotoGrid({
 
   // Handle selection change for a single photo
   // Supports shift-click for range selection
-  const handleSelectionChange = useCallback(
-    (
-      photoId: string,
-      selected: boolean,
-      event?: React.MouseEvent | React.KeyboardEvent,
-    ) => {
-      if (selection) {
-        if (selected) {
-          // Check for shift-click range selection
-          if (event?.shiftKey && selection.lastSelectedId) {
-            selection.selectRange(photoId, sortedPhotoIds);
-          } else {
-            selection.selectPhoto(photoId);
-          }
-        } else {
-          selection.deselectPhoto(photoId);
-        }
-      }
-    },
-    [selection, sortedPhotoIds],
-  );
+  const handleSelectionChange = useGridSelection({
+    selection,
+    sortedPhotoIds,
+  });
 
   if (isLoading || keysLoading) {
     return (

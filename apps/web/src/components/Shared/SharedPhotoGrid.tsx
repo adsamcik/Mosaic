@@ -13,6 +13,7 @@ import {
   computeJustifiedLayout,
   type JustifiedRow,
 } from '../../lib/justified-layout';
+import { formatDateHeader, groupPhotosByDate } from '../../lib/photo-date-utils';
 import type { PhotoMeta } from '../../workers/types';
 import { SharedPhotoLightbox } from './SharedPhotoLightbox';
 import { SharedPhotoThumbnail } from './SharedPhotoThumbnail';
@@ -54,56 +55,6 @@ type LayoutItem =
       rowIndex: number;
       id: string;
     };
-
-/**
- * Helper to format date groups
- */
-function formatDateHeader(dateString: string): string {
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return 'Unknown Date';
-
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  if (date.toDateString() === today.toDateString()) {
-    return 'Today';
-  }
-  if (date.toDateString() === yesterday.toDateString()) {
-    return 'Yesterday';
-  }
-
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
-  }).format(date);
-}
-
-/**
- * Group photos by date string (YYYY-MM-DD)
- */
-function groupPhotosByDate(photos: PhotoMeta[]) {
-  const groups: Record<string, PhotoMeta[]> = {};
-  const sorted = [...photos].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
-
-  for (const photo of sorted) {
-    // Use local date string for grouping
-    const dateKey = new Date(photo.createdAt).toDateString();
-    if (!groups[dateKey]) {
-      groups[dateKey] = [];
-    }
-    groups[dateKey].push(photo);
-  }
-
-  // Sort keys descending (newest first)
-  return Object.entries(groups).sort(
-    (a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime(),
-  );
-}
 
 /**
  * Virtualized Photo Grid for Share Link Viewers

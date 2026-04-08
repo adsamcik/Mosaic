@@ -12,6 +12,11 @@ export type {
 export { useAlbumEpochKeys, useEpochKey } from './useEpochKeys';
 export { useGridPrefetch, isPhotoInCache } from './useGridPrefetch';
 export type { UseGridPrefetchOptions } from './useGridPrefetch';
+export { useGridSelection } from './useGridSelection';
+export type {
+  HandleSelectionChange,
+  UseGridSelectionOptions,
+} from './useGridSelection';
 export { useImageDecode } from './useImageDecode';
 export type { UseImageDecodeResult } from './useImageDecode';
 export { useLightbox } from './useLightbox';
@@ -20,6 +25,8 @@ export type {
   LightboxState,
   UseLightboxResult,
 } from './useLightbox';
+export { useLightboxPreload } from './useLightboxPreload';
+export type { UseLightboxPreloadOptions } from './useLightboxPreload';
 export { clearLinkKeys, parseLinkFragment, useLinkKeys } from './useLinkKeys';
 export type { LinkKeyState, TierKey, UseLinkKeysResult } from './useLinkKeys';
 export {
@@ -64,5 +71,11 @@ export type {
 export { useSync } from './useSync';
 export type { SyncProgress, SyncStatus, UseSyncResult } from './useSync';
 export { useTheme } from './useTheme';
+export { useThumbnailShard } from './useThumbnailShard';
+export type {
+  ThumbnailShardState,
+  UseThumbnailShardOptions,
+  UseThumbnailShardResult,
+} from './useThumbnailShard';
 export { useErrorToast } from './useErrorToast';
 export { useUpload } from './useUpload';

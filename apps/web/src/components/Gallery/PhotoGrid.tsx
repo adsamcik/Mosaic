@@ -10,7 +10,9 @@ import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { useAnimatedItems } from '../../hooks/useAnimatedItems';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
+import { useGridSelection } from '../../hooks/useGridSelection';
 import { useLightbox } from '../../hooks/useLightbox';
+import { useLightboxPreload } from '../../hooks/useLightboxPreload';
 import { usePhotoDelete } from '../../hooks/usePhotoDelete';
 import type { UseSelectionReturn } from '../../hooks/useSelection';
 import {
@@ -18,6 +20,7 @@ import {
   type JustifiedRow,
 } from '../../lib/justified-layout';
 import '../../styles/upload.css';
+import { formatDateHeader, groupPhotosByDate } from '../../lib/photo-date-utils';
 import type { PhotoMeta } from '../../workers/types';
 import { AnimatedTile } from './AnimatedTile';
 import { DeletePhotoDialog } from './DeletePhotoDialog';
@@ -33,8 +36,7 @@ const TARGET_ROW_HEIGHT = 220;
 /** Height of the date header in pixels */
 const HEADER_HEIGHT = 44; // Approx 2.5rem + padding
 
-/** Number of photos to preload ahead/behind in lightbox */
-const PRELOAD_COUNT = 2;
+
 
 interface PhotoGridProps {
   albumId: string;
@@ -62,61 +64,6 @@ type LayoutItem =
       rowIndex: number;
       id: string;
     };
-
-/**
- * Helper to format date groups
- */
-function formatDateHeader(
-  dateString: string,
-  t: (key: string) => string,
-): string {
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return t('gallery.date.unknown');
-
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  if (date.toDateString() === today.toDateString()) {
-    return t('gallery.date.today');
-  }
-  if (date.toDateString() === yesterday.toDateString()) {
-    return t('gallery.date.yesterday');
-  }
-
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
-  }).format(date);
-}
-
-/**
- * Group photos by date string (YYYY-MM-DD)
- */
-function groupPhotosByDate(photos: PhotoMeta[]) {
-  const groups: Record<string, PhotoMeta[]> = {};
-  const sorted = [...photos].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
-
-  for (const photo of sorted) {
-    // Use local date string for grouping to avoid timezone splits if possible,
-    // but ISO string split is safer for consistency if timezones aren't strict.
-    // Assuming createdAt is ISO UTC.
-    const dateKey = new Date(photo.createdAt).toDateString();
-    if (!groups[dateKey]) {
-      groups[dateKey] = [];
-    }
-    groups[dateKey].push(photo);
-  }
-
-  // Sort keys descending (newest first)
-  return Object.entries(groups).sort(
-    (a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime(),
-  );
-}
 
 /**
  * Virtualized Justified Photo Grid Component
@@ -338,27 +285,12 @@ export function PhotoGrid({
     setScrollTop(e.currentTarget.scrollTop);
   }, []);
 
-  // Compute preload queue for lightbox
-  const preloadQueue = useMemo((): PhotoMeta[] => {
-    if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
-
-    const queue: PhotoMeta[] = [];
-    const currentIdx = lightbox.currentIndex;
-
-    for (let offset = 1; offset <= PRELOAD_COUNT; offset++) {
-      const prevPhoto = sortedPhotos[currentIdx - offset];
-      const nextPhoto = sortedPhotos[currentIdx + offset];
-      if (prevPhoto) queue.push(prevPhoto);
-      if (nextPhoto) queue.push(nextPhoto);
-    }
-
-    return queue;
-  }, [
-    lightbox.isOpen,
-    lightbox.currentIndex,
-    lightbox.currentPhoto,
-    sortedPhotos,
-  ]);
+  const preloadQueue = useLightboxPreload({
+    isOpen: lightbox.isOpen,
+    currentIndex: lightbox.currentIndex,
+    navigationDirection: lightbox.navigationDirection,
+    photos: sortedPhotos,
+  });
 
   // Handle photo click to open lightbox
   const handlePhotoClick = useCallback(
