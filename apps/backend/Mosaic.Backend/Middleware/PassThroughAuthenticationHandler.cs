@@ -7,7 +7,7 @@ namespace Mosaic.Backend.Middleware;
 
 /// <summary>
 /// A pass-through authentication handler that supports the Forbid operation.
-/// The actual authentication is done by CombinedAuthMiddleware, which sets HttpContext.Items["AuthenticatedUser"].
+/// The actual authentication is done by CombinedAuthMiddleware, which sets HttpContext.Items["AuthSub"].
 /// This handler exists solely to provide a default scheme for Forbid() calls in controllers.
 /// </summary>
 public class PassThroughAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
@@ -25,7 +25,7 @@ public class PassThroughAuthenticationHandler : AuthenticationHandler<Authentica
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // Check if CombinedAuthMiddleware already authenticated the user
-        if (Context.Items.TryGetValue("AuthenticatedUser", out var userObj) && userObj is string username)
+        if (Context.Items.TryGetValue("AuthSub", out var userObj) && userObj is string username)
         {
             var claims = new[] { new Claim(ClaimTypes.Name, username) };
             var identity = new ClaimsIdentity(claims, SchemeName);
