@@ -13,21 +13,14 @@
  * 3. Full resolution shards (slow, network + decryption)
  */
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import {
   getCachedPlaceholderDataURL,
   isValidPlaceholderHash,
 } from '../../lib/thumbhash-decoder';
-import {
-  loadPhoto,
-  releasePhoto,
-  type PhotoLoadResult,
-} from '../../lib/photo-service';
 import type { PhotoMeta } from '../../workers/types';
-import { createLogger } from '../../lib/logger';
 import { formatDuration } from '../../lib/video-frame-extractor';
-
-const log = createLogger('JustifiedPhotoThumbnail');
+import { useThumbnailShard } from '../../hooks/useThumbnailShard';
 
 interface JustifiedPhotoThumbnailProps {
   photo: PhotoMeta;
@@ -56,13 +49,6 @@ interface JustifiedPhotoThumbnailProps {
   loadFullResolution?: boolean;
 }
 
-/** Loading state for thumbnail */
-type ThumbnailState =
-  | { status: 'idle' }
-  | { status: 'loading'; progress: number }
-  | { status: 'loaded'; result: PhotoLoadResult }
-  | { status: 'error'; error: Error };
-
 /**
  * Justified Photo Thumbnail Component
  * Displays a single photo in the justified grid with encrypted loading
@@ -80,7 +66,15 @@ export const JustifiedPhotoThumbnail = memo(function JustifiedPhotoThumbnail({
   showDelete = true,
   loadFullResolution = false,
 }: JustifiedPhotoThumbnailProps) {
-  const [state, setState] = useState<ThumbnailState>({ status: 'idle' });
+  const { state, handleRetry } = useThumbnailShard({
+    photoId: photo.id,
+    shardIds: photo.shardIds,
+    mimeType: photo.mimeType,
+    hasThumbnail: !!photo.thumbnail,
+    epochReadKey,
+    loadFullResolution,
+  });
+
   const [isHovered, setIsHovered] = useState(false);
 
   // Placeholder (ThumbHash or legacy BlurHash) - instant, decoded in <1ms
@@ -105,85 +99,6 @@ export const JustifiedPhotoThumbnail = memo(function JustifiedPhotoThumbnail({
     // Otherwise treat as base64
     return `data:image/jpeg;base64,${photo.thumbnail}`;
   }, [photo.thumbnail]);
-
-  // Only load shards if:
-  // 1. No embedded thumbnail exists, OR
-  // 2. Full resolution is explicitly requested
-  // AND we have the epoch key and shard IDs
-  const shouldLoadShards = useMemo(() => {
-    const hasShards =
-      epochReadKey && photo.shardIds && photo.shardIds.length > 0;
-    if (!hasShards) return false;
-    // Load shards if no thumbnail OR if full resolution is requested
-    return !photo.thumbnail || loadFullResolution;
-  }, [epochReadKey, photo.shardIds, photo.thumbnail, loadFullResolution]);
-
-  // Load photo shards when needed
-  useEffect(() => {
-    if (!shouldLoadShards || !epochReadKey) {
-      return;
-    }
-
-    let cancelled = false;
-
-    async function load() {
-      setState({ status: 'loading', progress: 0 });
-
-      try {
-        const result = await loadPhoto(
-          photo.id,
-          photo.shardIds,
-          epochReadKey!,
-          photo.mimeType,
-          {
-            onProgress: (loaded, total) => {
-              if (!cancelled) {
-                const progress = total > 0 ? loaded / total : 0;
-                setState({ status: 'loading', progress });
-              }
-            },
-          },
-        );
-
-        if (!cancelled) {
-          setState({ status: 'loaded', result });
-        }
-      } catch (error) {
-        log.error(`Photo ${photo.id} load failed:`, error);
-        if (!cancelled) {
-          setState({
-            status: 'error',
-            error: error instanceof Error ? error : new Error(String(error)),
-          });
-        }
-      }
-    }
-
-    void load();
-
-    return () => {
-      cancelled = true;
-      releasePhoto(photo.id);
-    };
-  }, [
-    photo.id,
-    photo.shardIds,
-    photo.mimeType,
-    epochReadKey,
-    shouldLoadShards,
-  ]);
-
-  // Retry handler for failed loads
-  const handleRetry = useCallback(() => {
-    if (epochReadKey && photo.shardIds?.length > 0) {
-      setState({ status: 'idle' });
-      loadPhoto(photo.id, photo.shardIds, epochReadKey, photo.mimeType, {
-        skipCache: true,
-      })
-        .then((result) => setState({ status: 'loaded', result }))
-        .catch((error) => setState({ status: 'error', error }));
-    }
-  }, [photo.id, photo.shardIds, photo.mimeType, epochReadKey]);
 
   // Handle click - allow clicking when any visual is available (blurhash, embedded thumbnail, or fully loaded)
   const isClickable =
