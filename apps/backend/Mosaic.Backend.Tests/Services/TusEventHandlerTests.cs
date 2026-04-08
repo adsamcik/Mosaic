@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Linq;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
@@ -14,8 +13,8 @@ using Xunit;
 namespace Mosaic.Backend.Tests.Services;
 
 /// <summary>
-/// Tests for TusEventHandlers.OnBeforeCreate, specifically the album expiration guard.
-/// Uses SQLite in-memory so the raw SQL quota queries execute correctly.
+/// Tests for TusEventHandlers.OnBeforeCreate album expiration guard.
+/// Uses SQLite in-memory so the raw SQL quota queries work correctly.
 /// </summary>
 public class TusEventHandlerTests : IDisposable
 {
@@ -25,7 +24,6 @@ public class TusEventHandlerTests : IDisposable
 
     public TusEventHandlerTests()
     {
-        // Shared SQLite in-memory connection kept open for the test lifetime
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
@@ -36,8 +34,6 @@ public class TusEventHandlerTests : IDisposable
         _db = new MosaicDbContext(options);
         _db.Database.EnsureCreated();
 
-        // The handler calls services.CreateScope() then resolves MosaicDbContext.
-        // Register with the same open connection so scoped instances share the DB.
         var services = new ServiceCollection();
         services.AddDbContext<MosaicDbContext>(opts => opts.UseSqlite(_connection));
         _provider = services.BuildServiceProvider();
@@ -50,33 +46,26 @@ public class TusEventHandlerTests : IDisposable
     }
 
     private static BeforeCreateContext CreateBeforeCreateContext(
-        HttpContext httpContext,
-        Guid? albumId = null,
-        long uploadLength = 1024)
+        HttpContext httpContext, Guid? albumId = null, long uploadLength = 1024)
     {
         Dictionary<string, tusdotnet.Models.Metadata> metadata;
         if (albumId.HasValue)
         {
-            var headerValue = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.Value.ToString()))}";
-            metadata = tusdotnet.Models.Metadata.Parse(headerValue);
+            var hdr = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.Value.ToString()))}";
+            metadata = tusdotnet.Models.Metadata.Parse(hdr);
         }
         else
         {
             metadata = new Dictionary<string, tusdotnet.Models.Metadata>();
         }
 
-        var context = new BeforeCreateContext
-        {
-            UploadLength = uploadLength,
-            Metadata = metadata
-        };
+        var ctx = new BeforeCreateContext { UploadLength = uploadLength, Metadata = metadata };
 
-        // HttpContext has a private setter — use reflection
-        var httpContextProp = typeof(EventContext<BeforeCreateContext>)
-            .GetProperty("HttpContext", BindingFlags.Public | BindingFlags.Instance);
-        httpContextProp!.SetValue(context, httpContext);
+        typeof(EventContext<BeforeCreateContext>)
+            .GetProperty("HttpContext", BindingFlags.Public | BindingFlags.Instance)!
+            .SetValue(ctx, httpContext);
 
-        return context;
+        return ctx;
     }
 
     [Fact]
@@ -106,17 +95,11 @@ public class TusEventHandlerTests : IDisposable
         album.ExpiresAt = DateTimeOffset.UtcNow.AddHours(1);
         await _db.SaveChangesAsync();
 
-        // Remove quota records — InMemory DB doesn't support raw SQL
-        db.UserQuotas.RemoveRange(db.UserQuotas);
-        await db.SaveChangesAsync();
-
         var httpContext = TestHttpContext.Create("test-user");
         var context = CreateBeforeCreateContext(httpContext, album.Id);
 
         await TusEventHandlers.OnBeforeCreate(context, _provider);
 
-        // Should pass the expiration check. Quota may or may not pass,
-        // but "expired" must not appear in the error.
         if (context.HasFailed)
         {
             Assert.DoesNotContain("expired", context.ErrorMessage, StringComparison.OrdinalIgnoreCase);
@@ -130,10 +113,6 @@ public class TusEventHandlerTests : IDisposable
         var user = await builder.CreateUserAsync("test-user");
         var album = await builder.CreateAlbumAsync(user);
         Assert.Null(album.ExpiresAt);
-
-        // Remove quota records — InMemory DB doesn't support raw SQL
-        db.UserQuotas.RemoveRange(db.UserQuotas);
-        await db.SaveChangesAsync();
 
         var httpContext = TestHttpContext.Create("test-user");
         var context = CreateBeforeCreateContext(httpContext, album.Id);

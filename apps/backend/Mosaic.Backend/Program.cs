@@ -113,6 +113,16 @@ builder.Services.AddAuthentication(PassThroughAuthenticationHandler.SchemeName)
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+    // Trust only configured proxy networks for X-Forwarded-For
+    var trustedProxies = builder.Configuration.GetSection("Auth:TrustedProxies").Get<string[]>() ?? [];
+    foreach (var cidr in trustedProxies)
+    {
+        if (System.Net.IPNetwork.TryParse(cidr, out var network))
+        {
+            options.KnownIPNetworks.Add(network);
+        }
+    }
 });
 
 // Ensure Auth:ServerSecret is set - generate random one if missing
