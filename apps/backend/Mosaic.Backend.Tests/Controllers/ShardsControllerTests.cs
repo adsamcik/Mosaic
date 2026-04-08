@@ -26,7 +26,7 @@ public class ShardsControllerTests
 
         storage.AddFile(shard.StorageKey, new byte[] { 0x01, 0x02, 0x03, 0x04 });
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -58,7 +58,7 @@ public class ShardsControllerTests
         storage.AddFile(shard.StorageKey, new byte[] { 0x01, 0x02, 0x03, 0x04 });
 
         var httpContext = TestHttpContext.Create(UploaderAuthSub);
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -84,7 +84,7 @@ public class ShardsControllerTests
         using var db = TestDbContextFactory.Create();
         var storage = new MockStorageService();
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -109,7 +109,7 @@ public class ShardsControllerTests
 
         await builder.CreateUserAsync(UploaderAuthSub);
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -135,7 +135,7 @@ public class ShardsControllerTests
         var uploader = await builder.CreateUserAsync(UploaderAuthSub);
         var shard = await builder.CreateShardAsync(uploader, ShardStatus.PENDING);
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -161,7 +161,7 @@ public class ShardsControllerTests
         var uploader = await builder.CreateUserAsync(UploaderAuthSub);
         var shard = await builder.CreateShardAsync(uploader, ShardStatus.TRASHED);
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -192,7 +192,7 @@ public class ShardsControllerTests
 
         storage.AddFile(shard.StorageKey);
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -224,7 +224,7 @@ public class ShardsControllerTests
 
         storage.AddFile(shard.StorageKey, new byte[] { 0x01, 0x02, 0x03, 0x04 });
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -250,7 +250,7 @@ public class ShardsControllerTests
         var uploader = await builder.CreateUserAsync(UploaderAuthSub);
         var shard = await builder.CreateShardAsync(uploader, ShardStatus.PENDING, sizeBytes: 1024);
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -273,7 +273,7 @@ public class ShardsControllerTests
         using var db = TestDbContextFactory.Create();
         var storage = new MockStorageService();
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -298,7 +298,7 @@ public class ShardsControllerTests
 
         await builder.CreateUserAsync(UploaderAuthSub);
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -327,7 +327,7 @@ public class ShardsControllerTests
         var shard = await builder.CreateShardAsync(uploader, ShardStatus.ACTIVE);
         await builder.CreateManifestAsync(album, [shard]);
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -357,7 +357,7 @@ public class ShardsControllerTests
         var shard = await builder.CreateShardAsync(uploader, ShardStatus.ACTIVE);
         await builder.CreateManifestAsync(album, [shard]);
 
-        var controller = new ShardsController(db, storage)
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {

@@ -33,7 +33,7 @@ public static class TusEventHandlers
             return;
         }
 
-        // Check if the target album has expired
+        // Check if the target album has expired and user is a member
         if (context.Metadata.ContainsKey("albumId"))
         {
             var albumIdStr = context.Metadata["albumId"].GetString(Encoding.UTF8);
@@ -43,6 +43,16 @@ public static class TusEventHandlers
                 if (album != null && album.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
                 {
                     context.FailRequest("Album has expired");
+                    return;
+                }
+
+                // Verify user is an active member of the album
+                var isMember = await db.AlbumMembers
+                    .AsNoTracking()
+                    .AnyAsync(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null);
+                if (!isMember)
+                {
+                    context.FailRequest("Access denied");
                     return;
                 }
             }
