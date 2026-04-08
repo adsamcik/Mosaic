@@ -95,9 +95,19 @@ if [ "$SUITE" = "all" ] || [ "$SUITE" = "unit" ]; then
     echo -e "\n${CYAN}🧩 Running crypto library unit tests...${NC}"
     cd "$PROJECT_ROOT/libs/crypto"
     if npm test -- run; then
-        echo -e "${GREEN}✅ Unit tests passed${NC}"
+        echo -e "${GREEN}✅ Crypto unit tests passed${NC}"
     else
-        echo -e "${RED}❌ Unit tests failed${NC}"
+        echo -e "${RED}❌ Crypto unit tests failed${NC}"
+        exit_code=1
+    fi
+    cd "$PROJECT_ROOT"
+
+    echo -e "\n${CYAN}🧩 Running admin frontend tests...${NC}"
+    cd "$PROJECT_ROOT/apps/web"
+    if npm test -- run; then
+        echo -e "${GREEN}✅ Admin tests passed${NC}"
+    else
+        echo -e "${RED}❌ Admin tests failed${NC}"
         exit_code=1
     fi
     cd "$PROJECT_ROOT"
