@@ -109,6 +109,9 @@ builder.Services.AddAuthentication(PassThroughAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, PassThroughAuthenticationHandler>(
         PassThroughAuthenticationHandler.SchemeName, null);
 
+// NOTE: AllowedHosts is "*" in development but restricted in appsettings.Production.json.
+// For production, set the environment variable AllowedHosts to your domain (e.g. "mosaic.example.com").
+
 // Configure forwarded headers for reverse proxy support
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {

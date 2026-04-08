@@ -37,6 +37,7 @@ artifacts/
 *.key
 **/appsettings.*.json
 !**/appsettings.Development.json
+!**/appsettings.Production.json
 
 # IDE
 .idea/
