@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.ShareLinks;
+using Mosaic.Backend.Services;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
 using Mosaic.Backend.Tests.TestHelpers;
@@ -466,7 +468,7 @@ public class SecurityTests
         await builder.CreateUserAsync(UserB);
         var album = await builder.CreateAlbumAsync(owner);
 
-        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db), new EpochKeyRotationService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -501,7 +503,7 @@ public class SecurityTests
         membership.RevokedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db), new EpochKeyRotationService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -607,7 +609,7 @@ public class SecurityTests
         var album = await builder.CreateAlbumAsync(owner);
         await builder.AddMemberAsync(album, member, "viewer", owner);
 
-        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        var controller = new ShareLinksController(db, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext
             {
@@ -652,7 +654,7 @@ public class SecurityTests
         var album = await builder.CreateAlbumAsync(owner);
         var shareLink = await builder.CreateShareLinkAsync(album, isRevoked: true);
 
-        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        var controller = new ShareLinkAccessController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -686,7 +688,7 @@ public class SecurityTests
             album,
             expiresAt: DateTimeOffset.UtcNow.AddDays(-1)); // Expired
 
-        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        var controller = new ShareLinkAccessController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {
@@ -720,7 +722,7 @@ public class SecurityTests
             maxUses: 5,
             useCount: 5); // Already at max
 
-        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        var controller = new ShareLinkAccessController(db, config, new MockStorageService())
         {
             ControllerContext = new ControllerContext
             {

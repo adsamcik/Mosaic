@@ -43,6 +43,7 @@ builder.Services.AddDbContext<MosaicDbContext>(options =>
 builder.Services.AddScoped<IStorageService, LocalStorageService>();
 builder.Services.AddScoped<IQuotaSettingsService, QuotaSettingsService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<IEpochKeyRotationService, EpochKeyRotationService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
 builder.Services.AddExceptionHandler<DatabaseExceptionHandler>();

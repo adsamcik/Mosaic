@@ -14,11 +14,13 @@ public class EpochKeysController : ControllerBase
 {
     private readonly MosaicDbContext _db;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IEpochKeyRotationService _epochKeyRotationService;
 
-    public EpochKeysController(MosaicDbContext db, ICurrentUserService currentUserService)
+    public EpochKeysController(MosaicDbContext db, ICurrentUserService currentUserService, IEpochKeyRotationService epochKeyRotationService)
     {
         _db = db;
         _currentUserService = currentUserService;
+        _epochKeyRotationService = epochKeyRotationService;
     }
 
     /// <summary>
@@ -220,169 +222,21 @@ public class EpochKeysController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        // Batch load data to avoid N+1 queries
-        var requestedRecipientIds = request.EpochKeys.Select(k => k.RecipientId).ToHashSet();
-        
-        // Load all active members for this album in one query
-        var activeMembers = await _db.AlbumMembers
-            .Where(am => am.AlbumId == albumId && am.RevokedAt == null)
-            .Select(am => am.UserId)
-            .ToHashSetAsync();
+        var result = await _epochKeyRotationService.RotateAsync(album, epochId, request);
 
-        // Load all existing epoch keys for this album/epoch in one query
-        var existingKeys = await _db.EpochKeys
-            .Where(ek => ek.AlbumId == albumId && ek.EpochId == epochId)
-            .Select(ek => ek.RecipientId)
-            .ToHashSetAsync();
-
-        // Batch load share links if needed
-        Dictionary<Guid, ShareLink>? shareLinksByLinkId = null;
-        if (request.ShareLinkKeys != null && request.ShareLinkKeys.Length > 0)
+        if (!result.Success)
         {
-            var shareLinkIds = request.ShareLinkKeys.Select(sl => sl.ShareLinkId).ToList();
-            shareLinksByLinkId = await _db.ShareLinks
-                .Include(sl => sl.LinkEpochKeys)
-                .Where(sl => shareLinkIds.Contains(sl.Id) && sl.AlbumId == albumId)
-                .AsSplitQuery()
-                .ToDictionaryAsync(sl => sl.Id);
-        }
-
-        // Use a transaction for atomicity
-        await using var tx = await _db.Database.BeginTransactionAsync();
-        try
-        {
-            // Increment album's CurrentEpochId
-            album.CurrentEpochId = epochId;
-            album.UpdatedAt = DateTime.UtcNow;
-
-            // Validate and create epoch keys for all provided members
-            foreach (var keyRequest in request.EpochKeys)
-            {
-                // Check recipient is a member (using pre-loaded data)
-                if (!activeMembers.Contains(keyRequest.RecipientId))
-                {
-                    await tx.RollbackAsync();
-                    return Problem(
-                        detail: $"Recipient {keyRequest.RecipientId} is not a member of this album",
-                        statusCode: StatusCodes.Status400BadRequest);
-                }
-
-                // Check for existing key (using pre-loaded data)
-                if (existingKeys.Contains(keyRequest.RecipientId))
-                {
-                    await tx.RollbackAsync();
-                    return Problem(
-                        detail: $"Epoch key already exists for recipient {keyRequest.RecipientId}",
-                        statusCode: StatusCodes.Status409Conflict);
-                }
-
-                var epochKey = new EpochKey
-                {
-                    Id = Guid.CreateVersion7(),
-                    AlbumId = albumId,
-                    RecipientId = keyRequest.RecipientId,
-                    EpochId = epochId,
-                    EncryptedKeyBundle = keyRequest.EncryptedKeyBundle,
-                    OwnerSignature = keyRequest.OwnerSignature,
-                    SharerPubkey = keyRequest.SharerPubkey,
-                    SignPubkey = keyRequest.SignPubkey
-                };
-
-                _db.EpochKeys.Add(epochKey);
-            }
-
-            // Update share link wrapped keys if provided
-            var shareLinkKeysUpdated = 0;
-            if (request.ShareLinkKeys != null && request.ShareLinkKeys.Length > 0 && shareLinksByLinkId != null)
-            {
-                foreach (var linkUpdate in request.ShareLinkKeys)
-                {
-                    // Verify share link exists (using pre-loaded data)
-                    if (!shareLinksByLinkId.TryGetValue(linkUpdate.ShareLinkId, out var shareLink))
-                    {
-                        await tx.RollbackAsync();
-                        return Problem(
-                            detail: $"Share link {linkUpdate.ShareLinkId} not found or doesn't belong to this album",
-                            statusCode: StatusCodes.Status400BadRequest);
-                    }
-
-                    // Verify link is not revoked
-                    if (shareLink.IsRevoked)
-                    {
-                        continue; // Skip revoked links
-                    }
-
-                    // Add new wrapped keys for the new epoch
-                    foreach (var wrappedKey in linkUpdate.WrappedKeys)
-                    {
-                        if (wrappedKey.Nonce == null || wrappedKey.Nonce.Length != 24)
-                        {
-                            await tx.RollbackAsync();
-                            return Problem(
-                                detail: "Each wrapped key must have a 24-byte nonce",
-                                statusCode: StatusCodes.Status400BadRequest);
-                        }
-                        if (wrappedKey.EncryptedKey == null || wrappedKey.EncryptedKey.Length == 0)
-                        {
-                            await tx.RollbackAsync();
-                            return Problem(
-                                detail: "Each wrapped key must have an encryptedKey",
-                                statusCode: StatusCodes.Status400BadRequest);
-                        }
-                        if (wrappedKey.Tier < 1 || wrappedKey.Tier > shareLink.AccessTier)
-                        {
-                            await tx.RollbackAsync();
-                            return Problem(
-                                detail: $"Wrapped key tier must be between 1 and {shareLink.AccessTier}",
-                                statusCode: StatusCodes.Status400BadRequest);
-                        }
-
-                        _db.LinkEpochKeys.Add(new LinkEpochKey
-                        {
-                            Id = Guid.CreateVersion7(),
-                            ShareLinkId = shareLink.Id,
-                            EpochId = epochId,
-                            Tier = wrappedKey.Tier,
-                            WrappedNonce = wrappedKey.Nonce,
-                            WrappedKey = wrappedKey.EncryptedKey
-                        });
-                    }
-                    shareLinkKeysUpdated++;
-                }
-            }
-
-            await _db.SaveChangesAsync();
-            await tx.CommitAsync();
-
-            return Created($"/api/albums/{albumId}/epochs/{epochId}", new
-            {
-                AlbumId = albumId,
-                EpochId = epochId,
-                KeyCount = request.EpochKeys.Length,
-                ShareLinkKeysUpdated = shareLinkKeysUpdated
-            });
-        }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("unique", StringComparison.OrdinalIgnoreCase) == true ||
-                                            ex.InnerException?.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            // Handle race condition: another request created keys for this epoch concurrently
-            await tx.RollbackAsync();
             return Problem(
-                detail: "Epoch keys already exist for this epoch. Another request may have created them concurrently.",
-                statusCode: StatusCodes.Status409Conflict);
+                detail: result.ErrorDetail,
+                statusCode: result.StatusCode);
         }
-        catch (DbUpdateConcurrencyException)
+
+        return Created($"/api/albums/{albumId}/epochs/{epochId}", new
         {
-            // Handle optimistic concurrency violations
-            await tx.RollbackAsync();
-            return Problem(
-                detail: "Album was modified by another request. Please retry.",
-                statusCode: StatusCodes.Status409Conflict);
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
+            result.AlbumId,
+            result.EpochId,
+            result.KeyCount,
+            result.ShareLinkKeysUpdated
+        });
     }
 }
