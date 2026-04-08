@@ -85,6 +85,7 @@ function renderComponent(props: {
   linkId: string;
   albumId: string;
   accessTier: AccessTier;
+  grantToken?: string | null;
   tierKeys: Map<number, Map<AccessTier, TierKey>>;
   isLoadingKeys: boolean;
 }) {
@@ -241,6 +242,27 @@ describe('SharedGallery', () => {
       await waitFor(() => getByText(/Failed to load photos/i) !== null);
 
       expect(getByText(/Failed to load photos/i)).not.toBeNull();
+
+      cleanup();
+    });
+
+    it('should send the share grant header when provided', async () => {
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        grantToken: 'grant-token-123',
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
+      });
+
+      await waitFor(() => getByTestId('shared-photo-grid') !== null);
+
+      expect(mocks.fetch).toHaveBeenCalledWith('/api/s/test-link-id/photos', {
+        headers: {
+          'X-Share-Grant': 'grant-token-123',
+        },
+      });
 
       cleanup();
     });
@@ -450,7 +472,7 @@ describe('SharedGallery', () => {
 
       await waitFor(() => mocks.fetch.mock.calls.length > 0);
 
-      expect(mocks.fetch).toHaveBeenCalledWith('/api/s/test-link-id/photos');
+      expect(mocks.fetch).toHaveBeenCalledWith('/api/s/test-link-id/photos', {});
 
       cleanup();
     });

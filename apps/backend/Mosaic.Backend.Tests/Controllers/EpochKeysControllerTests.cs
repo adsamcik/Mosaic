@@ -70,7 +70,7 @@ public class EpochKeysControllerTests
     }
 
     [Fact]
-    public async Task Create_CreatesEpochKey_WhenOwnerCreates()
+    public async Task Create_CreatesEpochKey_WhenOwnerCreatesForActiveMember()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -108,7 +108,7 @@ public class EpochKeysControllerTests
     }
 
     [Fact]
-    public async Task Create_CreatesEpochKey_WhenEditorCreates()
+    public async Task Create_CreatesEpochKey_WhenEditorCreatesForActiveMember()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -186,6 +186,45 @@ public class EpochKeysControllerTests
     }
 
     [Fact]
+    public async Task Create_ReturnsForbid_WhenNonMemberTries()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var outsider = await builder.CreateUserAsync("outsider-user");
+        var recipient = await builder.CreateUserAsync(MemberAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.AddMemberAsync(album, recipient, "viewer", owner);
+
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create("outsider-user")
+            }
+        };
+
+        var request = new EpochKeysController.CreateEpochKeyRequest(
+            RecipientId: recipient.Id,
+            EpochId: 1,
+            EncryptedKeyBundle: new byte[32],
+            OwnerSignature: new byte[64],
+            SharerPubkey: new byte[32],
+            SignPubkey: new byte[32]
+        );
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+        Assert.Empty(db.EpochKeys.Where(ek => ek.RecipientId == recipient.Id && ek.AlbumId == album.Id));
+    }
+
+    [Fact]
     public async Task Create_ReturnsNotFound_WhenRecipientNotExists()
     {
         // Arrange
@@ -218,6 +257,83 @@ public class EpochKeysControllerTests
 
         // Assert
         ProblemDetailsAssertions.AssertNotFound(result);
+    }
+
+    [Fact]
+    public async Task Create_ReturnsBadRequest_WhenRecipientIsNotActiveMember()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var recipient = await builder.CreateUserAsync(MemberAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new EpochKeysController.CreateEpochKeyRequest(
+            RecipientId: recipient.Id,
+            EpochId: 1,
+            EncryptedKeyBundle: new byte[32],
+            OwnerSignature: new byte[64],
+            SharerPubkey: new byte[32],
+            SignPubkey: new byte[32]
+        );
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Empty(db.EpochKeys.Where(ek => ek.RecipientId == recipient.Id && ek.AlbumId == album.Id));
+    }
+
+    [Fact]
+    public async Task Create_ReturnsBadRequest_WhenRecipientMembershipIsRevoked()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var recipient = await builder.CreateUserAsync(MemberAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var membership = await builder.AddMemberAsync(album, recipient, "viewer", owner);
+        membership.RevokedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new EpochKeysController.CreateEpochKeyRequest(
+            RecipientId: recipient.Id,
+            EpochId: 1,
+            EncryptedKeyBundle: new byte[32],
+            OwnerSignature: new byte[64],
+            SharerPubkey: new byte[32],
+            SignPubkey: new byte[32]
+        );
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Empty(db.EpochKeys.Where(ek => ek.RecipientId == recipient.Id && ek.AlbumId == album.Id));
     }
 
     [Fact]

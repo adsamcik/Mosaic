@@ -37,6 +37,8 @@ export interface LinkKeyState {
   albumId: string | null;
   /** Encrypted album name (base64) */
   encryptedName: string | null;
+  /** Short-lived grant token for limited-use share links */
+  grantToken: string | null;
   /** Unwrapped tier keys by epoch */
   tierKeys: Map<number, Map<AccessTierType, TierKey>>;
   /** Whether the link is valid */
@@ -58,6 +60,7 @@ export interface LinkAccessResponse {
   accessTier: AccessTierType;
   epochCount: number;
   encryptedName?: string | null;
+  grantToken?: string | null;
 }
 
 /**
@@ -91,11 +94,12 @@ export function useLinkKeys(
     error: null,
     linkId: null,
     accessTier: null,
-    albumId: null,
-    encryptedName: null,
-    tierKeys: new Map(),
-    isValid: false,
-  });
+      albumId: null,
+      encryptedName: null,
+      grantToken: null,
+      tierKeys: new Map(),
+      isValid: false,
+    });
 
   /**
    * Fetch and unwrap keys from server
@@ -141,23 +145,8 @@ export function useLinkKeys(
         throw new Error('Link has been tampered with');
       }
 
-      // Check IndexedDB cache first (encrypted)
-      const cached = await getTierKeys(linkId);
-      if (cached) {
-        setState({
-          isLoading: false,
-          error: null,
-          linkId,
-          accessTier: cached.accessTier,
-          albumId: cached.albumId,
-          encryptedName: null,
-          tierKeys: cached.tierKeys,
-          isValid: true,
-        });
-        return;
-      }
-
-      // Fetch link info from server
+      // Always fetch link info first so limited-use links consume access and return
+      // a fresh grant token for subsequent /keys, /photos, and /shards requests.
       const accessResponse = await fetch(`/api/s/${linkId}`);
       if (!accessResponse.ok) {
         const errorData = await accessResponse.json().catch(() => ({}));
@@ -167,8 +156,35 @@ export function useLinkKeys(
       }
       const linkAccess: LinkAccessResponse = await accessResponse.json();
 
+      // Check IndexedDB cache after access validation. Cached tier keys are still valid,
+      // but limited-use links need a fresh grant token on each page load.
+      const cached = await getTierKeys(linkId);
+      if (cached) {
+        setState({
+          isLoading: false,
+          error: null,
+          linkId,
+          accessTier: linkAccess.accessTier,
+          albumId: linkAccess.albumId,
+          encryptedName: linkAccess.encryptedName ?? null,
+          grantToken: linkAccess.grantToken ?? null,
+          tierKeys: cached.tierKeys,
+          isValid: true,
+        });
+        return;
+      }
+
       // Fetch wrapped keys from server
-      const keysResponse = await fetch(`/api/s/${linkId}/keys`);
+      const keysResponse = await fetch(
+        `/api/s/${linkId}/keys`,
+        linkAccess.grantToken
+          ? {
+              headers: {
+                'X-Share-Grant': linkAccess.grantToken,
+              },
+            }
+          : {},
+      );
       if (!keysResponse.ok) {
         const errorData = await keysResponse.json().catch(() => ({}));
         throw new Error(
@@ -238,6 +254,7 @@ export function useLinkKeys(
         accessTier: linkAccess.accessTier,
         albumId: linkAccess.albumId,
         encryptedName: linkAccess.encryptedName ?? null,
+        grantToken: linkAccess.grantToken ?? null,
         tierKeys,
         isValid: true,
       });

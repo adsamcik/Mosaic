@@ -160,6 +160,7 @@ export async function downloadShards(
  *
  * @param linkId - The share link ID
  * @param shardId - The shard ID to download
+ * @param grantToken - Optional grant token for limited-use share links
  * @param onProgress - Optional progress callback
  * @returns The encrypted shard data as Uint8Array
  * @throws ShardDownloadError if download fails
@@ -167,12 +168,23 @@ export async function downloadShards(
 export async function downloadShardViaShareLink(
   linkId: string,
   shardId: string,
+  grantToken?: string,
   onProgress?: ProgressCallback,
 ): Promise<Uint8Array> {
   try {
-    const response = await fetch(`/api/s/${linkId}/shards/${shardId}`, {
+    const requestInit: RequestInit = {
       credentials: 'same-origin',
-    });
+    };
+    if (grantToken) {
+      requestInit.headers = {
+        'X-Share-Grant': grantToken,
+      };
+    }
+
+    const response = await fetch(
+      `/api/s/${linkId}/shards/${shardId}`,
+      requestInit,
+    );
 
     if (!response.ok) {
       throw new ApiError(response.status, response.statusText);

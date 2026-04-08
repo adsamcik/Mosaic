@@ -114,7 +114,7 @@ public class MembersControllerTests
     }
 
     [Fact]
-    public async Task Invite_AddsMember_WhenEditorInvites()
+    public async Task Invite_ReturnsForbid_WhenEditorTriesToInvite()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -153,7 +153,9 @@ public class MembersControllerTests
         var result = await controller.Invite(album.Id, request);
 
         // Assert
-        Assert.IsType<CreatedResult>(result);
+        Assert.IsType<ForbidResult>(result);
+        Assert.Equal(2, db.AlbumMembers.Count()); // owner + editor
+        Assert.Empty(db.EpochKeys);
     }
 
     [Fact]
@@ -197,6 +199,50 @@ public class MembersControllerTests
 
         // Assert
         Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task Invite_ReturnsForbid_WhenNonMemberTries()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var outsider = await builder.CreateUserAsync("outsider-user");
+        var invitee = await builder.CreateUserAsync(MemberAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new MembersController(db, config, new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<MembersController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create("outsider-user")
+            }
+        };
+
+        var request = new MembersController.InviteRequest(
+            RecipientId: invitee.Id,
+            Role: "viewer",
+            EpochKeys: [
+                new MembersController.EpochKeyCreate(
+                    EpochId: 1,
+                    EncryptedKeyBundle: Convert.ToBase64String(new byte[32]),
+                    OwnerSignature: Convert.ToBase64String(new byte[64]),
+                    SharerPubkey: Convert.ToBase64String(new byte[32]),
+                    SignPubkey: Convert.ToBase64String(new byte[32])
+                )
+            ]
+        );
+
+        // Act
+        var result = await controller.Invite(album.Id, request);
+
+        // Assert
+        Assert.IsType<ForbidResult>(result);
+        Assert.Single(db.AlbumMembers); // owner only
+        Assert.Empty(db.EpochKeys);
     }
 
     [Fact]

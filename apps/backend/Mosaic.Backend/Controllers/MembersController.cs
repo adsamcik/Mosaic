@@ -104,8 +104,8 @@ public class MembersController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        // Verify caller has permission to invite
-        var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
+        // Verify caller has permission to manage members
+        var (_, memberError) = await _db.RequireAlbumMemberManagerAsync(albumId, user.Id);
         if (memberError != null) return memberError;
 
         // Check if recipient user exists

@@ -213,22 +213,55 @@ class SessionManager {
    * Use this when the user cannot restore their session (e.g., wrong password, corrupted data).
    * This clears all local session state but preserves encrypted data on the server.
    */
-  clearCorruptedSession(): void {
+  async clearCorruptedSession(): Promise<void> {
     log.info('Clearing corrupted session state');
 
-    // Clear session storage (removes session state key and cached keys)
-    sessionStorage.clear();
+    // Clear idle timer
+    if (this.idleTimer !== null) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
 
-    // Clear any cached keys from memory
+    // Unsubscribe from settings changes and activity listeners
+    if (this.settingsUnsubscribe) {
+      this.settingsUnsubscribe();
+      this.settingsUnsubscribe = null;
+    }
+    this.detachIdleListeners();
+
+    // Clear cached data from memory before tearing down workers
+    clearAllCachedMetadata();
+    clearAllCovers();
+    clearPlaceholderCache();
+    clearPhotoCache();
+    clearAllEpochKeys();
     clearCacheEncryptionKey();
     clearLinkKeyEncryption();
 
-    // Clear cached metadata and covers from memory
-    clearAllCachedMetadata();
-    clearAllCovers();
+    // Dispose sync-related timers before closing worker clients
+    syncCoordinator.dispose();
 
-    // Clear epoch keys from memory
-    clearAllEpochKeys();
+    // Tear down workers so worker-resident keys are dropped immediately
+    const workerResults = await Promise.allSettled([
+      closeDbClient(),
+      closeCryptoClient(),
+      Promise.resolve().then(() => closeGeoClient()),
+    ]);
+
+    workerResults.forEach((result, index) => {
+      if (result.status !== 'rejected') {
+        return;
+      }
+
+      const workerName =
+        index === 0 ? 'db' : index === 1 ? 'crypto' : 'geo';
+      log.warn(`Failed to close ${workerName} worker during session clear`, {
+        error: result.reason,
+      });
+    });
+
+    // Clear session storage (removes session state key and cached keys)
+    sessionStorage.clear();
 
     // Reset internal state
     this._currentUser = null;

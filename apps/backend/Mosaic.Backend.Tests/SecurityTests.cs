@@ -177,7 +177,7 @@ public class SecurityTests
     #region Member Management Authorization
 
     [Fact]
-    public async Task Security_Members_NonOwnerCannotInviteMembers()
+    public async Task Security_Members_EditorCannotInviteMembers()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -185,16 +185,16 @@ public class SecurityTests
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync(UserA);
-        var member = await builder.CreateUserAsync(UserB);
+        var editor = await builder.CreateUserAsync(UserB);
         var invitee = await builder.CreateUserAsync(UserC);
         var album = await builder.CreateAlbumAsync(owner);
-        await builder.AddMemberAsync(album, member, "viewer", owner);
+        await builder.AddMemberAsync(album, editor, "editor", owner);
 
         var controller = new MembersController(db, config, new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<MembersController>())
         {
             ControllerContext = new ControllerContext
             {
-                HttpContext = TestHttpContext.Create(UserB) // Non-owner
+                HttpContext = TestHttpContext.Create(UserB) // Editor, not owner
             }
         };
 
@@ -215,7 +215,7 @@ public class SecurityTests
         // Act
         var result = await controller.Invite(album.Id, request);
 
-        // Assert - Only owner can invite
+        // Assert - Editors cannot manage membership
         Assert.IsType<ForbidResult>(result);
     }
 
@@ -807,4 +807,3 @@ public class SecurityTests
 
     #endregion
 }
-

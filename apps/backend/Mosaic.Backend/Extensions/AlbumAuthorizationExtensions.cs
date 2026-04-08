@@ -11,6 +11,22 @@ namespace Mosaic.Backend.Extensions;
 /// </summary>
 public static class AlbumAuthorizationExtensions
 {
+    private static async Task<(AlbumMember? Member, IActionResult? Error)> RequireAlbumRoleAsync(
+        this MosaicDbContext db,
+        Guid albumId,
+        Guid userId,
+        Func<string, bool> canAccess,
+        IActionResult? notMemberResult = null)
+    {
+        var (member, error) = await db.GetAlbumMemberAsync(albumId, userId, notMemberResult);
+        if (error != null)
+        {
+            return (null, error);
+        }
+
+        return canAccess(member!.Role) ? (member, null) : (null, new ForbidResult());
+    }
+
     /// <summary>
     /// Loads the album and verifies the user is the owner.
     /// Returns (album, null) on success.
@@ -71,13 +87,20 @@ public static class AlbumAuthorizationExtensions
     /// <param name="notMemberResult">
     /// Override the default <see cref="ForbidResult"/> when no membership is found.
     /// </param>
-    public static async Task<(AlbumMember? Member, IActionResult? Error)> RequireAlbumEditorAsync(
+    public static Task<(AlbumMember? Member, IActionResult? Error)> RequireAlbumEditorAsync(
         this MosaicDbContext db, Guid albumId, Guid userId, IActionResult? notMemberResult = null)
-    {
-        var (member, error) = await db.GetAlbumMemberAsync(albumId, userId, notMemberResult);
-        if (error != null) return (null, error);
-        if (!AlbumRoles.CanUpload(member!.Role))
-            return (null, new ForbidResult());
-        return (member, null);
-    }
+        => db.RequireAlbumRoleAsync(albumId, userId, AlbumRoles.CanUpload, notMemberResult);
+
+    /// <summary>
+    /// Loads the active membership and verifies the user can manage album members
+    /// (i.e. <see cref="AlbumRoles.CanManageMembers"/>).
+    /// Returns (member, null) on success.
+    /// Returns (null, Forbid) if not a member or insufficient role.
+    /// </summary>
+    /// <param name="notMemberResult">
+    /// Override the default <see cref="ForbidResult"/> when no membership is found.
+    /// </param>
+    public static Task<(AlbumMember? Member, IActionResult? Error)> RequireAlbumMemberManagerAsync(
+        this MosaicDbContext db, Guid albumId, Guid userId, IActionResult? notMemberResult = null)
+        => db.RequireAlbumRoleAsync(albumId, userId, AlbumRoles.CanManageMembers, notMemberResult);
 }

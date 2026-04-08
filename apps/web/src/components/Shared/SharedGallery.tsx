@@ -23,6 +23,8 @@ interface SharedGalleryProps {
   albumId: string;
   /** Access tier granted by this link */
   accessTier: AccessTierType;
+  /** Short-lived grant token for limited-use links */
+  grantToken?: string | null | undefined;
   /** Tier keys by epoch */
   tierKeys: Map<number, Map<AccessTierType, TierKey>>;
   /** Whether keys are still loading */
@@ -50,6 +52,7 @@ export function SharedGallery({
   linkId,
   albumId,
   accessTier,
+  grantToken,
   tierKeys,
   isLoadingKeys = false,
   albumName,
@@ -83,7 +86,16 @@ export function SharedGallery({
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch(`/api/s/${linkId}/photos`);
+        const response = await fetch(
+          `/api/s/${linkId}/photos`,
+          grantToken
+            ? {
+                headers: {
+                  'X-Share-Grant': grantToken,
+                },
+              }
+            : {},
+        );
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           throw new Error(
@@ -170,7 +182,7 @@ export function SharedGallery({
     return () => {
       cancelled = true;
     };
-  }, [linkId, albumId, tierKeys, isLoadingKeys]);
+  }, [linkId, albumId, grantToken, tierKeys, isLoadingKeys]);
 
   /**
    * Get tier key for a specific epoch and tier
@@ -354,6 +366,7 @@ export function SharedGallery({
             photos={photos}
             linkId={linkId}
             accessTier={accessTier}
+            grantToken={grantToken}
             getTierKey={getTierKey}
             isLoadingKeys={isLoadingKeys}
           />
@@ -362,6 +375,7 @@ export function SharedGallery({
             photos={photos}
             linkId={linkId}
             accessTier={accessTier}
+            grantToken={grantToken}
             getTierKey={getTierKey}
             isLoadingKeys={isLoadingKeys}
           />

@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   downloadShard,
+  downloadShardViaShareLink,
   downloadShards,
   ShardDownloadError,
 } from '../src/lib/shard-service';
@@ -51,6 +52,9 @@ describe('downloadShard', () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
+      headers: {
+        get: vi.fn(() => null),
+      },
       arrayBuffer: vi.fn().mockResolvedValue(testData.buffer),
     });
 
@@ -267,5 +271,45 @@ describe('downloadShards', () => {
     expect(progressCallback).toHaveBeenCalled();
     // Should have fetched both shards
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('downloadShardViaShareLink', () => {
+  const mockFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    globalThis.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('sends the share grant header when provided', async () => {
+    const testData = new Uint8Array([1, 2, 3]);
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: vi.fn(() => null),
+      },
+      arrayBuffer: vi.fn().mockResolvedValue(testData.buffer),
+    });
+
+    const result = await downloadShardViaShareLink(
+      'link-123',
+      'shard-123',
+      'grant-token-123',
+    );
+
+    expect(mockFetch).toHaveBeenCalledWith('/api/s/link-123/shards/shard-123', {
+      credentials: 'same-origin',
+      headers: {
+        'X-Share-Grant': 'grant-token-123',
+      },
+    });
+    expect(result).toEqual(testData);
   });
 });

@@ -25,6 +25,7 @@ interface SharedMosaicPhotoGridProps {
   photos: PhotoMeta[];
   linkId: string;
   accessTier: AccessTierType;
+  grantToken?: string | null | undefined;
   getTierKey: (epochId: number, tier: AccessTierType) => Uint8Array | undefined;
   isLoadingKeys?: boolean;
 }
@@ -44,6 +45,7 @@ export function SharedMosaicPhotoGrid({
   photos,
   linkId,
   accessTier,
+  grantToken,
   getTierKey,
   isLoadingKeys = false,
 }: SharedMosaicPhotoGridProps) {
@@ -250,6 +252,7 @@ export function SharedMosaicPhotoGrid({
         <SharedPhotoLightbox
           photo={currentPhoto}
           linkId={linkId}
+          grantToken={grantToken}
           tierKey={getTierKey(currentPhoto.epochId, accessTier)} // Current photo key
           accessTier={accessTier}
           onClose={() => setLightboxIndex(null)}

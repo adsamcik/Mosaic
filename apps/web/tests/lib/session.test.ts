@@ -565,4 +565,103 @@ describe('session', () => {
       expect(listener).toHaveBeenCalled();
     });
   });
+
+  describe('clearCorruptedSession', () => {
+    it('clears caches and tears down worker clients', async () => {
+      const {
+        session,
+        clearAllCachedMetadata,
+        clearAllCovers,
+        clearPlaceholderCache,
+        clearPhotoCache,
+        clearAllEpochKeys,
+        clearCacheEncryptionKey,
+        closeDbClient,
+        closeCryptoClient,
+        closeGeoClient,
+        getApi,
+        getCryptoClient,
+        getDbClient,
+      } = await getSessionModule();
+
+      const salt = new Uint8Array(16).fill(7);
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...salt)),
+      );
+      sessionStorage.setItem('mosaic:sessionState', 'active');
+      (getApi as Mock).mockReturnValue(mockApi);
+      (getCryptoClient as Mock).mockResolvedValue(mockCryptoClient);
+      (getDbClient as Mock).mockResolvedValue(mockDbClient);
+      mockApi.getCurrentUser.mockResolvedValue(mockUser);
+
+      await session.login('test-password');
+      vi.clearAllMocks();
+
+      await session.clearCorruptedSession();
+
+      expect(clearAllCachedMetadata).toHaveBeenCalledOnce();
+      expect(clearAllCovers).toHaveBeenCalledOnce();
+      expect(clearPlaceholderCache).toHaveBeenCalledOnce();
+      expect(clearPhotoCache).toHaveBeenCalledOnce();
+      expect(clearAllEpochKeys).toHaveBeenCalledOnce();
+      expect(clearCacheEncryptionKey).toHaveBeenCalledOnce();
+      expect(closeDbClient).toHaveBeenCalledOnce();
+      expect(closeCryptoClient).toHaveBeenCalledOnce();
+      expect(closeGeoClient).toHaveBeenCalledOnce();
+      expect(session.isLoggedIn).toBe(false);
+      expect(session.currentUser).toBeNull();
+      expect(sessionStorage.getItem('mosaic:sessionState')).toBeNull();
+    });
+
+    it('clears key material before closing worker clients', async () => {
+      const {
+        session,
+        clearAllEpochKeys,
+        clearCacheEncryptionKey,
+        closeDbClient,
+        closeCryptoClient,
+        getApi,
+        getCryptoClient,
+        getDbClient,
+      } = await getSessionModule();
+
+      const callOrder: string[] = [];
+
+      (clearAllEpochKeys as Mock).mockImplementation(() => {
+        callOrder.push('clearAllEpochKeys');
+      });
+      (clearCacheEncryptionKey as Mock).mockImplementation(() => {
+        callOrder.push('clearCacheEncryptionKey');
+      });
+      (closeDbClient as Mock).mockImplementation(async () => {
+        callOrder.push('closeDbClient');
+      });
+      (closeCryptoClient as Mock).mockImplementation(async () => {
+        callOrder.push('closeCryptoClient');
+      });
+
+      const salt = new Uint8Array(16).fill(7);
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...salt)),
+      );
+      (getApi as Mock).mockReturnValue(mockApi);
+      (getCryptoClient as Mock).mockResolvedValue(mockCryptoClient);
+      (getDbClient as Mock).mockResolvedValue(mockDbClient);
+      mockApi.getCurrentUser.mockResolvedValue(mockUser);
+
+      await session.login('test-password');
+      callOrder.length = 0;
+
+      await session.clearCorruptedSession();
+
+      expect(callOrder.indexOf('clearAllEpochKeys')).toBeLessThan(
+        callOrder.indexOf('closeDbClient'),
+      );
+      expect(callOrder.indexOf('clearCacheEncryptionKey')).toBeLessThan(
+        callOrder.indexOf('closeCryptoClient'),
+      );
+    });
+  });
 });

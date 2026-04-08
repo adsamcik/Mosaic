@@ -37,6 +37,8 @@ interface SharedPhotoGridProps {
   linkId: string;
   /** Maximum access tier for this share link */
   accessTier: AccessTierType;
+  /** Short-lived grant token for limited-use links */
+  grantToken?: string | null | undefined;
   /** Get the tier key for an epoch */
   getTierKey: (epochId: number, tier: AccessTierType) => Uint8Array | undefined;
   /** Get sign pubkey for manifest verification */
@@ -64,6 +66,7 @@ export function SharedPhotoGrid({
   photos,
   linkId,
   accessTier,
+  grantToken,
   getTierKey,
   isLoadingKeys = false,
 }: SharedPhotoGridProps) {
@@ -363,6 +366,7 @@ export function SharedPhotoGrid({
         <SharedPhotoLightbox
           photo={currentPhoto}
           linkId={linkId}
+          grantToken={grantToken}
           tierKey={getTierKey(currentPhoto.epochId, accessTier)}
           accessTier={accessTier}
           onClose={handleLightboxClose}

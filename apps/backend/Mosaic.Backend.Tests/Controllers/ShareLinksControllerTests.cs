@@ -2456,8 +2456,6 @@ public class ShareLinksControllerTests
 
         var linkIdBase64 = ToBase64Url(shareLink.LinkId);
 
-        // Use the same controller instance so that both Access() and GetKeys() share the
-        // same _grantSigningKey (which is per-instance when no config key is set).
         var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext { HttpContext = TestHttpContext.CreateUnauthenticated() }
@@ -2472,6 +2470,50 @@ public class ShareLinksControllerTests
 
         // Act
         var result = await controller.GetKeys(linkIdBase64);
+
+        // Assert
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetKeys_ReturnsOk_WhenGrantIsUsedAcrossControllerInstances()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner, currentEpochId: 1);
+        await builder.CreateEpochKeyAsync(album, owner, epochId: 1);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        var accessController = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var accessResult = await accessController.Access(linkIdBase64);
+        var accessOk = Assert.IsType<OkObjectResult>(accessResult);
+        var accessResp = Assert.IsType<LinkAccessResponse>(accessOk.Value);
+
+        var keysController = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+        keysController.HttpContext.Request.Headers["X-Share-Grant"] = accessResp.GrantToken!;
+
+        // Act
+        var result = await keysController.GetKeys(linkIdBase64);
 
         // Assert
         Assert.IsType<OkObjectResult>(result);
@@ -2520,7 +2562,6 @@ public class ShareLinksControllerTests
 
         var linkIdBase64 = ToBase64Url(shareLink.LinkId);
 
-        // Use the same controller instance so both Access() and GetPhotos() share _grantSigningKey.
         var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext { HttpContext = TestHttpContext.CreateUnauthenticated() }
@@ -2591,7 +2632,6 @@ public class ShareLinksControllerTests
 
         var linkIdBase64 = ToBase64Url(shareLink.LinkId);
 
-        // Use the same controller instance so both Access() and DownloadShard() share _grantSigningKey.
         var controller = new ShareLinksController(db, config, storage, new MockCurrentUserService(db))
         {
             ControllerContext = new ControllerContext { HttpContext = TestHttpContext.CreateUnauthenticated() }

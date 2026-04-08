@@ -96,6 +96,7 @@ export function SharedAlbumViewer({
     accessTier,
     tierKeys,
     encryptedName,
+    grantToken,
     isValid,
   } = useLinkKeys(linkId, linkSecret);
 
@@ -256,6 +257,7 @@ export function SharedAlbumViewer({
             linkId={linkId!}
             albumId={albumId}
             accessTier={accessTier}
+            grantToken={grantToken}
             tierKeys={tierKeysMap}
             isLoadingKeys={isLoading}
           />

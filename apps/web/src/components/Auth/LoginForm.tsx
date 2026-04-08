@@ -205,8 +205,8 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
         {isSessionRestore && (
           <button
             type="button"
-            onClick={() => {
-              session.clearCorruptedSession();
+            onClick={async () => {
+              await session.clearCorruptedSession();
               // Force a page reload to reset everything cleanly
               window.location.reload();
             }}

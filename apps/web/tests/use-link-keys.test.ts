@@ -84,6 +84,7 @@ import {
   parseLinkFragment,
   useLinkKeys,
 } from '../src/hooks/useLinkKeys';
+import * as linkTierKeyStore from '../src/lib/link-tier-key-store';
 
 // Test component that captures hook result
 function TestComponent({
@@ -349,6 +350,100 @@ describe('useLinkKeys', () => {
       );
 
       expect(typeof result.getReadKey).toBe('function');
+
+      cleanup();
+    });
+
+    it('fetches a grant token and sends it when loading keys', async () => {
+      vi.spyOn(linkTierKeyStore, 'getTierKeys').mockResolvedValue(null);
+      vi.spyOn(linkTierKeyStore, 'saveTierKeys').mockResolvedValue(undefined);
+
+      mocks.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            albumId: 'album-123',
+            accessTier: 2,
+            epochCount: 1,
+            encryptedName: 'encrypted-name',
+            grantToken: 'grant-token-123',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => [
+            {
+              epochId: 1,
+              tier: 2,
+              nonce: 'test-nonce',
+              encryptedKey: 'test-encrypted',
+              signPubkey: 'test-signpubkey',
+            },
+          ],
+        });
+
+      const { result, cleanup } = renderHookWithArgs(
+        'test-link-id',
+        'test-secret',
+      );
+
+      await waitFor(() => mocks.fetch.mock.calls.length === 2);
+
+      expect(mocks.fetch).toHaveBeenNthCalledWith(1, '/api/s/test-link-id');
+      expect(mocks.fetch).toHaveBeenNthCalledWith(
+        2,
+        '/api/s/test-link-id/keys',
+        {
+          headers: {
+            'X-Share-Grant': 'grant-token-123',
+          },
+        },
+      );
+
+      cleanup();
+    });
+
+    it('still revalidates access when cached tier keys exist', async () => {
+      vi.spyOn(linkTierKeyStore, 'getTierKeys').mockResolvedValue({
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: new Map([
+          [
+            1,
+            new Map([
+              [
+                2,
+                {
+                  epochId: 1,
+                  tier: 2,
+                  key: new Uint8Array(32).fill(7),
+                },
+              ],
+            ]),
+          ],
+        ]),
+      });
+
+      mocks.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          albumId: 'album-123',
+          accessTier: 2,
+          epochCount: 1,
+          grantToken: 'grant-token-123',
+        }),
+      });
+
+      const { result, cleanup } = renderHookWithArgs(
+        'test-link-id',
+        'test-secret',
+      );
+
+      await waitFor(() => mocks.fetch.mock.calls.length === 1);
+
+      expect(mocks.fetch).toHaveBeenCalledTimes(1);
+      expect(mocks.fetch).toHaveBeenCalledWith('/api/s/test-link-id');
+      expect(linkTierKeyStore.getTierKeys).toHaveBeenCalledWith('test-link-id');
 
       cleanup();
     });

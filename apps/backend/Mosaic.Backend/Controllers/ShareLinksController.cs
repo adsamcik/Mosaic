@@ -143,6 +143,8 @@ public class EpochKeyDto
 [ApiController]
 public class ShareLinksController : ControllerBase
 {
+    private static readonly Lazy<byte[]> FallbackGrantSigningKey = new(() => RandomNumberGenerator.GetBytes(32));
+
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
     private readonly IStorageService _storage;
@@ -163,17 +165,42 @@ public class ShareLinksController : ControllerBase
         // InMemory provider doesn't support ExecuteUpdateAsync
         _supportsExecuteUpdate = !db.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) ?? true;
 
-        // Initialize grant signing key from config, falling back to a per-instance random key.
-        // For production with multiple instances, set ShareLinks:GrantSigningKey in config.
+        // Initialize a stable signing key for grant tokens.
+        // Prefer ShareLinks:GrantSigningKey when explicitly configured.
+        // Otherwise derive a dedicated key from Auth:ServerSecret so tokens survive across
+        // controller instances and across app instances that share the same auth secret.
         var keyConfig = config["ShareLinks:GrantSigningKey"];
-        if (keyConfig != null)
+        if (!string.IsNullOrWhiteSpace(keyConfig))
         {
-            try { _grantSigningKey = Convert.FromBase64String(keyConfig); }
-            catch { _grantSigningKey = RandomNumberGenerator.GetBytes(32); }
+            try
+            {
+                _grantSigningKey = Convert.FromBase64String(keyConfig);
+            }
+            catch
+            {
+                _grantSigningKey = FallbackGrantSigningKey.Value;
+            }
         }
         else
         {
-            _grantSigningKey = RandomNumberGenerator.GetBytes(32);
+            var serverSecretBase64 = config["Auth:ServerSecret"];
+            if (!string.IsNullOrWhiteSpace(serverSecretBase64))
+            {
+                try
+                {
+                    var serverSecret = Convert.FromBase64String(serverSecretBase64);
+                    using var hmac = new HMACSHA256(serverSecret);
+                    _grantSigningKey = hmac.ComputeHash(Encoding.UTF8.GetBytes("share-link-grant"));
+                }
+                catch
+                {
+                    _grantSigningKey = FallbackGrantSigningKey.Value;
+                }
+            }
+            else
+            {
+                _grantSigningKey = FallbackGrantSigningKey.Value;
+            }
         }
     }
 

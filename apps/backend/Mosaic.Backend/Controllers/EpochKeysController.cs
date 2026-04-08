@@ -70,7 +70,7 @@ public class EpochKeysController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership or editor role
-        var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
+        var (_, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
         if (memberError != null) return memberError;
 
         // Check recipient exists
@@ -80,6 +80,18 @@ public class EpochKeysController : ControllerBase
             return Problem(
                 detail: "Recipient not found",
                 statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var (_, recipientMembershipError) = await _db.GetAlbumMemberAsync(
+            albumId,
+            request.RecipientId,
+            Problem(
+                detail: "Recipient must be an active album member",
+                statusCode: StatusCodes.Status400BadRequest));
+
+        if (recipientMembershipError != null)
+        {
+            return recipientMembershipError;
         }
 
         // Check for existing key (fast path - handles normal duplicates)

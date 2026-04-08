@@ -266,6 +266,8 @@ export interface LinkAccessResponse {
   albumId: string;
   accessTier: AccessTier;
   epochCount: number;
+  encryptedName?: string | null;
+  grantToken?: string | null;
 }
 
 /** Response for link epoch key */

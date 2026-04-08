@@ -205,6 +205,34 @@ describe('SharedPhotoLightbox', () => {
     expect(mockDecryptShardWithTierKey).toHaveBeenCalled();
   });
 
+  it('passes the share grant token to shard downloads', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    await act(async () => {
+      root = createRoot(container!);
+      root!.render(
+        createElement(SharedPhotoLightbox, {
+          photo: mockPhotoWithThumbnail,
+          linkId: 'link-1',
+          grantToken: 'grant-token-123',
+          tierKey: new Uint8Array(32),
+          accessTier: 3,
+          onClose: vi.fn(),
+          hasNext: false,
+          hasPrevious: false,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    expect(mockDownloadShard).toHaveBeenCalledWith(
+      'link-1',
+      'shard-1',
+      'grant-token-123',
+    );
+  });
+
   it('gracefully handles decryption failure when thumbnail is available', async () => {
     // Make decryption fail
     mockDecryptShardWithTierKey.mockRejectedValueOnce(

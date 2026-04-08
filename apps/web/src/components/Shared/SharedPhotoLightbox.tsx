@@ -24,6 +24,8 @@ export interface SharedPhotoLightboxProps {
   photo: PhotoMeta;
   /** Share link ID for shard downloads */
   linkId: string;
+  /** Short-lived grant token for limited-use links */
+  grantToken?: string | null | undefined;
   /** Tier key for decryption */
   tierKey?: Uint8Array | undefined;
   /** Access tier for this share link */
@@ -59,6 +61,7 @@ type PhotoState =
 export function SharedPhotoLightbox({
   photo,
   linkId,
+  grantToken,
   tierKey,
   accessTier,
   onClose,
@@ -174,10 +177,9 @@ export function SharedPhotoLightbox({
               setLoadProgress(25);
             }
 
-            const encryptedShard = await downloadShardViaShareLink(
-              linkId,
-              targetShardId,
-            );
+            const encryptedShard = grantToken
+              ? await downloadShardViaShareLink(linkId, targetShardId, grantToken)
+              : await downloadShardViaShareLink(linkId, targetShardId);
 
             if (!cancelled) {
               setLoadProgress(50);
@@ -230,10 +232,9 @@ export function SharedPhotoLightbox({
             if (cancelled) return;
 
             const shardId = photo.shardIds[i]!;
-            const encryptedShard = await downloadShardViaShareLink(
-              linkId,
-              shardId,
-            );
+            const encryptedShard = grantToken
+              ? await downloadShardViaShareLink(linkId, shardId, grantToken)
+              : await downloadShardViaShareLink(linkId, shardId);
 
             // Peek at the shard header to determine its tier
             const header = await crypto.peekHeader(encryptedShard);
