@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from './components/App/AppShell';
 import { LoginForm } from './components/Auth/LoginForm';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { SectionErrorFallback } from './components/SectionErrorFallback';
 import { SharedAlbumViewer } from './components/Shared/SharedAlbumViewer';
 import { ToastContainer } from './components/Toast';
 import { ToastProvider } from './contexts/ToastContext';
@@ -205,7 +207,13 @@ export function App() {
   if (isShareLink && shareLinkId) {
     return (
       <ToastProvider>
-        <SharedAlbumViewer linkId={shareLinkId} />
+        <ErrorBoundary
+          fallback={(error, reset) => (
+            <SectionErrorFallback error={error} section="Shared" onReset={reset} />
+          )}
+        >
+          <SharedAlbumViewer linkId={shareLinkId} />
+        </ErrorBoundary>
         <ToastContainer />
       </ToastProvider>
     );

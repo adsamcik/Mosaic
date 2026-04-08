@@ -581,7 +581,13 @@
   "error": {
     "somethingWentWrong": "Something went wrong",
     "unexpectedError": "An unexpected error occurred. Please try refreshing the page.",
-    "technicalDetails": "Technical Details"
+    "technicalDetails": "Technical Details",
+    "sectionCrashed": "The {{section}} section encountered an error.",
+    "sectionAlbums": "Albums",
+    "sectionGallery": "Gallery",
+    "sectionSettings": "Settings",
+    "sectionAdmin": "Admin",
+    "sectionShared": "Shared Album"
   },
   "blocks": {
     "heading": "Heading",

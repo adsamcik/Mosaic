@@ -587,7 +587,13 @@
   "error": {
     "somethingWentWrong": "Něco se pokazilo",
     "unexpectedError": "Došlo k neočekávané chybě. Zkuste obnovit stránku.",
-    "technicalDetails": "Technické detaily"
+    "technicalDetails": "Technické detaily",
+    "sectionCrashed": "V sekci {{section}} došlo k chybě.",
+    "sectionAlbums": "Alba",
+    "sectionGallery": "Galerie",
+    "sectionSettings": "Nastavení",
+    "sectionAdmin": "Administrace",
+    "sectionShared": "Sdílené album"
   },
   "blocks": {
     "heading": "Nadpis",

@@ -5,7 +5,9 @@ import { useAlbums, useRouter } from '../../hooks';
 import { AlbumList } from '../Albums/AlbumList';
 import { AdminPage } from '../Admin';
 import { LogoutButton } from '../Auth/LogoutButton';
+import { ErrorBoundary } from '../ErrorBoundary';
 import { Gallery } from '../Gallery/Gallery';
+import { SectionErrorFallback } from '../SectionErrorFallback';
 import { SettingsPage } from '../Settings/SettingsPage';
 import { getApi } from '../../lib/api';
 
@@ -209,29 +211,55 @@ export function AppShell() {
 
         <main className="app-main">
           {currentView === 'albums' && (
-            <AlbumList
-              onSelectAlbum={handleSelectAlbum}
-              albums={albums}
-              isLoading={albumsLoading}
-              error={albumsError}
-              refetch={refetchAlbums}
-              createAlbum={createAlbum}
-              isCreating={isCreating}
-              createError={createError}
-            />
+            <ErrorBoundary
+              fallback={(error, reset) => (
+                <SectionErrorFallback error={error} section="Albums" onReset={reset} />
+              )}
+            >
+              <AlbumList
+                onSelectAlbum={handleSelectAlbum}
+                albums={albums}
+                isLoading={albumsLoading}
+                error={albumsError}
+                refetch={refetchAlbums}
+                createAlbum={createAlbum}
+                isCreating={isCreating}
+                createError={createError}
+              />
+            </ErrorBoundary>
           )}
           {currentView === 'gallery' && selectedAlbumId && (
-            <Gallery
-              albumId={selectedAlbumId}
-              albumName={albums.find((a) => a.id === selectedAlbumId)?.name}
-              onDeleteAlbum={deleteAlbum}
-              onRenameAlbum={renameAlbum}
-              onAlbumDeleted={handleBackToAlbums}
-            />
+            <ErrorBoundary
+              fallback={(error, reset) => (
+                <SectionErrorFallback error={error} section="Gallery" onReset={reset} />
+              )}
+            >
+              <Gallery
+                albumId={selectedAlbumId}
+                albumName={albums.find((a) => a.id === selectedAlbumId)?.name}
+                onDeleteAlbum={deleteAlbum}
+                onRenameAlbum={renameAlbum}
+                onAlbumDeleted={handleBackToAlbums}
+              />
+            </ErrorBoundary>
           )}
-          {currentView === 'settings' && <SettingsPage />}
+          {currentView === 'settings' && (
+            <ErrorBoundary
+              fallback={(error, reset) => (
+                <SectionErrorFallback error={error} section="Settings" onReset={reset} />
+              )}
+            >
+              <SettingsPage />
+            </ErrorBoundary>
+          )}
           {currentView === 'admin' && (
-            <AdminPage onBack={handleBackFromAdmin} />
+            <ErrorBoundary
+              fallback={(error, reset) => (
+                <SectionErrorFallback error={error} section="Admin" onReset={reset} />
+              )}
+            >
+              <AdminPage onBack={handleBackFromAdmin} />
+            </ErrorBoundary>
           )}
         </main>
       </div>
