@@ -29,8 +29,13 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
+  "peerDependencies": {
     "libsodium-wrappers-sumo": "^0.7.15"
+  },
+  "peerDependenciesMeta": {
+    "libsodium-wrappers-sumo": {
+      "optional": false
+    }
   },
   "devDependencies": {
     "@stryker-mutator/core": "^9.4.0",
