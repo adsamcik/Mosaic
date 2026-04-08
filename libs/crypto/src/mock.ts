@@ -334,8 +334,7 @@ export const mockCrypto: CryptoLib = {
     if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
       return crypto.getRandomValues(new Uint8Array(length));
     }
-    // Fallback mock random
-    return mockBytes(length, Math.floor(Math.random() * 256));
+    throw new Error('crypto.getRandomValues is not available - cannot generate secure random bytes');
   },
 
   sha256(data: Uint8Array): string {
