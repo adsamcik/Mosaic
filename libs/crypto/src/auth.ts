@@ -70,9 +70,9 @@ export function signAuthChallenge(
     );
   }
 
-  if (!username || username.length === 0) {
+  if (!username || username.trim().length === 0) {
     throw new CryptoError(
-      'Username cannot be empty',
+      'Username cannot be empty or whitespace-only',
       CryptoErrorCode.INVALID_INPUT,
     );
   }
@@ -135,7 +135,7 @@ export function verifyAuthChallenge(
     return false;
   }
 
-  if (!username || username.length === 0) {
+  if (!username || username.trim().length === 0) {
     return false;
   }
 

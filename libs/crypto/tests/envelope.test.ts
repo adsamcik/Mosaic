@@ -570,4 +570,319 @@ describe('envelope', () => {
     c3[3] = 0x00;
     await expect(decryptShard(c3, tierKey)).rejects.toThrow('magic');
   });
+
+  describe('corrupted reserved bytes (security edge cases)', () => {
+    const tierKey = sodium.randombytes_buf(32);
+    const testData = new TextEncoder().encode('reserved byte corruption test');
+
+    it('rejects corruption at first reserved byte (offset 38)', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      ciphertext[38] = 0x01;
+      await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow(
+        'reserved',
+      );
+    });
+
+    it('rejects corruption at last reserved byte (offset 63)', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      ciphertext[63] = 0xff;
+      await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow(
+        'reserved',
+      );
+    });
+
+    it('rejects corruption at middle reserved byte', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      ciphertext[50] = 0x42;
+      await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow(
+        'reserved',
+      );
+    });
+
+    it('rejects all reserved bytes set to 0xFF', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      for (let i = 38; i < 64; i++) {
+        ciphertext[i] = 0xff;
+      }
+      await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow(
+        'reserved',
+      );
+    });
+
+    it('rejects corruption at each individual reserved byte position', async () => {
+      // Test every single reserved byte position (26 bytes: offsets 38-63)
+      for (let offset = 38; offset < 64; offset++) {
+        const { ciphertext } = await encryptShard(
+          testData,
+          tierKey,
+          1,
+          0,
+          ShardTier.ORIGINAL,
+        );
+        ciphertext[offset] = 0x01;
+        await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow(
+          'reserved',
+        );
+      }
+    });
+
+    it('passes when all reserved bytes are zero (valid envelope)', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      // Verify reserved bytes are already zero
+      for (let i = 38; i < 64; i++) {
+        expect(ciphertext[i]).toBe(0);
+      }
+      // Decryption should succeed
+      const decrypted = await decryptShard(ciphertext, tierKey);
+      expect(decrypted).toEqual(testData);
+    });
+  });
+
+  describe('invalid tier values (security edge cases)', () => {
+    const tierKey = sodium.randombytes_buf(32);
+    const testData = new TextEncoder().encode('tier validation test');
+
+    it('rejects tier value 0 during decryption', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      ciphertext[37] = 0;
+      await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow(
+        'Invalid shard tier',
+      );
+    });
+
+    it('rejects tier value 4 (one past valid range) during decryption', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      ciphertext[37] = 4;
+      await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow(
+        'Invalid shard tier',
+      );
+    });
+
+    it('rejects tier value 0xFF during decryption', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      ciphertext[37] = 0xff;
+      await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow(
+        'Invalid shard tier',
+      );
+    });
+
+    it('rejects tier value 0x80 (high bit set) during decryption', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      ciphertext[37] = 0x80;
+      await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow(
+        'Invalid shard tier',
+      );
+    });
+
+    it('accepts valid tier THUMB (1)', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.THUMB,
+      );
+      const header = peekHeader(ciphertext);
+      expect(header.tier).toBe(ShardTier.THUMB);
+      expect(header.tier).toBe(1);
+      const decrypted = await decryptShard(ciphertext, tierKey);
+      expect(decrypted).toEqual(testData);
+    });
+
+    it('accepts valid tier PREVIEW (2)', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.PREVIEW,
+      );
+      const header = peekHeader(ciphertext);
+      expect(header.tier).toBe(ShardTier.PREVIEW);
+      expect(header.tier).toBe(2);
+      const decrypted = await decryptShard(ciphertext, tierKey);
+      expect(decrypted).toEqual(testData);
+    });
+
+    it('accepts valid tier ORIGINAL (3)', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      const header = peekHeader(ciphertext);
+      expect(header.tier).toBe(ShardTier.ORIGINAL);
+      expect(header.tier).toBe(3);
+      const decrypted = await decryptShard(ciphertext, tierKey);
+      expect(decrypted).toEqual(testData);
+    });
+
+    it('rejects tier value via peekHeader for invalid tiers', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      ciphertext[37] = 0;
+      expect(() => peekHeader(ciphertext)).toThrow('Invalid shard tier');
+    });
+
+    it('rejects passing invalid tier at runtime via type coercion', async () => {
+      // Simulate runtime bypass of TypeScript enum safety
+      await expect(
+        encryptShard(testData, tierKey, 1, 0, 0 as ShardTier),
+      ).resolves.toBeDefined(); // encryptShard doesn't validate tier
+      // But decryption will reject it
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        0 as ShardTier,
+      );
+      await expect(decryptShard(ciphertext, tierKey)).rejects.toThrow(
+        'Invalid shard tier',
+      );
+    });
+  });
+
+  describe('nonce uniqueness under rapid generation', () => {
+    const tierKey = sodium.randombytes_buf(32);
+    const testData = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+
+    it('generates 10,000 unique nonces via randomBytes', () => {
+      const NONCE_COUNT = 10_000;
+      const nonces = new Set<string>();
+
+      for (let i = 0; i < NONCE_COUNT; i++) {
+        const nonce = sodium.randombytes_buf(24);
+        const nonceHex = Array.from(nonce)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+        nonces.add(nonceHex);
+      }
+
+      expect(nonces.size).toBe(NONCE_COUNT);
+    });
+
+    it('generates unique nonces with identical parameters (same epochId, shardId, tier)', async () => {
+      const COUNT = 100;
+      const nonces = new Set<string>();
+
+      for (let i = 0; i < COUNT; i++) {
+        const { ciphertext } = await encryptShard(
+          testData,
+          tierKey,
+          1,
+          0,
+          ShardTier.ORIGINAL,
+        );
+        const nonceHex = Array.from(ciphertext.slice(13, 37))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+        nonces.add(nonceHex);
+      }
+
+      expect(nonces.size).toBe(COUNT);
+    });
+
+    it('nonces have high entropy (no zero-nonce or low-entropy patterns)', async () => {
+      const { ciphertext } = await encryptShard(
+        testData,
+        tierKey,
+        1,
+        0,
+        ShardTier.ORIGINAL,
+      );
+      const nonce = ciphertext.slice(13, 37);
+
+      // Nonce should not be all zeros
+      const allZero = nonce.every((b) => b === 0);
+      expect(allZero).toBe(false);
+
+      // Nonce should not be all same byte
+      const allSame = nonce.every((b) => b === nonce[0]);
+      expect(allSame).toBe(false);
+
+      // At least 8 distinct byte values in a 24-byte nonce (probabilistically guaranteed)
+      const distinctBytes = new Set(nonce);
+      expect(distinctBytes.size).toBeGreaterThanOrEqual(8);
+    });
+
+    it('concurrent encryptions produce unique nonces', async () => {
+      const COUNT = 500;
+      const promises = Array.from({ length: COUNT }, (_, i) =>
+        encryptShard(testData, tierKey, 1, i, ShardTier.ORIGINAL),
+      );
+
+      const results = await Promise.all(promises);
+      const nonces = new Set(
+        results.map((r) =>
+          Array.from(r.ciphertext.slice(13, 37))
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join(''),
+        ),
+      );
+
+      expect(nonces.size).toBe(COUNT);
+    });
+  });
 });

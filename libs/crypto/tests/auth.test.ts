@@ -512,6 +512,117 @@ describe('generateFakeChallenge', () => {
   });
 });
 
+describe('whitespace-only usernames (security edge case)', () => {
+  let keypair: { publicKey: Uint8Array; privateKey: Uint8Array };
+  let challenge: Uint8Array;
+
+  beforeAll(() => {
+    keypair = sodium.crypto_sign_keypair();
+    challenge = randomBytes(32);
+  });
+
+  it('rejects spaces-only username on sign', () => {
+    expect(() =>
+      signAuthChallenge(challenge, '   ', keypair.privateKey),
+    ).toThrow(CryptoError);
+    expect(() =>
+      signAuthChallenge(challenge, '   ', keypair.privateKey),
+    ).toThrow(/cannot be empty or whitespace/);
+  });
+
+  it('rejects tab-only username on sign', () => {
+    expect(() =>
+      signAuthChallenge(challenge, '\t\t', keypair.privateKey),
+    ).toThrow(CryptoError);
+  });
+
+  it('rejects newline-only username on sign', () => {
+    expect(() =>
+      signAuthChallenge(challenge, '\n\r\n', keypair.privateKey),
+    ).toThrow(CryptoError);
+  });
+
+  it('rejects mixed whitespace username on sign', () => {
+    expect(() =>
+      signAuthChallenge(challenge, ' \t\n ', keypair.privateKey),
+    ).toThrow(CryptoError);
+  });
+
+  it('rejects NBSP (\\u00A0) username on sign', () => {
+    expect(() =>
+      signAuthChallenge(challenge, '\u00A0', keypair.privateKey),
+    ).toThrow(CryptoError);
+  });
+
+  it('does not reject zero-width space (\\u200B) username — trim does not strip it', () => {
+    // Zero-width space is NOT whitespace per Unicode Zs category;
+    // String.prototype.trim() does not remove it.
+    // This test documents that behavior — it's a valid (if odd) username.
+    expect(() =>
+      signAuthChallenge(challenge, '\u200B', keypair.privateKey),
+    ).not.toThrow();
+  });
+
+  it('rejects ideographic space (\\u3000) username on sign', () => {
+    expect(() =>
+      signAuthChallenge(challenge, '\u3000', keypair.privateKey),
+    ).toThrow(CryptoError);
+  });
+
+  it('rejects spaces-only username on verify', () => {
+    const signature = signAuthChallenge(
+      challenge,
+      'alice',
+      keypair.privateKey,
+    );
+    const isValid = verifyAuthChallenge(
+      challenge,
+      '   ',
+      signature,
+      keypair.publicKey,
+    );
+    expect(isValid).toBe(false);
+  });
+
+  it('rejects tab username on verify', () => {
+    const signature = signAuthChallenge(
+      challenge,
+      'alice',
+      keypair.privateKey,
+    );
+    const isValid = verifyAuthChallenge(
+      challenge,
+      '\t',
+      signature,
+      keypair.publicKey,
+    );
+    expect(isValid).toBe(false);
+  });
+
+  it('rejects NBSP username on verify', () => {
+    const signature = signAuthChallenge(
+      challenge,
+      'alice',
+      keypair.privateKey,
+    );
+    const isValid = verifyAuthChallenge(
+      challenge,
+      '\u00A0',
+      signature,
+      keypair.publicKey,
+    );
+    expect(isValid).toBe(false);
+  });
+
+  it('whitespace usernames produce different signatures than trimmed', () => {
+    // If whitespace IS accepted, at minimum it must not collide with real users
+    // This verifies that ' alice ' !== 'alice' at the crypto level
+    const sig1 = signAuthChallenge(challenge, 'alice', keypair.privateKey);
+    const sig2 = signAuthChallenge(challenge, ' alice ', keypair.privateKey);
+    expect(sig1).not.toEqual(sig2);
+  });
+});
+
 describe('full auth flow', () => {
   it('complete challenge-response authentication', async () => {
     const password = 'my-secure-password';
