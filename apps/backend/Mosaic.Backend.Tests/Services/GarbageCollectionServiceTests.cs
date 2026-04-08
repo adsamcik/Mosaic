@@ -176,4 +176,38 @@ public class GarbageCollectionServiceTests
         Assert.Equal(2952, updatedQuota!.UsedStorageBytes);
         Assert.Equal(1, updatedQuota.CurrentAlbumCount);
     }
+
+    [Fact]
+    public async Task CleanExpiredAlbums_ClampsQuotaToZero_WhenAlbumSizeExceedsUsedStorage()
+    {
+        // Arrange — data inconsistency where album size > used storage
+        var (service, db, _) = CreateService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync("owner");
+        var album = await builder.CreateAlbumAsync(owner);
+        album.ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1);
+        await db.SaveChangesAsync();
+
+        db.AlbumLimits.Add(new AlbumLimits
+        {
+            AlbumId = album.Id,
+            CurrentSizeBytes = 5000,
+            CurrentPhotoCount = 10
+        });
+
+        var quota = await db.UserQuotas.FindAsync(owner.Id);
+        quota!.UsedStorageBytes = 1000; // Less than album's 5000
+        quota.CurrentAlbumCount = 1;
+        await db.SaveChangesAsync();
+
+        // Act
+        var count = await service.CleanExpiredAlbums();
+
+        // Assert — quota clamped to 0, not negative
+        Assert.Equal(1, count);
+        var updatedQuota = await db.UserQuotas.FindAsync(owner.Id);
+        Assert.Equal(0, updatedQuota!.UsedStorageBytes);
+        Assert.Equal(0, updatedQuota.CurrentAlbumCount);
+    }
 }

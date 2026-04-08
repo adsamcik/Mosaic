@@ -1196,4 +1196,73 @@ public class AlbumsControllerTests
         var badRequestResult = ProblemDetailsAssertions.AssertBadRequest(result);
         Assert.Contains("encryptedName", ProblemDetailsAssertions.GetDetail(badRequestResult)!);
     }
+
+    [Fact]
+    public async Task UpdateExpiration_UpdatesOnlyExpiresAt_WhenWarningDaysNull()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+
+        // Album starts with default ExpirationWarningDays = 7
+        Assert.Equal(7, album.ExpirationWarningDays);
+
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var futureDate = DateTimeOffset.UtcNow.AddDays(90);
+        var request = new UpdateExpirationRequest(futureDate, null);
+
+        // Act
+        var result = await controller.UpdateExpiration(album.Id, request);
+
+        // Assert
+        Assert.IsType<OkObjectResult>(result);
+
+        await db.Entry(album).ReloadAsync();
+        Assert.Equal(futureDate, album.ExpiresAt);
+        Assert.Equal(7, album.ExpirationWarningDays); // unchanged from default
+    }
+
+    [Fact]
+    public async Task UpdateExpiration_AcceptsZeroWarningDays()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+
+        var controller = new AlbumsController(db, config, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var futureDate = DateTimeOffset.UtcNow.AddDays(30);
+        var request = new UpdateExpirationRequest(futureDate, 0);
+
+        // Act
+        var result = await controller.UpdateExpiration(album.Id, request);
+
+        // Assert
+        Assert.IsType<OkObjectResult>(result);
+
+        await db.Entry(album).ReloadAsync();
+        Assert.Equal(futureDate, album.ExpiresAt);
+        Assert.Equal(0, album.ExpirationWarningDays);
+    }
 }

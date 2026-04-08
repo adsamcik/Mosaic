@@ -6,10 +6,11 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DropZone } from '../src/components/Upload/DropZone';
 
-// Mock the UploadContext
+// Mock the UploadContext — capture the upload fn for assertions
+const mockUpload = vi.fn().mockResolvedValue(undefined);
 vi.mock('../src/contexts/UploadContext', () => ({
   useUploadContext: () => ({
-    upload: vi.fn().mockResolvedValue(undefined),
+    upload: mockUpload,
     isUploading: false,
     progress: 0,
     error: null,
@@ -266,5 +267,121 @@ describe('DropZone', () => {
     // Should not show overlay when no files
     // (depends on implementation - overlay may or may not show)
     expect(container.querySelector('[data-testid="drop-zone"]')).not.toBeNull();
+  });
+
+  describe('Video File Acceptance', () => {
+    it('accepts video files in drop events', async () => {
+      act(() => {
+        root.render(
+          createDropZone({
+            albumId: 'album-123',
+            children: createElement('div', null, 'Content'),
+          }),
+        );
+      });
+
+      const dropZone = container.querySelector('[data-testid="drop-zone"]')!;
+      const videoFile = new File(['video content'], 'clip.mp4', {
+        type: 'video/mp4',
+      });
+
+      // Enter first so state is active
+      const enterEvent = createDragEvent('dragenter', [videoFile]);
+      act(() => {
+        dropZone.dispatchEvent(enterEvent);
+      });
+
+      const dropEvent = createDragEvent('drop', [videoFile]);
+      await act(async () => {
+        dropZone.dispatchEvent(dropEvent);
+      });
+
+      expect(mockUpload).toHaveBeenCalledWith(videoFile, 'album-123');
+    });
+
+    it('accepts mixed image and video files', async () => {
+      act(() => {
+        root.render(
+          createDropZone({
+            albumId: 'album-123',
+            children: createElement('div', null, 'Content'),
+          }),
+        );
+      });
+
+      const dropZone = container.querySelector('[data-testid="drop-zone"]')!;
+      const imageFile = createImageFile('photo.png');
+      const videoFile = new File(['video content'], 'clip.mp4', {
+        type: 'video/mp4',
+      });
+
+      const enterEvent = createDragEvent('dragenter', [imageFile, videoFile]);
+      act(() => {
+        dropZone.dispatchEvent(enterEvent);
+      });
+
+      const dropEvent = createDragEvent('drop', [imageFile, videoFile]);
+      await act(async () => {
+        dropZone.dispatchEvent(dropEvent);
+      });
+
+      expect(mockUpload).toHaveBeenCalledTimes(2);
+      expect(mockUpload).toHaveBeenCalledWith(imageFile, 'album-123');
+      expect(mockUpload).toHaveBeenCalledWith(videoFile, 'album-123');
+    });
+
+    it('rejects non-media files', async () => {
+      act(() => {
+        root.render(
+          createDropZone({
+            albumId: 'album-123',
+            children: createElement('div', null, 'Content'),
+          }),
+        );
+      });
+
+      const dropZone = container.querySelector('[data-testid="drop-zone"]')!;
+      const textFile = new File(['hello world'], 'readme.txt', {
+        type: 'text/plain',
+      });
+
+      const enterEvent = createDragEvent('dragenter', [textFile]);
+      act(() => {
+        dropZone.dispatchEvent(enterEvent);
+      });
+
+      const dropEvent = createDragEvent('drop', [textFile]);
+      await act(async () => {
+        dropZone.dispatchEvent(dropEvent);
+      });
+
+      expect(mockUpload).not.toHaveBeenCalled();
+    });
+
+    it('accepts image files (existing behavior preserved)', async () => {
+      act(() => {
+        root.render(
+          createDropZone({
+            albumId: 'album-123',
+            children: createElement('div', null, 'Content'),
+          }),
+        );
+      });
+
+      const dropZone = container.querySelector('[data-testid="drop-zone"]')!;
+      const imageFile = createImageFile('photo.png');
+
+      const enterEvent = createDragEvent('dragenter', [imageFile]);
+      act(() => {
+        dropZone.dispatchEvent(enterEvent);
+      });
+
+      const dropEvent = createDragEvent('drop', [imageFile]);
+      await act(async () => {
+        dropZone.dispatchEvent(dropEvent);
+      });
+
+      expect(mockUpload).toHaveBeenCalledWith(imageFile, 'album-123');
+    });
   });
 });

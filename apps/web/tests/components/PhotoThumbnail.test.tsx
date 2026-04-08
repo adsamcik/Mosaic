@@ -796,6 +796,190 @@ describe('PhotoThumbnail', () => {
     });
   });
 
+  describe('Video Overlay', () => {
+    it('renders play icon overlay when isVideo is true', () => {
+      const photo = createMockPhoto({
+        thumbnail: 'base64EncodedThumbnailData',
+        isVideo: true,
+        mimeType: 'video/mp4',
+      });
+
+      act(() => {
+        root.render(
+          createElement(PhotoThumbnail, {
+            photo,
+            epochReadKey: mockEpochKey,
+          }),
+        );
+      });
+
+      const playOverlay = container.querySelector(
+        '[data-testid="video-play-overlay"]',
+      );
+      expect(playOverlay).not.toBeNull();
+    });
+
+    it('renders duration badge with formatted time when isVideo and duration > 0', () => {
+      const photo = createMockPhoto({
+        thumbnail: 'base64EncodedThumbnailData',
+        isVideo: true,
+        duration: 62,
+        mimeType: 'video/mp4',
+      });
+
+      act(() => {
+        root.render(
+          createElement(PhotoThumbnail, {
+            photo,
+            epochReadKey: mockEpochKey,
+          }),
+        );
+      });
+
+      const badge = container.querySelector(
+        '[data-testid="video-duration-badge"]',
+      );
+      expect(badge).not.toBeNull();
+      expect(badge?.textContent).toBe('1:02');
+    });
+
+    it('does NOT render play overlay when isVideo is false', () => {
+      const photo = createMockPhoto({
+        thumbnail: 'base64EncodedThumbnailData',
+        isVideo: false,
+        mimeType: 'image/jpeg',
+      });
+
+      act(() => {
+        root.render(
+          createElement(PhotoThumbnail, {
+            photo,
+            epochReadKey: mockEpochKey,
+          }),
+        );
+      });
+
+      expect(
+        container.querySelector('[data-testid="video-play-overlay"]'),
+      ).toBeNull();
+    });
+
+    it('does NOT render play overlay when isVideo is undefined', () => {
+      const photo = createMockPhoto({
+        thumbnail: 'base64EncodedThumbnailData',
+      });
+
+      act(() => {
+        root.render(
+          createElement(PhotoThumbnail, {
+            photo,
+            epochReadKey: mockEpochKey,
+          }),
+        );
+      });
+
+      expect(
+        container.querySelector('[data-testid="video-play-overlay"]'),
+      ).toBeNull();
+    });
+
+    it('does NOT render duration badge when isVideo is false', () => {
+      const photo = createMockPhoto({
+        thumbnail: 'base64EncodedThumbnailData',
+        isVideo: false,
+        duration: 120,
+        mimeType: 'image/jpeg',
+      });
+
+      act(() => {
+        root.render(
+          createElement(PhotoThumbnail, {
+            photo,
+            epochReadKey: mockEpochKey,
+          }),
+        );
+      });
+
+      expect(
+        container.querySelector('[data-testid="video-duration-badge"]'),
+      ).toBeNull();
+    });
+
+    it('does NOT render duration badge when duration is 0', () => {
+      const photo = createMockPhoto({
+        thumbnail: 'base64EncodedThumbnailData',
+        isVideo: true,
+        duration: 0,
+        mimeType: 'video/mp4',
+      });
+
+      act(() => {
+        root.render(
+          createElement(PhotoThumbnail, {
+            photo,
+            epochReadKey: mockEpochKey,
+          }),
+        );
+      });
+
+      expect(
+        container.querySelector('[data-testid="video-play-overlay"]'),
+      ).not.toBeNull();
+      expect(
+        container.querySelector('[data-testid="video-duration-badge"]'),
+      ).toBeNull();
+    });
+
+    it('does NOT render duration badge when duration is undefined', () => {
+      const photo = createMockPhoto({
+        thumbnail: 'base64EncodedThumbnailData',
+        isVideo: true,
+        mimeType: 'video/mp4',
+      });
+
+      act(() => {
+        root.render(
+          createElement(PhotoThumbnail, {
+            photo,
+            epochReadKey: mockEpochKey,
+          }),
+        );
+      });
+
+      expect(
+        container.querySelector('[data-testid="video-play-overlay"]'),
+      ).not.toBeNull();
+      expect(
+        container.querySelector('[data-testid="video-duration-badge"]'),
+      ).toBeNull();
+    });
+
+    it('renders play overlay without duration badge when duration missing', () => {
+      const photo = createMockPhoto({
+        thumbnail: 'base64EncodedThumbnailData',
+        isVideo: true,
+        duration: undefined,
+        mimeType: 'video/mp4',
+      });
+
+      act(() => {
+        root.render(
+          createElement(PhotoThumbnail, {
+            photo,
+            epochReadKey: mockEpochKey,
+          }),
+        );
+      });
+
+      expect(
+        container.querySelector('[data-testid="video-play-overlay"]'),
+      ).not.toBeNull();
+      expect(
+        container.querySelector('[data-testid="video-duration-badge"]'),
+      ).toBeNull();
+    });
+  });
+
   describe('Error State', () => {
     it('shows error state when shard loading fails', async () => {
       vi.mocked(photoService.loadPhoto).mockRejectedValue(
