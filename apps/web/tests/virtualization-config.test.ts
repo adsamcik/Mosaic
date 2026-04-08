@@ -43,10 +43,6 @@ describe('Virtualization Configuration', () => {
     const mosaicGridFiles = [
       { name: 'MosaicPhotoGrid', path: 'Gallery/MosaicPhotoGrid.tsx' },
       {
-        name: 'EnhancedMosaicPhotoGrid',
-        path: 'Gallery/EnhancedMosaicPhotoGrid.tsx',
-      },
-      {
         name: 'SharedMosaicPhotoGrid',
         path: 'Shared/SharedMosaicPhotoGrid.tsx',
       },
@@ -90,10 +86,6 @@ describe('Performance constraints documentation', () => {
     // to avoid rendering behavior inconsistencies between components
     const mosaicGridFiles = [
       { name: 'MosaicPhotoGrid', path: 'Gallery/MosaicPhotoGrid.tsx' },
-      {
-        name: 'EnhancedMosaicPhotoGrid',
-        path: 'Gallery/EnhancedMosaicPhotoGrid.tsx',
-      },
       {
         name: 'SharedMosaicPhotoGrid',
         path: 'Shared/SharedMosaicPhotoGrid.tsx',

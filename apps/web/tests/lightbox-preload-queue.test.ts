@@ -22,7 +22,7 @@ const PRELOAD_COUNT = 2;
 
 /**
  * Generate a preload queue based on current index and navigation direction.
- * This mirrors the logic in EnhancedMosaicPhotoGrid.tsx and other grid components.
+ * This mirrors the logic in MosaicPhotoGrid.tsx and other grid components.
  *
  * @param sortedPhotos - Array of all photos in display order
  * @param currentIdx - Current photo index

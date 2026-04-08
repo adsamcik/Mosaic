@@ -2,8 +2,6 @@ export { AnimatedTile, usePrefersReducedMotion } from './AnimatedTile';
 export type { AnimatedTileProps, AnimationPhase } from './AnimatedTile';
 export { DeletePhotoDialog } from './DeletePhotoDialog';
 export type { DeletePhotoDialogProps } from './DeletePhotoDialog';
-export { EnhancedMosaicPhotoGrid } from './EnhancedMosaicPhotoGrid';
-export { EnhancedMosaicTile } from './EnhancedMosaicTile';
 export { Gallery } from './Gallery';
 export type { GalleryViewMode } from './Gallery';
 export { GalleryHeader } from './GalleryHeader';
