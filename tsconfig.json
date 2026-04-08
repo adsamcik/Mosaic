@@ -1,0 +1,7 @@
+{
+  "files": [],
+  "references": [
+    { "path": "libs/crypto" },
+    { "path": "apps/web" }
+  ]
+}
