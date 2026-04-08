@@ -13,6 +13,7 @@
  */
 
 import { createLogger } from './logger';
+import { toArrayBufferView } from './buffer-utils';
 import type { AccessTier as AccessTierType } from './api-types';
 
 const log = createLogger('LinkTierKeyStore');
@@ -113,7 +114,7 @@ async function getLinkEncryptionKey(): Promise<CryptoKey> {
       const keyBytes = fromBase64(storedKey);
       linkEncryptionKey = await crypto.subtle.importKey(
         'raw',
-        keyBytes as Uint8Array<ArrayBuffer>,
+        toArrayBufferView(keyBytes),
         { name: 'AES-GCM', length: 256 },
         true, // Extractable so we can persist it
         ['encrypt', 'decrypt'],
@@ -220,9 +221,9 @@ export async function saveTierKeys(
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const plaintextBytes = new TextEncoder().encode(JSON.stringify(plaintext));
     const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
+      { name: 'AES-GCM', iv: toArrayBufferView(iv) },
       encKey,
-      plaintextBytes as Uint8Array<ArrayBuffer>,
+      toArrayBufferView(plaintextBytes),
     );
 
     // Store encrypted envelope
@@ -292,9 +293,9 @@ export async function getTierKeys(
 
           try {
             const decrypted = await crypto.subtle.decrypt(
-              { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
+              { name: 'AES-GCM', iv: toArrayBufferView(iv) },
               encKey,
-              ciphertext as Uint8Array<ArrayBuffer>,
+              toArrayBufferView(ciphertext),
             );
             plaintext = JSON.parse(new TextDecoder().decode(decrypted));
           } catch (decryptError) {

@@ -1,3 +1,4 @@
+import { toArrayBufferView } from './buffer-utils';
 import { clearAllCovers } from './album-cover-service';
 import { clearAllCachedMetadata } from './album-metadata-service';
 import { fromBase64, getApi, toBase64 } from './api';
@@ -104,9 +105,9 @@ export async function encryptSalt(
 
   // Encrypt the salt
   const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
+    { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
     key,
-    salt as Uint8Array<ArrayBuffer>,
+    toArrayBufferView(salt),
   );
 
   return {
@@ -131,9 +132,9 @@ export async function decryptSalt(
 
   try {
     const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
+      { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
       key,
-      encryptedSalt as Uint8Array<ArrayBuffer>,
+      toArrayBufferView(encryptedSalt),
     );
     return new Uint8Array(decrypted);
   } catch {

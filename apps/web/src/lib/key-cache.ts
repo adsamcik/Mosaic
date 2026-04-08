@@ -13,6 +13,7 @@
  */
 
 import { createLogger } from './logger';
+import { toArrayBufferView } from './buffer-utils';
 import { getKeyCacheDurationMs } from './settings-service';
 
 const log = createLogger('KeyCache');
@@ -92,7 +93,7 @@ async function getCacheEncryptionKey(): Promise<CryptoKey> {
       const keyBytes = fromBase64(storedKey);
       cacheEncryptionKey = await crypto.subtle.importKey(
         'raw',
-        keyBytes as Uint8Array<ArrayBuffer>,
+        toArrayBufferView(keyBytes),
         { name: 'AES-GCM', length: 256 },
         true, // Extractable so we can persist it
         ['encrypt', 'decrypt'],
@@ -159,9 +160,9 @@ export async function cacheKeys(keys: CachedKeys): Promise<void> {
 
     // Encrypt
     const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
+      { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
       encKey,
-      plaintext as Uint8Array<ArrayBuffer>,
+      toArrayBufferView(plaintext),
     );
 
     // Calculate expiration (0 = no expiry for "until tab close")
@@ -220,9 +221,9 @@ export async function getCachedKeys(): Promise<CachedKeys | null> {
     const nonce = fromBase64(envelope.nonce);
 
     const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: nonce as Uint8Array<ArrayBuffer> },
+      { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
       encKey,
-      ciphertext as Uint8Array<ArrayBuffer>,
+      toArrayBufferView(ciphertext),
     );
 
     const keys: CachedKeys = JSON.parse(new TextDecoder().decode(plaintext));

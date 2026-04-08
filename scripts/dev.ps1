@@ -548,143 +548,17 @@ try {
         }
         
         "test" {
-            $target = if ($Service -eq "") { "all" } else { $Service }
-            
-            switch ($target) {
-                "all" {
-                    Write-Title "Running all tests..."
-                    
-                    # Unit tests
-                    Write-Step "Running crypto library tests..."
-                    Push-Location (Join-Path $ProjectRoot "libs/crypto")
-                    npm test 2>&1
-                    $cryptoExit = $LASTEXITCODE
-                    Pop-Location
-                    
-                    Write-Step "Running frontend tests..."
-                    Push-Location (Join-Path $ProjectRoot "apps/web")
-                    npm run test:run 2>&1
-                    $frontendExit = $LASTEXITCODE
-                    Pop-Location
-                    
-                    Write-Step "Running backend tests..."
-                    Push-Location (Join-Path $ProjectRoot "apps/backend/Mosaic.Backend.Tests")
-                    dotnet test 2>&1
-                    $backendExit = $LASTEXITCODE
-                    Pop-Location
-                    
-                    if ($cryptoExit -eq 0 -and $frontendExit -eq 0 -and $backendExit -eq 0) {
-                        Write-Done "All unit tests passed!"
-                    } else {
-                        Write-Err "Some tests failed"
-                        exit 1
-                    }
-                }
-                "unit" {
-                    Write-Title "Running unit tests..."
-                    
-                    Write-Step "Running crypto library tests..."
-                    Push-Location (Join-Path $ProjectRoot "libs/crypto")
-                    npm test 2>&1
-                    Pop-Location
-                    
-                    Write-Step "Running frontend tests..."
-                    Push-Location (Join-Path $ProjectRoot "apps/web")
-                    npm run test:run 2>&1
-                    Pop-Location
-                    
-                    Write-Step "Running backend tests..."
-                    Push-Location (Join-Path $ProjectRoot "apps/backend/Mosaic.Backend.Tests")
-                    dotnet test 2>&1
-                    Pop-Location
-                }
-                "e2e" {
-                    Write-Title "Running E2E tests..."
-                    
-                    # Check if services are running
-                    $backendRunning = Test-ProcessRunning $BackendPidFile
-                    $frontendRunning = Test-ProcessRunning $FrontendPidFile
-                    
-                    if (-not $backendRunning -or -not $frontendRunning) {
-                        Write-Err "Dev services not running. Start them first with: .\dev.ps1 start"
-                        Write-Info "Or run the full E2E test suite with: .\scripts\run-e2e-tests.ps1"
-                        exit 1
-                    }
-                    
-                    Write-Info "Running against: Frontend=http://localhost:$FrontendPort Backend=http://localhost:$BackendPort"
-                    
-                    # Ensure E2E dependencies
-                    $e2ePath = Join-Path $ProjectRoot "tests/e2e"
-                    $e2eNodeModules = Join-Path $e2ePath "node_modules"
-                    if (-not (Test-Path $e2eNodeModules)) {
-                        Write-Step "Installing E2E dependencies..."
-                        Push-Location $e2ePath
-                        npm install 2>&1 | Out-Null
-                        npx playwright install chromium --with-deps 2>&1 | Out-Null
-                        Pop-Location
-                    }
-                    
-                    Push-Location $e2ePath
-                    
-                    # Build playwright command
-                    $playwrightArgs = @("test")
-                    
-                    # Parse extra args for options
-                    $project = "chromium"
-                    $testFile = ""
-                    $headed = $false
-                    $grep = ""
-                    
-                    for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
-                        $arg = $ExtraArgs[$i]
-                        switch -Regex ($arg) {
-                            "^--project=(.+)$" { $project = $Matches[1] }
-                            "^--headed$" { $headed = $true }
-                            "^--grep=(.+)$" { $grep = $Matches[1] }
-                            "^-g$" { 
-                                if ($i + 1 -lt $ExtraArgs.Count) { 
-                                    $grep = $ExtraArgs[$i + 1]
-                                    $i++ 
-                                } 
-                            }
-                            "^--debug$" { $playwrightArgs += "--debug" }
-                            "\.spec\.ts$" { $testFile = $arg }
-                            default { 
-                                if (-not $arg.StartsWith("-")) { $testFile = $arg }
-                            }
-                        }
-                    }
-                    
-                    if ($testFile) { $playwrightArgs += $testFile }
-                    if ($project -ne "all") { $playwrightArgs += "--project=$project" }
-                    if ($headed) { $playwrightArgs += "--headed" }
-                    if ($grep) { $playwrightArgs += "--grep=$grep" }
-                    
-                    Write-Info "Command: npx playwright $($playwrightArgs -join ' ')"
-                    Write-Host ""
-                    
-                    # Set environment variables
-                    $env:BASE_URL = "http://localhost:$FrontendPort"
-                    $env:API_URL = "http://localhost:$BackendPort"
-                    
-                    # Run playwright
-                    npx playwright @playwrightArgs
-                    $testExit = $LASTEXITCODE
-                    
-                    Pop-Location
-                    
-                    if ($testExit -eq 0) {
-                        Write-Done "E2E tests passed!"
-                    } else {
-                        Write-Err "E2E tests failed (exit code: $testExit)"
-                        exit $testExit
-                    }
-                }
-                default {
-                    Write-Err "Unknown test type: $target"
-                    Write-Info "Options: all, unit, e2e"
-                }
-            }
+            # Delegate to run-tests.ps1
+            $runTestsScript = Join-Path $PSScriptRoot "run-tests.ps1"
+            $suite = if ($Service -eq "") { "unit" } else { $Service }
+            # dev test "all" historically ran unit tests only
+            if ($suite -eq "all") { $suite = "unit" }
+
+            $runTestsArgs = @("-Suite", $suite)
+            if ($ExtraArgs) { $runTestsArgs += $ExtraArgs }
+
+            & $runTestsScript @runTestsArgs
+            exit $LASTEXITCODE
         }
         
         "help" {

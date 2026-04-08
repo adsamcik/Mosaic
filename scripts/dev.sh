@@ -372,76 +372,13 @@ case "$COMMAND" in
         ;;
     
     test)
-        test_type="${1:-all}"
+        # Delegate to run-tests.sh
+        test_type="${1:-unit}"
         shift || true
-        
-        case "$test_type" in
-            all|unit)
-                title "Running all unit tests..."
-                
-                step "Running crypto library tests..."
-                pushd "$PROJECT_ROOT/libs/crypto" > /dev/null
-                npm test
-                popd > /dev/null
-                
-                step "Running frontend tests..."
-                pushd "$PROJECT_ROOT/apps/web" > /dev/null
-                npm run test:run
-                popd > /dev/null
-                
-                step "Running backend tests..."
-                pushd "$PROJECT_ROOT/apps/backend/Mosaic.Backend.Tests" > /dev/null
-                dotnet test
-                popd > /dev/null
-                
-                done_msg "All unit tests completed!"
-                ;;
-            
-            e2e)
-                title "Running E2E tests..."
-                
-                # Check if services are accessible
-                if ! curl -s "http://localhost:$BACKEND_PORT/health" > /dev/null 2>&1; then
-                    err "Backend not running on port $BACKEND_PORT"
-                    info "Start services first with: ./scripts/dev.sh up && ./scripts/dev.sh backend"
-                    exit 1
-                fi
-                
-                if ! curl -s "http://localhost:$FRONTEND_PORT" > /dev/null 2>&1; then
-                    err "Frontend not running on port $FRONTEND_PORT"
-                    info "Start frontend with: ./scripts/dev.sh frontend"
-                    exit 1
-                fi
-                
-                info "Running against: Frontend=http://localhost:$FRONTEND_PORT Backend=http://localhost:$BACKEND_PORT"
-                
-                # Ensure E2E dependencies
-                e2e_path="$PROJECT_ROOT/tests/e2e"
-                if [ ! -d "$e2e_path/node_modules" ]; then
-                    step "Installing E2E dependencies..."
-                    pushd "$e2e_path" > /dev/null
-                    npm install
-                    npx playwright install chromium --with-deps
-                    popd > /dev/null
-                fi
-                
-                pushd "$e2e_path" > /dev/null
-                
-                export BASE_URL="http://localhost:$FRONTEND_PORT"
-                export API_URL="http://localhost:$BACKEND_PORT"
-                
-                # Pass remaining args to playwright
-                npx playwright test "$@"
-                
-                popd > /dev/null
-                ;;
-            
-            *)
-                err "Unknown test type: $test_type"
-                info "Options: all, unit, e2e"
-                exit 1
-                ;;
-        esac
+        # dev test "all" historically ran unit tests only
+        if [ "$test_type" = "all" ]; then test_type="unit"; fi
+
+        exec "$SCRIPT_DIR/run-tests.sh" "$test_type" "$@"
         ;;
     
     help|*)
