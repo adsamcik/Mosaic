@@ -272,7 +272,9 @@ public class ShareLinksController : ControllerBase
         }
         if (shareLink.Album.OwnerId != user.Id)
         {
-            return Forbid();
+            return Problem(
+                detail: "Share link not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
 
         shareLink.IsRevoked = true;
@@ -378,7 +380,9 @@ public class ShareLinksController : ControllerBase
         }
         if (shareLink.Album.OwnerId != user.Id)
         {
-            return Forbid();
+            return Problem(
+                detail: "Share link not found",
+                statusCode: StatusCodes.Status404NotFound);
         }
         if (shareLink.IsRevoked)
         {

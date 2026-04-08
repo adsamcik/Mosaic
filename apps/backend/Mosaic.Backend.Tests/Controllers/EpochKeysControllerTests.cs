@@ -513,7 +513,7 @@ public class EpochKeysControllerTests
     }
 
     [Fact]
-    public async Task Rotate_ReturnsForbid_WhenNonOwnerTries()
+    public async Task Rotate_ReturnsNotFound_WhenNonOwnerTries()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -547,8 +547,8 @@ public class EpochKeysControllerTests
         // Act
         var result = await controller.Rotate(album.Id, 2, request);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert — non-owners get 404 to prevent album enumeration
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]

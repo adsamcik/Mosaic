@@ -392,7 +392,7 @@ public class AlbumsControllerTests
     }
 
     [Fact]
-    public async Task Delete_ReturnsForbid_WhenNotOwner()
+    public async Task Delete_ReturnsNotFound_WhenNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -415,8 +415,8 @@ public class AlbumsControllerTests
         // Act
         var result = await controller.Delete(album.Id);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert — non-owners get 404 to prevent album enumeration
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]
@@ -856,7 +856,7 @@ public class AlbumsControllerTests
     }
 
     [Fact]
-    public async Task UpdateExpiration_ReturnsForbid_WhenNotOwner()
+    public async Task UpdateExpiration_ReturnsNotFound_WhenNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -881,8 +881,8 @@ public class AlbumsControllerTests
         // Act
         var result = await controller.UpdateExpiration(album.Id, request);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert — non-owners get 404 to prevent album enumeration
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]

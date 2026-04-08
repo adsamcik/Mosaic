@@ -43,7 +43,7 @@ public static class AlbumAuthorizationExtensions
         if (album == null)
             return (null, notFoundResult ?? new NotFoundResult());
         if (album.OwnerId != userId)
-            return (null, new ForbidResult());
+            return (null, notFoundResult ?? new NotFoundResult());
         return (album, null);
     }
 

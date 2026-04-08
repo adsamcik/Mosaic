@@ -247,8 +247,8 @@ public class SecurityTests
         // Act - UserB tries to remove UserC
         var result = await controller.Remove(album.Id, memberC.Id);
 
-        // Assert - Only owner can remove members
-        Assert.IsType<ForbidResult>(result);
+        // Assert - Only owner can remove members; non-owners get 404 to prevent enumeration
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]
@@ -638,8 +638,9 @@ public class SecurityTests
         // Act
         var result = await controller.Create(album.Id, request);
 
-        // Assert - Only owner can create share links
-        Assert.IsType<ForbidResult>(result);
+        // Assert - Only owner can create share links; non-owners get 404 to prevent enumeration
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
     }
 
     [Fact]

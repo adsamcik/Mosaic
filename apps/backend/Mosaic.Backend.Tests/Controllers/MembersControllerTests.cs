@@ -520,7 +520,7 @@ public class MembersControllerTests
     }
 
     [Fact]
-    public async Task Remove_ReturnsForbid_WhenNonOwnerTries()
+    public async Task Remove_ReturnsNotFound_WhenNonOwnerTries()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -545,8 +545,8 @@ public class MembersControllerTests
         // Act
         var result = await controller.Remove(album.Id, member.Id);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert — non-owners get 404 to prevent album enumeration
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]

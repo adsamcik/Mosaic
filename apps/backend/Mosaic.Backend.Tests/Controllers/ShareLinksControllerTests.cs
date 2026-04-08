@@ -187,7 +187,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task Create_ReturnsForbid_WhenUserIsNotOwner()
+    public async Task Create_ReturnsNotFound_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -212,8 +212,9 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.Create(album.Id, request);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert — non-owners get 404 to prevent album enumeration
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
     }
 
     [Fact]
@@ -497,7 +498,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task List_ReturnsForbid_WhenUserIsNotOwner()
+    public async Task List_ReturnsNotFound_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -520,8 +521,9 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.List(album.Id);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert — non-owners get 404 to prevent album enumeration
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
     }
 
     #endregion
@@ -681,7 +683,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task ListWithSecrets_ReturnsForbid_WhenUserIsNotOwner()
+    public async Task ListWithSecrets_ReturnsNotFound_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -703,8 +705,9 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.ListWithSecrets(album.Id);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert — non-owners get 404 to prevent album enumeration
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
     }
 
     #endregion
@@ -768,7 +771,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task Revoke_ReturnsForbid_WhenUserIsNotOwner()
+    public async Task Revoke_ReturnsNotFound_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -791,8 +794,9 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.Revoke(shareLink.Id);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert — non-owners get 404 to prevent album/link enumeration
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
     }
 
     #endregion
@@ -912,7 +916,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task AddEpochKeys_ReturnsForbid_WhenUserIsNotOwner()
+    public async Task AddEpochKeys_ReturnsNotFound_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -943,8 +947,9 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.AddEpochKeys(shareLink.Id, request);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert — non-owners get 404 to prevent album/link enumeration
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
     }
 
     [Fact]
@@ -1984,7 +1989,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task UpdateLinkExpiration_ReturnsForbid_WhenUserIsNotOwner()
+    public async Task UpdateLinkExpiration_ReturnsNotFound_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -2010,8 +2015,9 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert — non-owners get 404 to prevent album enumeration
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(404, objectResult.StatusCode);
     }
 
     [Fact]
