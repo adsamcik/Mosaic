@@ -328,7 +328,8 @@ export function createApiClient(): MosaicApi {
       });
 
       if (!response.ok) {
-        throw new ApiError(response.status, response.statusText);
+        const errorBody = await response.text().catch(() => undefined);
+        throw new ApiError(response.status, response.statusText, errorBody);
       }
 
       return new Uint8Array(await response.arrayBuffer());
@@ -422,8 +423,8 @@ export function createApiClient(): MosaicApi {
         `${API_BASE}/s/${encodeURIComponent(linkIdBase64)}/shards/${encodeURIComponent(shardId)}`,
       );
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`API error ${response.status}: ${text}`);
+        const errorBody = await response.text().catch(() => undefined);
+        throw new ApiError(response.status, response.statusText, errorBody);
       }
       return response.arrayBuffer();
     },
