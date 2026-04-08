@@ -12,22 +12,13 @@ public class ShardsController : ControllerBase
 {
     private readonly MosaicDbContext _db;
     private readonly IStorageService _storage;
+    private readonly ICurrentUserService _currentUserService;
 
-    public ShardsController(MosaicDbContext db, IStorageService storage)
+    public ShardsController(MosaicDbContext db, IStorageService storage, ICurrentUserService currentUserService)
     {
         _db = db;
         _storage = storage;
-    }
-
-    private async Task<User?> GetUser()
-    {
-        var authSub = HttpContext.Items["AuthSub"] as string;
-        if (authSub == null)
-        {
-            return null;
-        }
-
-        return await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+        _currentUserService = currentUserService;
     }
 
     /// <summary>
@@ -36,11 +27,7 @@ public class ShardsController : ControllerBase
     [HttpGet("{shardId}")]
     public async Task<IActionResult> Download(Guid shardId)
     {
-        var user = await GetUser();
-        if (user == null)
-        {
-            return Unauthorized();
-        }
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var shard = await _db.Shards.FindAsync(shardId);
         if (shard == null)
@@ -86,11 +73,7 @@ public class ShardsController : ControllerBase
     [HttpGet("{shardId}/meta")]
     public async Task<IActionResult> GetMeta(Guid shardId)
     {
-        var user = await GetUser();
-        if (user == null)
-        {
-            return Unauthorized();
-        }
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var shard = await _db.Shards.FindAsync(shardId);
         if (shard == null)
