@@ -415,13 +415,14 @@ describe('formatExpirationBadge', () => {
       expect(result?.text).toContain('album.expiresIn');
     });
 
-    it('returns danger for invalid date string (NaN days)', () => {
-      // "not-a-date" produces NaN from Date constructor, NaN <= 0 is false
-      // so it falls through to the weeks/months logic — NaN comparison returns false,
-      // which means it reaches the final return with NaN months
+    it('returns null for invalid date string', () => {
       const result = formatExpirationBadge('not-a-date', mockT);
-      // Should not crash — returns some badge (NaN days falls through all <= checks)
-      expect(result).not.toBeNull();
+      expect(result).toBeNull();
+    });
+
+    it('returns null for whitespace-only string', () => {
+      const result = formatExpirationBadge('   ', mockT);
+      expect(result).toBeNull();
     });
 
     it('handles exactly midnight boundary with fake timers', () => {

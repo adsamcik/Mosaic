@@ -60,8 +60,11 @@ export function formatExpirationBadge(
 ): ExpirationBadge | null {
   if (!expiresAt) return null;
 
+  const expiresDate = new Date(expiresAt);
+  if (isNaN(expiresDate.getTime())) return null;
+
   const days = Math.ceil(
-    (new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    (expiresDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
   );
 
   if (days <= 0) return { text: t('album.expired'), variant: 'danger' };
