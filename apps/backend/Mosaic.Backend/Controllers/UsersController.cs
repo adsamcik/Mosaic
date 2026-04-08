@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
@@ -49,9 +50,9 @@ public class UsersController : ControllerBase
     }
 
     public record UpdateUserRequest(
-        string? IdentityPubkey = null,
-        string? EncryptedSalt = null,
-        string? SaltNonce = null
+        [MaxLength(128)] string? IdentityPubkey = null,
+        [MaxLength(256)] string? EncryptedSalt = null,
+        [MaxLength(256)] string? SaltNonce = null
     );
 
     /// <summary>
@@ -129,7 +130,7 @@ public class UsersController : ControllerBase
         });
     }
 
-    public record UpdateWrappedKeyRequest(string WrappedAccountKey);
+    public record UpdateWrappedKeyRequest([MaxLength(2048)] string WrappedAccountKey);
 
     /// <summary>
     /// Update user's wrapped account key (for identity persistence across sessions)

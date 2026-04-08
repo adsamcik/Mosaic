@@ -124,6 +124,7 @@ public class AlbumsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
+        skip = Math.Max(0, skip);
         take = Math.Clamp(take, 1, 100);
 
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);

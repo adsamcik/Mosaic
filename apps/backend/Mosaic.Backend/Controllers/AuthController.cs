@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
@@ -827,7 +828,7 @@ public partial class AuthController : ControllerBase
 
     // ===== Request/Response DTOs =====
 
-    public record AuthInitRequest(string Username);
+    public record AuthInitRequest([MaxLength(256)] string Username);
 
     public record AuthInitResponse
     {
@@ -838,9 +839,9 @@ public partial class AuthController : ControllerBase
     }
 
     public record AuthVerifyRequest(
-        string Username,
+        [MaxLength(256)] string Username,
         Guid ChallengeId,
-        string Signature,
+        [MaxLength(256)] string Signature,
         long? Timestamp = null
     );
 
@@ -855,12 +856,12 @@ public partial class AuthController : ControllerBase
     }
 
     public record AuthRegisterRequest(
-        string Username,
-        string AuthPubkey,
-        string IdentityPubkey,
-        string UserSalt,
-        string AccountSalt,
-        string? WrappedAccountKey = null,
-        string? WrappedIdentitySeed = null
+        [MaxLength(256)] string Username,
+        [MaxLength(128)] string AuthPubkey,
+        [MaxLength(128)] string IdentityPubkey,
+        [MaxLength(128)] string UserSalt,
+        [MaxLength(128)] string AccountSalt,
+        [MaxLength(2048)] string? WrappedAccountKey = null,
+        [MaxLength(2048)] string? WrappedIdentitySeed = null
     );
 }

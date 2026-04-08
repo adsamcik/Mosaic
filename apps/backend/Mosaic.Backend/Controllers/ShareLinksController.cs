@@ -839,6 +839,7 @@ public class ShareLinksController : ControllerBase
     [HttpGet("api/s/{linkId}/photos")]
     public async Task<IActionResult> GetPhotos(string linkId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
+        skip = Math.Max(0, skip);
         take = Math.Clamp(take, 1, 100);
 
         var linkIdBytes = FromBase64Url(linkId);
