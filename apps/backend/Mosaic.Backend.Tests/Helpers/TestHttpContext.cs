@@ -24,4 +24,15 @@ public static class TestHttpContext
     {
         return new DefaultHttpContext();
     }
+
+    /// <summary>
+    /// Creates an unauthenticated HTTP context with an X-Share-Grant header set.
+    /// Use when testing subresource endpoints that require a grant token.
+    /// </summary>
+    public static HttpContext CreateUnauthenticatedWithGrant(string grantToken)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Share-Grant"] = grantToken;
+        return context;
+    }
 }

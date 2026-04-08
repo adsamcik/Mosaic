@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
@@ -75,6 +77,12 @@ public class LinkAccessResponse
     /// Base64-encoded encrypted album name (can be decrypted with tier key)
     /// </summary>
     public string? EncryptedName { get; set; }
+    /// <summary>
+    /// Short-lived HMAC grant token. Required by subresource endpoints (/keys, /photos, /shards)
+    /// when the share link has a MaxUses limit. Pass via X-Share-Grant header.
+    /// Valid for ~2 hours from issuance.
+    /// </summary>
+    public string? GrantToken { get; set; }
 }
 
 /// <summary>
@@ -140,6 +148,7 @@ public class ShareLinksController : ControllerBase
     private readonly IStorageService _storage;
     private readonly ICurrentUserService _currentUserService;
     private readonly bool _supportsExecuteUpdate;
+    private readonly byte[] _grantSigningKey;
 
     public ShareLinksController(
         MosaicDbContext db,
@@ -153,6 +162,19 @@ public class ShareLinksController : ControllerBase
         _currentUserService = currentUserService;
         // InMemory provider doesn't support ExecuteUpdateAsync
         _supportsExecuteUpdate = !db.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) ?? true;
+
+        // Initialize grant signing key from config, falling back to a per-instance random key.
+        // For production with multiple instances, set ShareLinks:GrantSigningKey in config.
+        var keyConfig = config["ShareLinks:GrantSigningKey"];
+        if (keyConfig != null)
+        {
+            try { _grantSigningKey = Convert.FromBase64String(keyConfig); }
+            catch { _grantSigningKey = RandomNumberGenerator.GetBytes(32); }
+        }
+        else
+        {
+            _grantSigningKey = RandomNumberGenerator.GetBytes(32);
+        }
     }
 
     /// <summary>
@@ -190,6 +212,46 @@ public class ShareLinksController : ControllerBase
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Generates an HMAC-based grant token for the given link ID.
+    /// The token is tied to a 2-hour time window so it expires naturally.
+    /// </summary>
+    private string GenerateGrantToken(byte[] linkId)
+    {
+        // 2-hour window: floor(unixSeconds / 7200)
+        var windowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 7200;
+        var message = Encoding.UTF8.GetBytes($"{Convert.ToHexString(linkId)}:{windowEpoch}");
+        using var hmac = new HMACSHA256(_grantSigningKey);
+        return ToBase64Url(hmac.ComputeHash(message));
+    }
+
+    /// <summary>
+    /// Validates a grant token for the given link ID.
+    /// Accepts tokens from the current 2-hour window and the immediately preceding one
+    /// to avoid clock-boundary edge cases.
+    /// </summary>
+    private bool IsGrantValid(byte[] linkId, string? token)
+    {
+        if (string.IsNullOrEmpty(token)) return false;
+
+        var currentWindow = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 7200;
+        var linkHex = Convert.ToHexString(linkId);
+
+        for (var offset = 0; offset <= 1; offset++)
+        {
+            var message = Encoding.UTF8.GetBytes($"{linkHex}:{currentWindow - offset}");
+            using var hmac = new HMACSHA256(_grantSigningKey);
+            var expected = ToBase64Url(hmac.ComputeHash(message));
+            if (CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(expected),
+                Encoding.UTF8.GetBytes(token)))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     #region Authenticated Endpoints
@@ -737,7 +799,8 @@ public class ShareLinksController : ControllerBase
             AlbumId = shareLink.AlbumId,
             AccessTier = shareLink.AccessTier,
             EpochCount = shareLink.LinkEpochKeys.Select(k => k.EpochId).Distinct().Count(),
-            EncryptedName = shareLink.Album.EncryptedName
+            EncryptedName = shareLink.Album.EncryptedName,
+            GrantToken = GenerateGrantToken(shareLink.LinkId)
         });
     }
 
@@ -756,7 +819,9 @@ public class ShareLinksController : ControllerBase
         }
 
         var shareLink = await _db.ShareLinks
+            .Include(sl => sl.Album)
             .Include(sl => sl.LinkEpochKeys)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
 
         if (shareLink == null)
@@ -766,11 +831,22 @@ public class ShareLinksController : ControllerBase
                 statusCode: StatusCodes.Status404NotFound);
         }
 
-        // Validate link is still valid (but don't increment use count for key fetch)
         var validationResult = ValidateShareLink(shareLink);
         if (validationResult != null)
         {
             return validationResult;
+        }
+
+        // Require a valid access grant when the link has a MaxUses limit.
+        if (shareLink.MaxUses.HasValue)
+        {
+            var grantToken = Request.Headers["X-Share-Grant"].FirstOrDefault();
+            if (!IsGrantValid(shareLink.LinkId, grantToken))
+            {
+                return Problem(
+                    detail: "Valid access grant required for limited-use links. Call GET /api/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
         }
 
         // Get sign pubkeys from epoch keys table for each epoch
@@ -817,6 +893,7 @@ public class ShareLinksController : ControllerBase
         }
 
         var shareLink = await _db.ShareLinks
+            .Include(sl => sl.Album)
             .FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
 
         if (shareLink == null)
@@ -826,11 +903,22 @@ public class ShareLinksController : ControllerBase
                 statusCode: StatusCodes.Status404NotFound);
         }
 
-        // Validate link is still valid (but don't increment use count for photo fetch)
         var validationResult = ValidateShareLink(shareLink);
         if (validationResult != null)
         {
             return validationResult;
+        }
+
+        // Require a valid access grant when the link has a MaxUses limit.
+        if (shareLink.MaxUses.HasValue)
+        {
+            var grantToken = Request.Headers["X-Share-Grant"].FirstOrDefault();
+            if (!IsGrantValid(shareLink.LinkId, grantToken))
+            {
+                return Problem(
+                    detail: "Valid access grant required for limited-use links. Call GET /api/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
         }
 
         // Get non-deleted manifests for the album with pagination
@@ -871,6 +959,7 @@ public class ShareLinksController : ControllerBase
         }
 
         var shareLink = await _db.ShareLinks
+            .Include(sl => sl.Album)
             .FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
 
         if (shareLink == null)
@@ -880,11 +969,22 @@ public class ShareLinksController : ControllerBase
                 statusCode: StatusCodes.Status404NotFound);
         }
 
-        // Validate link is still valid (but don't increment use count for shard download)
         var validationResult = ValidateShareLink(shareLink);
         if (validationResult != null)
         {
             return validationResult;
+        }
+
+        // Require a valid access grant when the link has a MaxUses limit.
+        if (shareLink.MaxUses.HasValue)
+        {
+            var grantToken = Request.Headers["X-Share-Grant"].FirstOrDefault();
+            if (!IsGrantValid(shareLink.LinkId, grantToken))
+            {
+                return Problem(
+                    detail: "Valid access grant required for limited-use links. Call GET /api/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
         }
 
         // Get the shard
@@ -923,7 +1023,9 @@ public class ShareLinksController : ControllerBase
     }
 
     /// <summary>
-    /// Validate that a share link is still valid (not revoked, not expired, within max uses)
+    /// Validates that a share link is still usable: not revoked, album not expired, link not expired.
+    /// MaxUses enforcement is handled exclusively at the Access() gate (which issues the grant token);
+    /// checking it here would block the last legitimate caller whose Access() incremented the counter.
     /// </summary>
     private IActionResult? ValidateShareLink(ShareLink shareLink)
     {
@@ -932,14 +1034,17 @@ public class ShareLinksController : ControllerBase
             return Gone(new { error = "This link has been revoked" });
         }
 
+        // Check album expiry - the Album navigation property must be loaded
+        if (shareLink.Album != null &&
+            shareLink.Album.ExpiresAt.HasValue &&
+            shareLink.Album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return Gone(new { error = "Album has expired" });
+        }
+
         if (shareLink.ExpiresAt.HasValue && shareLink.ExpiresAt.Value <= DateTimeOffset.UtcNow)
         {
             return Gone(new { error = "This link has expired" });
-        }
-
-        if (shareLink.MaxUses.HasValue && shareLink.UseCount >= shareLink.MaxUses.Value)
-        {
-            return Gone(new { error = "This link has reached its maximum uses" });
         }
 
         return null;

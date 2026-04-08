@@ -1775,8 +1775,11 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task DownloadShard_ReturnsGone_WhenLinkExceedsMaxUses()
+    public async Task DownloadShard_ReturnsUnauthorized_WhenLinkHasMaxUsesAndNoGrantProvided()
     {
+        // Regression: previously returned 410 Gone via ValidateShareLink MaxUses check,
+        // which was broken because it blocked the last legitimate caller.
+        // Now returns 401 Unauthorized when no grant token is presented for a limited-use link.
         // Arrange
         using var db = TestDbContextFactory.Create();
         var config = TestConfiguration.Create();
@@ -1806,7 +1809,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var objectResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(410, objectResult.StatusCode);
+        Assert.Equal(401, objectResult.StatusCode);
     }
 
     [Fact]
@@ -2270,6 +2273,341 @@ public class ShareLinksControllerTests
         // Assert
         var objectResult = Assert.IsType<ObjectResult>(result);
         Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetKeys_ReturnsGone_WhenAlbumExpired()
+    {
+        // Regression: GetKeys previously bypassed album expiry because it did not include Album
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album);
+
+        album.ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1);
+        await db.SaveChangesAsync();
+
+        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        // Act
+        var result = await controller.GetKeys(ToBase64Url(shareLink.LinkId));
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetPhotos_ReturnsGone_WhenAlbumExpired()
+    {
+        // Regression: GetPhotos previously bypassed album expiry because it did not include Album
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album);
+
+        album.ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1);
+        await db.SaveChangesAsync();
+
+        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        // Act
+        var result = await controller.GetPhotos(ToBase64Url(shareLink.LinkId));
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsGone_WhenAlbumExpired()
+    {
+        // Regression: DownloadShard previously bypassed album expiry because it did not include Album
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album);
+
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        storage.AddFile(shard.StorageKey);
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
+
+        album.ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1);
+        await db.SaveChangesAsync();
+
+        var controller = new ShareLinksController(db, config, storage, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        // Act
+        var result = await controller.DownloadShard(ToBase64Url(shareLink.LinkId), shard.Id);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    #endregion
+
+    #region Grant Token — MaxUses Enforcement
+
+    [Fact]
+    public async Task Access_ReturnsGrantToken_WhenLinkIsValid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 10);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        // Act
+        var result = await controller.Access(ToBase64Url(shareLink.LinkId));
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<LinkAccessResponse>(okResult.Value);
+        Assert.NotNull(response.GrantToken);
+        Assert.NotEmpty(response.GrantToken);
+    }
+
+    [Fact]
+    public async Task GetKeys_ReturnsUnauthorized_WhenMaxUsesSetAndNoGrantProvided()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        // Act — no grant header
+        var result = await controller.GetKeys(ToBase64Url(shareLink.LinkId));
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(401, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetKeys_ReturnsOk_WhenMaxUsesSetAndGrantIsValid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner, currentEpochId: 1);
+        await builder.CreateEpochKeyAsync(album, owner, epochId: 1);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Use the same controller instance so that both Access() and GetKeys() share the
+        // same _grantSigningKey (which is per-instance when no config key is set).
+        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext { HttpContext = TestHttpContext.CreateUnauthenticated() }
+        };
+
+        var accessResult = await controller.Access(linkIdBase64);
+        var accessOk = Assert.IsType<OkObjectResult>(accessResult);
+        var accessResp = Assert.IsType<LinkAccessResponse>(accessOk.Value);
+
+        // Inject the grant into the same controller's HttpContext
+        controller.HttpContext.Request.Headers["X-Share-Grant"] = accessResp.GrantToken!;
+
+        // Act
+        var result = await controller.GetKeys(linkIdBase64);
+
+        // Assert
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetPhotos_ReturnsUnauthorized_WhenMaxUsesSetAndNoGrantProvided()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5);
+
+        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        // Act — no grant header
+        var result = await controller.GetPhotos(ToBase64Url(shareLink.LinkId));
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(401, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetPhotos_ReturnsOk_WhenMaxUsesSetAndGrantIsValid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Use the same controller instance so both Access() and GetPhotos() share _grantSigningKey.
+        var controller = new ShareLinksController(db, config, new MockStorageService(), new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext { HttpContext = TestHttpContext.CreateUnauthenticated() }
+        };
+
+        var accessResult = await controller.Access(linkIdBase64);
+        var accessOk = Assert.IsType<OkObjectResult>(accessResult);
+        var accessResp = Assert.IsType<LinkAccessResponse>(accessOk.Value);
+
+        controller.HttpContext.Request.Headers["X-Share-Grant"] = accessResp.GrantToken!;
+
+        // Act
+        var result = await controller.GetPhotos(linkIdBase64);
+
+        // Assert
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsUnauthorized_WhenMaxUsesSetAndNoGrantProvided()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5);
+
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
+
+        var controller = new ShareLinksController(db, config, storage, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        // Act — no grant header
+        var result = await controller.DownloadShard(ToBase64Url(shareLink.LinkId), shard.Id);
+
+        // Assert
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(401, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsFile_WhenMaxUsesSetAndGrantIsValid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5, accessTier: 3);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        storage.AddFile(shard.StorageKey);
+        await builder.CreateManifestAsync(album, new List<Data.Entities.Shard> { shard });
+
+        var linkIdBase64 = ToBase64Url(shareLink.LinkId);
+
+        // Use the same controller instance so both Access() and DownloadShard() share _grantSigningKey.
+        var controller = new ShareLinksController(db, config, storage, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext { HttpContext = TestHttpContext.CreateUnauthenticated() }
+        };
+
+        var accessResult = await controller.Access(linkIdBase64);
+        var accessOk = Assert.IsType<OkObjectResult>(accessResult);
+        var accessResp = Assert.IsType<LinkAccessResponse>(accessOk.Value);
+
+        controller.HttpContext.Request.Headers["X-Share-Grant"] = accessResp.GrantToken!;
+
+        // Act
+        var result = await controller.DownloadShard(linkIdBase64, shard.Id);
+
+        // Assert
+        Assert.IsType<FileStreamResult>(result);
     }
 
     #endregion
