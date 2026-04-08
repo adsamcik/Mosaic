@@ -195,12 +195,12 @@ describe('AlbumPermissionsContext', () => {
       expect(getTestId('access-tier')).toBe('undefined');
     });
 
-    it('should allow download with full access tier (AccessTier.Full)', () => {
+    it('should allow download with full access tier (AccessTier.FULL)', () => {
       act(() => {
         root.render(
           createElement(AlbumPermissionsProvider, {
             role: 'anonymous',
-            accessTier: AccessTier.Full,
+            accessTier: AccessTier.FULL,
             children: createElement(PermissionsDisplay),
           }),
         );
@@ -210,12 +210,12 @@ describe('AlbumPermissionsContext', () => {
       expect(getTestId('access-tier')).toBe('3');
     });
 
-    it('should not allow download with preview access tier (AccessTier.Preview)', () => {
+    it('should not allow download with preview access tier (AccessTier.PREVIEW)', () => {
       act(() => {
         root.render(
           createElement(AlbumPermissionsProvider, {
             role: 'anonymous',
-            accessTier: AccessTier.Preview,
+            accessTier: AccessTier.PREVIEW,
             children: createElement(PermissionsDisplay),
           }),
         );
@@ -225,12 +225,12 @@ describe('AlbumPermissionsContext', () => {
       expect(getTestId('access-tier')).toBe('2');
     });
 
-    it('should not allow download with thumbnail access tier (AccessTier.Thumbnail)', () => {
+    it('should not allow download with thumbnail access tier (AccessTier.THUMB)', () => {
       act(() => {
         root.render(
           createElement(AlbumPermissionsProvider, {
             role: 'anonymous',
-            accessTier: AccessTier.Thumbnail,
+            accessTier: AccessTier.THUMB,
             children: createElement(PermissionsDisplay),
           }),
         );

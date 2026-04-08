@@ -131,7 +131,7 @@ function derivePermissions(
         canEditAlbum: false,
         canSelect: false,
         // Anonymous users can download only if they have full access tier
-        canDownload: accessTier === AccessTier.Full,
+        canDownload: accessTier === AccessTier.FULL,
         ...(accessTier !== undefined && { accessTier }),
       };
 

@@ -6,24 +6,12 @@
  */
 
 // =============================================================================
-// Access Tier for Share Links
+// Access Tier for Share Links (re-exported from @mosaic/crypto)
 // =============================================================================
 
-/**
- * Access tier levels for anonymous share link access.
- * Higher tiers include all capabilities of lower tiers.
- */
-export const AccessTier = {
-  /** Thumbnail only (200x200), no metadata */
-  Thumbnail: 1,
-  /** Preview resolution (up to 1080p), no location data */
-  Preview: 2,
-  /** Full resolution with all metadata */
-  Full: 3,
-} as const;
-
-/** Type for access tier values */
-export type AccessTierValue = (typeof AccessTier)[keyof typeof AccessTier];
+import { AccessTier } from '@mosaic/crypto';
+export { AccessTier };
+export type AccessTierValue = AccessTier;
 
 // =============================================================================
 // Common Types
@@ -232,8 +220,7 @@ export interface RotateEpochRequest {
 // Share Link Types
 // =============================================================================
 
-/** Access tier for share links */
-export type AccessTier = 1 | 2 | 3; // 1=thumb, 2=preview, 3=full
+// AccessTier type is imported from @mosaic/crypto and re-exported at the top of this file
 
 /** Wrapped tier key for a share link */
 export interface WrappedKeyRequest {
