@@ -18,33 +18,28 @@ const ROOT_KEY_CONTEXT = new TextEncoder().encode('Mosaic_RootKey_v1');
 const ACCOUNT_CONTEXT = new TextEncoder().encode('Mosaic_AccountKey_v1');
 
 /**
- * Derive all key layers from password (internal - exposes L0/L1).
+ * Derive L0 (master) and L1 (root) keys from password and salts.
  *
- * ⚠️ SECURITY WARNING: This function returns masterKey (L0) and rootKey (L1)
- * which MUST be zeroed by the caller using memzero() immediately after use.
- * Use deriveKeys() for production code which handles zeroing automatically.
+ * L0 = Argon2id(password, userSalt)
+ * L1 = HKDF-style(L0, accountSalt) using BLAKE2b with domain separation
  *
- * Key Hierarchy:
- * - L0 (Master): Argon2id(password, userSalt) - MUST BE ZEROED AFTER USE
- * - L1 (Root): HKDF-style(L0, accountSalt) - MUST BE ZEROED AFTER USE
- * - L2 (Account): random(32), wrapped by L1 - stored encrypted
+ * ⚠️ SECURITY: Callers MUST call memzero() on both returned keys after use.
+ * The intermediate rootKeyIntermediate is zeroed internally.
  *
- * @internal For testing purposes only. Production code should use deriveKeys().
  * @param password - User password
  * @param userSalt - 16-byte salt stored on server (per-user)
  * @param accountSalt - 16-byte salt stored on server (unique per account)
  * @param params - Optional Argon2 parameters (auto-detected if not provided)
- * @returns Full derived key hierarchy including L0/L1 (caller MUST call memzero on masterKey and rootKey)
+ * @returns L0 masterKey and L1 rootKey — caller MUST memzero both after use
  */
-export async function deriveKeysInternal(
+async function deriveMasterAndRootKeys(
   password: string,
   userSalt: Uint8Array,
   accountSalt: Uint8Array,
   params?: Argon2Params,
-): Promise<DerivedKeys> {
+): Promise<{ masterKey: Uint8Array; rootKey: Uint8Array }> {
   await sodium.ready;
 
-  // Verify crypto_pwhash is actually bound (race condition guard)
   if (typeof sodium.crypto_pwhash !== 'function') {
     throw new CryptoError(
       'libsodium WASM not fully initialized - crypto_pwhash not available',
@@ -92,8 +87,43 @@ export async function deriveKeysInternal(
     rootKeyIntermediate,
   );
 
-  // Clean intermediate key
+  // Clean intermediate key — masterKey/rootKey cleanup is caller's responsibility
   memzero(rootKeyIntermediate);
+
+  return { masterKey, rootKey };
+}
+
+/**
+ * Derive all key layers from password (internal - exposes L0/L1).
+ *
+ * ⚠️ SECURITY WARNING: This function returns masterKey (L0) and rootKey (L1)
+ * which MUST be zeroed by the caller using memzero() immediately after use.
+ * Use deriveKeys() for production code which handles zeroing automatically.
+ *
+ * Key Hierarchy:
+ * - L0 (Master): Argon2id(password, userSalt) - MUST BE ZEROED AFTER USE
+ * - L1 (Root): HKDF-style(L0, accountSalt) - MUST BE ZEROED AFTER USE
+ * - L2 (Account): random(32), wrapped by L1 - stored encrypted
+ *
+ * @internal For testing purposes only. Production code should use deriveKeys().
+ * @param password - User password
+ * @param userSalt - 16-byte salt stored on server (per-user)
+ * @param accountSalt - 16-byte salt stored on server (unique per account)
+ * @param params - Optional Argon2 parameters (auto-detected if not provided)
+ * @returns Full derived key hierarchy including L0/L1 (caller MUST call memzero on masterKey and rootKey)
+ */
+export async function deriveKeysInternal(
+  password: string,
+  userSalt: Uint8Array,
+  accountSalt: Uint8Array,
+  params?: Argon2Params,
+): Promise<DerivedKeys> {
+  const { masterKey, rootKey } = await deriveMasterAndRootKeys(
+    password,
+    userSalt,
+    accountSalt,
+    params,
+  );
 
   // L2: Generate random account key
   const accountKey = randomBytes(32);
@@ -174,28 +204,6 @@ export async function unwrapAccountKey(
   wrappedAccountKey: Uint8Array,
   params?: Argon2Params,
 ): Promise<Uint8Array> {
-  await sodium.ready;
-
-  // Verify crypto_pwhash is actually bound (race condition guard)
-  if (typeof sodium.crypto_pwhash !== 'function') {
-    throw new CryptoError(
-      'libsodium WASM not fully initialized - crypto_pwhash not available',
-      CryptoErrorCode.NOT_INITIALIZED,
-    );
-  }
-
-  if (userSalt.length !== 16) {
-    throw new CryptoError(
-      'User salt must be 16 bytes',
-      CryptoErrorCode.INVALID_INPUT,
-    );
-  }
-  if (accountSalt.length !== 16) {
-    throw new CryptoError(
-      'Account salt must be 16 bytes',
-      CryptoErrorCode.INVALID_INPUT,
-    );
-  }
   if (wrappedAccountKey.length < 24 + 16 + 1) {
     // nonce + tag + at least 1 byte
     throw new CryptoError(
@@ -204,33 +212,15 @@ export async function unwrapAccountKey(
     );
   }
 
-  const argon2Params = params ?? getArgon2Params();
-
-  // Derive L0 and L1
-  const masterKey = sodium.crypto_pwhash(
-    32,
+  const { masterKey, rootKey } = await deriveMasterAndRootKeys(
     password,
     userSalt,
-    argon2Params.iterations,
-    argon2Params.memory * 1024,
-    sodium.crypto_pwhash_ALG_ARGON2ID13,
+    accountSalt,
+    params,
   );
 
-  const rootKeyIntermediate = sodium.crypto_generichash(
-    32,
-    ROOT_KEY_CONTEXT,
-    masterKey,
-  );
-
-  const rootKey = sodium.crypto_generichash(
-    32,
-    sodium.crypto_generichash(32, ACCOUNT_CONTEXT, accountSalt),
-    rootKeyIntermediate,
-  );
-
-  // Clean up
+  // L0 not needed beyond derivation
   memzero(masterKey);
-  memzero(rootKeyIntermediate);
 
   // Unwrap L2
   const nonce = wrappedAccountKey.slice(0, 24);
@@ -272,16 +262,6 @@ export async function rewrapAccountKey(
   accountSalt: Uint8Array,
   params?: Argon2Params,
 ): Promise<Uint8Array> {
-  await sodium.ready;
-
-  // Verify crypto_pwhash is actually bound (race condition guard)
-  if (typeof sodium.crypto_pwhash !== 'function') {
-    throw new CryptoError(
-      'libsodium WASM not fully initialized - crypto_pwhash not available',
-      CryptoErrorCode.NOT_INITIALIZED,
-    );
-  }
-
   if (accountKey.length !== 32) {
     throw new CryptoError(
       'Account key must be 32 bytes',
@@ -289,33 +269,15 @@ export async function rewrapAccountKey(
     );
   }
 
-  const argon2Params = params ?? getArgon2Params();
-
-  // Derive new root key
-  const masterKey = sodium.crypto_pwhash(
-    32,
+  const { masterKey, rootKey } = await deriveMasterAndRootKeys(
     newPassword,
     userSalt,
-    argon2Params.iterations,
-    argon2Params.memory * 1024,
-    sodium.crypto_pwhash_ALG_ARGON2ID13,
+    accountSalt,
+    params,
   );
 
-  const rootKeyIntermediate = sodium.crypto_generichash(
-    32,
-    ROOT_KEY_CONTEXT,
-    masterKey,
-  );
-
-  const rootKey = sodium.crypto_generichash(
-    32,
-    sodium.crypto_generichash(32, ACCOUNT_CONTEXT, accountSalt),
-    rootKeyIntermediate,
-  );
-
-  // Clean up intermediates
+  // L0 not needed beyond derivation
   memzero(masterKey);
-  memzero(rootKeyIntermediate);
 
   // Wrap with new nonce
   const nonce = randomBytes(24);
