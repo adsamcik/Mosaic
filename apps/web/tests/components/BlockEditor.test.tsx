@@ -13,6 +13,8 @@ import {
   HeadingEditor,
   PhotoGridEditor,
   ContentEditor,
+  segmentsToHtml,
+  htmlToSegments,
 } from '../../src/components/Content/BlockEditor';
 import type {
   PhotoBlock,
@@ -642,5 +644,66 @@ describe('ContentEditor', () => {
       // onBlockAdd should be called with the original block
       expect(onBlockAdd).toHaveBeenCalledWith(originalBlock);
     });
+  });
+});
+
+describe('segmentsToHtml (XSS prevention)', () => {
+  it('does not produce <a> tag for javascript: href', () => {
+    const segments: RichTextSegment[] = [
+      { text: 'click me', href: 'javascript:alert(1)' },
+    ];
+    const html = segmentsToHtml(segments);
+    expect(html).not.toContain('<a');
+    expect(html).toContain('click me');
+  });
+
+  it('does not produce <a> tag for data: href', () => {
+    const segments: RichTextSegment[] = [
+      { text: 'click me', href: 'data:text/html,<script>alert(1)</script>' },
+    ];
+    const html = segmentsToHtml(segments);
+    expect(html).not.toContain('<a');
+    expect(html).toContain('click me');
+  });
+
+  it('produces <a> tag for https: href', () => {
+    const segments: RichTextSegment[] = [
+      { text: 'click me', href: 'https://example.com' },
+    ];
+    const html = segmentsToHtml(segments);
+    expect(html).toContain('<a href="https://example.com/">click me</a>');
+  });
+
+  it('produces <a> tag for mailto: href', () => {
+    const segments: RichTextSegment[] = [
+      { text: 'email', href: 'mailto:test@example.com' },
+    ];
+    const html = segmentsToHtml(segments);
+    expect(html).toContain('<a href="mailto:test@example.com">email</a>');
+  });
+});
+
+describe('htmlToSegments (XSS prevention)', () => {
+  it('strips javascript: href from extracted segments', () => {
+    const html = '<a href="javascript:alert(1)">click me</a>';
+    const segments = htmlToSegments(html);
+    expect(segments.length).toBeGreaterThan(0);
+    expect(segments[0].href).toBeUndefined();
+    expect(segments[0].text).toBe('click me');
+  });
+
+  it('strips data: href from extracted segments', () => {
+    const html = '<a href="data:text/html,<script>alert(1)</script>">click me</a>';
+    const segments = htmlToSegments(html);
+    expect(segments.length).toBeGreaterThan(0);
+    expect(segments[0].href).toBeUndefined();
+  });
+
+  it('preserves https: href in extracted segments', () => {
+    const html = '<a href="https://example.com">click me</a>';
+    const segments = htmlToSegments(html);
+    expect(segments.length).toBeGreaterThan(0);
+    expect(segments[0].href).toBe('https://example.com/');
+    expect(segments[0].text).toBe('click me');
   });
 });

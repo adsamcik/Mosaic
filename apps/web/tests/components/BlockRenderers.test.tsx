@@ -101,9 +101,49 @@ describe('RichText', () => {
     const { container } = render(RichText, { segments });
     const link = container.querySelector('a');
     expect(link).not.toBeNull();
-    expect(link?.getAttribute('href')).toBe('https://example.com');
+    expect(link?.getAttribute('href')).toBe('https://example.com/');
     expect(link?.getAttribute('target')).toBe('_blank');
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('blocks javascript: href (XSS prevention)', () => {
+    const segments: RichTextSegment[] = [
+      { text: 'XSS', href: 'javascript:alert(1)' },
+    ];
+    const { container } = render(RichText, { segments });
+    const link = container.querySelector('a');
+    expect(link).toBeNull();
+    expect(container.textContent).toContain('XSS');
+  });
+
+  it('blocks data: href (XSS prevention)', () => {
+    const segments: RichTextSegment[] = [
+      { text: 'XSS', href: 'data:text/html,<script>alert(1)</script>' },
+    ];
+    const { container } = render(RichText, { segments });
+    const link = container.querySelector('a');
+    expect(link).toBeNull();
+    expect(container.textContent).toContain('XSS');
+  });
+
+  it('blocks vbscript: href (XSS prevention)', () => {
+    const segments: RichTextSegment[] = [
+      { text: 'XSS', href: 'vbscript:MsgBox("XSS")' },
+    ];
+    const { container } = render(RichText, { segments });
+    const link = container.querySelector('a');
+    expect(link).toBeNull();
+    expect(container.textContent).toContain('XSS');
+  });
+
+  it('allows mailto: href', () => {
+    const segments: RichTextSegment[] = [
+      { text: 'Email', href: 'mailto:test@example.com' },
+    ];
+    const { container } = render(RichText, { segments });
+    const link = container.querySelector('a');
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute('href')).toBe('mailto:test@example.com');
   });
 
   it('renders combined formatting', () => {

@@ -33,6 +33,7 @@ import type {
   RichTextSegment,
 } from '../../lib/content-blocks';
 import {
+  sanitizeHref,
   createTextBlock,
   createHeadingBlock,
   createDividerBlock,
@@ -85,7 +86,7 @@ export interface TextEditorProps {
 /**
  * Convert RichTextSegments to TipTap HTML
  */
-function segmentsToHtml(segments: RichTextSegment[]): string {
+export function segmentsToHtml(segments: RichTextSegment[]): string {
   return segments
     .map((segment) => {
       let text = segment.text;
@@ -99,7 +100,10 @@ function segmentsToHtml(segments: RichTextSegment[]): string {
         text = `<em>${text}</em>`;
       }
       if (segment.href) {
-        text = `<a href="${segment.href}">${text}</a>`;
+        const safeHref = sanitizeHref(segment.href);
+        if (safeHref) {
+          text = `<a href="${safeHref}">${text}</a>`;
+        }
       }
       return text;
     })
@@ -109,7 +113,7 @@ function segmentsToHtml(segments: RichTextSegment[]): string {
 /**
  * Convert TipTap HTML to RichTextSegments
  */
-function htmlToSegments(html: string): RichTextSegment[] {
+export function htmlToSegments(html: string): RichTextSegment[] {
   // Simple parsing - in production would use DOM parsing
   const div = document.createElement('div');
   div.innerHTML = html;
@@ -137,9 +141,12 @@ function htmlToSegments(html: string): RichTextSegment[] {
         case 'code':
           newFormatting.code = true;
           break;
-        case 'a':
-          newFormatting.href = el.getAttribute('href') || undefined;
+        case 'a': {
+          const rawHref = el.getAttribute('href');
+          const href = rawHref ? (sanitizeHref(rawHref) ?? undefined) : undefined;
+          newFormatting.href = href;
           break;
+        }
       }
 
       for (const child of Array.from(node.childNodes)) {

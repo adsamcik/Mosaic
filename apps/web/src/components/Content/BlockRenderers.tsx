@@ -20,6 +20,7 @@ import type {
   SectionBlock,
   RichTextSegment,
 } from '../../lib/content-blocks';
+import { sanitizeHref } from '../../lib/content-blocks';
 import './BlockRenderers.css';
 
 // Fix for default marker icons in Vite/Webpack bundlers
@@ -67,16 +68,19 @@ export function RichText({ segments }: RichTextProps): ReactNode {
           content = <em>{content}</em>;
         }
         if (segment.href) {
-          content = (
-            <a
-              href={segment.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block-link"
-            >
-              {content}
-            </a>
-          );
+          const safeHref = sanitizeHref(segment.href);
+          if (safeHref) {
+            content = (
+              <a
+                href={safeHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block-link"
+              >
+                {content}
+              </a>
+            );
+          }
         }
 
         return <span key={index}>{content}</span>;
