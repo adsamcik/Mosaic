@@ -269,10 +269,11 @@ export async function decryptShard(
       tierKey,
     );
     return plaintext;
-  } catch {
+  } catch (error) {
     throw new CryptoError(
       'Decryption failed - wrong key or tampered data',
       CryptoErrorCode.DECRYPTION_FAILED,
+      error,
     );
   }
 }

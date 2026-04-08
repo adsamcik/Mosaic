@@ -86,10 +86,11 @@ export function unwrapKey(
       wrapper,
     );
     return plaintext;
-  } catch {
+  } catch (error) {
     throw new CryptoError(
       'Failed to unwrap key - authentication failed',
       CryptoErrorCode.DECRYPTION_FAILED,
+      error,
     );
   }
 }

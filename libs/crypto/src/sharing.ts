@@ -126,10 +126,11 @@ export function verifyAndOpenBundle(
       myIdentity.x25519.publicKey,
       myIdentity.x25519.secretKey,
     );
-  } catch {
+  } catch (error) {
     throw new CryptoError(
       'Failed to open sealed bundle - not intended for this recipient',
       CryptoErrorCode.DECRYPTION_FAILED,
+      error,
     );
   }
 

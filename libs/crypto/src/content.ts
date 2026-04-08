@@ -123,10 +123,11 @@ export function decryptContent(
       nonce,
       contentKey,
     );
-  } catch {
+  } catch (error) {
     throw new CryptoError(
       'Content decryption failed: authentication failed',
       CryptoErrorCode.DECRYPTION_FAILED,
+      error,
     );
   }
 }
