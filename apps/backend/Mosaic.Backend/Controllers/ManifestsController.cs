@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Logging;
 using Mosaic.Backend.Services;
 
@@ -134,21 +135,8 @@ public class ManifestsController : ControllerBase
             }
 
             // 2. Verify membership
-            var membership = await _db.AlbumMembers
-                .FirstOrDefaultAsync(am =>
-                    am.AlbumId == album.Id &&
-                    am.UserId == user.Id &&
-                    am.RevokedAt == null);
-
-            if (membership == null)
-            {
-                return Forbid();
-            }
-
-            if (!AlbumRoles.CanUpload(membership.Role))
-            {
-                return Forbid();
-            }
+            var (membership, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id);
+            if (memberError != null) return memberError;
 
             // 3. Validate shards
             var shards = await _db.Shards
@@ -291,16 +279,8 @@ public class ManifestsController : ControllerBase
         }
 
         // Verify access
-        var hasAccess = await _db.AlbumMembers
-            .AnyAsync(am =>
-                am.AlbumId == manifest.AlbumId &&
-                am.UserId == user.Id &&
-                am.RevokedAt == null);
-
-        if (!hasAccess)
-        {
-            return Forbid();
-        }
+        var accessError = await _db.RequireAlbumMemberAsync(manifest.AlbumId, user.Id);
+        if (accessError != null) return accessError;
 
         return Ok(new
         {
@@ -356,21 +336,8 @@ public class ManifestsController : ControllerBase
             }
 
             // Verify editor/owner access
-            var membership = await _db.AlbumMembers
-                .FirstOrDefaultAsync(am =>
-                    am.AlbumId == album.Id &&
-                    am.UserId == user.Id &&
-                    am.RevokedAt == null);
-
-            if (membership == null)
-            {
-                return Forbid();
-            }
-
-            if (!AlbumRoles.CanUpload(membership.Role))
-            {
-                return Forbid();
-            }
+            var (membership, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id);
+            if (memberError != null) return memberError;
 
             // Soft delete
             manifest.IsDeleted = true;

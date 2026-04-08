@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
@@ -202,21 +203,12 @@ public class ShareLinksController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
-        var album = await _db.Albums.FindAsync(albumId);
-        if (album == null)
-        {
-            return Problem(
-                detail: "Album not found",
-                statusCode: StatusCodes.Status404NotFound);
-        }
-
-        if (album.OwnerId != user.Id)
-        {
-            return Forbid();
-        }
+        var albumNotFound = Problem(detail: "Album not found", statusCode: StatusCodes.Status404NotFound);
+        var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id, albumNotFound);
+        if (ownerError != null) return ownerError;
 
         // Reject creating share links for expired albums
-        if (album.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (album!.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
         {
             return Gone(new { error = "Album has expired" });
         }
@@ -350,18 +342,9 @@ public class ShareLinksController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
-        var album = await _db.Albums.FindAsync(albumId);
-        if (album == null)
-        {
-            return Problem(
-                detail: "Album not found",
-                statusCode: StatusCodes.Status404NotFound);
-        }
-
-        if (album.OwnerId != user.Id)
-        {
-            return Forbid();
-        }
+        var albumNotFound = Problem(detail: "Album not found", statusCode: StatusCodes.Status404NotFound);
+        var (_, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id, albumNotFound);
+        if (ownerError != null) return ownerError;
 
         // Note: SQLite doesn't support DateTimeOffset in ORDER BY, so we order client-side
         var shareLinks = await _db.ShareLinks
@@ -395,17 +378,9 @@ public class ShareLinksController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
-        var album = await _db.Albums.FindAsync(albumId);
-        if (album == null)
-        {
-            return Problem(
-                detail: "Album not found",
-                statusCode: StatusCodes.Status404NotFound);
-        }
-        if (album.OwnerId != user.Id)
-        {
-            return Forbid();
-        }
+        var albumNotFound = Problem(detail: "Album not found", statusCode: StatusCodes.Status404NotFound);
+        var (_, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id, albumNotFound);
+        if (ownerError != null) return ownerError;
 
         // Only return active (non-revoked, non-expired) links with stored secrets
         // Note: For SQLite compatibility, we load all links for this album and filter client-side
@@ -484,18 +459,9 @@ public class ShareLinksController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album exists and user is owner
-        var album = await _db.Albums.FindAsync(albumId);
-        if (album == null)
-        {
-            return Problem(
-                detail: "Album not found",
-                statusCode: StatusCodes.Status404NotFound);
-        }
-
-        if (album.OwnerId != user.Id)
-        {
-            return Forbid();
-        }
+        var albumNotFound = Problem(detail: "Album not found", statusCode: StatusCodes.Status404NotFound);
+        var (_, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id, albumNotFound);
+        if (ownerError != null) return ownerError;
 
         // Decode linkId from base64url
         var linkIdBytes = FromBase64Url(linkId);

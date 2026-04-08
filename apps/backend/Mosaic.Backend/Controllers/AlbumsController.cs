@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Logging;
 using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
@@ -320,15 +321,8 @@ public class AlbumsController : ControllerBase
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
-        var membership = await _db.AlbumMembers
-            .AsNoTracking()
-            .Where(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null)
-            .FirstOrDefaultAsync();
-
-        if (membership == null)
-        {
-            return Forbid();
-        }
+        var (membership, memberError) = await _db.GetAlbumMemberAsync(albumId, user.Id);
+        if (memberError != null) return memberError;
 
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null)
@@ -347,7 +341,7 @@ public class AlbumsController : ControllerBase
             album.EncryptedDescription,
             album.ExpiresAt,
             album.ExpirationWarningDays,
-            membership.Role
+            membership!.Role
         });
     }
 
@@ -359,17 +353,8 @@ public class AlbumsController : ControllerBase
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
-        var album = await _db.Albums.FindAsync(albumId);
-        if (album == null)
-        {
-            return NotFound();
-        }
-
-        // Only owner can update expiration
-        if (album.OwnerId != user.Id)
-        {
-            return Forbid();
-        }
+        var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
+        if (ownerError != null) return ownerError;
 
         // Validate expiresAt if provided (null is allowed to remove expiration)
         if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
@@ -387,7 +372,7 @@ public class AlbumsController : ControllerBase
         }
 
         // Update expiration settings
-        album.ExpiresAt = request.ExpiresAt;
+        album!.ExpiresAt = request.ExpiresAt;
         if (request.ExpirationWarningDays.HasValue)
         {
             album.ExpirationWarningDays = request.ExpirationWarningDays.Value;
@@ -419,13 +404,8 @@ public class AlbumsController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify access
-        var hasAccess = await _db.AlbumMembers
-            .AnyAsync(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null);
-
-        if (!hasAccess)
-        {
-            return Forbid();
-        }
+        var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
+        if (accessError != null) return accessError;
 
         // Fetch album first to ensure it exists
         var album = await _db.Albums.FindAsync(albumId);
@@ -483,16 +463,8 @@ public class AlbumsController : ControllerBase
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
-        var album = await _db.Albums.FindAsync(albumId);
-        if (album == null)
-        {
-            return NotFound();
-        }
-
-        if (album.OwnerId != user.Id)
-        {
-            return Forbid();
-        }
+        var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
+        if (ownerError != null) return ownerError;
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
@@ -510,7 +482,7 @@ public class AlbumsController : ControllerBase
                 quota.UpdatedAt = DateTime.UtcNow;
             }
 
-            _db.Albums.Remove(album);
+            _db.Albums.Remove(album!);
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
 
@@ -534,21 +506,8 @@ public class AlbumsController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Check membership - owner or editor can rename
-        var membership = await _db.AlbumMembers
-            .AsNoTracking()
-            .Where(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null)
-            .FirstOrDefaultAsync();
-
-        if (membership == null)
-        {
-            return Forbid();
-        }
-
-        // Only owner and editors can rename
-        if (!AlbumRoles.CanUpload(membership.Role))
-        {
-            return Forbid();
-        }
+        var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
+        if (memberError != null) return memberError;
 
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null)
@@ -593,21 +552,8 @@ public class AlbumsController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Check membership - owner or editor can update description
-        var membership = await _db.AlbumMembers
-            .AsNoTracking()
-            .Where(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null)
-            .FirstOrDefaultAsync();
-
-        if (membership == null)
-        {
-            return Forbid();
-        }
-
-        // Only owner and editors can update description
-        if (!AlbumRoles.CanUpload(membership.Role))
-        {
-            return Forbid();
-        }
+        var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
+        if (memberError != null) return memberError;
 
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null)

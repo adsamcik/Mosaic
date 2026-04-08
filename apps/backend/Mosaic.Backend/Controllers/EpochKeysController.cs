@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
@@ -29,13 +30,8 @@ public class EpochKeysController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify user has access to album
-        var hasAccess = await _db.AlbumMembers
-            .AnyAsync(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null);
-
-        if (!hasAccess)
-        {
-            return Forbid();
-        }
+        var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
+        if (accessError != null) return accessError;
 
         var keys = await _db.EpochKeys
             .AsNoTracking()
@@ -74,21 +70,8 @@ public class EpochKeysController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership or editor role
-        var membership = await _db.AlbumMembers
-            .FirstOrDefaultAsync(am =>
-                am.AlbumId == albumId &&
-                am.UserId == user.Id &&
-                am.RevokedAt == null);
-
-        if (membership == null)
-        {
-            return Forbid();
-        }
-
-        if (!AlbumRoles.CanUpload(membership.Role))
-        {
-            return Forbid();
-        }
+        var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
+        if (memberError != null) return memberError;
 
         // Check recipient exists
         var recipient = await _db.Users.FindAsync(request.RecipientId);
@@ -214,19 +197,11 @@ public class EpochKeysController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
-        var album = await _db.Albums.FindAsync(albumId);
-        if (album == null)
-        {
-            return NotFound();
-        }
-
-        if (album.OwnerId != user.Id)
-        {
-            return Forbid();
-        }
+        var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
+        if (ownerError != null) return ownerError;
 
         // Validate epoch ID is greater than current
-        if (epochId <= album.CurrentEpochId)
+        if (epochId <= album!.CurrentEpochId)
         {
             return Problem(
                 detail: $"New epoch ID must be greater than current ({album.CurrentEpochId})",

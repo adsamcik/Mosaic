@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
@@ -107,17 +108,8 @@ public class AlbumContentController : ControllerBase
         }
 
         // Check user is a member
-        var membership = await _db.AlbumMembers
-            .AsNoTracking()
-            .FirstOrDefaultAsync(am =>
-                am.AlbumId == albumId &&
-                am.UserId == user.Id &&
-                am.RevokedAt == null);
-
-        if (membership == null)
-        {
-            return Forbid();
-        }
+        var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
+        if (accessError != null) return accessError;
 
         // Get content
         var content = await _db.AlbumContents.FindAsync(albumId);
@@ -166,23 +158,8 @@ public class AlbumContentController : ControllerBase
         }
 
         // Check user is owner or editor
-        var membership = await _db.AlbumMembers
-            .AsNoTracking()
-            .FirstOrDefaultAsync(am =>
-                am.AlbumId == albumId &&
-                am.UserId == user.Id &&
-                am.RevokedAt == null);
-
-        if (membership == null)
-        {
-            return NotFound();
-        }
-
-        // Only owner or editor can update content
-        if (membership.Role != "owner" && membership.Role != "editor")
-        {
-            return Forbid();
-        }
+        var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id, new NotFoundResult());
+        if (memberError != null) return memberError;
 
         // Get or create content
         var content = await _db.AlbumContents.FindAsync(albumId);

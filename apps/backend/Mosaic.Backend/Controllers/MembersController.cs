@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Logging;
 using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
@@ -38,13 +39,8 @@ public class MembersController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify access
-        var hasAccess = await _db.AlbumMembers
-            .AnyAsync(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null);
-
-        if (!hasAccess)
-        {
-            return Forbid();
-        }
+        var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
+        if (accessError != null) return accessError;
 
         var members = await _db.AlbumMembers
             .AsNoTracking()
@@ -109,18 +105,8 @@ public class MembersController : ControllerBase
         }
 
         // Verify caller has permission to invite
-        var membership = await _db.AlbumMembers
-            .FirstOrDefaultAsync(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null);
-
-        if (membership == null)
-        {
-            return Forbid();
-        }
-
-        if (!AlbumRoles.CanUpload(membership.Role))
-        {
-            return Forbid();
-        }
+        var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
+        if (memberError != null) return memberError;
 
         // Check if recipient user exists
         var targetUser = await _db.Users.FindAsync(request.RecipientId);
@@ -218,19 +204,11 @@ public class MembersController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify ownership
-        var album = await _db.Albums.FindAsync(albumId);
-        if (album == null)
-        {
-            return NotFound();
-        }
-
-        if (album.OwnerId != user.Id)
-        {
-            return Forbid();
-        }
+        var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
+        if (ownerError != null) return ownerError;
 
         // Cannot remove owner
-        if (userId == album.OwnerId)
+        if (userId == album!.OwnerId)
         {
             return Problem(
                 detail: "Cannot remove album owner",
