@@ -1,6 +1,10 @@
 /**
  * Shared types for worker communication
  */
+import type { EncryptedShard } from '@mosaic/crypto';
+
+// Re-export EncryptedShard from crypto lib (single source of truth)
+export type { EncryptedShard };
 
 /** Photo metadata stored in local SQLite */
 export interface PhotoMeta {
@@ -166,11 +170,7 @@ export interface DbWorkerApi {
   clearAlbumPhotos(albumId: string): Promise<void>;
 }
 
-/** Encrypted shard result */
-export interface EncryptedShard {
-  ciphertext: Uint8Array;
-  sha256: string;
-}
+// EncryptedShard is re-exported from @mosaic/crypto at the top of this file
 
 /**
  * Crypto Worker API

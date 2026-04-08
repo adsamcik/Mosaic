@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
-import { memzero } from '@mosaic/crypto';
+import { memzero, NONCE_SIZE, TAG_SIZE } from '@mosaic/crypto';
 import { createLogger } from '../lib/logger';
 import type {
   Bounds,
@@ -50,10 +50,7 @@ async function loadSqlJs(): Promise<SqlJsStatic> {
   return cachedSqlJs!;
 }
 
-/** Nonce size for XChaCha20-Poly1305 */
-const NONCE_SIZE = 24;
-/** Auth tag size */
-const TAG_SIZE = 16;
+// NONCE_SIZE and TAG_SIZE imported from @mosaic/crypto
 
 /**
  * Database Worker Implementation
