@@ -255,25 +255,33 @@ describe('AlbumExpirationSettings', () => {
 
   describe('days remaining', () => {
     it('shows days remaining when date is set', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-06-01T12:00:00Z'));
+
       const { getByTestId, cleanup } = renderComponent({
-        album: createMockAlbum({ expiresAt: daysFromNow(15) }),
+        album: createMockAlbum({ expiresAt: '2024-06-16T12:00:00Z' }), // 15 days
       });
 
       const daysRemaining = getByTestId('days-remaining');
       expect(daysRemaining?.textContent).toContain('15');
       expect(daysRemaining?.textContent).toContain('album.expiration.daysRemaining');
       cleanup();
+      vi.useRealTimers();
     });
 
     it('uses singular form when 1 day remaining', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-06-01T12:00:00Z'));
+
       const { getByTestId, cleanup } = renderComponent({
-        album: createMockAlbum({ expiresAt: daysFromNow(1) }),
+        album: createMockAlbum({ expiresAt: '2024-06-02T12:00:00Z' }), // 1 day
       });
 
       const daysRemaining = getByTestId('days-remaining');
       expect(daysRemaining?.textContent).toContain('album.expiration.daysRemaining');
       expect(daysRemaining?.textContent).toContain('"days":1');
       cleanup();
+      vi.useRealTimers();
     });
   });
 
@@ -999,6 +1007,61 @@ describe('AlbumExpirationSettings', () => {
 
       // Warning days (30) exceeds days remaining (3), so clamp hint should show
       expect(getByTestId('warning-days-clamped')).not.toBeNull();
+
+      cleanup();
+      vi.useRealTimers();
+    });
+
+    it('sends clamped warning days to API, not the raw input value', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-06-01T12:00:00Z'));
+
+      const onUpdate = vi.fn();
+      const { getByTestId, cleanup } = renderComponent({
+        album: createMockAlbum({
+          expiresAt: '2024-06-04T12:00:00Z', // 3 days away
+          expirationWarningDays: 7,
+        }),
+        onUpdate,
+      });
+
+      // Set warning days to 30 (exceeds 3 days remaining)
+      const warningInput = getByTestId('warning-days-input') as HTMLInputElement;
+      act(() => {
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        nativeInputValueSetter.call(warningInput, '30');
+        warningInput.dispatchEvent(new Event('input', { bubbles: true }));
+        warningInput.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
+      // Verify clamping hint appeared
+      expect(getByTestId('warning-days-clamped')).not.toBeNull();
+
+      // Click save — changing warning days on an existing expiration
+      // moves the date earlier? No — only warning days changed, no confirmation needed
+      const saveButton = getByTestId('save-expiration-button') as HTMLButtonElement;
+      await act(async () => {
+        saveButton.click();
+      });
+
+      // If confirmation is shown, confirm it
+      const confirmButton = getByTestId('confirm-expiration-button') as HTMLButtonElement | null;
+      if (confirmButton) {
+        await act(async () => {
+          confirmButton.click();
+        });
+      }
+
+      // API must receive effectiveWarningDays = max(1, 3-1) = 2, NOT 30
+      expect(mockUpdateAlbumExpiration).toHaveBeenCalledWith(
+        'album-123',
+        expect.objectContaining({
+          expirationWarningDays: 2,
+        }),
+      );
 
       cleanup();
       vi.useRealTimers();

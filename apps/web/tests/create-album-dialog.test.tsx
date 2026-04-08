@@ -6,7 +6,7 @@
 
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreateAlbumDialog } from '../src/components/Albums/CreateAlbumDialog';
 
 // Helper to render component and get elements
@@ -269,6 +269,72 @@ describe('CreateAlbumDialog', () => {
   describe('expiration section', () => {
     afterEach(() => {
       vi.useRealTimers();
+    });
+
+    it('shows permanent deletion warning when expiration section is opened', () => {
+      const { getByTestId, container, cleanup } = renderDialog();
+
+      // Toggle expiration section open
+      const toggle = getByTestId('expiration-toggle') as HTMLButtonElement;
+      act(() => {
+        toggle.click();
+      });
+
+      // The warning message should be visible
+      const warningEl = container.querySelector('.expiration-warning[role="alert"]');
+      expect(warningEl).not.toBeNull();
+      expect(warningEl?.textContent).toContain('album.create.temporaryWarning');
+
+      cleanup();
+    });
+
+    it('computes exact expiration date from 30d preset using fake timers', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-15T12:00:00Z'));
+
+      const onCreate = vi.fn().mockResolvedValue(undefined);
+      const { getByTestId, cleanup } = renderDialog({ onCreate });
+
+      // Enter a name
+      const input = getByTestId('album-name-input') as HTMLInputElement;
+      act(() => {
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        nativeInputValueSetter.call(input, 'Timer Test');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
+      // Expand expiration section
+      const toggle = getByTestId('expiration-toggle') as HTMLButtonElement;
+      act(() => {
+        toggle.click();
+      });
+
+      // Click "30 days" preset
+      const preset30d = getByTestId('expiration-30d') as HTMLButtonElement;
+      act(() => {
+        preset30d.click();
+      });
+
+      // Submit the form
+      const form = getByTestId('create-button') as HTMLButtonElement;
+      await act(async () => {
+        form.click();
+      });
+
+      // The date should be 2026-01-15 + 30 days = 2026-02-14
+      expect(onCreate).toHaveBeenCalledWith(
+        'Timer Test',
+        expect.objectContaining({
+          expiresAt: expect.stringContaining('2026-02-14'),
+          expirationWarningDays: 7,
+        }),
+      );
+
+      cleanup();
     });
 
     it('expiration section is collapsed by default', () => {
