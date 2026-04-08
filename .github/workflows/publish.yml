@@ -15,18 +15,13 @@ on:
         required: false
         type: boolean
         default: true
-      skip_tests:
-        description: '⚠️ BYPASS: Skip ALL tests (unit + E2E) and publish anyway'
-        required: false
-        type: boolean
-        default: false
       skip_e2e_only:
-        description: '⚠️ BYPASS: Skip E2E tests only (still runs unit tests)'
+        description: '⚠️ Skip E2E tests only — unit tests ALWAYS run. Provide bypass_reason.'
         required: false
         type: boolean
         default: false
       bypass_reason:
-        description: '📝 REQUIRED if bypassing: Justification for skipping tests'
+        description: '📝 REQUIRED when skip_e2e_only is true: justification for skipping E2E tests'
         required: false
         type: string
 
@@ -36,42 +31,40 @@ env:
   IMAGE_PREFIX: ${{ github.repository_owner }}/mosaic
 
 jobs:
-  # Validate bypass has a reason and announce it
+  # Validate e2e bypass has a documented reason
   validate-bypass:
-    name: Validate Bypass
+    name: Validate E2E Bypass
     runs-on: ubuntu-latest
-    if: ${{ inputs.skip_tests || inputs.skip_e2e_only }}
+    if: ${{ inputs.skip_e2e_only }}
     steps:
       - name: Require bypass reason
         if: ${{ inputs.bypass_reason == '' }}
         run: |
-          echo "::error::bypass_reason is REQUIRED when skipping tests. Please provide a justification."
+          echo "::error::bypass_reason is REQUIRED when skip_e2e_only is true. Please provide a justification."
           exit 1
 
       - name: Log bypass to job summary
         run: |
-          echo "## ⚠️ TEST BYPASS ACTIVE" >> $GITHUB_STEP_SUMMARY
+          echo "## ⚠️ E2E TEST BYPASS ACTIVE" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Skip ALL tests | \`${{ inputs.skip_tests }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Skip E2E only | \`${{ inputs.skip_e2e_only }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Skip E2E only | \`true\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Reason | ${{ inputs.bypass_reason }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Triggered by | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Run ID | [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "⏰ **Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
 
-  # Run unit tests before publishing (can be skipped via workflow_dispatch)
+  # Unit tests ALWAYS run — there is no bypass for this job
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-    if: ${{ !inputs.skip_tests }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -92,7 +85,7 @@ jobs:
           npm run test:run
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
@@ -101,14 +94,14 @@ jobs:
         working-directory: apps/backend/Mosaic.Backend.Tests
         run: dotnet test --verbosity normal
 
-  # Run E2E tests (can be skipped independently)
+  # E2E tests — skippable only via skip_e2e_only on workflow_dispatch with a documented reason
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
-    if: ${{ !inputs.skip_tests && !inputs.skip_e2e_only }}
+    if: ${{ !inputs.skip_e2e_only }}
     needs: unit-tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Build and start services
         run: |
@@ -123,7 +116,7 @@ jobs:
         run: docker compose -f docker-compose.test.yml run --rm e2e-tests
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: e2e-test-results
@@ -135,16 +128,16 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
 
-  # Build and publish backend image
+  # Build and publish backend image — unit tests MUST pass; e2e may be skipped with documented reason
   publish-backend:
     name: Publish Backend
     runs-on: ubuntu-latest
     needs: [validate-bypass, unit-tests, e2e-tests]
     if: |
-      always() && 
-      (needs.validate-bypass.result == 'success' || needs.validate-bypass.result == 'skipped') &&
-      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped') &&
-      (needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped')
+      always() &&
+      needs.unit-tests.result == 'success' &&
+      (needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped') &&
+      (needs.validate-bypass.result == 'success' || needs.validate-bypass.result == 'skipped')
     permissions:
       contents: read
       packages: write
@@ -153,13 +146,13 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -167,13 +160,13 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend
           labels: |
-            org.opencontainers.image.tests.bypassed=${{ inputs.skip_tests || inputs.skip_e2e_only || false }}
+            org.opencontainers.image.tests.e2e-bypassed=${{ inputs.skip_e2e_only || false }}
             org.opencontainers.image.tests.bypass-reason=${{ inputs.bypass_reason || 'N/A' }}
-            org.opencontainers.image.tests.bypass-actor=${{ (inputs.skip_tests || inputs.skip_e2e_only) && github.actor || 'N/A' }}
+            org.opencontainers.image.tests.bypass-actor=${{ inputs.skip_e2e_only && github.actor || 'N/A' }}
           tags: |
             # Use input tag if provided via workflow_dispatch
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
@@ -188,7 +181,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./apps/backend/Mosaic.Backend
           file: ./apps/backend/Mosaic.Backend/Dockerfile
@@ -200,22 +193,22 @@ jobs:
           platforms: linux/amd64,linux/arm64
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         if: ${{ github.event_name == 'push' || inputs.push }}
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ steps.meta.outputs.version }}
           artifact-name: sbom-backend.spdx.json
 
-  # Build and publish frontend image
+  # Build and publish frontend image — unit tests MUST pass; e2e may be skipped with documented reason
   publish-frontend:
     name: Publish Frontend
     runs-on: ubuntu-latest
     needs: [validate-bypass, unit-tests, e2e-tests]
     if: |
-      always() && 
-      (needs.validate-bypass.result == 'success' || needs.validate-bypass.result == 'skipped') &&
-      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped') &&
-      (needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped')
+      always() &&
+      needs.unit-tests.result == 'success' &&
+      (needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped') &&
+      (needs.validate-bypass.result == 'success' || needs.validate-bypass.result == 'skipped')
     permissions:
       contents: read
       packages: write
@@ -224,13 +217,13 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -238,13 +231,13 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend
           labels: |
-            org.opencontainers.image.tests.bypassed=${{ inputs.skip_tests || inputs.skip_e2e_only || false }}
+            org.opencontainers.image.tests.e2e-bypassed=${{ inputs.skip_e2e_only || false }}
             org.opencontainers.image.tests.bypass-reason=${{ inputs.bypass_reason || 'N/A' }}
-            org.opencontainers.image.tests.bypass-actor=${{ (inputs.skip_tests || inputs.skip_e2e_only) && github.actor || 'N/A' }}
+            org.opencontainers.image.tests.bypass-actor=${{ inputs.skip_e2e_only && github.actor || 'N/A' }}
           tags: |
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
             type=semver,pattern={{version}}
@@ -255,7 +248,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./apps/web/Dockerfile
@@ -267,7 +260,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         if: ${{ github.event_name == 'push' || inputs.push }}
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ steps.meta.outputs.version }}
@@ -283,7 +276,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Generate release notes
         id: notes
@@ -315,7 +308,7 @@ jobs:
           EOF
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
           body_path: release-notes.md
           generate_release_notes: true

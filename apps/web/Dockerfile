@@ -4,7 +4,7 @@
 # Multi-stage build for optimized production image
 
 # Build stage
-FROM node:22-alpine AS build
+FROM node:22-alpine@sha256:4d64b49e6c891c8fc821007cb1cdc6c0db7773110ac2c34bf2e6960adef62ed3 AS build
 WORKDIR /app
 
 # Copy workspace root files for monorepo support
@@ -37,7 +37,7 @@ ENV VITE_E2E_WEAK_KEYS=${VITE_E2E_WEAK_KEYS}
 RUN npm run build
 
 # Production stage - nginx with custom config
-FROM nginx:alpine AS production
+FROM nginx:alpine@sha256:645eda1c2477aaa9b879f73909b9222c6f19798dd45be6706268d82a661c6e6d AS production
 
 # OCI Image Labels (overwritten by docker/metadata-action in CI)
 LABEL org.opencontainers.image.title="Mosaic Frontend" \
