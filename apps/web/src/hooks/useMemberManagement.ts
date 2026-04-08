@@ -473,22 +473,3 @@ export function useMemberManagement(
     isOwner,
   };
 }
-
-/**
- * Hook to get album members (read-only, simpler)
- *
- * @param albumId - Album ID
- * @returns Member list state
- */
-export function useAlbumMembers(albumId: string) {
-  const { members, isLoading, error, refetch, isOwner } =
-    useMemberManagement(albumId);
-
-  return {
-    members,
-    isLoading,
-    error,
-    refetch,
-    isOwner,
-  };
-}
