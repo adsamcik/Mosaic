@@ -31,7 +31,7 @@
 | Layer    | Location                                                                                         |
 | -------- | ------------------------------------------------------------------------------------------------ |
 | Backend  | [Controllers/DevAuthController.cs](../apps/backend/Mosaic.Backend/Controllers/DevAuthController.cs) |
-| Backend  | [Middleware/LocalAuthMiddleware.cs](../apps/backend/Mosaic.Backend/Middleware/LocalAuthMiddleware.cs) |
+| Backend  | [Middleware/CombinedAuthMiddleware.cs](../apps/backend/Mosaic.Backend/Middleware/CombinedAuthMiddleware.cs) |
 | Frontend | [lib/local-auth.ts](../apps/web/src/lib/local-auth.ts)                                         |
 | Frontend | [components/Auth/LoginForm.tsx](../apps/web/src/components/Auth/LoginForm.tsx)                 |
 
@@ -60,7 +60,6 @@ Auth__ProxyAuthEnabled=false  # Disable ProxyAuth
 **Implementation:**
 | Layer   | Location                                                                                           |
 | ------- | -------------------------------------------------------------------------------------------------- |
-| Backend | [Middleware/TrustedProxyMiddleware.cs](../apps/backend/Mosaic.Backend/Middleware/TrustedProxyMiddleware.cs) |
 | Backend | [Middleware/CombinedAuthMiddleware.cs](../apps/backend/Mosaic.Backend/Middleware/CombinedAuthMiddleware.cs) |
 
 **Headers:**
@@ -209,7 +208,7 @@ npx playwright test auth-modes.spec.ts --project=chromium
 | Layer    | Location                                                                                      |
 | -------- | --------------------------------------------------------------------------------------------- |
 | Backend  | [Controllers/AlbumContentController.cs](../apps/backend/Mosaic.Backend/Controllers/AlbumContentController.cs) |
-| Backend  | [Models/AlbumContent.cs](../apps/backend/Mosaic.Backend/Models/AlbumContent.cs)               |
+| Backend  | [Data/Entities/AlbumContent.cs](../apps/backend/Mosaic.Backend/Data/Entities/AlbumContent.cs)  |
 | Crypto   | [libs/crypto/src/content.ts](../libs/crypto/src/content.ts) - deriveContentKey, encryptContent |
 | Frontend | [contexts/AlbumContentContext.tsx](../apps/web/src/contexts/AlbumContentContext.tsx)        |
 | Frontend | [lib/content-blocks.ts](../apps/web/src/lib/content-blocks.ts) - Zod schemas & types        |
@@ -294,7 +293,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Frontend Hook | [hooks/useSelection.ts](../apps/web/src/hooks/useSelection.ts)                   |
 | Frontend Hook | [hooks/usePhotoActions.ts](../apps/web/src/hooks/usePhotoActions.ts)             |
 | Frontend UI   | [components/Gallery/SelectionActionBar.tsx](../apps/web/src/components/Gallery/) |
-| Styles        | [styles/selection-ux.css](../apps/web/src/styles/selection-ux.css)               |
+| Styles        | *(selection styles inlined in components)*                                       |
 
 **Features:**
 - Long-press or checkbox selection
@@ -395,7 +394,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Layer              | Location                                                                           |
 | ------------------ | ---------------------------------------------------------------------------------- |
 | Frontend Hook      | [hooks/useLightbox.ts](../apps/web/src/hooks/useLightbox.ts)                     |
-| Frontend Component | [components/Gallery/PhotoViewer.tsx](../apps/web/src/components/Gallery/PhotoViewer.tsx) |
+| Frontend Component | [components/Gallery/PhotoLightbox.tsx](../apps/web/src/components/Gallery/PhotoLightbox.tsx) |
 
 **Features:**
 - Full-resolution image loading
@@ -480,8 +479,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Purpose             | Location                                                         |
 | ------------------- | ---------------------------------------------------------------- |
-| Key derivation      | [libs/crypto/src/key-derivation.ts](../libs/crypto/src/)         |
-| Envelope encryption | [libs/crypto/src/envelope.ts](../libs/crypto/src/)               |
+| Key derivation      | [libs/crypto/src/keychain.ts](../libs/crypto/src/keychain.ts)    |
+| Envelope encryption | [libs/crypto/src/envelope.ts](../libs/crypto/src/envelope.ts)    |
 | Epoch keys          | [hooks/useEpochKeys.ts](../apps/web/src/hooks/useEpochKeys.ts) |
 
 ---
@@ -572,7 +571,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Hook        | [hooks/useAnimatedItems.ts](../apps/web/src/hooks/useAnimatedItems.ts)                                           |
 | Component   | [components/Gallery/AnimatedTile.tsx](../apps/web/src/components/Gallery/AnimatedTile.tsx)                       |
 | Component   | [components/Gallery/PhotoGridSkeleton.tsx](../apps/web/src/components/Gallery/PhotoGridSkeleton.tsx)             |
-| Integration | [components/Gallery/EnhancedMosaicPhotoGrid.tsx](../apps/web/src/components/Gallery/EnhancedMosaicPhotoGrid.tsx) |
+| Integration | [components/Gallery/MosaicPhotoGrid.tsx](../apps/web/src/components/Gallery/MosaicPhotoGrid.tsx) |
 | Spec        | [docs/specs/SPEC-AnimationSystem.md](./specs/SPEC-AnimationSystem.md)                                              |
 
 **Features:**
@@ -626,7 +625,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer    | Location                                                                    |
 | -------- | --------------------------------------------------------------------------- |
-| Backend  | [Services/QuotaService.cs](../apps/backend/Mosaic.Backend/Services/)        |
+| Backend  | [Services/QuotaSettingsService.cs](../apps/backend/Mosaic.Backend/Services/QuotaSettingsService.cs) |
 | Backend  | User quota fields in database                                               |
 | Frontend | Quota display in settings and upload UI                                     |
 
@@ -682,8 +681,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Layer    | Location                                                                         |
 | -------- | -------------------------------------------------------------------------------- |
-| Frontend | [lib/image-conversion.ts](../apps/web/src/lib/image-conversion.ts)             |
-| Frontend | [lib/format-conversion.ts](../apps/web/src/lib/format-conversion.ts)           |
+| Frontend | [lib/image-decoder.ts](../apps/web/src/lib/image-decoder.ts)                   |
 | Tests    | [tests/e2e/tests/format-conversion.spec.ts](../tests/e2e/tests/format-conversion.spec.ts) |
 
 **Features:**
