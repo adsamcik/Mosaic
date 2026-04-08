@@ -45,15 +45,35 @@ vi.mock('../src/lib/sync-engine', () => ({
 // Import the mocked module to get access to the mock
 import { syncEngine } from '../src/lib/sync-engine';
 
-// Mock API
-vi.mock('../src/lib/api', () => ({
-  getApi: vi.fn(() => ({
-    getAlbum: vi.fn().mockResolvedValue({
-      id: 'album-1',
-      currentEpochId: 1,
-    }),
-  })),
-}));
+// Mock API — export real ApiError so `instanceof` checks work inside SyncContext
+const mockGetAlbum = vi.fn().mockResolvedValue({
+  id: 'album-1',
+  currentEpochId: 1,
+});
+
+vi.mock('../src/lib/api', () => {
+  class ApiError extends Error {
+    public readonly status: number;
+    public readonly statusText: string;
+    public readonly body?: string;
+    constructor(status: number, statusText: string, body?: string) {
+      super(`API Error ${status}: ${statusText}`);
+      this.name = 'ApiError';
+      this.status = status;
+      this.statusText = statusText;
+      this.body = body;
+    }
+  }
+  return {
+    ApiError,
+    getApi: vi.fn(() => ({
+      getAlbum: mockGetAlbum,
+    })),
+  };
+});
+
+// Re-import ApiError from the mocked module so we construct the same class
+import { ApiError } from '../src/lib/api';
 
 // Mock epoch key service
 vi.mock('../src/lib/epoch-key-service', () => ({
@@ -64,6 +84,20 @@ vi.mock('../src/lib/epoch-key-service', () => ({
       publicKey: new Uint8Array(32),
       secretKey: new Uint8Array(64),
     },
+  }),
+}));
+
+// Mock epoch key store
+const mockClearAlbumKeys = vi.fn();
+vi.mock('../src/lib/epoch-key-store', () => ({
+  clearAlbumKeys: (...args: unknown[]) => mockClearAlbumKeys(...args),
+}));
+
+// Mock db-client
+const mockClearAlbumPhotos = vi.fn().mockResolvedValue(undefined);
+vi.mock('../src/lib/db-client', () => ({
+  getDbClient: vi.fn().mockResolvedValue({
+    clearAlbumPhotos: (...args: unknown[]) => mockClearAlbumPhotos(...args),
   }),
 }));
 
@@ -95,6 +129,10 @@ describe('SyncContext', () => {
     vi.useFakeTimers();
     mockAutoSyncEnabled = true;
     mockSettingsSubscribers.length = 0;
+    mockGetAlbum.mockResolvedValue({
+      id: 'album-1',
+      currentEpochId: 1,
+    });
     container = document.createElement('div');
     document.body.appendChild(container);
   });
@@ -437,6 +475,137 @@ describe('SyncContext', () => {
       }).toThrow('useSyncContext must be used within a SyncProvider');
 
       consoleError.mockRestore();
+    });
+  });
+
+  describe('404 album cleanup', () => {
+    it('handles 404 by cleaning up album data', async () => {
+      let capturedContext: ReturnType<typeof useSyncContext> | null = null;
+
+      // Make getAlbum throw a 404 ApiError
+      mockGetAlbum.mockRejectedValue(new ApiError(404, 'Not Found'));
+
+      act(() => {
+        root = createRoot(container);
+        root.render(
+          createElement(
+            SyncProvider,
+            null,
+            createElement(TestConsumer, {
+              onContext: (ctx) => {
+                capturedContext = ctx;
+              },
+            }),
+          ),
+        );
+      });
+
+      // Register the album, then trigger sync
+      act(() => {
+        capturedContext!.registerAlbum('album-gone');
+      });
+
+      await act(async () => {
+        await capturedContext!.triggerSync('album-gone');
+      });
+
+      // Should have cleaned up local data
+      expect(mockClearAlbumKeys).toHaveBeenCalledWith('album-gone');
+      expect(mockClearAlbumPhotos).toHaveBeenCalledWith('album-gone');
+    });
+
+    it('does not clean up on non-404 errors', async () => {
+      let capturedContext: ReturnType<typeof useSyncContext> | null = null;
+
+      // Make getAlbum throw a 500 ApiError
+      mockGetAlbum.mockRejectedValue(new ApiError(500, 'Internal Server Error'));
+
+      act(() => {
+        root = createRoot(container);
+        root.render(
+          createElement(
+            SyncProvider,
+            null,
+            createElement(TestConsumer, {
+              onContext: (ctx) => {
+                capturedContext = ctx;
+              },
+            }),
+          ),
+        );
+      });
+
+      await act(async () => {
+        await capturedContext!.triggerSync('album-500');
+      });
+
+      // Should NOT have cleaned up
+      expect(mockClearAlbumKeys).not.toHaveBeenCalled();
+      expect(mockClearAlbumPhotos).not.toHaveBeenCalled();
+    });
+
+    it('does not clean up on network errors', async () => {
+      let capturedContext: ReturnType<typeof useSyncContext> | null = null;
+
+      // Make getAlbum throw a generic (non-API) error
+      mockGetAlbum.mockRejectedValue(new Error('Network failure'));
+
+      act(() => {
+        root = createRoot(container);
+        root.render(
+          createElement(
+            SyncProvider,
+            null,
+            createElement(TestConsumer, {
+              onContext: (ctx) => {
+                capturedContext = ctx;
+              },
+            }),
+          ),
+        );
+      });
+
+      await act(async () => {
+        await capturedContext!.triggerSync('album-offline');
+      });
+
+      // Should NOT have cleaned up — not an ApiError
+      expect(mockClearAlbumKeys).not.toHaveBeenCalled();
+      expect(mockClearAlbumPhotos).not.toHaveBeenCalled();
+    });
+
+    it('handles cleanup errors gracefully', async () => {
+      let capturedContext: ReturnType<typeof useSyncContext> | null = null;
+
+      // Make getAlbum throw a 404 AND make cleanup throw
+      mockGetAlbum.mockRejectedValue(new ApiError(404, 'Not Found'));
+      mockClearAlbumKeys.mockImplementation(() => {
+        throw new Error('IndexedDB is broken');
+      });
+
+      act(() => {
+        root = createRoot(container);
+        root.render(
+          createElement(
+            SyncProvider,
+            null,
+            createElement(TestConsumer, {
+              onContext: (ctx) => {
+                capturedContext = ctx;
+              },
+            }),
+          ),
+        );
+      });
+
+      // Should not throw — the error is caught internally
+      await act(async () => {
+        await capturedContext!.triggerSync('album-broken');
+      });
+
+      // clearAlbumKeys was attempted
+      expect(mockClearAlbumKeys).toHaveBeenCalledWith('album-broken');
+      // clearAlbumPhotos was NOT reached because clearAlbumKeys threw first
     });
   });
 });

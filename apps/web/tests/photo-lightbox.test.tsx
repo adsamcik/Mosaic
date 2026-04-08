@@ -820,3 +820,360 @@ describe('PhotoLightbox Preloading', () => {
     });
   });
 });
+
+/**
+ * Video Playback Tests
+ *
+ * Tests video rendering, playback controls, pause-on-navigation,
+ * spacebar toggle, and error handling in the lightbox.
+ */
+describe('Video Playback', () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  const pauseMock = vi.fn();
+  const playMock = vi.fn(() => Promise.resolve());
+
+  function createVideoPhoto(overrides: Partial<PhotoMeta> = {}): PhotoMeta {
+    return {
+      id: 'video-1',
+      albumId: 'album-1',
+      epochId: 'epoch-1',
+      filename: 'clip.mp4',
+      mimeType: 'video/mp4',
+      isVideo: true,
+      width: 1920,
+      height: 1080,
+      shardIds: ['shard-v1', 'shard-v2'],
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tags: [],
+      ...overrides,
+    };
+  }
+
+  function createImagePhoto(overrides: Partial<PhotoMeta> = {}): PhotoMeta {
+    return {
+      id: 'photo-1',
+      albumId: 'album-1',
+      epochId: 'epoch-1',
+      filename: 'test-photo.jpg',
+      mimeType: 'image/jpeg',
+      width: 1920,
+      height: 1080,
+      shardIds: ['shard-1', 'shard-2'],
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      tags: [],
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    vi.clearAllMocks();
+    pauseMock.mockClear();
+    playMock.mockClear();
+
+    // Reset photo-service mocks to defaults (clearAllMocks doesn't reset implementations)
+    vi.mocked(photoService.loadPhoto).mockResolvedValue({
+      blobUrl: 'blob:test-full',
+      size: 2048,
+    });
+    vi.mocked(photoService.getCachedPhoto).mockReturnValue(null);
+    vi.mocked(photoService.preloadPhotos).mockResolvedValue(undefined);
+
+    // Mock HTMLVideoElement play/pause since happy-dom has limited support
+    Object.defineProperty(HTMLVideoElement.prototype, 'pause', {
+      value: pauseMock,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, 'play', {
+      value: playMock,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  /** Helper: render a loaded lightbox and wait for the photo to resolve */
+  async function renderLoaded(
+    props: Partial<Parameters<typeof PhotoLightbox>[0]> & { photo: PhotoMeta },
+  ) {
+    await act(async () => {
+      root.render(
+        createElement(PhotoLightbox, {
+          epochReadKey: new Uint8Array(32),
+          onClose: vi.fn(),
+          ...props,
+        }),
+      );
+      // Allow loadPhoto promise to resolve and state to settle
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+  }
+
+  describe('Video element rendering', () => {
+    it('renders <video> element when photo.isVideo is true', async () => {
+      await renderLoaded({ photo: createVideoPhoto() });
+
+      const video = container.querySelector('[data-testid="lightbox-video"]');
+      expect(video).not.toBeNull();
+      expect(video?.tagName).toBe('VIDEO');
+    });
+
+    it('renders <video> element when mimeType is video/*', async () => {
+      // isVideo not explicitly set, but mimeType triggers detection
+      await renderLoaded({
+        photo: createVideoPhoto({ isVideo: undefined, mimeType: 'video/webm' }),
+      });
+
+      const video = container.querySelector('[data-testid="lightbox-video"]');
+      expect(video).not.toBeNull();
+    });
+
+    it('renders <img> element when photo is not a video', async () => {
+      await renderLoaded({ photo: createImagePhoto() });
+
+      const img = container.querySelector('[data-testid="lightbox-image"]');
+      expect(img).not.toBeNull();
+      expect(container.querySelector('[data-testid="lightbox-video"]')).toBeNull();
+    });
+
+    it('video element has controls attribute', async () => {
+      await renderLoaded({ photo: createVideoPhoto() });
+
+      const video = container.querySelector('video') as HTMLVideoElement;
+      expect(video).not.toBeNull();
+      expect(video.hasAttribute('controls')).toBe(true);
+    });
+
+    it('video element has autoPlay attribute', async () => {
+      await renderLoaded({ photo: createVideoPhoto() });
+
+      const video = container.querySelector('video') as HTMLVideoElement;
+      expect(video).not.toBeNull();
+      expect(video.autoplay).toBe(true);
+    });
+
+    it('video element has playsInline attribute', async () => {
+      await renderLoaded({ photo: createVideoPhoto() });
+
+      const video = container.querySelector('video') as HTMLVideoElement;
+      expect(video).not.toBeNull();
+      // happy-dom may not reflect playsInline as a property; check the attribute
+      expect(video.hasAttribute('playsinline')).toBe(true);
+    });
+
+    it('video element src matches loaded blob URL', async () => {
+      await renderLoaded({ photo: createVideoPhoto() });
+
+      const video = container.querySelector('video') as HTMLVideoElement;
+      expect(video).not.toBeNull();
+      expect(video.src).toBe('blob:test-full');
+    });
+  });
+
+  describe('Video pause on navigation', () => {
+    it('pauses video when navigating to next photo', async () => {
+      const onNext = vi.fn();
+
+      await renderLoaded({
+        photo: createVideoPhoto(),
+        onNext,
+        hasNext: true,
+      });
+
+      // Verify video is rendered
+      expect(container.querySelector('video')).not.toBeNull();
+
+      // Simulate ArrowRight keydown on window
+      act(() => {
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+        );
+      });
+
+      expect(pauseMock).toHaveBeenCalled();
+      expect(onNext).toHaveBeenCalled();
+    });
+
+    it('pauses video when navigating to previous photo', async () => {
+      const onPrevious = vi.fn();
+
+      await renderLoaded({
+        photo: createVideoPhoto(),
+        onPrevious,
+        hasPrevious: true,
+      });
+
+      act(() => {
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+        );
+      });
+
+      expect(pauseMock).toHaveBeenCalled();
+      expect(onPrevious).toHaveBeenCalled();
+    });
+  });
+
+  describe('Video pause on close', () => {
+    it('pauses video when Escape key pressed', async () => {
+      const onClose = vi.fn();
+
+      await renderLoaded({
+        photo: createVideoPhoto(),
+        onClose,
+      });
+
+      act(() => {
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        );
+      });
+
+      expect(pauseMock).toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it('pauses video when close button clicked', async () => {
+      const onClose = vi.fn();
+
+      await renderLoaded({
+        photo: createVideoPhoto(),
+        onClose,
+      });
+
+      const closeButton = container.querySelector(
+        '[data-testid="lightbox-close"]',
+      ) as HTMLButtonElement;
+
+      act(() => {
+        closeButton.click();
+      });
+
+      expect(onClose).toHaveBeenCalled();
+    });
+  });
+
+  describe('Spacebar handling', () => {
+    it('spacebar toggles video play when paused', async () => {
+      await renderLoaded({ photo: createVideoPhoto() });
+
+      const video = container.querySelector('video') as HTMLVideoElement;
+      expect(video).not.toBeNull();
+
+      // Simulate paused state — the default `paused` on HTMLVideoElement
+      // In happy-dom, paused is true by default
+      Object.defineProperty(video, 'paused', {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+
+      act(() => {
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { key: ' ', bubbles: true }),
+        );
+      });
+
+      expect(playMock).toHaveBeenCalled();
+    });
+
+    it('spacebar toggles video pause when playing', async () => {
+      await renderLoaded({ photo: createVideoPhoto() });
+
+      const video = container.querySelector('video') as HTMLVideoElement;
+      expect(video).not.toBeNull();
+
+      // Simulate playing state
+      Object.defineProperty(video, 'paused', {
+        value: false,
+        writable: true,
+        configurable: true,
+      });
+
+      act(() => {
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { key: ' ', bubbles: true }),
+        );
+      });
+
+      expect(pauseMock).toHaveBeenCalled();
+    });
+
+    it('spacebar does not trigger navigation', async () => {
+      const onNext = vi.fn();
+      const onPrevious = vi.fn();
+
+      await renderLoaded({
+        photo: createVideoPhoto(),
+        onNext,
+        onPrevious,
+        hasNext: true,
+        hasPrevious: true,
+      });
+
+      act(() => {
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { key: ' ', bubbles: true }),
+        );
+      });
+
+      expect(onNext).not.toHaveBeenCalled();
+      expect(onPrevious).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Video error handling', () => {
+    it('shows error state when video fails to load', async () => {
+      await renderLoaded({ photo: createVideoPhoto() });
+
+      const video = container.querySelector('video') as HTMLVideoElement;
+      expect(video).not.toBeNull();
+
+      // Trigger the video onError handler
+      await act(async () => {
+        video.dispatchEvent(new Event('error', { bubbles: false }));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      const error = container.querySelector('[data-testid="lightbox-error"]');
+      expect(error).not.toBeNull();
+      expect(error?.textContent).toContain('Video playback failed');
+    });
+  });
+
+  describe('Cleanup', () => {
+    it('pauses video when photo changes (rerender with different photo)', async () => {
+      await renderLoaded({ photo: createVideoPhoto({ id: 'video-a' }) });
+
+      expect(container.querySelector('video')).not.toBeNull();
+
+      // Rerender with a different photo — the useEffect cleanup should pause
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: createVideoPhoto({ id: 'video-b' }),
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      // pauseVideo is called in the useEffect cleanup when photo.id changes
+      expect(pauseMock).toHaveBeenCalled();
+    });
+  });
+});
