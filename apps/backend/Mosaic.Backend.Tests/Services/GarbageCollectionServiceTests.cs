@@ -35,7 +35,7 @@ public class GarbageCollectionServiceTests
 
         var config = CreateConfig();
         var logger = new NullLogger<GarbageCollectionService>();
-        var service = new GarbageCollectionService(provider, logger, config);
+        var service = new GarbageCollectionService(provider, logger);
 
         return (service, db, storage);
     }
