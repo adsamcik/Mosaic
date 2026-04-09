@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.EpochKeys;
-using Mosaic.Backend.Models.EpochKeys;
 using Mosaic.Backend.Services;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;

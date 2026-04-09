@@ -3,8 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Auth;
-using Mosaic.Backend.Models.Auth;
-using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
 

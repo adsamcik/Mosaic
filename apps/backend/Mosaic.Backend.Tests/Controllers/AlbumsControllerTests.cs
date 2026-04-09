@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.Albums;
-using Mosaic.Backend.Models.Albums;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
 using Mosaic.Backend.Tests.TestHelpers;

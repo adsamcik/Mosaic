@@ -7,7 +7,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.Auth;
-using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Tests.Helpers;
 using NSubstitute;

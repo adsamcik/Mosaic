@@ -7,10 +7,6 @@ using Mosaic.Backend.Services;
 
 using Mosaic.Backend.Models.Albums;
 
-using Mosaic.Backend.Models.Albums;
-
-using Mosaic.Backend.Models.Albums;
-
 namespace Mosaic.Backend.Controllers;
 
 /// <summary>

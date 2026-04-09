@@ -2,8 +2,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Users;
-using Mosaic.Backend.Models.Users;
-using Mosaic.Backend.Models.Users;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
 

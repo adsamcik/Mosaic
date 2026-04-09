@@ -6,7 +6,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.Admin;
-using Mosaic.Backend.Models.Admin;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;

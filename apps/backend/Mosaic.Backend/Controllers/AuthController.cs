@@ -6,8 +6,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Auth;
-using Mosaic.Backend.Models.Auth;
-using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
 using NSec.Cryptography;
