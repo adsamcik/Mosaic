@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models.Admin;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
 using Mosaic.Backend.Services;
@@ -31,21 +34,7 @@ public class AdminUsersController : ControllerBase
             ?? throw new UnauthorizedAccessException("Admin user not found in context");
     }
 
-    public record UserWithQuotaResponse(
-        Guid Id,
-        string AuthSub,
-        bool IsAdmin,
-        DateTime CreatedAt,
-        UserQuotaResponse Quota
-    );
 
-    public record UserQuotaResponse(
-        long MaxStorageBytes,
-        long UsedStorageBytes,
-        int MaxAlbums,
-        int CurrentAlbumCount,
-        bool IsCustom
-    );
 
     /// <summary>
     /// List all users with quota info
@@ -128,10 +117,6 @@ public class AdminUsersController : ControllerBase
         ));
     }
 
-    public record UpdateUserQuotaRequest(
-        long? MaxStorageBytes,
-        int? MaxAlbums
-    );
 
     /// <summary>
     /// Set custom quota for a user

@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.Albums;
+using Mosaic.Backend.Models.Albums;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Tests.Helpers;

@@ -11,12 +11,18 @@ public record CreateEpochKeyRequest(
     [MaxLength(64)] byte[] SignPubkey
 );
 
+/// <summary>
+/// Wrapped key for a share link at a specific tier
+/// </summary>
 public record ShareLinkWrappedKeyRequest(
     int Tier,
     byte[] Nonce,
     byte[] EncryptedKey
 );
 
+/// <summary>
+/// Updated wrapped keys for a single share link
+/// </summary>
 public record ShareLinkKeyUpdateRequest(
     Guid ShareLinkId,
     ShareLinkWrappedKeyRequest[] WrappedKeys

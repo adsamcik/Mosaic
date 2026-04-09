@@ -1,6 +1,10 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.Albums;
+using Mosaic.Backend.Models.EpochKeys;
+using Mosaic.Backend.Models.Manifests;
+using Mosaic.Backend.Models.Members;
 using Mosaic.Backend.Models.ShareLinks;
 using Mosaic.Backend.Services;
 using Mosaic.Backend.Tests.Helpers;
@@ -200,11 +204,11 @@ public class SecurityTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: invitee.Id,
             Role: "viewer",
             EpochKeys: [
-                new MembersController.EpochKeyCreate(
+                new EpochKeyCreate(
                     EpochId: 1,
                     EncryptedKeyBundle: Convert.ToBase64String(new byte[32]),
                     OwnerSignature: Convert.ToBase64String(new byte[64]),
@@ -333,7 +337,7 @@ public class SecurityTests
             }
         };
 
-        var request = new ManifestsController.CreateManifestRequest(
+        var request = new CreateManifestRequest(
             AlbumId: album.Id,
             EncryptedMeta: new byte[100],
             Signature: Convert.ToBase64String(new byte[64]),
@@ -369,7 +373,7 @@ public class SecurityTests
             }
         };
 
-        var request = new ManifestsController.CreateManifestRequest(
+        var request = new CreateManifestRequest(
             AlbumId: album.Id,
             EncryptedMeta: new byte[100],
             Signature: Convert.ToBase64String(new byte[64]),
@@ -409,7 +413,7 @@ public class SecurityTests
             }
         };
 
-        var request = new ManifestsController.CreateManifestRequest(
+        var request = new CreateManifestRequest(
             AlbumId: album.Id,
             EncryptedMeta: new byte[100],
             Signature: Convert.ToBase64String(new byte[64]),

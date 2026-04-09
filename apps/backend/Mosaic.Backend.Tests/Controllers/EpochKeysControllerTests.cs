@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.EpochKeys;
+using Mosaic.Backend.Models.EpochKeys;
 using Mosaic.Backend.Services;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
@@ -91,7 +93,7 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.CreateEpochKeyRequest(
+        var request = new CreateEpochKeyRequest(
             RecipientId: recipient.Id,
             EpochId: 1,
             EncryptedKeyBundle: new byte[32],
@@ -131,7 +133,7 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.CreateEpochKeyRequest(
+        var request = new CreateEpochKeyRequest(
             RecipientId: recipient.Id,
             EpochId: 1,
             EncryptedKeyBundle: new byte[32],
@@ -170,7 +172,7 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.CreateEpochKeyRequest(
+        var request = new CreateEpochKeyRequest(
             RecipientId: recipient.Id,
             EpochId: 1,
             EncryptedKeyBundle: new byte[32],
@@ -208,7 +210,7 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.CreateEpochKeyRequest(
+        var request = new CreateEpochKeyRequest(
             RecipientId: recipient.Id,
             EpochId: 1,
             EncryptedKeyBundle: new byte[32],
@@ -244,7 +246,7 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.CreateEpochKeyRequest(
+        var request = new CreateEpochKeyRequest(
             RecipientId: Guid.NewGuid(),
             EpochId: 1,
             EncryptedKeyBundle: new byte[32],
@@ -280,7 +282,7 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.CreateEpochKeyRequest(
+        var request = new CreateEpochKeyRequest(
             RecipientId: recipient.Id,
             EpochId: 1,
             EncryptedKeyBundle: new byte[32],
@@ -320,7 +322,7 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.CreateEpochKeyRequest(
+        var request = new CreateEpochKeyRequest(
             RecipientId: recipient.Id,
             EpochId: 1,
             EncryptedKeyBundle: new byte[32],
@@ -359,7 +361,7 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.CreateEpochKeyRequest(
+        var request = new CreateEpochKeyRequest(
             RecipientId: recipient.Id,
             EpochId: 1, // Same epoch
             EncryptedKeyBundle: new byte[32],
@@ -479,8 +481,8 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.RotateEpochRequest([
-            new EpochKeysController.CreateEpochKeyRequest(
+        var request = new RotateEpochRequest([
+            new CreateEpochKeyRequest(
                 RecipientId: owner.Id,
                 EpochId: 2,
                 EncryptedKeyBundle: new byte[32],
@@ -488,7 +490,7 @@ public class EpochKeysControllerTests
                 SharerPubkey: new byte[32],
                 SignPubkey: new byte[32]
             ),
-            new EpochKeysController.CreateEpochKeyRequest(
+            new CreateEpochKeyRequest(
                 RecipientId: member.Id,
                 EpochId: 2,
                 EncryptedKeyBundle: new byte[32],
@@ -533,8 +535,8 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.RotateEpochRequest([
-            new EpochKeysController.CreateEpochKeyRequest(
+        var request = new RotateEpochRequest([
+            new CreateEpochKeyRequest(
                 RecipientId: owner.Id,
                 EpochId: 2,
                 EncryptedKeyBundle: new byte[32],
@@ -547,7 +549,7 @@ public class EpochKeysControllerTests
         // Act
         var result = await controller.Rotate(album.Id, 2, request);
 
-        // Assert — non-owners get 404 to prevent album enumeration
+        // Assert â€” non-owners get 404 to prevent album enumeration
         Assert.IsType<NotFoundResult>(result);
     }
 
@@ -570,8 +572,8 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.RotateEpochRequest([
-            new EpochKeysController.CreateEpochKeyRequest(
+        var request = new RotateEpochRequest([
+            new CreateEpochKeyRequest(
                 RecipientId: owner.Id,
                 EpochId: 3, // Less than current (5)
                 EncryptedKeyBundle: new byte[32],
@@ -608,8 +610,8 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.RotateEpochRequest([
-            new EpochKeysController.CreateEpochKeyRequest(
+        var request = new RotateEpochRequest([
+            new CreateEpochKeyRequest(
                 RecipientId: nonMember.Id, // Not a member
                 EpochId: 2,
                 EncryptedKeyBundle: new byte[32],
@@ -644,8 +646,8 @@ public class EpochKeysControllerTests
             }
         };
 
-        var request = new EpochKeysController.RotateEpochRequest([
-            new EpochKeysController.CreateEpochKeyRequest(
+        var request = new RotateEpochRequest([
+            new CreateEpochKeyRequest(
                 RecipientId: owner.Id,
                 EpochId: 2,
                 EncryptedKeyBundle: new byte[32],

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.Members;
+using Mosaic.Backend.Models.Members;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
 using Mosaic.Backend.Tests.TestHelpers;
@@ -89,11 +91,11 @@ public class MembersControllerTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: invitee.Id,
             Role: "viewer",
             EpochKeys: [
-                new MembersController.EpochKeyCreate(
+                new EpochKeyCreate(
                     EpochId: 1,
                     EncryptedKeyBundle: Convert.ToBase64String(new byte[32]),
                     OwnerSignature: Convert.ToBase64String(new byte[64]),
@@ -135,11 +137,11 @@ public class MembersControllerTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: invitee.Id,
             Role: "viewer",
             EpochKeys: [
-                new MembersController.EpochKeyCreate(
+                new EpochKeyCreate(
                     EpochId: 1,
                     EncryptedKeyBundle: Convert.ToBase64String(new byte[32]),
                     OwnerSignature: Convert.ToBase64String(new byte[64]),
@@ -180,11 +182,11 @@ public class MembersControllerTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: invitee.Id,
             Role: "viewer",
             EpochKeys: [
-                new MembersController.EpochKeyCreate(
+                new EpochKeyCreate(
                     EpochId: 1,
                     EncryptedKeyBundle: Convert.ToBase64String(new byte[32]),
                     OwnerSignature: Convert.ToBase64String(new byte[64]),
@@ -222,11 +224,11 @@ public class MembersControllerTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: invitee.Id,
             Role: "viewer",
             EpochKeys: [
-                new MembersController.EpochKeyCreate(
+                new EpochKeyCreate(
                     EpochId: 1,
                     EncryptedKeyBundle: Convert.ToBase64String(new byte[32]),
                     OwnerSignature: Convert.ToBase64String(new byte[64]),
@@ -265,11 +267,11 @@ public class MembersControllerTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: invitee.Id,
             Role: "admin", // Invalid role
             EpochKeys: [
-                new MembersController.EpochKeyCreate(
+                new EpochKeyCreate(
                     EpochId: 1,
                     EncryptedKeyBundle: Convert.ToBase64String(new byte[32]),
                     OwnerSignature: Convert.ToBase64String(new byte[64]),
@@ -306,7 +308,7 @@ public class MembersControllerTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: invitee.Id,
             Role: "viewer",
             EpochKeys: []
@@ -338,11 +340,11 @@ public class MembersControllerTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: Guid.NewGuid(),
             Role: "viewer",
             EpochKeys: [
-                new MembersController.EpochKeyCreate(
+                new EpochKeyCreate(
                     EpochId: 1,
                     EncryptedKeyBundle: Convert.ToBase64String(new byte[32]),
                     OwnerSignature: Convert.ToBase64String(new byte[64]),
@@ -380,11 +382,11 @@ public class MembersControllerTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: member.Id,
             Role: "editor",
             EpochKeys: [
-                new MembersController.EpochKeyCreate(
+                new EpochKeyCreate(
                     EpochId: 1,
                     EncryptedKeyBundle: Convert.ToBase64String(new byte[32]),
                     OwnerSignature: Convert.ToBase64String(new byte[64]),
@@ -424,11 +426,11 @@ public class MembersControllerTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: member.Id,
             Role: "editor",
             EpochKeys: [
-                new MembersController.EpochKeyCreate(
+                new EpochKeyCreate(
                     EpochId: 1,
                     EncryptedKeyBundle: Convert.ToBase64String(new byte[32]),
                     OwnerSignature: Convert.ToBase64String(new byte[64]),
@@ -468,11 +470,11 @@ public class MembersControllerTests
             }
         };
 
-        var request = new MembersController.InviteRequest(
+        var request = new InviteRequest(
             RecipientId: invitee.Id,
             Role: "viewer",
             EpochKeys: [
-                new MembersController.EpochKeyCreate(
+                new EpochKeyCreate(
                     EpochId: 1,
                     EncryptedKeyBundle: "not-valid-base64!!!",
                     OwnerSignature: Convert.ToBase64String(new byte[64]),
@@ -545,7 +547,7 @@ public class MembersControllerTests
         // Act
         var result = await controller.Remove(album.Id, member.Id);
 
-        // Assert — non-owners get 404 to prevent album enumeration
+        // Assert â€” non-owners get 404 to prevent album enumeration
         Assert.IsType<NotFoundResult>(result);
     }
 

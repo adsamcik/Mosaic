@@ -1,7 +1,9 @@
-using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Models.Members;
+using Mosaic.Backend.Models.Members;
+using Mosaic.Backend.Models.Members;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Logging;
@@ -60,25 +62,7 @@ public class MembersController : ControllerBase
         return Ok(members);
     }
 
-    /// <summary>
-    /// DTO for creating an epoch key during invite
-    /// </summary>
-    public record EpochKeyCreate(
-        int EpochId,
-        [MaxLength(8192)] string EncryptedKeyBundle,
-        [MaxLength(256)] string OwnerSignature,
-        [MaxLength(128)] string SharerPubkey,
-        [MaxLength(128)] string SignPubkey
-    );
 
-    /// <summary>
-    /// Request to invite a member to an album with epoch keys
-    /// </summary>
-    public record InviteRequest(
-        Guid RecipientId,
-        [MaxLength(32)] string Role,
-        [MaxLength(100)] EpochKeyCreate[] EpochKeys
-    );
 
     /// <summary>
     /// Invite a member to the album with epoch keys

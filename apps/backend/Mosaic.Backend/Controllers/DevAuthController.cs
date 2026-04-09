@@ -2,6 +2,9 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Models.Auth;
+using Mosaic.Backend.Models.Auth;
+using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
 
@@ -240,29 +243,4 @@ public class DevAuthController : ControllerBase
     }
 }
 
-// =============================================================================
-// Request/Response Types
-// =============================================================================
-
-public record DevLoginRequest
-{
-    public required string Username { get; init; }
-}
-
-public record DevLoginResponse
-{
-    public required Guid UserId { get; init; }
-    public required string Username { get; init; }
-    public required string UserSalt { get; init; }
-    public required string AccountSalt { get; init; }
-    public required bool IsNewUser { get; init; }
-}
-
-public record DevUpdateKeysRequest
-{
-    public string? AuthPubkey { get; init; }
-    public string? IdentityPubkey { get; init; }
-    public string? WrappedAccountKey { get; init; }
-    public string? WrappedIdentitySeed { get; init; }
-}
 #endif

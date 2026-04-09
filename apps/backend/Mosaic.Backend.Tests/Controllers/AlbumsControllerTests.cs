@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.Albums;
+using Mosaic.Backend.Models.Albums;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
 using Mosaic.Backend.Tests.TestHelpers;
@@ -415,7 +417,7 @@ public class AlbumsControllerTests
         // Act
         var result = await controller.Delete(album.Id);
 
-        // Assert — non-owners get 404 to prevent album enumeration
+        // Assert â€” non-owners get 404 to prevent album enumeration
         Assert.IsType<NotFoundResult>(result);
     }
 
@@ -881,7 +883,7 @@ public class AlbumsControllerTests
         // Act
         var result = await controller.UpdateExpiration(album.Id, request);
 
-        // Assert — non-owners get 404 to prevent album enumeration
+        // Assert â€” non-owners get 404 to prevent album enumeration
         Assert.IsType<NotFoundResult>(result);
     }
 

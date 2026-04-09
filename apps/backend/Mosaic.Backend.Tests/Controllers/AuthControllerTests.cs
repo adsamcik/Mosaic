@@ -6,6 +6,8 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.Auth;
+using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Tests.Helpers;
 using NSubstitute;
@@ -105,11 +107,11 @@ public class AuthControllerTests
         var controller = CreateController(db);
 
         // Act
-        var result = await controller.InitAuth(new AuthController.AuthInitRequest("alice"));
+        var result = await controller.InitAuth(new AuthInitRequest("alice"));
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var response = Assert.IsType<AuthController.AuthInitResponse>(okResult.Value);
+        var response = Assert.IsType<AuthInitResponse>(okResult.Value);
         Assert.NotNull(response.Challenge);
         Assert.NotNull(response.UserSalt);
         Assert.NotEqual(Guid.Empty, response.ChallengeId);
@@ -123,7 +125,7 @@ public class AuthControllerTests
         var controller = CreateController(db);
 
         // Act
-        var result = await controller.InitAuth(new AuthController.AuthInitRequest(""));
+        var result = await controller.InitAuth(new AuthInitRequest(""));
 
         // Assert
         var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
@@ -138,7 +140,7 @@ public class AuthControllerTests
         var controller = CreateController(db);
 
         // Act
-        var result = await controller.InitAuth(new AuthController.AuthInitRequest("user with spaces!"));
+        var result = await controller.InitAuth(new AuthInitRequest("user with spaces!"));
 
         // Assert
         var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
@@ -164,11 +166,11 @@ public class AuthControllerTests
         var controller = CreateController(db);
 
         // Act
-        var result = await controller.InitAuth(new AuthController.AuthInitRequest("existing-user"));
+        var result = await controller.InitAuth(new AuthInitRequest("existing-user"));
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var response = Assert.IsType<AuthController.AuthInitResponse>(okResult.Value);
+        var response = Assert.IsType<AuthInitResponse>(okResult.Value);
         Assert.Equal(Convert.ToBase64String(userSalt), response.UserSalt);
     }
 
@@ -180,12 +182,12 @@ public class AuthControllerTests
         var controller = CreateController(db);
 
         // Act
-        var result1 = await controller.InitAuth(new AuthController.AuthInitRequest("nonexistent"));
-        var result2 = await controller.InitAuth(new AuthController.AuthInitRequest("nonexistent"));
+        var result1 = await controller.InitAuth(new AuthInitRequest("nonexistent"));
+        var result2 = await controller.InitAuth(new AuthInitRequest("nonexistent"));
 
         // Assert - fake salt should be deterministic
-        var response1 = Assert.IsType<AuthController.AuthInitResponse>(Assert.IsType<OkObjectResult>(result1).Value);
-        var response2 = Assert.IsType<AuthController.AuthInitResponse>(Assert.IsType<OkObjectResult>(result2).Value);
+        var response1 = Assert.IsType<AuthInitResponse>(Assert.IsType<OkObjectResult>(result1).Value);
+        var response2 = Assert.IsType<AuthInitResponse>(Assert.IsType<OkObjectResult>(result2).Value);
         Assert.Equal(response1.UserSalt, response2.UserSalt);
     }
 
@@ -213,15 +215,15 @@ public class AuthControllerTests
         var controller = CreateController(db);
 
         // Get challenge
-        var initResult = await controller.InitAuth(new AuthController.AuthInitRequest("alice"));
-        var initResponse = Assert.IsType<AuthController.AuthInitResponse>(
+        var initResult = await controller.InitAuth(new AuthInitRequest("alice"));
+        var initResponse = Assert.IsType<AuthInitResponse>(
             Assert.IsType<OkObjectResult>(initResult).Value);
 
         var challenge = Convert.FromBase64String(initResponse.Challenge);
         var signature = SignChallenge(challenge, "alice", secretKey);
 
         // Act
-        var result = await controller.VerifyAuth(new AuthController.AuthVerifyRequest(
+        var result = await controller.VerifyAuth(new AuthVerifyRequest(
             "alice",
             initResponse.ChallengeId,
             signature
@@ -229,7 +231,7 @@ public class AuthControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var response = Assert.IsType<AuthController.AuthVerifyResponse>(okResult.Value);
+        var response = Assert.IsType<AuthVerifyResponse>(okResult.Value);
         Assert.True(response.Success);
         Assert.Equal(user.Id, response.UserId);
         Assert.Equal(Convert.ToBase64String(accountSalt), response.AccountSalt);
@@ -258,15 +260,15 @@ public class AuthControllerTests
         var controller = CreateController(db);
 
         // Get challenge
-        var initResult = await controller.InitAuth(new AuthController.AuthInitRequest("alice"));
-        var initResponse = Assert.IsType<AuthController.AuthInitResponse>(
+        var initResult = await controller.InitAuth(new AuthInitRequest("alice"));
+        var initResponse = Assert.IsType<AuthInitResponse>(
             Assert.IsType<OkObjectResult>(initResult).Value);
 
         var challenge = Convert.FromBase64String(initResponse.Challenge);
         var wrongSignature = SignChallenge(challenge, "alice", wrongSecretKey);
 
         // Act
-        var result = await controller.VerifyAuth(new AuthController.AuthVerifyRequest(
+        var result = await controller.VerifyAuth(new AuthVerifyRequest(
             "alice",
             initResponse.ChallengeId,
             wrongSignature
@@ -285,12 +287,12 @@ public class AuthControllerTests
         var controller = CreateController(db);
 
         // Get challenge (will return fake salt)
-        var initResult = await controller.InitAuth(new AuthController.AuthInitRequest("nonexistent"));
-        var initResponse = Assert.IsType<AuthController.AuthInitResponse>(
+        var initResult = await controller.InitAuth(new AuthInitRequest("nonexistent"));
+        var initResponse = Assert.IsType<AuthInitResponse>(
             Assert.IsType<OkObjectResult>(initResult).Value);
 
         // Act
-        var result = await controller.VerifyAuth(new AuthController.AuthVerifyRequest(
+        var result = await controller.VerifyAuth(new AuthVerifyRequest(
             "nonexistent",
             initResponse.ChallengeId,
             "fake-signature"
@@ -335,7 +337,7 @@ public class AuthControllerTests
         var signature = SignChallenge(challenge.Challenge, "alice", secretKey);
 
         // Act
-        var result = await controller.VerifyAuth(new AuthController.AuthVerifyRequest(
+        var result = await controller.VerifyAuth(new AuthVerifyRequest(
             "alice",
             challenge.Id,
             signature
@@ -380,7 +382,7 @@ public class AuthControllerTests
         var signature = SignChallenge(challenge.Challenge, "alice", secretKey);
 
         // Act
-        var result = await controller.VerifyAuth(new AuthController.AuthVerifyRequest(
+        var result = await controller.VerifyAuth(new AuthVerifyRequest(
             "alice",
             challenge.Id,
             signature
@@ -402,7 +404,7 @@ public class AuthControllerTests
         var accountSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
 
         // Act
-        var result = await controller.Register(new AuthController.AuthRegisterRequest(
+        var result = await controller.Register(new AuthRegisterRequest(
             "newuser",
             "auth-pubkey-base64",
             "identity-pubkey-base64",
@@ -439,7 +441,7 @@ public class AuthControllerTests
         var accountSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
 
         // Act
-        var result = await controller.Register(new AuthController.AuthRegisterRequest(
+        var result = await controller.Register(new AuthRegisterRequest(
             "existing",
             "auth-pubkey",
             "identity-pubkey",
@@ -462,7 +464,7 @@ public class AuthControllerTests
         var shortSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(8)); // Too short
 
         // Act
-        var result = await controller.Register(new AuthController.AuthRegisterRequest(
+        var result = await controller.Register(new AuthRegisterRequest(
             "newuser",
             "auth-pubkey",
             "identity-pubkey",
@@ -490,13 +492,13 @@ public class AuthControllerTests
         await db.SaveChangesAsync();
 
         var controller = CreateController(db);
-        // No AuthSub in HttpContext.Items → unauthenticated
+        // No AuthSub in HttpContext.Items â†’ unauthenticated
 
         var userSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
         var accountSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
 
         // Act
-        var result = await controller.Register(new AuthController.AuthRegisterRequest(
+        var result = await controller.Register(new AuthRegisterRequest(
             "newuser",
             "auth-pubkey",
             "identity-pubkey",
@@ -530,7 +532,7 @@ public class AuthControllerTests
         var accountSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
 
         // Act
-        var result = await controller.Register(new AuthController.AuthRegisterRequest(
+        var result = await controller.Register(new AuthRegisterRequest(
             "anotheruser",
             "auth-pubkey",
             "identity-pubkey",
@@ -564,7 +566,7 @@ public class AuthControllerTests
         var accountSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
 
         // Act
-        var result = await controller.Register(new AuthController.AuthRegisterRequest(
+        var result = await controller.Register(new AuthRegisterRequest(
             "newuser",
             "auth-pubkey",
             "identity-pubkey",

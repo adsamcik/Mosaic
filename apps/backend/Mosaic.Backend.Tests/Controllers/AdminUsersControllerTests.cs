@@ -5,6 +5,8 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models.Admin;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
@@ -84,7 +86,7 @@ public class AdminUsersControllerTests
         var result = await controller.GetUserQuota(user.Id);
 
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var quota = Assert.IsType<AdminUsersController.UserQuotaResponse>(okResult.Value);
+        var quota = Assert.IsType<UserQuotaResponse>(okResult.Value);
         Assert.Equal(5000, quota.MaxStorageBytes);
         Assert.Equal(1000, quota.UsedStorageBytes);
         Assert.Equal(50, quota.MaxAlbums);
@@ -116,11 +118,11 @@ public class AdminUsersControllerTests
         await db.SaveChangesAsync();
 
         var controller = CreateController(db, admin);
-        var request = new AdminUsersController.UpdateUserQuotaRequest(MaxStorageBytes: 9999, MaxAlbums: 25);
+        var request = new UpdateUserQuotaRequest(MaxStorageBytes: 9999, MaxAlbums: 25);
         var result = await controller.SetUserQuota(user.Id, request);
 
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var quota = Assert.IsType<AdminUsersController.UserQuotaResponse>(okResult.Value);
+        var quota = Assert.IsType<UserQuotaResponse>(okResult.Value);
         Assert.Equal(9999, quota.MaxStorageBytes);
         Assert.Equal(25, quota.MaxAlbums);
     }

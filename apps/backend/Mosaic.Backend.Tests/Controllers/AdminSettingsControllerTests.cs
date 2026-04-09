@@ -5,6 +5,8 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models.Admin;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
@@ -77,7 +79,7 @@ public class AdminSettingsControllerTests
         await db.SaveChangesAsync();
 
         var controller = CreateController(db, admin);
-        var request = new AdminSettingsController.UpdateQuotaDefaultsRequest(
+        var request = new UpdateQuotaDefaultsRequest(
             MaxStorageBytesPerUser: 5000,
             MaxAlbumsPerUser: 50,
             MaxPhotosPerAlbum: 500,
@@ -104,7 +106,7 @@ public class AdminSettingsControllerTests
         await db.SaveChangesAsync();
 
         var controller = CreateController(db, admin);
-        var request = new AdminSettingsController.UpdateQuotaDefaultsRequest(
+        var request = new UpdateQuotaDefaultsRequest(
             MaxStorageBytesPerUser: -1,
             MaxAlbumsPerUser: 50,
             MaxPhotosPerAlbum: 500,

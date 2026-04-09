@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.Users;
+using Mosaic.Backend.Models.Users;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
 using Mosaic.Backend.Tests.TestHelpers;
@@ -80,7 +82,7 @@ public class UsersControllerTests
             }
         };
 
-        var request = new UsersController.UpdateUserRequest(IdentityPubkey: "new-pubkey-123");
+        var request = new UpdateUserRequest(IdentityPubkey: "new-pubkey-123");
 
         // Act
         var result = await controller.UpdateMe(request);
@@ -108,7 +110,7 @@ public class UsersControllerTests
             }
         };
 
-        var request = new UsersController.UpdateUserRequest(IdentityPubkey: "different-pubkey");
+        var request = new UpdateUserRequest(IdentityPubkey: "different-pubkey");
 
         // Act
         var result = await controller.UpdateMe(request);
@@ -134,7 +136,7 @@ public class UsersControllerTests
             }
         };
 
-        var request = new UsersController.UpdateUserRequest(IdentityPubkey: "existing-pubkey");
+        var request = new UpdateUserRequest(IdentityPubkey: "existing-pubkey");
 
         // Act
         var result = await controller.UpdateMe(request);
@@ -163,7 +165,7 @@ public class UsersControllerTests
         var encryptedSalt = Convert.ToBase64String(new byte[32]);
         var saltNonce = Convert.ToBase64String(new byte[12]);
 
-        var request = new UsersController.UpdateUserRequest(
+        var request = new UpdateUserRequest(
             EncryptedSalt: encryptedSalt,
             SaltNonce: saltNonce);
 
@@ -194,7 +196,7 @@ public class UsersControllerTests
             }
         };
 
-        var request = new UsersController.UpdateUserRequest(
+        var request = new UpdateUserRequest(
             EncryptedSalt: Convert.ToBase64String(new byte[32]));
 
         // Act
@@ -221,7 +223,7 @@ public class UsersControllerTests
             }
         };
 
-        var request = new UsersController.UpdateUserRequest(
+        var request = new UpdateUserRequest(
             EncryptedSalt: Convert.ToBase64String(new byte[32]),
             SaltNonce: Convert.ToBase64String(new byte[10])); // Should be 12
 
@@ -249,7 +251,7 @@ public class UsersControllerTests
             }
         };
 
-        var request = new UsersController.UpdateUserRequest(
+        var request = new UpdateUserRequest(
             EncryptedSalt: "not-valid-base64!!!",
             SaltNonce: Convert.ToBase64String(new byte[12]));
 

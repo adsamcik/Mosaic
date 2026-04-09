@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models.Admin;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
 
@@ -30,21 +33,7 @@ public class AdminAlbumsController : ControllerBase
             ?? throw new UnauthorizedAccessException("Admin user not found in context");
     }
 
-    public record AlbumWithLimitsResponse(
-        Guid Id,
-        Guid OwnerId,
-        string OwnerAuthSub,
-        DateTime CreatedAt,
-        AlbumLimitsResponse Limits
-    );
 
-    public record AlbumLimitsResponse(
-        int MaxPhotos,
-        int CurrentPhotoCount,
-        long MaxSizeBytes,
-        long CurrentSizeBytes,
-        bool IsCustom
-    );
 
     /// <summary>
     /// List all albums with limit info
@@ -129,10 +118,6 @@ public class AdminAlbumsController : ControllerBase
         ));
     }
 
-    public record UpdateAlbumLimitsRequest(
-        int? MaxPhotos,
-        long? MaxSizeBytes
-    );
 
     /// <summary>
     /// Set custom limits for an album

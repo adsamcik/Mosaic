@@ -1,11 +1,13 @@
 using System.Buffers.Binary;
-using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Models.Auth;
+using Mosaic.Backend.Models.Auth;
+using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
 using NSec.Cryptography;
@@ -826,42 +828,4 @@ public partial class AuthController : ControllerBase
         }
     }
 
-    // ===== Request/Response DTOs =====
-
-    public record AuthInitRequest([MaxLength(256)] string Username);
-
-    public record AuthInitResponse
-    {
-        public Guid ChallengeId { get; init; }
-        public required string Challenge { get; init; }
-        public required string UserSalt { get; init; }
-        public long Timestamp { get; init; }
-    }
-
-    public record AuthVerifyRequest(
-        [MaxLength(256)] string Username,
-        Guid ChallengeId,
-        [MaxLength(256)] string Signature,
-        long? Timestamp = null
-    );
-
-    public record AuthVerifyResponse
-    {
-        public bool Success { get; init; }
-        public Guid UserId { get; init; }
-        public string? AccountSalt { get; init; }
-        public string? WrappedAccountKey { get; init; }
-        public string? WrappedIdentitySeed { get; init; }
-        public string? IdentityPubkey { get; init; }
-    }
-
-    public record AuthRegisterRequest(
-        [MaxLength(256)] string Username,
-        [MaxLength(128)] string AuthPubkey,
-        [MaxLength(128)] string IdentityPubkey,
-        [MaxLength(128)] string UserSalt,
-        [MaxLength(128)] string AccountSalt,
-        [MaxLength(2048)] string? WrappedAccountKey = null,
-        [MaxLength(2048)] string? WrappedIdentitySeed = null
-    );
 }

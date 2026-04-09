@@ -1,7 +1,9 @@
-using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Models.Users;
+using Mosaic.Backend.Models.Users;
+using Mosaic.Backend.Models.Users;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
 
@@ -49,11 +51,6 @@ public class UsersController : ControllerBase
         });
     }
 
-    public record UpdateUserRequest(
-        [MaxLength(128)] string? IdentityPubkey = null,
-        [MaxLength(256)] string? EncryptedSalt = null,
-        [MaxLength(256)] string? SaltNonce = null
-    );
 
     /// <summary>
     /// Update user profile (identity pubkey and/or encrypted salt)
@@ -130,7 +127,6 @@ public class UsersController : ControllerBase
         });
     }
 
-    public record UpdateWrappedKeyRequest([MaxLength(2048)] string WrappedAccountKey);
 
     /// <summary>
     /// Update user's wrapped account key (for identity persistence across sessions)

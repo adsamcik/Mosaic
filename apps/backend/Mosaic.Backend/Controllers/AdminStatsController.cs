@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models.Admin;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
 
@@ -21,27 +24,8 @@ public class AdminStatsController : ControllerBase
         _quotaService = quotaService;
     }
 
-    public record SystemStatsResponse(
-        int TotalUsers,
-        int TotalAlbums,
-        int TotalPhotos,
-        long TotalStorageBytes,
-        List<UserQuotaWarning> UsersNearQuota,
-        List<AlbumLimitWarning> AlbumsNearLimit
-    );
 
-    public record UserQuotaWarning(
-        Guid UserId,
-        string AuthSub,
-        int UsagePercent
-    );
 
-    public record AlbumLimitWarning(
-        Guid AlbumId,
-        string OwnerAuthSub,
-        int PhotoUsagePercent,
-        int SizeUsagePercent
-    );
 
     /// <summary>
     /// Get system-wide usage statistics

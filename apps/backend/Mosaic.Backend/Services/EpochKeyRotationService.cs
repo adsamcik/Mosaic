@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Models.EpochKeys;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 
@@ -31,7 +31,7 @@ public interface IEpochKeyRotationService
     Task<EpochRotationResult> RotateAsync(
         Album album,
         int epochId,
-        EpochKeysController.RotateEpochRequest request);
+        RotateEpochRequest request);
 }
 
 public class EpochKeyRotationService : IEpochKeyRotationService
@@ -46,7 +46,7 @@ public class EpochKeyRotationService : IEpochKeyRotationService
     public async Task<EpochRotationResult> RotateAsync(
         Album album,
         int epochId,
-        EpochKeysController.RotateEpochRequest request)
+        RotateEpochRequest request)
     {
         var albumId = album.Id;
 
@@ -132,7 +132,7 @@ public class EpochKeyRotationService : IEpochKeyRotationService
     }
 
     private static EpochRotationResult? ValidateMemberKeys(
-        EpochKeysController.CreateEpochKeyRequest[] epochKeys,
+        CreateEpochKeyRequest[] epochKeys,
         HashSet<Guid> activeMembers,
         HashSet<Guid> existingKeys)
     {
@@ -162,7 +162,7 @@ public class EpochKeyRotationService : IEpochKeyRotationService
         return null;
     }
 
-    private void AddMemberKeys(Guid albumId, int epochId, EpochKeysController.CreateEpochKeyRequest[] epochKeys)
+    private void AddMemberKeys(Guid albumId, int epochId, CreateEpochKeyRequest[] epochKeys)
     {
         foreach (var keyRequest in epochKeys)
         {
@@ -182,7 +182,7 @@ public class EpochKeyRotationService : IEpochKeyRotationService
 
     private (int Updated, EpochRotationResult? Error) ValidateAndAddShareLinkKeys(
         int epochId,
-        EpochKeysController.ShareLinkKeyUpdateRequest[]? shareLinkKeys,
+        ShareLinkKeyUpdateRequest[]? shareLinkKeys,
         Dictionary<Guid, ShareLink>? shareLinksByLinkId)
     {
         if (shareLinkKeys is not { Length: > 0 } || shareLinksByLinkId == null)

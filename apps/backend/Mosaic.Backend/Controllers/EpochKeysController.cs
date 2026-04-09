@@ -1,7 +1,9 @@
-using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Models.EpochKeys;
+using Mosaic.Backend.Models.EpochKeys;
+using Mosaic.Backend.Models.EpochKeys;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Services;
@@ -54,14 +56,6 @@ public class EpochKeysController : ControllerBase
         return Ok(keys);
     }
 
-    public record CreateEpochKeyRequest(
-        Guid RecipientId,
-        int EpochId,
-        [MaxLength(4096)] byte[] EncryptedKeyBundle,
-        [MaxLength(128)] byte[] OwnerSignature,
-        [MaxLength(64)] byte[] SharerPubkey,
-        [MaxLength(64)] byte[] SignPubkey
-    );
 
     /// <summary>
     /// Create a new epoch key for a recipient
@@ -181,27 +175,8 @@ public class EpochKeysController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Wrapped key for a share link at a specific tier
-    /// </summary>
-    public record ShareLinkWrappedKeyRequest(
-        int Tier,
-        byte[] Nonce,
-        byte[] EncryptedKey
-    );
 
-    /// <summary>
-    /// Updated wrapped keys for a single share link
-    /// </summary>
-    public record ShareLinkKeyUpdateRequest(
-        Guid ShareLinkId,
-        ShareLinkWrappedKeyRequest[] WrappedKeys
-    );
 
-    public record RotateEpochRequest(
-        CreateEpochKeyRequest[] EpochKeys,
-        ShareLinkKeyUpdateRequest[]? ShareLinkKeys = null
-    );
 
     /// <summary>
     /// Rotate to a new epoch (key rotation after member removal)

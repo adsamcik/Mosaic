@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models.Admin;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
 
@@ -39,12 +42,6 @@ public class AdminSettingsController : ControllerBase
         return Ok(defaults);
     }
 
-    public record UpdateQuotaDefaultsRequest(
-        long MaxStorageBytesPerUser,
-        int MaxAlbumsPerUser,
-        int MaxPhotosPerAlbum,
-        long MaxBytesPerAlbum
-    );
 
     /// <summary>
     /// Update system-wide quota defaults
