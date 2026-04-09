@@ -155,6 +155,7 @@ public class EpochKeysController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var key = await _db.EpochKeys
+            .AsNoTracking()
             .FirstOrDefaultAsync(ek => ek.Id == keyId && ek.AlbumId == albumId);
         if (key == null)
         {

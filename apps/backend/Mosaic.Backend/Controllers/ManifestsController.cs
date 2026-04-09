@@ -270,6 +270,7 @@ public class ManifestsController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var manifest = await _db.Manifests
+            .AsNoTracking()
             .Include(m => m.ManifestShards.OrderBy(ms => ms.ChunkIndex))
             .FirstOrDefaultAsync(m => m.Id == manifestId);
 
@@ -347,6 +348,7 @@ public class ManifestsController : ControllerBase
 
             // Get shards with their sizes before marking as trashed
             var shards = await _db.ManifestShards
+                .AsNoTracking()
                 .Where(ms => ms.ManifestId == manifestId)
                 .Join(_db.Shards, ms => ms.ShardId, s => s.Id, (ms, s) => s)
                 .ToListAsync();

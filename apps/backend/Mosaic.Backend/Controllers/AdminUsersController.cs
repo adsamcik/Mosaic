@@ -108,6 +108,7 @@ public class AdminUsersController : ControllerBase
         var defaults = await _quotaService.GetDefaultsAsync();
 
         var user = await _db.Users
+            .AsNoTracking()
             .Include(u => u.Quota)
             .FirstOrDefaultAsync(u => u.Id == userId);
 

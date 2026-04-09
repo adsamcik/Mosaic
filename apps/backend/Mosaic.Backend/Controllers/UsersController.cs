@@ -193,7 +193,7 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> GetUserByPubkey(string pubkey)
     {
         // pubkey is base64-encoded, URL encoding handled by ASP.NET Core
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.IdentityPubkey == pubkey);
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.IdentityPubkey == pubkey);
         if (user == null)
         {
             return Problem(

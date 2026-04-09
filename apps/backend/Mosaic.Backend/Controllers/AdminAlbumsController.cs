@@ -109,6 +109,7 @@ public class AdminAlbumsController : ControllerBase
         var defaults = await _quotaService.GetDefaultsAsync();
 
         var album = await _db.Albums
+            .AsNoTracking()
             .Include(a => a.Limits)
             .FirstOrDefaultAsync(a => a.Id == albumId);
 

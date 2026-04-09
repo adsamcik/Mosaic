@@ -127,6 +127,7 @@ public class ShareLinkAccessController : ControllerBase
         }
 
         var shareLink = await _db.ShareLinks
+            .AsNoTracking()
             .Include(sl => sl.Album)
             .Include(sl => sl.LinkEpochKeys)
             .AsSplitQuery()
@@ -188,7 +189,7 @@ public class ShareLinkAccessController : ControllerBase
         if (!updateSucceeded)
         {
             // Re-fetch to determine specific reason (link was modified between initial fetch and update)
-            var link = await _db.ShareLinks.FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
+            var link = await _db.ShareLinks.AsNoTracking().FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
             if (link == null)
             {
                 return Problem(
@@ -260,6 +261,7 @@ public class ShareLinkAccessController : ControllerBase
         // Get sign pubkeys from epoch keys table for each epoch
         var epochIds = shareLink.LinkEpochKeys.Select(k => k.EpochId).Distinct().ToList();
         var epochSignPubkeys = await _db.EpochKeys
+            .AsNoTracking()
             .Where(ek => ek.AlbumId == shareLink.AlbumId && epochIds.Contains(ek.EpochId))
             .GroupBy(ek => ek.EpochId)
             .Select(g => new { EpochId = g.Key, SignPubkey = g.First().SignPubkey })
@@ -301,6 +303,7 @@ public class ShareLinkAccessController : ControllerBase
         }
 
         var shareLink = await _db.ShareLinks
+            .AsNoTracking()
             .Include(sl => sl.Album)
             .FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
 
@@ -367,6 +370,7 @@ public class ShareLinkAccessController : ControllerBase
         }
 
         var shareLink = await _db.ShareLinks
+            .AsNoTracking()
             .Include(sl => sl.Album)
             .FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
 

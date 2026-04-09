@@ -183,7 +183,7 @@ public class TestSeedController : ControllerBase
         }
 
         // Check if user already exists
-        var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == request.Email);
+        var existingUser = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == request.Email);
         if (existingUser != null)
         {
             return Conflict(new ErrorResponse("User with this email already exists"));

@@ -26,7 +26,7 @@ public static class TusEventHandlers
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
         {
             context.FailRequest("User not found");
@@ -145,7 +145,7 @@ public static class TusEventHandlers
                 // Refund the reserved quota since the upload is rejected
                 using var cleanupScope = services.CreateScope();
                 var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<MosaicDbContext>();
-                var cleanupUser = await cleanupDb.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+                var cleanupUser = await cleanupDb.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
                 if (cleanupUser != null)
                 {
                     var reservedBytes = httpContext.Items["QuotaReservedBytes"] as long? ?? fileSize;
@@ -174,7 +174,7 @@ public static class TusEventHandlers
 
         await using var tx = await db.Database.BeginTransactionAsync();
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
 
         // Create PENDING shard with computed SHA256
         db.Shards.Add(new Shard

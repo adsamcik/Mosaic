@@ -138,7 +138,7 @@ public partial class AuthController : ControllerBase
         }
 
         // Look up user
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == request.Username);
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == request.Username);
 
         byte[] challenge = RandomNumberGenerator.GetBytes(32);
         byte[] userSalt;
@@ -254,7 +254,7 @@ public partial class AuthController : ControllerBase
         await _db.SaveChangesAsync();
 
         // Look up user
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == request.Username);
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == request.Username);
         if (user == null || string.IsNullOrEmpty(user.AuthPubkey))
         {
             // User doesn't exist or doesn't have local auth set up
@@ -377,7 +377,7 @@ public partial class AuthController : ControllerBase
                     statusCode: StatusCodes.Status401Unauthorized);
             }
 
-            var callingUser = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+            var callingUser = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
             if (callingUser == null || !callingUser.IsAdmin)
             {
                 return Problem(

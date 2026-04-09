@@ -81,7 +81,7 @@ public class DevAuthController : ControllerBase
         Log.DevAuthLogin(_logger, request.Username);
 
         // Find or create user
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == request.Username);
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == request.Username);
 
         if (user == null)
         {

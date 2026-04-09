@@ -40,7 +40,7 @@ public class AdminAuthMiddleware
 
         // Reuse user loaded by CombinedAuthMiddleware when available
         var user = context.Items["AuthUser"] as User
-            ?? await db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+            ?? await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
         {
             _logger.AdminAccessDenied(Guid.Empty, context.Request.Path.Value ?? "/api/admin");
