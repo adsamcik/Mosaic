@@ -14,28 +14,21 @@ namespace Mosaic.Backend.Controllers;
 public class ManifestsController : ControllerBase
 {
     private readonly MosaicDbContext _db;
-    private readonly IConfiguration _config;
     private readonly IQuotaSettingsService _quotaService;
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<ManifestsController> _logger;
-    private readonly bool _useSqlite;
 
     public ManifestsController(
         MosaicDbContext db,
-        IConfiguration config,
         IQuotaSettingsService quotaService,
         ICurrentUserService currentUserService,
         ILogger<ManifestsController> logger)
     {
         _db = db;
-        _config = config;
         _quotaService = quotaService;
         _currentUserService = currentUserService;
         _logger = logger;
 
-        // Detect if we're using SQLite (no row locking support)
-        var connectionString = config.GetConnectionString("Default");
-        _useSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ?? false;
     }
 
     public record CreateManifestRequest(
@@ -114,7 +107,7 @@ public class ManifestsController : ControllerBase
         {
             // 1. Lock album row (FOR UPDATE is PostgreSQL-only; SQLite uses simpler locking)
             Album? album;
-            if (_useSqlite)
+            if (_db.UsesLiteProvider())
             {
                 // SQLite: Use standard query (transactions provide sufficient isolation)
                 album = await _db.Albums.FindAsync(request.AlbumId);
@@ -320,7 +313,7 @@ public class ManifestsController : ControllerBase
 
             // Lock album (FOR UPDATE is PostgreSQL-only; SQLite uses simpler locking)
             Album? album;
-            if (_useSqlite)
+            if (_db.UsesLiteProvider())
             {
                 album = await _db.Albums.FindAsync(manifest.AlbumId);
             }

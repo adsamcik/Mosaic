@@ -95,28 +95,21 @@ public class InitialEpochKeyRequest
 public class AlbumsController : ControllerBase
 {
     private readonly MosaicDbContext _db;
-    private readonly IConfiguration _config;
     private readonly IQuotaSettingsService _quotaService;
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<AlbumsController> _logger;
-    private readonly bool _useSqlite;
 
     public AlbumsController(
         MosaicDbContext db,
-        IConfiguration config,
         IQuotaSettingsService quotaService,
         ICurrentUserService currentUserService,
         ILogger<AlbumsController> logger)
     {
         _db = db;
-        _config = config;
         _quotaService = quotaService;
         _currentUserService = currentUserService;
         _logger = logger;
 
-        // Detect if we're using SQLite or InMemory (no row locking support)
-        var connectionString = config.GetConnectionString("Default");
-        _useSqlite = connectionString == null || connectionString.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -219,7 +212,7 @@ public class AlbumsController : ControllerBase
             // Check album count limit inside transaction with row locking to prevent race conditions
             var maxAlbums = await _quotaService.GetEffectiveMaxAlbumsAsync(user.Id);
             UserQuota? quota;
-            if (_useSqlite)
+            if (_db.UsesLiteProvider())
             {
                 quota = await _db.UserQuotas.FindAsync(user.Id);
             }

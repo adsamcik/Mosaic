@@ -20,7 +20,6 @@ public class ShareLinkAccessController : ControllerBase
 
     private readonly MosaicDbContext _db;
     private readonly IStorageService _storage;
-    private readonly bool _supportsExecuteUpdate;
     private readonly byte[] _grantSigningKey;
 
     public ShareLinkAccessController(
@@ -30,8 +29,6 @@ public class ShareLinkAccessController : ControllerBase
     {
         _db = db;
         _storage = storage;
-        // InMemory provider doesn't support ExecuteUpdateAsync
-        _supportsExecuteUpdate = !db.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) ?? true;
 
         // Initialize a stable signing key for grant tokens.
         // Prefer ShareLinks:GrantSigningKey when explicitly configured.
@@ -160,7 +157,7 @@ public class ShareLinkAccessController : ControllerBase
 
         bool updateSucceeded;
 
-        if (_supportsExecuteUpdate)
+        if (_db.SupportsBulkOperations())
         {
             // Use atomic update to prevent race conditions on MaxUses (PostgreSQL/SQLite)
             var updated = await _db.ShareLinks

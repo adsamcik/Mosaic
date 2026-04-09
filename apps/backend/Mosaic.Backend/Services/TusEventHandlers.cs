@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Extensions;
 using tusdotnet.Interfaces;
 using tusdotnet.Models.Configuration;
 
@@ -61,10 +62,9 @@ public static class TusEventHandlers
         // Atomic quota reservation: prevents TOCTOU race condition with parallel uploads.
         // Uses conditional UPDATE so concurrent requests cannot all pass the check.
         var uploadLength = context.UploadLength;
-        var useSqlite = db.Database.ProviderName?.Contains("Sqlite") == true;
         int rowsAffected;
 
-        if (useSqlite)
+        if (db.UsesLiteProvider())
         {
             rowsAffected = await db.Database.ExecuteSqlRawAsync(
                 "UPDATE user_quotas SET used_storage_bytes = used_storage_bytes + {0}, updated_at = datetime('now') WHERE user_id = {1} AND used_storage_bytes + {0} <= max_storage_bytes",
@@ -149,8 +149,7 @@ public static class TusEventHandlers
                 if (cleanupUser != null)
                 {
                     var reservedBytes = httpContext.Items["QuotaReservedBytes"] as long? ?? fileSize;
-                    var useSqliteCleanup = cleanupDb.Database.ProviderName?.Contains("Sqlite") == true;
-                    if (useSqliteCleanup)
+                    if (cleanupDb.UsesLiteProvider())
                     {
                         await cleanupDb.Database.ExecuteSqlRawAsync(
                             "UPDATE user_quotas SET used_storage_bytes = MAX(0, used_storage_bytes - {0}), updated_at = datetime('now') WHERE user_id = {1}",
@@ -170,7 +169,6 @@ public static class TusEventHandlers
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
-        var useSqlite = db.Database.ProviderName?.Contains("Sqlite") == true;
 
         await using var tx = await db.Database.BeginTransactionAsync();
 
@@ -194,7 +192,7 @@ public static class TusEventHandlers
         var sizeDifference = fileSize - reservedSize;
         if (sizeDifference != 0)
         {
-            if (useSqlite)
+            if (db.UsesLiteProvider())
             {
                 await db.Database.ExecuteSqlRawAsync(
                     "UPDATE user_quotas SET used_storage_bytes = MAX(0, used_storage_bytes + {0}), updated_at = datetime('now') WHERE user_id = {1}",

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Logging;
 
 namespace Mosaic.Backend.Services;
@@ -9,18 +10,14 @@ public class GarbageCollectionService : BackgroundService
 {
     private readonly IServiceProvider _services;
     private readonly ILogger<GarbageCollectionService> _logger;
-    private readonly bool _useSqlite;
 
     public GarbageCollectionService(
         IServiceProvider services,
-        ILogger<GarbageCollectionService> logger,
-        IConfiguration configuration)
+        ILogger<GarbageCollectionService> logger)
     {
         _services = services;
         _logger = logger;
 
-        var connectionString = configuration.GetConnectionString("Default");
-        _useSqlite = connectionString?.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ?? false;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -62,7 +59,7 @@ public class GarbageCollectionService : BackgroundService
 
         // Use parameterized SQL with database-specific NOW function
         int count;
-        if (_useSqlite)
+        if (db.UsesLiteProvider())
         {
             count = await db.Database.ExecuteSqlAsync(
                 $"UPDATE shards SET status = 'TRASHED', status_updated_at = datetime('now') WHERE status = 'PENDING' AND pending_expires_at < datetime('now')");
@@ -158,7 +155,7 @@ public class GarbageCollectionService : BackgroundService
         {
             List<Album> expiredAlbums;
 
-            if (_useSqlite)
+            if (db.UsesLiteProvider())
             {
                 // SQLite doesn't support DateTimeOffset in WHERE or ORDER BY clauses,
                 // so we load albums with expiration dates and filter/sort client-side.
