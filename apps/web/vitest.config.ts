@@ -30,6 +30,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@': resolve(__dirname, './src'),
       '@mosaic/crypto': resolve(__dirname, '../../libs/crypto/src'),
     },
   },
