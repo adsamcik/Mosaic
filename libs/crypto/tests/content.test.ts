@@ -177,4 +177,35 @@ describe('content encryption', () => {
 
     expect(decrypted).toEqual(plaintext);
   });
+
+  it('rejects invalid key length in encryptContent', () => {
+    const shortKey = new Uint8Array(16);
+    const plaintext = new Uint8Array([1, 2, 3]);
+
+    expect(() => encryptContent(plaintext, shortKey, 1)).toThrow('Content key must be 32 bytes');
+  });
+
+  it('rejects invalid key length in decryptContent', () => {
+    const epoch = generateEpochKey(1);
+    const contentKey = deriveContentKey(epoch.epochSeed);
+    const plaintext = new TextEncoder().encode('test');
+    const encrypted = encryptContent(plaintext, contentKey, epoch.epochId);
+
+    const shortKey = new Uint8Array(16);
+    expect(() =>
+      decryptContent(encrypted.ciphertext, encrypted.nonce, shortKey, epoch.epochId),
+    ).toThrow('Content key must be 32 bytes');
+  });
+
+  it('rejects invalid nonce length in decryptContent', () => {
+    const epoch = generateEpochKey(1);
+    const contentKey = deriveContentKey(epoch.epochSeed);
+    const plaintext = new TextEncoder().encode('test');
+    const encrypted = encryptContent(plaintext, contentKey, epoch.epochId);
+
+    const shortNonce = new Uint8Array(12);
+    expect(() =>
+      decryptContent(encrypted.ciphertext, shortNonce, contentKey, epoch.epochId),
+    ).toThrow('Nonce must be 24 bytes');
+  });
 });
