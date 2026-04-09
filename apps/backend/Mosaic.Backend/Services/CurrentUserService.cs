@@ -40,7 +40,9 @@ public class CurrentUserService : ICurrentUserService
         var authSub = context.Items["AuthSub"] as string
             ?? throw new UnauthorizedAccessException("No AuthSub found in request context");
 
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+        // Reuse user loaded by CombinedAuthMiddleware when available
+        var user = context.Items["AuthUser"] as User
+            ?? await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
         {
             // Use transaction to ensure User and UserQuota are created atomically

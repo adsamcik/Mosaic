@@ -267,45 +267,47 @@ export function createShareLinkUrl(
   return `${normalizedBase}/s/${encodedLinkId}#k=${encodedSecret}`;
 }
 
+/** Result of parsing a share link URL */
+export type ParseShareLinkResult =
+  | { success: true; linkId: Uint8Array; linkSecret: Uint8Array }
+  | { success: false; reason: string };
+
 /**
  * Parse a share link URL to extract linkId and linkSecret.
  *
  * @param url - Complete share link URL
- * @returns Object with linkId and linkSecret, or null if invalid
+ * @returns Discriminated union: success with linkId/linkSecret, or failure with reason
  */
-export function parseShareLinkUrl(url: string): {
-  linkId: Uint8Array;
-  linkSecret: Uint8Array;
-} | null {
+export function parseShareLinkUrl(url: string): ParseShareLinkResult {
   try {
     const parsed = new URL(url);
 
     // Extract link ID from path: .../s/{linkId} (supports prefix paths)
     const pathMatch = parsed.pathname.match(/\/s\/([A-Za-z0-9_-]+)$/);
-    // Stryker disable next-line ConditionalExpression,LogicalOperator,BlockStatement: Guard is semantically equivalent - mutation causes exception caught by try-catch, producing same null result
+    // Stryker disable next-line ConditionalExpression,LogicalOperator,BlockStatement: Guard is semantically equivalent - mutation causes exception caught by try-catch, producing same failure result
     if (!pathMatch || !pathMatch[1]) {
-      return null;
+      return { success: false, reason: 'URL path does not contain a valid /s/{linkId} segment' };
     }
     const linkId = decodeLinkId(pathMatch[1]);
 
     // Extract link secret from fragment: #k={linkSecret}
     const fragment = parsed.hash;
     const secretMatch = fragment.match(/^#k=([A-Za-z0-9_-]+)$/);
-    // Stryker disable next-line ConditionalExpression,LogicalOperator,BlockStatement: Guard is semantically equivalent - mutation causes exception caught by try-catch, producing same null result
+    // Stryker disable next-line ConditionalExpression,LogicalOperator,BlockStatement: Guard is semantically equivalent - mutation causes exception caught by try-catch, producing same failure result
     if (!secretMatch || !secretMatch[1]) {
-      return null;
+      return { success: false, reason: 'URL fragment does not contain a valid #k={linkSecret} parameter' };
     }
     const linkSecret = decodeLinkSecret(secretMatch[1]);
 
     // Verify linkId matches derived value
     const { linkId: derivedLinkId } = deriveLinkKeys(linkSecret);
     if (!sodium.memcmp(linkId, derivedLinkId)) {
-      return null; // linkId doesn't match secret - tampered or invalid
+      return { success: false, reason: 'Link ID does not match the secret — URL may be tampered or corrupted' };
     }
 
-    return { linkId, linkSecret };
-  } catch (_error: unknown) {
-    // Catch any parsing or validation errors
-    return null;
+    return { success: true, linkId, linkSecret };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { success: false, reason: `Failed to parse share link URL: ${message}` };
   }
 }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
 
 namespace Mosaic.Backend.Middleware;
@@ -37,7 +38,9 @@ public class AdminAuthMiddleware
             return;
         }
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
+        // Reuse user loaded by CombinedAuthMiddleware when available
+        var user = context.Items["AuthUser"] as User
+            ?? await db.Users.FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
         {
             _logger.AdminAccessDenied(Guid.Empty, context.Request.Path.Value ?? "/api/admin");

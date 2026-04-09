@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Mosaic.Backend.Data.Entities;
 
 public class Manifest
@@ -7,7 +9,9 @@ public class Manifest
     public long VersionCreated { get; set; }
     public bool IsDeleted { get; set; }
     public required byte[] EncryptedMeta { get; set; }
+    [MaxLength(128)]
     public required string Signature { get; set; }
+    [MaxLength(128)]
     public required string SignerPubkey { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

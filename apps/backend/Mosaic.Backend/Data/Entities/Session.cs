@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Mosaic.Backend.Data.Entities;
 
 /// <summary>
@@ -45,16 +47,19 @@ public class Session
     /// <summary>
     /// User agent string for device identification.
     /// </summary>
+    [MaxLength(500)]
     public string? UserAgent { get; set; }
 
     /// <summary>
     /// IP address of the client when session was created.
     /// </summary>
+    [MaxLength(45)]
     public string? IpAddress { get; set; }
 
     /// <summary>
     /// Optional device name (e.g., "Chrome on Windows").
     /// </summary>
+    [MaxLength(255)]
     public string? DeviceName { get; set; }
 
     // Navigation

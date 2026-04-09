@@ -1,9 +1,12 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Mosaic.Backend.Data.Entities;
 
 public class AlbumMember
 {
     public Guid AlbumId { get; set; }
     public Guid UserId { get; set; }
+    [MaxLength(50)]
     public required string Role { get; set; }  // "owner", "editor", "viewer"
     public Guid? InvitedBy { get; set; }
     public DateTime JoinedAt { get; set; } = DateTime.UtcNow;

@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Mosaic.Backend.Data.Entities;
 
 /// <summary>
@@ -14,6 +16,7 @@ public class AuthChallenge
     /// <summary>
     /// Username this challenge is for (may not exist in DB for anti-enumeration).
     /// </summary>
+    [MaxLength(255)]
     public required string Username { get; set; }
 
     /// <summary>
@@ -39,5 +42,6 @@ public class AuthChallenge
     /// <summary>
     /// IP address that requested the challenge (for rate limiting).
     /// </summary>
+    [MaxLength(45)]
     public string? IpAddress { get; set; }
 }

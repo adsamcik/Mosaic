@@ -158,6 +158,7 @@ public partial class CombinedAuthMiddleware
         context.Items["AuthSub"] = session.User.AuthSub;
         context.Items["UserId"] = session.UserId;
         context.Items["AuthMethod"] = "LocalAuth";
+        context.Items["AuthUser"] = session.User;
 
         return true;
     }

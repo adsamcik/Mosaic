@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Mosaic.Backend.Data.Entities;
 
 public enum ShardStatus
@@ -11,6 +13,7 @@ public class Shard
 {
     public Guid Id { get; set; }
     public Guid? UploaderId { get; set; }
+    [MaxLength(255)]
     public required string StorageKey { get; set; }
     public long SizeBytes { get; set; }
     public ShardStatus Status { get; set; } = ShardStatus.PENDING;
@@ -22,6 +25,7 @@ public class Shard
     /// Used for transport integrity verification during download.
     /// Computed server-side after upload completes.
     /// </summary>
+    [MaxLength(64)]
     public string? Sha256 { get; set; }
 
     // Navigation

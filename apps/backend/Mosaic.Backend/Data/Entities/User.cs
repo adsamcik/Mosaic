@@ -1,9 +1,13 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Mosaic.Backend.Data.Entities;
 
 public class User
 {
     public Guid Id { get; set; }
+    [MaxLength(255)]
     public required string AuthSub { get; set; }
+    [MaxLength(128)]
     public required string IdentityPubkey { get; set; }  // Base64 Ed25519
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
@@ -57,6 +61,7 @@ public class User
     /// Separate from IdentityPubkey for security isolation.
     /// Derived from: Argon2id(password, userSalt) → BLAKE2b("Mosaic_AuthKey_v1")
     /// </summary>
+    [MaxLength(128)]
     public string? AuthPubkey { get; set; }
 
     /// <summary>

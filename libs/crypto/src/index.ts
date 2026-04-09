@@ -24,6 +24,8 @@ export type {
   WrappedTierKey,
 } from './types';
 
+export type { ParseShareLinkResult } from './link-sharing';
+
 export {
   CryptoError,
   CryptoErrorCode,

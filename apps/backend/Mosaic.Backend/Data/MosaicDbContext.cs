@@ -214,7 +214,8 @@ public class MosaicDbContext : DbContext
                 .HasForeignKey(s => s.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            e.HasIndex(s => s.TokenHash);
+            e.HasIndex(s => s.TokenHash).IsUnique();
+            e.HasIndex(s => new { s.TokenHash, s.ExpiresAt });
             e.HasIndex(s => s.UserId);
             e.HasIndex(s => s.ExpiresAt);
         });

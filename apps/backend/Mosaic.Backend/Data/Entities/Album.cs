@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Mosaic.Backend.Data.Entities;
 
 public class Album
@@ -13,12 +15,14 @@ public class Album
     /// Base64-encoded encrypted album name (encrypted with epoch read key).
     /// Client-side encrypted, server stores opaque blob.
     /// </summary>
+    [MaxLength(500)]
     public string? EncryptedName { get; set; }
 
     /// <summary>
     /// Base64-encoded encrypted album description (encrypted with epoch read key).
     /// Client-side encrypted, server stores opaque blob.
     /// </summary>
+    [MaxLength(4000)]
     public string? EncryptedDescription { get; set; }
 
     /// <summary>

@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Mosaic.Backend.Data.Entities;
 
 /// <summary>
@@ -6,7 +8,9 @@ namespace Mosaic.Backend.Data.Entities;
 /// </summary>
 public class SystemSetting
 {
+    [MaxLength(128)]
     public required string Key { get; set; }
+    [MaxLength(4000)]
     public required string Value { get; set; }  // JSON string
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public Guid? UpdatedBy { get; set; }
