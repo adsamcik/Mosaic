@@ -171,13 +171,15 @@ public class ShareLinkAccessController : ControllerBase
         else
         {
             // Fallback for InMemory provider (tests only)
-            if (shareLink.MaxUses.HasValue && shareLink.UseCount >= shareLink.MaxUses.Value)
+            // Re-fetch as tracked since the initial query used AsNoTracking
+            var trackedLink = await _db.ShareLinks.FirstAsync(sl => sl.LinkId == linkIdBytes);
+            if (trackedLink.MaxUses.HasValue && trackedLink.UseCount >= trackedLink.MaxUses.Value)
             {
                 updateSucceeded = false;
             }
             else
             {
-                shareLink.UseCount++;
+                trackedLink.UseCount++;
                 await _db.SaveChangesAsync();
                 updateSucceeded = true;
             }

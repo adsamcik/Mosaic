@@ -27,6 +27,9 @@ public class ShardsController : ControllerBase
     [HttpGet("{shardId}")]
     public async Task<IActionResult> Download(Guid shardId)
     {
+        if (HttpContext.Items["AuthSub"] is not string)
+            return Unauthorized();
+
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var shard = await _db.Shards.FindAsync(shardId);
@@ -73,6 +76,9 @@ public class ShardsController : ControllerBase
     [HttpGet("{shardId}/meta")]
     public async Task<IActionResult> GetMeta(Guid shardId)
     {
+        if (HttpContext.Items["AuthSub"] is not string)
+            return Unauthorized();
+
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var shard = await _db.Shards.FindAsync(shardId);
