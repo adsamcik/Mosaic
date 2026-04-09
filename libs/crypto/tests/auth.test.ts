@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
+import type { LibsodiumWrappersSumo } from 'libsodium-wrappers-sumo';
 import {
   generateAuthChallenge,
   signAuthChallenge,
@@ -13,7 +14,7 @@ import {
   generateFakeChallenge,
   CHALLENGE_SIZE,
 } from '../src/auth';
-import { CryptoError } from '../src/types';
+import { CryptoError, CryptoErrorCode } from '../src/types';
 import { randomBytes, toBase64 } from '../src/utils';
 
 // Fast Argon2 params for testing
@@ -718,5 +719,47 @@ describe('full auth flow', () => {
     // Fake salt is consistent for same username
     const fakeUserSalt2 = generateFakeUserSalt('nonexistent', serverSecret);
     expect(fakeUserSalt).toEqual(fakeUserSalt2);
+  });
+});
+
+describe('verifyAuthChallenge catch block', () => {
+  let keypair: { publicKey: Uint8Array; privateKey: Uint8Array };
+  let challenge: Uint8Array;
+  const username = 'alice';
+
+  beforeAll(() => {
+    keypair = sodium.crypto_sign_keypair();
+    challenge = randomBytes(32);
+  });
+
+  it('returns false when crypto_sign_verify_detached throws', () => {
+    const signature = signAuthChallenge(challenge, username, keypair.privateKey);
+    const original = sodium.crypto_sign_verify_detached;
+    try {
+      (sodium as unknown as Record<string, unknown>).crypto_sign_verify_detached = () => {
+        throw new Error('simulated WASM trap');
+      };
+      const result = verifyAuthChallenge(challenge, username, signature, keypair.publicKey);
+      expect(result).toBe(false);
+    } finally {
+      (sodium as unknown as Record<string, unknown>).crypto_sign_verify_detached = original;
+    }
+  });
+});
+
+describe('deriveAuthKeypair guard', () => {
+  it('throws CryptoError when crypto_pwhash is not available', async () => {
+    const original = sodium.crypto_pwhash;
+    try {
+      (sodium as unknown as Record<string, unknown>).crypto_pwhash = undefined;
+      await expect(
+        deriveAuthKeypair('password', randomBytes(16), { memoryKiB: 1024, iterations: 1, parallelism: 1 }),
+      ).rejects.toThrow(CryptoError);
+      await expect(
+        deriveAuthKeypair('password', randomBytes(16), { memoryKiB: 1024, iterations: 1, parallelism: 1 }),
+      ).rejects.toMatchObject({ code: CryptoErrorCode.NOT_INITIALIZED });
+    } finally {
+      (sodium as unknown as Record<string, unknown>).crypto_pwhash = original;
+    }
   });
 });

@@ -795,3 +795,28 @@ describe('keychain', () => {
     }, 120000); // Allow up to 120s for three Argon2 operations
   });
 });
+
+describe('deriveMasterAndRootKeys guard', () => {
+  it('throws CryptoError when crypto_pwhash is not available', async () => {
+    const original = sodium.crypto_pwhash;
+    try {
+      (sodium as unknown as Record<string, unknown>).crypto_pwhash = undefined;
+      await expect(
+        deriveKeysInternal('password', new Uint8Array(16), new Uint8Array(16), {
+          memory: 1024,
+          iterations: 1,
+          parallelism: 1,
+        }),
+      ).rejects.toThrow(CryptoError);
+      await expect(
+        deriveKeysInternal('password', new Uint8Array(16), new Uint8Array(16), {
+          memory: 1024,
+          iterations: 1,
+          parallelism: 1,
+        }),
+      ).rejects.toMatchObject({ code: CryptoErrorCode.NOT_INITIALIZED });
+    } finally {
+      (sodium as unknown as Record<string, unknown>).crypto_pwhash = original;
+    }
+  });
+});
