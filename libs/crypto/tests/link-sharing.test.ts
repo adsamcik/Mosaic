@@ -12,9 +12,17 @@ import {
   decodeLinkId,
   createShareLinkUrl,
   parseShareLinkUrl,
+  type ParseShareLinkResult,
 } from '../src/link-sharing';
 import { generateEpochKey } from '../src/epochs';
 import { AccessTier } from '../src/types';
+
+/** Type-narrowing helper: asserts success and returns the payload */
+function expectSuccess(result: ParseShareLinkResult) {
+  expect(result.success).toBe(true);
+  if (!result.success) throw new Error('expected success');
+  return result;
+}
 
 beforeAll(async () => {
   await sodium.ready;
@@ -297,9 +305,9 @@ describe('link-sharing', () => {
       const url = createShareLinkUrl('https://photos.example.com', secret);
       const parsed = parseShareLinkUrl(url);
 
-      expect(parsed).not.toBeNull();
-      expect(parsed!.linkId).toEqual(linkId);
-      expect(parsed!.linkSecret).toEqual(secret);
+      const p = expectSuccess(parsed);
+      expect(p.linkId).toEqual(linkId);
+      expect(p.linkSecret).toEqual(secret);
     });
 
     it('parses URL with path prefix', () => {
@@ -309,16 +317,16 @@ describe('link-sharing', () => {
       const url = createShareLinkUrl('https://photos.example.com/app', secret);
       const parsed = parseShareLinkUrl(url);
 
-      expect(parsed).not.toBeNull();
-      expect(parsed!.linkId).toEqual(linkId);
-      expect(parsed!.linkSecret).toEqual(secret);
+      const p = expectSuccess(parsed);
+      expect(p.linkId).toEqual(linkId);
+      expect(p.linkSecret).toEqual(secret);
     });
 
     it('returns null for URL without /s/ path', () => {
       const result = parseShareLinkUrl(
         'https://photos.example.com/album/123#k=abc',
       );
-      expect(result).toBeNull();
+      expect(result.success).toBe(false);
     });
 
     it('returns null for URL without fragment key', () => {
@@ -332,7 +340,7 @@ describe('link-sharing', () => {
       const result = parseShareLinkUrl(
         `https://photos.example.com/s/${encoded}`,
       );
-      expect(result).toBeNull();
+      expect(result.success).toBe(false);
     });
 
     it('returns null for URL with invalid linkId length', () => {
@@ -346,19 +354,19 @@ describe('link-sharing', () => {
       const result = parseShareLinkUrl(
         `https://photos.example.com/s/${shortId}#k=${encodedSecret}`,
       );
-      expect(result).toBeNull();
+      expect(result.success).toBe(false);
     });
 
     it('returns null for completely invalid URL', () => {
       // This triggers the catch block because new URL() throws for invalid URLs
       // Use undefined/null-like input that will cause URL constructor to throw
       const result = parseShareLinkUrl('://');
-      expect(result).toBeNull();
+      expect(result.success).toBe(false);
     });
 
     it('returns null for another invalid URL format', () => {
       const result = parseShareLinkUrl('');
-      expect(result).toBeNull();
+      expect(result.success).toBe(false);
     });
 
     it('returns null for URL with invalid base64 in linkId', () => {
@@ -369,7 +377,7 @@ describe('link-sharing', () => {
       const result = parseShareLinkUrl(
         `https://photos.example.com/s/@@@invalid@@@#k=${encodedSecret}`,
       );
-      expect(result).toBeNull();
+      expect(result.success).toBe(false);
     });
 
     it('returns null for URL with invalid base64 in secret', () => {
@@ -384,7 +392,7 @@ describe('link-sharing', () => {
       const result = parseShareLinkUrl(
         `https://photos.example.com/s/${encoded}#k=!!!invalid!!!`,
       );
-      expect(result).toBeNull();
+      expect(result.success).toBe(false);
     });
 
     it('returns null for tampered linkId that does not match secret', () => {
@@ -403,7 +411,7 @@ describe('link-sharing', () => {
       const result = parseShareLinkUrl(
         `https://photos.example.com/s/${wrongEncodedLinkId}#k=${encodedSecret}`,
       );
-      expect(result).toBeNull();
+      expect(result.success).toBe(false);
     });
   });
 
@@ -454,8 +462,8 @@ describe('link-sharing', () => {
 
       // === STEP 3: Visitor opens share link ===
       const parsed = parseShareLinkUrl(shareUrl);
-      expect(parsed).not.toBeNull();
-      const visitorKeys = deriveLinkKeys(parsed!.linkSecret);
+      const p = expectSuccess(parsed);
+      const visitorKeys = deriveLinkKeys(p.linkSecret);
 
       // Verify linkId matches
       expect(visitorKeys.linkId).toEqual(linkId);
@@ -551,7 +559,7 @@ describe('link-sharing', () => {
 
       try {
         const result = parseShareLinkUrl(url);
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       } finally {
         (sodium as Record<string, unknown>).memcmp = originalMemcmp;
       }
@@ -615,7 +623,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${shortId}#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('rejects decoded linkId of 17 bytes (one above threshold)', () => {
@@ -629,7 +637,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${longId}#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('error message in decodeLinkId includes expected and actual length', () => {
@@ -685,7 +693,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}/extra#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('rejects URL with /s/ not followed by proper base64url linkId', () => {
@@ -696,7 +704,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/link.id.with.dots#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('rejects URL with fragment containing extra content before #k=', () => {
@@ -712,7 +720,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}#prefix&k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('rejects URL with fragment containing extra content after secret', () => {
@@ -728,7 +736,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}#k=${encodedSecret}&extra=data`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
     });
 
@@ -741,7 +749,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/album/123#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null when pathname has /s/ but no linkId', () => {
@@ -752,7 +760,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null when fragment is empty', () => {
@@ -767,7 +775,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null when fragment has #k= but no value', () => {
@@ -782,7 +790,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}#k=`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
     });
 
@@ -908,7 +916,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null when no /s/ pattern exists at all (tests !pathMatch)', () => {
@@ -919,7 +927,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/album#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null for path ending with just /s (no trailing slash or id)', () => {
@@ -930,7 +938,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null (not throws) for invalid path - verifies early return', () => {
@@ -942,7 +950,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/notshare/path#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('gracefully returns null for path with /s/ in wrong position', () => {
@@ -953,7 +961,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/abc/def#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
     });
 
@@ -968,7 +976,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}#other&k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null when fragment exists but has no k= at all', () => {
@@ -980,7 +988,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}#something`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null when fragment is just hash with no content', () => {
@@ -992,7 +1000,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}#`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null for fragment with k= but missing value (tests !secretMatch[1])', () => {
@@ -1004,7 +1012,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}#k=`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null (not throws) when fragment is missing - verifies early return', () => {
@@ -1017,7 +1025,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('returns null for fragment with wrong key name', () => {
@@ -1030,7 +1038,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}#s=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
 
       it('rejects fragment with leading content before #k= (kills ^ anchor removal)', () => {
@@ -1044,7 +1052,7 @@ describe('link-sharing', () => {
         const result = parseShareLinkUrl(
           `https://photos.example.com/s/${encodedLinkId}#prefix#k=${encodedSecret}`,
         );
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
       });
     });
 
@@ -1067,7 +1075,7 @@ describe('link-sharing', () => {
           `https://photos.example.com/album#k=${encodedSecret}`,
         );
 
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
         // CRITICAL: from_base64 should NOT have been called
         // If it was called, the L244 early return did not happen
         expect(spy).not.toHaveBeenCalled();
@@ -1087,7 +1095,7 @@ describe('link-sharing', () => {
           `https://photos.example.com/s/${encodedLinkId}#something`,
         );
 
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
         // from_base64 called exactly once (for linkId only)
         // If L252 check is mutated to false, it would try decodeLinkSecret(undefined) = 2 calls
         expect(spy).toHaveBeenCalledTimes(1);
@@ -1106,7 +1114,7 @@ describe('link-sharing', () => {
           `https://photos.example.com/s/${encodedLinkId}#k=${encodedSecret}`,
         );
 
-        expect(result).not.toBeNull();
+        expectSuccess(result);
         expect(spy).toHaveBeenCalledTimes(2);
       });
 
@@ -1126,7 +1134,7 @@ describe('link-sharing', () => {
           `https://photos.example.com/noshare#k=${encodedSecret}`,
         );
 
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
         // With correct || logic, from_base64 is never called
         expect(spy).not.toHaveBeenCalled();
       });
@@ -1143,7 +1151,7 @@ describe('link-sharing', () => {
           `https://photos.example.com/s/${encodedLinkId}#nok`,
         );
 
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
         // With correct || logic, from_base64 called once for linkId only
         expect(spy).toHaveBeenCalledTimes(1);
       });
@@ -1159,7 +1167,7 @@ describe('link-sharing', () => {
           `https://photos.example.com/share#k=${encodedSecret}`,
         );
 
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
         // If BlockStatement is removed, code continues to decodeLinkId which calls from_base64
         // With proper code, we return null and from_base64 is never called
         expect(spy).not.toHaveBeenCalled();
@@ -1177,7 +1185,7 @@ describe('link-sharing', () => {
           `https://photos.example.com/s/${encodedLinkId}#nomatch`,
         );
 
-        expect(result).toBeNull();
+        expect(result.success).toBe(false);
         // If BlockStatement is removed, code continues to decodeLinkSecret which calls from_base64
         // With proper code, from_base64 is called once (for linkId only)
         expect(spy).toHaveBeenCalledTimes(1);
