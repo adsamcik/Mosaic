@@ -10,7 +10,6 @@ import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { useAnimatedItems } from '../../hooks/useAnimatedItems';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
-import { useGridSelection } from '../../hooks/useGridSelection';
 import { useLightbox } from '../../hooks/useLightbox';
 import { useLightboxPreload } from '../../hooks/useLightboxPreload';
 import { usePhotoDelete } from '../../hooks/usePhotoDelete';

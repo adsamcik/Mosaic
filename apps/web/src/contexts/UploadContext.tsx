@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
-import { getEpochKey } from '../lib/epoch-key-store';
+import { type EpochKeyBundle, getEpochKey } from '../lib/epoch-key-store';
 import { createLogger } from '../lib/logger';
 import { createManifestForUpload } from '../lib/manifest-service';
 import { syncEngine } from '../lib/sync-engine';

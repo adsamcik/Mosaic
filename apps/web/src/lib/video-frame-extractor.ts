@@ -382,10 +382,12 @@ export async function extractVideoFrame(file: File): Promise<VideoFrameResult> {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
     }
-    if (video) {
-      video.pause();
-      video.removeAttribute('src');
-      video.load(); // Reset the element
+    // video is assigned inside the Promise callback, which CFA doesn't track
+    const videoEl = video as HTMLVideoElement | null;
+    if (videoEl) {
+      videoEl.pause();
+      videoEl.removeAttribute('src');
+      videoEl.load(); // Reset the element
       video = null;
     }
     if (blobUrl) {

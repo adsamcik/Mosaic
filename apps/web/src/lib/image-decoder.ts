@@ -204,7 +204,7 @@ export async function createDisplayableUrl(
 ): Promise<{ url: string; mimeType: string }> {
   // Videos don't need format conversion — pass through directly
   if (isVideoMimeType(mimeType)) {
-    const blob = new Blob([data], { type: mimeType });
+    const blob = new Blob([new Uint8Array(data)], { type: mimeType });
     const url = URL.createObjectURL(blob);
     return { url, mimeType };
   }

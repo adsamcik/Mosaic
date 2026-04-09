@@ -240,10 +240,10 @@ describe('album-download-service', () => {
     });
 
     it('falls back to shardIds[2:] for legacy format', async () => {
-      const photo = createMockPhoto({
-        originalShardIds: undefined,
+      const { originalShardIds: _, ...base } = createMockPhoto({
         shardIds: ['thumb-1', 'preview-1', 'legacy-orig-1', 'legacy-orig-2'],
       });
+      const photo: PhotoMeta = base;
 
       await downloadAlbumAsZip({
         albumName: 'Legacy',
@@ -255,10 +255,10 @@ describe('album-download-service', () => {
     });
 
     it('falls back to all shardIds when there are ≤2 shards and no originalShardIds', async () => {
-      const photo = createMockPhoto({
-        originalShardIds: undefined,
+      const { originalShardIds: _, ...base } = createMockPhoto({
         shardIds: ['only-shard'],
       });
+      const photo: PhotoMeta = base;
 
       await downloadAlbumAsZip({
         albumName: 'Minimal',
@@ -314,12 +314,11 @@ describe('album-download-service', () => {
     });
 
     it('uses legacy shard hashes (shardHashes[2:]) when no originalShardHashes', async () => {
-      const photo = createMockPhoto({
-        originalShardIds: undefined,
+      const { originalShardIds: _a, originalShardHashes: _b, ...base } = createMockPhoto({
         shardIds: ['t', 'p', 'o1'],
         shardHashes: ['h-t', 'h-p', 'h-o1'],
-        originalShardHashes: undefined,
       });
+      const photo: PhotoMeta = base;
 
       await downloadAlbumAsZip({
         albumName: 'LegacyHash',
@@ -411,7 +410,6 @@ describe('album-download-service', () => {
       });
 
       // The blob download creates an <a> with download attribute set to the sanitized filename
-      const allAnchors = document.querySelectorAll('a[download]');
       // Verify downloadZip was called (ZIP was created with the sanitized name)
       expect(mockDownloadZip).toHaveBeenCalled();
     });
@@ -455,10 +453,10 @@ describe('album-download-service', () => {
     });
 
     it('falls back to createdAt for lastModified when takenAt is missing', async () => {
-      const photo = createMockPhoto({
-        takenAt: undefined,
+      const { takenAt: _, ...base } = createMockPhoto({
         createdAt: '2024-03-20T08:00:00Z',
       });
+      const photo: PhotoMeta = base;
 
       await downloadAlbumAsZip({
         albumName: 'Dates',
