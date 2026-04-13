@@ -47,23 +47,27 @@ export function isLowMemoryDevice(): boolean {
  * @security This MUST only be used in test environments.
  */
 function isE2EWeakKeysMode(): boolean {
-  // In Vite/browser context, check import.meta.env
-  // Use unknown intermediate cast for TypeScript compatibility
-  if (typeof import.meta !== 'undefined') {
-    const meta = import.meta as unknown as {
-      env?: { PROD?: boolean; VITE_E2E_WEAK_KEYS?: string; DEV?: boolean };
-    };
+  // In Vite/browser context, check import.meta.env directly.
+  // IMPORTANT: Vite statically replaces `import.meta.env.XXXX` at build time,
+  // but ONLY when accessed as a direct property chain — NOT through a variable.
+  try {
+    // Access import.meta.env directly for Vite static replacement.
+    // The 'as any' cast is needed for TypeScript but preserves the direct
+    // property chain that Vite's static analysis requires.
+    const env = (import.meta as any).env;
 
     // Explicit E2E weak keys flag takes precedence — this is set intentionally
     // via build args for Docker test builds (which are production Vite builds)
-    if (meta.env?.VITE_E2E_WEAK_KEYS === 'true') {
+    if (env?.VITE_E2E_WEAK_KEYS === 'true') {
       return true;
     }
 
     // Safety: Never enable in production mode unless explicitly requested above
-    if (meta.env?.PROD) {
+    if (env?.PROD) {
       return false;
     }
+  } catch {
+    // import.meta.env may not exist in all environments
   }
 
   // In Node.js context (e.g., unit tests), check process.env
