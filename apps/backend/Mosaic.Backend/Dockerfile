@@ -16,12 +16,9 @@ RUN dotnet restore -a $TARGETARCH
 COPY . .
 RUN dotnet publish -c Release -a $TARGETARCH --no-restore -o /app/publish
 
-# Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS runtime
+# Runtime stage — use Jammy (Ubuntu 22.04) for broad CI compatibility
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-jammy AS runtime
 WORKDIR /app
-
-# Disable diagnostics to prevent potential SIGSEGV from profiling infrastructure
-ENV DOTNET_EnableDiagnostics=0
 
 # OCI Image Labels (overwritten by docker/metadata-action in CI)
 LABEL org.opencontainers.image.title="Mosaic Backend" \

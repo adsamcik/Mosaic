@@ -61,6 +61,16 @@ jobs:
       - name: Run API integration tests
         run: docker compose -f docker-compose.test.yml run --rm api-tests
       
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "=== Backend Logs ==="
+          docker logs mosaic-test-backend --tail 100 2>&1 || true
+          echo "=== Postgres Logs ==="
+          docker logs mosaic-test-postgres --tail 50 2>&1 || true
+          echo "=== Container Status ==="
+          docker compose -f docker-compose.test.yml ps -a 2>&1 || true
+      
       - name: Upload test results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
@@ -100,6 +110,16 @@ jobs:
           echo "Verifying backend on localhost:5000..."
           curl -sf http://localhost:5000/health || (echo "Backend not accessible" && exit 1)
           echo "All services verified!"
+      
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "=== Backend Logs ==="
+          docker logs mosaic-test-backend --tail 100 2>&1 || true
+          echo "=== Frontend Logs ==="
+          docker logs mosaic-test-frontend --tail 50 2>&1 || true
+          echo "=== Container Status ==="
+          docker compose -f docker-compose.test.yml ps -a 2>&1 || true
       
       # Setup Node.js for Playwright
       - name: Setup Node.js
