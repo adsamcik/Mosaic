@@ -16,8 +16,8 @@ RUN dotnet restore -a $TARGETARCH
 COPY . .
 RUN dotnet publish -c Release -a $TARGETARCH --no-restore -o /app/publish
 
-# Runtime stage — use Jammy (Ubuntu 22.04) for broad CI compatibility
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-jammy AS runtime
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-amd64 AS runtime
 WORKDIR /app
 
 # OCI Image Labels (overwritten by docker/metadata-action in CI)
@@ -53,5 +53,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Set environment variables
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
+ENV DOTNET_EnableDiagnostics=0
+ENV COMPlus_EnableDiagnostics=0
 
 ENTRYPOINT ["dotnet", "Mosaic.Backend.dll"]
