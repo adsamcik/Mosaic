@@ -54,13 +54,15 @@ function isE2EWeakKeysMode(): boolean {
       env?: { PROD?: boolean; VITE_E2E_WEAK_KEYS?: string; DEV?: boolean };
     };
 
-    // Safety: Never enable in production mode
-    if (meta.env?.PROD) {
-      return false;
-    }
-
+    // Explicit E2E weak keys flag takes precedence — this is set intentionally
+    // via build args for Docker test builds (which are production Vite builds)
     if (meta.env?.VITE_E2E_WEAK_KEYS === 'true') {
       return true;
+    }
+
+    // Safety: Never enable in production mode unless explicitly requested above
+    if (meta.env?.PROD) {
+      return false;
     }
   }
 
