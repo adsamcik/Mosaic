@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -16,12 +16,12 @@ namespace Mosaic.Backend.Migrations
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
-                    username = table.Column<string>(type: "text", nullable: false),
+                    username = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
                     challenge = table.Column<byte[]>(type: "bytea", nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     expires_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     is_used = table.Column<bool>(type: "boolean", nullable: false),
-                    ip_address = table.Column<string>(type: "text", nullable: true)
+                    ip_address = table.Column<string>(type: "character varying(45)", maxLength: 45, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -33,8 +33,8 @@ namespace Mosaic.Backend.Migrations
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
-                    auth_sub = table.Column<string>(type: "text", nullable: false),
-                    identity_pubkey = table.Column<string>(type: "text", nullable: false),
+                    auth_sub = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    identity_pubkey = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     is_admin = table.Column<bool>(type: "boolean", nullable: false),
                     encrypted_salt = table.Column<byte[]>(type: "bytea", nullable: true),
@@ -43,7 +43,8 @@ namespace Mosaic.Backend.Migrations
                     account_salt = table.Column<byte[]>(type: "bytea", nullable: true),
                     wrapped_account_key = table.Column<byte[]>(type: "bytea", nullable: true),
                     wrapped_identity_seed = table.Column<byte[]>(type: "bytea", nullable: true),
-                    auth_pubkey = table.Column<string>(type: "text", nullable: true)
+                    auth_pubkey = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    row_version = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -60,10 +61,11 @@ namespace Mosaic.Backend.Migrations
                     current_version = table.Column<long>(type: "bigint", nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    encrypted_name = table.Column<string>(type: "text", nullable: true),
-                    encrypted_description = table.Column<string>(type: "text", nullable: true),
+                    encrypted_name = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    encrypted_description = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: true),
                     expires_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    expiration_warning_days = table.Column<int>(type: "integer", nullable: false)
+                    expiration_warning_days = table.Column<int>(type: "integer", nullable: false),
+                    row_version = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -87,9 +89,9 @@ namespace Mosaic.Backend.Migrations
                     last_seen_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     expires_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     revoked_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    user_agent = table.Column<string>(type: "text", nullable: true),
-                    ip_address = table.Column<string>(type: "text", nullable: true),
-                    device_name = table.Column<string>(type: "text", nullable: true)
+                    user_agent = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    ip_address = table.Column<string>(type: "character varying(45)", maxLength: 45, nullable: true),
+                    device_name = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -108,11 +110,12 @@ namespace Mosaic.Backend.Migrations
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
                     uploader_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    storage_key = table.Column<string>(type: "text", nullable: false),
+                    storage_key = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
                     size_bytes = table.Column<long>(type: "bigint", nullable: false),
                     status = table.Column<string>(type: "text", nullable: false),
                     status_updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    pending_expires_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                    pending_expires_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    sha256 = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -129,8 +132,8 @@ namespace Mosaic.Backend.Migrations
                 name: "system_settings",
                 columns: table => new
                 {
-                    key = table.Column<string>(type: "text", nullable: false),
-                    value = table.Column<string>(type: "text", nullable: false),
+                    key = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    value = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: false),
                     updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     updated_by = table.Column<Guid>(type: "uuid", nullable: true)
                 },
@@ -168,6 +171,29 @@ namespace Mosaic.Backend.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "album_contents",
+                columns: table => new
+                {
+                    album_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    encrypted_content = table.Column<byte[]>(type: "bytea", nullable: false),
+                    nonce = table.Column<byte[]>(type: "bytea", nullable: false),
+                    epoch_id = table.Column<int>(type: "integer", nullable: false),
+                    version = table.Column<long>(type: "bigint", nullable: false),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("p_k_album_contents", x => x.album_id);
+                    table.ForeignKey(
+                        name: "f_k_album_contents_albums_album_id",
+                        column: x => x.album_id,
+                        principalTable: "albums",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "album_limits",
                 columns: table => new
                 {
@@ -195,7 +221,7 @@ namespace Mosaic.Backend.Migrations
                 {
                     album_id = table.Column<Guid>(type: "uuid", nullable: false),
                     user_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    role = table.Column<string>(type: "text", nullable: false),
+                    role = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
                     invited_by = table.Column<Guid>(type: "uuid", nullable: true),
                     joined_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     revoked_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
@@ -263,10 +289,11 @@ namespace Mosaic.Backend.Migrations
                     version_created = table.Column<long>(type: "bigint", nullable: false),
                     is_deleted = table.Column<bool>(type: "boolean", nullable: false),
                     encrypted_meta = table.Column<byte[]>(type: "bytea", nullable: false),
-                    signature = table.Column<string>(type: "text", nullable: false),
-                    signer_pubkey = table.Column<string>(type: "text", nullable: false),
+                    signature = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    signer_pubkey = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    row_version = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -311,7 +338,8 @@ namespace Mosaic.Backend.Migrations
                 {
                     manifest_id = table.Column<Guid>(type: "uuid", nullable: false),
                     shard_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    chunk_index = table.Column<int>(type: "integer", nullable: false)
+                    chunk_index = table.Column<int>(type: "integer", nullable: false),
+                    tier = table.Column<int>(type: "integer", nullable: false, defaultValue: 3)
                 },
                 constraints: table =>
                 {
@@ -423,7 +451,13 @@ namespace Mosaic.Backend.Migrations
             migrationBuilder.CreateIndex(
                 name: "i_x_sessions_token_hash",
                 table: "sessions",
-                column: "token_hash");
+                column: "token_hash",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "i_x_sessions_token_hash_expires_at",
+                table: "sessions",
+                columns: new[] { "token_hash", "expires_at" });
 
             migrationBuilder.CreateIndex(
                 name: "i_x_sessions_user_id",
@@ -467,6 +501,9 @@ namespace Mosaic.Backend.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "album_contents");
+
             migrationBuilder.DropTable(
                 name: "album_limits");
 
