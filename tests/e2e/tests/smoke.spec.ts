@@ -64,6 +64,20 @@ test.describe('Smoke Tests @smoke @p0 @fast', () => {
     await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, username);
 
     // Verify app shell loads (crypto initialized successfully)
+    // Add diagnostic logging for CI debugging
+    const appShellVisible = await page.getByTestId('app-shell').isVisible().catch(() => false);
+    if (!appShellVisible) {
+      // Capture page state for debugging
+      const url = page.url();
+      const bodyText = await page.locator('body').innerText().catch(() => 'FAILED TO GET BODY');
+      const consoleErrors = await page.evaluate(() => {
+        return (window as any).__testConsoleErrors?.slice(-5) ?? [];
+      }).catch(() => []);
+      console.log(`[SMOKE-1 DEBUG] URL: ${url}`);
+      console.log(`[SMOKE-1 DEBUG] Page text (first 500): ${bodyText.substring(0, 500)}`);
+      console.log(`[SMOKE-1 DEBUG] Console errors: ${JSON.stringify(consoleErrors)}`);
+    }
+
     await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
     // Verify app shell has critical elements

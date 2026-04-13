@@ -175,9 +175,9 @@ export default defineConfig({
         launchOptions: {
           args: CHROME_ARGS,
         },
-        // Faster settings for smoke tests
+        // Enable screenshots on failure for CI debugging
         trace: 'off',
-        screenshot: 'off',
+        screenshot: 'only-on-failure',
         video: 'off',
       },
       retries: 0, // No retries for smoke - fail fast

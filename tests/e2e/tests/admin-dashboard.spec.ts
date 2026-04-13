@@ -12,6 +12,13 @@ test.describe('Admin Dashboard @p1 @ui @admin', () => {
 
   test('admin page loads successfully', async ({ testContext }) => {
     const user = await testContext.createAuthenticatedUser('admin');
+
+    // Debug: capture page state before and after login attempt
+    await user.page.goto('/');
+    const urlBefore = user.page.url();
+    const bodyBefore = await user.page.locator('body').innerText().catch(() => 'EMPTY');
+    console.log(`[ADMIN DEBUG] Before login - URL: ${urlBefore}, Body (100): ${bodyBefore.substring(0, 100)}`);
+
     await loginUser(user);
 
     const appShell = new AppShell(user.page);
