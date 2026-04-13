@@ -366,6 +366,7 @@ public class TestSeedController : ControllerBase
                 WrappedAccountKey = request.WrappedAccountKey,
                 UserSalt = FromBase64Url(request.UserSalt) ?? RandomNumberGenerator.GetBytes(16),
                 AccountSalt = FromBase64Url(request.AccountSalt) ?? RandomNumberGenerator.GetBytes(16),
+                IsAdmin = true, // E2E test users get admin for full feature coverage
                 CreatedAt = DateTime.UtcNow
             };
 
