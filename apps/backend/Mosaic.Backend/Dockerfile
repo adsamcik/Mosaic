@@ -3,17 +3,18 @@
 # Mosaic Backend - .NET 10 ASP.NET Core API
 # Multi-stage build for optimized production image
 
-# Build stage
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# Build stage — use build platform for fast native compilation
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG TARGETARCH
 WORKDIR /src
 
-# Copy project file and restore dependencies
+# Copy project file and restore dependencies for target architecture
 COPY Mosaic.Backend.csproj ./
-RUN dotnet restore
+RUN dotnet restore -a $TARGETARCH
 
-# Copy source and build
+# Copy source and publish for target architecture
 COPY . .
-RUN dotnet publish -c Release -o /app/publish --no-restore
+RUN dotnet publish -c Release -a $TARGETARCH --no-restore -o /app/publish
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
