@@ -366,8 +366,9 @@ public partial class AuthController : ControllerBase
 
         // After the first user is created, registration requires admin authentication.
         // The first registration (bootstrap) remains public so the initial admin can be created.
+        // Exception: in Testing environment, registration is always open for E2E test automation.
         var isFirstUser = !await _db.Users.AnyAsync();
-        if (!isFirstUser)
+        if (!isFirstUser && !_env.IsEnvironment("Testing"))
         {
             var authSub = HttpContext.Items["AuthSub"] as string;
             if (string.IsNullOrEmpty(authSub))
