@@ -4,7 +4,7 @@
 # Multi-stage build for optimized production image
 
 # Build stage
-FROM mcr.microsoft.com/dotnet/sdk:10.0-preview AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy project file and restore dependencies
@@ -16,7 +16,7 @@ COPY . .
 RUN dotnet publish -c Release -o /app/publish --no-restore
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-preview AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 # OCI Image Labels (overwritten by docker/metadata-action in CI)
