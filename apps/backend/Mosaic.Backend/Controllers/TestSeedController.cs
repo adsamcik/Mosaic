@@ -269,6 +269,32 @@ public class TestSeedController : ControllerBase
     }
 
     /// <summary>
+    /// Promotes a user to admin for E2E testing purposes.
+    /// Users registered via the UI don't get IsAdmin because pool users already exist.
+    /// </summary>
+    /// <param name="email">The email (AuthSub) of the user to promote.</param>
+    /// <returns>The promoted user's email and admin status.</returns>
+    /// <response code="200">User was promoted to admin.</response>
+    /// <response code="404">Environment is not Development/Testing or user not found.</response>
+    [HttpPost("promote-admin/{email}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> PromoteAdmin(string email)
+    {
+        if (!IsTestEnvironment()) return NotFound();
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == email);
+        if (user == null) return NotFound(new ErrorResponse("User not found"));
+
+        user.IsAdmin = true;
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Promoted E2E test user to admin: {Email}", email);
+
+        return Ok(new { email = user.AuthSub, isAdmin = true });
+    }
+
+    /// <summary>
     /// Expires a share link immediately for E2E testing purposes.
     /// Sets the ExpiresAt to 1 hour in the past.
     /// </summary>

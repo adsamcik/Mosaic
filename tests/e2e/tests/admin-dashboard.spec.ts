@@ -7,6 +7,14 @@
 
 import { test, expect, loginUser, createAlbumViaUI } from '../fixtures-enhanced';
 import { AppShell, AdminPage } from '../page-objects';
+import { API_URL } from '../framework';
+
+async function promoteToAdmin(email: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/test-seed/promote-admin/${encodeURIComponent(email)}`, { method: 'POST' });
+  if (!response.ok) {
+    throw new Error(`Failed to promote ${email} to admin: ${response.status}`);
+  }
+}
 
 test.describe('Admin Dashboard @p1 @ui @admin', () => {
 
@@ -15,6 +23,10 @@ test.describe('Admin Dashboard @p1 @ui @admin', () => {
     await loginUser(user);
 
     const appShell = new AppShell(user.page);
+    await appShell.waitForLoad();
+
+    await promoteToAdmin(user.email);
+    await user.page.reload();
     await appShell.waitForLoad();
 
     await appShell.openAdmin();
@@ -33,6 +45,11 @@ test.describe('Admin Dashboard @p1 @ui @admin', () => {
 
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
+
+    await promoteToAdmin(user.email);
+    await user.page.reload();
+    await appShell.waitForLoad();
+
     await appShell.openAdmin();
 
     const adminPage = new AdminPage(user.page);
@@ -64,6 +81,11 @@ test.describe('Admin Dashboard @p1 @ui @admin', () => {
 
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
+
+    await promoteToAdmin(user.email);
+    await user.page.reload();
+    await appShell.waitForLoad();
+
     await appShell.openAdmin();
 
     const adminPage = new AdminPage(user.page);
@@ -96,6 +118,10 @@ test.describe('Admin Dashboard @p1 @ui @admin', () => {
     await loginUser(user);
 
     const appShell = new AppShell(user.page);
+    await appShell.waitForLoad();
+
+    await promoteToAdmin(user.email);
+    await user.page.reload();
     await appShell.waitForLoad();
 
     // Create an album via UI first
@@ -135,6 +161,11 @@ test.describe('Admin Dashboard @p1 @ui @admin', () => {
 
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
+
+    await promoteToAdmin(user.email);
+    await user.page.reload();
+    await appShell.waitForLoad();
+
     await appShell.openAdmin();
 
     const adminPage = new AdminPage(user.page);
@@ -175,6 +206,11 @@ test.describe('Admin Dashboard @p1 @ui @admin', () => {
 
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
+
+    await promoteToAdmin(user.email);
+    await user.page.reload();
+    await appShell.waitForLoad();
+
     await appShell.openAdmin();
 
     const adminPage = new AdminPage(user.page);
