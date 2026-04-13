@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.EpochKeys;
 using Mosaic.Backend.Services;
@@ -514,7 +514,7 @@ public class EpochKeysControllerTests
     }
 
     [Fact]
-    public async Task Rotate_ReturnsNotFound_WhenNonOwnerTries()
+    public async Task Rotate_ReturnsForbid_WhenNonOwnerTries()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -548,8 +548,8 @@ public class EpochKeysControllerTests
         // Act
         var result = await controller.Rotate(album.Id, 2, request);
 
-        // Assert â€” non-owners get 404 to prevent album enumeration
-        Assert.IsType<NotFoundResult>(result);
+        // Assert â€” non-owners get 403
+        Assert.IsType<ForbidResult>(result);
     }
 
     [Fact]

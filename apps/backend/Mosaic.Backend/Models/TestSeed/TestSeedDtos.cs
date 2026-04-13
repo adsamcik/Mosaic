@@ -1,4 +1,3 @@
-#if DEBUG
 namespace Mosaic.Backend.Models.TestSeed;
 
 /// <summary>
@@ -89,4 +88,3 @@ public record CreateAuthenticatedUserResponse(
     string AccountSalt,
     string SessionToken
 );
-#endif

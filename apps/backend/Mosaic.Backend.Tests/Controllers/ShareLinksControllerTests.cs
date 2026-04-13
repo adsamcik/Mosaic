@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.ShareLinks;
 using Mosaic.Backend.Data.Entities;
@@ -187,7 +187,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task Create_ReturnsNotFound_WhenUserIsNotOwner()
+    public async Task Create_ReturnsForbid_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -212,9 +212,8 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.Create(album.Id, request);
 
-        // Assert — non-owners get 404 to prevent album enumeration
-        var objectResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(404, objectResult.StatusCode);
+        // Assert — non-owners get 403
+        Assert.IsType<ForbidResult>(result);
     }
 
     [Fact]
@@ -498,7 +497,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task List_ReturnsNotFound_WhenUserIsNotOwner()
+    public async Task List_ReturnsForbid_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -521,9 +520,8 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.List(album.Id);
 
-        // Assert — non-owners get 404 to prevent album enumeration
-        var objectResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(404, objectResult.StatusCode);
+        // Assert — non-owners get 403
+        Assert.IsType<ForbidResult>(result);
     }
 
     #endregion
@@ -683,7 +681,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task ListWithSecrets_ReturnsNotFound_WhenUserIsNotOwner()
+    public async Task ListWithSecrets_ReturnsForbid_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -705,9 +703,8 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.ListWithSecrets(album.Id);
 
-        // Assert — non-owners get 404 to prevent album enumeration
-        var objectResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(404, objectResult.StatusCode);
+        // Assert — non-owners get 403
+        Assert.IsType<ForbidResult>(result);
     }
 
     #endregion
@@ -771,7 +768,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task Revoke_ReturnsNotFound_WhenUserIsNotOwner()
+    public async Task Revoke_ReturnsForbid_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -794,9 +791,9 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.Revoke(shareLink.Id);
 
-        // Assert — non-owners get 404 to prevent album/link enumeration
+        // Assert — non-owners get 403
         var objectResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(404, objectResult.StatusCode);
+        Assert.Equal(403, objectResult.StatusCode);
     }
 
     #endregion
@@ -916,7 +913,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task AddEpochKeys_ReturnsNotFound_WhenUserIsNotOwner()
+    public async Task AddEpochKeys_ReturnsForbid_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -947,9 +944,9 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.AddEpochKeys(shareLink.Id, request);
 
-        // Assert — non-owners get 404 to prevent album/link enumeration
+        // Assert — non-owners get 403
         var objectResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(404, objectResult.StatusCode);
+        Assert.Equal(403, objectResult.StatusCode);
     }
 
     [Fact]
@@ -1989,7 +1986,7 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
-    public async Task UpdateLinkExpiration_ReturnsNotFound_WhenUserIsNotOwner()
+    public async Task UpdateLinkExpiration_ReturnsForbid_WhenUserIsNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -2015,9 +2012,8 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.UpdateLinkExpiration(album.Id, linkIdBase64, request);
 
-        // Assert — non-owners get 404 to prevent album enumeration
-        var objectResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(404, objectResult.StatusCode);
+        // Assert — non-owners get 403
+        Assert.IsType<ForbidResult>(result);
     }
 
     [Fact]

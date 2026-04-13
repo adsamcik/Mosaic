@@ -273,8 +273,8 @@ public class ShareLinksController : ControllerBase
         if (shareLink.Album.OwnerId != user.Id)
         {
             return Problem(
-                detail: "Share link not found",
-                statusCode: StatusCodes.Status404NotFound);
+                detail: "Not authorized to revoke this share link",
+                statusCode: StatusCodes.Status403Forbidden);
         }
 
         shareLink.IsRevoked = true;
@@ -381,8 +381,8 @@ public class ShareLinksController : ControllerBase
         if (shareLink.Album.OwnerId != user.Id)
         {
             return Problem(
-                detail: "Share link not found",
-                statusCode: StatusCodes.Status404NotFound);
+                detail: "Not authorized to manage this share link",
+                statusCode: StatusCodes.Status403Forbidden);
         }
         if (shareLink.IsRevoked)
         {

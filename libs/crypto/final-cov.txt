@@ -1,0 +1,98 @@
+
+[1m[46m RUN [49m[22m [36mv4.0.17 [39m[90mC:/Users/adam-/GitHub/Mosaic/libs/crypto[39m
+      [2mCoverage enabled with [22m[33mv8[39m
+
+stderr | tests/keychain.test.ts > keychain > default Argon2 params branch coverage > deriveKeys uses default params when not provided
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+ [32mÔ£ô[39m tests/link-sharing.test.ts [2m([22m[2m75 tests[22m[2m)[22m[33m 422[2mms[22m[39m
+stderr | tests/keychain.test.ts > keychain > default Argon2 params branch coverage > deriveKeys uses default params when not provided
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+stderr | tests/keychain.test.ts > keychain > default Argon2 params branch coverage > deriveKeysInternal uses default params when not provided
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+stderr | tests/keychain.test.ts > keychain > default Argon2 params branch coverage > unwrapAccountKey uses default params when not provided
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+stderr | tests/keychain.test.ts > keychain > default Argon2 params branch coverage > unwrapAccountKey uses default params when not provided
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+stderr | tests/keychain.test.ts > keychain > default Argon2 params branch coverage > rewrapAccountKey uses default params when not provided
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+stderr | tests/keychain.test.ts > keychain > default Argon2 params branch coverage > rewrapAccountKey uses default params when not provided
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+stderr | tests/keychain.test.ts > keychain > default Argon2 params branch coverage > rewrapAccountKey uses default params when not provided
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+ [32mÔ£ô[39m tests/auth.test.ts [2m([22m[2m57 tests[22m[2m)[22m[33m 1801[2mms[22m[39m
+     [33m[2mÔ£ô[22m[39m uses default params when not provided [33m 1332[2mms[22m[39m
+stderr | tests/integration.test.ts > integration: user registration flow > derives and unwraps consistent account key
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+ [32mÔ£ô[39m tests/keychain.test.ts [2m([22m[2m42 tests[22m[2m)[22m[33m 1047[2mms[22m[39m
+stderr | tests/integration.test.ts > integration: user registration flow > derives different keys with different passwords
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+stderr | tests/integration.test.ts > integration: user registration flow > derives identity keypair from account key
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+stderr | tests/integration.test.ts > integration: album creation and photo upload
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+ [32mÔ£ô[39m tests/utils.test.ts [2m([22m[2m27 tests[22m[2m)[22m[33m 517[2mms[22m[39m
+       [33m[2mÔ£ô[22m[39m produces consistent hashes [33m 367[2mms[22m[39m
+ [32mÔ£ô[39m tests/identity.test.ts [2m([22m[2m31 tests[22m[2m)[22m[32m 214[2mms[22m[39m
+ [32mÔ£ô[39m tests/sharing.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 308[2mms[22m[39m
+ [32mÔ£ô[39m tests/content.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 6613[2mms[22m[39m
+     [33m[2mÔ£ô[22m[39m handles large content [33m 6451[2mms[22m[39m
+ [32mÔ£ô[39m tests/epochs.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 98[2mms[22m[39m
+ [32mÔ£ô[39m tests/keybox.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 90[2mms[22m[39m
+ [32mÔ£ô[39m tests/signer.test.ts [2m([22m[2m56 tests[22m[2m)[22m[32m 170[2mms[22m[39m
+ [32mÔ£ô[39m tests/memory.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+stderr | tests/integration.test.ts > integration: album sharing between users
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+stderr | tests/integration.test.ts > integration: epoch key rotation
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+ [32mÔ£ô[39m tests/envelope.test.ts [2m([22m[2m52 tests[22m[2m | [22m[33m2 skipped[39m[2m)[22m[33m 11482[2mms[22m[39m
+       [33m[2mÔ£ô[22m[39m generates 10,000 unique nonces via randomBytes [33m 7486[2mms[22m[39m
+       [33m[2mÔ£ô[22m[39m generates unique nonces with identical parameters (same epochId, shardId, tier) [33m 2020[2mms[22m[39m
+       [33m[2mÔ£ô[22m[39m concurrent encryptions produce unique nonces [33m 891[2mms[22m[39m
+stderr | tests/integration.test.ts > integration: complete photo lifecycle > simulates full photo upload ÔåÆ sync ÔåÆ view flow
+[CRYPTO] ÔÜá´©Å WEAK KEYS MODE ENABLED - Using minimal Argon2 parameters. This provides NO security and should ONLY be used for E2E testing.
+
+ [32mÔ£ô[39m tests/integration.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 14081[2mms[22m[39m
+     [33m[2mÔ£ô[22m[39m encrypts and decrypts photo shards [33m 4872[2mms[22m[39m
+     [33m[2mÔ£ô[22m[39m encrypts multiple shards for a large photo [33m 4104[2mms[22m[39m
+     [33m[2mÔ£ô[22m[39m simulates full photo upload ÔåÆ sync ÔåÆ view flow [33m 4328[2mms[22m[39m
+ [32mÔ£ô[39m tests/security-invariants.test.ts [2m([22m[2m46 tests[22m[2m)[22m[33m 15175[2mms[22m[39m
+     [33m[2mÔ£ô[22m[39m generates unique nonces across many encryptions with same key [33m 14646[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m14 passed[39m[22m[90m (14)[39m
+[2m      Tests [22m [1m[32m490 passed[39m[22m[2m | [22m[33m2 skipped[39m[90m (492)[39m
+[2m   Start at [22m 16:01:01
+[2m   Duration [22m 21.68s[2m (transform 18.65s, setup 0ms, import 25.08s, tests 52.05s, environment 5ms)[22m
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-----------------|---------|----------|---------|---------|-------------------
+File             | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-----------------|---------|----------|---------|---------|-------------------
+All files        |     100 |    99.44 |     100 |     100 |                   
+ auth.ts         |     100 |      100 |     100 |     100 |                   
+ content.ts      |     100 |      100 |     100 |     100 |                   
+ envelope.ts     |     100 |      100 |     100 |     100 |                   
+ epochs.ts       |     100 |      100 |     100 |     100 |                   
+ identity.ts     |     100 |      100 |     100 |     100 |                   
+ keybox.ts       |     100 |      100 |     100 |     100 |                   
+ keychain.ts     |     100 |      100 |     100 |     100 |                   
+ link-sharing.ts |     100 |    96.42 |     100 |     100 | 310               
+ memory.ts       |     100 |      100 |     100 |     100 |                   
+ sharing.ts      |     100 |      100 |     100 |     100 |                   
+ signer.ts       |     100 |      100 |     100 |     100 |                   
+ types.ts        |     100 |      100 |     100 |     100 |                   
+ utils.ts        |     100 |      100 |     100 |     100 |                   
+-----------------|---------|----------|---------|---------|-------------------

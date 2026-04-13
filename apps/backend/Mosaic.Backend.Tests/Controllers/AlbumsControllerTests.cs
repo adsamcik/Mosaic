@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.Albums;
 using Mosaic.Backend.Tests.Helpers;
@@ -393,7 +393,7 @@ public class AlbumsControllerTests
     }
 
     [Fact]
-    public async Task Delete_ReturnsNotFound_WhenNotOwner()
+    public async Task Delete_ReturnsForbid_WhenNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -416,8 +416,8 @@ public class AlbumsControllerTests
         // Act
         var result = await controller.Delete(album.Id);
 
-        // Assert â€” non-owners get 404 to prevent album enumeration
-        Assert.IsType<NotFoundResult>(result);
+        // Assert â€” non-owners get 403
+        Assert.IsType<ForbidResult>(result);
     }
 
     [Fact]
@@ -857,7 +857,7 @@ public class AlbumsControllerTests
     }
 
     [Fact]
-    public async Task UpdateExpiration_ReturnsNotFound_WhenNotOwner()
+    public async Task UpdateExpiration_ReturnsForbid_WhenNotOwner()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -882,8 +882,8 @@ public class AlbumsControllerTests
         // Act
         var result = await controller.UpdateExpiration(album.Id, request);
 
-        // Assert â€” non-owners get 404 to prevent album enumeration
-        Assert.IsType<NotFoundResult>(result);
+        // Assert â€” non-owners get 403
+        Assert.IsType<ForbidResult>(result);
     }
 
     [Fact]

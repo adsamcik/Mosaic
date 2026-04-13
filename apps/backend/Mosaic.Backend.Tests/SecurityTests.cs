@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.Albums;
@@ -251,8 +251,8 @@ public class SecurityTests
         // Act - UserB tries to remove UserC
         var result = await controller.Remove(album.Id, memberC.Id);
 
-        // Assert - Only owner can remove members; non-owners get 404 to prevent enumeration
-        Assert.IsType<NotFoundResult>(result);
+        // Assert - Only owner can remove members; non-owners get 403
+        Assert.IsType<ForbidResult>(result);
     }
 
     [Fact]
@@ -642,9 +642,8 @@ public class SecurityTests
         // Act
         var result = await controller.Create(album.Id, request);
 
-        // Assert - Only owner can create share links; non-owners get 404 to prevent enumeration
-        var objectResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(404, objectResult.StatusCode);
+        // Assert - Only owner can create share links; non-owners get 403
+        Assert.IsType<ForbidResult>(result);
     }
 
     [Fact]

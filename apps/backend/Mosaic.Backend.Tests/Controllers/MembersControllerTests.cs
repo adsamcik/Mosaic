@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.Members;
 using Mosaic.Backend.Tests.Helpers;
@@ -521,7 +521,7 @@ public class MembersControllerTests
     }
 
     [Fact]
-    public async Task Remove_ReturnsNotFound_WhenNonOwnerTries()
+    public async Task Remove_ReturnsForbid_WhenNonOwnerTries()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -546,8 +546,8 @@ public class MembersControllerTests
         // Act
         var result = await controller.Remove(album.Id, member.Id);
 
-        // Assert â€” non-owners get 404 to prevent album enumeration
-        Assert.IsType<NotFoundResult>(result);
+        // Assert â€” non-owners get 403
+        Assert.IsType<ForbidResult>(result);
     }
 
     [Fact]
