@@ -77,7 +77,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
 
   if (loading) {
     return (
-      <div className="admin-page loading">
+      <div className="admin-page loading" data-testid="admin-page">
         <div className="loading-spinner" />
         <p>Loading admin panel...</p>
       </div>
@@ -86,7 +86,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
 
   if (error) {
     return (
-      <div className="admin-page error">
+      <div className="admin-page error" data-testid="admin-page">
         <h2>Error</h2>
         <p>{error}</p>
         <div className="error-actions">

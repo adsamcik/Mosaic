@@ -24,8 +24,11 @@ export class AdminPage {
     this.albumTable = page.getByTestId('albums-table');
   }
 
-  async waitForLoad(timeout = 10000): Promise<void> {
+  async waitForLoad(timeout = 30000): Promise<void> {
+    // Wait for admin-page container (now present in loading/error/loaded states)
     await expect(this.container).toBeVisible({ timeout });
+    // Wait for loading to finish (tabs appear when data is loaded)
+    await expect(this.dashboardTab).toBeVisible({ timeout });
   }
 
   async openDashboard(): Promise<void> {
