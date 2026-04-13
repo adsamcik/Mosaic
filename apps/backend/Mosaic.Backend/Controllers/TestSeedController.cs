@@ -1,3 +1,4 @@
+#if DEBUG
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -7,8 +8,6 @@ using Mosaic.Backend.Data.Entities;
 using System.Text.Json;
 
 namespace Mosaic.Backend.Controllers;
-
-#if DEBUG
 /// <summary>
 /// E2E test seeding controller for managing test users and data.
 /// This controller is ONLY available when ASPNETCORE_ENVIRONMENT is "Development" or "Testing".
