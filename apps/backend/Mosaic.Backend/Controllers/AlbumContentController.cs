@@ -98,7 +98,7 @@ public class AlbumContentController : ControllerBase
         }
 
         // Check user is owner or editor
-        var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id, new NotFoundResult());
+        var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
         if (memberError != null) return memberError;
 
         // Get or create content

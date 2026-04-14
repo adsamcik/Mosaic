@@ -219,6 +219,14 @@ test.describe('Album Content API @p1 @album', () => {
       const owner = await testContext.createAuthenticatedUser('content-owner');
       await loginUser(owner, TEST_PASSWORD);
       const album = await createAlbumViaAPI(owner.email, testContext.generateAlbumName('OwnerOnly'));
+      expect(album.id, 'Album should have been created with a valid ID').toBeTruthy();
+
+      // Verify the album is accessible by the owner before testing non-owner access
+      const verifyResponse = await owner.page.request.get(
+        `${API_URL}/api/albums/${album.id}`,
+        { headers: { 'Remote-User': owner.email } }
+      );
+      expect(verifyResponse.status(), 'Album should exist and be accessible by owner').toBe(200);
 
       // Try to update with different user
       const other = await testContext.createAuthenticatedUser('not-owner');
@@ -245,7 +253,15 @@ test.describe('Album Content API @p1 @album', () => {
         }
       );
 
-      expect(response.status()).toBe(403);
+      const status = response.status();
+      if (status !== 403) {
+        const body = await response.text();
+        throw new Error(
+          `Expected 403 Forbidden but got ${status}. Album ID: ${album.id}, ` +
+          `Owner: ${owner.email}, Requester: ${other.email}, Response: ${body}`
+        );
+      }
+      expect(status).toBe(403);
     });
 
     test('validates nonce length (must be 24 bytes)', async ({ testContext }) => {
