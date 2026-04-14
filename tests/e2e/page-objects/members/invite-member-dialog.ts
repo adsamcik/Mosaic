@@ -61,6 +61,19 @@ export class InviteMemberDialog {
     await this.setUserId(userId);
     await this.setRole(role);
     await this.submit();
-    await this.waitForClose(30000);
+
+    // Extended 60s timeout for CI Docker where crypto key generation is slow
+    try {
+      await this.waitForClose(60000);
+    } catch (closeError) {
+      // Before re-throwing timeout, check if an error message is displayed
+      const hasError = await this.errorMessage.isVisible().catch(() => false);
+      if (hasError) {
+        const errorText = await this.errorMessage.textContent();
+        throw new Error(`Invite failed with error: ${errorText}`);
+      }
+      // No error visible — genuine timeout
+      throw closeError;
+    }
   }
 }
