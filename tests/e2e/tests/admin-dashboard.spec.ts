@@ -60,6 +60,9 @@ async function loginAsAdmin(user: AuthenticatedUser): Promise<void> {
 }
 
 test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
+  // Run admin tests serially — they make heavy admin API calls that
+  // overwhelm the Docker backend when running in parallel
+  test.describe.configure({ mode: 'serial' });
 
   test('admin page loads successfully', async ({ testContext }) => {
     const user = await testContext.createAuthenticatedUser('admin');
