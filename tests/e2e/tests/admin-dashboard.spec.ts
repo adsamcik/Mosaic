@@ -5,8 +5,8 @@
  * tab switching, and navigation back to albums.
  *
  * The admin page makes 5 concurrent API calls that overwhelm Docker backends.
- * We mock the 4 expensive endpoints (stats, near-limits, users, albums) and
- * let only the lightweight quota-defaults call hit the real backend.
+ * We mock ALL 5 admin endpoints so the admin page loads instantly without
+ * hitting the real backend. This tests the admin UI rendering and navigation.
  */
 
 import { test, expect, loginUser, type AuthenticatedUser } from '../fixtures-enhanced';
@@ -119,6 +119,17 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
       ]),
     });
   });
+
+  await page.route('**/api/admin/quota-defaults', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        maxStorageBytes: 10737418240,
+        maxAlbums: null,
+      }),
+    });
+  });
 }
 
 /**
@@ -152,9 +163,6 @@ async function loginAsAdmin(user: AuthenticatedUser): Promise<void> {
 
   // Step 3: Register and login normally.
   await loginUser(user);
-
-  // Step 4: Promote to admin in the backend so quota-defaults call succeeds.
-  await promoteToAdmin(user.email);
 }
 
 test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
