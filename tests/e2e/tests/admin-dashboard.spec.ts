@@ -36,20 +36,9 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
   const albumId = '00000000-0000-0000-0000-000000000002';
   const now = new Date().toISOString();
 
-  await page.route('**/api/admin/stats', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        totalUsers: 3,
-        totalAlbums: 5,
-        totalPhotos: 42,
-        totalStorageBytes: 1024 * 1024 * 100,
-      }),
-    });
-  });
-
-  await page.route('**/api/admin/near-limits', async (route) => {
+  // Register near-limits BEFORE stats — Playwright matches routes in order,
+  // and **/api/admin/stats would also match **/api/admin/stats/near-limits
+  await page.route('**/api/admin/stats/near-limits', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -58,6 +47,24 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
         usersNearAlbumLimit: [],
         albumsNearPhotoLimit: [],
         albumsNearSizeLimit: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/admin/stats', async (route) => {
+    // Skip if this is actually the near-limits endpoint (shouldn't happen
+    // because it's registered above, but guard anyway)
+    if (route.request().url().includes('near-limits')) {
+      return route.continue();
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        totalUsers: 3,
+        totalAlbums: 5,
+        totalPhotos: 42,
+        totalStorageBytes: 1024 * 1024 * 100,
       }),
     });
   });
@@ -120,7 +127,7 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
     });
   });
 
-  await page.route('**/api/admin/quota-defaults', async (route) => {
+  await page.route('**/api/admin/settings/quota', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
