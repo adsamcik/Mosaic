@@ -5,30 +5,57 @@
  * tab switching, and navigation back to albums.
  */
 
-import { test, expect, loginUser, createAlbumViaUI } from '../fixtures-enhanced';
-import { AppShell, AdminPage } from '../page-objects';
+import { test, expect, loginUser, createAlbumViaUI, TEST_PASSWORD, type AuthenticatedUser } from '../fixtures-enhanced';
+import { AppShell, AdminPage, LoginPage } from '../page-objects';
 import { API_URL } from '../framework';
 
 /**
- * Create a test user in the backend via test-seed API and promote to admin.
- * This ensures the user has IsAdmin=true BEFORE login, so the frontend
- * sees admin status from the first /api/users/me response.
+ * Promote a user to admin via the test-seed API.
  */
-async function ensureAdminUser(email: string): Promise<void> {
-  // Create user via test-seed (idempotent - returns 409 if exists)
-  await fetch(`${API_URL}/api/test-seed/create-user`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, authMode: 'local' }),
-  });
-
-  // Promote to admin
-  const promoteResponse = await fetch(
+async function promoteToAdmin(email: string): Promise<void> {
+  const response = await fetch(
     `${API_URL}/api/test-seed/promote-admin/${encodeURIComponent(email)}`,
     { method: 'POST' },
   );
-  if (!promoteResponse.ok) {
-    throw new Error(`Failed to promote ${email} to admin: ${promoteResponse.status}`);
+  if (!response.ok) {
+    throw new Error(`Failed to promote ${email} to admin: ${response.status}`);
+  }
+}
+
+/**
+ * Login normally (register the user), promote to admin via backend API,
+ * then reload so the frontend picks up isAdmin=true from /api/users/me.
+ * Handles re-login after reload for both LocalAuth and ProxyAuth modes.
+ */
+async function loginAsAdmin(user: AuthenticatedUser): Promise<void> {
+  // Step 1: Register and login normally (user doesn't exist yet)
+  await loginUser(user);
+
+  // Step 2: Promote to admin in the backend
+  await promoteToAdmin(user.email);
+
+  // Step 3: Reload to pick up isAdmin from /api/users/me
+  await user.page.reload();
+
+  const loginForm = user.page.getByTestId('login-form');
+  const appShell = user.page.getByTestId('app-shell');
+  await expect(loginForm.or(appShell)).toBeVisible({ timeout: 15000 });
+
+  const isLoggedIn = await appShell.isVisible().catch(() => false);
+
+  if (!isLoggedIn) {
+    const loginPage = new LoginPage(user.page);
+    await loginPage.waitForForm();
+
+    const hasUsernameField = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
+
+    if (hasUsernameField) {
+      await loginPage.loginWithUsername(user.email, TEST_PASSWORD);
+    } else {
+      await loginPage.login(TEST_PASSWORD);
+    }
+
+    await loginPage.expectLoginSuccess();
   }
 }
 
@@ -36,8 +63,7 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
 
   test('admin page loads successfully', async ({ testContext }) => {
     const user = await testContext.createAuthenticatedUser('admin');
-    await ensureAdminUser(user.email);
-    await loginUser(user);
+    await loginAsAdmin(user);
 
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
@@ -52,8 +78,7 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
 
   test('dashboard tab shows system statistics', async ({ testContext }) => {
     const user = await testContext.createAuthenticatedUser('admin');
-    await ensureAdminUser(user.email);
-    await loginUser(user);
+    await loginAsAdmin(user);
 
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
@@ -73,8 +98,7 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
 
   test('users tab shows user list', async ({ testContext }) => {
     const user = await testContext.createAuthenticatedUser('admin');
-    await ensureAdminUser(user.email);
-    await loginUser(user);
+    await loginAsAdmin(user);
 
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
@@ -94,8 +118,7 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
 
   test('albums tab shows album list', async ({ testContext }) => {
     const user = await testContext.createAuthenticatedUser('admin');
-    await ensureAdminUser(user.email);
-    await loginUser(user);
+    await loginAsAdmin(user);
 
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
@@ -124,8 +147,7 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
 
   test('can switch between all tabs', async ({ testContext }) => {
     const user = await testContext.createAuthenticatedUser('admin');
-    await ensureAdminUser(user.email);
-    await loginUser(user);
+    await loginAsAdmin(user);
 
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
@@ -158,8 +180,7 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
 
   test('admin navigation: can return to albums', async ({ testContext }) => {
     const user = await testContext.createAuthenticatedUser('admin');
-    await ensureAdminUser(user.email);
-    await loginUser(user);
+    await loginAsAdmin(user);
 
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
