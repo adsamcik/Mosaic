@@ -404,8 +404,8 @@ test.describe('Format Conversion @p1 @format', () => {
       page,
       testUser,
     }) => {
-      // Upload + crypto conversion needs extra time under CI Docker load
-      test.slow();
+      // Upload + crypto + lightbox rendering needs extra time under CI Docker load
+      test.setTimeout(240_000); // 4 minutes
       const gallery = await setupAlbumAndNavigate(
         page,
         testUser,
@@ -445,7 +445,7 @@ test.describe('Format Conversion @p1 @format', () => {
       testUser,
     }) => {
       // HEIC conversion + crypto is especially slow under CI Docker load
-      test.slow();
+      test.setTimeout(300_000); // 5 minutes for HEIC
       const gallery = await setupAlbumAndNavigate(
         page,
         testUser,

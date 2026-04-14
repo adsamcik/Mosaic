@@ -130,6 +130,7 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
 
   test.describe('Photo Exit Animations', () => {
     test('P2-ANIM-4: deleted photos animate out', async ({ testContext }) => {
+      test.slow(); // Upload + delete + animation verification needs extra time in CI
       const user = await testContext.createAuthenticatedUser('exit-anim');
       await loginUser(user, TEST_PASSWORD);
 
