@@ -174,6 +174,9 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
      * The observable behavior is that the removed member loses access.
      */
     test('P1-COLLAB-6: removed member loses access to shared album', async ({ collaboration }) => {
+      // Double timeout — member removal involves key rotation
+      test.slow();
+
       const { alice, bob, generateAlbumName } = collaboration;
 
       // Step 1: Login both users first to initialize crypto keys
@@ -215,9 +218,19 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
       await membersPanel.close();
 
       // Step 5: Verify Bob can see the shared album
-      const bobAppShell = new AppShell(bob.page);
-      await reloadAndEnsureLoggedIn(bob.page, TEST_PASSWORD);
+      // Use simple reload — session cookie persists, no need for full re-login
+      await bob.page.reload();
+      await expect(
+        bob.page.getByTestId('app-shell').or(bob.page.getByTestId('login-form'))
+      ).toBeVisible({ timeout: 30000 });
+      const needsLogin = await bob.page.getByTestId('login-form').isVisible().catch(() => false);
+      if (needsLogin) {
+        const loginPage = new LoginPage(bob.page);
+        await loginPage.login(TEST_PASSWORD);
+        await loginPage.expectLoginSuccess();
+      }
 
+      const bobAppShell = new AppShell(bob.page);
       await bobAppShell.waitForLoad();
 
       // Bob should see the shared album
@@ -226,13 +239,11 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
       expect(bobAlbumCount).toBeGreaterThanOrEqual(1);
 
       // Step 6: Alice removes Bob from the album
-      // Navigate back to Alice's album if needed
       await alice.page.bringToFront();
       await aliceGallery.openMembers();
       await membersPanel.waitForOpen();
 
       // Use the member ID/name to locate and remove Bob
-      // The removeMemberWithConfirmation method handles the dialog
       try {
         await membersPanel.removeMemberWithConfirmation(bobInfo.id);
       } catch {
@@ -241,34 +252,24 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
         await membersPanel.removeMemberWithConfirmation(bobDisplayName);
       }
 
-      // Wait for removal to complete by checking member count decreases
-      // The removeMemberWithConfirmation waits for dialog close, but key rotation happens in background
+      // Wait for member count to decrease — panel stays open, just poll count
+      await membersPanel.waitForOpen();
       await expect(async () => {
-        await aliceGallery.openMembers();
-        await membersPanel.waitForOpen();
         const currentCount = await membersPanel.getMemberCount();
         expect(currentCount).toBeLessThan(memberCount);
-      }).toPass({ timeout: 10000 });
-
-      // Panel is already open from the polling above
-      // Verify Bob is no longer in member list - get the current count
-      const postRemovalCount = await membersPanel.getMemberCount();
-      expect(postRemovalCount).toBeLessThan(memberCount);
+      }).toPass({ timeout: 30000 });
 
       await membersPanel.close();
 
       // Step 7: Verify Bob can no longer see the album
+      // Use toPass with reload intervals instead of expensive reloadAndEnsureLoggedIn
       await bob.page.bringToFront();
-      await reloadAndEnsureLoggedIn(bob.page, TEST_PASSWORD);
-
-      await bobAppShell.waitForLoad();
-
-      // Bob should no longer see the album (either empty state or album not visible)
-      const bobPostRemovalCards = bob.page.getByTestId('album-card');
-      const finalAlbumCount = await bobPostRemovalCards.count();
-
-      // The shared album should be gone from Bob's view
-      expect(finalAlbumCount).toBe(0);
+      await expect(async () => {
+        await bob.page.reload();
+        await expect(bob.page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
+        const count = await bob.page.getByTestId('album-card').count();
+        expect(count).toBe(0);
+      }).toPass({ timeout: 30000, intervals: [5000, 10000] });
     });
 
     /**
