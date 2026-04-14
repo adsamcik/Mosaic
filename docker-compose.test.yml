@@ -28,7 +28,7 @@ services:
     container_name: mosaic-test-backend
     environment:
       ASPNETCORE_ENVIRONMENT: Testing
-      ConnectionStrings__Default: "Host=postgres;Database=mosaic_test;Username=mosaic;Password=test"
+      ConnectionStrings__Default: "Host=postgres;Database=mosaic_test;Username=mosaic;Password=test;Maximum Pool Size=100;Timeout=30"
       Storage__Path: /app/data/blobs
       Auth__LocalAuthEnabled: "true"
       Auth__ProxyAuthEnabled: "true"
@@ -39,7 +39,8 @@ services:
     ports:
       - "5000:8080"  # Expose for E2E tests running on host (localhost is secure context)
     volumes:
-      - test_blobs:/app/data/blobs
+      - type: tmpfs
+        target: /app/data/blobs
     networks:
       - mosaic-test
     depends_on:
@@ -117,10 +118,6 @@ services:
         condition: service_healthy
     profiles:
       - e2e-tests
-
-volumes:
-  test_blobs:
-    driver: local
 
 networks:
   mosaic-test:
