@@ -40,7 +40,7 @@ export class LoginPage {
     await this.page.goto('/');
   }
 
-  async waitForForm(timeout = 30000): Promise<void> {
+  async waitForForm(timeout = 60000): Promise<void> {
     // Wait for the form container to be visible
     await expect(this.form).toBeVisible({ timeout });
     

@@ -38,7 +38,7 @@ export class InviteMemberDialog {
   async setUserId(userId: string): Promise<void> {
     await this.userIdInput.fill(userId);
     await this.lookupButton.click();
-    await expect(this.foundUser).toBeVisible({ timeout: 10000 });
+    await expect(this.foundUser).toBeVisible({ timeout: 30000 });
   }
 
   async setRole(role: 'viewer' | 'editor'): Promise<void> {

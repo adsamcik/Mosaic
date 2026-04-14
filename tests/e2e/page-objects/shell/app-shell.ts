@@ -61,6 +61,8 @@ export class AppShell {
 
   async openAdmin(): Promise<void> {
     await this.adminButton.click();
+    // Admin page fires 5 parallel API calls — wait for network to settle
+    await this.page.waitForLoadState('networkidle');
   }
 
   async goBack(): Promise<void> {
