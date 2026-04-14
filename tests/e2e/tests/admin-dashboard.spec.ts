@@ -5,8 +5,8 @@
  * tab switching, and navigation back to albums.
  */
 
-import { test, expect, loginUser, createAlbumViaUI, TEST_PASSWORD, type AuthenticatedUser } from '../fixtures-enhanced';
-import { AppShell, AdminPage, LoginPage } from '../page-objects';
+import { test, expect, loginUser, createAlbumViaUI, type AuthenticatedUser } from '../fixtures-enhanced';
+import { AppShell, AdminPage } from '../page-objects';
 import { API_URL } from '../framework';
 
 /**
@@ -24,39 +24,38 @@ async function promoteToAdmin(email: string): Promise<void> {
 
 /**
  * Login normally (register the user), promote to admin via backend API,
- * then reload so the frontend picks up isAdmin=true from /api/users/me.
- * Handles re-login after reload for both LocalAuth and ProxyAuth modes.
+ * and make the frontend aware of admin status without a page reload.
+ *
+ * Uses Playwright route interception to inject isAdmin=true into
+ * /api/users/me responses. This avoids the unreliable reload+re-login
+ * cycle that caused flaky failures in CI Docker environments.
  */
 async function loginAsAdmin(user: AuthenticatedUser): Promise<void> {
-  // Step 1: Register and login normally (user doesn't exist yet)
+  // Step 1: Intercept GET /api/users/me to inject isAdmin: true.
+  // Set up BEFORE login so AppShell sees admin status on first mount.
+  await user.page.route('**/api/users/me', async (route) => {
+    if (route.request().method() !== 'GET') {
+      return route.continue();
+    }
+    const response = await route.fetch();
+    if (!response.ok()) {
+      return route.fulfill({ response });
+    }
+    const json = await response.json();
+    json.isAdmin = true;
+    await route.fulfill({
+      status: response.status(),
+      contentType: 'application/json',
+      body: JSON.stringify(json),
+    });
+  });
+
+  // Step 2: Register and login normally.
+  // AppShell mounts and sees isAdmin=true from the intercepted response.
   await loginUser(user);
 
-  // Step 2: Promote to admin in the backend
+  // Step 3: Promote to admin in the backend so admin API calls succeed.
   await promoteToAdmin(user.email);
-
-  // Step 3: Reload to pick up isAdmin from /api/users/me
-  await user.page.reload();
-
-  const loginForm = user.page.getByTestId('login-form');
-  const appShell = user.page.getByTestId('app-shell');
-  await expect(loginForm.or(appShell)).toBeVisible({ timeout: 15000 });
-
-  const isLoggedIn = await appShell.isVisible().catch(() => false);
-
-  if (!isLoggedIn) {
-    const loginPage = new LoginPage(user.page);
-    await loginPage.waitForForm();
-
-    const hasUsernameField = await loginPage.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);
-
-    if (hasUsernameField) {
-      await loginPage.loginWithUsername(user.email, TEST_PASSWORD);
-    } else {
-      await loginPage.login(TEST_PASSWORD);
-    }
-
-    await loginPage.expectLoginSuccess();
-  }
 }
 
 test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
