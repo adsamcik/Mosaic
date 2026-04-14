@@ -91,8 +91,8 @@ test.describe('Album Content API @p1 @album', () => {
             'Content-Type': 'application/json',
           },
           data: {
-            encryptedContent: Array.from(encryptedContent),
-            nonce: Array.from(nonce),
+            encryptedContent: Buffer.from(encryptedContent).toString('base64'),
+            nonce: Buffer.from(nonce).toString('base64'),
             epochId: TEST_EPOCH_ID,
             expectedVersion: 0,
           },
@@ -126,8 +126,8 @@ test.describe('Album Content API @p1 @album', () => {
             'Content-Type': 'application/json',
           },
           data: {
-            encryptedContent: Array.from(content1),
-            nonce: Array.from(nonce1),
+            encryptedContent: Buffer.from(content1).toString('base64'),
+            nonce: Buffer.from(nonce1).toString('base64'),
             epochId: TEST_EPOCH_ID,
             expectedVersion: 0,
           },
@@ -148,8 +148,8 @@ test.describe('Album Content API @p1 @album', () => {
             'Content-Type': 'application/json',
           },
           data: {
-            encryptedContent: Array.from(content2),
-            nonce: Array.from(nonce2),
+            encryptedContent: Buffer.from(content2).toString('base64'),
+            nonce: Buffer.from(nonce2).toString('base64'),
             epochId: TEST_EPOCH_ID,
             expectedVersion: 1,
           },
@@ -181,8 +181,8 @@ test.describe('Album Content API @p1 @album', () => {
             'Content-Type': 'application/json',
           },
           data: {
-            encryptedContent: Array.from(content1),
-            nonce: Array.from(nonce1),
+            encryptedContent: Buffer.from(content1).toString('base64'),
+            nonce: Buffer.from(nonce1).toString('base64'),
             epochId: TEST_EPOCH_ID,
             expectedVersion: 0,
           },
@@ -203,8 +203,8 @@ test.describe('Album Content API @p1 @album', () => {
             'Content-Type': 'application/json',
           },
           data: {
-            encryptedContent: Array.from(content2),
-            nonce: Array.from(nonce2),
+            encryptedContent: Buffer.from(content2).toString('base64'),
+            nonce: Buffer.from(nonce2).toString('base64'),
             epochId: TEST_EPOCH_ID,
             expectedVersion: 0, // Wrong version!
           },
@@ -237,8 +237,8 @@ test.describe('Album Content API @p1 @album', () => {
             'Content-Type': 'application/json',
           },
           data: {
-            encryptedContent: Array.from(content),
-            nonce: Array.from(nonce),
+            encryptedContent: Buffer.from(content).toString('base64'),
+            nonce: Buffer.from(nonce).toString('base64'),
             epochId: TEST_EPOCH_ID,
             expectedVersion: 0,
           },
@@ -267,8 +267,8 @@ test.describe('Album Content API @p1 @album', () => {
             'Content-Type': 'application/json',
           },
           data: {
-            encryptedContent: Array.from(content),
-            nonce: Array.from(shortNonce),
+            encryptedContent: Buffer.from(content).toString('base64'),
+            nonce: Buffer.from(shortNonce).toString('base64'),
             epochId: TEST_EPOCH_ID,
             expectedVersion: 0,
           },
@@ -301,8 +301,8 @@ test.describe('Album Content API @p1 @album', () => {
             'Content-Type': 'application/json',
           },
           data: {
-            encryptedContent: Array.from(encryptedContent),
-            nonce: Array.from(nonce),
+            encryptedContent: Buffer.from(encryptedContent).toString('base64'),
+            nonce: Buffer.from(nonce).toString('base64'),
             epochId: TEST_EPOCH_ID,
             expectedVersion: 0,
           },
@@ -321,9 +321,9 @@ test.describe('Album Content API @p1 @album', () => {
       expect(body.version).toBe(1);
       expect(body.epochId).toBe(TEST_EPOCH_ID);
       
-      // Verify content matches
-      const returnedContent = new Uint8Array(body.encryptedContent);
-      const returnedNonce = new Uint8Array(body.nonce);
+      // Verify content matches (API returns base64-encoded byte arrays)
+      const returnedContent = new Uint8Array(Buffer.from(body.encryptedContent, 'base64'));
+      const returnedNonce = new Uint8Array(Buffer.from(body.nonce, 'base64'));
       
       expect(returnedContent).toEqual(encryptedContent);
       expect(returnedNonce).toEqual(nonce);
