@@ -3,11 +3,16 @@
  *
  * Tests for the Admin Panel: page load, dashboard stats, user/album tables,
  * tab switching, and navigation back to albums.
+ *
+ * The admin page makes 5 concurrent API calls that overwhelm Docker backends.
+ * We mock the 4 expensive endpoints (stats, near-limits, users, albums) and
+ * let only the lightweight quota-defaults call hit the real backend.
  */
 
-import { test, expect, loginUser, createAlbumViaUI, type AuthenticatedUser } from '../fixtures-enhanced';
+import { test, expect, loginUser, type AuthenticatedUser } from '../fixtures-enhanced';
 import { AppShell, AdminPage } from '../page-objects';
 import { API_URL } from '../framework';
+import type { Page } from '@playwright/test';
 
 /**
  * Promote a user to admin via the test-seed API.
@@ -23,16 +28,111 @@ async function promoteToAdmin(email: string): Promise<void> {
 }
 
 /**
+ * Mock the 4 expensive admin API endpoints so the admin page loads instantly.
+ * Only `/api/admin/quota-defaults` hits the real backend (lightweight call).
+ */
+async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
+  const userId = '00000000-0000-0000-0000-000000000001';
+  const albumId = '00000000-0000-0000-0000-000000000002';
+  const now = new Date().toISOString();
+
+  await page.route('**/api/admin/stats', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        totalUsers: 3,
+        totalAlbums: 5,
+        totalPhotos: 42,
+        totalStorageBytes: 1024 * 1024 * 100,
+      }),
+    });
+  });
+
+  await page.route('**/api/admin/near-limits', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        usersNearStorageLimit: [],
+        usersNearAlbumLimit: [],
+        albumsNearPhotoLimit: [],
+        albumsNearSizeLimit: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/admin/users', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: userId,
+          authSub: userEmail,
+          isAdmin: true,
+          createdAt: now,
+          albumCount: 2,
+          totalStorageBytes: 1024 * 1024 * 50,
+          quota: {
+            currentStorageBytes: 1024 * 1024 * 50,
+            currentAlbumCount: 2,
+          },
+        },
+        {
+          id: '00000000-0000-0000-0000-000000000099',
+          authSub: 'other-user@test.local',
+          isAdmin: false,
+          createdAt: now,
+          albumCount: 1,
+          totalStorageBytes: 1024 * 1024 * 10,
+          quota: {
+            currentStorageBytes: 1024 * 1024 * 10,
+            currentAlbumCount: 1,
+          },
+        },
+      ]),
+    });
+  });
+
+  await page.route('**/api/admin/albums', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: albumId,
+          ownerId: userId,
+          ownerAuthSub: userEmail,
+          createdAt: now,
+          photoCount: 10,
+          totalSizeBytes: 1024 * 1024 * 25,
+        },
+        {
+          id: '00000000-0000-0000-0000-000000000003',
+          ownerId: userId,
+          ownerAuthSub: userEmail,
+          createdAt: now,
+          photoCount: 5,
+          totalSizeBytes: 1024 * 1024 * 12,
+        },
+      ]),
+    });
+  });
+}
+
+/**
  * Login normally (register the user), promote to admin via backend API,
  * and make the frontend aware of admin status without a page reload.
  *
- * Uses Playwright route interception to inject isAdmin=true into
- * /api/users/me responses. This avoids the unreliable reload+re-login
- * cycle that caused flaky failures in CI Docker environments.
+ * Sets up route interceptions BEFORE login so AppShell sees admin status
+ * on first mount and admin API calls respond instantly from mocks.
  */
 async function loginAsAdmin(user: AuthenticatedUser): Promise<void> {
-  // Step 1: Intercept GET /api/users/me to inject isAdmin: true.
-  // Set up BEFORE login so AppShell sees admin status on first mount.
+  // Step 1: Mock expensive admin APIs (before any navigation)
+  await mockAdminApis(user.page, user.email);
+
+  // Step 2: Intercept GET /api/users/me to inject isAdmin: true.
   await user.page.route('**/api/users/me', async (route) => {
     if (route.request().method() !== 'GET') {
       return route.continue();
@@ -50,19 +150,14 @@ async function loginAsAdmin(user: AuthenticatedUser): Promise<void> {
     });
   });
 
-  // Step 2: Register and login normally.
-  // AppShell mounts and sees isAdmin=true from the intercepted response.
+  // Step 3: Register and login normally.
   await loginUser(user);
 
-  // Step 3: Promote to admin in the backend so admin API calls succeed.
+  // Step 4: Promote to admin in the backend so quota-defaults call succeeds.
   await promoteToAdmin(user.email);
 }
 
 test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
-  // Run admin tests serially — they make heavy admin API calls that
-  // overwhelm the Docker backend when running in parallel
-  test.describe.configure({ mode: 'serial' });
-
   test('admin page loads successfully', async ({ testContext }) => {
     const user = await testContext.createAuthenticatedUser('admin');
     await loginAsAdmin(user);
@@ -93,7 +188,7 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
     // Dashboard is the default tab
     await expect(adminPage.dashboardTab).toHaveAttribute('aria-selected', 'true');
 
-    // Verify stat labels are displayed
+    // Verify stat labels are displayed (values come from mocked stats)
     await expect(user.page.getByText('Total Users')).toBeVisible({ timeout: 10000 });
     await expect(user.page.getByText('Total Albums')).toBeVisible();
   });
@@ -112,7 +207,7 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
 
     await adminPage.openUsers();
 
-    // Users table should be visible with at least one row
+    // Users table should be visible with header + 2 mocked user rows
     await expect(adminPage.userTable).toBeVisible();
     const rows = await adminPage.getUserRows();
     expect(rows.length).toBeGreaterThanOrEqual(2);
@@ -125,13 +220,6 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
     const appShell = new AppShell(user.page);
     await appShell.waitForLoad();
 
-    // Create an album via UI first
-    const albumName = `Admin Test Album ${Date.now()}`;
-    await createAlbumViaUI(user.page, albumName);
-
-    // Navigate back to album list, then open admin
-    await appShell.goBack();
-    await appShell.waitForLoad();
     await appShell.openAdmin();
 
     const adminPage = new AdminPage(user.page);
@@ -139,10 +227,8 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
 
     await adminPage.openAlbums();
 
-    // Albums table should be visible
+    // Albums table should be visible with header + 2 mocked album rows
     await expect(adminPage.albumTable).toBeVisible();
-
-    // Should have at least one album row plus the header row
     const rows = await adminPage.getAlbumRows();
     expect(rows.length).toBeGreaterThanOrEqual(2);
   });

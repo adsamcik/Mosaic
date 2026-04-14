@@ -24,43 +24,9 @@ export class AdminPage {
     this.albumTable = page.getByTestId('albums-table');
   }
 
-  async waitForLoad(timeout = 120000): Promise<void> {
-    // Wait for admin-page container (present in loading/error/loaded states)
+  async waitForLoad(): Promise<void> {
     await expect(this.container).toBeVisible({ timeout: 30000 });
-
-    // Admin data comes from 5 parallel API calls — in CI Docker these can
-    // be very slow.  Poll frequently for either success (tabs) or error
-    // (Retry button), retrying up to 3 times with generous per-attempt timeouts.
-    const retryButton = this.container.getByRole('button', { name: 'Retry' });
-    const maxRetries = 3;
-    const perAttemptTimeout = Math.floor(timeout / (maxRetries + 1));
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const result = await Promise.race([
-        this.dashboardTab
-          .waitFor({ state: 'visible', timeout: perAttemptTimeout })
-          .then(() => 'loaded' as const),
-        retryButton
-          .waitFor({ state: 'visible', timeout: perAttemptTimeout })
-          .then(() => 'error' as const),
-      ]).catch(() => 'timeout' as const);
-
-      if (result === 'loaded') {
-        return;
-      }
-
-      if (result === 'error' && attempt < maxRetries) {
-        await retryButton.click();
-        // Wait for loading to restart before the next attempt
-        await expect(retryButton).toBeHidden({ timeout: 5000 });
-        continue;
-      }
-
-      break;
-    }
-
-    // Final assertion — gives a clear error message on failure
-    await expect(this.dashboardTab).toBeVisible({ timeout: perAttemptTimeout });
+    await expect(this.dashboardTab).toBeVisible({ timeout: 30000 });
   }
 
   async openDashboard(): Promise<void> {
