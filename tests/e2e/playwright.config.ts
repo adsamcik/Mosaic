@@ -103,9 +103,9 @@ export default defineConfig({
   // Worker configuration for parallelism
   // We have 8 pool users, so we can scale up to 8 workers
   // Local: Use all 8 workers for maximum parallelism
-  // CI: 2 workers to reduce Docker resource contention (admin, collab, and
-  // crypto-heavy tests overwhelm the backend with more workers)
-  workers: process.env.CI ? 2 : 8,
+  // CI: 3 workers — balance between speed (avoid 30min timeout) and
+  // stability (avoid overwhelming Docker backend with concurrent crypto)
+  workers: process.env.CI ? 3 : 8,
 
   // Fail fast in CI - stop after N failures to save resources
   maxFailures: process.env.CI ? 10 : undefined,
