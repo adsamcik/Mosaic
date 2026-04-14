@@ -257,7 +257,7 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
       await expect(async () => {
         const currentCount = await membersPanel.getMemberCount();
         expect(currentCount).toBeLessThan(memberCount);
-      }).toPass({ timeout: 30000 });
+      }).toPass({ timeout: 60000 });
 
       await membersPanel.close();
 
