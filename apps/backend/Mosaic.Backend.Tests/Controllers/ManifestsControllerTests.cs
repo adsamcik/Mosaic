@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Models.Manifests;
 using Mosaic.Backend.Services;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
@@ -27,6 +28,48 @@ public class ManifestsControllerTests
         {
             ControllerContext = { HttpContext = TestHttpContext.Create(authSub) }
         };
+    }
+
+    [Fact]
+    public async Task Create_StoresAndReturnsEncryptedMetaAsOpaqueBytes()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.PENDING, sizeBytes: 17);
+        var encryptedMeta = new byte[]
+        {
+            0xff, 0x00, 0x7b, 0x22, 0x67, 0x70, 0x73, 0x22, 0x3a, 0x22, 0x6e, 0x6f, 0x74, 0x2d, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x22, 0x7d
+        };
+        var request = new CreateManifestRequest(
+            AlbumId: album.Id,
+            EncryptedMeta: encryptedMeta,
+            Signature: Convert.ToBase64String(new byte[64]),
+            SignerPubkey: Convert.ToBase64String(new byte[32]),
+            ShardIds: [shard.Id.ToString()]);
+
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        // Act
+        var createResult = await controller.Create(request);
+
+        // Assert
+        var createdResult = Assert.IsType<CreatedResult>(createResult);
+        var manifestId = GetResponseProperty<Guid>(createdResult.Value, "Id");
+
+        var persisted = await db.Manifests.SingleAsync(m => m.Id == manifestId);
+        Assert.Equal(encryptedMeta, persisted.EncryptedMeta);
+        Assert.Equal(ShardStatus.ACTIVE, (await db.Shards.SingleAsync(s => s.Id == shard.Id)).Status);
+
+        var getResult = await controller.Get(manifestId);
+        var okResult = Assert.IsType<OkObjectResult>(getResult);
+        var returnedMeta = GetResponseProperty<byte[]>(okResult.Value, "EncryptedMeta");
+        Assert.Equal(encryptedMeta, returnedMeta);
     }
 
     [Fact]
@@ -188,5 +231,13 @@ public class ManifestsControllerTests
         Assert.True(deletedManifest.IsDeleted);
         Assert.Empty(db.ManifestShards.Where(ms => ms.ManifestId == manifest.Id));
         Assert.Equal(ShardStatus.TRASHED, db.Shards.Single(s => s.Id == shard.Id).Status);
+    }
+
+    private static T GetResponseProperty<T>(object? response, string propertyName)
+    {
+        Assert.NotNull(response);
+        var property = response.GetType().GetProperty(propertyName);
+        Assert.NotNull(property);
+        return Assert.IsType<T>(property.GetValue(response));
     }
 }

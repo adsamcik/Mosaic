@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Tests.Helpers;
@@ -10,6 +11,42 @@ public class ShardsControllerTests
 {
     private const string UploaderAuthSub = "uploader-user";
     private const string ViewerAuthSub = "viewer-user";
+
+    [Fact]
+    public async Task Download_ReturnsOpaqueBytesUnchanged_WhenPayloadIsNotImageData()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var uploader = await builder.CreateUserAsync(UploaderAuthSub);
+        var album = await builder.CreateAlbumAsync(uploader);
+        var shard = await builder.CreateShardAsync(uploader, ShardStatus.ACTIVE);
+        await builder.CreateManifestAsync(album, [shard]);
+
+        var encryptedPayload = new byte[] { 0xff, 0x00, 0x7b, 0x22, 0x6e, 0x6f, 0x74, 0x2d, 0x6a, 0x70, 0x65, 0x67, 0x22, 0x7d };
+        storage.AddFile(shard.StorageKey, encryptedPayload);
+
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(UploaderAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.Download(shard.Id);
+
+        // Assert
+        var fileResult = Assert.IsType<FileStreamResult>(result);
+        Assert.Equal("application/octet-stream", fileResult.ContentType);
+
+        using var copied = new MemoryStream();
+        await fileResult.FileStream.CopyToAsync(copied);
+        Assert.Equal(encryptedPayload, copied.ToArray());
+    }
 
     [Fact]
     public async Task Download_ReturnsFile_WhenUserHasAccess()
@@ -237,6 +274,46 @@ public class ShardsControllerTests
 
         // Assert
         Assert.IsType<FileStreamResult>(result);
+    }
+
+    [Fact]
+    public async Task GetMeta_ReturnsOnlySafeOpaqueShardMetadata()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var uploader = await builder.CreateUserAsync(UploaderAuthSub);
+        var shard = await builder.CreateShardAsync(uploader, ShardStatus.PENDING, sizeBytes: 1024);
+        shard.Sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        await db.SaveChangesAsync();
+
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(UploaderAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.GetMeta(shard.Id);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(okResult.Value));
+        var root = json.RootElement;
+
+        Assert.Equal(shard.Id, root.GetProperty("Id").GetGuid());
+        Assert.Equal(shard.SizeBytes, root.GetProperty("SizeBytes").GetInt64());
+        Assert.Equal(shard.Sha256, root.GetProperty("Sha256").GetString());
+        Assert.True(root.TryGetProperty("Status", out _));
+        Assert.True(root.TryGetProperty("StatusUpdatedAt", out _));
+        Assert.False(root.TryGetProperty("StorageKey", out _));
+        Assert.False(root.TryGetProperty("Content", out _));
+        Assert.False(root.TryGetProperty("EncryptedContent", out _));
+        Assert.False(root.TryGetProperty("Preview", out _));
     }
 
     [Fact]

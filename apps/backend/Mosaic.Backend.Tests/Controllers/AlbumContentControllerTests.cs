@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.Albums;
 using Mosaic.Backend.Data;
@@ -13,6 +14,75 @@ namespace Mosaic.Backend.Tests.Controllers;
 public class AlbumContentControllerTests
 {
     private const string TestAuthSub = "test-user-123";
+
+    [Fact]
+    public async Task PutContent_StoresAndReturnsEncryptedContentAsOpaqueBytes()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+
+        var encryptedContent = Encoding.UTF8.GetBytes("{\"blocks\":[{\"type\":\"not-plaintext\"}]}");
+        var nonce = Enumerable.Range(0, 24).Select(value => (byte)(value + 1)).ToArray();
+        var controller = CreateController(db);
+        var request = new UpdateAlbumContentRequest
+        {
+            EncryptedContent = encryptedContent,
+            Nonce = nonce,
+            EpochId = 7,
+            ExpectedVersion = 0
+        };
+
+        // Act
+        var putResult = await controller.PutContent(album.Id, request);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(putResult);
+        var response = Assert.IsType<AlbumContentResponse>(okResult.Value);
+        Assert.Equal(encryptedContent, response.EncryptedContent);
+        Assert.Equal(nonce, response.Nonce);
+        Assert.Equal(7, response.EpochId);
+
+        var getResult = await controller.GetContent(album.Id);
+        var getOkResult = Assert.IsType<OkObjectResult>(getResult);
+        var getResponse = Assert.IsType<AlbumContentResponse>(getOkResult.Value);
+        Assert.Equal(encryptedContent, getResponse.EncryptedContent);
+        Assert.Equal(nonce, getResponse.Nonce);
+
+        var persisted = await db.AlbumContents.SingleAsync(content => content.AlbumId == album.Id);
+        Assert.Equal(encryptedContent, persisted.EncryptedContent);
+        Assert.Equal(nonce, persisted.Nonce);
+    }
+
+    [Fact]
+    public async Task PutContent_AcceptsMalformedCiphertextWhenNonceLengthIsValid()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+
+        var malformedCiphertext = new byte[] { 0xff, 0xfe, 0x00, 0x13, 0x37 };
+        var controller = CreateController(db);
+        var request = new UpdateAlbumContentRequest
+        {
+            EncryptedContent = malformedCiphertext,
+            Nonce = new byte[24],
+            EpochId = 1,
+            ExpectedVersion = 0
+        };
+
+        // Act
+        var result = await controller.PutContent(album.Id, request);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<AlbumContentResponse>(okResult.Value);
+        Assert.Equal(malformedCiphertext, response.EncryptedContent);
+    }
 
     [Fact]
     public async Task GetContent_ReturnsNotFound_WhenAlbumDoesNotExist()
