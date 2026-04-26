@@ -38,8 +38,8 @@
     }
   },
   "devDependencies": {
-    "@stryker-mutator/core": "^9.4.0",
-    "@stryker-mutator/vitest-runner": "^9.4.0",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/libsodium-wrappers-sumo": "^0.7.8",
     "@types/node": "^25.0.9",
     "@vitest/coverage-v8": "^4.0.17",
