@@ -311,26 +311,8 @@ describe('useLightbox', () => {
     });
   });
 
-  describe('keyboard navigation', () => {
-    it('closes on Escape key', () => {
-      const { getResult, cleanup } = createHookTester(mockPhotos);
-
-      act(() => {
-        getResult().open(2);
-      });
-
-      expect(getResult().isOpen).toBe(true);
-
-      act(() => {
-        const event = new KeyboardEvent('keydown', { key: 'Escape' });
-        document.dispatchEvent(event);
-      });
-
-      expect(getResult().isOpen).toBe(false);
-      cleanup();
-    });
-
-    it('navigates next on ArrowRight key', () => {
+  describe('keyboard ownership', () => {
+    it('does not respond to global keyboard events when open', () => {
       const { getResult, cleanup } = createHookTester(mockPhotos);
 
       act(() => {
@@ -338,43 +320,13 @@ describe('useLightbox', () => {
       });
 
       act(() => {
-        const event = new KeyboardEvent('keydown', { key: 'ArrowRight' });
-        document.dispatchEvent(event);
-      });
-
-      expect(getResult().currentIndex).toBe(2);
-      cleanup();
-    });
-
-    it('navigates previous on ArrowLeft key', () => {
-      const { getResult, cleanup } = createHookTester(mockPhotos);
-
-      act(() => {
-        getResult().open(2);
-      });
-
-      act(() => {
-        const event = new KeyboardEvent('keydown', { key: 'ArrowLeft' });
-        document.dispatchEvent(event);
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowRight' }),
+        );
       });
 
       expect(getResult().currentIndex).toBe(1);
-      cleanup();
-    });
-
-    it('does not respond to keyboard when closed', () => {
-      const { getResult, cleanup } = createHookTester(mockPhotos);
-
-      // Don't open the lightbox
-      const initialIndex = getResult().currentIndex;
-
-      act(() => {
-        const event = new KeyboardEvent('keydown', { key: 'ArrowRight' });
-        document.dispatchEvent(event);
-      });
-
-      expect(getResult().currentIndex).toBe(initialIndex);
-      expect(getResult().isOpen).toBe(false);
+      expect(getResult().isOpen).toBe(true);
       cleanup();
     });
   });

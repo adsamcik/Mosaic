@@ -1,11 +1,31 @@
 /**
  * MapView Component Tests
  */
+import L from 'leaflet';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MapView } from '../src/components/Gallery/MapView';
 import type { GeoFeature, PhotoMeta } from '../src/workers/types';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) => {
+      switch (key) {
+        case 'gallery.mapView.empty':
+          return 'No geotagged photos in this album';
+        case 'gallery.mapView.photoCount':
+          return `${options?.count ?? 0} photo${options?.count === 1 ? '' : 's'}`;
+        case 'gallery.mapView.clusterCount':
+          return `${options?.count ?? 0} cluster${options?.count === 1 ? '' : 's'}`;
+        case 'gallery.mapView.clusterTooltip':
+          return `${options?.count ?? 0} photo${options?.count === 1 ? '' : 's'}`;
+        default:
+          return key;
+      }
+    },
+  }),
+}));
 
 // Mock Leaflet - we can't fully test map rendering in happy-dom
 const mockMap = {
@@ -141,6 +161,8 @@ function renderMapView(props: Partial<Parameters<typeof MapView>[0]> = {}) {
 describe('MapView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGeoClient.getClusters.mockResolvedValue([]);
+    mockGeoClient.getLeaves.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -263,6 +285,114 @@ describe('MapView', () => {
       });
 
       expect(getByTestId('map-view')).not.toBeNull();
+
+      cleanup();
+    });
+
+    it('renders hostile filenames as text nodes in tooltips', async () => {
+      mockGeoClient.getClusters.mockResolvedValue([
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [-74.006, 40.7128] },
+          properties: { id: 'photo-1', cluster: false },
+        },
+      ]);
+
+      const photos: PhotoMeta[] = [
+        {
+          id: 'photo-1',
+          assetId: 'asset-1',
+          albumId: 'test-album',
+          filename: '<img src=x onerror=alert(1)>',
+          mimeType: 'image/jpeg',
+          width: 1920,
+          height: 1080,
+          lat: 40.7128,
+          lng: -74.006,
+          tags: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          shardIds: ['shard-1'],
+          epochId: 1,
+        },
+      ];
+
+      const points: GeoFeature[] = [
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [-74.006, 40.7128] },
+          properties: { id: 'photo-1' },
+        },
+      ];
+
+      const { cleanup } = renderMapView({ points, photos });
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      const tooltipContent = mockMarker.bindTooltip.mock.calls[0]?.[0];
+      expect(tooltipContent).toBeInstanceOf(HTMLElement);
+      expect((tooltipContent as HTMLElement).textContent).toContain(
+        '<img src=x onerror=alert(1)>',
+      );
+      expect((tooltipContent as HTMLElement).querySelector('img')).toBeNull();
+
+      cleanup();
+    });
+
+    it('falls back to the camera icon for malformed thumbnail data', async () => {
+      mockGeoClient.getClusters.mockResolvedValue([
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [-74.006, 40.7128] },
+          properties: { id: 'photo-1', cluster: false },
+        },
+      ]);
+
+      const photos: PhotoMeta[] = [
+        {
+          id: 'photo-1',
+          assetId: 'asset-1',
+          albumId: 'test-album',
+          filename: 'test.jpg',
+          mimeType: 'image/jpeg',
+          width: 1920,
+          height: 1080,
+          lat: 40.7128,
+          lng: -74.006,
+          tags: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          shardIds: ['shard-1'],
+          epochId: 1,
+          thumbnail: 'abc" onerror="alert(1)',
+        },
+      ];
+
+      const points: GeoFeature[] = [
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [-74.006, 40.7128] },
+          properties: { id: 'photo-1' },
+        },
+      ];
+
+      const { cleanup } = renderMapView({ points, photos });
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      const markerOptions = vi.mocked(L.marker).mock.calls[0]?.[1] as
+        | { icon?: { html?: HTMLElement | string } }
+        | undefined;
+      const iconHtml = markerOptions?.icon?.html;
+
+      expect(iconHtml).toBeInstanceOf(HTMLElement);
+      expect((iconHtml as HTMLElement).querySelector('img')).toBeNull();
+      expect((iconHtml as HTMLElement).textContent).toContain('📷');
+      expect((iconHtml as HTMLElement).innerHTML).not.toContain('onerror');
 
       cleanup();
     });

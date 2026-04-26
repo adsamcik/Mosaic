@@ -2,7 +2,7 @@
  * useLightbox Hook
  *
  * Manages lightbox state for viewing full-resolution photos.
- * Provides navigation between photos and keyboard controls.
+ * Provides navigation between photos.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -142,34 +142,6 @@ export function useLightbox(photos: PhotoMeta[]): UseLightboxResult {
     },
     [photos.length],
   );
-
-  // Handle keyboard navigation when lightbox is open
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      switch (event.key) {
-        case 'Escape':
-          close();
-          break;
-        case 'ArrowRight':
-          next();
-          break;
-        case 'ArrowLeft':
-          previous();
-          break;
-        default:
-          // Ignore other keys
-          break;
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen, close, next, previous]);
 
   // Prevent body scroll when lightbox is open
   useEffect(() => {

@@ -221,6 +221,33 @@
       "warningBulk": "All {{count}} selected photos will be permanently deleted from the server.",
       "warningSingle": "This photo will be permanently deleted from the server."
     },
+    "storyView": {
+      "loading": "Loading story...",
+      "error": "Failed to load story",
+      "noContent": "No story yet",
+      "createDescription": "Create a story to add narrative to your album.",
+      "create": "Create Story",
+      "saving": "Saving...",
+      "saved": "Saved",
+      "saveError": "Save failed",
+      "conflict": "Conflict detected",
+      "loadingKeys": "Loading encryption keys..."
+    },
+    "mapView": {
+      "empty": "No geotagged photos in this album",
+      "photoCount": "{{count}} photo",
+      "photoCount_other": "{{count}} photos",
+      "clusterCount": "{{count}} cluster",
+      "clusterCount_other": "{{count}} clusters",
+      "clusterTooltip": "{{count}} photo",
+      "clusterTooltip_other": "{{count}} photos"
+    },
+    "gridView": {
+      "emptyTitle": "No photos yet",
+      "emptyDescription": "Upload some photos to get started",
+      "syncing": "Syncing",
+      "queued": "Queued"
+    },
     "date": {
       "today": "Today",
       "yesterday": "Yesterday",

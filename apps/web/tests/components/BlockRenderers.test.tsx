@@ -7,10 +7,51 @@
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mockLeafletMap = {
+  remove: vi.fn(),
+  setView: vi.fn(),
+};
+
+const mockLeafletMarker = {
+  addTo: vi.fn().mockReturnThis(),
+  bindPopup: vi.fn().mockReturnThis(),
+};
+
+const mockLeafletTileLayer = {
+  addTo: vi.fn().mockReturnThis(),
+};
+
+vi.mock('leaflet', () => ({
+  default: {
+    map: vi.fn(() => mockLeafletMap),
+    tileLayer: vi.fn(() => mockLeafletTileLayer),
+    marker: vi.fn(() => mockLeafletMarker),
+    Icon: {
+      Default: {
+        prototype: {},
+        mergeOptions: vi.fn(),
+      },
+    },
+  },
+}));
+
+vi.mock('leaflet/dist/leaflet.css', () => ({}));
+vi.mock('leaflet/dist/images/marker-icon-2x.png', () => ({
+  default: 'marker-icon-2x.png',
+}));
+vi.mock('leaflet/dist/images/marker-icon.png', () => ({
+  default: 'marker-icon.png',
+}));
+vi.mock('leaflet/dist/images/marker-shadow.png', () => ({
+  default: 'marker-shadow.png',
+}));
+
 import {
   BlockRenderer,
   ContentRenderer,
   HeadingBlockRenderer,
+  MapBlockRenderer,
   TextBlockRenderer,
   PhotoBlockRenderer,
   PhotoGroupBlockRenderer,
@@ -54,6 +95,10 @@ function renderComponent<P extends object>(
 
 // Setup and teardown for each test
 let cleanupFns: (() => void)[] = [];
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 afterEach(() => {
   cleanupFns.forEach((fn) => fn());
@@ -223,6 +268,35 @@ describe('TextBlockRenderer', () => {
     expect(p).not.toBeNull();
     expect(p?.classList.contains('block-text')).toBe(true);
     expect(container.querySelector('strong')?.textContent).toBe('World');
+  });
+});
+
+describe('MapBlockRenderer', () => {
+  it('renders hostile marker labels as text nodes in popups', () => {
+    const block = {
+      type: 'map',
+      id: 'map-1',
+      center: { lat: 40.7128, lng: -74.006 },
+      markers: [
+        {
+          id: 'marker-1',
+          lat: 40.7128,
+          lng: -74.006,
+          label: '<img src=x onerror=alert(1)>',
+        },
+      ],
+      position: 'a',
+    } as const;
+
+    render(MapBlockRenderer, { block });
+
+    expect(mockLeafletMarker.bindPopup).toHaveBeenCalledTimes(1);
+    const popupContent = mockLeafletMarker.bindPopup.mock.calls[0]?.[0];
+    expect(popupContent).toBeInstanceOf(HTMLElement);
+    expect((popupContent as HTMLElement).textContent).toBe(
+      '<img src=x onerror=alert(1)>',
+    );
+    expect((popupContent as HTMLElement).querySelector('img')).toBeNull();
   });
 });
 

@@ -279,6 +279,12 @@ interface MapBlockRendererProps {
 const DEFAULT_MAP_HEIGHT = 400;
 const DEFAULT_ZOOM = 10;
 
+function createLeafletTextContent(text: string): HTMLDivElement {
+  const container = document.createElement('div');
+  container.textContent = text;
+  return container;
+}
+
 export const MapBlockRenderer = memo(function MapBlockRenderer({
   block,
 }: MapBlockRendererProps) {
@@ -311,7 +317,7 @@ export const MapBlockRenderer = memo(function MapBlockRenderer({
       block.markers.forEach((marker) => {
         const leafletMarker = L.marker([marker.lat, marker.lng]).addTo(map);
         if (marker.label) {
-          leafletMarker.bindPopup(marker.label);
+          leafletMarker.bindPopup(createLeafletTextContent(marker.label));
         }
       });
     }

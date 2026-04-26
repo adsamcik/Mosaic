@@ -1,5 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useGridSelection } from '../../hooks/useGridSelection';
 import { useLightbox } from '../../hooks/useLightbox';
@@ -47,6 +48,7 @@ export function SquarePhotoGrid({
   onPhotosDeleted,
   selection,
 }: SquarePhotoGridProps) {
+  const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement | null>(null);
 
   // Store ResizeObserver instance so we can clean it up
@@ -151,7 +153,7 @@ export function SquarePhotoGrid({
     return 5; // Large screens
   }, [containerWidth]);
 
-  const rowCount = Math.ceil(photos.length / columns);
+  const rowCount = Math.ceil(sortedPhotos.length / columns);
 
   // Calculate row height based on column width to ensure squares
   // Subtracting gap from width to get accurate cell size
@@ -201,7 +203,7 @@ export function SquarePhotoGrid({
     return (
       <div className="photo-grid-loading">
         <div className="loading-spinner" />
-        <p>Loading photos...</p>
+        <p>{t('gallery.loading')}</p>
       </div>
     );
   }
@@ -209,7 +211,9 @@ export function SquarePhotoGrid({
   if (error) {
     return (
       <div className="photo-grid-error">
-        <p>Failed to load photos: {error.message}</p>
+        <p>
+          {t('gallery.error.loadFailed')}: {error.message}
+        </p>
       </div>
     );
   }
@@ -233,8 +237,8 @@ export function SquarePhotoGrid({
             <circle cx="12" cy="13" r="3" />
           </svg>
         </div>
-        <h3>No photos yet</h3>
-        <p className="text-muted">Upload some photos to get started</p>
+        <h3>{t('gallery.gridView.emptyTitle')}</h3>
+        <p className="text-muted">{t('gallery.gridView.emptyDescription')}</p>
       </div>
     );
   }
@@ -271,148 +275,213 @@ export function SquarePhotoGrid({
                 gridTemplateColumns: `repeat(${columns}, 1fr)`,
                 gap: '4px',
               }}
-            >
-              {Array.from({ length: columns }).map((_, colIndex) => {
-                const photoIndex = virtualRow.index * columns + colIndex;
-                const photo = photos[photoIndex];
-                if (!photo) return null;
+              >
+                {Array.from({ length: columns }).map((_, colIndex) => {
+                  const photoIndex = virtualRow.index * columns + colIndex;
+                  const photo = sortedPhotos[photoIndex];
+                  if (!photo) return null;
 
-                // Check if this photo is pending/syncing in the PhotoStore
-                const pendingItem = getPendingPhotoItem(photo);
+                  // Check if this photo is pending/syncing in the PhotoStore
+                  const pendingItem = getPendingPhotoItem(photo);
 
-                if (pendingItem) {
-                  // Render pending photo with progress overlay
-                  const progress = pendingItem.uploadProgress ?? 0;
-                  const isUploading = progress > 0 && progress < 1;
-                  const isSyncing = pendingItem.status === 'syncing';
-                  const isEncrypting = progress === 0 && !isSyncing && !pendingItem.error;
-                  const displayProgress = isUploading
-                    ? 20 + progress * 70
-                    : isSyncing
-                      ? 95
-                      : isEncrypting
-                        ? 15
-                        : 0;
-                  
-                  // Determine progress bar class
-                  const progressBarClass = isEncrypting
-                    ? 'encrypting'
-                    : isSyncing
-                      ? 'syncing'
-                      : '';
+                  if (pendingItem) {
+                    // Render pending photo with progress overlay
+                    const progress = pendingItem.uploadProgress ?? 0;
+                    const isUploading = progress > 0 && progress < 1;
+                    const isSyncing = pendingItem.status === 'syncing';
+                    const isEncrypting =
+                      progress === 0 && !isSyncing && !pendingItem.error;
+                    const displayProgress = isUploading
+                      ? 20 + progress * 70
+                      : isSyncing
+                        ? 95
+                        : isEncrypting
+                          ? 15
+                          : 0;
+
+                    const progressBarClass = isEncrypting
+                      ? 'encrypting'
+                      : isSyncing
+                        ? 'syncing'
+                        : '';
+
+                    return (
+                      <div
+                        key={photo.id}
+                        className="photo-thumbnail photo-thumbnail-pending"
+                        data-testid="pending-photo-thumbnail"
+                      >
+                        <div className="photo-content">
+                          {(pendingItem.localBlobUrl || photo.thumbnail) && (
+                            <img
+                              src={
+                                pendingItem.localBlobUrl ??
+                                (photo.thumbnail
+                                  ? `data:image/jpeg;base64,${photo.thumbnail}`
+                                  : undefined)
+                              }
+                              alt={photo.filename}
+                              className="photo-image"
+                              style={{
+                                opacity: 0.8,
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                                filter: 'brightness(0.9)',
+                              }}
+                            />
+                          )}
+                          <div className="upload-overlay">
+                            <div className="upload-progress-container">
+                              <div
+                                className={`upload-progress-bar ${progressBarClass}`}
+                                style={{ width: `${displayProgress}%` }}
+                              />
+                            </div>
+                            {pendingItem.error ? (
+                              <span className="upload-status upload-status--error">
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="12" cy="12" r="10" />
+                                  <line x1="15" y1="9" x2="9" y2="15" />
+                                  <line x1="9" y1="9" x2="15" y2="15" />
+                                </svg>
+                                <span>{t('upload.failed')}</span>
+                              </span>
+                            ) : isSyncing ? (
+                              <span className="upload-status upload-status--syncing">
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <polyline points="23 4 23 10 17 10" />
+                                  <polyline points="1 20 1 14 7 14" />
+                                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                                </svg>
+                                <span>{t('gallery.gridView.syncing')}</span>
+                              </span>
+                            ) : isEncrypting ? (
+                              <span className="upload-status upload-status--encrypting">
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <rect
+                                    x="3"
+                                    y="11"
+                                    width="18"
+                                    height="11"
+                                    rx="2"
+                                    ry="2"
+                                  />
+                                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                </svg>
+                                <span>{t('upload.encrypting')}</span>
+                              </span>
+                            ) : isUploading ? (
+                              <span className="upload-status upload-status--uploading">
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                  <polyline points="17 8 12 3 7 8" />
+                                  <line x1="12" y1="3" x2="12" y2="15" />
+                                </svg>
+                                <span>{Math.round(progress * 100)}%</span>
+                              </span>
+                            ) : (
+                              <span className="upload-status upload-status--queued">
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="12" cy="12" r="10" />
+                                  <polyline points="12 6 12 12 16 14" />
+                                </svg>
+                                <span>{t('gallery.gridView.queued')}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {pendingItem.error && (
+                          <div className="photo-error-overlay">
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="white"
+                              strokeWidth="2"
+                            >
+                              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                              <line x1="12" y1="9" x2="12" y2="13" />
+                              <line x1="12" y1="17" x2="12.01" y2="17" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  const epochReadKey = epochKeys.get(photo.epochId);
+                  const isSelected = selectedIds.has(photo.id);
 
                   return (
-                    <div
+                    <PhotoThumbnail
                       key={photo.id}
-                      className="photo-thumbnail photo-thumbnail-pending"
-                      data-testid="pending-photo-thumbnail"
-                    >
-                      <div className="photo-content">
-                        {(pendingItem.localBlobUrl || photo.thumbnail) && (
-                          <img
-                            src={
-                              pendingItem.localBlobUrl ??
-                              (photo.thumbnail
-                                ? `data:image/jpeg;base64,${photo.thumbnail}`
-                                : undefined)
-                            }
-                            alt={photo.filename}
-                            className="photo-image"
-                            style={{
-                              opacity: 0.8,
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                              filter: 'brightness(0.9)',
-                            }}
-                          />
-                        )}
-                        <div className="upload-overlay">
-                          <div className="upload-progress-container">
-                            <div
-                              className={`upload-progress-bar ${progressBarClass}`}
-                              style={{ width: `${displayProgress}%` }}
-                            />
-                          </div>
-                          {pendingItem.error ? (
-                            <span className="upload-status upload-status--error">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="10" />
-                                <line x1="15" y1="9" x2="9" y2="15" />
-                                <line x1="9" y1="9" x2="15" y2="15" />
-                              </svg>
-                              <span>Failed</span>
-                            </span>
-                          ) : isSyncing ? (
-                            <span className="upload-status upload-status--syncing">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="23 4 23 10 17 10" />
-                                <polyline points="1 20 1 14 7 14" />
-                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                              </svg>
-                              <span>Syncing</span>
-                            </span>
-                          ) : isEncrypting ? (
-                            <span className="upload-status upload-status--encrypting">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                              </svg>
-                              <span>Encrypting</span>
-                            </span>
-                          ) : isUploading ? (
-                            <span className="upload-status upload-status--uploading">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                <polyline points="17 8 12 3 7 8" />
-                                <line x1="12" y1="3" x2="12" y2="15" />
-                              </svg>
-                              <span>{Math.round(progress * 100)}%</span>
-                            </span>
-                          ) : (
-                            <span className="upload-status upload-status--queued">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="10" />
-                                <polyline points="12 6 12 12 16 14" />
-                              </svg>
-                              <span>Queued</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {pendingItem.error && (
-                        <div className="photo-error-overlay">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                            <line x1="12" y1="9" x2="12" y2="13" />
-                            <line x1="12" y1="17" x2="12.01" y2="17" />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
+                      photo={photo}
+                      {...(epochReadKey && { epochReadKey })}
+                      onClick={() => handlePhotoClick(photo)}
+                      isSelected={isSelected}
+                      onSelectionChange={(selected, event) =>
+                        handleSelectionChange(photo.id, selected, event)
+                      }
+                      onDelete={(thumbnailUrl) =>
+                        handleDeletePhoto(photo, thumbnailUrl)
+                      }
+                      selectionMode={isSelectionMode}
+                    />
                   );
-                }
-
-                // Get epoch read key for this photo
-                const epochReadKey = epochKeys.get(photo.epochId);
-                const isSelected = selectedIds.has(photo.id);
-                return (
-                  <PhotoThumbnail
-                    key={photo.id}
-                    photo={photo}
-                    {...(epochReadKey && { epochReadKey })}
-                    onClick={() => handlePhotoClick(photo)}
-                    isSelected={isSelected}
-                    onSelectionChange={(selected, event) =>
-                      handleSelectionChange(photo.id, selected, event)
-                    }
-                    onDelete={(thumbnailUrl) =>
-                      handleDeletePhoto(photo, thumbnailUrl)
-                    }
-                    selectionMode={isSelectionMode}
-                  />
-                );
-              })}
+                })}
             </div>
           ))}
         </div>

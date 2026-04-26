@@ -87,7 +87,7 @@ function StoryViewContent() {
     return (
       <div className="story-view story-view--loading">
         <div className="loading-spinner" />
-        <p>{t('gallery.story.loading', 'Loading story...')}</p>
+        <p>{t('gallery.storyView.loading')}</p>
       </div>
     );
   }
@@ -96,7 +96,7 @@ function StoryViewContent() {
   if (loadState === 'error') {
     return (
       <div className="story-view story-view--error">
-        <p>{t('gallery.story.error', 'Failed to load story')}</p>
+        <p>{t('gallery.storyView.error')}</p>
         {errorMessage && <p className="error-message">{errorMessage}</p>}
         <button onClick={() => loadContent()} className="btn btn-secondary">
           {t('common.retry', 'Retry')}
@@ -110,19 +110,16 @@ function StoryViewContent() {
     return (
       <div className="story-view story-view--empty">
         <div className="story-view__empty-state">
-          <h3>{t('gallery.story.noContent', 'No story yet')}</h3>
+          <h3>{t('gallery.storyView.noContent')}</h3>
           <p>
-            {t(
-              'gallery.story.createDescription',
-              'Create a story to add narrative to your album.',
-            )}
+              {t('gallery.storyView.createDescription')}
           </p>
           {canEdit && (
             <button
               onClick={() => createInitialContent()}
               className="btn btn-primary"
             >
-              {t('gallery.story.create', 'Create Story')}
+              {t('gallery.storyView.create')}
             </button>
           )}
         </div>
@@ -148,22 +145,22 @@ function StoryViewContent() {
       <div className="story-view__status">
         {saveState === 'saving' && (
           <span className="status-saving">
-            {t('gallery.story.saving', 'Saving...')}
+            {t('gallery.storyView.saving')}
           </span>
         )}
         {saveState === 'saved' && (
           <span className="status-saved">
-            {t('gallery.story.saved', 'Saved')}
+            {t('gallery.storyView.saved')}
           </span>
         )}
         {saveState === 'error' && (
           <span className="status-error">
-            {t('gallery.story.saveError', 'Save failed')}
+            {t('gallery.storyView.saveError')}
           </span>
         )}
         {saveState === 'conflict' && (
           <span className="status-conflict">
-            {t('gallery.story.conflict', 'Conflict detected')}
+            {t('gallery.storyView.conflict')}
           </span>
         )}
       </div>
@@ -199,10 +196,7 @@ function StoryView({
       <div className="story-view story-view--no-key">
         <div className="loading-spinner" />
         <p>
-          {t(
-            'gallery.story.loadingKeys',
-            'Loading encryption keys...',
-          )}
+            {t('gallery.storyView.loadingKeys')}
         </p>
       </div>
     );
@@ -355,7 +349,10 @@ export function Gallery({
   // The PhotoStore is updated automatically, and usePhotoList subscribes to those changes
 
   // Convert photos to GeoFeatures for map view
-  const geoFeatures = useMemo(() => photosToGeoFeatures(photos), [photos]);
+  const geoFeatures = useMemo(
+    () => photosToGeoFeatures(sortedPhotos),
+    [sortedPhotos],
+  );
 
   // Count geotagged photos
   const geotaggedCount = geoFeatures.length;
@@ -363,25 +360,25 @@ export function Gallery({
   // Handle photo click from map
   const handleMapPhotoClick = useCallback(
     (photoId: string) => {
-      const index = photos.findIndex((p) => p.id === photoId);
-      if (index >= 0) {
-        lightbox.open(index);
+      const sortedIndex = sortedPhotos.findIndex((p) => p.id === photoId);
+      if (sortedIndex >= 0) {
+        lightbox.open(sortedIndex);
       }
     },
-    [photos, lightbox],
+    [sortedPhotos, lightbox],
   );
 
   // Handle cluster click from map - open lightbox with first photo
   const handleMapClusterClick = useCallback(
     (photoIds: string[]) => {
       if (photoIds.length > 0) {
-        const index = photos.findIndex((p) => p.id === photoIds[0]);
-        if (index >= 0) {
-          lightbox.open(index);
+        const sortedIndex = sortedPhotos.findIndex((p) => p.id === photoIds[0]);
+        if (sortedIndex >= 0) {
+          lightbox.open(sortedIndex);
         }
       }
     },
-    [photos, lightbox],
+    [sortedPhotos, lightbox],
   );
 
   // Handle album deletion
@@ -482,8 +479,8 @@ export function Gallery({
 
   // Select all photos - wrapper for header
   const handleSelectAll = useCallback(() => {
-    selection.selectAll(photos.map((p) => p.id));
-  }, [photos, selection]);
+    selection.selectAll(sortedPhotos.map((p) => p.id));
+  }, [sortedPhotos, selection]);
 
   // Handle download all photos
   const handleDownloadAll = useCallback(() => {
@@ -579,7 +576,7 @@ export function Gallery({
     }
 
     return queue;
-  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, photos]);
+  }, [lightbox.isOpen, lightbox.currentIndex, lightbox.currentPhoto, sortedPhotos]);
 
   // Get epoch read key for current lightbox photo
   const currentEpochReadKey = lightbox.currentPhoto
@@ -691,7 +688,7 @@ export function Gallery({
                 <MapView
                   albumId={albumId}
                   points={geoFeatures}
-                  photos={photos}
+                  photos={sortedPhotos}
                   onPhotoClick={handleMapPhotoClick}
                   onClusterClick={handleMapClusterClick}
                 />

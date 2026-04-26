@@ -8,6 +8,7 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getGeoClient } from '../../lib/geo-client';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
 import { createLogger } from '../../lib/logger';
@@ -61,6 +62,8 @@ const MAX_ZOOM = 18;
 /** Cluster size thresholds for styling */
 const CLUSTER_SIZE_SMALL = 10;
 const CLUSTER_SIZE_MEDIUM = 100;
+const BASE64_DATA_PATTERN =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 /**
  * Get cluster marker size based on point count
@@ -84,30 +87,31 @@ function getClusterColor(count: number): string {
  * Create a cluster marker icon
  */
 function createClusterIcon(count: number): L.DivIcon {
-  const size = getClusterSize(count);
-  const color = getClusterColor(count);
+  const safeCount = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+  const size = getClusterSize(safeCount);
+  const color = getClusterColor(safeCount);
+  const container = document.createElement('div');
+  container.className = 'map-cluster-marker';
+  Object.assign(container.style, {
+    width: `${size}px`,
+    height: `${size}px`,
+    background: color,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: `${size > 40 ? 14 : 12}px`,
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+    border: '2px solid white',
+    cursor: 'pointer',
+    transition: 'transform 0.2s ease',
+  });
+  container.textContent = String(safeCount);
 
   return L.divIcon({
-    html: `
-      <div class="map-cluster-marker" style="
-        width: ${size}px;
-        height: ${size}px;
-        background: ${color};
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-weight: bold;
-        font-size: ${size > 40 ? 14 : 12}px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-        border: 2px solid white;
-        cursor: pointer;
-        transition: transform 0.2s ease;
-      ">
-        ${count}
-      </div>
-    `,
+    html: container,
     className: 'map-cluster-icon',
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -119,38 +123,63 @@ function createClusterIcon(count: number): L.DivIcon {
  */
 function createPhotoIcon(photo?: PhotoMeta): L.DivIcon {
   const size = 40;
-  const thumbnailHtml = photo?.thumbnail
-    ? `<img src="data:image/jpeg;base64,${photo.thumbnail}" alt="" style="
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        border-radius: 50%;
-      " />`
-    : `<span style="font-size: 18px;">📷</span>`;
+  const container = document.createElement('div');
+  container.className = 'map-photo-marker';
+  Object.assign(container.style, {
+    width: `${size}px`,
+    height: `${size}px`,
+    background: 'var(--color-surface, #1a1a1a)',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+    border: '2px solid var(--color-primary, #3b82f6)',
+    cursor: 'pointer',
+    overflow: 'hidden',
+    transition: 'transform 0.2s ease',
+  });
+
+  const thumbnailData = photo?.thumbnail?.trim();
+  if (thumbnailData && BASE64_DATA_PATTERN.test(thumbnailData)) {
+    const image = document.createElement('img');
+    image.alt = '';
+    image.src = `data:image/jpeg;base64,${thumbnailData}`;
+    Object.assign(image.style, {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      borderRadius: '50%',
+    });
+    container.appendChild(image);
+  } else {
+    const fallback = document.createElement('span');
+    fallback.textContent = '📷';
+    fallback.style.fontSize = '18px';
+    container.appendChild(fallback);
+  }
 
   return L.divIcon({
-    html: `
-      <div class="map-photo-marker" style="
-        width: ${size}px;
-        height: ${size}px;
-        background: var(--color-surface, #1a1a1a);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-        border: 2px solid var(--color-primary, #3b82f6);
-        cursor: pointer;
-        overflow: hidden;
-        transition: transform 0.2s ease;
-      ">
-        ${thumbnailHtml}
-      </div>
-    `,
+    html: container,
     className: 'map-photo-icon',
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
+}
+
+function createTooltipContent(title: string, subtitle?: string): HTMLDivElement {
+  const container = document.createElement('div');
+  const titleElement = document.createElement('div');
+  titleElement.textContent = title;
+  container.appendChild(titleElement);
+
+  if (subtitle) {
+    const subtitleElement = document.createElement('div');
+    subtitleElement.textContent = subtitle;
+    container.appendChild(subtitleElement);
+  }
+
+  return container;
 }
 
 /**
@@ -167,6 +196,7 @@ export function MapView({
   initialCenter = DEFAULT_CENTER,
   initialZoom = DEFAULT_ZOOM,
 }: MapViewProps) {
+  const { t } = useTranslation();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
@@ -370,10 +400,15 @@ export function MapView({
         marker.on('click', () => handleClusterClick(feature));
 
         // Add tooltip
-        marker.bindTooltip(`${count} photos`, {
+        marker.bindTooltip(
+          createTooltipContent(
+            t('gallery.mapView.clusterTooltip', { count }),
+          ),
+          {
           direction: 'top',
           offset: [0, -getClusterSize(count) / 2],
-        });
+          },
+        );
 
         markersLayer.addLayer(marker);
       } else {
@@ -387,8 +422,13 @@ export function MapView({
 
         // Add tooltip with photo info
         const tooltipContent = photo
-          ? `${photo.filename}${photo.takenAt ? `<br>${new Date(photo.takenAt).toLocaleDateString()}` : ''}`
-          : photoId;
+          ? createTooltipContent(
+              photo.filename,
+              photo.takenAt
+                ? new Date(photo.takenAt).toLocaleDateString()
+                : undefined,
+            )
+          : createTooltipContent(photoId);
 
         marker.bindTooltip(tooltipContent, {
           direction: 'top',
@@ -488,16 +528,19 @@ export function MapView({
       {points.length === 0 && !isLoading && (
         <div className="map-view-empty" data-testid="map-empty">
           <span className="map-view-empty-icon">🗺️</span>
-          <span>No geotagged photos in this album</span>
+          <span>{t('gallery.mapView.empty')}</span>
         </div>
       )}
 
       {/* Stats overlay */}
       {points.length > 0 && (
         <div className="map-view-stats" data-testid="map-stats">
-          <span>{points.length} photos</span>
+          <span>{t('gallery.mapView.photoCount', { count: points.length })}</span>
           {clusters.length > 0 && clusters.length !== points.length && (
-            <span> • {clusters.length} clusters</span>
+            <span>
+              {' '}
+              • {t('gallery.mapView.clusterCount', { count: clusters.length })}
+            </span>
           )}
         </div>
       )}

@@ -1004,7 +1004,7 @@ describe('Video Playback', () => {
       });
 
       expect(pauseMock).toHaveBeenCalled();
-      expect(onNext).toHaveBeenCalled();
+      expect(onNext).toHaveBeenCalledTimes(1);
     });
 
     it('pauses video when navigating to previous photo', async () => {
@@ -1023,7 +1023,7 @@ describe('Video Playback', () => {
       });
 
       expect(pauseMock).toHaveBeenCalled();
-      expect(onPrevious).toHaveBeenCalled();
+      expect(onPrevious).toHaveBeenCalledTimes(1);
     });
   });
 

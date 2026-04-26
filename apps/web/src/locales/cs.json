@@ -225,6 +225,36 @@
       "warningBulk": "Všech {{count}} vybraných fotek bude trvale smazáno ze serveru.",
       "warningSingle": "Tato fotka bude trvale smazána ze serveru."
     },
+    "storyView": {
+      "loading": "Načítání příběhu...",
+      "error": "Nepodařilo se načíst příběh",
+      "noContent": "Zatím žádný příběh",
+      "createDescription": "Vytvořte příběh a přidejte k albu vyprávění.",
+      "create": "Vytvořit příběh",
+      "saving": "Ukládání...",
+      "saved": "Uloženo",
+      "saveError": "Uložení selhalo",
+      "conflict": "Zjištěn konflikt",
+      "loadingKeys": "Načítání šifrovacích klíčů..."
+    },
+    "mapView": {
+      "empty": "V tomto albu nejsou žádné geotagované fotky",
+      "photoCount": "{{count}} fotka",
+      "photoCount_few": "{{count}} fotky",
+      "photoCount_other": "{{count}} fotek",
+      "clusterCount": "{{count}} cluster",
+      "clusterCount_few": "{{count}} clustery",
+      "clusterCount_other": "{{count}} clusterů",
+      "clusterTooltip": "{{count}} fotka",
+      "clusterTooltip_few": "{{count}} fotky",
+      "clusterTooltip_other": "{{count}} fotek"
+    },
+    "gridView": {
+      "emptyTitle": "Zatím žádné fotky",
+      "emptyDescription": "Nahrajte několik fotek pro začátek",
+      "syncing": "Synchronizace",
+      "queued": "Ve frontě"
+    },
     "date": {
       "today": "Dnes",
       "yesterday": "Včera",
