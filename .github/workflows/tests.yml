@@ -185,12 +185,23 @@ jobs:
 
       - name: Setup Rust
         run: |
-          rustup toolchain install 1.93.1 --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
+          rustup toolchain install 1.93.1 --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown,aarch64-linux-android,x86_64-linux-android
           rustup default 1.93.1
 
       - name: Run Rust workspace checks
         run: bash ./scripts/rust-check.sh --skip-supply-chain
-      
+
+      - name: Install wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
+
+      - name: Build Rust WASM package
+        run: bash ./scripts/build-rust-wasm.sh
+
+      - name: Check Rust Android targets
+        run: |
+          cargo check -p mosaic-uniffi --target aarch64-linux-android --locked
+          cargo check -p mosaic-uniffi --target x86_64-linux-android --locked
+
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -207,3 +218,28 @@ jobs:
         run: |
           npm ci
           npm run build
+
+  rust-supply-chain:
+    name: Rust Supply Chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Rust
+        run: |
+          rustup toolchain install 1.93.1 --profile minimal
+          rustup default 1.93.1
+
+      - name: Install Rust supply-chain tools
+        run: |
+          cargo install cargo-deny --version 0.19.4 --locked
+          cargo install cargo-audit --version 0.22.1 --locked
+          cargo install cargo-vet --version 0.10.2 --locked
+
+      - name: Run Rust supply-chain checks
+        run: |
+          cargo deny check
+          cargo audit
+          cargo vet --locked --no-registry-suggestions

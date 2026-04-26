@@ -7,15 +7,41 @@ yanked = "deny"
 
 [licenses]
 allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
   "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
 ]
-confidence-threshold = 0.8
+confidence-threshold = 0.93
 
 [bans]
 deny = []
 highlight = "all"
 multiple-versions = "warn"
+skip = [
+  { crate = "winnow@0.7.15", reason = "Reviewed duplicate from the UniFFI TOML parser stack; keep newer winnow visible for duplicate detection." },
+  { crate = "wit-bindgen@0.46.0", reason = "Reviewed duplicate from the UniFFI WASI/getrandom stack; keep newer wit-bindgen visible for duplicate detection." },
+]
 wildcards = "deny"
+
+[bans.build]
+allow-build-scripts = [
+  "anyhow",
+  "camino",
+  "fs-err",
+  "getrandom",
+  "libc",
+  "proc-macro2",
+  "quote",
+  "rustix",
+  "rustversion",
+  "serde",
+  "serde_core",
+  "wasm-bindgen",
+  "wasm-bindgen-shared",
+  "wit-bindgen",
+]
 
 [sources]
 allow-git = []

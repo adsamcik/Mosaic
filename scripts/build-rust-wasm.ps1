@@ -2,24 +2,37 @@
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+$WasmBindgenVersion = "0.2.118"
 
 Push-Location $ProjectRoot
 
 try {
-    rustup target add wasm32-unknown-unknown
+    $installedTargets = rustup target list --installed
+    if ($installedTargets -notcontains "wasm32-unknown-unknown") {
+        rustup target add wasm32-unknown-unknown
+    }
+
+    if (-not (Get-Command wasm-bindgen -ErrorAction SilentlyContinue)) {
+        throw "wasm-bindgen CLI is required. Install it with: cargo install wasm-bindgen-cli --version $WasmBindgenVersion --locked"
+    }
+
+    $versionOutput = wasm-bindgen --version
+    if ($versionOutput -notmatch "wasm-bindgen\s+([0-9]+\.[0-9]+\.[0-9]+)") {
+        throw "Unable to parse wasm-bindgen version from: $versionOutput"
+    }
+
+    if ($Matches[1] -ne $WasmBindgenVersion) {
+        throw "wasm-bindgen CLI version mismatch: expected $WasmBindgenVersion, got $($Matches[1])"
+    }
+
     cargo build -p mosaic-wasm --target wasm32-unknown-unknown --release --locked
 
-    if (Get-Command wasm-bindgen -ErrorAction SilentlyContinue) {
-        $OutDir = Join-Path $ProjectRoot "target/wasm-bindgen/mosaic-wasm"
-        New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
-        wasm-bindgen `
-            --target web `
-            --out-dir $OutDir `
-            "$ProjectRoot/target/wasm32-unknown-unknown/release/mosaic_wasm.wasm"
-    }
-    else {
-        Write-Warning "wasm-bindgen is not installed; generated JS bindings were skipped."
-    }
+    $OutDir = Join-Path $ProjectRoot "target/wasm-bindgen/mosaic-wasm"
+    New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+    wasm-bindgen `
+        --target web `
+        --out-dir $OutDir `
+        "$ProjectRoot/target/wasm32-unknown-unknown/release/mosaic_wasm.wasm"
 }
 finally {
     Pop-Location
