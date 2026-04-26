@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "operation": "fixture.format-example.v1",
+  "protocolVersion": "mosaic-v1",
+  "description": "Shape-only example for the Mosaic golden-vector fixture format.",
+  "algorithms": {
+    "encoding": "mce-v1-postcard-profile"
+  },
+  "domainLabels": [
+    "mosaic.v1.manifest.sign"
+  ],
+  "inputs": {
+    "albumId": "00000000-0000-7000-8000-000000000001",
+    "epochId": 1,
+    "encryptedMetaHex": "00112233445566778899aabbccddeeff",
+    "tieredShards": [
+      {
+        "tier": 1,
+        "shardId": "00000000-0000-7000-8000-000000000101",
+        "sha256Hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+      }
+    ]
+  },
+  "expected": {
+    "fixturePurpose": "schema-validation-only",
+    "runnerBehavior": "validate-shape-and-skip-crypto-execution"
+  },
+  "negativeCases": [
+    {
+      "name": "missing-domain-label",
+      "mutations": [
+        "remove domainLabels[0]"
+      ],
+      "errorCode": "VECTOR_SCHEMA_INVALID"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "encryptedMeta",
+      "classification": "encrypted",
+      "reason": "Photo metadata is encrypted client-side before upload."
+    },
+    {
+      "name": "signature",
+      "classification": "public-cryptographic",
+      "reason": "Manifest signatures are public verification data."
+    },
+    {
+      "name": "shardId",
+      "classification": "opaque-id",
+      "reason": "Shard IDs link encrypted blobs without revealing media content."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "photoBytes",
+      "reason": "Plaintext media bytes must never be sent to or stored by the backend.",
+      "errorCode": "PLAINTEXT_MEDIA_FORBIDDEN"
+    },
+    {
+      "name": "filename",
+      "reason": "Original filenames are encrypted photo metadata.",
+      "errorCode": "PLAINTEXT_METADATA_FORBIDDEN"
+    },
+    {
+      "name": "exifGps",
+      "reason": "Location metadata is preserved only inside encrypted metadata records.",
+      "errorCode": "PLAINTEXT_METADATA_FORBIDDEN"
+    }
+  ]
+}

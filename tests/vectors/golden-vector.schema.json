@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mosaic.local/schemas/golden-vector.schema.json",
+  "title": "Mosaic Golden Vector Fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operation",
+    "protocolVersion",
+    "description",
+    "algorithms",
+    "domainLabels",
+    "inputs",
+    "expected",
+    "negativeCases",
+    "serverBoundOutputs",
+    "forbiddenServerOutputs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "operation": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$"
+    },
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^mosaic-v[0-9]+$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "algorithms": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "domainLabels": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^mosaic\\.v[0-9]+\\.[a-z0-9.-]+$"
+      },
+      "uniqueItems": true
+    },
+    "inputs": {
+      "$ref": "#/$defs/valueMap"
+    },
+    "expected": {
+      "$ref": "#/$defs/valueMap"
+    },
+    "negativeCases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "mutations",
+          "errorCode"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "mutations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "errorCode": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_]+$"
+          }
+        }
+      }
+    },
+    "serverBoundOutputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "classification",
+          "reason"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "classification": {
+            "enum": [
+              "random",
+              "encrypted",
+              "public-cryptographic",
+              "opaque-id",
+              "operational-metadata",
+              "expiration-lifecycle-metadata"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "forbiddenServerOutputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "reason",
+          "errorCode"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "errorCode": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_]+$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "valueMap": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/vectorValue"
+      }
+    },
+    "vectorValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/vectorValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/vectorValue"
+          }
+        }
+      ]
+    }
+  }
+}
