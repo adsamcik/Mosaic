@@ -1002,12 +1002,17 @@ Invalid reasons (just do it):
 
 **Subagents are your primary tool for research and multi-step analysis.** Use them aggressively—they are fast, thorough, and free up your context for implementation work.
 
+### Context-Preservation Rule
+
+For long-running roadmap work, multi-lane migrations, repeated compaction sessions, or tasks that involve security/supply-chain review plus implementation, operate as an orchestrator by default. Delegate isolated implementation slices, exhaustive audits, test failure analysis, and code review to focused subagents; keep the main conversation for decisions, integration, risk assessment, and final verification. Do not personally read every dependency, log, or large file set when a subagent can return a concise, structured result.
+
 ### 🔴 ALWAYS Use Subagents For
 
 | Scenario | Why |
 |----------|-----|
 | **Any search across >3 files** | Subagents search exhaustively; you might miss edge cases |
 | **Understanding unfamiliar code** | Delegate research, preserve your context for coding |
+| **Long-running or post-compaction efforts** | Main thread stays lean and acts as orchestrator |
 | **Finding all usages of a symbol** | Subagents systematically map every occurrence |
 | **Analyzing data flow** | Let subagents trace end-to-end while you plan |
 | **Investigating test failures** | Subagents can check logs, trace code paths, find root causes |
