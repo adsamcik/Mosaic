@@ -9,6 +9,7 @@ yanked = "deny"
 allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
   "MIT",
   "MPL-2.0",
   "Unicode-3.0",
@@ -30,6 +31,7 @@ allow-build-scripts = [
   "anyhow",
   "camino",
   "fs-err",
+  "generic-array",
   "getrandom",
   "libc",
   "proc-macro2",

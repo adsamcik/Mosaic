@@ -25,10 +25,20 @@ url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 [imports.zcash]
 url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
 
+[[exemptions.aead]]
+version = "0.5.2"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto AEAD trait crate; no unsafe in public surface, widely used in audited stacks."
+
 [[exemptions.anyhow]]
 version = "1.0.102"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
+
+[[exemptions.block-buffer]]
+version = "0.10.4"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto block-buffer; pure Rust, no unsafe, used by sha2/digest."
 
 [[exemptions.bytes]]
 version = "1.11.1"
@@ -40,6 +50,36 @@ version = "1.2.2"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
 
+[[exemptions.chacha20]]
+version = "0.9.1"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto ChaCha20 stream cipher implementation."
+
+[[exemptions.chacha20poly1305]]
+version = "0.10.1"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto XChaCha20-Poly1305 AEAD — primary cipher for Mosaic shard encryption."
+
+[[exemptions.cipher]]
+version = "0.4.4"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto cipher trait crate."
+
+[[exemptions.cpufeatures]]
+version = "0.2.17"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto runtime CPU feature detection for sha2 acceleration."
+
+[[exemptions.crypto-common]]
+version = "0.1.7"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto common primitives (Key, Block) used by digest/aead."
+
+[[exemptions.digest]]
+version = "0.10.7"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto Digest trait crate used by sha2."
+
 [[exemptions.fastrand]]
 version = "2.4.1"
 criteria = "safe-to-deploy"
@@ -49,6 +89,11 @@ notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eigh
 version = "2.11.0"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
+
+[[exemptions.generic-array]]
+version = "0.14.7"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. Foundational type-level array crate used throughout RustCrypto."
 
 [[exemptions.getrandom]]
 version = "0.4.2"
@@ -75,10 +120,20 @@ version = "2.14.0"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
 
+[[exemptions.inout]]
+version = "0.1.4"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto in-place/out-of-place buffer abstraction used by cipher."
+
 [[exemptions.itoa]]
 version = "1.0.18"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
+
+[[exemptions.js-sys]]
+version = "0.3.95"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. wasm-bindgen JavaScript bindings used by getrandom wasm_js for browser CSPRNG access."
 
 [[exemptions.libc]]
 version = "0.2.186"
@@ -99,6 +154,16 @@ notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eigh
 version = "1.21.4"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
+
+[[exemptions.opaque-debug]]
+version = "0.3.1"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. Tiny helper macro that redacts Debug output for crypto types."
+
+[[exemptions.poly1305]]
+version = "0.8.0"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto Poly1305 MAC implementation."
 
 [[exemptions.prettyplease]]
 version = "0.2.37"
@@ -140,10 +205,20 @@ version = "1.1.1"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
 
+[[exemptions.sha2]]
+version = "0.10.9"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto SHA-256 implementation used for shard content hashing."
+
 [[exemptions.siphasher]]
 version = "1.0.2"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
+
+[[exemptions.subtle]]
+version = "2.6.1"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto constant-time comparison primitives (BSD-3-Clause)."
 
 [[exemptions.syn]]
 version = "2.0.117"
@@ -170,6 +245,11 @@ version = "1.1.1+spec-1.1.0"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
 
+[[exemptions.typenum]]
+version = "1.20.0"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. Type-level number crate used by generic-array and the RustCrypto stack."
+
 [[exemptions.unicode-ident]]
 version = "1.0.24"
 criteria = "safe-to-deploy"
@@ -179,6 +259,16 @@ notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eigh
 version = "0.31.1"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
+
+[[exemptions.universal-hash]]
+version = "0.5.1"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto UniversalHash trait used by poly1305."
+
+[[exemptions.version_check]]
+version = "0.9.5"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. Build-time Rust version probe used by typenum."
 
 [[exemptions.wasm-bindgen]]
 version = "0.2.118"
@@ -214,6 +304,11 @@ notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eigh
 version = "1.0.2"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
+
+[[exemptions.zeroize]]
+version = "1.8.2"
+criteria = "safe-to-deploy"
+notes = "Phase 3 production crypto slice backlog exemption pending formal audit. Secure memory zeroing used by SecretKey::drop and RustCrypto internals."
 
 [[exemptions.zmij]]
 version = "1.0.21"

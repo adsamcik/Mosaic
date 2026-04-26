@@ -9,6 +9,10 @@ publish.workspace = true
 
 [dependencies]
 mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
+chacha20poly1305 = { version = "=0.10.1", default-features = false, features = ["alloc"] }
+sha2 = { version = "=0.10.9", default-features = false }
+zeroize = "=1.8.2"
+getrandom = { version = "=0.4.2", features = ["wasm_js"] }
 
 [lints]
 workspace = true

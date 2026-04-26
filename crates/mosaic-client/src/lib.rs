@@ -8,6 +8,7 @@ use std::sync::{Mutex, OnceLock};
 
 use mosaic_crypto::MosaicCryptoError;
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader};
+use zeroize::{Zeroize, Zeroizing};
 
 /// Stable client error codes exported through FFI facades.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +21,13 @@ pub enum ClientErrorCode {
     InvalidTier = 103,
     NonZeroReservedByte = 104,
     EmptyContext = 200,
+    InvalidKeyLength = 201,
+    InvalidInputLength = 202,
+    InvalidEnvelope = 203,
+    MissingCiphertext = 204,
+    AuthenticationFailed = 205,
+    RngFailure = 206,
+    WrappedKeyTooShort = 207,
     OperationCancelled = 300,
     SecretHandleNotFound = 400,
     InternalStatePoisoned = 500,
@@ -103,14 +111,13 @@ pub struct ProgressResult {
 }
 
 struct SecretRecord {
-    bytes: Vec<u8>,
+    bytes: Zeroizing<Vec<u8>>,
     open: bool,
 }
 
 impl SecretRecord {
     fn close(&mut self) {
-        self.bytes.fill(0);
-        self.bytes.clear();
+        self.bytes.zeroize();
         self.open = false;
     }
 }
@@ -178,7 +185,7 @@ pub fn open_secret_handle(secret: &[u8]) -> Result<u64, ClientError> {
     guard.insert(
         handle,
         SecretRecord {
-            bytes: secret.to_vec(),
+            bytes: Zeroizing::new(secret.to_vec()),
             open: true,
         },
     );
@@ -265,6 +272,13 @@ fn map_domain_error(error: MosaicDomainError) -> ClientErrorCode {
 fn map_crypto_error(error: MosaicCryptoError) -> ClientErrorCode {
     match error {
         MosaicCryptoError::EmptyContext => ClientErrorCode::EmptyContext,
+        MosaicCryptoError::InvalidKeyLength { .. } => ClientErrorCode::InvalidKeyLength,
+        MosaicCryptoError::InvalidInputLength { .. } => ClientErrorCode::InvalidInputLength,
+        MosaicCryptoError::InvalidEnvelope => ClientErrorCode::InvalidEnvelope,
+        MosaicCryptoError::MissingCiphertext => ClientErrorCode::MissingCiphertext,
+        MosaicCryptoError::AuthenticationFailed => ClientErrorCode::AuthenticationFailed,
+        MosaicCryptoError::RngFailure => ClientErrorCode::RngFailure,
+        MosaicCryptoError::WrappedKeyTooShort { .. } => ClientErrorCode::WrappedKeyTooShort,
     }
 }
 
