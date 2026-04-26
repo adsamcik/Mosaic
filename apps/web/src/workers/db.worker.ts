@@ -18,6 +18,23 @@ const log = createLogger('DbWorker');
 type SqlJsStatic = Awaited<ReturnType<typeof import('sql.js').default>>;
 type DatabaseType = import('sql.js').Database;
 
+export enum DbWorkerErrorCode {
+  NOT_INITIALIZED = 'NOT_INITIALIZED',
+  RESET_REQUIRED = 'RESET_REQUIRED',
+  SNAPSHOT_DECRYPT_FAILED = 'SNAPSHOT_DECRYPT_FAILED',
+}
+
+export class DbWorkerError extends Error {
+  constructor(
+    message: string,
+    public readonly code: DbWorkerErrorCode,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'DbWorkerError';
+  }
+}
+
 // Store the loaded sql.js instance
 let cachedSqlJs: SqlJsStatic | null = null;
 
@@ -56,11 +73,12 @@ async function loadSqlJs(): Promise<SqlJsStatic> {
  * Database Worker Implementation
  * Manages SQLite-WASM database with OPFS persistence
  */
-class DbWorker implements DbWorkerApi {
+export class DbWorker implements DbWorkerApi {
   private sql: SqlJsStatic | null = null;
   private db: DatabaseType | null = null;
   private sessionKey: Uint8Array | null = null;
   private sodiumReady = false;
+  private lastError: DbWorkerError | null = null;
 
   /**
    * Ensure libsodium is initialized before crypto operations.
@@ -75,6 +93,10 @@ class DbWorker implements DbWorkerApi {
   }
 
   async init(sessionKey: Uint8Array): Promise<void> {
+    if (this.lastError) {
+      throw this.lastError;
+    }
+
     const initTimer = log.startTimer('database initialization');
     this.sessionKey = sessionKey;
 
@@ -98,20 +120,63 @@ class DbWorker implements DbWorkerApi {
         const decrypted = await this.decryptBlob(existingData);
         decryptTimer.end({ decryptedSize: decrypted.byteLength });
         this.db = new this.sql.Database(decrypted);
+        this.lastError = null;
         log.info('Loaded existing database from OPFS');
       } catch (error) {
-        // Decryption failed - could be wrong password or corrupted data
-        // Start fresh with a new database
-        log.error('Failed to decrypt existing database, starting fresh', error);
-        this.db = new this.sql.Database();
+        this.markUnavailable(
+          new DbWorkerError(
+            'Failed to decrypt existing database snapshot; explicit reset required',
+            DbWorkerErrorCode.SNAPSHOT_DECRYPT_FAILED,
+            error,
+          ),
+        );
+        throw this.lastError;
       }
     } else {
       log.debug('No existing database found, creating new one');
       this.db = new this.sql.Database();
+      this.lastError = null;
     }
 
-    await this.runMigrations();
+    try {
+      await this.runMigrations();
+      this.lastError = null;
+    } catch (error) {
+      this.markUnavailable(
+        error instanceof DbWorkerError
+          ? error
+          : new DbWorkerError(
+              'Database initialization failed',
+              DbWorkerErrorCode.RESET_REQUIRED,
+              error,
+            ),
+      );
+      throw this.lastError;
+    }
     initTimer.end();
+  }
+
+  async resetStorage(): Promise<void> {
+    if (!this.sessionKey) {
+      throw new DbWorkerError(
+        'Database not initialized',
+        DbWorkerErrorCode.NOT_INITIALIZED,
+      );
+    }
+
+    await this.deleteFromOPFS();
+
+    if (!this.sql) {
+      this.sql = await loadSqlJs();
+    }
+
+    if (this.db) {
+      this.db.close();
+    }
+
+    this.db = new this.sql.Database();
+    this.lastError = null;
+    await this.runMigrations();
   }
 
   async close(): Promise<void> {
@@ -127,12 +192,37 @@ class DbWorker implements DbWorkerApi {
     }
   }
 
+  private markUnavailable(error: DbWorkerError): void {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+
+    this.lastError = error;
+    log.error(error.message, error.cause);
+  }
+
+  private getReadyDb(): DatabaseType {
+    if (this.lastError) {
+      throw this.lastError;
+    }
+
+    if (!this.db) {
+      throw new DbWorkerError(
+        'Database not initialized',
+        DbWorkerErrorCode.NOT_INITIALIZED,
+      );
+    }
+
+    return this.db;
+  }
+
   /**
    * Get current schema version from SQLite PRAGMA user_version
    */
   private getSchemaVersion(): number {
-    if (!this.db) return 0;
-    const result = this.db.exec('PRAGMA user_version');
+    const db = this.getReadyDb();
+    const result = db.exec('PRAGMA user_version');
     return (result[0]?.values[0]?.[0] as number) ?? 0;
   }
 
@@ -140,16 +230,14 @@ class DbWorker implements DbWorkerApi {
    * Set schema version using SQLite PRAGMA user_version
    */
   private setSchemaVersion(version: number): void {
-    if (!this.db) return;
-    this.db.run(`PRAGMA user_version = ${version}`);
+    this.getReadyDb().run(`PRAGMA user_version = ${version}`);
   }
 
   /**
    * Check if FTS5 table exists
    */
   private ftsTableExists(): boolean {
-    if (!this.db) return false;
-    const result = this.db.exec(
+    const result = this.getReadyDb().exec(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='photos_fts'",
     );
     const firstRow = result[0];
@@ -164,11 +252,9 @@ class DbWorker implements DbWorkerApi {
    * Create FTS5 table and triggers
    */
   private createFtsTable(): void {
-    if (!this.db) return;
-
     log.info('Creating FTS5 virtual table for full-text search');
 
-    this.db.run(`
+    this.getReadyDb().run(`
       CREATE VIRTUAL TABLE IF NOT EXISTS photos_fts USING fts5(
         filename, tags, description,
         content='photos',
@@ -177,21 +263,21 @@ class DbWorker implements DbWorkerApi {
     `);
 
     // Triggers to keep FTS in sync
-    this.db.run(`
+    this.getReadyDb().run(`
       CREATE TRIGGER IF NOT EXISTS photos_ai AFTER INSERT ON photos BEGIN
         INSERT INTO photos_fts(rowid, filename, tags, description)
         VALUES (NEW.rowid, NEW.filename, NEW.tags, NEW.description);
       END;
     `);
 
-    this.db.run(`
+    this.getReadyDb().run(`
       CREATE TRIGGER IF NOT EXISTS photos_ad AFTER DELETE ON photos BEGIN
         INSERT INTO photos_fts(photos_fts, rowid, filename, tags, description)
         VALUES ('delete', OLD.rowid, OLD.filename, OLD.tags, OLD.description);
       END;
     `);
 
-    this.db.run(`
+    this.getReadyDb().run(`
       CREATE TRIGGER IF NOT EXISTS photos_au AFTER UPDATE ON photos BEGIN
         INSERT INTO photos_fts(photos_fts, rowid, filename, tags, description)
         VALUES ('delete', OLD.rowid, OLD.filename, OLD.tags, OLD.description);
@@ -205,12 +291,10 @@ class DbWorker implements DbWorkerApi {
    * Rebuild FTS index from existing photos data
    */
   private rebuildFtsIndex(): void {
-    if (!this.db) return;
-
     log.info('Rebuilding FTS index from existing photos');
 
     // Clear existing FTS data and rebuild from photos table
-    this.db.run(`
+    this.getReadyDb().run(`
       INSERT INTO photos_fts(photos_fts) VALUES('rebuild');
     `);
 
@@ -218,8 +302,7 @@ class DbWorker implements DbWorkerApi {
   }
 
   private async runMigrations(): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-
+    const db = this.getReadyDb();
     const currentVersion = this.getSchemaVersion();
     log.debug('Current schema version', { version: currentVersion });
 
@@ -227,7 +310,7 @@ class DbWorker implements DbWorkerApi {
     if (currentVersion < 1) {
       log.info('Running migration: v0 -> v1 (initial schema)');
 
-      this.db.run(`
+      db.run(`
         -- Albums table for sync state
         CREATE TABLE IF NOT EXISTS albums (
           id TEXT PRIMARY KEY,
@@ -289,16 +372,16 @@ class DbWorker implements DbWorkerApi {
       log.info('Running migration: v2 -> v3 (thumbnail columns)');
 
       try {
-        this.db.run(`
+        db.run(`
           ALTER TABLE photos ADD COLUMN thumbnail TEXT;
         `);
-        this.db.run(`
+        db.run(`
           ALTER TABLE photos ADD COLUMN thumb_width INTEGER;
         `);
-        this.db.run(`
+        db.run(`
           ALTER TABLE photos ADD COLUMN thumb_height INTEGER;
         `);
-        this.db.run(`
+        db.run(`
           ALTER TABLE photos ADD COLUMN blurhash TEXT;
         `);
 
@@ -316,12 +399,12 @@ class DbWorker implements DbWorkerApi {
       log.info('Running migration: v3 -> v4 (tier shard columns)');
 
       try {
-        this.db.run(`ALTER TABLE photos ADD COLUMN thumbnail_shard_id TEXT;`);
-        this.db.run(`ALTER TABLE photos ADD COLUMN thumbnail_shard_hash TEXT;`);
-        this.db.run(`ALTER TABLE photos ADD COLUMN preview_shard_id TEXT;`);
-        this.db.run(`ALTER TABLE photos ADD COLUMN preview_shard_hash TEXT;`);
-        this.db.run(`ALTER TABLE photos ADD COLUMN original_shard_ids TEXT;`); // JSON array
-        this.db.run(
+        db.run(`ALTER TABLE photos ADD COLUMN thumbnail_shard_id TEXT;`);
+        db.run(`ALTER TABLE photos ADD COLUMN thumbnail_shard_hash TEXT;`);
+        db.run(`ALTER TABLE photos ADD COLUMN preview_shard_id TEXT;`);
+        db.run(`ALTER TABLE photos ADD COLUMN preview_shard_hash TEXT;`);
+        db.run(`ALTER TABLE photos ADD COLUMN original_shard_ids TEXT;`); // JSON array
+        db.run(
           `ALTER TABLE photos ADD COLUMN original_shard_hashes TEXT;`,
         ); // JSON array
 
@@ -338,7 +421,7 @@ class DbWorker implements DbWorkerApi {
       log.info('Running migration: v4 -> v5 (thumbhash column)');
 
       try {
-        this.db.run(`ALTER TABLE photos ADD COLUMN thumbhash TEXT;`);
+        db.run(`ALTER TABLE photos ADD COLUMN thumbhash TEXT;`);
 
         this.setSchemaVersion(5);
         log.info('Thumbhash column migration complete');
@@ -353,8 +436,8 @@ class DbWorker implements DbWorkerApi {
       log.info('Running migration: v5 -> v6 (video support)');
 
       try {
-        this.db.run(`ALTER TABLE photos ADD COLUMN is_video INTEGER DEFAULT 0;`);
-        this.db.run(`ALTER TABLE photos ADD COLUMN duration REAL;`);
+        db.run(`ALTER TABLE photos ADD COLUMN is_video INTEGER DEFAULT 0;`);
+        db.run(`ALTER TABLE photos ADD COLUMN duration REAL;`);
 
         this.setSchemaVersion(6);
         log.info('Video support migration complete');
@@ -378,9 +461,7 @@ class DbWorker implements DbWorkerApi {
   }
 
   async getAlbumVersion(albumId: string): Promise<number> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const result = this.db.exec(
+    const result = this.getReadyDb().exec(
       'SELECT current_version FROM albums WHERE id = ?',
       [albumId],
     );
@@ -388,9 +469,7 @@ class DbWorker implements DbWorkerApi {
   }
 
   async setAlbumVersion(albumId: string, version: number): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    this.db.run(
+    this.getReadyDb().run(
       `
       INSERT INTO albums (id, current_version) VALUES (?, ?)
       ON CONFLICT(id) DO UPDATE SET current_version = ?
@@ -401,9 +480,7 @@ class DbWorker implements DbWorkerApi {
   }
 
   async insertManifests(manifests: DecryptedManifest[]): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
+    const stmt = this.getReadyDb().prepare(`
       INSERT OR REPLACE INTO photos 
       (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description, thumbnail, thumb_width, thumb_height, blurhash, thumbnail_shard_id, thumbnail_shard_hash, preview_shard_id, preview_shard_hash, original_shard_ids, original_shard_hashes, thumbhash, is_video, duration)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -411,7 +488,7 @@ class DbWorker implements DbWorkerApi {
 
     for (const m of manifests) {
       if (m.isDeleted) {
-        this.db.run('DELETE FROM photos WHERE id = ?', [m.id]);
+        this.getReadyDb().run('DELETE FROM photos WHERE id = ?', [m.id]);
       } else {
         log.debug('insertManifest', {
           id: m.id,
@@ -469,9 +546,7 @@ class DbWorker implements DbWorkerApi {
   }
 
   async deleteManifest(id: string): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    this.db.run('DELETE FROM photos WHERE id = ?', [id]);
+    this.getReadyDb().run('DELETE FROM photos WHERE id = ?', [id]);
     await this.saveToOPFS();
   }
 
@@ -480,9 +555,7 @@ class DbWorker implements DbWorkerApi {
     limit: number,
     offset: number,
   ): Promise<PhotoMeta[]> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const result = this.db.exec(
+    const result = this.getReadyDb().exec(
       `
       SELECT * FROM photos WHERE album_id = ?
       ORDER BY taken_at DESC, created_at DESC
@@ -507,9 +580,7 @@ class DbWorker implements DbWorkerApi {
   }
 
   async getPhotoCount(albumId: string): Promise<number> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const result = this.db.exec(
+    const result = this.getReadyDb().exec(
       'SELECT COUNT(*) FROM photos WHERE album_id = ?',
       [albumId],
     );
@@ -517,9 +588,7 @@ class DbWorker implements DbWorkerApi {
   }
 
   async searchPhotos(albumId: string, query: string): Promise<PhotoMeta[]> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const result = this.db.exec(
+    const result = this.getReadyDb().exec(
       `
       SELECT p.* FROM photos p
       INNER JOIN photos_fts fts ON p.rowid = fts.rowid
@@ -534,9 +603,7 @@ class DbWorker implements DbWorkerApi {
   }
 
   async getPhotosForMap(albumId: string, bounds: Bounds): Promise<GeoPoint[]> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const result = this.db.exec(
+    const result = this.getReadyDb().exec(
       `
       SELECT id, lat, lng FROM photos
       WHERE album_id = ?
@@ -557,23 +624,22 @@ class DbWorker implements DbWorkerApi {
   }
 
   async getPhotoById(id: string): Promise<PhotoMeta | null> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const result = this.db.exec('SELECT * FROM photos WHERE id = ?', [id]);
+    const result = this.getReadyDb().exec('SELECT * FROM photos WHERE id = ?', [
+      id,
+    ]);
     const photos = this.rowsToPhotos(result);
     return photos[0] ?? null;
   }
 
   async clearAlbumPhotos(albumId: string): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-
     log.info('Clearing cached photos for album', { albumId });
 
     // Delete all photos for this album
-    this.db.run('DELETE FROM photos WHERE album_id = ?', [albumId]);
+    const db = this.getReadyDb();
+    db.run('DELETE FROM photos WHERE album_id = ?', [albumId]);
 
     // Reset album version to force full resync
-    this.db.run('DELETE FROM albums WHERE id = ?', [albumId]);
+    db.run('DELETE FROM albums WHERE id = ?', [albumId]);
 
     // Persist changes to OPFS
     await this.saveToOPFS();
@@ -634,9 +700,7 @@ class DbWorker implements DbWorkerApi {
   }
 
   private async saveToOPFS(): Promise<void> {
-    if (!this.db) return;
-
-    const data = this.db.export();
+    const data = this.getReadyDb().export();
     // Encrypt database with XChaCha20-Poly1305 using session key
     const encrypted = await this.encryptBlob(data);
 
@@ -650,6 +714,15 @@ class DbWorker implements DbWorkerApi {
     new Uint8Array(buffer).set(encrypted);
     await writable.write(buffer);
     await writable.close();
+  }
+
+  private async deleteFromOPFS(): Promise<void> {
+    try {
+      const root = await navigator.storage.getDirectory();
+      await root.removeEntry('mosaic.db.enc');
+    } catch {
+      // Ignore missing file
+    }
   }
 
   /**

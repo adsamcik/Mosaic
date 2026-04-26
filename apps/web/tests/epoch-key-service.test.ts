@@ -110,8 +110,9 @@ describe('Epoch Key Service', () => {
       const bundles = await fetchAndUnwrapEpochKeys('album-123');
 
       expect(bundles).toHaveLength(2);
-      expect(bundles[0].epochId).toBe(1);
-      expect(bundles[1].epochId).toBe(2);
+      expect(bundles.map((bundle) => bundle.epochId).sort((a, b) => a - b)).toEqual(
+        [1, 2],
+      );
       expect(mockApi.getEpochKeys).toHaveBeenCalledWith('album-123');
     });
 
@@ -146,6 +147,136 @@ describe('Epoch Key Service', () => {
       expect(mockCryptoClient.openEpochKeyBundle).not.toHaveBeenCalled();
     });
 
+    it('prefers the newest record when the same epoch is uploaded twice', async () => {
+      const olderBundle = new Uint8Array(100).fill(1);
+      const newerBundle = new Uint8Array(100).fill(2);
+
+      mockApi.getEpochKeys.mockResolvedValue([
+        {
+          ...createMockEpochKeyRecord(1),
+          encryptedKeyBundle: toBase64(olderBundle),
+          createdAt: '2024-01-01T00:00:00Z',
+        },
+        {
+          ...createMockEpochKeyRecord(1),
+          encryptedKeyBundle: toBase64(newerBundle),
+          createdAt: '2024-01-02T00:00:00Z',
+        },
+      ]);
+
+      mockCryptoClient.openEpochKeyBundle.mockImplementation(
+        async (bundle: Uint8Array) => ({
+          epochSeed: new Uint8Array(32).fill(bundle[0] ?? 0),
+          signPublicKey: new Uint8Array(32).fill(2),
+          signSecretKey: new Uint8Array(64).fill(3),
+        }),
+      );
+
+      const bundles = await fetchAndUnwrapEpochKeys('album-123');
+
+      expect(bundles).toHaveLength(1);
+      expect(bundles[0].epochSeed[0]).toBe(2);
+      expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries legacy empty-albumId bundles only when compatibility is explicitly enabled', async () => {
+      mockApi.getEpochKeys.mockResolvedValue([createMockEpochKeyRecord(1)]);
+      mockCryptoClient.openEpochKeyBundle
+        .mockRejectedValueOnce(new Error('Bundle albumId must not be empty'))
+        .mockResolvedValueOnce({
+          epochSeed: new Uint8Array(32).fill(8),
+          signPublicKey: new Uint8Array(32).fill(2),
+          signSecretKey: new Uint8Array(64).fill(3),
+        });
+
+      const bundles = await fetchAndUnwrapEpochKeys('album-123', 0, {
+        allowLegacyEmptyAlbumId: true,
+      });
+
+      expect(bundles).toHaveLength(1);
+      expect(bundles[0].epochSeed[0]).toBe(8);
+      expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenNthCalledWith(
+        1,
+        expect.any(Uint8Array),
+        expect.any(Uint8Array),
+        'album-123',
+        0,
+      );
+      expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenNthCalledWith(
+        2,
+        expect.any(Uint8Array),
+        expect.any(Uint8Array),
+        'album-123',
+        0,
+        { allowLegacyEmptyAlbumId: true },
+      );
+    });
+
+    it('rejects legacy empty-albumId bundles by default', async () => {
+      mockApi.getEpochKeys.mockResolvedValue([createMockEpochKeyRecord(1)]);
+      mockCryptoClient.openEpochKeyBundle.mockRejectedValue(
+        new Error('Bundle albumId must not be empty'),
+      );
+
+      await expect(fetchAndUnwrapEpochKeys('album-123')).rejects.toThrow(
+        /Bundle albumId must not be empty/,
+      );
+
+      expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenCalledTimes(1);
+      expect(mockCryptoClient.openEpochKeyBundle).not.toHaveBeenCalledWith(
+        expect.any(Uint8Array),
+        expect.any(Uint8Array),
+        'album-123',
+        0,
+        { allowLegacyEmptyAlbumId: true },
+      );
+    });
+
+    it('rejects a malicious legacy duplicate when a strict record exists for the epoch', async () => {
+      const newerLegacyBundle = new Uint8Array(100).fill(1);
+      const olderStrictBundle = new Uint8Array(100).fill(2);
+
+      mockApi.getEpochKeys.mockResolvedValue([
+        {
+          ...createMockEpochKeyRecord(1),
+          encryptedKeyBundle: toBase64(newerLegacyBundle),
+          createdAt: '2024-01-02T00:00:00Z',
+        },
+        {
+          ...createMockEpochKeyRecord(1),
+          encryptedKeyBundle: toBase64(olderStrictBundle),
+          createdAt: '2024-01-01T00:00:00Z',
+        },
+      ]);
+
+      mockCryptoClient.openEpochKeyBundle.mockImplementation(
+        async (bundle: Uint8Array, _sender, _albumId, _minEpochId, options) => {
+          if (bundle[0] === 1 && !options?.allowLegacyEmptyAlbumId) {
+            throw new Error('Bundle albumId must not be empty');
+          }
+
+          return {
+            epochSeed: new Uint8Array(32).fill(bundle[0] ?? 0),
+            signPublicKey: new Uint8Array(32).fill(2),
+            signSecretKey: new Uint8Array(64).fill(3),
+          };
+        },
+      );
+
+      const bundles = await fetchAndUnwrapEpochKeys('album-123', 0, {
+        allowLegacyEmptyAlbumId: true,
+      });
+
+      expect(bundles).toHaveLength(1);
+      expect(bundles[0].epochSeed[0]).toBe(2);
+      expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenCalledTimes(2);
+      expect(
+        mockCryptoClient.openEpochKeyBundle.mock.calls.every(
+          (call) => call[4] === undefined,
+        ),
+      ).toBe(true);
+    });
+
     it('skips epochs below minEpochId', async () => {
       const records = [
         createMockEpochKeyRecord(1),
@@ -157,7 +288,9 @@ describe('Epoch Key Service', () => {
       const bundles = await fetchAndUnwrapEpochKeys('album-123', 2);
 
       expect(bundles).toHaveLength(2);
-      expect(bundles.map((b) => b.epochId)).toEqual([2, 3]);
+      expect(bundles.map((b) => b.epochId).sort((a, b) => a - b)).toEqual([
+        2, 3,
+      ]);
     });
 
     it('throws IDENTITY_NOT_DERIVED when identity not available', async () => {

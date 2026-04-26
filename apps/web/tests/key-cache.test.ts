@@ -84,6 +84,12 @@ describe('key-cache', () => {
       expect(envelope).toHaveProperty('expiresAt');
     });
 
+    it('does not persist the raw cache encryption key alongside ciphertext', async () => {
+      await cacheKeys(mockKeys);
+
+      expect(sessionStorage.getItem('mosaic:cacheKey')).toBeNull();
+    });
+
     it('does not store keys when caching is disabled', async () => {
       vi.mocked(settingsService.getKeyCacheDurationMs).mockReturnValue(0);
 
@@ -186,6 +192,27 @@ describe('key-cache', () => {
 
       Date.now = originalNow;
     });
+
+    it('zeroes the decrypted plaintext buffer after parsing', async () => {
+      await cacheKeys(mockKeys);
+
+      const plaintextBytes = new TextEncoder().encode(JSON.stringify(mockKeys));
+      const decryptSpy = vi
+        .spyOn(crypto.subtle, 'decrypt')
+        .mockResolvedValueOnce(plaintextBytes.buffer);
+
+      try {
+        const result = await getCachedKeys();
+
+        expect(result).not.toBeNull();
+        expect(result!.accountKey).toBe(mockKeys.accountKey);
+        expect(Array.from(plaintextBytes).every((byte) => byte === 0)).toBe(
+          true,
+        );
+      } finally {
+        decryptSpy.mockRestore();
+      }
+    });
   });
 
   describe('clearCachedKeys', () => {
@@ -287,36 +314,26 @@ describe('key-cache', () => {
       return freshModule;
     };
 
-    it('restores keys after simulated page reload (encryption key persisted in sessionStorage)', async () => {
-      // First, cache keys (this persists both the keys and the encryption key)
+    it('invalidates restore after simulated page reload', async () => {
       await cacheKeys(mockKeys);
 
-      // Verify cache exists
       expect(sessionStorage.getItem('mosaic:keyCache')).not.toBeNull();
-      expect(sessionStorage.getItem('mosaic:cacheKey')).not.toBeNull();
+      expect(sessionStorage.getItem('mosaic:cacheKey')).toBeNull();
 
-      // Simulate page reload by getting fresh module (clears in-memory cacheEncryptionKey)
       const freshModule = await simulatePageReload();
 
-      // hasCachedKeys should still return true (encryption key is in sessionStorage)
-      expect(freshModule.hasCachedKeys()).toBe(true);
+      expect(freshModule.hasCachedKeys()).toBe(false);
 
-      // getCachedKeys should restore the keys from sessionStorage
       const retrieved = await freshModule.getCachedKeys();
-      expect(retrieved).not.toBeNull();
-      expect(retrieved!.accountKey).toBe(mockKeys.accountKey);
-      expect(retrieved!.sessionKey).toBe(mockKeys.sessionKey);
+      expect(retrieved).toBeNull();
     });
 
-    it('hasCachedKeys returns true when encryption key is only in sessionStorage', async () => {
-      // Cache keys first
+    it('hasCachedKeys returns false when only ciphertext survives reload', async () => {
       await cacheKeys(mockKeys);
 
-      // Simulate page reload
       const freshModule = await simulatePageReload();
 
-      // Even though in-memory key is null, sessionStorage has it
-      expect(freshModule.hasCachedKeys()).toBe(true);
+      expect(freshModule.hasCachedKeys()).toBe(false);
     });
   });
 });

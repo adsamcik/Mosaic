@@ -169,6 +169,7 @@ describe('Worker API interface completeness', () => {
   it('DbWorkerApi has required methods', () => {
     const requiredMethods: (keyof DbWorkerApi)[] = [
       'init',
+      'resetStorage',
       'close',
       'getAlbumVersion',
       'setAlbumVersion',
@@ -182,7 +183,7 @@ describe('Worker API interface completeness', () => {
       'clearAlbumPhotos',
     ];
 
-    expect(requiredMethods).toHaveLength(12);
+    expect(requiredMethods).toHaveLength(13);
   });
 
   it('GeoWorkerApi has required methods', () => {

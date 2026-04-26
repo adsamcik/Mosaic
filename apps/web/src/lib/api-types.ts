@@ -216,6 +216,11 @@ export interface RotateEpochRequest {
   shareLinkKeys?: ShareLinkKeyUpdateRequest[];
 }
 
+export interface SyncAlbumOptions {
+  limit?: number;
+  signal?: AbortSignal;
+}
+
 // =============================================================================
 // Share Link Types
 // =============================================================================
@@ -486,7 +491,7 @@ export interface MosaicApi {
   syncAlbum(
     albumId: string,
     since: number,
-    limit?: number,
+    options?: SyncAlbumOptions,
   ): Promise<SyncResponse>;
 
   // Members

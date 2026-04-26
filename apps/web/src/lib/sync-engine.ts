@@ -15,38 +15,41 @@ import {
 import { createLogger } from './logger';
 
 const log = createLogger('SyncEngine');
+const MAX_SYNC_PAGINATION_ITERATIONS = 1000;
 
-/**
- * Get epoch thumb key for manifest decryption.
- * Derives the thumbKey from epochSeed for decrypting manifests.
- *
- * IMPORTANT: Manifests are encrypted with the thumbKey (tier 1), not the raw epochSeed.
- * This ensures share link recipients (who only have tier keys) can decrypt manifests.
- *
- * @param albumId - Album ID
- * @param epochId - Epoch ID
- * @returns thumbKey if available, null otherwise. Caller must call memzero() after use.
- */
-async function getEpochThumbKey(
-  albumId: string,
-  epochId: number,
-): Promise<Uint8Array | null> {
-  // Check cache first via epoch-key-store
-  const cached = getEpochKey(albumId, epochId);
-  if (cached) {
-    const { thumbKey } = deriveTierKeys(cached.epochSeed);
-    return thumbKey;
+function createAbortError(): Error {
+  if (typeof DOMException !== 'undefined') {
+    return new DOMException('Sync cancelled', 'AbortError');
   }
 
-  // Fetch and unwrap epoch keys from server
-  try {
-    const bundle = await getOrFetchEpochKey(albumId, epochId);
-    const { thumbKey } = deriveTierKeys(bundle.epochSeed);
-    return thumbKey;
-  } catch (err) {
-    log.error(`Failed to get epoch key ${epochId} for album ${albumId}`, err);
-    return null;
+  const error = new Error('Sync cancelled');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw createAbortError();
   }
+}
+
+function keysMatch(left: Uint8Array, right: Uint8Array): boolean {
+  // Public-key comparison only. Do not use this helper for secrets.
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function hasValidSigningKey(pubkey: Uint8Array): boolean {
+  return pubkey.length === 32 && pubkey.some((byte) => byte !== 0);
 }
 
 /** Sync event types */
@@ -125,100 +128,136 @@ class SyncEngine extends EventTarget {
       const db = await getDbClient();
       const crypto = await getCryptoClient();
       const api = getApi();
+      const signal = this.syncAbortController.signal;
 
-      // Get local version
-      const localVersion = await db.getAlbumVersion(albumId);
+      let sinceVersion = await db.getAlbumVersion(albumId);
+      let iterationCount = 0;
 
-      // Fetch delta from server
-      const response = await api.syncAlbum(albumId, localVersion);
+      while (true) {
+        throwIfAborted(signal);
 
-      // Decrypt manifests
-      const decrypted: DecryptedManifest[] = [];
-      for (const m of response.manifests) {
-        // Get epoch seed for this manifest, then derive thumbKey for decryption.
-        // Manifests are encrypted with thumbKey (tier 1) to enable share link decryption.
-        let epochSeed = readKey;
-        if (!epochSeed) {
-          const cachedKey = await getEpochThumbKey(
-            albumId,
-            response.currentEpochId,
+        if (iterationCount >= MAX_SYNC_PAGINATION_ITERATIONS) {
+          const error = new Error(
+            `Sync pagination iteration cap reached for album ${albumId}`,
           );
-          if (!cachedKey) {
-            log.warn(
-              `No epoch key available for album ${albumId} epoch ${response.currentEpochId}`,
-            );
-            continue;
-          }
-          // getEpochThumbKey already returns the derived thumbKey
-          epochSeed = cachedKey;
-        } else {
-          // Caller passed epochSeed, derive thumbKey from it
-          const { thumbKey } = deriveTierKeys(epochSeed);
-          epochSeed = thumbKey;
+          log.error(error.message, { albumId, sinceVersion, iterationCount });
+          throw error;
+        }
+        iterationCount += 1;
+
+        const response = await api.syncAlbum(albumId, sinceVersion, { signal });
+        throwIfAborted(signal);
+
+        if (response.hasMore && response.albumVersion <= sinceVersion) {
+          const error = new Error(
+            `Sync pagination did not advance album version for album ${albumId}`,
+          );
+          log.error(error.message, {
+            albumId,
+            sinceVersion,
+            responseAlbumVersion: response.albumVersion,
+            iterationCount,
+          });
+          throw error;
         }
 
-        // Decode base64 values from API
-        const encryptedMeta = fromBase64(m.encryptedMeta);
-        const signature = fromBase64(m.signature);
-        const signerPubkey = fromBase64(m.signerPubkey);
-
-        // DEBUG: Log the verification key details
-        log.debug('Verifying manifest signature', {
-          manifestId: m.id,
-          signerPubkeyPrefix: Array.from(signerPubkey.slice(0, 8))
-            .map((b: number) => b.toString(16).padStart(2, '0'))
-            .join(''),
-          signaturePrefix: Array.from(signature.slice(0, 8))
-            .map((b: number) => b.toString(16).padStart(2, '0'))
-            .join(''),
-          encryptedMetaLength: encryptedMeta.length,
-        });
-
-        // Verify signature before decryption
-        const isValid = await crypto.verifyManifest(
-          encryptedMeta,
-          signature,
-          signerPubkey,
-        );
-
-        if (!isValid) {
-          log.warn(`Invalid signature for manifest ${m.id}`);
-          // Zero out derived key before continuing
-          memzero(epochSeed);
-          continue;
-        }
-
-        // Decrypt metadata using the thumbKey
-        const meta = await crypto.decryptManifest(encryptedMeta, epochSeed);
-
-        // Zero out derived key after use
-        memzero(epochSeed);
-
-        decrypted.push({
-          id: m.id,
-          albumId: m.albumId,
-          versionCreated: m.versionCreated,
-          isDeleted: m.isDeleted,
-          meta,
-          shardIds: m.shardIds,
-        });
-      }
-
-      // Store in local database
-      if (decrypted.length > 0) {
-        await db.insertManifests(decrypted);
-        await db.setAlbumVersion(albumId, response.albumVersion);
-
-        this.dispatchSyncEvent('sync-progress', {
+        throwIfAborted(signal);
+        const epochBundle = await getOrFetchEpochKey(
           albumId,
-          count: decrypted.length,
-        });
-      }
+          response.currentEpochId,
+        );
+        throwIfAborted(signal);
 
-      // Continue if more data available
-      if (response.hasMore) {
-        await this.sync(albumId, readKey);
-        return;
+        if (!hasValidSigningKey(epochBundle.signKeypair.publicKey)) {
+          throw new Error(
+            `Missing valid epoch signing key for album ${albumId} epoch ${response.currentEpochId}`,
+          );
+        }
+
+        const decrypted: DecryptedManifest[] = [];
+        for (const manifest of response.manifests) {
+          throwIfAborted(signal);
+
+          let thumbKey: Uint8Array | null = null;
+          let previewKey: Uint8Array | null = null;
+          let fullKey: Uint8Array | null = null;
+
+          try {
+            ({ thumbKey, previewKey, fullKey } = readKey
+              ? deriveTierKeys(readKey)
+              : deriveTierKeys(epochBundle.epochSeed));
+
+            const encryptedMeta = fromBase64(manifest.encryptedMeta);
+            const signature = fromBase64(manifest.signature);
+            const serverSignerPubkey = fromBase64(manifest.signerPubkey);
+
+            if (!hasValidSigningKey(serverSignerPubkey)) {
+              log.warn(`Manifest ${manifest.id} has empty signer pubkey`);
+              continue;
+            }
+
+            if (
+              !keysMatch(serverSignerPubkey, epochBundle.signKeypair.publicKey)
+            ) {
+              log.warn(
+                `Manifest ${manifest.id} signer pubkey mismatch for album ${albumId}`,
+              );
+              continue;
+            }
+
+            throwIfAborted(signal);
+            const isValid = await crypto.verifyManifest(
+              encryptedMeta,
+              signature,
+              epochBundle.signKeypair.publicKey,
+            );
+
+            if (!isValid) {
+              log.warn(`Invalid signature for manifest ${manifest.id}`);
+              continue;
+            }
+
+            throwIfAborted(signal);
+            const meta = await crypto.decryptManifest(encryptedMeta, thumbKey);
+            throwIfAborted(signal);
+
+            decrypted.push({
+              id: manifest.id,
+              albumId: manifest.albumId,
+              versionCreated: manifest.versionCreated,
+              isDeleted: manifest.isDeleted,
+              meta,
+              shardIds: manifest.shardIds,
+            });
+          } finally {
+            if (thumbKey) {
+              memzero(thumbKey);
+            }
+            if (previewKey) {
+              memzero(previewKey);
+            }
+            if (fullKey) {
+              memzero(fullKey);
+            }
+          }
+        }
+
+        throwIfAborted(signal);
+        if (decrypted.length > 0) {
+          await db.insertManifests(decrypted);
+          this.dispatchSyncEvent('sync-progress', {
+            albumId,
+            count: decrypted.length,
+          });
+        }
+
+        await db.setAlbumVersion(albumId, response.albumVersion);
+        sinceVersion = response.albumVersion;
+        throwIfAborted(signal);
+
+        if (!response.hasMore) {
+          break;
+        }
       }
 
       log.info(`Dispatching sync-complete event for album ${albumId}`);

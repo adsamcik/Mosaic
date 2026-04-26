@@ -1,3 +1,4 @@
+import { memzero } from '@mosaic/crypto';
 import { useCallback, useEffect, useState } from 'react';
 import type { Album } from '../components/Albums/AlbumCard';
 import {
@@ -359,6 +360,9 @@ export function useAlbums() {
       setIsCreating(true);
       setCreateError(null);
 
+      let epochSeedToWipe: Uint8Array | null = null;
+      let signSecretKeyToWipe: Uint8Array | null = null;
+
       try {
         const api = getApi();
         const crypto = await getCryptoClient();
@@ -375,6 +379,8 @@ export function useAlbums() {
         // Generate new epoch key for this album
         const epochId = 1; // Initial epoch
         const epochKey = await crypto.generateEpochKey(epochId);
+        epochSeedToWipe = epochKey.epochSeed;
+        signSecretKeyToWipe = epochKey.signSecretKey;
 
         // Encrypt the album name for local storage
         // Note: The encrypted name is stored locally. When we add album metadata
@@ -383,7 +389,7 @@ export function useAlbums() {
 
         // Create sealed bundle for owner (self-seal)
         const bundle = await crypto.createEpochKeyBundle(
-          '', // Album ID not known yet - will be set by server
+          '', // Bootstrap-only legacy placeholder; strict fetch prefers the corrected re-seal below.
           epochId,
           epochKey.epochSeed,
           epochKey.signPublicKey,
@@ -408,6 +414,41 @@ export function useAlbums() {
           ...(options?.expirationWarningDays ? { expirationWarningDays: options.expirationWarningDays } : {}),
         });
 
+        const correctedBundle = await crypto.createEpochKeyBundle(
+          newAlbum.id,
+          epochId,
+          epochKey.epochSeed,
+          epochKey.signPublicKey,
+          epochKey.signSecretKey,
+          identityPubkey,
+        );
+
+        try {
+          await api.createEpochKey(newAlbum.id, {
+            recipientId: currentUser.id,
+            epochId,
+            encryptedKeyBundle: toBase64(
+              new Uint8Array([
+                ...correctedBundle.signature,
+                ...correctedBundle.encryptedBundle,
+              ]),
+            ),
+            ownerSignature: toBase64(correctedBundle.signature),
+            sharerPubkey: toBase64(identityPubkey),
+            signPubkey: toBase64(epochKey.signPublicKey),
+          });
+        } catch (error) {
+          try {
+            await api.deleteAlbum(newAlbum.id);
+          } catch (rollbackError) {
+            log.error(
+              `Failed to roll back album ${newAlbum.id} after epoch key reseal failure:`,
+              rollbackError,
+            );
+          }
+          throw error;
+        }
+
         // Also store in localStorage as a fallback for older server versions
         // Use the service function for consistency
         setStoredEncryptedName(newAlbum.id, encryptedName);
@@ -421,6 +462,8 @@ export function useAlbums() {
             secretKey: epochKey.signSecretKey,
           },
         });
+        epochSeedToWipe = null;
+        signSecretKeyToWipe = null;
 
         // Transform to frontend format
         // We know the real name since we just created it
@@ -444,6 +487,12 @@ export function useAlbums() {
         setCreateError(message);
         return null;
       } finally {
+        if (epochSeedToWipe) {
+          memzero(epochSeedToWipe);
+        }
+        if (signSecretKeyToWipe) {
+          memzero(signSecretKeyToWipe);
+        }
         setIsCreating(false);
       }
     },

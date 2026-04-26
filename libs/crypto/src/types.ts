@@ -296,6 +296,8 @@ export interface BundleValidationContext {
   albumId: string;
   /** Minimum acceptable epoch ID (prevents replay) */
   minEpochId: number;
+  /** Allow legacy bundles created before album ID was known */
+  allowLegacyEmptyAlbumId?: boolean;
 }
 
 // =============================================================================

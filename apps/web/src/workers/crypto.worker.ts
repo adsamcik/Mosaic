@@ -6,6 +6,7 @@ import type {
   CryptoWorkerApi,
   EncryptedShard,
   ExportedKeys,
+  OpenEpochKeyBundleOptions,
   PhotoMeta,
 } from './types';
 
@@ -479,6 +480,7 @@ class CryptoWorker implements CryptoWorkerApi {
     senderPubkey: Uint8Array,
     albumId: string,
     minEpochId: number,
+    options?: OpenEpochKeyBundleOptions,
   ): Promise<{
     epochSeed: Uint8Array;
     signPublicKey: Uint8Array;
@@ -500,6 +502,7 @@ class CryptoWorker implements CryptoWorkerApi {
     const context = {
       albumId,
       minEpochId,
+      allowLegacyEmptyAlbumId: options?.allowLegacyEmptyAlbumId ?? false,
     };
 
     // Verify and open the bundle

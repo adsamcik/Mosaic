@@ -127,6 +127,14 @@ export interface AlbumState {
   currentVersion: number;
 }
 
+export interface OpenEpochKeyBundleOptions {
+  /**
+   * Allow legacy bundles with an empty albumId only after strict validation fails.
+   * This is for one-time migration compatibility and must never be the default path.
+   */
+  allowLegacyEmptyAlbumId?: boolean;
+}
+
 /**
  * Database Worker API
  * Manages SQLite-WASM database with encrypted persistence to OPFS
@@ -137,6 +145,13 @@ export interface DbWorkerApi {
    * @param sessionKey - 32-byte key for database encryption
    */
   init(sessionKey: Uint8Array): Promise<void>;
+
+  /**
+   * Delete the persisted encrypted snapshot and recreate an empty database.
+   * Reuses the current session key and leaves the worker ready for immediate use.
+   * Must only be called after init(sessionKey) has established that session key.
+   */
+  resetStorage(): Promise<void>;
 
   /**
    * Close the database and clear session key
@@ -311,6 +326,7 @@ export interface CryptoWorkerApi {
     senderPubkey: Uint8Array,
     albumId: string,
     minEpochId: number,
+    options?: OpenEpochKeyBundleOptions,
   ): Promise<{
     epochSeed: Uint8Array;
     signPublicKey: Uint8Array;

@@ -24,6 +24,27 @@ export interface EpochKeyBundle {
 /** Cache structure: albumId -> epochId -> EpochKeyBundle */
 const epochKeyCache = new Map<string, Map<number, EpochKeyBundle>>();
 
+function hasNonZeroBytes(bytes: Uint8Array): boolean {
+  return bytes.some((b) => b !== 0);
+}
+
+function wipeBundle(bundle: EpochKeyBundle): void {
+  memzero(bundle.epochSeed);
+  memzero(bundle.signKeypair.secretKey);
+}
+
+function wipeReplacedBundle(
+  existing: EpochKeyBundle,
+  replacement: EpochKeyBundle,
+): void {
+  if (existing.epochSeed !== replacement.epochSeed) {
+    memzero(existing.epochSeed);
+  }
+  if (existing.signKeypair.secretKey !== replacement.signKeypair.secretKey) {
+    memzero(existing.signKeypair.secretKey);
+  }
+}
+
 /**
  * Get an epoch key bundle from the cache.
  *
@@ -86,12 +107,10 @@ export function setEpochKey(albumId: string, bundle: EpochKeyBundle): void {
   // Check if we already have a bundle with valid signKeypair
   const existing = albumKeys.get(bundle.epochId);
   if (existing) {
-    const existingHasValidSignKeypair = existing.signKeypair.publicKey.some(
-      (b) => b !== 0,
+    const existingHasValidSignKeypair = hasNonZeroBytes(
+      existing.signKeypair.publicKey,
     );
-    const newHasValidSignKeypair = bundle.signKeypair.publicKey.some(
-      (b) => b !== 0,
-    );
+    const newHasValidSignKeypair = hasNonZeroBytes(bundle.signKeypair.publicKey);
 
     // Don't overwrite a complete bundle with one that has empty signKeypair
     if (existingHasValidSignKeypair && !newHasValidSignKeypair) {
@@ -109,6 +128,10 @@ export function setEpochKey(albumId: string, bundle: EpochKeyBundle): void {
         epochId: bundle.epochId,
       });
     }
+  }
+
+  if (existing && existing !== bundle) {
+    wipeReplacedBundle(existing, bundle);
   }
 
   albumKeys.set(bundle.epochId, bundle);
@@ -147,8 +170,7 @@ export function clearAlbumKeys(albumId: string): void {
   if (albumKeys) {
     // Wipe key material before clearing
     for (const bundle of albumKeys.values()) {
-      memzero(bundle.epochSeed);
-      memzero(bundle.signKeypair.secretKey);
+      wipeBundle(bundle);
     }
     albumKeys.clear();
     epochKeyCache.delete(albumId);
@@ -163,8 +185,7 @@ export function clearAllEpochKeys(): void {
   // Wipe all key material before clearing
   for (const albumKeys of epochKeyCache.values()) {
     for (const bundle of albumKeys.values()) {
-      memzero(bundle.epochSeed);
-      memzero(bundle.signKeypair.secretKey);
+      wipeBundle(bundle);
     }
     albumKeys.clear();
   }

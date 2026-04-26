@@ -20,6 +20,7 @@ import type {
   AlbumContentResponse,
   UpdateAlbumContentRequest,
   SyncResponse,
+  SyncAlbumOptions,
   AlbumMember,
   InviteRequest,
   EpochKeyRecord,
@@ -79,13 +80,14 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   headers?: Record<string, string>;
+  signal?: AbortSignal;
 }
 
 async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { method = 'GET', body, headers = {} } = options;
+  const { method = 'GET', body, headers = {}, signal } = options;
 
   const requestHeaders: Record<string, string> = {
     ...headers,
@@ -101,6 +103,10 @@ async function apiRequest<T>(
     headers: requestHeaders,
     credentials: 'same-origin',
   };
+
+  if (signal !== undefined) {
+    init.signal = signal;
+  }
 
   // Only add body if it's defined
   if (body !== undefined) {
@@ -218,15 +224,21 @@ export function createApiClient(): MosaicApi {
     async syncAlbum(
       albumId: string,
       since: number,
-      limit?: number,
+      options: SyncAlbumOptions = {},
     ): Promise<SyncResponse> {
+      const { limit, signal } = options;
       const params = new URLSearchParams({
         since: String(since),
       });
       if (limit !== undefined) {
         params.set('limit', String(limit));
       }
-      return apiRequest(`/albums/${albumId}/sync?${params}`);
+      const requestOptions: RequestOptions = {};
+      if (signal !== undefined) {
+        requestOptions.signal = signal;
+      }
+
+      return apiRequest(`/albums/${albumId}/sync?${params}`, requestOptions);
     },
 
     // =========================================================================

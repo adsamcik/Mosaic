@@ -19,6 +19,62 @@ import { createLogger } from './logger';
 
 const log = createLogger('EpochKeyService');
 
+export interface FetchEpochKeyOptions {
+  allowLegacyEmptyAlbumId?: boolean;
+}
+
+function newestRecordFirst(a: EpochKeyRecord, b: EpochKeyRecord): number {
+  if (a.epochId !== b.epochId) {
+    return b.epochId - a.epochId;
+  }
+
+  const aCreated = Date.parse(a.createdAt);
+  const bCreated = Date.parse(b.createdAt);
+  if (Number.isNaN(aCreated) || Number.isNaN(bCreated)) {
+    return 0;
+  }
+
+  return bCreated - aCreated;
+}
+
+function isLegacyEmptyAlbumIdError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('Bundle albumId must not be empty');
+}
+
+function classifyEpochKeyError(
+  record: EpochKeyRecord,
+  error: unknown,
+): never {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes('signature') || message.includes('Signature')) {
+    throw new EpochKeyError(
+      `Invalid signature for epoch key ${record.epochId}`,
+      EpochKeyErrorCode.SIGNATURE_INVALID,
+      error instanceof Error ? error : undefined,
+    );
+  }
+
+  if (message.includes('decrypt') || message.includes('open')) {
+    throw new EpochKeyError(
+      `Failed to decrypt epoch key ${record.epochId}`,
+      EpochKeyErrorCode.DECRYPTION_FAILED,
+      error instanceof Error ? error : undefined,
+    );
+  }
+
+  if (message.includes('mismatch') || message.includes('context')) {
+    throw new EpochKeyError(
+      `Context mismatch for epoch key ${record.epochId}`,
+      EpochKeyErrorCode.CONTEXT_MISMATCH,
+      error instanceof Error ? error : undefined,
+    );
+  }
+
+  throw error;
+}
+
 /** Error thrown when epoch key operations fail */
 export class EpochKeyError extends Error {
   constructor(
@@ -64,6 +120,7 @@ export enum EpochKeyErrorCode {
 export async function fetchAndUnwrapEpochKeys(
   albumId: string,
   minEpochId = 0,
+  options: FetchEpochKeyOptions = {},
 ): Promise<EpochKeyBundle[]> {
   const api = getApi();
   const crypto = await getCryptoClient();
@@ -103,81 +160,120 @@ export async function fetchAndUnwrapEpochKeys(
   }
 
   const unwrappedBundles: EpochKeyBundle[] = [];
+  const seenEpochIds = new Set<number>();
+  const recordsByEpoch = new Map<number, EpochKeyRecord[]>();
 
-  // Unwrap each epoch key bundle
-  for (const record of epochKeyRecords) {
-    // Skip epochs below minimum (prevents replay attacks)
+  for (const record of [...epochKeyRecords].sort(newestRecordFirst)) {
     if (record.epochId < minEpochId) {
       continue;
     }
 
-    // Check if already cached
-    if (hasEpochKey(albumId, record.epochId)) {
-      const cached = getEpochKey(albumId, record.epochId);
+    const records = recordsByEpoch.get(record.epochId);
+    if (records) {
+      records.push(record);
+    } else {
+      recordsByEpoch.set(record.epochId, [record]);
+    }
+  }
+
+  for (const [epochId, records] of recordsByEpoch) {
+    const primaryRecord = records[0];
+    if (!primaryRecord) {
+      continue;
+    }
+
+    if (seenEpochIds.has(epochId)) {
+      continue;
+    }
+
+    if (hasEpochKey(albumId, epochId)) {
+      const cached = getEpochKey(albumId, epochId);
       if (cached) {
         unwrappedBundles.push(cached);
+        seenEpochIds.add(epochId);
         continue;
       }
     }
 
-    try {
-      // Decode base64 values from server
-      // Note: encryptedKeyBundle is stored as signature (64 bytes) || sealed box
-      // so we use it directly - no need to prepend ownerSignature again
-      const fullBundle = fromBase64(record.encryptedKeyBundle);
-      const sharerPubkey = fromBase64(record.sharerPubkey);
+    let firstError: unknown = null;
+    const legacyCandidates: EpochKeyRecord[] = [];
+    const allowLegacyEmptyAlbumId = options.allowLegacyEmptyAlbumId ?? false;
+    let hasNonLegacyRecord = false;
+    let resolvedBundle: EpochKeyBundle | null = null;
 
-      // Open the epoch key bundle via crypto worker
-      const opened = await crypto.openEpochKeyBundle(
-        fullBundle,
-        sharerPubkey,
-        albumId,
-        minEpochId,
-      );
-
-      const bundle: EpochKeyBundle = {
-        epochId: record.epochId,
-        epochSeed: opened.epochSeed,
-        signKeypair: {
-          publicKey: opened.signPublicKey,
-          secretKey: opened.signSecretKey,
-        },
-      };
-
-      // Cache the unwrapped bundle
-      setEpochKey(albumId, bundle);
-      unwrappedBundles.push(bundle);
-    } catch (err) {
-      // Determine error type based on message
-      const message = err instanceof Error ? err.message : String(err);
-
-      if (message.includes('signature') || message.includes('Signature')) {
-        throw new EpochKeyError(
-          `Invalid signature for epoch key ${record.epochId}`,
-          EpochKeyErrorCode.SIGNATURE_INVALID,
-          err instanceof Error ? err : undefined,
+    for (const record of records) {
+      try {
+        const fullBundle = fromBase64(record.encryptedKeyBundle);
+        const sharerPubkey = fromBase64(record.sharerPubkey);
+        const opened = await crypto.openEpochKeyBundle(
+          fullBundle,
+          sharerPubkey,
+          albumId,
+          minEpochId,
         );
-      }
 
-      if (message.includes('decrypt') || message.includes('open')) {
-        throw new EpochKeyError(
-          `Failed to decrypt epoch key ${record.epochId}`,
-          EpochKeyErrorCode.DECRYPTION_FAILED,
-          err instanceof Error ? err : undefined,
-        );
-      }
+        resolvedBundle = {
+          epochId: record.epochId,
+          epochSeed: opened.epochSeed,
+          signKeypair: {
+            publicKey: opened.signPublicKey,
+            secretKey: opened.signSecretKey,
+          },
+        };
+        break;
+      } catch (error) {
+        if (isLegacyEmptyAlbumIdError(error)) {
+          if (allowLegacyEmptyAlbumId) {
+            legacyCandidates.push(record);
+          }
+          firstError ??= error;
+          continue;
+        }
 
-      if (message.includes('mismatch') || message.includes('context')) {
-        throw new EpochKeyError(
-          `Context mismatch for epoch key ${record.epochId}`,
-          EpochKeyErrorCode.CONTEXT_MISMATCH,
-          err instanceof Error ? err : undefined,
-        );
+        hasNonLegacyRecord = true;
+        firstError ??= error;
       }
-
-      // Re-throw unknown errors
-      throw err;
     }
+
+    if (
+      !resolvedBundle &&
+      allowLegacyEmptyAlbumId &&
+      !hasNonLegacyRecord
+    ) {
+      for (const record of legacyCandidates) {
+        try {
+          const fullBundle = fromBase64(record.encryptedKeyBundle);
+          const sharerPubkey = fromBase64(record.sharerPubkey);
+          const opened = await crypto.openEpochKeyBundle(
+            fullBundle,
+            sharerPubkey,
+            albumId,
+            minEpochId,
+            { allowLegacyEmptyAlbumId: true },
+          );
+
+          resolvedBundle = {
+            epochId: record.epochId,
+            epochSeed: opened.epochSeed,
+            signKeypair: {
+              publicKey: opened.signPublicKey,
+              secretKey: opened.signSecretKey,
+            },
+          };
+          break;
+        } catch (error) {
+          firstError ??= error;
+        }
+      }
+    }
+
+    if (!resolvedBundle) {
+      classifyEpochKeyError(primaryRecord, firstError);
+    }
+
+    setEpochKey(albumId, resolvedBundle);
+    unwrappedBundles.push(resolvedBundle);
+    seenEpochIds.add(epochId);
   }
 
   return unwrappedBundles;

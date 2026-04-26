@@ -2,12 +2,12 @@
  * Secure Key Cache
  *
  * Caches encryption keys in sessionStorage with time-based expiration.
- * Keys are encrypted with a random session-key stored only in memory,
- * providing defense-in-depth against sessionStorage access.
+ * Keys are encrypted with a random in-memory AES key stored only in memory,
+ * preventing raw key co-location with ciphertext.
  *
  * Security properties:
  * - Keys are encrypted with AES-256-GCM before storage
- * - Encryption key exists only in memory (cleared on tab close)
+ * - Encryption key exists only in memory (cleared on tab close/reload)
  * - Expiration timestamp prevents indefinite key persistence
  * - Automatic cleanup on expiration
  */
@@ -21,10 +21,7 @@ const log = createLogger('KeyCache');
 /** Storage key for cached keys */
 const KEY_CACHE_STORAGE_KEY = 'mosaic:keyCache';
 
-/** Storage key for the cache encryption key (persisted in sessionStorage) */
-const CACHE_KEY_STORAGE_KEY = 'mosaic:cacheKey';
-
-/** In-memory encryption key for the cache (lazy-loaded from sessionStorage) */
+/** In-memory encryption key for the cache (never persisted) */
 let cacheEncryptionKey: CryptoKey | null = null;
 
 /** Cached keys structure */
@@ -78,55 +75,19 @@ function fromBase64(base64: string): Uint8Array {
 
 /**
  * Get or create the in-memory encryption key.
- * The key is persisted in sessionStorage (as exportable raw bytes) so it
- * survives page reloads but is cleared when the tab closes.
+ * The key is non-extractable and never persisted.
  */
 async function getCacheEncryptionKey(): Promise<CryptoKey> {
   if (cacheEncryptionKey) {
     return cacheEncryptionKey;
   }
 
-  // Try to restore from sessionStorage first
-  const storedKey = sessionStorage.getItem(CACHE_KEY_STORAGE_KEY);
-  if (storedKey) {
-    try {
-      const keyBytes = fromBase64(storedKey);
-      cacheEncryptionKey = await crypto.subtle.importKey(
-        'raw',
-        toArrayBufferView(keyBytes),
-        { name: 'AES-GCM', length: 256 },
-        true, // Extractable so we can persist it
-        ['encrypt', 'decrypt'],
-      );
-      log.debug('Restored cache encryption key from sessionStorage');
-      return cacheEncryptionKey;
-    } catch (error) {
-      log.error(
-        'Failed to restore cache encryption key, generating new one',
-        error,
-      );
-      sessionStorage.removeItem(CACHE_KEY_STORAGE_KEY);
-    }
-  }
-
   // Generate a random AES-256 key
   cacheEncryptionKey = await crypto.subtle.generateKey(
     { name: 'AES-GCM', length: 256 },
-    true, // Extractable so we can persist it
+    false,
     ['encrypt', 'decrypt'],
   );
-
-  // Persist to sessionStorage for page reloads
-  try {
-    const keyBytes = await crypto.subtle.exportKey('raw', cacheEncryptionKey);
-    sessionStorage.setItem(
-      CACHE_KEY_STORAGE_KEY,
-      toBase64(new Uint8Array(keyBytes)),
-    );
-    log.debug('Generated and persisted new cache encryption key');
-  } catch (error) {
-    log.error('Failed to persist cache encryption key', error);
-  }
 
   return cacheEncryptionKey;
 }
@@ -154,31 +115,34 @@ export async function cacheKeys(keys: CachedKeys): Promise<void> {
   try {
     const encKey = await getCacheEncryptionKey();
     const plaintext = new TextEncoder().encode(JSON.stringify(keys));
+    try {
+      // Generate random nonce
+      const nonce = crypto.getRandomValues(new Uint8Array(12));
 
-    // Generate random nonce
-    const nonce = crypto.getRandomValues(new Uint8Array(12));
+      // Encrypt
+      const ciphertext = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
+        encKey,
+        toArrayBufferView(plaintext),
+      );
 
-    // Encrypt
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
-      encKey,
-      toArrayBufferView(plaintext),
-    );
+      // Calculate expiration (0 = no expiry for "until tab close")
+      const expiresAt = durationMs === Infinity ? 0 : Date.now() + durationMs;
 
-    // Calculate expiration (0 = no expiry for "until tab close")
-    const expiresAt = durationMs === Infinity ? 0 : Date.now() + durationMs;
+      const envelope: CacheEnvelope = {
+        ciphertext: toBase64(new Uint8Array(ciphertext)),
+        nonce: toBase64(nonce),
+        expiresAt,
+      };
 
-    const envelope: CacheEnvelope = {
-      ciphertext: toBase64(new Uint8Array(ciphertext)),
-      nonce: toBase64(nonce),
-      expiresAt,
-    };
-
-    sessionStorage.setItem(KEY_CACHE_STORAGE_KEY, JSON.stringify(envelope));
-    log.debug('Keys cached successfully, expires:', {
-      expiresAt:
-        expiresAt === 0 ? 'on tab close' : new Date(expiresAt).toISOString(),
-    });
+      sessionStorage.setItem(KEY_CACHE_STORAGE_KEY, JSON.stringify(envelope));
+      log.debug('Keys cached successfully, expires:', {
+        expiresAt:
+          expiresAt === 0 ? 'on tab close' : new Date(expiresAt).toISOString(),
+      });
+    } finally {
+      plaintext.fill(0);
+    }
   } catch (error) {
     log.error('Failed to cache keys:', {
       error: error instanceof Error ? error.message : String(error),
@@ -213,7 +177,13 @@ export async function getCachedKeys(): Promise<CachedKeys | null> {
       return null;
     }
 
-    // Get or restore the encryption key
+    if (!cacheEncryptionKey) {
+      log.debug('No in-memory cache encryption key available');
+      clearCachedKeys();
+      return null;
+    }
+
+    // Get the in-memory encryption key
     const encKey = await getCacheEncryptionKey();
 
     // Decrypt
@@ -226,9 +196,16 @@ export async function getCachedKeys(): Promise<CachedKeys | null> {
       toArrayBufferView(ciphertext),
     );
 
-    const keys: CachedKeys = JSON.parse(new TextDecoder().decode(plaintext));
-    log.debug('Retrieved cached keys successfully');
-    return keys;
+    const plaintextBytes = new Uint8Array(plaintext);
+    try {
+      const keys: CachedKeys = JSON.parse(
+        new TextDecoder().decode(plaintextBytes),
+      );
+      log.debug('Retrieved cached keys successfully');
+      return keys;
+    } finally {
+      plaintextBytes.fill(0);
+    }
   } catch (error) {
     log.error('Failed to retrieve cached keys:', error);
     clearCachedKeys();
@@ -250,7 +227,6 @@ export function clearCachedKeys(): void {
  */
 export function clearCacheEncryptionKey(): void {
   cacheEncryptionKey = null;
-  sessionStorage.removeItem(CACHE_KEY_STORAGE_KEY);
   clearCachedKeys();
   log.debug('Cleared cache encryption key');
 }
@@ -260,8 +236,7 @@ export function clearCacheEncryptionKey(): void {
  * Used to determine if we can skip password entry.
  */
 export function hasCachedKeys(): boolean {
-  // Check if we have the encryption key (in memory or sessionStorage)
-  if (!cacheEncryptionKey && !sessionStorage.getItem(CACHE_KEY_STORAGE_KEY)) {
+  if (!cacheEncryptionKey) {
     return false;
   }
 

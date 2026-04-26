@@ -22,6 +22,7 @@ import type {
   AlbumContentResponse,
   UpdateAlbumContentRequest,
   SyncResponse,
+  SyncAlbumOptions,
   AlbumMember,
   InviteRequest,
   EpochKeyRecord,
@@ -201,7 +202,25 @@ function createMockStore(): MockStore {
 export function createMockApi(latencyMs: number = 100): MosaicApi {
   const store = createMockStore();
 
-  const delay = () => new Promise((r) => setTimeout(r, latencyMs));
+  const delay = (signal?: AbortSignal) =>
+    new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException('Request aborted', 'AbortError'));
+        return;
+      }
+
+      const onAbort = () => {
+        clearTimeout(timeoutId);
+        reject(new DOMException('Request aborted', 'AbortError'));
+      };
+
+      const timeoutId = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, latencyMs);
+
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
 
   const generateUuid = () =>
     'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -394,9 +413,10 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     async syncAlbum(
       albumId: string,
       since: number,
-      limit: number = 100,
+      options: SyncAlbumOptions = {},
     ): Promise<SyncResponse> {
-      await delay();
+      const { limit = 100, signal } = options;
+      await delay(signal);
       const album = store.albums.get(albumId);
       if (!album) {
         throw new Error(`Album not found: ${albumId}`);

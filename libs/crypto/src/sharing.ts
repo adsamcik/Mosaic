@@ -134,72 +134,75 @@ export function verifyAndOpenBundle(
     );
   }
 
-  // Parse JSON
-  let bundleJson: {
-    version: number;
-    albumId: string;
-    epochId: number;
-    recipientPubkey: string;
-    epochSeed: string;
-    signKeypair: {
-      publicKey: string;
-      secretKey: string;
-    };
-  };
-
   try {
-    bundleJson = JSON.parse(new TextDecoder().decode(bundleBytes));
-  } catch {
+    const bundleJson: {
+      version: number;
+      albumId: string;
+      epochId: number;
+      recipientPubkey: string;
+      epochSeed: string;
+      signKeypair: {
+        publicKey: string;
+        secretKey: string;
+      };
+    } = JSON.parse(new TextDecoder().decode(bundleBytes));
+
+    if (bundleJson.albumId === '') {
+      if (!expectedContext.allowLegacyEmptyAlbumId) {
+        throw new CryptoError(
+          'Bundle albumId must not be empty',
+          CryptoErrorCode.CONTEXT_MISMATCH,
+        );
+      }
+    } else if (bundleJson.albumId !== expectedContext.albumId) {
+      throw new CryptoError(
+        `Bundle albumId mismatch: expected ${expectedContext.albumId}, got ${bundleJson.albumId}`,
+        CryptoErrorCode.CONTEXT_MISMATCH,
+      );
+    }
+
+    if (bundleJson.epochId < expectedContext.minEpochId) {
+      throw new CryptoError(
+        `Bundle epochId too old: ${bundleJson.epochId} < ${expectedContext.minEpochId}`,
+        CryptoErrorCode.CONTEXT_MISMATCH,
+      );
+    }
+
+    const recipientPubkey = fromBase64(bundleJson.recipientPubkey);
+    if (
+      recipientPubkey.length !== myIdentity.ed25519.publicKey.length ||
+      !sodium.memcmp(recipientPubkey, myIdentity.ed25519.publicKey)
+    ) {
+      throw new CryptoError(
+        'Bundle not intended for this recipient',
+        CryptoErrorCode.CONTEXT_MISMATCH,
+      );
+    }
+
+    return {
+      version: bundleJson.version,
+      albumId: bundleJson.albumId,
+      epochId: bundleJson.epochId,
+      recipientPubkey,
+      epochSeed: fromBase64(bundleJson.epochSeed),
+      signKeypair: {
+        publicKey: fromBase64(bundleJson.signKeypair.publicKey),
+        secretKey: fromBase64(bundleJson.signKeypair.secretKey),
+      },
+    };
+  } catch (error) {
+    if (error instanceof CryptoError) {
+      throw error;
+    }
+
     throw new CryptoError(
       'Failed to parse bundle JSON',
       CryptoErrorCode.INVALID_ENVELOPE,
+      error,
     );
+  } finally {
+    sodium.memzero(bundleBytes);
   }
-
-  // Validate album ID
-  // Note: Empty albumId is allowed for bundles created at album creation time,
-  // when the album ID was not yet known. The signature still provides integrity.
-  if (
-    bundleJson.albumId !== '' &&
-    bundleJson.albumId !== expectedContext.albumId
-  ) {
-    throw new CryptoError(
-      `Bundle albumId mismatch: expected ${expectedContext.albumId}, got ${bundleJson.albumId}`,
-      CryptoErrorCode.CONTEXT_MISMATCH,
-    );
-  }
-
-  // Validate epoch ID (prevent replay of old keys)
-  if (bundleJson.epochId < expectedContext.minEpochId) {
-    throw new CryptoError(
-      `Bundle epochId too old: ${bundleJson.epochId} < ${expectedContext.minEpochId}`,
-      CryptoErrorCode.CONTEXT_MISMATCH,
-    );
-  }
-
-  // Verify recipient binding
-  const recipientPubkey = fromBase64(bundleJson.recipientPubkey);
-  if (
-    recipientPubkey.length !== myIdentity.ed25519.publicKey.length ||
-    !sodium.memcmp(recipientPubkey, myIdentity.ed25519.publicKey)
-  ) {
-    throw new CryptoError(
-      'Bundle not intended for this recipient',
-      CryptoErrorCode.CONTEXT_MISMATCH,
-    );
-  }
-
-  return {
-    version: bundleJson.version,
-    albumId: bundleJson.albumId,
-    epochId: bundleJson.epochId,
-    recipientPubkey,
-    epochSeed: fromBase64(bundleJson.epochSeed),
-    signKeypair: {
-      publicKey: fromBase64(bundleJson.signKeypair.publicKey),
-      secretKey: fromBase64(bundleJson.signKeypair.secretKey),
-    },
-  };
 }
 
 /**
