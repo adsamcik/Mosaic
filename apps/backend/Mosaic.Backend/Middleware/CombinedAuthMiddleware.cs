@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Infrastructure;
 
 namespace Mosaic.Backend.Middleware;
 
@@ -17,6 +18,7 @@ public partial class CombinedAuthMiddleware
     private readonly bool _localAuthEnabled;
     private readonly bool _proxyAuthEnabled;
     private readonly List<IPNetwork> _trustedNetworks;
+    private readonly bool _testSeedEnabled;
     private readonly ILogger<CombinedAuthMiddleware> _logger;
 
     // Session sliding window: 7 days
@@ -34,9 +36,8 @@ public partial class CombinedAuthMiddleware
         "/api/auth/config",
         "/api/auth/verify",
         "/api/auth/register",
-        "/api/dev-auth/",
-        "/api/test-seed/",  // E2E test seeding (dev/test environments only)
-        "/api/s/",
+        "/api/dev-auth",
+        "/api/s", // Intentionally broad for anonymous share-link routes; exact-plus-slash matching keeps /api/settings and /api/secrets private.
         "/swagger",
         "/openapi"
     ];
@@ -44,14 +45,16 @@ public partial class CombinedAuthMiddleware
     public CombinedAuthMiddleware(
         RequestDelegate next,
         IConfiguration config,
+        IWebHostEnvironment environment,
         ILogger<CombinedAuthMiddleware> logger)
     {
         _next = next;
         _logger = logger;
 
-        // Read independent auth toggles
-        _localAuthEnabled = config.GetValue("Auth:LocalAuthEnabled", false);
-        _proxyAuthEnabled = config.GetValue("Auth:ProxyAuthEnabled", false);
+        var authConfiguration = AuthConfigurationResolver.Resolve(config);
+        _localAuthEnabled = authConfiguration.LocalAuthEnabled;
+        _proxyAuthEnabled = authConfiguration.ProxyAuthEnabled;
+        _testSeedEnabled = AuthConfigurationResolver.IsTestSeedEnabled(environment);
 
         // Parse trusted proxy networks
         var cidrs = config.GetSection("Auth:TrustedProxies").Get<string[]>() ?? [];
@@ -68,7 +71,9 @@ public partial class CombinedAuthMiddleware
         var isPublicPath = IsPublicPath(path);
 
         // Special case: /api/auth/init returns 404 when LocalAuth is disabled
-        if (isPublicPath && path.StartsWith("/api/auth/init", StringComparison.OrdinalIgnoreCase) && !_localAuthEnabled)
+        if (isPublicPath &&
+            AuthConfigurationResolver.MatchesPublicPath(path, "/api/auth/init") &&
+            !_localAuthEnabled)
         {
             context.Response.StatusCode = 404;
             await context.Response.WriteAsJsonAsync(new { error = "Not found" });
@@ -200,15 +205,17 @@ public partial class CombinedAuthMiddleware
         return true;
     }
 
-    private static bool IsPublicPath(string path)
+    private bool IsPublicPath(string path)
     {
         foreach (var publicPath in PublicPaths)
         {
-            if (path.StartsWith(publicPath, StringComparison.OrdinalIgnoreCase))
+            if (AuthConfigurationResolver.MatchesPublicPath(path, publicPath))
             {
                 return true;
             }
         }
-        return false;
+
+        return _testSeedEnabled &&
+               AuthConfigurationResolver.MatchesPublicPath(path, "/api/test-seed");
     }
 }

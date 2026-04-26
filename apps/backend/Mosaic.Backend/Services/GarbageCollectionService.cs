@@ -8,6 +8,9 @@ namespace Mosaic.Backend.Services;
 
 public class GarbageCollectionService : BackgroundService
 {
+    internal static readonly TimeSpan ExpiredShareLinkRetention = TimeSpan.FromDays(30);
+    internal static readonly TimeSpan ExpiredShareLinkGrantRetentionBuffer = TimeSpan.FromMinutes(10);
+
     private readonly IServiceProvider _services;
     private readonly ILogger<GarbageCollectionService> _logger;
 
@@ -35,13 +38,20 @@ public class GarbageCollectionService : BackgroundService
                 var expiredSessions = 0;
                 var expiredLinks = 0;
                 var expiredAlbums = 0;
+                var expiredUploadReservations = 0;
 
+                expiredUploadReservations = await TusEventHandlers.CleanupExpiredReservations(_services, stoppingToken);
                 orphanedBlobs = await CleanExpiredPendingShards();
                 orphanedBlobs += await CleanTrashedShards();
                 expiredAlbums = await CleanExpiredAlbums();
+                await CleanExpiredShareLinkGrants();
                 expiredLinks = await CleanExpiredShareLinks();
 
-                _logger.GarbageCollectionCompleted(orphanedBlobs, expiredSessions, expiredLinks, expiredAlbums);
+                _logger.GarbageCollectionCompleted(
+                    orphanedBlobs + expiredUploadReservations,
+                    expiredSessions,
+                    expiredLinks,
+                    expiredAlbums);
             }
             catch (Exception ex)
             {
@@ -78,7 +88,7 @@ public class GarbageCollectionService : BackgroundService
         return count;
     }
 
-    private async Task<int> CleanTrashedShards()
+    internal async Task<int> CleanTrashedShards()
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
@@ -128,8 +138,20 @@ public class GarbageCollectionService : BackgroundService
             // Reclaim quota
             if (shard.UploaderId.HasValue)
             {
-                await db.Database.ExecuteSqlAsync(
-                    $"UPDATE user_quotas SET used_storage_bytes = used_storage_bytes - {shard.SizeBytes}, updated_at = {now} WHERE user_id = {shard.UploaderId.Value}");
+                if (db.Database.IsRelational())
+                {
+                    await db.Database.ExecuteSqlAsync(
+                        $"UPDATE user_quotas SET used_storage_bytes = used_storage_bytes - {shard.SizeBytes}, updated_at = {now} WHERE user_id = {shard.UploaderId.Value}");
+                }
+                else
+                {
+                    var quota = await db.UserQuotas.FindAsync(shard.UploaderId.Value);
+                    if (quota != null)
+                    {
+                        quota.UsedStorageBytes = Math.Max(0, quota.UsedStorageBytes - shard.SizeBytes);
+                        quota.UpdatedAt = now;
+                    }
+                }
             }
 
             db.Shards.Remove(shard);
@@ -144,7 +166,6 @@ public class GarbageCollectionService : BackgroundService
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
-        var storage = scope.ServiceProvider.GetRequiredService<IStorageService>();
 
         var now = DateTimeOffset.UtcNow;
 
@@ -187,39 +208,21 @@ public class GarbageCollectionService : BackgroundService
             {
                 try
                 {
-                    // Find all shards belonging to this album via manifests
-                    var shardStorageKeys = await db.ManifestShards
-                        .Where(ms => ms.Manifest.AlbumId == album.Id)
-                        .Select(ms => ms.Shard.StorageKey)
-                        .Distinct()
+                    var manifestIds = await db.Manifests
+                        .IgnoreQueryFilters()
+                        .Where(m => m.AlbumId == album.Id)
+                        .Select(m => m.Id)
                         .ToListAsync();
 
-                    // Delete all shards from storage
-                    foreach (var storageKey in shardStorageKeys)
-                    {
-                        try
-                        {
-                            await storage.DeleteAsync(storageKey);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.StorageError(ex, $"delete shard {storageKey} for expired album {album.Id}");
-                        }
-                    }
-
-                    // Reclaim owner's quota before deleting
-                    var albumLimits = await db.AlbumLimits.FindAsync(album.Id);
-                    var totalSizeBytes = albumLimits?.CurrentSizeBytes ?? 0;
+                    await ShardReferenceCleanup.DetachManifestShardsAsync(db, manifestIds, DateTime.UtcNow);
 
                     var quota = await db.UserQuotas.FindAsync(album.OwnerId);
                     if (quota != null)
                     {
-                        quota.UsedStorageBytes = Math.Max(0, quota.UsedStorageBytes - totalSizeBytes);
                         quota.CurrentAlbumCount = Math.Max(0, quota.CurrentAlbumCount - 1);
                         quota.UpdatedAt = DateTime.UtcNow;
                     }
 
-                    // Remove the album from database (cascade will handle related entities)
                     db.Albums.Remove(album);
                     await db.SaveChangesAsync();
 
@@ -236,27 +239,37 @@ public class GarbageCollectionService : BackgroundService
         return deletedCount;
     }
 
-    private async Task<int> CleanExpiredShareLinks()
+    internal async Task<int> CleanExpiredShareLinks()
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
 
-        var thirtyDaysAgo = DateTimeOffset.UtcNow.AddDays(-30);
+        var expirationCutoff = DateTimeOffset.UtcNow.Subtract(ExpiredShareLinkRetention);
         var totalDeleted = 0;
 
         // Delete share links that expired 30+ days ago in batches
-        // Note: SQLite doesn't support DateTimeOffset in WHERE or ORDER BY clauses,
-        // so we load share links with expiration dates and filter/sort client-side.
         while (true)
         {
-            // Load share links with expiration dates and filter/sort client-side for SQLite compatibility
-            var longExpiredLinks = (await db.ShareLinks
-                .Where(sl => sl.ExpiresAt != null)
-                .ToListAsync())
-                .Where(sl => sl.ExpiresAt <= thirtyDaysAgo)
-                .OrderBy(sl => sl.ExpiresAt)
-                .Take(100)
-                .ToList();
+            List<ShareLink> longExpiredLinks;
+
+            if (db.UsesLiteProvider())
+            {
+                longExpiredLinks = (await db.ShareLinks
+                    .Where(sl => sl.ExpiresAt != null)
+                    .ToListAsync())
+                    .Where(sl => sl.ExpiresAt <= expirationCutoff)
+                    .OrderBy(sl => sl.ExpiresAt)
+                    .Take(100)
+                    .ToList();
+            }
+            else
+            {
+                longExpiredLinks = await db.ShareLinks
+                    .Where(sl => sl.ExpiresAt != null && sl.ExpiresAt <= expirationCutoff)
+                    .OrderBy(sl => sl.ExpiresAt)
+                    .Take(100)
+                    .ToListAsync();
+            }
 
             if (longExpiredLinks.Count == 0)
             {
@@ -268,6 +281,48 @@ public class GarbageCollectionService : BackgroundService
 
             totalDeleted += longExpiredLinks.Count;
             _logger.ExpiredLinksCleaned(longExpiredLinks.Count);
+        }
+
+        return totalDeleted;
+    }
+
+    internal async Task<int> CleanExpiredShareLinkGrants()
+    {
+        using var scope = _services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+
+        var expirationCutoff = DateTimeOffset.UtcNow.Subtract(ExpiredShareLinkGrantRetentionBuffer);
+        var totalDeleted = 0;
+
+        while (true)
+        {
+            List<ShareLinkGrant> expiredGrants;
+
+            if (db.UsesLiteProvider())
+            {
+                expiredGrants = (await db.ShareLinkGrants.ToListAsync())
+                    .Where(grant => grant.ExpiresAt <= expirationCutoff)
+                    .OrderBy(grant => grant.ExpiresAt)
+                    .Take(100)
+                    .ToList();
+            }
+            else
+            {
+                expiredGrants = await db.ShareLinkGrants
+                    .Where(grant => grant.ExpiresAt <= expirationCutoff)
+                    .OrderBy(grant => grant.ExpiresAt)
+                    .Take(100)
+                    .ToListAsync();
+            }
+
+            if (expiredGrants.Count == 0)
+            {
+                break;
+            }
+
+            db.ShareLinkGrants.RemoveRange(expiredGrants);
+            await db.SaveChangesAsync();
+            totalDeleted += expiredGrants.Count;
         }
 
         return totalDeleted;

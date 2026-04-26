@@ -5,16 +5,28 @@ using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
 using tusdotnet.Interfaces;
+using tusdotnet.Models;
 using tusdotnet.Models.Configuration;
 
 namespace Mosaic.Backend.Services;
 
 public static class TusEventHandlers
 {
+    private const string ReservedBytesItemKey = "QuotaReservedBytes";
+    private const string ReservationUserIdItemKey = "TusReservationUserId";
+    private const string ReservationAlbumIdItemKey = "TusReservationAlbumId";
+    private static readonly TimeSpan ReservationLifetime = TimeSpan.FromHours(24);
+
     public static async Task OnBeforeCreate(
         BeforeCreateContext context,
         IServiceProvider services)
     {
+        if (context.UploadLength < 0)
+        {
+            context.FailRequest("Deferred upload length is not supported");
+            return;
+        }
+
         var httpContext = context.HttpContext;
         var authSub = httpContext.Items["AuthSub"] as string;
 
@@ -34,179 +46,409 @@ public static class TusEventHandlers
             return;
         }
 
-        // Check if the target album has expired and user is a member
-        if (context.Metadata.ContainsKey("albumId"))
+        var albumId = TryGetAlbumId(context.Metadata);
+        if (albumId.HasValue)
         {
-            var albumIdStr = context.Metadata["albumId"].GetString(Encoding.UTF8);
-            if (Guid.TryParse(albumIdStr, out var albumId))
+            var accessError = await ValidateAlbumAccessAsync(db, albumId.Value, user.Id);
+            if (accessError != null)
             {
-                var album = await db.Albums.AsNoTracking().FirstOrDefaultAsync(a => a.Id == albumId);
-                if (album != null && album.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
-                {
-                    context.FailRequest("Album has expired");
-                    return;
-                }
-
-                // Verify user is an active member of the album
-                var isMember = await db.AlbumMembers
-                    .AsNoTracking()
-                    .AnyAsync(am => am.AlbumId == albumId && am.UserId == user.Id && am.RevokedAt == null);
-                if (!isMember)
-                {
-                    context.FailRequest("Access denied");
-                    return;
-                }
-            }
-        }
-
-        // Atomic quota reservation: prevents TOCTOU race condition with parallel uploads.
-        // Uses conditional UPDATE so concurrent requests cannot all pass the check.
-        var uploadLength = context.UploadLength;
-        int rowsAffected;
-
-        if (db.UsesLiteProvider())
-        {
-            rowsAffected = await db.Database.ExecuteSqlRawAsync(
-                "UPDATE user_quotas SET used_storage_bytes = used_storage_bytes + {0}, updated_at = datetime('now') WHERE user_id = {1} AND used_storage_bytes + {0} <= max_storage_bytes",
-                uploadLength, user.Id);
-        }
-        else
-        {
-            rowsAffected = await db.Database.ExecuteSqlRawAsync(
-                "UPDATE user_quotas SET used_storage_bytes = used_storage_bytes + {0}, updated_at = NOW() WHERE user_id = {1} AND used_storage_bytes + {0} <= max_storage_bytes",
-                uploadLength, user.Id);
-        }
-
-        // If no rows updated, either no quota row (unlimited) or quota exceeded
-        if (rowsAffected == 0)
-        {
-            // Check if a quota row exists — if it does, the update failed due to the constraint
-            var quotaExists = await db.UserQuotas.AnyAsync(q => q.UserId == user.Id);
-            if (quotaExists)
-            {
-                context.FailRequest("Storage quota exceeded");
+                context.FailRequest(accessError);
                 return;
             }
-            // No quota record = unlimited uploads, allow through
         }
 
-        // Store reservation info so OnFileComplete can reconcile
-        httpContext.Items["QuotaReservedBytes"] = uploadLength;
+        var quotaReserved = await AdjustQuotaAsync(db, user.Id, context.UploadLength, enforceLimit: true);
+        if (!quotaReserved)
+        {
+            context.FailRequest("Storage quota exceeded");
+            return;
+        }
+
+        httpContext.Items[ReservedBytesItemKey] = context.UploadLength;
+        httpContext.Items[ReservationUserIdItemKey] = user.Id;
+        if (albumId.HasValue)
+        {
+            httpContext.Items[ReservationAlbumIdItemKey] = albumId.Value;
+        }
+    }
+
+    public static async Task OnCreateComplete(
+        CreateCompleteContext context,
+        IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+        var httpContext = context.HttpContext;
+
+        var authSub = httpContext.Items["AuthSub"] as string;
+        if (string.IsNullOrEmpty(authSub))
+        {
+            throw new InvalidOperationException("Missing authenticated user for upload reservation.");
+        }
+
+        var userId = httpContext.Items[ReservationUserIdItemKey] as Guid?
+            ?? await db.Users
+                .AsNoTracking()
+                .Where(u => u.AuthSub == authSub)
+                .Select(u => (Guid?)u.Id)
+                .FirstOrDefaultAsync();
+
+        if (!userId.HasValue)
+        {
+            throw new InvalidOperationException("Authenticated user not found for upload reservation.");
+        }
+
+        var reservation = await db.TusUploadReservations.FindAsync(context.FileId);
+        if (reservation == null)
+        {
+            reservation = new TusUploadReservation
+            {
+                FileId = context.FileId!,
+                UserId = userId.Value
+            };
+            db.TusUploadReservations.Add(reservation);
+        }
+
+        reservation.AlbumId = httpContext.Items[ReservationAlbumIdItemKey] as Guid?
+            ?? TryGetAlbumId(context.Metadata);
+        reservation.ReservedBytes = httpContext.Items[ReservedBytesItemKey] as long? ?? context.UploadLength;
+        reservation.UploadLength = context.UploadLength;
+        reservation.ExpiresAt = DateTime.UtcNow.Add(ReservationLifetime);
+        reservation.CreatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+    }
+
+    public static async Task OnAuthorize(
+        AuthorizeContext context,
+        IServiceProvider services)
+    {
+        if (context.Intent is IntentType.CreateFile or IntentType.GetOptions)
+        {
+            return;
+        }
+
+        var authSub = context.HttpContext.Items["AuthSub"] as string;
+        if (string.IsNullOrEmpty(authSub))
+        {
+            context.FailRequest("Unauthorized");
+            return;
+        }
+
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
+        if (user == null)
+        {
+            context.FailRequest("Unauthorized");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(context.FileId))
+        {
+            context.FailRequest("Unauthorized");
+            return;
+        }
+
+        var reservation = await db.TusUploadReservations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.FileId == context.FileId);
+
+        if (reservation == null)
+        {
+            if (context.Intent == IntentType.GetFileInfo
+                && Guid.TryParse(context.FileId, out var shardId)
+                && await db.Shards.AsNoTracking().AnyAsync(s => s.Id == shardId && s.UploaderId == user.Id))
+            {
+                return;
+            }
+
+            context.FailRequest("Unauthorized");
+            return;
+        }
+
+        if (reservation.UserId != user.Id)
+        {
+            context.FailRequest("Unauthorized");
+            return;
+        }
+    }
+
+    public static async Task OnDeleteComplete(
+        DeleteCompleteContext context,
+        IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+
+        var reservation = await db.TusUploadReservations.FindAsync(context.FileId);
+        if (reservation == null)
+        {
+            return;
+        }
+
+        await AdjustQuotaAsync(db, reservation.UserId, -reservation.ReservedBytes, enforceLimit: false);
+        db.TusUploadReservations.Remove(reservation);
+        await db.SaveChangesAsync();
     }
 
     public static async Task OnFileComplete(
         FileCompleteContext context,
         IServiceProvider services)
     {
-        var httpContext = context.HttpContext;
-        var authSub = (string)httpContext.Items["AuthSub"]!;
         var fileId = context.FileId!;
-
-        // Get file size and compute SHA256 from the store
-        long fileSize = 0;
-        string? sha256Hex = null;
-        
-        if (context.Store is ITusReadableStore readable)
-        {
-            var file = await readable.GetFileAsync(fileId, context.CancellationToken);
-            if (file != null)
-            {
-                using var stream = await file.GetContentAsync(context.CancellationToken);
-                fileSize = stream.Length;
-                
-                // Compute SHA256 for transport integrity verification
-                stream.Position = 0;
-                using var sha256 = SHA256.Create();
-                var hashBytes = await sha256.ComputeHashAsync(stream, context.CancellationToken);
-                sha256Hex = Convert.ToHexString(hashBytes).ToLowerInvariant();
-            }
-        }
-
-        // Verify upload integrity against client-provided hash
-        Dictionary<string, tusdotnet.Models.Metadata>? metadata = null;
-        if (context.Store is ITusReadableStore readableForMeta)
-        {
-            var metaFile = await readableForMeta.GetFileAsync(fileId, context.CancellationToken);
-            if (metaFile != null)
-                metadata = await metaFile.GetMetadataAsync(context.CancellationToken);
-        }
-
-        if (metadata != null && metadata.ContainsKey("sha256"))
-        {
-            var clientHash = metadata["sha256"].GetString(Encoding.UTF8);
-            if (!string.Equals(sha256Hex, clientHash, StringComparison.OrdinalIgnoreCase))
-            {
-                // Clean up: delete the corrupted file from the store
-                if (context.Store is ITusTerminationStore terminationStore)
-                {
-                    await terminationStore.DeleteFileAsync(fileId, context.CancellationToken);
-                }
-
-                // Refund the reserved quota since the upload is rejected
-                using var cleanupScope = services.CreateScope();
-                var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<MosaicDbContext>();
-                var cleanupUser = await cleanupDb.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
-                if (cleanupUser != null)
-                {
-                    var reservedBytes = httpContext.Items["QuotaReservedBytes"] as long? ?? fileSize;
-                    if (cleanupDb.UsesLiteProvider())
-                    {
-                        await cleanupDb.Database.ExecuteSqlRawAsync(
-                            "UPDATE user_quotas SET used_storage_bytes = MAX(0, used_storage_bytes - {0}), updated_at = datetime('now') WHERE user_id = {1}",
-                            reservedBytes, cleanupUser.Id);
-                    }
-                    else
-                    {
-                        await cleanupDb.Database.ExecuteSqlRawAsync(
-                            "UPDATE user_quotas SET used_storage_bytes = GREATEST(0, used_storage_bytes - {0}), updated_at = NOW() WHERE user_id = {1}",
-                            reservedBytes, cleanupUser.Id);
-                    }
-                }
-
-                throw new Exception($"Integrity check failed: server SHA256 {sha256Hex} does not match client SHA256 {clientHash}");
-            }
-        }
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
 
-        await using var tx = await db.Database.BeginTransactionAsync();
-
-        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
-
-        // Create PENDING shard with computed SHA256
-        db.Shards.Add(new Shard
+        var reservation = await db.TusUploadReservations.FirstOrDefaultAsync(r => r.FileId == fileId);
+        if (reservation == null)
         {
-            Id = Guid.Parse(fileId),
-            UploaderId = user!.Id,
-            StorageKey = fileId,
-            SizeBytes = fileSize,
-            Status = ShardStatus.PENDING,
-            PendingExpiresAt = DateTime.UtcNow.AddHours(24),
-            Sha256 = sha256Hex
-        });
+            throw new InvalidOperationException($"Upload reservation missing for tus file {fileId}.");
+        }
 
-        // Reconcile quota: reservation was based on declared upload length,
-        // adjust for actual file size difference
-        var reservedSize = httpContext.Items["QuotaReservedBytes"] as long? ?? 0;
-        var sizeDifference = fileSize - reservedSize;
-        if (sizeDifference != 0)
+        var (fileSize, sha256Hex, metadata) = await ReadUploadAsync(context.Store, fileId, context.CancellationToken);
+
+        if (metadata != null && metadata.TryGetValue("sha256", out var hashMetadata))
         {
-            if (db.UsesLiteProvider())
+            var clientHash = hashMetadata.GetString(Encoding.UTF8);
+            if (!string.Equals(sha256Hex, clientHash, StringComparison.OrdinalIgnoreCase))
             {
-                await db.Database.ExecuteSqlRawAsync(
-                    "UPDATE user_quotas SET used_storage_bytes = MAX(0, used_storage_bytes + {0}), updated_at = datetime('now') WHERE user_id = {1}",
-                    sizeDifference, user.Id);
-            }
-            else
-            {
-                await db.Database.ExecuteSqlRawAsync(
-                    "UPDATE user_quotas SET used_storage_bytes = GREATEST(0, used_storage_bytes + {0}), updated_at = NOW() WHERE user_id = {1}",
-                    sizeDifference, user.Id);
+                await CleanupFailedUploadAsync(context.Store, fileId, reservation, services, context.CancellationToken);
+                throw new InvalidOperationException(
+                    $"Integrity check failed: server SHA256 {sha256Hex} does not match client SHA256 {clientHash}");
             }
         }
 
-        await db.SaveChangesAsync();
-        await tx.CommitAsync();
+        var accessError = reservation.AlbumId.HasValue
+            ? await ValidateAlbumAccessAsync(db, reservation.AlbumId.Value, reservation.UserId)
+            : null;
+        if (accessError != null)
+        {
+            await CleanupFailedUploadAsync(context.Store, fileId, reservation, services, context.CancellationToken);
+            throw new InvalidOperationException(accessError);
+        }
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            db.Shards.Add(new Shard
+            {
+                Id = Guid.Parse(fileId),
+                UploaderId = reservation.UserId,
+                StorageKey = fileId,
+                SizeBytes = fileSize,
+                Status = ShardStatus.PENDING,
+                PendingExpiresAt = DateTime.UtcNow.AddHours(24),
+                Sha256 = sha256Hex
+            });
+
+            var sizeDifference = fileSize - reservation.ReservedBytes;
+            var quotaAdjusted = await AdjustQuotaAsync(
+                db,
+                reservation.UserId,
+                sizeDifference,
+                enforceLimit: sizeDifference > 0);
+
+            if (!quotaAdjusted)
+            {
+                throw new InvalidOperationException("Storage quota exceeded");
+            }
+
+            db.TusUploadReservations.Remove(reservation);
+            await db.SaveChangesAsync(context.CancellationToken);
+            await tx.CommitAsync(context.CancellationToken);
+        }
+        catch
+        {
+            await tx.RollbackAsync(context.CancellationToken);
+            await CleanupFailedUploadAsync(context.Store, fileId, reservation, services, context.CancellationToken);
+            throw;
+        }
+    }
+
+    public static async Task<int> CleanupExpiredReservations(
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+
+        var expiredReservations = await db.TusUploadReservations
+            .Where(r => r.ExpiresAt <= DateTime.UtcNow)
+            .OrderBy(r => r.ExpiresAt)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        if (expiredReservations.Count == 0)
+        {
+            return 0;
+        }
+
+        var tusStore = new tusdotnet.Stores.TusDiskStore(configuration["Storage:Path"] ?? "./data/blobs");
+        var deletedCount = 0;
+
+        foreach (var reservation in expiredReservations)
+        {
+            if (tusStore is ITusTerminationStore terminationStore)
+            {
+                await terminationStore.DeleteFileAsync(reservation.FileId, cancellationToken);
+            }
+
+            await AdjustQuotaAsync(db, reservation.UserId, -reservation.ReservedBytes, enforceLimit: false);
+            db.TusUploadReservations.Remove(reservation);
+            deletedCount++;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return deletedCount;
+    }
+
+    private static async Task<(long FileSize, string? Sha256Hex, Dictionary<string, tusdotnet.Models.Metadata>? Metadata)> ReadUploadAsync(
+        ITusStore store,
+        string fileId,
+        CancellationToken cancellationToken)
+    {
+        long fileSize = 0;
+        string? sha256Hex = null;
+        Dictionary<string, tusdotnet.Models.Metadata>? metadata = null;
+
+        if (store is ITusReadableStore readable)
+        {
+            var file = await readable.GetFileAsync(fileId, cancellationToken);
+            if (file != null)
+            {
+                using var stream = await file.GetContentAsync(cancellationToken);
+                fileSize = stream.Length;
+                stream.Position = 0;
+                sha256Hex = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken)).ToLowerInvariant();
+                metadata = await file.GetMetadataAsync(cancellationToken);
+            }
+        }
+
+        return (fileSize, sha256Hex, metadata);
+    }
+
+    private static async Task CleanupFailedUploadAsync(
+        ITusStore store,
+        string fileId,
+        TusUploadReservation reservation,
+        IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        if (store is ITusTerminationStore terminationStore)
+        {
+            await terminationStore.DeleteFileAsync(fileId, cancellationToken);
+        }
+
+        using var cleanupScope = services.CreateScope();
+        var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+        var trackedReservation = await cleanupDb.TusUploadReservations.FindAsync([fileId], cancellationToken);
+        if (trackedReservation == null)
+        {
+            return;
+        }
+
+        await AdjustQuotaAsync(cleanupDb, trackedReservation.UserId, -trackedReservation.ReservedBytes, enforceLimit: false);
+        cleanupDb.TusUploadReservations.Remove(trackedReservation);
+        await cleanupDb.SaveChangesAsync(cancellationToken);
+    }
+
+    private static Guid? TryGetAlbumId(Dictionary<string, tusdotnet.Models.Metadata>? metadata)
+    {
+        if (metadata == null || !metadata.TryGetValue("albumId", out var albumMetadata))
+        {
+            return null;
+        }
+
+        var albumIdStr = albumMetadata.GetString(Encoding.UTF8);
+        return Guid.TryParse(albumIdStr, out var albumId) ? albumId : null;
+    }
+
+    private static async Task<string?> ValidateAlbumAccessAsync(MosaicDbContext db, Guid albumId, Guid userId)
+    {
+        var album = await db.Albums.AsNoTracking().FirstOrDefaultAsync(a => a.Id == albumId);
+        if (album == null)
+        {
+            return "Album not found";
+        }
+
+        if (album.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return "Album has expired";
+        }
+
+        var isMember = await db.AlbumMembers
+            .AsNoTracking()
+            .AnyAsync(am => am.AlbumId == albumId && am.UserId == userId && am.RevokedAt == null);
+        if (!isMember)
+        {
+            return "Access denied";
+        }
+
+        return null;
+    }
+
+    private static async Task<bool> AdjustQuotaAsync(
+        MosaicDbContext db,
+        Guid userId,
+        long deltaBytes,
+        bool enforceLimit)
+    {
+        if (deltaBytes == 0)
+        {
+            return true;
+        }
+
+        int rowsAffected;
+        if (deltaBytes > 0)
+        {
+            if (db.UsesLiteProvider())
+            {
+                rowsAffected = await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE user_quotas SET used_storage_bytes = used_storage_bytes + {0}, updated_at = datetime('now') WHERE user_id = {1} AND used_storage_bytes + {0} <= max_storage_bytes",
+                    deltaBytes,
+                    userId);
+            }
+            else
+            {
+                rowsAffected = await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE user_quotas SET used_storage_bytes = used_storage_bytes + {0}, updated_at = NOW() WHERE user_id = {1} AND used_storage_bytes + {0} <= max_storage_bytes",
+                    deltaBytes,
+                    userId);
+            }
+
+            if (!enforceLimit)
+            {
+                return rowsAffected > 0 || !await db.UserQuotas.AnyAsync(q => q.UserId == userId);
+            }
+
+            if (rowsAffected == 0)
+            {
+                var quotaExists = await db.UserQuotas.AnyAsync(q => q.UserId == userId);
+                return !quotaExists;
+            }
+
+            return true;
+        }
+
+        if (db.UsesLiteProvider())
+        {
+            rowsAffected = await db.Database.ExecuteSqlRawAsync(
+                "UPDATE user_quotas SET used_storage_bytes = MAX(0, used_storage_bytes + {0}), updated_at = datetime('now') WHERE user_id = {1}",
+                deltaBytes,
+                userId);
+        }
+        else
+        {
+            rowsAffected = await db.Database.ExecuteSqlRawAsync(
+                "UPDATE user_quotas SET used_storage_bytes = GREATEST(0, used_storage_bytes + {0}), updated_at = NOW() WHERE user_id = {1}",
+                deltaBytes,
+                userId);
+        }
+
+        return rowsAffected > 0 || !await db.UserQuotas.AnyAsync(q => q.UserId == userId);
     }
 }

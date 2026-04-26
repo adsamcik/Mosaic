@@ -1,5 +1,7 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Models.Albums;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
@@ -366,6 +368,34 @@ public class AlbumsControllerTests
     }
 
     [Fact]
+    public async Task Sync_ReturnsDeletedManifestsAsTombstones()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user, currentVersion: 5);
+        var shard = await builder.CreateShardAsync(user, ShardStatus.TRASHED);
+        var manifest = await builder.CreateManifestAsync(album, [shard], isDeleted: true);
+
+        var controller = new AlbumsController(db, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.Sync(album.Id, 0);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(okResult.Value));
+        var manifests = json.RootElement.GetProperty("Manifests");
+        var manifestElement = Assert.Single(manifests.EnumerateArray());
+        Assert.True(manifestElement.GetProperty("IsDeleted").GetBoolean());
+    }
+
+    [Fact]
     public async Task Delete_DeletesAlbum_WhenOwner()
     {
         // Arrange
@@ -441,6 +471,35 @@ public class AlbumsControllerTests
 
         // Assert
         Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task Delete_DetachesManifestShardsAndTrashesAlbumShards()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+        var shard = await builder.CreateShardAsync(user, ShardStatus.ACTIVE);
+        var manifest = await builder.CreateManifestAsync(album, [shard]);
+
+        var controller = new AlbumsController(db, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.Delete(album.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Empty(db.Albums);
+        Assert.Empty(db.ManifestShards.Where(ms => ms.ManifestId == manifest.Id));
+
+        var updatedShard = db.Shards.Single(s => s.Id == shard.Id);
+        Assert.Equal(ShardStatus.TRASHED, updatedShard.Status);
     }
 
     [Fact]

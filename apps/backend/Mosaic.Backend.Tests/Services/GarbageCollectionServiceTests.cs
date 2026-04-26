@@ -100,81 +100,49 @@ public class GarbageCollectionServiceTests
     }
 
     [Fact]
-    public async Task CleanExpiredAlbums_ReclaimsQuota()
+    public async Task CleanExpiredAlbums_ReclaimsAlbumSlot_AndLeavesShardForTrashedCleanup()
     {
-        // Arrange
-        var (service, db, _) = CreateService();
-        var builder = new TestDataBuilder(db);
-
-        var owner = await builder.CreateUserAsync("owner");
-        var album = await builder.CreateAlbumAsync(owner);
-        album.ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1);
-        await db.SaveChangesAsync();
-
-        db.AlbumLimits.Add(new AlbumLimits
-        {
-            AlbumId = album.Id,
-            CurrentSizeBytes = 5000,
-            CurrentPhotoCount = 10
-        });
-
-        var quota = await db.UserQuotas.FindAsync(owner.Id);
-        quota!.UsedStorageBytes = 8000;
-        quota.CurrentAlbumCount = 3;
-        await db.SaveChangesAsync();
-
-        // Act
-        await service.CleanExpiredAlbums();
-
-        // Assert
-        var updatedQuota = await db.UserQuotas.FindAsync(owner.Id);
-        Assert.Equal(3000, updatedQuota!.UsedStorageBytes);
-        Assert.Equal(2, updatedQuota.CurrentAlbumCount);
-    }
-
-    [Fact]
-    public async Task CleanExpiredAlbums_HandlesPartialStorageFailure()
-    {
-        // Arrange
-        var storage = Substitute.For<IStorageService>();
+        var storage = new MockStorageService();
         var (service, db, _) = CreateService(storage);
         var builder = new TestDataBuilder(db);
 
         var owner = await builder.CreateUserAsync("owner");
         var album = await builder.CreateAlbumAsync(owner);
         album.ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1);
-        await db.SaveChangesAsync();
-
-        var shard1 = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE, sizeBytes: 1024, storageKey: "key1");
-        var shard2 = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE, sizeBytes: 1024, storageKey: "key2");
-        await builder.CreateManifestAsync(album, [shard1, shard2]);
-
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE, sizeBytes: 5000, storageKey: "expired-album-shard");
+        storage.AddFile(shard.StorageKey);
+        await builder.CreateManifestAsync(album, [shard]);
         db.AlbumLimits.Add(new AlbumLimits
         {
             AlbumId = album.Id,
-            CurrentSizeBytes = 2048
+            CurrentSizeBytes = 5000,
+            CurrentPhotoCount = 1
         });
-
-        var quota = await db.UserQuotas.FindAsync(owner.Id);
-        quota!.UsedStorageBytes = 5000;
-        quota.CurrentAlbumCount = 2;
         await db.SaveChangesAsync();
 
-        // key1 succeeds, key2 fails
-        storage.DeleteAsync("key1").Returns(Task.CompletedTask);
-        storage.DeleteAsync("key2").ThrowsAsync(new IOException("disk error"));
+        var quota = await db.UserQuotas.FindAsync(owner.Id);
+        quota!.UsedStorageBytes = 8000;
+        quota.CurrentAlbumCount = 3;
+        await db.SaveChangesAsync();
 
-        // Act
-        var count = await service.CleanExpiredAlbums();
+        await service.CleanExpiredAlbums();
 
-        // Assert — album deleted from DB despite storage failure
-        Assert.Equal(1, count);
-        Assert.Empty(db.Albums);
-
-        // Quota still reclaimed
         var updatedQuota = await db.UserQuotas.FindAsync(owner.Id);
-        Assert.Equal(2952, updatedQuota!.UsedStorageBytes);
-        Assert.Equal(1, updatedQuota.CurrentAlbumCount);
+        Assert.Equal(8000, updatedQuota!.UsedStorageBytes);
+        Assert.Equal(2, updatedQuota.CurrentAlbumCount);
+        Assert.Empty(db.ManifestShards);
+        Assert.Equal(ShardStatus.TRASHED, db.Shards.Single(s => s.Id == shard.Id).Status);
+
+        var trashedShard = db.Shards.Single(s => s.Id == shard.Id);
+        trashedShard.StatusUpdatedAt = DateTime.UtcNow.AddDays(-8);
+        await db.SaveChangesAsync();
+
+        var cleaned = await service.CleanTrashedShards();
+        Assert.Equal(1, cleaned);
+
+        updatedQuota = await db.UserQuotas.FindAsync(owner.Id);
+        Assert.Equal(3000, updatedQuota!.UsedStorageBytes);
+        Assert.Equal(2, updatedQuota.CurrentAlbumCount);
     }
 
     [Fact]
@@ -204,10 +172,69 @@ public class GarbageCollectionServiceTests
         // Act
         var count = await service.CleanExpiredAlbums();
 
-        // Assert — quota clamped to 0, not negative
+        // Assert — storage is reclaimed when trashed shards are purged, but album slot is reclaimed now
         Assert.Equal(1, count);
         var updatedQuota = await db.UserQuotas.FindAsync(owner.Id);
-        Assert.Equal(0, updatedQuota!.UsedStorageBytes);
+        Assert.Equal(1000, updatedQuota!.UsedStorageBytes);
         Assert.Equal(0, updatedQuota.CurrentAlbumCount);
+    }
+
+    [Fact]
+    public async Task CleanExpiredShareLinks_DeletesOnlyLinksPastRetentionWindow()
+    {
+        var (service, db, _) = CreateService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync("owner");
+        var album = await builder.CreateAlbumAsync(owner);
+        var expiredLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-31));
+        var recentExpiredLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-29));
+        var activeLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(2));
+
+        var count = await service.CleanExpiredShareLinks();
+
+        Assert.Equal(1, count);
+        Assert.Null(await db.ShareLinks.FindAsync(expiredLink.Id));
+        Assert.NotNull(await db.ShareLinks.FindAsync(recentExpiredLink.Id));
+        Assert.NotNull(await db.ShareLinks.FindAsync(activeLink.Id));
+    }
+
+    [Fact]
+    public async Task CleanExpiredShareLinkGrants_KeepsRecentlyExpiredRowsWithinBuffer()
+    {
+        var (service, db, _) = CreateService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync("owner");
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5, useCount: 1);
+
+        var oldGrant = new ShareLinkGrant
+        {
+            Id = Guid.NewGuid(),
+            ShareLinkId = shareLink.Id,
+            TokenHash = TestDataBuilder.GenerateRandomBytes(32),
+            GrantedUseCount = 1,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-20),
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-25)
+        };
+        var bufferedGrant = new ShareLinkGrant
+        {
+            Id = Guid.NewGuid(),
+            ShareLinkId = shareLink.Id,
+            TokenHash = TestDataBuilder.GenerateRandomBytes(32),
+            GrantedUseCount = 1,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-8)
+        };
+
+        db.ShareLinkGrants.AddRange(oldGrant, bufferedGrant);
+        await db.SaveChangesAsync();
+
+        var count = await service.CleanExpiredShareLinkGrants();
+
+        Assert.Equal(1, count);
+        Assert.Null(await db.ShareLinkGrants.FindAsync(oldGrant.Id));
+        Assert.NotNull(await db.ShareLinkGrants.FindAsync(bufferedGrant.Id));
     }
 }

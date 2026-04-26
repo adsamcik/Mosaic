@@ -336,6 +336,7 @@ public class AlbumsController : ControllerBase
         }
 
         var manifests = await _db.Manifests
+            .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(m => m.AlbumId == albumId && m.VersionCreated > since)
             .OrderBy(m => m.VersionCreated)
@@ -383,15 +384,18 @@ public class AlbumsController : ControllerBase
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
-            // Get album limits to know photo count and size
-            var albumLimits = await _db.AlbumLimits.FindAsync(albumId);
-            var totalSizeBytes = albumLimits?.CurrentSizeBytes ?? 0;
+            var manifestIds = await _db.Manifests
+                .IgnoreQueryFilters()
+                .Where(m => m.AlbumId == albumId)
+                .Select(m => m.Id)
+                .ToListAsync();
 
-            // Decrement user's storage usage and album count
+            await ShardReferenceCleanup.DetachManifestShardsAsync(_db, manifestIds, DateTime.UtcNow);
+
+            // Album count is reclaimed immediately. Storage is reclaimed when GC removes detached shards.
             var quota = await _db.UserQuotas.FindAsync(user.Id);
             if (quota != null)
             {
-                quota.UsedStorageBytes = Math.Max(0, quota.UsedStorageBytes - totalSizeBytes);
                 quota.CurrentAlbumCount = Math.Max(0, quota.CurrentAlbumCount - 1);
                 quota.UpdatedAt = DateTime.UtcNow;
             }

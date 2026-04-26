@@ -86,6 +86,12 @@ public class ShareLinksController : ControllerBase
                     detail: "Each wrapped key tier must be 1, 2, or 3",
                     statusCode: StatusCodes.Status400BadRequest);
             }
+            if (key.Tier > request.AccessTier)
+            {
+                return Problem(
+                    detail: "Each wrapped key tier must be less than or equal to accessTier",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
         }
 
         if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
@@ -417,6 +423,12 @@ public class ShareLinksController : ControllerBase
             {
                 return Problem(
                     detail: "Each epoch key tier must be 1, 2, or 3",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+            if (key.Tier > shareLink.AccessTier)
+            {
+                return Problem(
+                    detail: "Each epoch key tier must be less than or equal to accessTier",
                     statusCode: StatusCodes.Status400BadRequest);
             }
         }

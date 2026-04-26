@@ -17,6 +17,8 @@ public class MosaicDbContext : DbContext
     public DbSet<UserQuota> UserQuotas => Set<UserQuota>();
     public DbSet<ShareLink> ShareLinks => Set<ShareLink>();
     public DbSet<LinkEpochKey> LinkEpochKeys => Set<LinkEpochKey>();
+    public DbSet<ShareLinkGrant> ShareLinkGrants => Set<ShareLinkGrant>();
+    public DbSet<TusUploadReservation> TusUploadReservations => Set<TusUploadReservation>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<AuthChallenge> AuthChallenges => Set<AuthChallenge>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
@@ -204,6 +206,37 @@ public class MosaicDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(lek => new { lek.ShareLinkId, lek.EpochId, lek.Tier });
+        });
+
+        // ShareLinkGrant
+        modelBuilder.Entity<ShareLinkGrant>(e =>
+        {
+            e.HasOne(slg => slg.ShareLink)
+                .WithMany(sl => sl.Grants)
+                .HasForeignKey(slg => slg.ShareLinkId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(slg => new { slg.ShareLinkId, slg.TokenHash }).IsUnique();
+            e.HasIndex(slg => slg.ExpiresAt);
+        });
+
+        // TusUploadReservation
+        modelBuilder.Entity<TusUploadReservation>(e =>
+        {
+            e.HasKey(r => r.FileId);
+
+            e.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(r => r.Album)
+                .WithMany()
+                .HasForeignKey(r => r.AlbumId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasIndex(r => r.ExpiresAt);
+            e.HasIndex(r => r.UserId);
         });
 
         // Session

@@ -16,4 +16,5 @@ public class ShareLink
     // Navigation
     public Album Album { get; set; } = null!;
     public ICollection<LinkEpochKey> LinkEpochKeys { get; set; } = [];
+    public ICollection<ShareLinkGrant> Grants { get; set; } = [];
 }

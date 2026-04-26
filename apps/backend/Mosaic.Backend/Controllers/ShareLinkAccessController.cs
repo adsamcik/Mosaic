@@ -16,11 +16,11 @@ namespace Mosaic.Backend.Controllers;
 [ApiController]
 public class ShareLinkAccessController : ControllerBase
 {
-    private static readonly Lazy<byte[]> FallbackGrantSigningKey = new(() => RandomNumberGenerator.GetBytes(32));
+    private static readonly TimeSpan GrantLifetime = TimeSpan.FromMinutes(5);
+    private const int MaxGrantValidationCandidates = 8;
 
     private readonly MosaicDbContext _db;
     private readonly IStorageService _storage;
-    private readonly byte[] _grantSigningKey;
 
     public ShareLinkAccessController(
         MosaicDbContext db,
@@ -29,84 +29,64 @@ public class ShareLinkAccessController : ControllerBase
     {
         _db = db;
         _storage = storage;
-
-        // Initialize a stable signing key for grant tokens.
-        // Prefer ShareLinks:GrantSigningKey when explicitly configured.
-        // Otherwise derive a dedicated key from Auth:ServerSecret so tokens survive across
-        // controller instances and across app instances that share the same auth secret.
-        var keyConfig = config["ShareLinks:GrantSigningKey"];
-        if (!string.IsNullOrWhiteSpace(keyConfig))
-        {
-            try
-            {
-                _grantSigningKey = Convert.FromBase64String(keyConfig);
-            }
-            catch
-            {
-                _grantSigningKey = FallbackGrantSigningKey.Value;
-            }
-        }
-        else
-        {
-            var serverSecretBase64 = config["Auth:ServerSecret"];
-            if (!string.IsNullOrWhiteSpace(serverSecretBase64))
-            {
-                try
-                {
-                    var serverSecret = Convert.FromBase64String(serverSecretBase64);
-                    using var hmac = new HMACSHA256(serverSecret);
-                    _grantSigningKey = hmac.ComputeHash(Encoding.UTF8.GetBytes("share-link-grant"));
-                }
-                catch
-                {
-                    _grantSigningKey = FallbackGrantSigningKey.Value;
-                }
-            }
-            else
-            {
-                _grantSigningKey = FallbackGrantSigningKey.Value;
-            }
-        }
+        _ = config;
     }
 
-    /// <summary>
-    /// Generates an HMAC-based grant token for the given link ID.
-    /// The token is tied to a 2-hour time window so it expires naturally.
-    /// </summary>
-    private string GenerateGrantToken(byte[] linkId)
+    private static byte[] HashGrantToken(string token)
     {
-        // 2-hour window: floor(unixSeconds / 7200)
-        var windowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 7200;
-        var message = Encoding.UTF8.GetBytes($"{Convert.ToHexString(linkId)}:{windowEpoch}");
-        using var hmac = new HMACSHA256(_grantSigningKey);
-        return Base64UrlHelper.ToBase64Url(hmac.ComputeHash(message));
+        return SHA256.HashData(Encoding.UTF8.GetBytes(token));
     }
 
-    /// <summary>
-    /// Validates a grant token for the given link ID.
-    /// Accepts tokens from the current 2-hour window and the immediately preceding one
-    /// to avoid clock-boundary edge cases.
-    /// </summary>
-    private bool IsGrantValid(byte[] linkId, string? token)
+    private async Task<string> CreateGrantTokenAsync(ShareLink shareLink, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(token)) return false;
-
-        var currentWindow = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 7200;
-        var linkHex = Convert.ToHexString(linkId);
-
-        for (var offset = 0; offset <= 1; offset++)
+        var rawToken = Base64UrlHelper.ToBase64Url(RandomNumberGenerator.GetBytes(32));
+        _db.ShareLinkGrants.Add(new ShareLinkGrant
         {
-            var message = Encoding.UTF8.GetBytes($"{linkHex}:{currentWindow - offset}");
-            using var hmac = new HMACSHA256(_grantSigningKey);
-            var expected = Base64UrlHelper.ToBase64Url(hmac.ComputeHash(message));
-            if (CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(expected),
-                Encoding.UTF8.GetBytes(token)))
-            {
-                return true;
-            }
+            Id = Guid.CreateVersion7(),
+            ShareLinkId = shareLink.Id,
+            TokenHash = HashGrantToken(rawToken),
+            GrantedUseCount = shareLink.UseCount,
+            ExpiresAt = DateTimeOffset.UtcNow.Add(GrantLifetime)
+        });
+
+        var staleGrants = await _db.ShareLinkGrants
+            .Where(g => g.ShareLinkId == shareLink.Id && g.GrantedUseCount < shareLink.UseCount)
+            .ToListAsync(cancellationToken);
+        if (staleGrants.Count > 0)
+        {
+            _db.ShareLinkGrants.RemoveRange(staleGrants);
         }
-        return false;
+
+        return rawToken;
+    }
+
+    private async Task<bool> IsGrantValidAsync(ShareLink shareLink, string? token, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return false;
+        }
+
+        var tokenHash = HashGrantToken(token);
+        var now = DateTimeOffset.UtcNow;
+
+        var grants = await _db.ShareLinkGrants
+            .AsNoTracking()
+            .Where(
+                grant => grant.ShareLinkId == shareLink.Id
+                    && grant.GrantedUseCount == shareLink.UseCount
+                    && grant.ExpiresAt > now)
+            .OrderByDescending(grant => grant.CreatedAt)
+            .Take(MaxGrantValidationCandidates)
+            .ToListAsync(cancellationToken);
+
+        var isValid = false;
+        foreach (var grant in grants)
+        {
+            isValid |= CryptographicOperations.FixedTimeEquals(grant.TokenHash, tokenHash);
+        }
+
+        return isValid;
     }
 
     /// <summary>
@@ -155,52 +135,41 @@ public class ShareLinkAccessController : ControllerBase
             return Gone(new { error = "This link has expired" });
         }
 
-        bool updateSucceeded;
+        string? grantToken = null;
 
-        if (_db.SupportsBulkOperations())
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        ShareLink trackedLink;
+
+        if (_db.UsesLiteProvider())
         {
-            // Use atomic update to prevent race conditions on MaxUses (PostgreSQL/SQLite)
-            var updated = await _db.ShareLinks
-                .Where(sl => sl.LinkId == linkIdBytes &&
-                             !sl.IsRevoked &&
-                             (!sl.MaxUses.HasValue || sl.UseCount < sl.MaxUses.Value))
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.UseCount, x => x.UseCount + 1));
-
-            updateSucceeded = updated > 0;
+            trackedLink = await _db.ShareLinks.FirstAsync(sl => sl.Id == shareLink.Id);
         }
         else
         {
-            // Fallback for InMemory provider (tests only)
-            // Re-fetch as tracked since the initial query used AsNoTracking
-            var trackedLink = await _db.ShareLinks.FirstAsync(sl => sl.LinkId == linkIdBytes);
-            if (trackedLink.MaxUses.HasValue && trackedLink.UseCount >= trackedLink.MaxUses.Value)
-            {
-                updateSucceeded = false;
-            }
-            else
-            {
-                trackedLink.UseCount++;
-                await _db.SaveChangesAsync();
-                updateSucceeded = true;
-            }
+            trackedLink = await _db.ShareLinks
+                .FromSqlRaw("SELECT * FROM share_links WHERE id = {0} FOR UPDATE", shareLink.Id)
+                .FirstAsync();
         }
 
-        if (!updateSucceeded)
+        if (trackedLink.IsRevoked)
         {
-            // Re-fetch to determine specific reason (link was modified between initial fetch and update)
-            var link = await _db.ShareLinks.AsNoTracking().FirstOrDefaultAsync(sl => sl.LinkId == linkIdBytes);
-            if (link == null)
-            {
-                return Problem(
-                    detail: "Link not found",
-                    statusCode: StatusCodes.Status404NotFound);
-            }
-            if (link.IsRevoked)
-            {
-                return Gone(new { error = "This link has been revoked" });
-            }
+            return Gone(new { error = "This link has been revoked" });
+        }
+        if (trackedLink.MaxUses.HasValue && trackedLink.UseCount >= trackedLink.MaxUses.Value)
+        {
             return Gone(new { error = "This link has reached its maximum uses" });
         }
+
+        trackedLink.UseCount++;
+        if (trackedLink.MaxUses.HasValue)
+        {
+            grantToken = await CreateGrantTokenAsync(trackedLink, HttpContext.RequestAborted);
+        }
+
+        await _db.SaveChangesAsync(HttpContext.RequestAborted);
+        await tx.CommitAsync(HttpContext.RequestAborted);
+
+        shareLink.UseCount = trackedLink.UseCount;
 
         return Ok(new LinkAccessResponse
         {
@@ -208,7 +177,7 @@ public class ShareLinkAccessController : ControllerBase
             AccessTier = shareLink.AccessTier,
             EpochCount = shareLink.LinkEpochKeys.Select(k => k.EpochId).Distinct().Count(),
             EncryptedName = shareLink.Album.EncryptedName,
-            GrantToken = GenerateGrantToken(shareLink.LinkId)
+            GrantToken = grantToken
         });
     }
 
@@ -249,7 +218,7 @@ public class ShareLinkAccessController : ControllerBase
         if (shareLink.MaxUses.HasValue)
         {
             var grantToken = Request.Headers["X-Share-Grant"].FirstOrDefault();
-            if (!IsGrantValid(shareLink.LinkId, grantToken))
+            if (!await IsGrantValidAsync(shareLink, grantToken, HttpContext.RequestAborted))
             {
                 return Problem(
                     detail: "Valid access grant required for limited-use links. Call GET /api/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
@@ -267,6 +236,7 @@ public class ShareLinkAccessController : ControllerBase
             .ToDictionaryAsync(x => x.EpochId, x => x.SignPubkey);
 
         var keys = shareLink.LinkEpochKeys
+            .Where(k => k.Tier <= shareLink.AccessTier)
             .OrderBy(k => k.EpochId)
             .ThenBy(k => k.Tier)
             .Select(k => new LinkEpochKeyResponse
@@ -323,7 +293,7 @@ public class ShareLinkAccessController : ControllerBase
         if (shareLink.MaxUses.HasValue)
         {
             var grantToken = Request.Headers["X-Share-Grant"].FirstOrDefault();
-            if (!IsGrantValid(shareLink.LinkId, grantToken))
+            if (!await IsGrantValidAsync(shareLink, grantToken, HttpContext.RequestAborted))
             {
                 return Problem(
                     detail: "Valid access grant required for limited-use links. Call GET /api/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
@@ -347,7 +317,11 @@ public class ShareLinkAccessController : ControllerBase
                 EncryptedMeta = m.EncryptedMeta,
                 Signature = m.Signature,
                 SignerPubkey = m.SignerPubkey,
-                ShardIds = m.ManifestShards.OrderBy(ms => ms.ChunkIndex).Select(ms => ms.ShardId).ToList()
+                ShardIds = m.ManifestShards
+                    .Where(ms => ms.Tier <= shareLink.AccessTier)
+                    .OrderBy(ms => ms.ChunkIndex)
+                    .Select(ms => ms.ShardId)
+                    .ToList()
             })
             .ToListAsync();
 
@@ -390,7 +364,7 @@ public class ShareLinkAccessController : ControllerBase
         if (shareLink.MaxUses.HasValue)
         {
             var grantToken = Request.Headers["X-Share-Grant"].FirstOrDefault();
-            if (!IsGrantValid(shareLink.LinkId, grantToken))
+            if (!await IsGrantValidAsync(shareLink, grantToken, HttpContext.RequestAborted))
             {
                 return Problem(
                     detail: "Valid access grant required for limited-use links. Call GET /api/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
@@ -416,7 +390,10 @@ public class ShareLinkAccessController : ControllerBase
         // Verify the shard belongs to the linked album
         var shardBelongsToAlbum = await _db.ManifestShards
             .Where(ms => ms.ShardId == shardId)
-            .AnyAsync(ms => ms.Manifest.AlbumId == shareLink.AlbumId && !ms.Manifest.IsDeleted);
+            .AnyAsync(ms =>
+                ms.Manifest.AlbumId == shareLink.AlbumId
+                && !ms.Manifest.IsDeleted
+                && ms.Tier <= shareLink.AccessTier);
 
         if (!shardBelongsToAlbum)
         {

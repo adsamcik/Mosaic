@@ -154,5 +154,39 @@ public class ManifestsControllerTests
     // Note: Create and Delete tests are more complex because they use PostgreSQL-specific 
     // features (FOR UPDATE) that don't work with InMemory provider. These would require 
     // integration tests with a real PostgreSQL database.
-}
 
+    [Fact]
+    public async Task Delete_SoftDeletesManifestAndTrashesDetachedShards()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        db.AlbumLimits.Add(new AlbumLimits
+        {
+            AlbumId = album.Id,
+            CurrentPhotoCount = 1,
+            CurrentSizeBytes = 1024
+        });
+        await db.SaveChangesAsync();
+
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE, sizeBytes: 1024);
+        var manifest = await builder.CreateManifestAsync(album, [shard]);
+
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        var result = await controller.Delete(manifest.Id);
+
+        Assert.IsType<NoContentResult>(result);
+
+        var deletedManifest = await db.Manifests
+            .IgnoreQueryFilters()
+            .SingleAsync(m => m.Id == manifest.Id);
+        Assert.True(deletedManifest.IsDeleted);
+        Assert.Empty(db.ManifestShards.Where(ms => ms.ManifestId == manifest.Id));
+        Assert.Equal(ShardStatus.TRASHED, db.Shards.Single(s => s.Id == shard.Id).Status);
+    }
+}

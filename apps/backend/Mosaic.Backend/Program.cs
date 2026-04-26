@@ -110,6 +110,9 @@ builder.Services.AddAuthentication(PassThroughAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, PassThroughAuthenticationHandler>(
         PassThroughAuthenticationHandler.SchemeName, null);
 
+var authConfiguration = AuthConfigurationResolver.Resolve(builder.Configuration);
+AuthConfigurationResolver.ValidateForStartup(builder.Configuration, builder.Environment, authConfiguration);
+
 // NOTE: AllowedHosts is "*" in development but restricted in appsettings.Production.json.
 // For production, set the environment variable AllowedHosts to your domain (e.g. "mosaic.example.com").
 
@@ -145,8 +148,9 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     }
 });
 
-// Ensure Auth:ServerSecret is set - generate random one if missing
-var serverSecretMissing = string.IsNullOrEmpty(builder.Configuration["Auth:ServerSecret"]);
+// Ensure Auth:ServerSecret is set - generate random one if missing outside Production.
+// Production never reaches the fallback path because ValidateForStartup above fails fast.
+var serverSecretMissing = string.IsNullOrWhiteSpace(builder.Configuration["Auth:ServerSecret"]);
 if (serverSecretMissing)
 {
     var secret = RandomNumberGenerator.GetBytes(32);
@@ -157,17 +161,7 @@ var app = builder.Build();
 
 if (serverSecretMissing)
 {
-    if (app.Environment.IsProduction())
-    {
-        app.Logger.LogWarning(
-            "⚠️  Auth:ServerSecret is not configured. A random secret has been generated for this session. " +
-            "Fake salts will change on restart, which may enable user enumeration detection. " +
-            "Set Auth:ServerSecret to a persistent base64-encoded 32-byte value in production.");
-    }
-    else
-    {
-        app.Logger.LogInformation("Auth:ServerSecret not configured - using auto-generated random secret for this session");
-    }
+    app.Logger.LogInformation("Auth:ServerSecret not configured - using auto-generated random secret for this session");
 }
 
 // Validate proxy trust configuration in Production.
@@ -204,31 +198,10 @@ else
         app.Environment.EnvironmentName);
 }
 
-// Determine auth modes from configuration (independent toggles)
-// Support both new format (LocalAuthEnabled/ProxyAuthEnabled) and legacy format (Mode)
-var legacyMode = builder.Configuration["Auth:Mode"];
-bool localAuthEnabled, proxyAuthEnabled;
-
-if (builder.Configuration.GetValue<bool?>("Auth:LocalAuthEnabled") != null ||
-    builder.Configuration.GetValue<bool?>("Auth:ProxyAuthEnabled") != null)
+if (authConfiguration.UsesLegacyMode)
 {
-    // New format: independent toggles
-    localAuthEnabled = builder.Configuration.GetValue("Auth:LocalAuthEnabled", false);
-    proxyAuthEnabled = builder.Configuration.GetValue("Auth:ProxyAuthEnabled", false);
-}
-else if (!string.IsNullOrEmpty(legacyMode))
-{
-    // Legacy format: Auth:Mode = "LocalAuth" | "ProxyAuth"
-    localAuthEnabled = legacyMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
-    proxyAuthEnabled = legacyMode.Equals("ProxyAuth", StringComparison.OrdinalIgnoreCase);
     app.Logger.LogWarning(
         "Using legacy Auth:Mode configuration. Consider migrating to Auth:LocalAuthEnabled and Auth:ProxyAuthEnabled");
-}
-else
-{
-    // Default: ProxyAuth only
-    localAuthEnabled = false;
-    proxyAuthEnabled = true;
 }
 
 // Middleware order matters:
@@ -251,7 +224,7 @@ app.UseMiddleware<RequestTimingMiddleware>();
 // Use combined auth middleware (supports both LocalAuth and ProxyAuth independently)
 app.Logger.LogInformation(
     "Auth configuration: LocalAuth={LocalAuth}, ProxyAuth={ProxyAuth}",
-    localAuthEnabled, proxyAuthEnabled);
+    authConfiguration.LocalAuthEnabled, authConfiguration.ProxyAuthEnabled);
 app.UseMiddleware<CombinedAuthMiddleware>();
 
 // Add authentication/authorization middleware for Forbid() support
@@ -286,13 +259,25 @@ app.MapTus("/api/files", async httpContext => new tusdotnet.Models.DefaultTusCon
     MaxAllowedUploadSizeInBytes = 100 * 1024 * 1024,
     Events = new()
     {
+        OnAuthorizeAsync = async ctx =>
+        {
+            await TusEventHandlers.OnAuthorize(ctx, app.Services);
+        },
         OnBeforeCreateAsync = async ctx =>
         {
             await TusEventHandlers.OnBeforeCreate(ctx, app.Services);
         },
+        OnCreateCompleteAsync = async ctx =>
+        {
+            await TusEventHandlers.OnCreateComplete(ctx, app.Services);
+        },
         OnFileCompleteAsync = async ctx =>
         {
             await TusEventHandlers.OnFileComplete(ctx, app.Services);
+        },
+        OnDeleteCompleteAsync = async ctx =>
+        {
+            await TusEventHandlers.OnDeleteComplete(ctx, app.Services);
         }
     }
 });
@@ -323,3 +308,5 @@ if (runMigrations)
 }
 
 app.Run();
+
+public partial class Program;

@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Security.Cryptography;
+using System.Text;
+using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.ShareLinks;
 using Mosaic.Backend.Data.Entities;
@@ -244,6 +246,33 @@ public class ShareLinksControllerTests
         // Assert
         var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
         Assert.Contains("accessTier", ProblemDetailsAssertions.GetDetail(badRequest));
+    }
+
+    [Fact]
+    public async Task Create_ReturnsBadRequest_WhenWrappedKeyTierExceedsAccessTier()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = CreateValidRequest();
+        request.AccessTier = 2;
+        request.WrappedKeys[0].Tier = 3;
+
+        var result = await controller.Create(album.Id, request);
+
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("less than or equal to accessTier", ProblemDetailsAssertions.GetDetail(badRequest));
     }
 
     [Fact]
@@ -1058,6 +1087,47 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
+    public async Task AddEpochKeys_ReturnsBadRequest_WhenTierExceedsShareLinkAccessTier()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 2);
+
+        var controller = new ShareLinksController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new AddEpochKeysRequest
+        {
+            EpochKeys = new List<EpochKeyDto>
+            {
+                new EpochKeyDto
+                {
+                    EpochId = 1,
+                    Tier = 3,
+                    Nonce = TestDataBuilder.GenerateRandomBytes(24),
+                    EncryptedKey = TestDataBuilder.GenerateRandomBytes(48)
+                }
+            }
+        };
+
+        // Act
+        var result = await controller.AddEpochKeys(shareLink.Id, request);
+
+        // Assert
+        var badRequestResult = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("accesstier", ProblemDetailsAssertions.GetDetail(badRequestResult)?.ToLower());
+    }
+
+    [Fact]
     public async Task AddEpochKeys_ReturnsBadRequest_WhenEpochKeysEmpty()
     {
         // Arrange
@@ -1393,6 +1463,37 @@ public class ShareLinksControllerTests
         Assert.Equal(410, objectResult.StatusCode);
     }
 
+    [Fact]
+    public async Task GetKeys_FiltersKeysAboveAccessTier()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner, currentEpochId: 1);
+        await builder.CreateEpochKeyAsync(album, owner, epochId: 1);
+
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 2);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 1);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 2);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+
+        var controller = new ShareLinkAccessController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var result = await controller.GetKeys(ToBase64Url(shareLink.LinkId));
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var keys = Assert.IsAssignableFrom<List<LinkEpochKeyResponse>>(okResult.Value);
+        Assert.Equal([1, 2], keys.Select(k => k.Tier).ToArray());
+    }
+
     #endregion
 
     #region GET /api/s/{linkId}/photos
@@ -1524,6 +1625,47 @@ public class ShareLinksControllerTests
         // Assert
         var objectResult = Assert.IsType<ObjectResult>(result);
         Assert.Equal(410, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetPhotos_FiltersShardsAboveAccessTier()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var thumbShard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        var previewShard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        var originalShard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        var manifest = await builder.CreateManifestAsync(album, [thumbShard, previewShard, originalShard]);
+
+        var manifestShards = db.ManifestShards
+            .Where(ms => ms.ManifestId == manifest.Id)
+            .OrderBy(ms => ms.ChunkIndex)
+            .ToList();
+        manifestShards[0].Tier = 1;
+        manifestShards[1].Tier = 2;
+        manifestShards[2].Tier = 3;
+        await db.SaveChangesAsync();
+
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 2);
+
+        var controller = new ShareLinkAccessController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var result = await controller.GetPhotos(ToBase64Url(shareLink.LinkId));
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        Assert.Single(photos);
+        Assert.Equal([thumbShard.Id, previewShard.Id], photos[0].ShardIds.ToArray());
     }
 
     #endregion
@@ -1704,6 +1846,39 @@ public class ShareLinksControllerTests
         var result = await controller.DownloadShard(linkIdBase64, shard.Id);
 
         // Assert
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task DownloadShard_ReturnsForbidden_WhenShardTierExceedsAccessTier()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        storage.AddFile(shard.StorageKey);
+
+        var manifest = await builder.CreateManifestAsync(album, [shard]);
+        var manifestShard = db.ManifestShards.Single(ms => ms.ManifestId == manifest.Id && ms.ShardId == shard.Id);
+        manifestShard.Tier = 3;
+        await db.SaveChangesAsync();
+
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 2);
+
+        var controller = new ShareLinkAccessController(db, config, storage)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
+            }
+        };
+
+        var result = await controller.DownloadShard(ToBase64Url(shareLink.LinkId), shard.Id);
+
         Assert.IsType<ForbidResult>(result);
     }
 
@@ -2651,6 +2826,106 @@ public class ShareLinksControllerTests
 
         // Assert
         Assert.IsType<FileStreamResult>(result);
+    }
+
+    [Fact]
+    public async Task Grant_BecomesInvalid_WhenUseCountChanges()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner, currentEpochId: 1);
+        await builder.CreateEpochKeyAsync(album, owner, epochId: 1);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 2);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+
+        var linkId = ToBase64Url(shareLink.LinkId);
+
+        var firstAccessController = new ShareLinkAccessController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext { HttpContext = TestHttpContext.CreateUnauthenticated() }
+        };
+        var firstAccess = Assert.IsType<OkObjectResult>(await firstAccessController.Access(linkId));
+        var firstGrant = Assert.IsType<LinkAccessResponse>(firstAccess.Value).GrantToken;
+
+        var secondAccessController = new ShareLinkAccessController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext { HttpContext = TestHttpContext.CreateUnauthenticated() }
+        };
+        var secondAccess = Assert.IsType<OkObjectResult>(await secondAccessController.Access(linkId));
+        var secondGrant = Assert.IsType<LinkAccessResponse>(secondAccess.Value).GrantToken;
+
+        var staleGrantController = new ShareLinkAccessController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext { HttpContext = TestHttpContext.CreateUnauthenticated() }
+        };
+        staleGrantController.HttpContext.Request.Headers["X-Share-Grant"] = firstGrant!;
+
+        var staleResult = await staleGrantController.GetKeys(linkId);
+        Assert.Equal(401, Assert.IsType<ObjectResult>(staleResult).StatusCode);
+
+        var freshGrantController = new ShareLinkAccessController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext { HttpContext = TestHttpContext.CreateUnauthenticated() }
+        };
+        freshGrantController.HttpContext.Request.Headers["X-Share-Grant"] = secondGrant!;
+
+        Assert.IsType<OkObjectResult>(await freshGrantController.GetKeys(linkId));
+    }
+
+    [Fact]
+    public async Task GetKeys_ReturnsOk_WhenGrantValidationHitsSafetyLimit()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner, currentEpochId: 1);
+        await builder.CreateEpochKeyAsync(album, owner, epochId: 1);
+        var shareLink = await builder.CreateShareLinkAsync(album, maxUses: 5, useCount: 1);
+        await builder.CreateLinkEpochKeyAsync(shareLink, 1, 3);
+
+        var now = DateTimeOffset.UtcNow;
+        for (var i = 0; i < 16; i++)
+        {
+            var historicalToken = $"historical-grant-{i}";
+            db.ShareLinkGrants.Add(new ShareLinkGrant
+            {
+                Id = Guid.NewGuid(),
+                ShareLinkId = shareLink.Id,
+                TokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(historicalToken)),
+                GrantedUseCount = shareLink.UseCount,
+                ExpiresAt = now.AddMinutes(5),
+                CreatedAt = now.AddMinutes(-30 + i)
+            });
+        }
+
+        const string validToken = "most-recent-valid-grant";
+        db.ShareLinkGrants.Add(new ShareLinkGrant
+        {
+            Id = Guid.NewGuid(),
+            ShareLinkId = shareLink.Id,
+            TokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(validToken)),
+            GrantedUseCount = shareLink.UseCount,
+            ExpiresAt = now.AddMinutes(5),
+            CreatedAt = now.AddMinutes(1)
+        });
+        await db.SaveChangesAsync();
+
+        var controller = new ShareLinkAccessController(db, config, new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticatedWithGrant(validToken)
+            }
+        };
+
+        var result = await controller.GetKeys(ToBase64Url(shareLink.LinkId));
+
+        Assert.IsType<OkObjectResult>(result);
     }
 
     #endregion
