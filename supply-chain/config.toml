@@ -35,6 +35,21 @@ version = "1.0.102"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
 
+[[exemptions.argon2]]
+version = "0.5.3"
+criteria = "safe-to-deploy"
+notes = "Phase 3 keychain KDF slice backlog exemption after four-auditor dependency review found no malicious behavior. RustCrypto Argon2id implementation for password-rooted L0 derivation."
+
+[[exemptions.base64ct]]
+version = "1.8.3"
+criteria = "safe-to-deploy"
+notes = "Phase 3 keychain KDF slice backlog exemption after argon2 graph review. Constant-time base64 codec used by argon2 parameter support."
+
+[[exemptions.blake2]]
+version = "0.10.6"
+criteria = "safe-to-deploy"
+notes = "Phase 3 keychain KDF slice backlog exemption after argon2 graph review. RustCrypto BLAKE2 implementation used internally by argon2."
+
 [[exemptions.block-buffer]]
 version = "0.10.4"
 criteria = "safe-to-deploy"
@@ -109,6 +124,11 @@ notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eigh
 version = "0.17.0"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
+
+[[exemptions.hkdf]]
+version = "0.12.4"
+criteria = "safe-to-deploy"
+notes = "Phase 3 keychain KDF slice backlog exemption after four-auditor dependency review. RustCrypto HKDF pinned to digest 0.10 stack for HKDF-SHA256 root-key derivation."
 
 [[exemptions.id-arena]]
 version = "2.3.0"

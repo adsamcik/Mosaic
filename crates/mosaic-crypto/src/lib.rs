@@ -2,10 +2,12 @@
 
 #![forbid(unsafe_code)]
 
+use argon2::{Algorithm, Argon2, Block, Params, Version};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, KeyInit, Payload},
 };
+use hkdf::Hkdf;
 use mosaic_domain::{SHARD_ENVELOPE_HEADER_LEN, ShardEnvelopeHeader, ShardTier};
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, Zeroizing};
@@ -15,6 +17,21 @@ const MAX_SHARD_BYTES: usize = 100 * 1024 * 1024;
 
 /// Minimum valid wrapped key length: 24-byte nonce + 16-byte AEAD tag + 1-byte payload.
 const MIN_WRAPPED_KEY_BYTES: usize = 24 + 16 + 1;
+
+/// Minimum Mosaic Argon2id memory cost in KiB (64 MiB).
+const MIN_KDF_MEMORY_KIB: u32 = 64 * 1024;
+
+/// Minimum Mosaic Argon2id iteration count.
+const MIN_KDF_ITERATIONS: u32 = 3;
+
+/// Fixed output length for Mosaic L0/L1/L2 keys.
+const KEY_BYTES: usize = 32;
+
+/// Required length for user and account salts.
+const SALT_BYTES: usize = 16;
+
+/// HKDF-SHA256 domain separation label for deriving L1 root keys from L0.
+const ROOT_KEY_INFO: &[u8] = b"mosaic:root-key:v1";
 
 /// Crypto crate errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,27 +52,44 @@ pub enum MosaicCryptoError {
     RngFailure,
     /// Wrapped-key bytes are shorter than the minimum required length.
     WrappedKeyTooShort { actual: usize },
+    /// KDF profile is below Mosaic's current security minimums.
+    KdfProfileTooWeak,
+    /// Salt argument had an unexpected byte length.
+    InvalidSaltLength { actual: usize },
+    /// Argon2id or HKDF derivation failed.
+    KdfFailure,
 }
 
 /// Opaque 32-byte secret key that zeroizes its contents on drop.
 ///
 /// Intentionally does not implement `Clone`, `Copy`, `Debug`, `Display`, or `Serialize`
 /// to prevent accidental leakage.
-pub struct SecretKey([u8; 32]);
+pub struct SecretKey(Zeroizing<Vec<u8>>);
 
 impl SecretKey {
-    /// Constructs a `SecretKey` from a raw 32-byte array, taking ownership.
-    #[must_use]
-    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self(bytes)
+    /// Constructs a `SecretKey` from mutable raw bytes and zeroizes the source.
+    ///
+    /// # Errors
+    /// Returns `InvalidKeyLength` if `bytes` is not exactly 32 bytes long.
+    pub fn from_bytes(bytes: &mut [u8]) -> Result<Self, MosaicCryptoError> {
+        if bytes.len() != KEY_BYTES {
+            let actual = bytes.len();
+            bytes.zeroize();
+            return Err(MosaicCryptoError::InvalidKeyLength { actual });
+        }
+
+        let mut key_bytes = Zeroizing::new(vec![0_u8; KEY_BYTES]);
+        key_bytes.copy_from_slice(bytes);
+        bytes.zeroize();
+        Ok(Self(key_bytes))
     }
 
     /// Returns a reference to the underlying key bytes.
     ///
     /// Use only inside controlled cryptographic operations; never log or display the result.
     #[must_use]
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_slice()
     }
 }
 
@@ -71,6 +105,169 @@ pub struct EncryptedShard {
     pub bytes: Vec<u8>,
     /// Base64url no-padding SHA-256 digest of `bytes`.
     pub sha256: String,
+}
+
+/// Mosaic Argon2id profile for deriving password-rooted key material.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KdfProfile {
+    memory_kib: u32,
+    iterations: u32,
+    parallelism: u32,
+}
+
+impl KdfProfile {
+    /// Creates a KDF profile if it satisfies Mosaic's minimum security policy.
+    ///
+    /// `memory_kib` is in KiB/Argon2 memory blocks. The current minimum is
+    /// 64 MiB, 3 iterations, and at least 1 lane.
+    pub const fn new(
+        memory_kib: u32,
+        iterations: u32,
+        parallelism: u32,
+    ) -> Result<Self, MosaicCryptoError> {
+        if memory_kib < MIN_KDF_MEMORY_KIB || iterations < MIN_KDF_ITERATIONS || parallelism < 1 {
+            return Err(MosaicCryptoError::KdfProfileTooWeak);
+        }
+
+        Ok(Self {
+            memory_kib,
+            iterations,
+            parallelism,
+        })
+    }
+
+    /// Returns the memory cost in KiB.
+    #[must_use]
+    pub const fn memory_kib(self) -> u32 {
+        self.memory_kib
+    }
+
+    /// Returns the Argon2id iteration count.
+    #[must_use]
+    pub const fn iterations(self) -> u32 {
+        self.iterations
+    }
+
+    /// Returns the Argon2id parallelism/lane count.
+    #[must_use]
+    pub const fn parallelism(self) -> u32 {
+        self.parallelism
+    }
+
+    /// Returns Mosaic's fixed KDF output length.
+    #[must_use]
+    pub const fn output_len(self) -> usize {
+        KEY_BYTES
+    }
+}
+
+/// Safe account-key derivation result.
+///
+/// L0 and L1 are zeroized before return. Only the random L2 account key and
+/// L2 wrapped by L1 are returned.
+pub struct AccountKeyMaterial {
+    pub account_key: SecretKey,
+    pub wrapped_account_key: Vec<u8>,
+}
+
+/// Derives the L1 root key from password, user salt, and account salt.
+///
+/// This is an internal building block for account-key unwrap and test vectors.
+/// Callers should prefer [`derive_account_key`] or [`unwrap_account_key`] for
+/// production flows so L0/L1 stay short-lived.
+///
+/// # Errors
+/// - `InvalidSaltLength` if either salt is not exactly 16 bytes.
+/// - `KdfProfileTooWeak` if the profile is below policy.
+/// - `KdfFailure` if Argon2id/HKDF reports an error.
+pub fn derive_root_key(
+    password: Zeroizing<Vec<u8>>,
+    user_salt: &[u8],
+    account_salt: &[u8],
+    profile: KdfProfile,
+) -> Result<SecretKey, MosaicCryptoError> {
+    validate_salt(user_salt)?;
+    validate_salt(account_salt)?;
+
+    let argon_params = Params::new(
+        profile.memory_kib(),
+        profile.iterations(),
+        profile.parallelism(),
+        Some(profile.output_len()),
+    )
+    .map_err(|_| MosaicCryptoError::KdfFailure)?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params.clone());
+
+    let mut master_key = Zeroizing::new([0_u8; KEY_BYTES]);
+    let mut memory_blocks = Zeroizing::new(vec![Block::default(); argon_params.block_count()]);
+    argon2
+        .hash_password_into_with_memory(
+            password.as_slice(),
+            user_salt,
+            &mut master_key[..],
+            memory_blocks.as_mut_slice(),
+        )
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+
+    let mut root_key = Zeroizing::new([0_u8; KEY_BYTES]);
+    Hkdf::<Sha256>::new(Some(account_salt), &master_key[..])
+        .expand(ROOT_KEY_INFO, &mut root_key[..])
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+
+    SecretKey::from_bytes(&mut root_key[..])
+}
+
+/// Derives a fresh L2 account key and wraps it with the password-derived L1 key.
+///
+/// # Errors
+/// Returns salt, KDF, RNG, or wrapping errors from the underlying operations.
+pub fn derive_account_key(
+    password: Zeroizing<Vec<u8>>,
+    user_salt: &[u8],
+    account_salt: &[u8],
+    profile: KdfProfile,
+) -> Result<AccountKeyMaterial, MosaicCryptoError> {
+    let root_key = derive_root_key(password, user_salt, account_salt, profile)?;
+
+    let mut account_key_bytes = Zeroizing::new(vec![0_u8; KEY_BYTES]);
+    getrandom::fill(account_key_bytes.as_mut_slice()).map_err(|_| MosaicCryptoError::RngFailure)?;
+    let account_key = SecretKey::from_bytes(account_key_bytes.as_mut_slice())?;
+    let wrapped_account_key = wrap_key(account_key.as_bytes(), &root_key)?;
+
+    Ok(AccountKeyMaterial {
+        account_key,
+        wrapped_account_key,
+    })
+}
+
+/// Unwraps a previously created L2 account key using password-derived L1.
+///
+/// # Errors
+/// Returns salt, KDF, or authentication errors from the underlying operations.
+pub fn unwrap_account_key(
+    password: Zeroizing<Vec<u8>>,
+    user_salt: &[u8],
+    account_salt: &[u8],
+    wrapped_account_key: &[u8],
+    profile: KdfProfile,
+) -> Result<SecretKey, MosaicCryptoError> {
+    let root_key = derive_root_key(password, user_salt, account_salt, profile)?;
+    let mut account_key_bytes = unwrap_key(wrapped_account_key, &root_key)?;
+
+    if account_key_bytes.len() != KEY_BYTES {
+        return Err(MosaicCryptoError::InvalidKeyLength {
+            actual: account_key_bytes.len(),
+        });
+    }
+
+    SecretKey::from_bytes(account_key_bytes.as_mut_slice())
+}
+
+fn validate_salt(salt: &[u8]) -> Result<(), MosaicCryptoError> {
+    if salt.len() != SALT_BYTES {
+        return Err(MosaicCryptoError::InvalidSaltLength { actual: salt.len() });
+    }
+    Ok(())
 }
 
 /// Encrypts `data` as a shard envelope authenticated with `key`.

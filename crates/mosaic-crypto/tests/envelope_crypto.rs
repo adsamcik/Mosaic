@@ -13,9 +13,36 @@ const WRONG_KEY_BYTES: [u8; 32] = [
     0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xed, 0xee, 0xef,
 ];
 
+fn secret_key_from(mut bytes: [u8; 32]) -> SecretKey {
+    match SecretKey::from_bytes(&mut bytes) {
+        Ok(value) => value,
+        Err(error) => panic!("test key bytes should be accepted: {error:?}"),
+    }
+}
+
+#[test]
+fn secret_key_constructor_zeroizes_source_and_rejects_bad_length() {
+    let mut bytes = [0x42_u8; 32];
+    let key = match SecretKey::from_bytes(&mut bytes) {
+        Ok(value) => value,
+        Err(error) => panic!("test key bytes should be accepted: {error:?}"),
+    };
+
+    assert!(key.as_bytes().iter().all(|byte| *byte == 0x42));
+    assert!(bytes.iter().all(|byte| *byte == 0));
+
+    let mut short_key = [0_u8; 31];
+    let error = match SecretKey::from_bytes(&mut short_key) {
+        Ok(_) => panic!("short key should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(error, MosaicCryptoError::InvalidKeyLength { actual: 31 });
+    assert!(short_key.iter().all(|byte| *byte == 0));
+}
+
 #[test]
 fn shard_encryption_round_trips_with_header_aad_and_hash() {
-    let key = SecretKey::from_bytes(KEY_BYTES);
+    let key = secret_key_from(KEY_BYTES);
     let plaintext = b"mosaic encrypted shard bytes";
 
     let encrypted = match encrypt_shard(plaintext, &key, 7, 3, ShardTier::Original) {
@@ -47,7 +74,7 @@ fn shard_encryption_round_trips_with_header_aad_and_hash() {
 
 #[test]
 fn shard_encryption_generates_fresh_nonce_inside_crypto() {
-    let key = SecretKey::from_bytes(KEY_BYTES);
+    let key = secret_key_from(KEY_BYTES);
     let plaintext = b"same plaintext";
 
     let first = match encrypt_shard(plaintext, &key, 1, 0, ShardTier::Preview) {
@@ -65,8 +92,8 @@ fn shard_encryption_generates_fresh_nonce_inside_crypto() {
 
 #[test]
 fn shard_decryption_rejects_wrong_key_tampered_header_and_header_only_envelope() {
-    let key = SecretKey::from_bytes(KEY_BYTES);
-    let wrong_key = SecretKey::from_bytes(WRONG_KEY_BYTES);
+    let key = secret_key_from(KEY_BYTES);
+    let wrong_key = secret_key_from(WRONG_KEY_BYTES);
 
     let encrypted = match encrypt_shard(b"authenticated", &key, 2, 9, ShardTier::Thumbnail) {
         Ok(value) => value,
@@ -97,8 +124,8 @@ fn shard_decryption_rejects_wrong_key_tampered_header_and_header_only_envelope()
 
 #[test]
 fn key_wrap_round_trips_and_rejects_tampering() {
-    let key = SecretKey::from_bytes(KEY_BYTES);
-    let wrapper = SecretKey::from_bytes(WRONG_KEY_BYTES);
+    let key = secret_key_from(KEY_BYTES);
+    let wrapper = secret_key_from(WRONG_KEY_BYTES);
 
     let wrapped = match wrap_key(key.as_bytes(), &wrapper) {
         Ok(value) => value,
@@ -125,7 +152,7 @@ fn key_wrap_round_trips_and_rejects_tampering() {
 
 #[test]
 fn key_wrap_rejects_short_wrapped_input() {
-    let wrapper = SecretKey::from_bytes(WRONG_KEY_BYTES);
+    let wrapper = secret_key_from(WRONG_KEY_BYTES);
 
     let error = match unwrap_key(&[0_u8; 40], &wrapper) {
         Ok(_) => panic!("short wrapped input should fail"),

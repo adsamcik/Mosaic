@@ -28,6 +28,9 @@ pub enum ClientErrorCode {
     AuthenticationFailed = 205,
     RngFailure = 206,
     WrappedKeyTooShort = 207,
+    KdfProfileTooWeak = 208,
+    InvalidSaltLength = 209,
+    KdfFailure = 210,
     OperationCancelled = 300,
     SecretHandleNotFound = 400,
     InternalStatePoisoned = 500,
@@ -279,6 +282,9 @@ fn map_crypto_error(error: MosaicCryptoError) -> ClientErrorCode {
         MosaicCryptoError::AuthenticationFailed => ClientErrorCode::AuthenticationFailed,
         MosaicCryptoError::RngFailure => ClientErrorCode::RngFailure,
         MosaicCryptoError::WrappedKeyTooShort { .. } => ClientErrorCode::WrappedKeyTooShort,
+        MosaicCryptoError::KdfProfileTooWeak => ClientErrorCode::KdfProfileTooWeak,
+        MosaicCryptoError::InvalidSaltLength { .. } => ClientErrorCode::InvalidSaltLength,
+        MosaicCryptoError::KdfFailure => ClientErrorCode::KdfFailure,
     }
 }
 
