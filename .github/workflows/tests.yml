@@ -182,6 +182,14 @@ jobs:
       - name: Build backend
         working-directory: apps/backend/Mosaic.Backend
         run: dotnet build --configuration Release
+
+      - name: Setup Rust
+        run: |
+          rustup toolchain install 1.93.1 --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
+          rustup default 1.93.1
+
+      - name: Run Rust workspace checks
+        run: bash ./scripts/rust-check.sh --skip-supply-chain
       
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

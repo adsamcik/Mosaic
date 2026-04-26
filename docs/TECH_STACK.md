@@ -96,6 +96,19 @@ L3 (Epoch)   = ReadKey + SignKey per album  # Distributed to members
 - Constant-time comparisons for all sensitive data
 - Automatic memory zeroing after key use
 
+### Rust Client Core (in progress)
+
+| Crate | Purpose |
+|-------|---------|
+| **mosaic-domain** | Canonical protocol/domain types and schema versions |
+| **mosaic-crypto** | Canonical Rust cryptographic boundary |
+| **mosaic-client** | Shared upload/sync/session state-machine boundary |
+| **mosaic-media** | Gated media-processing prototype boundary |
+| **mosaic-wasm** | Web Worker/WASM facade |
+| **mosaic-uniffi** | Android UniFFI/JNI facade |
+
+Rust is pinned with `rust-toolchain.toml`. The workspace is not used by production web/backend paths until the later WASM and Android integration phases.
+
 ---
 
 ## Database
@@ -174,6 +187,7 @@ Cross-Origin-Embedder-Policy: require-corp
 | **Node.js** | 20+ LTS for frontend tooling |
 | **pnpm/npm** | Package management |
 | **.NET CLI** | Backend development |
+| **Rust** | Shared client-core development |
 | **ESLint** | TypeScript/JavaScript linting |
 | **TypeScript** | Static type checking |
 

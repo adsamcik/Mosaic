@@ -39,7 +39,7 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 | Frontend | React 19, Vite, TypeScript |
 | Backend | .NET 10, ASP.NET Core |
 | Database | PostgreSQL 16+ |
-| Crypto | libsodium (XChaCha20-Poly1305, Ed25519, Argon2id) |
+| Crypto | libsodium today, Rust client core in progress |
 | Local DB | SQLite-WASM + OPFS |
 | Uploads | Tus protocol (resumable) |
 
@@ -48,11 +48,13 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 ```text
 mosaic/
 ├── apps/
-│   ├── admin/          # React frontend
+│   ├── web/            # React frontend
 │   └── backend/        # .NET API
+├── crates/             # Rust client-core workspace
 ├── libs/
-│   └── crypto/         # Shared crypto library
+│   └── crypto/         # TypeScript crypto/reference library
 ├── docs/               # Documentation
+├── tests/              # Integration, E2E, vectors, architecture checks
 └── scripts/            # Deployment scripts
 ```
 
@@ -140,6 +142,7 @@ docker compose -f docker-compose.dev.yml --profile tools up -d
 | ----------- | ------- | ------------- |
 | Node.js | 20+ | `node --version` |
 | .NET SDK | 10+ | `dotnet --version` |
+| Rust | 1.93.1 toolchain; 1.85 MSRV | `rustc --version` |
 | Docker | Latest | `docker --version` |
 
 ### 🚀 Quick Start (Recommended)

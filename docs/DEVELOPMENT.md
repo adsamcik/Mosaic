@@ -33,6 +33,7 @@ Open <http://localhost:5173> when ready.
 | **Node.js** | 20+ | [nodejs.org](https://nodejs.org) |
 | **pnpm/npm** | Latest | Included with Node.js |
 | **.NET SDK** | 10+ | [dotnet.microsoft.com](https://dotnet.microsoft.com/download) |
+| **Rust** | 1.93.1 toolchain; 1.85 MSRV | Managed by `rust-toolchain.toml` |
 | **Docker** | Latest | [docker.com](https://www.docker.com/get-started) |
 
 ### Verify Installation
@@ -40,6 +41,7 @@ Open <http://localhost:5173> when ready.
 ```bash
 node --version    # Should show v20.x or higher
 dotnet --version  # Should show 10.x or higher
+rustc --version   # Should show 1.93.1 from rust-toolchain.toml
 docker --version  # Should show Docker version
 ```
 
@@ -202,6 +204,35 @@ For debugging, use launch configurations:
    ```bash
    cd libs/crypto && npm install && npm run build
    ```
+
+---
+
+## Rust Client-Core Workspace
+
+The Rust workspace is the foundation for the shared client core used by future web WASM and Android UniFFI integrations.
+
+```powershell
+# Format, lint, test, and run architecture boundary checks
+.\scripts\rust-check.ps1 -SkipSupplyChain
+
+# Include cargo-deny, cargo-audit, and cargo-vet checks when installed
+.\scripts\rust-check.ps1
+
+# Build the WASM facade crate
+.\scripts\build-rust-wasm.ps1
+
+# Build Android facade artifacts with cargo-ndk
+.\scripts\build-rust-android.ps1
+```
+
+```bash
+./scripts/rust-check.sh --skip-supply-chain
+./scripts/rust-check.sh
+./scripts/build-rust-wasm.sh
+./scripts/build-rust-android.sh
+```
+
+The Rust crates intentionally do not affect production web or backend behavior until later feature-flagged integration phases.
 
 ---
 

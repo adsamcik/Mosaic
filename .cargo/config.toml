@@ -1,0 +1,5 @@
+[alias]
+mosaic-arch = "metadata --format-version=1 --no-deps"
+mosaic-check = "check --workspace --all-targets --all-features --locked"
+mosaic-clippy = "clippy --workspace --all-targets --all-features -- -D warnings"
+mosaic-test = "test --workspace --locked"

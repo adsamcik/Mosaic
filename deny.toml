@@ -1,0 +1,24 @@
+[graph]
+all-features = true
+
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+
+[licenses]
+allow = [
+  "MIT",
+]
+confidence-threshold = 0.8
+
+[bans]
+deny = []
+highlight = "all"
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+allow-git = []
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+unknown-git = "deny"
+unknown-registry = "deny"

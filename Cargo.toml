@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/mosaic-domain",
+  "crates/mosaic-crypto",
+  "crates/mosaic-client",
+  "crates/mosaic-media",
+  "crates/mosaic-wasm",
+  "crates/mosaic-uniffi",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/adsamcik/Mosaic"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+codegen-units = 1
+debug = "line-tables-only"
+lto = "thin"
+opt-level = "z"
+panic = "abort"
+strip = "symbols"
