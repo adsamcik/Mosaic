@@ -30,6 +30,7 @@ wildcards = "deny"
 allow-build-scripts = [
   "anyhow",
   "camino",
+  "curve25519-dalek",
   "fs-err",
   "generic-array",
   "getrandom",

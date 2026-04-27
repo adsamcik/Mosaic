@@ -80,6 +80,11 @@ version = "0.4.4"
 criteria = "safe-to-deploy"
 notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto cipher trait crate."
 
+[[exemptions.const-oid]]
+version = "0.9.6"
+criteria = "safe-to-deploy"
+notes = "Phase 3 manifest signing slice backlog exemption after four-auditor dependency review found no malicious behavior. DER object identifier support pulled by the Ed25519 package metadata graph."
+
 [[exemptions.cpufeatures]]
 version = "0.2.17"
 criteria = "safe-to-deploy"
@@ -90,10 +95,30 @@ version = "0.1.7"
 criteria = "safe-to-deploy"
 notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto common primitives (Key, Block) used by digest/aead."
 
+[[exemptions.curve25519-dalek]]
+version = "4.1.3"
+criteria = "safe-to-deploy"
+notes = "Phase 3 manifest signing slice backlog exemption after four-auditor dependency review found no malicious behavior. Curve/Edwards arithmetic implementation used by ed25519-dalek for manifest signatures; cargo-deny build script reviewed and allowlisted."
+
+[[exemptions.curve25519-dalek-derive]]
+version = "0.1.1"
+criteria = "safe-to-deploy"
+notes = "Phase 3 manifest signing slice backlog exemption after four-auditor dependency review found no malicious behavior. Proc-macro support crate used by curve25519-dalek field arithmetic."
+
 [[exemptions.digest]]
 version = "0.10.7"
 criteria = "safe-to-deploy"
 notes = "Phase 3 production crypto slice backlog exemption pending formal audit. RustCrypto Digest trait crate used by sha2."
+
+[[exemptions.ed25519]]
+version = "2.2.3"
+criteria = "safe-to-deploy"
+notes = "Phase 3 manifest signing slice backlog exemption after four-auditor dependency review found no malicious behavior. Ed25519 trait and signature byte wrapper crate used by ed25519-dalek."
+
+[[exemptions.ed25519-dalek]]
+version = "2.1.0"
+criteria = "safe-to-deploy"
+notes = "Phase 3 manifest signing slice backlog exemption after four-auditor dependency review found no malicious behavior. Pure-Rust Ed25519 implementation selected by ADR-005 for canonical manifest transcript signatures."
 
 [[exemptions.fastrand]]
 version = "2.4.1"
@@ -180,6 +205,11 @@ version = "0.3.1"
 criteria = "safe-to-deploy"
 notes = "Phase 3 production crypto slice backlog exemption pending formal audit. Tiny helper macro that redacts Debug output for crypto types."
 
+[[exemptions.pkcs8]]
+version = "0.10.2"
+criteria = "safe-to-deploy"
+notes = "Phase 3 manifest signing slice backlog exemption after four-auditor dependency review found no malicious behavior. PKCS#8 metadata dependency pulled by the Ed25519 package graph; Mosaic does not expose PKCS#8 key import/export in this slice."
+
 [[exemptions.poly1305]]
 version = "0.8.0"
 criteria = "safe-to-deploy"
@@ -234,6 +264,11 @@ notes = "Phase 3 production crypto slice backlog exemption pending formal audit.
 version = "1.0.2"
 criteria = "safe-to-deploy"
 notes = "Phase 1.5 FFI spike backlog exemption after peer audit imports and eight dependency audit subagents found no malicious behavior; replace with formal audits before production crypto cutover."
+
+[[exemptions.spki]]
+version = "0.7.3"
+criteria = "safe-to-deploy"
+notes = "Phase 3 manifest signing slice backlog exemption after four-auditor dependency review found no malicious behavior. SubjectPublicKeyInfo metadata dependency pulled by the Ed25519 package graph; no Mosaic runtime API exposes SPKI in this slice."
 
 [[exemptions.subtle]]
 version = "2.6.1"

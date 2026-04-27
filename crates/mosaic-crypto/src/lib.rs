@@ -7,6 +7,7 @@ use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, KeyInit, Payload},
 };
+use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use mosaic_domain::{SHARD_ENVELOPE_HEADER_LEN, ShardEnvelopeHeader, ShardTier};
 use sha2::{Digest, Sha256};
@@ -26,6 +27,15 @@ const MIN_KDF_ITERATIONS: u32 = 3;
 
 /// Fixed output length for Mosaic L0/L1/L2 keys.
 const KEY_BYTES: usize = 32;
+
+/// Ed25519 signing seed length.
+const SIGNING_SEED_BYTES: usize = 32;
+
+/// Ed25519 public key length.
+const SIGNING_PUBLIC_KEY_BYTES: usize = 32;
+
+/// Ed25519 detached signature length.
+const SIGNATURE_BYTES: usize = 64;
 
 /// Required length for user and account salts.
 const SALT_BYTES: usize = 16;
@@ -70,6 +80,10 @@ pub enum MosaicCryptoError {
     InvalidSaltLength { actual: usize },
     /// Argon2id or HKDF derivation failed.
     KdfFailure,
+    /// Signature bytes had an unexpected length.
+    InvalidSignatureLength { actual: usize },
+    /// Public signing key bytes did not decode as a valid Ed25519 verifying key.
+    InvalidPublicKey,
 }
 
 /// Opaque 32-byte secret key that zeroizes its contents on drop.
@@ -108,6 +122,130 @@ impl SecretKey {
 impl Drop for SecretKey {
     fn drop(&mut self) {
         self.0.zeroize();
+    }
+}
+
+/// Rust-owned Ed25519 manifest signing secret.
+///
+/// Stores the 32-byte Ed25519 seed in zeroizing memory. Intentionally does not
+/// implement `Clone`, `Copy`, `Debug`, `Display`, or serialization traits.
+pub struct ManifestSigningSecretKey(Zeroizing<[u8; SIGNING_SEED_BYTES]>);
+
+impl ManifestSigningSecretKey {
+    /// Constructs a manifest signing secret from a 32-byte Ed25519 seed.
+    ///
+    /// The caller-provided seed is zeroized on success and invalid length.
+    ///
+    /// # Errors
+    /// Returns `InvalidKeyLength` if `seed` is not exactly 32 bytes.
+    pub fn from_seed(seed: &mut [u8]) -> Result<Self, MosaicCryptoError> {
+        if seed.len() != SIGNING_SEED_BYTES {
+            let actual = seed.len();
+            seed.zeroize();
+            return Err(MosaicCryptoError::InvalidKeyLength { actual });
+        }
+
+        let mut seed_bytes = Zeroizing::new([0_u8; SIGNING_SEED_BYTES]);
+        seed_bytes.copy_from_slice(seed);
+        seed.zeroize();
+        Ok(Self(seed_bytes))
+    }
+
+    /// Derives the public Ed25519 verifying key for this signing secret.
+    #[must_use]
+    pub fn public_key(&self) -> ManifestSigningPublicKey {
+        let signing_key = SigningKey::from_bytes(&self.0);
+        ManifestSigningPublicKey(signing_key.verifying_key().to_bytes())
+    }
+}
+
+impl Drop for ManifestSigningSecretKey {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+/// Ed25519 manifest signing public key.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct ManifestSigningPublicKey([u8; SIGNING_PUBLIC_KEY_BYTES]);
+
+impl ManifestSigningPublicKey {
+    /// Constructs a public key from raw bytes.
+    ///
+    /// # Errors
+    /// Returns `InvalidKeyLength` if `bytes` is not exactly 32 bytes, or
+    /// `InvalidPublicKey` if the bytes are not accepted by the Ed25519 verifier.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MosaicCryptoError> {
+        if bytes.len() != SIGNING_PUBLIC_KEY_BYTES {
+            return Err(MosaicCryptoError::InvalidKeyLength {
+                actual: bytes.len(),
+            });
+        }
+
+        let mut public_key = [0_u8; SIGNING_PUBLIC_KEY_BYTES];
+        public_key.copy_from_slice(bytes);
+        let verifying_key = VerifyingKey::from_bytes(&public_key)
+            .map_err(|_| MosaicCryptoError::InvalidPublicKey)?;
+        if verifying_key.is_weak() {
+            return Err(MosaicCryptoError::InvalidPublicKey);
+        }
+        Ok(Self(public_key))
+    }
+
+    /// Returns the raw 32-byte public key.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; SIGNING_PUBLIC_KEY_BYTES] {
+        &self.0
+    }
+}
+
+/// Ed25519 detached manifest signature.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct ManifestSignature([u8; SIGNATURE_BYTES]);
+
+impl ManifestSignature {
+    /// Constructs a manifest signature from raw bytes.
+    ///
+    /// # Errors
+    /// Returns `InvalidSignatureLength` if `bytes` is not exactly 64 bytes.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MosaicCryptoError> {
+        if bytes.len() != SIGNATURE_BYTES {
+            return Err(MosaicCryptoError::InvalidSignatureLength {
+                actual: bytes.len(),
+            });
+        }
+
+        let mut signature = [0_u8; SIGNATURE_BYTES];
+        signature.copy_from_slice(bytes);
+        Ok(Self(signature))
+    }
+
+    /// Returns the raw 64-byte detached signature.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; SIGNATURE_BYTES] {
+        &self.0
+    }
+}
+
+/// Manifest signing keypair.
+pub struct ManifestSigningKeypair {
+    secret_key: ManifestSigningSecretKey,
+    public_key: ManifestSigningPublicKey,
+}
+
+impl ManifestSigningKeypair {
+    /// Returns the Rust-owned signing secret.
+    #[must_use]
+    pub const fn secret_key(&self) -> &ManifestSigningSecretKey {
+        &self.secret_key
+    }
+
+    /// Returns the public verifying key.
+    #[must_use]
+    pub const fn public_key(&self) -> &ManifestSigningPublicKey {
+        &self.public_key
     }
 }
 
@@ -334,6 +472,57 @@ pub fn generate_epoch_key_material(epoch_id: u32) -> Result<EpochKeyMaterial, Mo
     let mut epoch_seed = Zeroizing::new(vec![0_u8; KEY_BYTES]);
     getrandom::fill(epoch_seed.as_mut_slice()).map_err(|_| MosaicCryptoError::RngFailure)?;
     derive_epoch_key_material(epoch_id, epoch_seed.as_mut_slice())
+}
+
+/// Generates a fresh manifest signing keypair with the OS CSPRNG.
+///
+/// # Errors
+/// Returns `RngFailure` if the OS CSPRNG is unavailable.
+pub fn generate_manifest_signing_keypair() -> Result<ManifestSigningKeypair, MosaicCryptoError> {
+    let mut seed = Zeroizing::new([0_u8; SIGNING_SEED_BYTES]);
+    getrandom::fill(&mut seed[..]).map_err(|_| MosaicCryptoError::RngFailure)?;
+    let secret_key = ManifestSigningSecretKey::from_seed(&mut seed[..])?;
+    let public_key = secret_key.public_key();
+
+    Ok(ManifestSigningKeypair {
+        secret_key,
+        public_key,
+    })
+}
+
+/// Signs canonical manifest transcript bytes.
+///
+/// The transcript bytes must already include the manifest signing context and
+/// transcript version from `mosaic-domain`; this function does not prepend an
+/// additional context string.
+#[must_use]
+pub fn sign_manifest_transcript(
+    transcript_bytes: &[u8],
+    secret_key: &ManifestSigningSecretKey,
+) -> ManifestSignature {
+    let signing_key = SigningKey::from_bytes(&secret_key.0);
+    let signature: Ed25519Signature = signing_key.sign(transcript_bytes);
+    ManifestSignature(signature.to_bytes())
+}
+
+/// Verifies a canonical manifest transcript signature.
+///
+/// Returns `false` for wrong keys, tampered transcripts, or tampered signatures.
+#[must_use]
+pub fn verify_manifest_transcript(
+    transcript_bytes: &[u8],
+    signature: &ManifestSignature,
+    public_key: &ManifestSigningPublicKey,
+) -> bool {
+    let verifying_key = match VerifyingKey::from_bytes(public_key.as_bytes()) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let signature = Ed25519Signature::from_bytes(signature.as_bytes());
+
+    verifying_key
+        .verify_strict(transcript_bytes, &signature)
+        .is_ok()
 }
 
 /// Derives all current Mosaic tier/content keys from a 32-byte epoch seed.
