@@ -33,6 +33,18 @@ const SALT_BYTES: usize = 16;
 /// HKDF-SHA256 domain separation label for deriving L1 root keys from L0.
 const ROOT_KEY_INFO: &[u8] = b"mosaic:root-key:v1";
 
+/// HKDF-SHA256 domain separation label for thumbnail shard keys.
+const THUMB_KEY_INFO: &[u8] = b"mosaic:tier:thumb:v1";
+
+/// HKDF-SHA256 domain separation label for preview shard keys.
+const PREVIEW_KEY_INFO: &[u8] = b"mosaic:tier:preview:v1";
+
+/// HKDF-SHA256 domain separation label for original shard keys.
+const FULL_KEY_INFO: &[u8] = b"mosaic:tier:full:v1";
+
+/// HKDF-SHA256 domain separation label for album content keys.
+const CONTENT_KEY_INFO: &[u8] = b"mosaic:tier:content:v1";
+
 /// Crypto crate errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MosaicCryptoError {
@@ -170,6 +182,57 @@ pub struct AccountKeyMaterial {
     pub wrapped_account_key: Vec<u8>,
 }
 
+/// Per-epoch key material derived from a random 32-byte epoch seed.
+///
+/// All secrets are Rust-owned and zeroizing. This type intentionally does not
+/// expose mutable key references or implement serialization traits.
+pub struct EpochKeyMaterial {
+    epoch_id: u32,
+    epoch_seed: SecretKey,
+    thumb_key: SecretKey,
+    preview_key: SecretKey,
+    full_key: SecretKey,
+    content_key: SecretKey,
+}
+
+impl EpochKeyMaterial {
+    /// Returns the epoch identifier.
+    #[must_use]
+    pub const fn epoch_id(&self) -> u32 {
+        self.epoch_id
+    }
+
+    /// Returns the random epoch seed used to derive this material.
+    #[must_use]
+    pub const fn epoch_seed(&self) -> &SecretKey {
+        &self.epoch_seed
+    }
+
+    /// Returns the thumbnail shard encryption key.
+    #[must_use]
+    pub const fn thumb_key(&self) -> &SecretKey {
+        &self.thumb_key
+    }
+
+    /// Returns the preview shard encryption key.
+    #[must_use]
+    pub const fn preview_key(&self) -> &SecretKey {
+        &self.preview_key
+    }
+
+    /// Returns the original/full-resolution shard encryption key.
+    #[must_use]
+    pub const fn full_key(&self) -> &SecretKey {
+        &self.full_key
+    }
+
+    /// Returns the album content encryption key.
+    #[must_use]
+    pub const fn content_key(&self) -> &SecretKey {
+        &self.content_key
+    }
+}
+
 /// Derives the L1 root key from password, user salt, and account salt.
 ///
 /// This is an internal building block for account-key unwrap and test vectors.
@@ -261,6 +324,77 @@ pub fn unwrap_account_key(
     }
 
     SecretKey::from_bytes(account_key_bytes.as_mut_slice())
+}
+
+/// Generates fresh per-epoch key material for a new album epoch.
+///
+/// # Errors
+/// Returns `RngFailure` if the OS CSPRNG is unavailable.
+pub fn generate_epoch_key_material(epoch_id: u32) -> Result<EpochKeyMaterial, MosaicCryptoError> {
+    let mut epoch_seed = Zeroizing::new(vec![0_u8; KEY_BYTES]);
+    getrandom::fill(epoch_seed.as_mut_slice()).map_err(|_| MosaicCryptoError::RngFailure)?;
+    derive_epoch_key_material(epoch_id, epoch_seed.as_mut_slice())
+}
+
+/// Derives all current Mosaic tier/content keys from a 32-byte epoch seed.
+///
+/// Rust v1 uses canonical HKDF-SHA256 with fixed Mosaic labels. The input seed
+/// buffer is zeroized before return on both success and invalid length.
+///
+/// # Errors
+/// Returns `InvalidKeyLength` if `epoch_seed` is not exactly 32 bytes long, or
+/// `KdfFailure` if HKDF expansion reports an error.
+pub fn derive_epoch_key_material(
+    epoch_id: u32,
+    epoch_seed: &mut [u8],
+) -> Result<EpochKeyMaterial, MosaicCryptoError> {
+    let seed = epoch_seed;
+    if seed.len() != KEY_BYTES {
+        let actual = seed.len();
+        seed.zeroize();
+        return Err(MosaicCryptoError::InvalidKeyLength { actual });
+    }
+
+    let thumb_key = derive_labeled_key(seed, THUMB_KEY_INFO)?;
+    let preview_key = derive_labeled_key(seed, PREVIEW_KEY_INFO)?;
+    let full_key = derive_labeled_key(seed, FULL_KEY_INFO)?;
+    let content_key = derive_labeled_key(seed, CONTENT_KEY_INFO)?;
+    let epoch_seed = SecretKey::from_bytes(seed)?;
+
+    Ok(EpochKeyMaterial {
+        epoch_id,
+        epoch_seed,
+        thumb_key,
+        preview_key,
+        full_key,
+        content_key,
+    })
+}
+
+/// Derives the album content key from an epoch seed.
+///
+/// # Errors
+/// Returns `KdfFailure` if HKDF expansion reports an error.
+pub fn derive_content_key(epoch_seed: &SecretKey) -> Result<SecretKey, MosaicCryptoError> {
+    derive_labeled_key(epoch_seed.as_bytes(), CONTENT_KEY_INFO)
+}
+
+/// Returns the key for the requested shard tier.
+#[must_use]
+pub const fn get_tier_key(epoch_key: &EpochKeyMaterial, tier: ShardTier) -> &SecretKey {
+    match tier {
+        ShardTier::Thumbnail => epoch_key.thumb_key(),
+        ShardTier::Preview => epoch_key.preview_key(),
+        ShardTier::Original => epoch_key.full_key(),
+    }
+}
+
+fn derive_labeled_key(seed: &[u8], info: &[u8]) -> Result<SecretKey, MosaicCryptoError> {
+    let mut key_bytes = Zeroizing::new(vec![0_u8; KEY_BYTES]);
+    Hkdf::<Sha256>::new(None, seed)
+        .expand(info, key_bytes.as_mut_slice())
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+    SecretKey::from_bytes(key_bytes.as_mut_slice())
 }
 
 fn validate_salt(salt: &[u8]) -> Result<(), MosaicCryptoError> {
