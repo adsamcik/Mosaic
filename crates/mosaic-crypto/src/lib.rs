@@ -28,6 +28,15 @@ const MIN_KDF_MEMORY_KIB: u32 = 64 * 1024;
 /// Minimum Mosaic Argon2id iteration count.
 const MIN_KDF_ITERATIONS: u32 = 3;
 
+/// Maximum Mosaic Argon2id memory cost in KiB (256 MiB).
+pub const MAX_KDF_MEMORY_KIB: u32 = 256 * 1024;
+
+/// Maximum Mosaic Argon2id iteration count.
+pub const MAX_KDF_ITERATIONS: u32 = 10;
+
+/// Maximum Mosaic Argon2id parallelism/lane count.
+pub const MAX_KDF_PARALLELISM: u32 = 4;
+
 /// Fixed output length for Mosaic L0/L1/L2 keys.
 const KEY_BYTES: usize = 32;
 
@@ -88,6 +97,8 @@ pub enum MosaicCryptoError {
     WrappedKeyTooShort { actual: usize },
     /// KDF profile is below Mosaic's current security minimums.
     KdfProfileTooWeak,
+    /// KDF profile exceeds Mosaic's resource-exhaustion guardrails.
+    KdfProfileTooCostly,
     /// Salt argument had an unexpected byte length.
     InvalidSaltLength { actual: usize },
     /// Argon2id or HKDF derivation failed.
@@ -577,10 +588,11 @@ pub struct KdfProfile {
 }
 
 impl KdfProfile {
-    /// Creates a KDF profile if it satisfies Mosaic's minimum security policy.
+    /// Creates a KDF profile if it satisfies Mosaic's security and resource policy.
     ///
     /// `memory_kib` is in KiB/Argon2 memory blocks. The current minimum is
-    /// 64 MiB, 3 iterations, and at least 1 lane.
+    /// 64 MiB, 3 iterations, and at least 1 lane. Upper bounds prevent hostile
+    /// FFI callers from requesting unbounded Argon2 memory or CPU work.
     pub const fn new(
         memory_kib: u32,
         iterations: u32,
@@ -588,6 +600,13 @@ impl KdfProfile {
     ) -> Result<Self, MosaicCryptoError> {
         if memory_kib < MIN_KDF_MEMORY_KIB || iterations < MIN_KDF_ITERATIONS || parallelism < 1 {
             return Err(MosaicCryptoError::KdfProfileTooWeak);
+        }
+
+        if memory_kib > MAX_KDF_MEMORY_KIB
+            || iterations > MAX_KDF_ITERATIONS
+            || parallelism > MAX_KDF_PARALLELISM
+        {
+            return Err(MosaicCryptoError::KdfProfileTooCostly);
         }
 
         Ok(Self {
@@ -691,6 +710,7 @@ impl EpochKeyMaterial {
 /// # Errors
 /// - `InvalidSaltLength` if either salt is not exactly 16 bytes.
 /// - `KdfProfileTooWeak` if the profile is below policy.
+/// - `KdfProfileTooCostly` if the profile exceeds resource limits.
 /// - `KdfFailure` if Argon2id/HKDF reports an error.
 pub fn derive_root_key(
     password: Zeroizing<Vec<u8>>,
@@ -783,6 +803,7 @@ pub fn unwrap_account_key(
 /// # Errors
 /// - `InvalidSaltLength` if `user_salt` is not exactly 16 bytes.
 /// - `KdfProfileTooWeak` if the profile is below policy.
+/// - `KdfProfileTooCostly` if the profile exceeds resource limits.
 /// - `KdfFailure` if Argon2id/HKDF reports an error.
 pub fn derive_auth_signing_keypair(
     password: Zeroizing<Vec<u8>>,
@@ -1379,10 +1400,7 @@ pub const fn protocol_version() -> &'static str {
     mosaic_domain::PROTOCOL_VERSION
 }
 
-/// Deterministic test-only derivation used by the FFI spike.
-///
-/// This is not production cryptography. Production KDF/encryption work lands in
-/// the crypto-core phase with audited primitives and golden vectors.
+/// Deterministic derivation used by the explicit FFI spike probe.
 pub fn test_only_derive_probe_key(
     input: &[u8],
     context: &[u8],
@@ -1391,36 +1409,11 @@ pub fn test_only_derive_probe_key(
         return Err(MosaicCryptoError::EmptyContext);
     }
 
-    let mut state = [
-        0x6d6f_7361_6963_2d31_u64,
-        0x6666_692d_7370_696b_u64,
-        0x6465_7269_7665_2d31_u64,
-        0x636f_6e74_6578_7421_u64,
-    ];
-
-    mix_bytes(&mut state, context);
-    mix_byte(&mut state, 0xff);
-    mix_bytes(&mut state, input);
-
     let mut output = [0_u8; 32];
-    for (index, value) in state.iter().enumerate() {
-        output[index * 8..(index + 1) * 8].copy_from_slice(&value.to_le_bytes());
-    }
+    Hkdf::<Sha256>::new(Some(context), input)
+        .expand(b"mosaic:ffi-spike-probe:v1", &mut output)
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
     Ok(output)
-}
-
-fn mix_bytes(state: &mut [u64; 4], bytes: &[u8]) {
-    for byte in bytes {
-        mix_byte(state, *byte);
-    }
-}
-
-fn mix_byte(state: &mut [u64; 4], byte: u8) {
-    state[0] ^= u64::from(byte);
-    state[0] = state[0].wrapping_mul(0x1000_0000_01b3);
-    state[1] ^= state[0].rotate_left(13);
-    state[2] = state[2].wrapping_add(state[1] ^ 0x9e37_79b9_7f4a_7c15);
-    state[3] ^= state[2].rotate_right(17);
 }
 
 #[cfg(test)]

@@ -75,3 +75,11 @@ fn wasm_facade_returns_progress_events_with_stable_error_code() {
     assert_eq!(result.events.len(), 1);
     assert_eq!(result.events[0].completed_steps, 1);
 }
+
+#[test]
+fn wasm_facade_rejects_unbounded_progress_event_requests() {
+    let result = wasm_progress_probe(u32::MAX, None);
+
+    assert_eq!(result.code, 202);
+    assert!(result.events.is_empty());
+}

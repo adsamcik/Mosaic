@@ -38,9 +38,11 @@ pub enum ClientErrorCode {
     InvalidSignatureLength = 211,
     InvalidPublicKey = 212,
     InvalidUsername = 213,
+    KdfProfileTooCostly = 214,
     OperationCancelled = 300,
     SecretHandleNotFound = 400,
     IdentityHandleNotFound = 401,
+    HandleSpaceExhausted = 402,
     InternalStatePoisoned = 500,
 }
 
@@ -223,6 +225,8 @@ pub struct ProgressResult {
     pub events: Vec<ProgressEvent>,
 }
 
+const MAX_PROGRESS_EVENTS: u32 = 10_000;
+
 struct SecretRecord {
     bytes: Zeroizing<Vec<u8>>,
     open: bool,
@@ -348,7 +352,7 @@ pub fn ffi_spike_probe_key(input: &[u8], context: &[u8]) -> BytesResult {
 
 /// Opens a Rust-owned opaque secret handle.
 pub fn open_secret_handle(secret: &[u8]) -> Result<u64, ClientError> {
-    let handle = NEXT_SECRET_HANDLE.fetch_add(1, Ordering::Relaxed);
+    let handle = allocate_handle(&NEXT_SECRET_HANDLE)?;
     let registry = secret_registry();
     let mut guard = registry.lock().map_err(|_| {
         ClientError::new(
@@ -356,6 +360,13 @@ pub fn open_secret_handle(secret: &[u8]) -> Result<u64, ClientError> {
             "secret registry lock was poisoned",
         )
     })?;
+
+    if guard.contains_key(&handle) {
+        return Err(ClientError::new(
+            ClientErrorCode::HandleSpaceExhausted,
+            "secret handle space is exhausted",
+        ));
+    }
 
     guard.insert(
         handle,
@@ -603,7 +614,7 @@ fn insert_identity_handle(
     wrapped_seed: Vec<u8>,
 ) -> Result<IdentityHandleResult, ClientError> {
     let keypair = derive_identity_keypair(identity_seed).map_err(client_error_from_crypto)?;
-    let handle = NEXT_IDENTITY_HANDLE.fetch_add(1, Ordering::Relaxed);
+    let handle = allocate_handle(&NEXT_IDENTITY_HANDLE)?;
     let result = IdentityHandleResult::ok(handle, &keypair, wrapped_seed);
 
     let registry = identity_registry();
@@ -613,6 +624,12 @@ fn insert_identity_handle(
             "identity registry lock was poisoned",
         )
     })?;
+    if guard.contains_key(&handle) {
+        return Err(ClientError::new(
+            ClientErrorCode::HandleSpaceExhausted,
+            "identity handle space is exhausted",
+        ));
+    }
     guard.insert(
         handle,
         IdentityRecord {
@@ -705,10 +722,33 @@ fn client_error_from_crypto(error: MosaicCryptoError) -> ClientError {
     ClientError::new(map_crypto_error(error), "cryptographic operation failed")
 }
 
+fn allocate_handle(counter: &AtomicU64) -> Result<u64, ClientError> {
+    counter
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+            if current == 0 {
+                return None;
+            }
+            current.checked_add(1)
+        })
+        .map_err(|_| {
+            ClientError::new(
+                ClientErrorCode::HandleSpaceExhausted,
+                "handle space is exhausted",
+            )
+        })
+}
+
 /// Runs a deterministic long-operation progress probe with optional cancellation.
 #[must_use]
 pub fn run_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> ProgressResult {
-    let mut events = Vec::new();
+    if total_steps > MAX_PROGRESS_EVENTS {
+        return ProgressResult {
+            code: ClientErrorCode::InvalidInputLength,
+            events: Vec::new(),
+        };
+    }
+
+    let mut events = Vec::with_capacity(total_steps as usize);
 
     if cancel_after == Some(0) {
         return ProgressResult {
@@ -758,6 +798,7 @@ fn map_crypto_error(error: MosaicCryptoError) -> ClientErrorCode {
         MosaicCryptoError::RngFailure => ClientErrorCode::RngFailure,
         MosaicCryptoError::WrappedKeyTooShort { .. } => ClientErrorCode::WrappedKeyTooShort,
         MosaicCryptoError::KdfProfileTooWeak => ClientErrorCode::KdfProfileTooWeak,
+        MosaicCryptoError::KdfProfileTooCostly => ClientErrorCode::KdfProfileTooCostly,
         MosaicCryptoError::InvalidSaltLength { .. } => ClientErrorCode::InvalidSaltLength,
         MosaicCryptoError::KdfFailure => ClientErrorCode::KdfFailure,
         MosaicCryptoError::InvalidSignatureLength { .. } => ClientErrorCode::InvalidSignatureLength,
@@ -790,5 +831,18 @@ mod tests {
             Err(error) => panic!("secret registry lock should be available: {error:?}"),
         };
         assert!(!guard.contains_key(&handle));
+    }
+
+    #[test]
+    fn handle_allocator_rejects_wraparound() {
+        let counter = std::sync::atomic::AtomicU64::new(u64::MAX);
+
+        let error = match super::allocate_handle(&counter) {
+            Ok(handle) => panic!("wrapped handle should be rejected: {handle}"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, super::ClientErrorCode::HandleSpaceExhausted);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::Relaxed), u64::MAX);
     }
 }

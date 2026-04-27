@@ -1,5 +1,6 @@
 use mosaic_crypto::{
-    KdfProfile, MosaicCryptoError, derive_account_key, derive_root_key, unwrap_account_key,
+    KdfProfile, MAX_KDF_ITERATIONS, MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM, MosaicCryptoError,
+    derive_account_key, derive_root_key, unwrap_account_key,
 };
 use zeroize::Zeroizing;
 
@@ -38,6 +39,32 @@ fn kdf_profile_enforces_mosaic_minimums() {
     assert_eq!(
         KdfProfile::new(64 * 1024, 3, 0),
         Err(MosaicCryptoError::KdfProfileTooWeak)
+    );
+}
+
+#[test]
+fn kdf_profile_rejects_resource_exhaustion_parameters() {
+    let max_profile =
+        match KdfProfile::new(MAX_KDF_MEMORY_KIB, MAX_KDF_ITERATIONS, MAX_KDF_PARALLELISM) {
+            Ok(value) => value,
+            Err(error) => panic!("maximum Mosaic profile should be valid: {error:?}"),
+        };
+
+    assert_eq!(max_profile.memory_kib(), MAX_KDF_MEMORY_KIB);
+    assert_eq!(max_profile.iterations(), MAX_KDF_ITERATIONS);
+    assert_eq!(max_profile.parallelism(), MAX_KDF_PARALLELISM);
+
+    assert_eq!(
+        KdfProfile::new(MAX_KDF_MEMORY_KIB + 1, 3, 1),
+        Err(MosaicCryptoError::KdfProfileTooCostly)
+    );
+    assert_eq!(
+        KdfProfile::new(64 * 1024, MAX_KDF_ITERATIONS + 1, 1),
+        Err(MosaicCryptoError::KdfProfileTooCostly)
+    );
+    assert_eq!(
+        KdfProfile::new(64 * 1024, 3, MAX_KDF_PARALLELISM + 1),
+        Err(MosaicCryptoError::KdfProfileTooCostly)
     );
 }
 

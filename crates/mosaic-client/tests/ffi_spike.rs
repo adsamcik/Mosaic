@@ -96,6 +96,14 @@ fn progress_probe_reports_steps_and_cancellation() {
 }
 
 #[test]
+fn progress_probe_rejects_unbounded_event_requests() {
+    let result = run_progress_probe(u32::MAX, None);
+
+    assert_eq!(result.code, ClientErrorCode::InvalidInputLength);
+    assert!(result.events.is_empty());
+}
+
+#[test]
 fn ffi_probe_key_is_available_only_as_an_explicit_spike_operation() {
     let result = ffi_spike_probe_key(b"input", b"context");
 

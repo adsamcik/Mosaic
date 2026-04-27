@@ -117,6 +117,14 @@ fn uniffi_facade_returns_progress_events_with_stable_error_code() {
     assert_eq!(result.events[0].completed_steps, 1);
 }
 
+#[test]
+fn uniffi_facade_rejects_unbounded_progress_event_requests() {
+    let result = android_progress_probe(u32::MAX, None);
+
+    assert_eq!(result.code, 202);
+    assert!(result.events.is_empty());
+}
+
 fn unlock_request(wrapped_account_key: Vec<u8>) -> AccountUnlockRequest {
     AccountUnlockRequest {
         user_salt: USER_SALT.to_vec(),

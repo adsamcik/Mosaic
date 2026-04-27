@@ -170,6 +170,26 @@ fn account_unlock_rejects_weak_kdf_profile_without_opening_handle() {
 }
 
 #[test]
+fn account_unlock_rejects_resource_exhaustion_kdf_profile_without_opening_handle() {
+    let wrapped_account_key = wrapped_account_key();
+    let mut password = PASSWORD.to_vec();
+
+    let result = unlock_account_key(AccountUnlockRequest {
+        password: password.as_mut_slice(),
+        user_salt: &USER_SALT,
+        account_salt: &ACCOUNT_SALT,
+        wrapped_account_key: &wrapped_account_key,
+        kdf_memory_kib: u32::MAX,
+        kdf_iterations: 3,
+        kdf_parallelism: 1,
+    });
+
+    assert_eq!(result.code, ClientErrorCode::KdfProfileTooCostly);
+    assert_eq!(result.handle, 0);
+    assert!(password.iter().all(|byte| *byte == 0));
+}
+
+#[test]
 fn account_unlock_rejects_invalid_user_or_account_salt_lengths() {
     let wrapped_account_key = wrapped_account_key();
     let mut password = PASSWORD.to_vec();

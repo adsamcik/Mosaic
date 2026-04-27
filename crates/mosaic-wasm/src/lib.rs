@@ -433,7 +433,16 @@ pub fn wasm_progress_probe_js(total_steps: u32, cancel_after: i64) -> JsProgress
         u32::try_from(cancel_after).ok()
     };
     let result = mosaic_client::run_progress_probe(total_steps, cancel_after);
-    let mut event_pairs = Vec::with_capacity(result.events.len() * 2);
+    let event_pairs_capacity = match result.events.len().checked_mul(2) {
+        Some(value) => value,
+        None => {
+            return JsProgressResult {
+                code: mosaic_client::ClientErrorCode::InvalidInputLength.as_u16(),
+                event_pairs: Vec::new(),
+            };
+        }
+    };
+    let mut event_pairs = Vec::with_capacity(event_pairs_capacity);
     for event in result.events {
         event_pairs.push(event.completed_steps);
         event_pairs.push(event.total_steps);
