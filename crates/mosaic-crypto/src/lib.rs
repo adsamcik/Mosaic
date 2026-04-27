@@ -387,6 +387,179 @@ impl AuthSigningKeypair {
     }
 }
 
+/// Rust-owned Ed25519 identity signing secret.
+///
+/// Stores the 32-byte Ed25519 seed in zeroizing memory. Intentionally does not
+/// implement `Clone`, `Copy`, `Debug`, `Display`, or serialization traits.
+pub struct IdentitySigningSecretKey(Zeroizing<[u8; SIGNING_SEED_BYTES]>);
+
+impl IdentitySigningSecretKey {
+    /// Constructs an identity signing secret from a 32-byte Ed25519 seed.
+    ///
+    /// The caller-provided seed is zeroized on success and invalid length.
+    ///
+    /// # Errors
+    /// Returns `InvalidKeyLength` if `seed` is not exactly 32 bytes.
+    pub fn from_seed(seed: &mut [u8]) -> Result<Self, MosaicCryptoError> {
+        if seed.len() != SIGNING_SEED_BYTES {
+            let actual = seed.len();
+            seed.zeroize();
+            return Err(MosaicCryptoError::InvalidKeyLength { actual });
+        }
+
+        let mut seed_bytes = Zeroizing::new([0_u8; SIGNING_SEED_BYTES]);
+        seed_bytes.copy_from_slice(seed);
+        seed.zeroize();
+        Ok(Self(seed_bytes))
+    }
+
+    /// Derives the public Ed25519 identity verifying key.
+    #[must_use]
+    pub fn public_key(&self) -> IdentitySigningPublicKey {
+        let signing_key = SigningKey::from_bytes(&self.0);
+        IdentitySigningPublicKey(signing_key.verifying_key().to_bytes())
+    }
+
+    /// Derives the X25519 recipient public key from the Ed25519 identity key.
+    #[must_use]
+    pub fn encryption_public_key(&self) -> IdentityEncryptionPublicKey {
+        let signing_key = SigningKey::from_bytes(&self.0);
+        IdentityEncryptionPublicKey(*signing_key.verifying_key().to_montgomery().as_bytes())
+    }
+
+    /// Wipes the Rust-owned signing seed in place.
+    pub fn zeroize_secret(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl Drop for IdentitySigningSecretKey {
+    fn drop(&mut self) {
+        self.zeroize_secret();
+    }
+}
+
+/// Ed25519 identity signing public key.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct IdentitySigningPublicKey([u8; SIGNING_PUBLIC_KEY_BYTES]);
+
+impl IdentitySigningPublicKey {
+    /// Constructs an identity public key from raw Ed25519 bytes.
+    ///
+    /// # Errors
+    /// Returns `InvalidKeyLength` if `bytes` is not exactly 32 bytes, or
+    /// `InvalidPublicKey` if the bytes are not accepted by the Ed25519 verifier.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MosaicCryptoError> {
+        if bytes.len() != SIGNING_PUBLIC_KEY_BYTES {
+            return Err(MosaicCryptoError::InvalidKeyLength {
+                actual: bytes.len(),
+            });
+        }
+
+        let mut public_key = [0_u8; SIGNING_PUBLIC_KEY_BYTES];
+        public_key.copy_from_slice(bytes);
+        let verifying_key = VerifyingKey::from_bytes(&public_key)
+            .map_err(|_| MosaicCryptoError::InvalidPublicKey)?;
+        if verifying_key.is_weak() {
+            return Err(MosaicCryptoError::InvalidPublicKey);
+        }
+        Ok(Self(public_key))
+    }
+
+    /// Returns the raw 32-byte Ed25519 public key.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; SIGNING_PUBLIC_KEY_BYTES] {
+        &self.0
+    }
+
+    /// Converts this Ed25519 identity public key to its X25519 recipient public key.
+    ///
+    /// # Errors
+    /// Returns `InvalidPublicKey` if the key unexpectedly fails Ed25519 decoding.
+    pub fn encryption_public_key(self) -> Result<IdentityEncryptionPublicKey, MosaicCryptoError> {
+        let verifying_key =
+            VerifyingKey::from_bytes(&self.0).map_err(|_| MosaicCryptoError::InvalidPublicKey)?;
+        Ok(IdentityEncryptionPublicKey(
+            *verifying_key.to_montgomery().as_bytes(),
+        ))
+    }
+}
+
+/// X25519 recipient public key derived from an Ed25519 identity key.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct IdentityEncryptionPublicKey([u8; SIGNING_PUBLIC_KEY_BYTES]);
+
+impl IdentityEncryptionPublicKey {
+    /// Returns the raw 32-byte X25519 public key.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; SIGNING_PUBLIC_KEY_BYTES] {
+        &self.0
+    }
+}
+
+/// Ed25519 detached identity signature.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct IdentitySignature([u8; SIGNATURE_BYTES]);
+
+impl IdentitySignature {
+    /// Constructs an identity signature from raw bytes.
+    ///
+    /// # Errors
+    /// Returns `InvalidSignatureLength` if `bytes` is not exactly 64 bytes.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MosaicCryptoError> {
+        if bytes.len() != SIGNATURE_BYTES {
+            return Err(MosaicCryptoError::InvalidSignatureLength {
+                actual: bytes.len(),
+            });
+        }
+
+        let mut signature = [0_u8; SIGNATURE_BYTES];
+        signature.copy_from_slice(bytes);
+        Ok(Self(signature))
+    }
+
+    /// Returns the raw 64-byte detached signature.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; SIGNATURE_BYTES] {
+        &self.0
+    }
+}
+
+/// Identity key material derived from a 32-byte account identity seed.
+pub struct IdentityKeypair {
+    secret_key: IdentitySigningSecretKey,
+    signing_public_key: IdentitySigningPublicKey,
+    encryption_public_key: IdentityEncryptionPublicKey,
+}
+
+impl IdentityKeypair {
+    /// Returns the Rust-owned identity signing secret.
+    #[must_use]
+    pub const fn secret_key(&self) -> &IdentitySigningSecretKey {
+        &self.secret_key
+    }
+
+    /// Returns the Ed25519 identity signing public key.
+    #[must_use]
+    pub const fn signing_public_key(&self) -> &IdentitySigningPublicKey {
+        &self.signing_public_key
+    }
+
+    /// Returns the X25519 recipient public key.
+    #[must_use]
+    pub const fn encryption_public_key(&self) -> &IdentityEncryptionPublicKey {
+        &self.encryption_public_key
+    }
+
+    /// Wipes the Rust-owned signing seed in place.
+    pub fn zeroize_secret(&mut self) {
+        self.secret_key.zeroize_secret();
+    }
+}
+
 /// Output of a successful shard encryption.
 pub struct EncryptedShard {
     /// Serialized envelope: 64-byte header || ciphertext || 16-byte AEAD tag.
@@ -762,6 +935,75 @@ pub fn generate_manifest_signing_keypair() -> Result<ManifestSigningKeypair, Mos
         secret_key,
         public_key,
     })
+}
+
+/// Generates a fresh 32-byte identity seed for account identity creation.
+///
+/// # Errors
+/// Returns `RngFailure` if the OS CSPRNG is unavailable.
+pub fn generate_identity_seed() -> Result<Zeroizing<[u8; SIGNING_SEED_BYTES]>, MosaicCryptoError> {
+    let mut seed = Zeroizing::new([0_u8; SIGNING_SEED_BYTES]);
+    getrandom::fill(&mut seed[..]).map_err(|_| MosaicCryptoError::RngFailure)?;
+    Ok(seed)
+}
+
+/// Derives identity signing and recipient public key material from a 32-byte seed.
+///
+/// The caller-provided seed buffer is zeroized on success and invalid length.
+///
+/// # Errors
+/// Returns `InvalidKeyLength` if `seed` is not exactly 32 bytes.
+pub fn derive_identity_keypair(seed: &mut [u8]) -> Result<IdentityKeypair, MosaicCryptoError> {
+    let secret_key = IdentitySigningSecretKey::from_seed(seed)?;
+    let signing_public_key = secret_key.public_key();
+    let encryption_public_key = secret_key.encryption_public_key();
+
+    Ok(IdentityKeypair {
+        secret_key,
+        signing_public_key,
+        encryption_public_key,
+    })
+}
+
+/// Converts an Ed25519 identity public key to its X25519 recipient public key.
+///
+/// # Errors
+/// Returns `InvalidKeyLength` or `InvalidPublicKey` for invalid input bytes.
+pub fn identity_encryption_public_key_from_signing_public_key(
+    signing_public_key: &[u8],
+) -> Result<IdentityEncryptionPublicKey, MosaicCryptoError> {
+    IdentitySigningPublicKey::from_bytes(signing_public_key)?.encryption_public_key()
+}
+
+/// Signs canonical manifest transcript bytes with the account identity key.
+#[must_use]
+pub fn sign_manifest_with_identity(
+    transcript_bytes: &[u8],
+    secret_key: &IdentitySigningSecretKey,
+) -> IdentitySignature {
+    let signing_key = SigningKey::from_bytes(&secret_key.0);
+    let signature: Ed25519Signature = signing_key.sign(transcript_bytes);
+    IdentitySignature(signature.to_bytes())
+}
+
+/// Verifies a canonical manifest transcript signature made by an identity key.
+///
+/// Returns `false` for wrong keys, tampered transcripts, or tampered signatures.
+#[must_use]
+pub fn verify_manifest_identity_signature(
+    transcript_bytes: &[u8],
+    signature: &IdentitySignature,
+    public_key: &IdentitySigningPublicKey,
+) -> bool {
+    let verifying_key = match VerifyingKey::from_bytes(public_key.as_bytes()) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let signature = Ed25519Signature::from_bytes(signature.as_bytes());
+
+    verifying_key
+        .verify_strict(transcript_bytes, &signature)
+        .is_ok()
 }
 
 /// Signs canonical manifest transcript bytes.

@@ -26,6 +26,23 @@ pub struct ProgressResult {
     pub events: Vec<ProgressEvent>,
 }
 
+/// UniFFI record for byte-array results.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct BytesResult {
+    pub code: u16,
+    pub bytes: Vec<u8>,
+}
+
+/// UniFFI record for identity handle results.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct IdentityHandleResult {
+    pub code: u16,
+    pub handle: u64,
+    pub signing_pubkey: Vec<u8>,
+    pub encryption_pubkey: Vec<u8>,
+    pub wrapped_seed: Vec<u8>,
+}
+
 /// Returns the crate name for smoke tests and generated wrapper diagnostics.
 #[must_use]
 pub const fn crate_name() -> &'static str {
@@ -41,7 +58,7 @@ pub const fn protocol_version() -> &'static str {
 /// Returns the stable UniFFI API snapshot for this FFI spike.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v1 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult"
+    "mosaic-uniffi ffi-spike:v2 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult identity(create/open/close/pubkeys/sign)"
 }
 
 /// Parses a shard envelope header through the UniFFI export surface.
@@ -73,6 +90,79 @@ pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> Pr
                 total_steps: event.total_steps,
             })
             .collect(),
+    }
+}
+
+/// Creates a new identity handle for an existing account-key handle.
+#[uniffi::export]
+#[must_use]
+pub fn create_identity_handle(account_key_handle: u64) -> IdentityHandleResult {
+    identity_result_from_client(mosaic_client::create_identity_handle(account_key_handle))
+}
+
+/// Opens an identity handle from wrapped identity seed bytes.
+#[uniffi::export]
+#[must_use]
+pub fn open_identity_handle(
+    wrapped_identity_seed: Vec<u8>,
+    account_key_handle: u64,
+) -> IdentityHandleResult {
+    identity_result_from_client(mosaic_client::open_identity_handle(
+        &wrapped_identity_seed,
+        account_key_handle,
+    ))
+}
+
+/// Returns an identity handle's Ed25519 public key.
+#[uniffi::export]
+#[must_use]
+pub fn identity_signing_pubkey(handle: u64) -> BytesResult {
+    bytes_result_from_client(mosaic_client::identity_signing_pubkey(handle))
+}
+
+/// Returns an identity handle's X25519 recipient public key.
+#[uniffi::export]
+#[must_use]
+pub fn identity_encryption_pubkey(handle: u64) -> BytesResult {
+    bytes_result_from_client(mosaic_client::identity_encryption_pubkey(handle))
+}
+
+/// Signs manifest transcript bytes with an identity handle.
+#[uniffi::export]
+#[must_use]
+pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: Vec<u8>) -> BytesResult {
+    bytes_result_from_client(mosaic_client::sign_manifest_with_identity(
+        handle,
+        &transcript_bytes,
+    ))
+}
+
+/// Closes an identity handle and returns the stable error code.
+#[uniffi::export]
+#[must_use]
+pub fn close_identity_handle(handle: u64) -> u16 {
+    match mosaic_client::close_identity_handle(handle) {
+        Ok(()) => mosaic_client::ClientErrorCode::Ok.as_u16(),
+        Err(error) => error.code.as_u16(),
+    }
+}
+
+fn identity_result_from_client(
+    result: mosaic_client::IdentityHandleResult,
+) -> IdentityHandleResult {
+    IdentityHandleResult {
+        code: result.code.as_u16(),
+        handle: result.handle,
+        signing_pubkey: result.signing_pubkey,
+        encryption_pubkey: result.encryption_pubkey,
+        wrapped_seed: result.wrapped_seed,
+    }
+}
+
+fn bytes_result_from_client(result: mosaic_client::BytesResult) -> BytesResult {
+    BytesResult {
+        code: result.code.as_u16(),
+        bytes: result.bytes,
     }
 }
 

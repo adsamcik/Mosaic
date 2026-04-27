@@ -6,7 +6,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use mosaic_crypto::MosaicCryptoError;
+use mosaic_crypto::{
+    IdentityKeypair, MosaicCryptoError, SecretKey, derive_identity_keypair, generate_identity_seed,
+    sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_key, wrap_key,
+};
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -36,6 +39,7 @@ pub enum ClientErrorCode {
     InvalidUsername = 213,
     OperationCancelled = 300,
     SecretHandleNotFound = 400,
+    IdentityHandleNotFound = 401,
     InternalStatePoisoned = 500,
 }
 
@@ -102,6 +106,38 @@ pub struct BytesResult {
     pub bytes: Vec<u8>,
 }
 
+/// FFI-safe identity handle result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityHandleResult {
+    pub code: ClientErrorCode,
+    pub handle: u64,
+    pub signing_pubkey: Vec<u8>,
+    pub encryption_pubkey: Vec<u8>,
+    pub wrapped_seed: Vec<u8>,
+}
+
+impl IdentityHandleResult {
+    fn ok(handle: u64, keypair: &IdentityKeypair, wrapped_seed: Vec<u8>) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            handle,
+            signing_pubkey: keypair.signing_public_key().as_bytes().to_vec(),
+            encryption_pubkey: keypair.encryption_public_key().as_bytes().to_vec(),
+            wrapped_seed,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            handle: 0,
+            signing_pubkey: Vec::new(),
+            encryption_pubkey: Vec::new(),
+            wrapped_seed: Vec::new(),
+        }
+    }
+}
+
 /// FFI-safe progress event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgressEvent {
@@ -137,8 +173,34 @@ impl Drop for SecretRecord {
 static NEXT_SECRET_HANDLE: AtomicU64 = AtomicU64::new(1);
 static SECRET_REGISTRY: OnceLock<Mutex<HashMap<u64, SecretRecord>>> = OnceLock::new();
 
+struct IdentityRecord {
+    account_handle: u64,
+    keypair: IdentityKeypair,
+    open: bool,
+}
+
+impl IdentityRecord {
+    fn close(&mut self) {
+        self.keypair.zeroize_secret();
+        self.open = false;
+    }
+}
+
+impl Drop for IdentityRecord {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+static NEXT_IDENTITY_HANDLE: AtomicU64 = AtomicU64::new(1);
+static IDENTITY_REGISTRY: OnceLock<Mutex<HashMap<u64, IdentityRecord>>> = OnceLock::new();
+
 fn secret_registry() -> &'static Mutex<HashMap<u64, SecretRecord>> {
     SECRET_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn identity_registry() -> &'static Mutex<HashMap<u64, IdentityRecord>> {
+    IDENTITY_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Returns the crate name for smoke tests and FFI wrapper diagnostics.
@@ -213,11 +275,117 @@ pub fn secret_handle_is_open(handle: u64) -> Result<bool, ClientError> {
 
 /// Closes and wipes a Rust-owned opaque secret handle.
 pub fn close_secret_handle(handle: u64) -> Result<(), ClientError> {
-    let registry = secret_registry();
+    {
+        let registry = secret_registry();
+        let mut guard = registry.lock().map_err(|_| {
+            ClientError::new(
+                ClientErrorCode::InternalStatePoisoned,
+                "secret registry lock was poisoned",
+            )
+        })?;
+
+        match guard.remove(&handle) {
+            Some(mut record) if record.open => {
+                record.close();
+            }
+            _ => {
+                return Err(ClientError::new(
+                    ClientErrorCode::SecretHandleNotFound,
+                    "secret handle is not open",
+                ));
+            }
+        }
+    }
+
+    close_identity_handles_for_account(handle)?;
+    Ok(())
+}
+
+/// Creates a new Rust-owned identity handle and returns the wrapped identity seed.
+#[must_use]
+pub fn create_identity_handle(account_key_handle: u64) -> IdentityHandleResult {
+    match create_identity_handle_result(account_key_handle) {
+        Ok(value) => value,
+        Err(error) => IdentityHandleResult::error(error.code),
+    }
+}
+
+/// Opens a Rust-owned identity handle from a wrapped identity seed.
+#[must_use]
+pub fn open_identity_handle(
+    wrapped_identity_seed: &[u8],
+    account_key_handle: u64,
+) -> IdentityHandleResult {
+    match open_identity_handle_result(wrapped_identity_seed, account_key_handle) {
+        Ok(value) => value,
+        Err(error) => IdentityHandleResult::error(error.code),
+    }
+}
+
+/// Returns whether an opaque identity handle is still open.
+pub fn identity_handle_is_open(handle: u64) -> Result<bool, ClientError> {
+    let registry = identity_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "identity registry lock was poisoned",
+        )
+    })?;
+
+    Ok(guard.get(&handle).is_some_and(|record| record.open))
+}
+
+/// Returns the Ed25519 public identity key for an open identity handle.
+#[must_use]
+pub fn identity_signing_pubkey(handle: u64) -> BytesResult {
+    with_identity(handle, |record| BytesResult {
+        code: ClientErrorCode::Ok,
+        bytes: record
+            .keypair
+            .signing_public_key()
+            .as_bytes()
+            .as_slice()
+            .to_vec(),
+    })
+    .unwrap_or_else(bytes_error)
+}
+
+/// Returns the X25519 recipient public key for an open identity handle.
+#[must_use]
+pub fn identity_encryption_pubkey(handle: u64) -> BytesResult {
+    with_identity(handle, |record| BytesResult {
+        code: ClientErrorCode::Ok,
+        bytes: record
+            .keypair
+            .encryption_public_key()
+            .as_bytes()
+            .as_slice()
+            .to_vec(),
+    })
+    .unwrap_or_else(bytes_error)
+}
+
+/// Signs manifest transcript bytes with an open identity handle.
+#[must_use]
+pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: &[u8]) -> BytesResult {
+    with_identity(handle, |record| {
+        let signature =
+            crypto_sign_manifest_with_identity(transcript_bytes, record.keypair.secret_key());
+        BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: signature.as_bytes().to_vec(),
+        }
+    })
+    .unwrap_or_else(bytes_error)
+}
+
+/// Closes and wipes a Rust-owned opaque identity handle.
+pub fn close_identity_handle(handle: u64) -> Result<(), ClientError> {
+    let registry = identity_registry();
     let mut guard = registry.lock().map_err(|_| {
         ClientError::new(
             ClientErrorCode::InternalStatePoisoned,
-            "secret registry lock was poisoned",
+            "identity registry lock was poisoned",
         )
     })?;
 
@@ -227,10 +395,142 @@ pub fn close_secret_handle(handle: u64) -> Result<(), ClientError> {
             Ok(())
         }
         _ => Err(ClientError::new(
-            ClientErrorCode::SecretHandleNotFound,
-            "secret handle is not open",
+            ClientErrorCode::IdentityHandleNotFound,
+            "identity handle is not open",
         )),
     }
+}
+
+fn create_identity_handle_result(
+    account_key_handle: u64,
+) -> Result<IdentityHandleResult, ClientError> {
+    let account_key = account_secret_key_from_handle(account_key_handle)?;
+    let mut identity_seed = generate_identity_seed().map_err(client_error_from_crypto)?;
+    let wrapped_seed =
+        wrap_key(identity_seed.as_slice(), &account_key).map_err(client_error_from_crypto)?;
+    insert_identity_handle(
+        account_key_handle,
+        identity_seed.as_mut_slice(),
+        wrapped_seed,
+    )
+}
+
+fn open_identity_handle_result(
+    wrapped_identity_seed: &[u8],
+    account_key_handle: u64,
+) -> Result<IdentityHandleResult, ClientError> {
+    let account_key = account_secret_key_from_handle(account_key_handle)?;
+    let mut identity_seed =
+        unwrap_key(wrapped_identity_seed, &account_key).map_err(client_error_from_crypto)?;
+    insert_identity_handle(account_key_handle, identity_seed.as_mut_slice(), Vec::new())
+}
+
+fn insert_identity_handle(
+    account_handle: u64,
+    identity_seed: &mut [u8],
+    wrapped_seed: Vec<u8>,
+) -> Result<IdentityHandleResult, ClientError> {
+    let keypair = derive_identity_keypair(identity_seed).map_err(client_error_from_crypto)?;
+    let handle = NEXT_IDENTITY_HANDLE.fetch_add(1, Ordering::Relaxed);
+    let result = IdentityHandleResult::ok(handle, &keypair, wrapped_seed);
+
+    let registry = identity_registry();
+    let mut guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "identity registry lock was poisoned",
+        )
+    })?;
+    guard.insert(
+        handle,
+        IdentityRecord {
+            account_handle,
+            keypair,
+            open: true,
+        },
+    );
+
+    Ok(result)
+}
+
+fn account_secret_key_from_handle(handle: u64) -> Result<SecretKey, ClientError> {
+    let mut account_key_bytes = {
+        let registry = secret_registry();
+        let guard = registry.lock().map_err(|_| {
+            ClientError::new(
+                ClientErrorCode::InternalStatePoisoned,
+                "secret registry lock was poisoned",
+            )
+        })?;
+        let record = guard
+            .get(&handle)
+            .filter(|record| record.open)
+            .ok_or_else(|| {
+                ClientError::new(
+                    ClientErrorCode::SecretHandleNotFound,
+                    "account key handle is not open",
+                )
+            })?;
+
+        Zeroizing::new(record.bytes.as_slice().to_vec())
+    };
+
+    SecretKey::from_bytes(account_key_bytes.as_mut_slice()).map_err(client_error_from_crypto)
+}
+
+fn close_identity_handles_for_account(account_handle: u64) -> Result<(), ClientError> {
+    let registry = identity_registry();
+    let mut guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "identity registry lock was poisoned",
+        )
+    })?;
+
+    guard.retain(|_, record| {
+        if record.account_handle == account_handle {
+            record.close();
+            false
+        } else {
+            true
+        }
+    });
+    Ok(())
+}
+
+fn with_identity<T>(
+    handle: u64,
+    action: impl FnOnce(&IdentityRecord) -> T,
+) -> Result<T, ClientError> {
+    let registry = identity_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "identity registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::IdentityHandleNotFound,
+                "identity handle is not open",
+            )
+        })?;
+
+    Ok(action(record))
+}
+
+fn bytes_error(error: ClientError) -> BytesResult {
+    BytesResult {
+        code: error.code,
+        bytes: Vec::new(),
+    }
+}
+
+fn client_error_from_crypto(error: MosaicCryptoError) -> ClientError {
+    ClientError::new(map_crypto_error(error), "cryptographic operation failed")
 }
 
 /// Runs a deterministic long-operation progress probe with optional cancellation.

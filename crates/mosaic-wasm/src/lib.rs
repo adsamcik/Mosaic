@@ -28,6 +28,23 @@ pub struct ProgressResult {
     pub events: Vec<ProgressEvent>,
 }
 
+/// Rust-side WASM facade bytes result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BytesResult {
+    pub code: u16,
+    pub bytes: Vec<u8>,
+}
+
+/// Rust-side WASM facade identity handle result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityHandleResult {
+    pub code: u16,
+    pub handle: u64,
+    pub signing_pubkey: Vec<u8>,
+    pub encryption_pubkey: Vec<u8>,
+    pub wrapped_seed: Vec<u8>,
+}
+
 /// WASM-bindgen class for header parse results.
 #[wasm_bindgen(js_name = HeaderResult)]
 pub struct JsHeaderResult {
@@ -124,6 +141,78 @@ impl JsProgressResult {
     }
 }
 
+/// WASM-bindgen class for byte-array results.
+#[wasm_bindgen(js_name = BytesResult)]
+pub struct JsBytesResult {
+    code: u16,
+    bytes: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = BytesResult)]
+impl JsBytesResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Public bytes or signature bytes.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+}
+
+/// WASM-bindgen class for identity handle results.
+#[wasm_bindgen(js_name = IdentityHandleResult)]
+pub struct JsIdentityHandleResult {
+    code: u16,
+    handle: u64,
+    signing_pubkey: Vec<u8>,
+    encryption_pubkey: Vec<u8>,
+    wrapped_seed: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = IdentityHandleResult)]
+impl JsIdentityHandleResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Opaque Rust-owned identity handle.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn handle(&self) -> u64 {
+        self.handle
+    }
+
+    /// Ed25519 public identity key.
+    #[wasm_bindgen(getter, js_name = signingPubkey)]
+    #[must_use]
+    pub fn signing_pubkey(&self) -> Vec<u8> {
+        self.signing_pubkey.clone()
+    }
+
+    /// X25519 recipient public key.
+    #[wasm_bindgen(getter, js_name = encryptionPubkey)]
+    #[must_use]
+    pub fn encryption_pubkey(&self) -> Vec<u8> {
+        self.encryption_pubkey.clone()
+    }
+
+    /// Wrapped identity seed bytes returned on creation.
+    #[wasm_bindgen(getter, js_name = wrappedSeed)]
+    #[must_use]
+    pub fn wrapped_seed(&self) -> Vec<u8> {
+        self.wrapped_seed.clone()
+    }
+}
+
 /// Returns the crate name for smoke tests and generated wrapper diagnostics.
 #[must_use]
 pub const fn crate_name() -> &'static str {
@@ -139,7 +228,7 @@ pub const fn protocol_version() -> &'static str {
 /// Returns the stable WASM API snapshot for this FFI spike.
 #[must_use]
 pub const fn wasm_api_snapshot() -> &'static str {
-    "mosaic-wasm ffi-spike:v1 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult"
+    "mosaic-wasm ffi-spike:v2 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult identity(create/open/close/pubkeys/sign)"
 }
 
 /// Parses a shard envelope header for Rust-side wrapper tests.
@@ -152,6 +241,54 @@ pub fn parse_envelope_header(bytes: Vec<u8>) -> HeaderResult {
 #[must_use]
 pub fn wasm_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> ProgressResult {
     progress_result_from_client(mosaic_client::run_progress_probe(total_steps, cancel_after))
+}
+
+/// Creates a new identity handle for an existing account-key handle.
+#[must_use]
+pub fn create_identity_handle(account_key_handle: u64) -> IdentityHandleResult {
+    identity_result_from_client(mosaic_client::create_identity_handle(account_key_handle))
+}
+
+/// Opens an identity handle from wrapped identity seed bytes.
+#[must_use]
+pub fn open_identity_handle(
+    wrapped_identity_seed: Vec<u8>,
+    account_key_handle: u64,
+) -> IdentityHandleResult {
+    identity_result_from_client(mosaic_client::open_identity_handle(
+        &wrapped_identity_seed,
+        account_key_handle,
+    ))
+}
+
+/// Returns an identity handle's Ed25519 public key.
+#[must_use]
+pub fn identity_signing_pubkey(handle: u64) -> BytesResult {
+    bytes_result_from_client(mosaic_client::identity_signing_pubkey(handle))
+}
+
+/// Returns an identity handle's X25519 recipient public key.
+#[must_use]
+pub fn identity_encryption_pubkey(handle: u64) -> BytesResult {
+    bytes_result_from_client(mosaic_client::identity_encryption_pubkey(handle))
+}
+
+/// Signs manifest transcript bytes with an identity handle.
+#[must_use]
+pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: Vec<u8>) -> BytesResult {
+    bytes_result_from_client(mosaic_client::sign_manifest_with_identity(
+        handle,
+        &transcript_bytes,
+    ))
+}
+
+/// Closes an identity handle and returns the stable error code.
+#[must_use]
+pub fn close_identity_handle(handle: u64) -> u16 {
+    match mosaic_client::close_identity_handle(handle) {
+        Ok(()) => mosaic_client::ClientErrorCode::Ok.as_u16(),
+        Err(error) => error.code.as_u16(),
+    }
 }
 
 /// Parses a shard envelope header through the generated WASM binding surface.
@@ -190,6 +327,54 @@ pub fn wasm_progress_probe_js(total_steps: u32, cancel_after: i64) -> JsProgress
     }
 }
 
+/// Creates a new identity handle through the generated WASM binding surface.
+#[wasm_bindgen(js_name = createIdentityHandle)]
+#[must_use]
+pub fn create_identity_handle_js(account_key_handle: u64) -> JsIdentityHandleResult {
+    js_identity_result_from_rust(create_identity_handle(account_key_handle))
+}
+
+/// Opens an identity handle through the generated WASM binding surface.
+#[wasm_bindgen(js_name = openIdentityHandle)]
+#[must_use]
+pub fn open_identity_handle_js(
+    wrapped_identity_seed: Vec<u8>,
+    account_key_handle: u64,
+) -> JsIdentityHandleResult {
+    js_identity_result_from_rust(open_identity_handle(
+        wrapped_identity_seed,
+        account_key_handle,
+    ))
+}
+
+/// Returns an identity handle's Ed25519 public key through WASM.
+#[wasm_bindgen(js_name = identitySigningPubkey)]
+#[must_use]
+pub fn identity_signing_pubkey_js(handle: u64) -> JsBytesResult {
+    js_bytes_result_from_rust(identity_signing_pubkey(handle))
+}
+
+/// Returns an identity handle's X25519 public key through WASM.
+#[wasm_bindgen(js_name = identityEncryptionPubkey)]
+#[must_use]
+pub fn identity_encryption_pubkey_js(handle: u64) -> JsBytesResult {
+    js_bytes_result_from_rust(identity_encryption_pubkey(handle))
+}
+
+/// Signs manifest transcript bytes through WASM.
+#[wasm_bindgen(js_name = signManifestWithIdentity)]
+#[must_use]
+pub fn sign_manifest_with_identity_js(handle: u64, transcript_bytes: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(sign_manifest_with_identity(handle, transcript_bytes))
+}
+
+/// Closes an identity handle through WASM.
+#[wasm_bindgen(js_name = closeIdentityHandle)]
+#[must_use]
+pub fn close_identity_handle_js(handle: u64) -> u16 {
+    close_identity_handle(handle)
+}
+
 fn header_result_from_client(result: mosaic_client::HeaderResult) -> HeaderResult {
     HeaderResult {
         code: result.code.as_u16(),
@@ -211,6 +396,42 @@ fn progress_result_from_client(result: mosaic_client::ProgressResult) -> Progres
                 total_steps: event.total_steps,
             })
             .collect(),
+    }
+}
+
+fn identity_result_from_client(
+    result: mosaic_client::IdentityHandleResult,
+) -> IdentityHandleResult {
+    IdentityHandleResult {
+        code: result.code.as_u16(),
+        handle: result.handle,
+        signing_pubkey: result.signing_pubkey,
+        encryption_pubkey: result.encryption_pubkey,
+        wrapped_seed: result.wrapped_seed,
+    }
+}
+
+fn bytes_result_from_client(result: mosaic_client::BytesResult) -> BytesResult {
+    BytesResult {
+        code: result.code.as_u16(),
+        bytes: result.bytes,
+    }
+}
+
+fn js_identity_result_from_rust(result: IdentityHandleResult) -> JsIdentityHandleResult {
+    JsIdentityHandleResult {
+        code: result.code,
+        handle: result.handle,
+        signing_pubkey: result.signing_pubkey,
+        encryption_pubkey: result.encryption_pubkey,
+        wrapped_seed: result.wrapped_seed,
+    }
+}
+
+fn js_bytes_result_from_rust(result: BytesResult) -> JsBytesResult {
+    JsBytesResult {
+        code: result.code,
+        bytes: result.bytes,
     }
 }
 
