@@ -4,7 +4,8 @@ use mosaic_client::{
     identity_signing_pubkey, sign_manifest_with_identity, unlock_account_key,
 };
 use mosaic_crypto::{
-    IdentitySignature, IdentitySigningPublicKey, KdfProfile, derive_account_key,
+    IdentitySignature, IdentitySigningPublicKey, KdfProfile, MAX_KDF_ITERATIONS,
+    MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM, derive_account_key,
     verify_manifest_identity_signature,
 };
 use zeroize::Zeroizing;
@@ -185,6 +186,74 @@ fn account_unlock_rejects_resource_exhaustion_kdf_profile_without_opening_handle
     });
 
     assert_eq!(result.code, ClientErrorCode::KdfProfileTooCostly);
+    assert_eq!(result.handle, 0);
+    assert!(password.iter().all(|byte| *byte == 0));
+}
+
+#[test]
+fn account_unlock_rejects_each_costly_kdf_limit_and_zeroizes_password() {
+    let wrapped_account_key = wrapped_account_key();
+    let cases = [
+        (MAX_KDF_MEMORY_KIB + 1, 3, 1),
+        (64 * 1024, MAX_KDF_ITERATIONS + 1, 1),
+        (64 * 1024, 3, MAX_KDF_PARALLELISM + 1),
+    ];
+
+    for (memory_kib, iterations, parallelism) in cases {
+        let mut password = PASSWORD.to_vec();
+
+        let result = unlock_account_key(AccountUnlockRequest {
+            password: password.as_mut_slice(),
+            user_salt: &USER_SALT,
+            account_salt: &ACCOUNT_SALT,
+            wrapped_account_key: &wrapped_account_key,
+            kdf_memory_kib: memory_kib,
+            kdf_iterations: iterations,
+            kdf_parallelism: parallelism,
+        });
+
+        assert_eq!(result.code, ClientErrorCode::KdfProfileTooCostly);
+        assert_eq!(result.handle, 0);
+        assert!(password.iter().all(|byte| *byte == 0));
+    }
+}
+
+#[test]
+fn account_unlock_rejects_multiple_kdf_violations_and_zeroizes_password() {
+    let wrapped_account_key = wrapped_account_key();
+    let mut password = PASSWORD.to_vec();
+
+    let result = unlock_account_key(AccountUnlockRequest {
+        password: password.as_mut_slice(),
+        user_salt: &USER_SALT,
+        account_salt: &ACCOUNT_SALT,
+        wrapped_account_key: &wrapped_account_key,
+        kdf_memory_kib: 1,
+        kdf_iterations: MAX_KDF_ITERATIONS + 1,
+        kdf_parallelism: MAX_KDF_PARALLELISM + 1,
+    });
+
+    assert_eq!(result.code, ClientErrorCode::KdfProfileTooWeak);
+    assert_eq!(result.handle, 0);
+    assert!(password.iter().all(|byte| *byte == 0));
+}
+
+#[test]
+fn account_unlock_rejects_wrapped_key_shorter_than_minimum() {
+    let short_wrapped_key = vec![0x5a_u8; 24 + 16];
+    let mut password = PASSWORD.to_vec();
+
+    let result = unlock_account_key(AccountUnlockRequest {
+        password: password.as_mut_slice(),
+        user_salt: &USER_SALT,
+        account_salt: &ACCOUNT_SALT,
+        wrapped_account_key: &short_wrapped_key,
+        kdf_memory_kib: 64 * 1024,
+        kdf_iterations: 3,
+        kdf_parallelism: 1,
+    });
+
+    assert_eq!(result.code, ClientErrorCode::WrappedKeyTooShort);
     assert_eq!(result.handle, 0);
     assert!(password.iter().all(|byte| *byte == 0));
 }

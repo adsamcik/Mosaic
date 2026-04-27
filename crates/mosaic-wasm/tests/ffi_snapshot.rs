@@ -4,6 +4,8 @@ use mosaic_wasm::{
     identity_signing_pubkey, parse_envelope_header, wasm_api_snapshot, wasm_progress_probe,
 };
 
+const MAX_PROGRESS_EVENTS: u32 = 10_000;
+
 #[test]
 fn wasm_facade_exposes_stable_ffi_spike_surface() {
     assert_eq!(
@@ -82,4 +84,31 @@ fn wasm_facade_rejects_unbounded_progress_event_requests() {
 
     assert_eq!(result.code, 202);
     assert!(result.events.is_empty());
+}
+
+#[test]
+fn wasm_facade_propagates_progress_boundary_and_zero_steps() {
+    let boundary_error = wasm_progress_probe(MAX_PROGRESS_EVENTS + 1, None);
+    assert_eq!(boundary_error.code, 202);
+    assert!(boundary_error.events.is_empty());
+
+    let zero_steps = wasm_progress_probe(0, None);
+    assert_eq!(zero_steps.code, 0);
+    assert!(zero_steps.events.is_empty());
+}
+
+#[test]
+fn wasm_identity_operations_reject_zero_handle_without_outputs() {
+    let create_result = create_identity_handle(0);
+    assert_eq!(create_result.code, 400);
+    assert_eq!(create_result.handle, 0);
+    assert!(create_result.signing_pubkey.is_empty());
+    assert!(create_result.encryption_pubkey.is_empty());
+    assert!(create_result.wrapped_seed.is_empty());
+
+    let pubkey_result = identity_signing_pubkey(0);
+    assert_eq!(pubkey_result.code, 401);
+    assert!(pubkey_result.bytes.is_empty());
+
+    assert_eq!(close_identity_handle(0), 401);
 }

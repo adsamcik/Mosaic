@@ -69,6 +69,22 @@ fn kdf_profile_rejects_resource_exhaustion_parameters() {
 }
 
 #[test]
+fn kdf_profile_reports_weak_profiles_before_costly_profiles() {
+    assert_eq!(
+        KdfProfile::new(1, MAX_KDF_ITERATIONS + 1, MAX_KDF_PARALLELISM + 1),
+        Err(MosaicCryptoError::KdfProfileTooWeak)
+    );
+    assert_eq!(
+        KdfProfile::new(MAX_KDF_MEMORY_KIB + 1, 1, MAX_KDF_PARALLELISM + 1),
+        Err(MosaicCryptoError::KdfProfileTooWeak)
+    );
+    assert_eq!(
+        KdfProfile::new(MAX_KDF_MEMORY_KIB + 1, MAX_KDF_ITERATIONS + 1, 0),
+        Err(MosaicCryptoError::KdfProfileTooWeak)
+    );
+}
+
+#[test]
 fn root_key_derivation_is_deterministic_and_account_salt_bound() {
     let profile = minimum_profile();
 

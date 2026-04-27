@@ -16,6 +16,7 @@ const USER_SALT: [u8; 16] = [
 const ACCOUNT_SALT: [u8; 16] = [
     0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
 ];
+const MAX_PROGRESS_EVENTS: u32 = 10_000;
 
 #[test]
 fn uniffi_facade_exposes_stable_ffi_spike_surface() {
@@ -123,6 +124,17 @@ fn uniffi_facade_rejects_unbounded_progress_event_requests() {
 
     assert_eq!(result.code, 202);
     assert!(result.events.is_empty());
+}
+
+#[test]
+fn uniffi_facade_propagates_progress_boundary_and_zero_steps() {
+    let boundary_error = android_progress_probe(MAX_PROGRESS_EVENTS + 1, None);
+    assert_eq!(boundary_error.code, 202);
+    assert!(boundary_error.events.is_empty());
+
+    let zero_steps = android_progress_probe(0, None);
+    assert_eq!(zero_steps.code, 0);
+    assert!(zero_steps.events.is_empty());
 }
 
 fn unlock_request(wrapped_account_key: Vec<u8>) -> AccountUnlockRequest {

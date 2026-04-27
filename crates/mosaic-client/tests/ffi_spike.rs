@@ -18,6 +18,7 @@ const ACCOUNT_KEY: [u8; 32] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
 ];
+const MAX_PROGRESS_EVENTS: u32 = 10_000;
 
 #[test]
 fn parse_shard_header_maps_domain_errors_to_stable_codes() {
@@ -104,11 +105,114 @@ fn progress_probe_rejects_unbounded_event_requests() {
 }
 
 #[test]
+fn progress_probe_handles_boundary_and_cancellation_edges() {
+    let max_result = run_progress_probe(MAX_PROGRESS_EVENTS, None);
+    assert_eq!(max_result.code, ClientErrorCode::Ok);
+    assert_eq!(max_result.events.len(), MAX_PROGRESS_EVENTS as usize);
+    assert_eq!(
+        max_result.events.first(),
+        Some(&ProgressEvent {
+            completed_steps: 1,
+            total_steps: MAX_PROGRESS_EVENTS,
+        })
+    );
+    assert_eq!(
+        max_result.events.last(),
+        Some(&ProgressEvent {
+            completed_steps: MAX_PROGRESS_EVENTS,
+            total_steps: MAX_PROGRESS_EVENTS,
+        })
+    );
+
+    let too_many = run_progress_probe(MAX_PROGRESS_EVENTS + 1, None);
+    assert_eq!(too_many.code, ClientErrorCode::InvalidInputLength);
+    assert!(too_many.events.is_empty());
+
+    let cancel_immediately = run_progress_probe(5, Some(0));
+    assert_eq!(cancel_immediately.code, ClientErrorCode::OperationCancelled);
+    assert!(cancel_immediately.events.is_empty());
+
+    let cancel_after_total = run_progress_probe(5, Some(10));
+    assert_eq!(cancel_after_total.code, ClientErrorCode::Ok);
+    assert_eq!(cancel_after_total.events.len(), 5);
+
+    let zero_steps = run_progress_probe(0, None);
+    assert_eq!(zero_steps.code, ClientErrorCode::Ok);
+    assert!(zero_steps.events.is_empty());
+}
+
+#[test]
 fn ffi_probe_key_is_available_only_as_an_explicit_spike_operation() {
     let result = ffi_spike_probe_key(b"input", b"context");
 
     assert_eq!(result.code, ClientErrorCode::Ok);
     assert_eq!(result.bytes.len(), 32);
+}
+
+#[test]
+fn ffi_probe_key_rejects_empty_context() {
+    let result = ffi_spike_probe_key(b"input", b"");
+
+    assert_eq!(result.code, ClientErrorCode::EmptyContext);
+    assert!(result.bytes.is_empty());
+}
+
+#[test]
+fn handle_operations_reject_zero_handle_without_secret_outputs() {
+    let secret_is_open = match secret_handle_is_open(0) {
+        Ok(value) => value,
+        Err(error) => panic!("zero secret handle status should be readable: {error:?}"),
+    };
+    assert!(!secret_is_open);
+
+    let close_secret_error = match close_secret_handle(0) {
+        Ok(()) => panic!("zero secret handle should not close"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        close_secret_error.code,
+        ClientErrorCode::SecretHandleNotFound
+    );
+
+    let identity_is_open = match identity_handle_is_open(0) {
+        Ok(value) => value,
+        Err(error) => panic!("zero identity handle status should be readable: {error:?}"),
+    };
+    assert!(!identity_is_open);
+
+    let create_result = create_identity_handle(0);
+    assert_eq!(create_result.code, ClientErrorCode::SecretHandleNotFound);
+    assert_eq!(create_result.handle, 0);
+    assert!(create_result.signing_pubkey.is_empty());
+    assert!(create_result.encryption_pubkey.is_empty());
+    assert!(create_result.wrapped_seed.is_empty());
+
+    let signing_result = identity_signing_pubkey(0);
+    assert_eq!(signing_result.code, ClientErrorCode::IdentityHandleNotFound);
+    assert!(signing_result.bytes.is_empty());
+
+    let encryption_result = identity_encryption_pubkey(0);
+    assert_eq!(
+        encryption_result.code,
+        ClientErrorCode::IdentityHandleNotFound
+    );
+    assert!(encryption_result.bytes.is_empty());
+
+    let signature_result = sign_manifest_with_identity(0, b"transcript");
+    assert_eq!(
+        signature_result.code,
+        ClientErrorCode::IdentityHandleNotFound
+    );
+    assert!(signature_result.bytes.is_empty());
+
+    let close_identity_error = match close_identity_handle(0) {
+        Ok(()) => panic!("zero identity handle should not close"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        close_identity_error.code,
+        ClientErrorCode::IdentityHandleNotFound
+    );
 }
 
 #[test]
@@ -221,6 +325,13 @@ fn closing_account_handle_closes_linked_identity_handles() {
 
     let signing_result = identity_signing_pubkey(create_result.handle);
     assert_eq!(signing_result.code, ClientErrorCode::IdentityHandleNotFound);
+
+    let signature_result =
+        sign_manifest_with_identity(create_result.handle, b"manifest transcript");
+    assert_eq!(
+        signature_result.code,
+        ClientErrorCode::IdentityHandleNotFound
+    );
 
     let encryption_result = identity_encryption_pubkey(create_result.handle);
     assert_eq!(
