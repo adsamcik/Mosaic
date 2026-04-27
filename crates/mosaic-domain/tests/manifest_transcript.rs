@@ -168,7 +168,7 @@ fn manifest_transcript_reports_first_gap_after_sorting_shards() {
     let error = match canonical_manifest_transcript_bytes(&ManifestTranscript::new(
         ALBUM_ID,
         1,
-        &encrypted_meta,
+        encrypted_envelope(&encrypted_meta),
         &shards,
     )) {
         Ok(_) => panic!("gap in sorted shard indices should fail"),
