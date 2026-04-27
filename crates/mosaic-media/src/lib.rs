@@ -3,6 +3,10 @@
 #![forbid(unsafe_code)]
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+const WEBP_VP8X_ICC_FLAG: u8 = 0b0010_0000;
+const WEBP_VP8X_EXIF_FLAG: u8 = 0b0000_0100;
+const WEBP_VP8X_XMP_FLAG: u8 = 0b0000_0001;
+const WEBP_VP8X_METADATA_FLAGS: u8 = WEBP_VP8X_ICC_FLAG | WEBP_VP8X_EXIF_FLAG | WEBP_VP8X_XMP_FLAG;
 pub const NORMAL_EXIF_ORIENTATION: u8 = 1;
 pub const MAX_IMAGE_PIXELS: u32 = 32 * 1024 * 1024;
 /// Maximum canonical thumbnail tier edge length in pixels.
@@ -55,6 +59,7 @@ pub enum MosaicMediaError {
     UnsupportedFormat,
     OutputTooLarge,
     ImageMetadataMismatch,
+    MetadataSidecar(mosaic_domain::MetadataSidecarError),
     EncodedTierMismatch {
         expected: TierDimensions,
         actual: TierDimensions,
@@ -121,6 +126,43 @@ impl GeneratedTiers {
     #[must_use]
     pub fn into_tiers(self) -> [TierOutput; 3] {
         self.tiers
+    }
+}
+
+/// Stable identifiers needed to bind media metadata into a canonical sidecar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediaSidecarIds {
+    pub album_id: [u8; 16],
+    pub photo_id: [u8; 16],
+    pub epoch_id: u32,
+}
+
+/// Generated gallery tiers plus client-local plaintext metadata sidecar bytes.
+///
+/// `metadata_sidecar` is plaintext canonical metadata and must be encrypted
+/// before manifest binding, persistence, upload, or logging.
+pub struct GeneratedMediaWithSidecar {
+    tiers: GeneratedTiers,
+    metadata_sidecar: Vec<u8>,
+}
+
+impl GeneratedMediaWithSidecar {
+    /// Returns generated gallery tiers in canonical upload order.
+    #[must_use]
+    pub const fn tiers(&self) -> &GeneratedTiers {
+        &self.tiers
+    }
+
+    /// Returns client-local plaintext canonical metadata sidecar bytes.
+    #[must_use]
+    pub fn metadata_sidecar(&self) -> &[u8] {
+        &self.metadata_sidecar
+    }
+
+    /// Consumes the result into generated tiers and plaintext sidecar bytes.
+    #[must_use]
+    pub fn into_parts(self) -> (GeneratedTiers, Vec<u8>) {
+        (self.tiers, self.metadata_sidecar)
     }
 }
 
@@ -239,6 +281,14 @@ pub fn generate_tiers_with_metadata<E: MediaTierEncoder + ?Sized>(
         return Err(MosaicMediaError::ImageMetadataMismatch);
     }
 
+    generate_tiers_with_verified_metadata(bytes, metadata, encoder)
+}
+
+fn generate_tiers_with_verified_metadata<E: MediaTierEncoder + ?Sized>(
+    bytes: &[u8],
+    metadata: ImageMetadata,
+    encoder: &E,
+) -> Result<GeneratedTiers, MosaicMediaError> {
     let stripped = strip_known_metadata(metadata.format, bytes)?;
     let layout = plan_tier_layout(metadata.width, metadata.height)?;
 
@@ -254,6 +304,69 @@ pub fn generate_tiers_with_metadata<E: MediaTierEncoder + ?Sized>(
     Ok(GeneratedTiers {
         tiers: [thumbnail, preview, original],
     })
+}
+
+/// Generates canonical gallery tiers plus client-local canonical metadata sidecar bytes.
+///
+/// The returned sidecar bytes are plaintext metadata and must be encrypted by
+/// the client crypto layer before they are persisted, uploaded, logged, or
+/// bound into a manifest transcript.
+///
+/// # Errors
+/// Returns inspection, media generation, or metadata sidecar serialization
+/// errors.
+pub fn generate_tiers_with_sidecar<E: MediaTierEncoder + ?Sized>(
+    bytes: &[u8],
+    sidecar_ids: MediaSidecarIds,
+    encoder: &E,
+) -> Result<GeneratedMediaWithSidecar, MosaicMediaError> {
+    let metadata = inspect_image(bytes)?;
+    let tiers = generate_tiers_with_verified_metadata(bytes, metadata, encoder)?;
+    let metadata_sidecar = canonical_media_metadata_sidecar_bytes(sidecar_ids, metadata)?;
+
+    Ok(GeneratedMediaWithSidecar {
+        tiers,
+        metadata_sidecar,
+    })
+}
+
+/// Builds canonical plaintext sidecar bytes from inspected media metadata.
+///
+/// The sidecar currently records the EXIF orientation, normalized source
+/// dimensions used for tier planning, and trusted container MIME type.
+///
+/// # Errors
+/// Returns metadata sidecar serialization errors.
+pub fn canonical_media_metadata_sidecar_bytes(
+    sidecar_ids: MediaSidecarIds,
+    metadata: ImageMetadata,
+) -> Result<Vec<u8>, MosaicMediaError> {
+    let orientation = u16::from(metadata.orientation).to_le_bytes();
+    let mut dimensions = [0_u8; 8];
+    dimensions[..4].copy_from_slice(&metadata.width.to_le_bytes());
+    dimensions[4..].copy_from_slice(&metadata.height.to_le_bytes());
+    let fields = [
+        mosaic_domain::MetadataSidecarField::new(
+            mosaic_domain::metadata_field_tags::ORIENTATION,
+            &orientation,
+        ),
+        mosaic_domain::MetadataSidecarField::new(
+            mosaic_domain::metadata_field_tags::ORIGINAL_DIMENSIONS,
+            &dimensions,
+        ),
+        mosaic_domain::MetadataSidecarField::new(
+            mosaic_domain::metadata_field_tags::MIME_OVERRIDE,
+            metadata.mime_type.as_bytes(),
+        ),
+    ];
+    let sidecar = mosaic_domain::MetadataSidecar::new(
+        sidecar_ids.album_id,
+        sidecar_ids.photo_id,
+        sidecar_ids.epoch_id,
+        &fields,
+    );
+    mosaic_domain::canonical_metadata_sidecar_bytes(&sidecar)
+        .map_err(MosaicMediaError::MetadataSidecar)
 }
 
 /// Plans canonical thumbnail, preview, and original tier dimensions.
@@ -1010,7 +1123,13 @@ fn strip_webp_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> 
         if let Some(kind) = classify_webp_metadata(chunk_type) {
             removed.push(kind);
         } else {
+            let output_chunk_start = output.len();
             output.extend_from_slice(&bytes[chunk_start..padded_end]);
+            if chunk_type == b"VP8X" {
+                if let Some(flags) = output.get_mut(output_chunk_start + 8) {
+                    *flags &= !WEBP_VP8X_METADATA_FLAGS;
+                }
+            }
         }
         offset = padded_end;
     }
@@ -1042,14 +1161,19 @@ mod tests {
 
     use super::{
         GeneratedTiers, ImageMetadata, MediaFormat, MediaTierEncoder, MetadataKind,
-        MosaicMediaError, TierOutput, extract_exif_orientation, generate_tiers,
-        generate_tiers_with_metadata, inspect_image, normalize_dimensions_by_orientation,
+        MosaicMediaError, TierOutput, canonical_media_metadata_sidecar_bytes,
+        extract_exif_orientation, generate_tiers, generate_tiers_with_metadata,
+        generate_tiers_with_sidecar, inspect_image, normalize_dimensions_by_orientation,
     };
     use super::{
-        MAX_IMAGE_PIXELS, NORMAL_EXIF_ORIENTATION, PREVIEW_MAX_DIMENSION, THUMBNAIL_MAX_DIMENSION,
-        TierDimensions, plan_tier_layout, strip_known_metadata,
+        MAX_IMAGE_PIXELS, MediaSidecarIds, NORMAL_EXIF_ORIENTATION, PREVIEW_MAX_DIMENSION,
+        THUMBNAIL_MAX_DIMENSION, TierDimensions, WEBP_VP8X_EXIF_FLAG, WEBP_VP8X_ICC_FLAG,
+        WEBP_VP8X_METADATA_FLAGS, WEBP_VP8X_XMP_FLAG, plan_tier_layout, strip_known_metadata,
     };
-    use mosaic_domain::ShardTier;
+    use mosaic_domain::{
+        MetadataSidecar, MetadataSidecarField, ShardTier, canonical_metadata_sidecar_bytes,
+        metadata_field_tags,
+    };
 
     #[test]
     fn uses_domain_protocol_version() {
@@ -1315,6 +1439,70 @@ mod tests {
         );
         assert!(!contains_ascii(
             &generated.tiers()[2].bytes,
+            b"caption=private"
+        ));
+    }
+
+    #[test]
+    fn builds_canonical_media_metadata_sidecar_from_inspected_metadata() {
+        let ids = sidecar_ids();
+        let metadata = ImageMetadata {
+            format: MediaFormat::Jpeg,
+            mime_type: "image/jpeg",
+            width: 3024,
+            height: 4032,
+            orientation: 6,
+        };
+
+        let sidecar = match canonical_media_metadata_sidecar_bytes(ids, metadata) {
+            Ok(value) => value,
+            Err(error) => panic!("media sidecar should serialize: {error:?}"),
+        };
+
+        assert_eq!(sidecar, expected_media_sidecar(ids, metadata));
+    }
+
+    #[test]
+    fn generation_with_sidecar_returns_sanitized_tiers_and_plaintext_sidecar_bytes() {
+        let input = jpeg_with_segments(&[
+            jpeg_exif_orientation_segment(6, false),
+            jpeg_segment(0xec, b"caption=private"),
+            jpeg_sof_segment(0xc0, 3024, 4032),
+        ]);
+        let ids = sidecar_ids();
+        let encoder = FakeEncoder::default();
+
+        let generated = match generate_tiers_with_sidecar(&input, ids, &encoder) {
+            Ok(value) => value,
+            Err(error) => panic!("tiers and sidecar should generate: {error:?}"),
+        };
+
+        let inspected = match inspect_image(&input) {
+            Ok(value) => value,
+            Err(error) => panic!("test JPEG should inspect: {error:?}"),
+        };
+        assert_eq!(
+            generated.metadata_sidecar(),
+            expected_media_sidecar(ids, inspected)
+        );
+        assert!(
+            encoder
+                .requested_sources()
+                .iter()
+                .all(|source| !contains_ascii(source, b"Exif"))
+        );
+        assert!(
+            encoder
+                .requested_sources()
+                .iter()
+                .all(|source| !contains_ascii(source, b"caption=private"))
+        );
+        assert!(!contains_ascii(
+            &generated.tiers().tiers()[2].bytes,
+            b"Exif"
+        ));
+        assert!(!contains_ascii(
+            &generated.tiers().tiers()[2].bytes,
             b"caption=private"
         ));
     }
@@ -1631,6 +1819,43 @@ mod tests {
             stripped.bytes[7],
         ]);
         assert_eq!(usize::try_from(declared_size), Ok(stripped.bytes.len() - 8));
+    }
+
+    #[test]
+    fn stripped_webp_clears_vp8x_metadata_presence_flags() {
+        const ALPHA_FLAG: u8 = 0b0001_0000;
+        let input = webp_with_chunks(&[
+            webp_vp8x_chunk_with_flags(640, 480, WEBP_VP8X_METADATA_FLAGS | ALPHA_FLAG),
+            webp_chunk(*b"EXIF", b"gps coordinates"),
+            webp_chunk(*b"XMP ", b"xmp caption"),
+            webp_chunk(*b"ICCP", b"profile"),
+            webp_chunk(*b"ALPH", b"alpha bytes"),
+            webp_vp8_chunk(640, 480),
+        ]);
+
+        let stripped = match strip_known_metadata(MediaFormat::WebP, &input) {
+            Ok(value) => value,
+            Err(error) => panic!("extended WebP metadata should strip: {error:?}"),
+        };
+
+        assert_eq!(
+            stripped.removed,
+            vec![
+                MetadataKind::Exif,
+                MetadataKind::Xmp,
+                MetadataKind::ColorProfile
+            ]
+        );
+        let flags = webp_vp8x_flags(&stripped.bytes);
+        assert_eq!(flags & WEBP_VP8X_ICC_FLAG, 0);
+        assert_eq!(flags & WEBP_VP8X_EXIF_FLAG, 0);
+        assert_eq!(flags & WEBP_VP8X_XMP_FLAG, 0);
+        assert_eq!(flags & ALPHA_FLAG, ALPHA_FLAG);
+        assert!(!contains_ascii(&stripped.bytes, b"EXIF"));
+        assert!(!contains_ascii(&stripped.bytes, b"xmp caption"));
+        assert!(!contains_ascii(&stripped.bytes, b"ICCP"));
+        assert!(contains_ascii(&stripped.bytes, b"ALPH"));
+        assert!(contains_ascii(&stripped.bytes, b"alpha bytes"));
     }
 
     #[test]
@@ -1951,6 +2176,34 @@ mod tests {
         }
     }
 
+    fn sidecar_ids() -> MediaSidecarIds {
+        MediaSidecarIds {
+            album_id: [0x11; 16],
+            photo_id: [0x22; 16],
+            epoch_id: 7,
+        }
+    }
+
+    fn expected_media_sidecar(ids: MediaSidecarIds, metadata: ImageMetadata) -> Vec<u8> {
+        let orientation = u16::from(metadata.orientation).to_le_bytes();
+        let mut dimensions = [0_u8; 8];
+        dimensions[..4].copy_from_slice(&metadata.width.to_le_bytes());
+        dimensions[4..].copy_from_slice(&metadata.height.to_le_bytes());
+        let fields = [
+            MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &orientation),
+            MetadataSidecarField::new(metadata_field_tags::ORIGINAL_DIMENSIONS, &dimensions),
+            MetadataSidecarField::new(
+                metadata_field_tags::MIME_OVERRIDE,
+                metadata.mime_type.as_bytes(),
+            ),
+        ];
+        let sidecar = MetadataSidecar::new(ids.album_id, ids.photo_id, ids.epoch_id, &fields);
+        match canonical_metadata_sidecar_bytes(&sidecar) {
+            Ok(value) => value,
+            Err(error) => panic!("expected sidecar should serialize: {error:?}"),
+        }
+    }
+
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct EncodeRequest {
         source: Vec<u8>,
@@ -2195,12 +2448,25 @@ mod tests {
     }
 
     fn webp_vp8x_chunk(width: u32, height: u32) -> Vec<u8> {
+        webp_vp8x_chunk_with_flags(width, height, 0)
+    }
+
+    fn webp_vp8x_chunk_with_flags(width: u32, height: u32, flags: u8) -> Vec<u8> {
         let width_minus_one = width - 1;
         let height_minus_one = height - 1;
         let mut payload = vec![0; 10];
+        payload[0] = flags;
         payload[4..7].copy_from_slice(&width_minus_one.to_le_bytes()[..3]);
         payload[7..10].copy_from_slice(&height_minus_one.to_le_bytes()[..3]);
         webp_chunk(*b"VP8X", &payload)
+    }
+
+    fn webp_vp8x_flags(bytes: &[u8]) -> u8 {
+        let chunk_offset = match bytes.windows(4).position(|candidate| candidate == b"VP8X") {
+            Some(value) => value,
+            None => panic!("test WebP should contain a VP8X chunk"),
+        };
+        bytes[chunk_offset + 8]
     }
 
     fn contains_ascii(haystack: &[u8], needle: &[u8]) -> bool {
