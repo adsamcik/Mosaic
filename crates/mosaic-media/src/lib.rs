@@ -5,6 +5,10 @@
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 pub const NORMAL_EXIF_ORIENTATION: u8 = 1;
 pub const MAX_IMAGE_PIXELS: u32 = 32 * 1024 * 1024;
+/// Maximum canonical thumbnail tier edge length in pixels.
+pub const THUMBNAIL_MAX_DIMENSION: u32 = 256;
+/// Maximum canonical preview tier edge length in pixels.
+pub const PREVIEW_MAX_DIMENSION: u32 = 1024;
 
 /// Supported image container formats for dependency-free media boundary checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +66,30 @@ pub struct ImageMetadata {
     pub orientation: u8,
 }
 
+/// Planned dimensions for one canonical shard tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TierDimensions {
+    pub tier: mosaic_domain::ShardTier,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Canonical dependency-free layout for media tiers derived from display dimensions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TierLayout {
+    pub thumbnail: TierDimensions,
+    pub preview: TierDimensions,
+    pub original: TierDimensions,
+}
+
+impl TierLayout {
+    /// Returns tiers in canonical manifest/upload order.
+    #[must_use]
+    pub const fn tiers(&self) -> [TierDimensions; 3] {
+        [self.thumbnail, self.preview, self.original]
+    }
+}
+
 /// Result of stripping recognized metadata from an image container.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StrippedMedia {
@@ -117,6 +145,39 @@ pub fn inspect_image(bytes: &[u8]) -> Result<ImageMetadata, MosaicMediaError> {
         width,
         height,
         orientation,
+    })
+}
+
+/// Plans canonical thumbnail, preview, and original tier dimensions.
+///
+/// Inputs must already be normalized display dimensions, such as the `width`
+/// and `height` returned by [`inspect_image`]. This function does not decode,
+/// transform, encode, read, or write media bytes.
+///
+/// # Errors
+/// Returns `InvalidDimensions` for zero or over-budget source dimensions.
+pub fn plan_tier_layout(width: u32, height: u32) -> Result<TierLayout, MosaicMediaError> {
+    let (width, height) = validate_dimensions(width, height)?;
+    let (thumbnail_width, thumbnail_height) =
+        fit_inside_square(width, height, THUMBNAIL_MAX_DIMENSION);
+    let (preview_width, preview_height) = fit_inside_square(width, height, PREVIEW_MAX_DIMENSION);
+
+    Ok(TierLayout {
+        thumbnail: TierDimensions {
+            tier: mosaic_domain::ShardTier::Thumbnail,
+            width: thumbnail_width,
+            height: thumbnail_height,
+        },
+        preview: TierDimensions {
+            tier: mosaic_domain::ShardTier::Preview,
+            width: preview_width,
+            height: preview_height,
+        },
+        original: TierDimensions {
+            tier: mosaic_domain::ShardTier::Original,
+            width,
+            height,
+        },
     })
 }
 
@@ -191,6 +252,32 @@ fn validate_dimensions(width: u32, height: u32) -> Result<(u32, u32), MosaicMedi
     }
 
     Ok((width, height))
+}
+
+fn fit_inside_square(width: u32, height: u32, max_dimension: u32) -> (u32, u32) {
+    if width <= max_dimension && height <= max_dimension {
+        return (width, height);
+    }
+
+    if width >= height {
+        (
+            max_dimension,
+            scale_secondary_dimension(height, max_dimension, width),
+        )
+    } else {
+        (
+            scale_secondary_dimension(width, max_dimension, height),
+            max_dimension,
+        )
+    }
+}
+
+fn scale_secondary_dimension(dimension: u32, max_dimension: u32, dominant_dimension: u32) -> u32 {
+    let scaled = (u64::from(dimension) * u64::from(max_dimension)) / u64::from(dominant_dimension);
+    match u32::try_from(scaled.clamp(1, u64::from(max_dimension))) {
+        Ok(value) => value,
+        Err(_) => max_dimension,
+    }
 }
 
 fn extract_jpeg_exif_orientation(bytes: &[u8]) -> Result<u8, MosaicMediaError> {
@@ -822,11 +909,151 @@ mod tests {
         ImageMetadata, MediaFormat, MetadataKind, MosaicMediaError, extract_exif_orientation,
         inspect_image, normalize_dimensions_by_orientation,
     };
-    use super::{MAX_IMAGE_PIXELS, strip_known_metadata};
+    use super::{MAX_IMAGE_PIXELS, TierDimensions, plan_tier_layout, strip_known_metadata};
+    use mosaic_domain::ShardTier;
 
     #[test]
     fn uses_domain_protocol_version() {
         assert_eq!(super::protocol_version(), "mosaic-v1");
+    }
+
+    #[test]
+    fn plans_landscape_tier_layout() {
+        let layout = expect_tier_layout(4032, 3024);
+
+        assert_eq!(
+            layout.tiers(),
+            [
+                tier(ShardTier::Thumbnail, 256, 192),
+                tier(ShardTier::Preview, 1024, 768),
+                tier(ShardTier::Original, 4032, 3024),
+            ]
+        );
+        assert_eq!(layout.original.width, 4032);
+        assert_eq!(layout.original.height, 3024);
+    }
+
+    #[test]
+    fn plans_portrait_tier_layout() {
+        let layout = expect_tier_layout(3024, 4032);
+
+        assert_eq!(
+            layout.tiers(),
+            [
+                tier(ShardTier::Thumbnail, 192, 256),
+                tier(ShardTier::Preview, 768, 1024),
+                tier(ShardTier::Original, 3024, 4032),
+            ]
+        );
+    }
+
+    #[test]
+    fn plans_square_tier_layout() {
+        let layout = expect_tier_layout(3000, 3000);
+
+        assert_eq!(
+            layout.tiers(),
+            [
+                tier(ShardTier::Thumbnail, 256, 256),
+                tier(ShardTier::Preview, 1024, 1024),
+                tier(ShardTier::Original, 3000, 3000),
+            ]
+        );
+    }
+
+    #[test]
+    fn does_not_upscale_small_sources() {
+        let layout = expect_tier_layout(128, 96);
+
+        assert_eq!(
+            layout.tiers(),
+            [
+                tier(ShardTier::Thumbnail, 128, 96),
+                tier(ShardTier::Preview, 128, 96),
+                tier(ShardTier::Original, 128, 96),
+            ]
+        );
+    }
+
+    #[test]
+    fn uses_deterministic_integer_floor_scaling_for_non_divisible_aspect_ratios() {
+        let layout = expect_tier_layout(3333, 2000);
+
+        assert_eq!(layout.thumbnail, tier(ShardTier::Thumbnail, 256, 153));
+        assert_eq!(layout.preview, tier(ShardTier::Preview, 1024, 614));
+        assert!(
+            u64::from(layout.thumbnail.height) * 3333 <= 2000 * u64::from(layout.thumbnail.width)
+        );
+        assert!(
+            u64::from(layout.thumbnail.height + 1) * 3333
+                > 2000 * u64::from(layout.thumbnail.width)
+        );
+        assert!(u64::from(layout.preview.height) * 3333 <= 2000 * u64::from(layout.preview.width));
+        assert!(
+            u64::from(layout.preview.height + 1) * 3333 > 2000 * u64::from(layout.preview.width)
+        );
+    }
+
+    #[test]
+    fn extreme_aspect_ratio_clamps_secondary_dimension_to_one() {
+        let wide = expect_tier_layout(MAX_IMAGE_PIXELS, 1);
+        assert_eq!(wide.thumbnail, tier(ShardTier::Thumbnail, 256, 1));
+        assert_eq!(wide.preview, tier(ShardTier::Preview, 1024, 1));
+        assert_eq!(
+            wide.original,
+            tier(ShardTier::Original, MAX_IMAGE_PIXELS, 1)
+        );
+
+        let tall = expect_tier_layout(1, MAX_IMAGE_PIXELS);
+        assert_eq!(tall.thumbnail, tier(ShardTier::Thumbnail, 1, 256));
+        assert_eq!(tall.preview, tier(ShardTier::Preview, 1, 1024));
+        assert_eq!(
+            tall.original,
+            tier(ShardTier::Original, 1, MAX_IMAGE_PIXELS)
+        );
+    }
+
+    #[test]
+    fn rejects_zero_and_excessive_dimensions_for_tier_layout() {
+        assert_eq!(
+            plan_tier_layout(0, 1),
+            Err(MosaicMediaError::InvalidDimensions)
+        );
+        assert_eq!(
+            plan_tier_layout(1, 0),
+            Err(MosaicMediaError::InvalidDimensions)
+        );
+        assert_eq!(
+            plan_tier_layout(MAX_IMAGE_PIXELS + 1, 1),
+            Err(MosaicMediaError::InvalidDimensions)
+        );
+    }
+
+    #[test]
+    fn plans_from_orientation_normalized_inspection_dimensions() {
+        let input = jpeg_with_segments(&[
+            jpeg_exif_orientation_segment(6, false),
+            jpeg_sof_segment(0xc0, 3024, 4032),
+        ]);
+        let metadata = match inspect_image(&input) {
+            Ok(value) => value,
+            Err(error) => panic!("orientation-swapped JPEG should inspect: {error:?}"),
+        };
+
+        assert_eq!(
+            (metadata.width, metadata.height, metadata.orientation),
+            (3024, 4032, 6)
+        );
+
+        let layout = expect_tier_layout(metadata.width, metadata.height);
+        assert_eq!(
+            layout.tiers(),
+            [
+                tier(ShardTier::Thumbnail, 192, 256),
+                tier(ShardTier::Preview, 768, 1024),
+                tier(ShardTier::Original, 3024, 4032),
+            ]
+        );
     }
 
     #[test]
@@ -1187,6 +1414,21 @@ mod tests {
             inspect_image(&excessive_png),
             Err(MosaicMediaError::InvalidDimensions)
         );
+    }
+
+    fn expect_tier_layout(width: u32, height: u32) -> super::TierLayout {
+        match plan_tier_layout(width, height) {
+            Ok(value) => value,
+            Err(error) => panic!("tier layout should plan for {width}x{height}: {error:?}"),
+        }
+    }
+
+    fn tier(tier: ShardTier, width: u32, height: u32) -> TierDimensions {
+        TierDimensions {
+            tier,
+            width,
+            height,
+        }
     }
 
     fn jpeg_segment(marker: u8, payload: &[u8]) -> Vec<u8> {
