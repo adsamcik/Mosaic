@@ -1,5 +1,6 @@
 use mosaic_crypto::{
-    MosaicCryptoError, SecretKey, decrypt_shard, encrypt_shard, sha256_bytes, unwrap_key, wrap_key,
+    AuthSigningSecretKey, IdentitySigningSecretKey, ManifestSigningSecretKey, MosaicCryptoError,
+    SecretKey, decrypt_shard, encrypt_shard, sha256_bytes, unwrap_key, wrap_key,
 };
 use mosaic_domain::{SHARD_ENVELOPE_HEADER_LEN, ShardEnvelopeHeader, ShardTier};
 
@@ -38,6 +39,53 @@ fn secret_key_constructor_zeroizes_source_and_rejects_bad_length() {
     };
     assert_eq!(error, MosaicCryptoError::InvalidKeyLength { actual: 31 });
     assert!(short_key.iter().all(|byte| *byte == 0));
+
+    let mut empty_key = Vec::new();
+    let error = match SecretKey::from_bytes(empty_key.as_mut_slice()) {
+        Ok(_) => panic!("empty key should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(error, MosaicCryptoError::InvalidKeyLength { actual: 0 });
+
+    let mut long_key = [0x55_u8; 33];
+    let error = match SecretKey::from_bytes(&mut long_key) {
+        Ok(_) => panic!("long key should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(error, MosaicCryptoError::InvalidKeyLength { actual: 33 });
+    assert!(long_key.iter().all(|byte| *byte == 0));
+}
+
+#[test]
+fn signing_seed_constructors_zeroize_sources_on_success_and_error() {
+    let mut manifest_seed = [0x11_u8; 32];
+    let _manifest_key = match ManifestSigningSecretKey::from_seed(&mut manifest_seed) {
+        Ok(value) => value,
+        Err(error) => panic!("manifest signing seed should be accepted: {error:?}"),
+    };
+    assert!(manifest_seed.iter().all(|byte| *byte == 0));
+
+    let mut auth_seed = [0x22_u8; 32];
+    let _auth_key = match AuthSigningSecretKey::from_seed(&mut auth_seed) {
+        Ok(value) => value,
+        Err(error) => panic!("auth signing seed should be accepted: {error:?}"),
+    };
+    assert!(auth_seed.iter().all(|byte| *byte == 0));
+
+    let mut identity_seed = [0x33_u8; 32];
+    let _identity_key = match IdentitySigningSecretKey::from_seed(&mut identity_seed) {
+        Ok(value) => value,
+        Err(error) => panic!("identity signing seed should be accepted: {error:?}"),
+    };
+    assert!(identity_seed.iter().all(|byte| *byte == 0));
+
+    let mut short_seed = [0x44_u8; 31];
+    let error = match ManifestSigningSecretKey::from_seed(&mut short_seed) {
+        Ok(_) => panic!("short signing seed should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(error, MosaicCryptoError::InvalidKeyLength { actual: 31 });
+    assert!(short_seed.iter().all(|byte| *byte == 0));
 }
 
 #[test]
@@ -120,6 +168,44 @@ fn shard_decryption_rejects_wrong_key_tampered_header_and_header_only_envelope()
         Err(error) => error,
     };
     assert_eq!(header_only_error, MosaicCryptoError::MissingCiphertext);
+}
+
+#[test]
+fn shard_decryption_classifies_structural_and_authenticated_tampering() {
+    let key = secret_key_from(KEY_BYTES);
+    let encrypted = match encrypt_shard(b"authenticated", &key, 2, 9, ShardTier::Thumbnail) {
+        Ok(value) => value,
+        Err(error) => panic!("shard should encrypt: {error:?}"),
+    };
+
+    let mut bad_magic = encrypted.bytes.clone();
+    bad_magic[0] ^= 0x01;
+    assert_eq!(
+        decrypt_shard(&bad_magic, &key),
+        Err(MosaicCryptoError::InvalidEnvelope)
+    );
+
+    let mut bad_reserved = encrypted.bytes.clone();
+    bad_reserved[38] = 1;
+    assert_eq!(
+        decrypt_shard(&bad_reserved, &key),
+        Err(MosaicCryptoError::InvalidEnvelope)
+    );
+
+    let mut tampered_tier = encrypted.bytes.clone();
+    tampered_tier[37] = ShardTier::Preview.to_byte();
+    assert_eq!(
+        decrypt_shard(&tampered_tier, &key),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+
+    let mut tampered_ciphertext = encrypted.bytes;
+    let last_index = tampered_ciphertext.len() - 1;
+    tampered_ciphertext[last_index] ^= 0x01;
+    assert_eq!(
+        decrypt_shard(&tampered_ciphertext, &key),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
 }
 
 #[test]

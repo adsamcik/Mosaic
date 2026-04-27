@@ -39,6 +39,28 @@ fn shard_header_parses_original_raw_bytes() {
 }
 
 #[test]
+fn shard_header_rejects_only_non_exact_boundary_lengths_as_length_errors() {
+    let bytes = ShardEnvelopeHeader::new(42, 7, NONCE, ShardTier::Original).to_bytes();
+
+    assert!(ShardEnvelopeHeader::parse(&bytes).is_ok());
+    assert_eq!(
+        ShardEnvelopeHeader::parse(&bytes[..SHARD_ENVELOPE_HEADER_LEN - 1]),
+        Err(MosaicDomainError::InvalidHeaderLength {
+            actual: SHARD_ENVELOPE_HEADER_LEN - 1
+        })
+    );
+
+    let mut too_long = bytes.to_vec();
+    too_long.push(0);
+    assert_eq!(
+        ShardEnvelopeHeader::parse(&too_long),
+        Err(MosaicDomainError::InvalidHeaderLength {
+            actual: SHARD_ENVELOPE_HEADER_LEN + 1
+        })
+    );
+}
+
+#[test]
 fn shard_header_rejects_non_zero_reserved_before_decrypt() {
     let mut bytes = ShardEnvelopeHeader::new(42, 7, NONCE, ShardTier::Thumbnail).to_bytes();
     bytes[63] = 1;
@@ -49,4 +71,35 @@ fn shard_header_rejects_non_zero_reserved_before_decrypt() {
     };
 
     assert_eq!(error, MosaicDomainError::NonZeroReservedByte { offset: 63 });
+}
+
+#[test]
+fn shard_header_rejects_every_reserved_byte_offset() {
+    for offset in 38..SHARD_ENVELOPE_HEADER_LEN {
+        let mut bytes = ShardEnvelopeHeader::new(42, 7, NONCE, ShardTier::Thumbnail).to_bytes();
+        bytes[offset] = 1;
+
+        assert_eq!(
+            ShardEnvelopeHeader::parse(&bytes),
+            Err(MosaicDomainError::NonZeroReservedByte { offset })
+        );
+    }
+}
+
+#[test]
+fn shard_tier_accepts_only_defined_protocol_values() {
+    assert_eq!(ShardTier::try_from(1), Ok(ShardTier::Thumbnail));
+    assert_eq!(ShardTier::try_from(2), Ok(ShardTier::Preview));
+    assert_eq!(ShardTier::try_from(3), Ok(ShardTier::Original));
+
+    assert_eq!(
+        ShardTier::try_from(0),
+        Err(MosaicDomainError::InvalidTier { value: 0 })
+    );
+    for value in 4..=u8::MAX {
+        assert_eq!(
+            ShardTier::try_from(value),
+            Err(MosaicDomainError::InvalidTier { value })
+        );
+    }
 }

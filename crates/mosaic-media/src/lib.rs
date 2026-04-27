@@ -1046,8 +1046,8 @@ mod tests {
         generate_tiers_with_metadata, inspect_image, normalize_dimensions_by_orientation,
     };
     use super::{
-        MAX_IMAGE_PIXELS, NORMAL_EXIF_ORIENTATION, TierDimensions, plan_tier_layout,
-        strip_known_metadata,
+        MAX_IMAGE_PIXELS, NORMAL_EXIF_ORIENTATION, PREVIEW_MAX_DIMENSION, THUMBNAIL_MAX_DIMENSION,
+        TierDimensions, plan_tier_layout, strip_known_metadata,
     };
     use mosaic_domain::ShardTier;
 
@@ -1868,6 +1868,55 @@ mod tests {
         assert_eq!(
             inspect_image(&excessive_png),
             Err(MosaicMediaError::InvalidDimensions)
+        );
+    }
+
+    #[test]
+    fn tier_layout_preserves_non_zero_secondary_dimension_for_valid_extreme_aspects() {
+        let wide = expect_tier_layout(32_000, 1);
+        assert_eq!(wide.thumbnail.width, THUMBNAIL_MAX_DIMENSION);
+        assert_eq!(wide.thumbnail.height, 1);
+        assert_eq!(wide.preview.width, PREVIEW_MAX_DIMENSION);
+        assert_eq!(wide.preview.height, 1);
+
+        let tall = expect_tier_layout(1, 32_000);
+        assert_eq!(tall.thumbnail.width, 1);
+        assert_eq!(tall.thumbnail.height, THUMBNAIL_MAX_DIMENSION);
+        assert_eq!(tall.preview.width, 1);
+        assert_eq!(tall.preview.height, PREVIEW_MAX_DIMENSION);
+    }
+
+    #[test]
+    fn metadata_stripping_rejects_truncated_container_boundaries() {
+        let mut truncated_jpeg = vec![0xff, 0xd8, 0xff, 0xe1];
+        truncated_jpeg.extend_from_slice(&16_u16.to_be_bytes());
+        truncated_jpeg.extend_from_slice(b"Exif");
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Jpeg, &truncated_jpeg),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+
+        let mut truncated_png = b"\x89PNG\r\n\x1a\n".to_vec();
+        truncated_png.extend_from_slice(&4_u32.to_be_bytes());
+        truncated_png.extend_from_slice(b"tEXt");
+        truncated_png.push(b'x');
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Png, &truncated_png),
+            Err(MosaicMediaError::InvalidPng)
+        );
+
+        let malformed_webp = {
+            let mut bytes = b"RIFF".to_vec();
+            bytes.extend_from_slice(&16_u32.to_le_bytes());
+            bytes.extend_from_slice(b"WEBP");
+            bytes.extend_from_slice(b"EXIF");
+            bytes.extend_from_slice(&8_u32.to_le_bytes());
+            bytes.extend_from_slice(b"gps");
+            bytes
+        };
+        assert_eq!(
+            strip_known_metadata(MediaFormat::WebP, &malformed_webp),
+            Err(MosaicMediaError::InvalidWebP)
         );
     }
 

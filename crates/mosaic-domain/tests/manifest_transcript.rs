@@ -150,3 +150,31 @@ fn manifest_transcript_rejects_duplicate_or_missing_indices() {
         }
     );
 }
+
+#[test]
+fn manifest_transcript_reports_first_gap_after_sorting_shards() {
+    let encrypted_meta = [0xaa];
+    let shards = [
+        shard_ref(3, ShardTier::Original, 0x30, 0x33),
+        shard_ref(0, ShardTier::Thumbnail, 0x10, 0x11),
+        shard_ref(2, ShardTier::Preview, 0x20, 0x22),
+    ];
+
+    let error = match canonical_manifest_transcript_bytes(&ManifestTranscript::new(
+        ALBUM_ID,
+        1,
+        &encrypted_meta,
+        &shards,
+    )) {
+        Ok(_) => panic!("gap in sorted shard indices should fail"),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        ManifestTranscriptError::NonSequentialShardIndex {
+            expected: 1,
+            actual: 2
+        }
+    );
+}
