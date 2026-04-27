@@ -1,6 +1,6 @@
 use mosaic_domain::{
-    ManifestShardRef, ManifestTranscript, ManifestTranscriptError, ShardTier,
-    canonical_manifest_transcript_bytes,
+    EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, ManifestTranscriptError,
+    ShardTier, canonical_manifest_transcript_bytes,
 };
 
 const ALBUM_ID: [u8; 16] = [
@@ -29,6 +29,10 @@ fn hex(bytes: &[u8]) -> String {
     output
 }
 
+fn encrypted_envelope(bytes: &[u8]) -> EncryptedMetadataEnvelope<'_> {
+    EncryptedMetadataEnvelope::new(bytes)
+}
+
 #[test]
 fn manifest_transcript_serializes_to_fixed_binary_vector() {
     let encrypted_meta = [0xaa, 0xbb, 0xcc];
@@ -36,7 +40,8 @@ fn manifest_transcript_serializes_to_fixed_binary_vector() {
         shard_ref(1, ShardTier::Original, 0x20, 0x22),
         shard_ref(0, ShardTier::Thumbnail, 0x10, 0x11),
     ];
-    let transcript = ManifestTranscript::new(ALBUM_ID, 7, &encrypted_meta, &shards);
+    let transcript =
+        ManifestTranscript::new(ALBUM_ID, 7, encrypted_envelope(&encrypted_meta), &shards);
 
     let bytes = match canonical_manifest_transcript_bytes(&transcript) {
         Ok(value) => value,
@@ -62,7 +67,7 @@ fn manifest_transcript_is_canonical_for_shard_order() {
     let ordered_bytes = match canonical_manifest_transcript_bytes(&ManifestTranscript::new(
         ALBUM_ID,
         3,
-        &encrypted_meta,
+        encrypted_envelope(&encrypted_meta),
         &ordered,
     )) {
         Ok(value) => value,
@@ -71,7 +76,7 @@ fn manifest_transcript_is_canonical_for_shard_order() {
     let reversed_bytes = match canonical_manifest_transcript_bytes(&ManifestTranscript::new(
         ALBUM_ID,
         3,
-        &encrypted_meta,
+        encrypted_envelope(&encrypted_meta),
         &reversed,
     )) {
         Ok(value) => value,
@@ -84,7 +89,7 @@ fn manifest_transcript_is_canonical_for_shard_order() {
 #[test]
 fn manifest_transcript_rejects_empty_encrypted_metadata() {
     let shards = [shard_ref(0, ShardTier::Thumbnail, 0x10, 0x11)];
-    let transcript = ManifestTranscript::new(ALBUM_ID, 1, &[], &shards);
+    let transcript = ManifestTranscript::new(ALBUM_ID, 1, encrypted_envelope(&[]), &shards);
 
     let error = match canonical_manifest_transcript_bytes(&transcript) {
         Ok(_) => panic!("empty encrypted metadata should fail"),
@@ -97,7 +102,7 @@ fn manifest_transcript_rejects_empty_encrypted_metadata() {
 #[test]
 fn manifest_transcript_rejects_empty_shard_list() {
     let encrypted_meta = [0xaa];
-    let transcript = ManifestTranscript::new(ALBUM_ID, 1, &encrypted_meta, &[]);
+    let transcript = ManifestTranscript::new(ALBUM_ID, 1, encrypted_envelope(&encrypted_meta), &[]);
 
     let error = match canonical_manifest_transcript_bytes(&transcript) {
         Ok(_) => panic!("empty shard list should fail"),
@@ -119,7 +124,7 @@ fn manifest_transcript_rejects_duplicate_or_missing_indices() {
     let duplicate_error = match canonical_manifest_transcript_bytes(&ManifestTranscript::new(
         ALBUM_ID,
         1,
-        &encrypted_meta,
+        encrypted_envelope(&encrypted_meta),
         &duplicate,
     )) {
         Ok(_) => panic!("duplicate shard index should fail"),
@@ -136,7 +141,7 @@ fn manifest_transcript_rejects_duplicate_or_missing_indices() {
     let missing_error = match canonical_manifest_transcript_bytes(&ManifestTranscript::new(
         ALBUM_ID,
         1,
-        &encrypted_meta,
+        encrypted_envelope(&encrypted_meta),
         &missing_zero,
     )) {
         Ok(_) => panic!("missing zero index should fail"),

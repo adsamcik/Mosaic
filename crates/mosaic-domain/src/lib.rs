@@ -24,6 +24,34 @@ pub const MANIFEST_SIGN_CONTEXT: &[u8] = b"Mosaic_Manifest_v1";
 /// Current manifest signing transcript format version.
 pub const MANIFEST_TRANSCRIPT_VERSION: u8 = 1;
 
+/// Domain separation context for client-local canonical metadata sidecar bytes.
+pub const METADATA_SIDECAR_CONTEXT: &[u8] = b"Mosaic_Metadata_v1";
+
+/// Current canonical metadata sidecar format version.
+pub const METADATA_SIDECAR_VERSION: u8 = 1;
+
+/// Known metadata sidecar TLV field tags.
+pub mod metadata_field_tags {
+    /// EXIF orientation value encoded as a little-endian `u16`.
+    pub const ORIENTATION: u16 = 1;
+    /// Original device timestamp encoded as little-endian Unix epoch milliseconds `i64`.
+    pub const DEVICE_TIMESTAMP_MS: u16 = 2;
+    /// Original pixel dimensions encoded as little-endian width `u32` then height `u32`.
+    pub const ORIGINAL_DIMENSIONS: u16 = 3;
+    /// MIME override encoded as UTF-8 bytes.
+    pub const MIME_OVERRIDE: u16 = 4;
+    /// User caption encoded as UTF-8 bytes.
+    pub const CAPTION: u16 = 5;
+    /// Original filename encoded as UTF-8 bytes.
+    pub const FILENAME: u16 = 6;
+    /// Camera make encoded as UTF-8 bytes.
+    pub const CAMERA_MAKE: u16 = 7;
+    /// Camera model encoded as UTF-8 bytes.
+    pub const CAMERA_MODEL: u16 = 8;
+    /// GPS payload encoded by the client metadata layer.
+    pub const GPS: u16 = 9;
+}
+
 /// Domain-level parse and validation errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MosaicDomainError {
@@ -50,6 +78,21 @@ pub enum ManifestTranscriptError {
     LengthTooLarge { field: &'static str, actual: usize },
     /// Canonical shard indices must be exactly sequential after sorting.
     NonSequentialShardIndex { expected: u32, actual: u32 },
+}
+
+/// Metadata sidecar construction errors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MetadataSidecarError {
+    /// A length field cannot be represented by the current sidecar format.
+    LengthTooLarge { field: &'static str, actual: usize },
+    /// Field tags are one-based; zero is reserved and rejected.
+    ZeroFieldTag,
+    /// A present field must contain a value. Omit absent metadata instead.
+    EmptyFieldValue { tag: u16 },
+    /// Canonical sidecar fields must not repeat tags.
+    DuplicateFieldTag { tag: u16 },
+    /// Canonical sidecar fields must be supplied in strictly ascending tag order.
+    UnsortedFieldTag { previous: u16, actual: u16 },
 }
 
 /// Supported shard tiers for the current MVP envelope.
@@ -83,6 +126,115 @@ impl TryFrom<u8> for ShardTier {
             3 => Ok(Self::Original),
             _ => Err(MosaicDomainError::InvalidTier { value }),
         }
+    }
+}
+
+/// One client-local plaintext metadata sidecar TLV field.
+///
+/// The value bytes are canonical plaintext metadata input. They must be sealed
+/// by a later encryption slice before anything is bound into a manifest
+/// transcript or sent to the backend.
+pub struct MetadataSidecarField<'a> {
+    tag: u16,
+    value: &'a [u8],
+}
+
+impl<'a> MetadataSidecarField<'a> {
+    /// Creates a metadata sidecar field from already-canonical value bytes.
+    #[must_use]
+    pub const fn new(tag: u16, value: &'a [u8]) -> Self {
+        Self { tag, value }
+    }
+
+    /// Returns the TLV field tag.
+    #[must_use]
+    pub const fn tag(&self) -> u16 {
+        self.tag
+    }
+
+    /// Returns the canonical field value bytes.
+    #[must_use]
+    pub const fn value(&self) -> &[u8] {
+        self.value
+    }
+}
+
+/// Client-local plaintext metadata sidecar inputs.
+///
+/// Canonical sidecar bytes are deterministic plaintext inputs for a later
+/// encryption step. Production manifest construction must pass the encrypted
+/// sidecar envelope bytes to [`ManifestTranscript::new`], never these plaintext
+/// canonical bytes.
+pub struct MetadataSidecar<'a> {
+    album_id: [u8; 16],
+    photo_id: [u8; 16],
+    epoch_id: u32,
+    fields: &'a [MetadataSidecarField<'a>],
+}
+
+impl<'a> MetadataSidecar<'a> {
+    /// Creates metadata sidecar inputs.
+    #[must_use]
+    pub const fn new(
+        album_id: [u8; 16],
+        photo_id: [u8; 16],
+        epoch_id: u32,
+        fields: &'a [MetadataSidecarField<'a>],
+    ) -> Self {
+        Self {
+            album_id,
+            photo_id,
+            epoch_id,
+            fields,
+        }
+    }
+
+    /// Returns the 16-byte album UUID bytes.
+    #[must_use]
+    pub const fn album_id(&self) -> &[u8; 16] {
+        &self.album_id
+    }
+
+    /// Returns the 16-byte photo UUID bytes.
+    #[must_use]
+    pub const fn photo_id(&self) -> &[u8; 16] {
+        &self.photo_id
+    }
+
+    /// Returns the epoch ID.
+    #[must_use]
+    pub const fn epoch_id(&self) -> u32 {
+        self.epoch_id
+    }
+
+    /// Returns the metadata fields in caller-supplied order.
+    #[must_use]
+    pub const fn fields(&self) -> &[MetadataSidecarField<'a>] {
+        self.fields
+    }
+}
+
+/// Encrypted/opaque metadata envelope bytes for manifest transcript binding.
+///
+/// This type intentionally separates encrypted sidecar envelopes from plaintext
+/// bytes returned by [`canonical_metadata_sidecar_bytes`]. Construct it only
+/// after the metadata sidecar has been encrypted by the client crypto layer.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct EncryptedMetadataEnvelope<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> EncryptedMetadataEnvelope<'a> {
+    /// Wraps already-encrypted/opaque metadata sidecar envelope bytes.
+    #[must_use]
+    pub const fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes }
+    }
+
+    /// Returns encrypted/opaque metadata sidecar envelope bytes.
+    #[must_use]
+    pub const fn bytes(&self) -> &'a [u8] {
+        self.bytes
     }
 }
 
@@ -138,20 +290,26 @@ impl ManifestShardRef {
 }
 
 /// Manifest signing transcript inputs.
+///
+/// `encrypted_meta` is an encrypted/opaque metadata sidecar envelope. Plaintext
+/// bytes returned by [`canonical_metadata_sidecar_bytes`] do not type-check here.
 pub struct ManifestTranscript<'a> {
     album_id: [u8; 16],
     epoch_id: u32,
-    encrypted_meta: &'a [u8],
+    encrypted_meta: EncryptedMetadataEnvelope<'a>,
     shards: &'a [ManifestShardRef],
 }
 
 impl<'a> ManifestTranscript<'a> {
     /// Creates manifest transcript inputs.
+    ///
+    /// The `encrypted_meta` argument must already wrap encrypted/opaque sidecar
+    /// envelope bytes so manifest signing never binds plaintext metadata.
     #[must_use]
     pub const fn new(
         album_id: [u8; 16],
         epoch_id: u32,
-        encrypted_meta: &'a [u8],
+        encrypted_meta: EncryptedMetadataEnvelope<'a>,
         shards: &'a [ManifestShardRef],
     ) -> Self {
         Self {
@@ -177,7 +335,7 @@ impl<'a> ManifestTranscript<'a> {
     /// Returns encrypted metadata envelope bytes.
     #[must_use]
     pub const fn encrypted_meta(&self) -> &[u8] {
-        self.encrypted_meta
+        self.encrypted_meta.bytes()
     }
 
     /// Returns server-visible shard references.
@@ -187,10 +345,84 @@ impl<'a> ManifestTranscript<'a> {
     }
 }
 
+/// Builds deterministic client-local canonical metadata sidecar bytes.
+///
+/// The returned bytes are plaintext metadata inputs and must be encrypted before
+/// they are included as `encrypted_meta` in a manifest transcript or sent to the
+/// backend. Empty field lists are valid and encode as `field_count = 0`.
+///
+/// # Errors
+/// Returns [`MetadataSidecarError::LengthTooLarge`] when the field count or any
+/// field value length cannot fit in `u32`, [`MetadataSidecarError::ZeroFieldTag`]
+/// for tag zero, [`MetadataSidecarError::EmptyFieldValue`] for present fields
+/// without values, [`MetadataSidecarError::DuplicateFieldTag`] for repeated tags,
+/// or [`MetadataSidecarError::UnsortedFieldTag`] when fields are not supplied in
+/// strictly ascending tag order.
+pub fn canonical_metadata_sidecar_bytes(
+    sidecar: &MetadataSidecar<'_>,
+) -> Result<Vec<u8>, MetadataSidecarError> {
+    let field_count = checked_metadata_sidecar_len("fields", sidecar.fields().len())?;
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(METADATA_SIDECAR_CONTEXT);
+    bytes.push(METADATA_SIDECAR_VERSION);
+    bytes.extend_from_slice(sidecar.album_id());
+    bytes.extend_from_slice(sidecar.photo_id());
+    bytes.extend_from_slice(&sidecar.epoch_id().to_le_bytes());
+    bytes.extend_from_slice(&field_count.to_le_bytes());
+
+    let mut previous_tag = None;
+    for field in sidecar.fields() {
+        if field.tag() == 0 {
+            return Err(MetadataSidecarError::ZeroFieldTag);
+        }
+
+        if let Some(previous) = previous_tag {
+            if field.tag() == previous {
+                return Err(MetadataSidecarError::DuplicateFieldTag { tag: field.tag() });
+            }
+            if field.tag() < previous {
+                return Err(MetadataSidecarError::UnsortedFieldTag {
+                    previous,
+                    actual: field.tag(),
+                });
+            }
+        }
+
+        if field.value().is_empty() {
+            return Err(MetadataSidecarError::EmptyFieldValue { tag: field.tag() });
+        }
+
+        let value_len = checked_metadata_sidecar_len("field_value", field.value().len())?;
+        bytes.extend_from_slice(&field.tag().to_le_bytes());
+        bytes.extend_from_slice(&value_len.to_le_bytes());
+        bytes.extend_from_slice(field.value());
+
+        previous_tag = Some(field.tag());
+    }
+
+    Ok(bytes)
+}
+
+fn checked_metadata_sidecar_len(
+    field: &'static str,
+    actual: usize,
+) -> Result<u32, MetadataSidecarError> {
+    u32::try_from(actual).map_err(|_| MetadataSidecarError::LengthTooLarge { field, actual })
+}
+
 /// Builds deterministic binary bytes for future manifest signing.
 ///
 /// The transcript binds album, epoch, encrypted metadata, shard order, shard
 /// IDs, tiers, and encrypted shard hashes without exposing plaintext metadata.
+///
+/// # Errors
+/// Returns [`ManifestTranscriptError::EmptyEncryptedMeta`] when no encrypted
+/// metadata envelope bytes are supplied, [`ManifestTranscriptError::EmptyShardList`]
+/// when no shards are linked, [`ManifestTranscriptError::LengthTooLarge`] when a
+/// transcript length cannot fit in `u32`, or
+/// [`ManifestTranscriptError::NonSequentialShardIndex`] when sorted shard
+/// indices are not exactly sequential from zero.
 pub fn canonical_manifest_transcript_bytes(
     transcript: &ManifestTranscript<'_>,
 ) -> Result<Vec<u8>, ManifestTranscriptError> {
@@ -246,8 +478,8 @@ pub fn canonical_manifest_transcript_bytes(
 /// Deterministic public vectors shared by native Rust and platform wrappers.
 pub mod golden_vectors {
     use super::{
-        ManifestShardRef, ManifestTranscript, ManifestTranscriptError, ShardEnvelopeHeader,
-        ShardTier, canonical_manifest_transcript_bytes,
+        EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, ManifestTranscriptError,
+        ShardEnvelopeHeader, ShardTier, canonical_manifest_transcript_bytes,
     };
 
     /// Fixed epoch ID used by the envelope header vector.
@@ -295,7 +527,7 @@ pub mod golden_vectors {
         let transcript = ManifestTranscript::new(
             MANIFEST_ALBUM_ID,
             MANIFEST_EPOCH_ID,
-            &MANIFEST_ENCRYPTED_META,
+            EncryptedMetadataEnvelope::new(&MANIFEST_ENCRYPTED_META),
             &shards,
         );
 
@@ -435,5 +667,24 @@ mod tests {
     #[test]
     fn exposes_protocol_version() {
         assert_eq!(super::PROTOCOL_VERSION, "mosaic-v1");
+    }
+
+    #[test]
+    fn metadata_sidecar_len_helper_rejects_values_above_u32() {
+        if usize::BITS > 32 {
+            let actual = u32::MAX as usize + 1;
+            let error = match super::checked_metadata_sidecar_len("field_value", actual) {
+                Ok(_) => panic!("length above u32 should fail"),
+                Err(error) => error,
+            };
+
+            assert_eq!(
+                error,
+                super::MetadataSidecarError::LengthTooLarge {
+                    field: "field_value",
+                    actual
+                }
+            );
+        }
     }
 }

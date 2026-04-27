@@ -3,7 +3,8 @@ use mosaic_crypto::{
     generate_manifest_signing_keypair, sign_manifest_transcript, verify_manifest_transcript,
 };
 use mosaic_domain::{
-    ManifestShardRef, ManifestTranscript, ShardTier, canonical_manifest_transcript_bytes,
+    EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, ShardTier,
+    canonical_manifest_transcript_bytes,
 };
 
 const ALBUM_ID: [u8; 16] = [
@@ -34,7 +35,7 @@ fn canonical_transcript() -> Vec<u8> {
     match canonical_manifest_transcript_bytes(&ManifestTranscript::new(
         ALBUM_ID,
         7,
-        &encrypted_meta,
+        EncryptedMetadataEnvelope::new(&encrypted_meta),
         &shards,
     )) {
         Ok(value) => value,
