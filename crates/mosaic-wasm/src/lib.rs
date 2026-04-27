@@ -45,6 +45,22 @@ pub struct IdentityHandleResult {
     pub wrapped_seed: Vec<u8>,
 }
 
+/// Rust-side WASM facade public crypto/domain golden-vector snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CryptoDomainGoldenVectorSnapshot {
+    pub code: u16,
+    pub envelope_header: Vec<u8>,
+    pub envelope_epoch_id: u32,
+    pub envelope_shard_index: u32,
+    pub envelope_tier: u8,
+    pub envelope_nonce: Vec<u8>,
+    pub manifest_transcript: Vec<u8>,
+    pub identity_message: Vec<u8>,
+    pub identity_signing_pubkey: Vec<u8>,
+    pub identity_encryption_pubkey: Vec<u8>,
+    pub identity_signature: Vec<u8>,
+}
+
 /// WASM-bindgen class for header parse results.
 #[wasm_bindgen(js_name = HeaderResult)]
 pub struct JsHeaderResult {
@@ -213,6 +229,102 @@ impl JsIdentityHandleResult {
     }
 }
 
+/// WASM-bindgen class for public crypto/domain golden-vector snapshots.
+#[wasm_bindgen(js_name = CryptoDomainGoldenVectorSnapshot)]
+pub struct JsCryptoDomainGoldenVectorSnapshot {
+    code: u16,
+    envelope_header: Vec<u8>,
+    envelope_epoch_id: u32,
+    envelope_shard_index: u32,
+    envelope_tier: u8,
+    envelope_nonce: Vec<u8>,
+    manifest_transcript: Vec<u8>,
+    identity_message: Vec<u8>,
+    identity_signing_pubkey: Vec<u8>,
+    identity_encryption_pubkey: Vec<u8>,
+    identity_signature: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = CryptoDomainGoldenVectorSnapshot)]
+impl JsCryptoDomainGoldenVectorSnapshot {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Serialized 64-byte shard envelope header vector.
+    #[wasm_bindgen(getter, js_name = envelopeHeader)]
+    #[must_use]
+    pub fn envelope_header(&self) -> Vec<u8> {
+        self.envelope_header.clone()
+    }
+
+    /// Parsed envelope epoch ID.
+    #[wasm_bindgen(getter, js_name = envelopeEpochId)]
+    #[must_use]
+    pub fn envelope_epoch_id(&self) -> u32 {
+        self.envelope_epoch_id
+    }
+
+    /// Parsed envelope shard index.
+    #[wasm_bindgen(getter, js_name = envelopeShardIndex)]
+    #[must_use]
+    pub fn envelope_shard_index(&self) -> u32 {
+        self.envelope_shard_index
+    }
+
+    /// Parsed envelope tier byte.
+    #[wasm_bindgen(getter, js_name = envelopeTier)]
+    #[must_use]
+    pub fn envelope_tier(&self) -> u8 {
+        self.envelope_tier
+    }
+
+    /// Parsed envelope nonce bytes.
+    #[wasm_bindgen(getter, js_name = envelopeNonce)]
+    #[must_use]
+    pub fn envelope_nonce(&self) -> Vec<u8> {
+        self.envelope_nonce.clone()
+    }
+
+    /// Canonical manifest transcript vector bytes.
+    #[wasm_bindgen(getter, js_name = manifestTranscript)]
+    #[must_use]
+    pub fn manifest_transcript(&self) -> Vec<u8> {
+        self.manifest_transcript.clone()
+    }
+
+    /// Fixed public identity signing message bytes.
+    #[wasm_bindgen(getter, js_name = identityMessage)]
+    #[must_use]
+    pub fn identity_message(&self) -> Vec<u8> {
+        self.identity_message.clone()
+    }
+
+    /// Ed25519 identity public key bytes.
+    #[wasm_bindgen(getter, js_name = identitySigningPubkey)]
+    #[must_use]
+    pub fn identity_signing_pubkey(&self) -> Vec<u8> {
+        self.identity_signing_pubkey.clone()
+    }
+
+    /// X25519 recipient public key bytes.
+    #[wasm_bindgen(getter, js_name = identityEncryptionPubkey)]
+    #[must_use]
+    pub fn identity_encryption_pubkey(&self) -> Vec<u8> {
+        self.identity_encryption_pubkey.clone()
+    }
+
+    /// Ed25519 detached identity signature bytes.
+    #[wasm_bindgen(getter, js_name = identitySignature)]
+    #[must_use]
+    pub fn identity_signature(&self) -> Vec<u8> {
+        self.identity_signature.clone()
+    }
+}
+
 /// Returns the crate name for smoke tests and generated wrapper diagnostics.
 #[must_use]
 pub const fn crate_name() -> &'static str {
@@ -228,7 +340,7 @@ pub const fn protocol_version() -> &'static str {
 /// Returns the stable WASM API snapshot for this FFI spike.
 #[must_use]
 pub const fn wasm_api_snapshot() -> &'static str {
-    "mosaic-wasm ffi-spike:v2 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult identity(create/open/close/pubkeys/sign)"
+    "mosaic-wasm ffi-spike:v3 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult identity(create/open/close/pubkeys/sign) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
 }
 
 /// Parses a shard envelope header for Rust-side wrapper tests.
@@ -280,6 +392,12 @@ pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: Vec<u8>) -> By
         handle,
         &transcript_bytes,
     ))
+}
+
+/// Returns deterministic public crypto/domain golden vectors for Rust-side wrapper tests.
+#[must_use]
+pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVectorSnapshot {
+    crypto_domain_vector_from_client(mosaic_client::crypto_domain_golden_vector_snapshot())
 }
 
 /// Closes an identity handle and returns the stable error code.
@@ -368,6 +486,13 @@ pub fn sign_manifest_with_identity_js(handle: u64, transcript_bytes: Vec<u8>) ->
     js_bytes_result_from_rust(sign_manifest_with_identity(handle, transcript_bytes))
 }
 
+/// Returns deterministic public crypto/domain golden vectors through WASM.
+#[wasm_bindgen(js_name = cryptoDomainGoldenVectorSnapshot)]
+#[must_use]
+pub fn crypto_domain_golden_vector_snapshot_js() -> JsCryptoDomainGoldenVectorSnapshot {
+    js_crypto_domain_vector_from_rust(crypto_domain_golden_vector_snapshot())
+}
+
 /// Closes an identity handle through WASM.
 #[wasm_bindgen(js_name = closeIdentityHandle)]
 #[must_use]
@@ -418,6 +543,24 @@ fn bytes_result_from_client(result: mosaic_client::BytesResult) -> BytesResult {
     }
 }
 
+fn crypto_domain_vector_from_client(
+    result: mosaic_client::CryptoDomainGoldenVectorSnapshot,
+) -> CryptoDomainGoldenVectorSnapshot {
+    CryptoDomainGoldenVectorSnapshot {
+        code: result.code.as_u16(),
+        envelope_header: result.envelope_header,
+        envelope_epoch_id: result.envelope_epoch_id,
+        envelope_shard_index: result.envelope_shard_index,
+        envelope_tier: result.envelope_tier,
+        envelope_nonce: result.envelope_nonce,
+        manifest_transcript: result.manifest_transcript,
+        identity_message: result.identity_message,
+        identity_signing_pubkey: result.identity_signing_pubkey,
+        identity_encryption_pubkey: result.identity_encryption_pubkey,
+        identity_signature: result.identity_signature,
+    }
+}
+
 fn js_identity_result_from_rust(result: IdentityHandleResult) -> JsIdentityHandleResult {
     JsIdentityHandleResult {
         code: result.code,
@@ -432,6 +575,24 @@ fn js_bytes_result_from_rust(result: BytesResult) -> JsBytesResult {
     JsBytesResult {
         code: result.code,
         bytes: result.bytes,
+    }
+}
+
+fn js_crypto_domain_vector_from_rust(
+    result: CryptoDomainGoldenVectorSnapshot,
+) -> JsCryptoDomainGoldenVectorSnapshot {
+    JsCryptoDomainGoldenVectorSnapshot {
+        code: result.code,
+        envelope_header: result.envelope_header,
+        envelope_epoch_id: result.envelope_epoch_id,
+        envelope_shard_index: result.envelope_shard_index,
+        envelope_tier: result.envelope_tier,
+        envelope_nonce: result.envelope_nonce,
+        manifest_transcript: result.manifest_transcript,
+        identity_message: result.identity_message,
+        identity_signing_pubkey: result.identity_signing_pubkey,
+        identity_encryption_pubkey: result.identity_encryption_pubkey,
+        identity_signature: result.identity_signature,
     }
 }
 

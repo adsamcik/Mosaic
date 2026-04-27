@@ -1006,6 +1006,74 @@ pub fn verify_manifest_identity_signature(
         .is_ok()
 }
 
+/// Deterministic public crypto vectors shared by native Rust and FFI facades.
+pub mod golden_vectors {
+    use super::{
+        MosaicCryptoError, SIGNATURE_BYTES, SIGNING_PUBLIC_KEY_BYTES, derive_identity_keypair,
+        sign_manifest_with_identity,
+    };
+
+    /// Fixed message for the Ed25519 identity signing vector.
+    pub const IDENTITY_MESSAGE: &[u8] = b"";
+
+    // Public RFC 8032 test vector seed. This is not production secret material.
+    const IDENTITY_SEED: [u8; 32] = [
+        0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c,
+        0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae,
+        0x7f, 0x60,
+    ];
+
+    /// Public outputs for the deterministic identity vector.
+    pub struct IdentityPublicVector {
+        signing_pubkey: [u8; SIGNING_PUBLIC_KEY_BYTES],
+        encryption_pubkey: [u8; SIGNING_PUBLIC_KEY_BYTES],
+        signature: [u8; SIGNATURE_BYTES],
+    }
+
+    impl IdentityPublicVector {
+        /// Returns the Ed25519 identity public key bytes.
+        #[must_use]
+        pub const fn signing_pubkey(&self) -> &[u8; SIGNING_PUBLIC_KEY_BYTES] {
+            &self.signing_pubkey
+        }
+
+        /// Returns the X25519 recipient public key bytes.
+        #[must_use]
+        pub const fn encryption_pubkey(&self) -> &[u8; SIGNING_PUBLIC_KEY_BYTES] {
+            &self.encryption_pubkey
+        }
+
+        /// Returns the Ed25519 detached signature bytes.
+        #[must_use]
+        pub const fn signature(&self) -> &[u8; SIGNATURE_BYTES] {
+            &self.signature
+        }
+    }
+
+    /// Returns deterministic identity public bytes and signature.
+    ///
+    /// The private seed is an RFC 8032 test-only input and is never returned.
+    ///
+    /// # Errors
+    /// Returns identity key derivation errors if the fixed vector seed stops
+    /// satisfying the identity key constructor.
+    pub fn identity_public_vector() -> Result<IdentityPublicVector, MosaicCryptoError> {
+        let mut seed = IDENTITY_SEED;
+        let mut keypair = derive_identity_keypair(&mut seed)?;
+        let signature = sign_manifest_with_identity(IDENTITY_MESSAGE, keypair.secret_key());
+        let signing_pubkey = *keypair.signing_public_key().as_bytes();
+        let encryption_pubkey = *keypair.encryption_public_key().as_bytes();
+        let signature = *signature.as_bytes();
+        keypair.zeroize_secret();
+
+        Ok(IdentityPublicVector {
+            signing_pubkey,
+            encryption_pubkey,
+            signature,
+        })
+    }
+}
+
 /// Signs canonical manifest transcript bytes.
 ///
 /// The transcript bytes must already include the manifest signing context and

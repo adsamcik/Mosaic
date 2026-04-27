@@ -175,6 +175,40 @@ impl IdentityHandleResult {
     }
 }
 
+/// FFI-safe public golden-vector snapshot for cross-platform wrapper tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CryptoDomainGoldenVectorSnapshot {
+    pub code: ClientErrorCode,
+    pub envelope_header: Vec<u8>,
+    pub envelope_epoch_id: u32,
+    pub envelope_shard_index: u32,
+    pub envelope_tier: u8,
+    pub envelope_nonce: Vec<u8>,
+    pub manifest_transcript: Vec<u8>,
+    pub identity_message: Vec<u8>,
+    pub identity_signing_pubkey: Vec<u8>,
+    pub identity_encryption_pubkey: Vec<u8>,
+    pub identity_signature: Vec<u8>,
+}
+
+impl CryptoDomainGoldenVectorSnapshot {
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            envelope_header: Vec::new(),
+            envelope_epoch_id: 0,
+            envelope_shard_index: 0,
+            envelope_tier: 0,
+            envelope_nonce: Vec::new(),
+            manifest_transcript: Vec::new(),
+            identity_message: Vec::new(),
+            identity_signing_pubkey: Vec::new(),
+            identity_encryption_pubkey: Vec::new(),
+            identity_signature: Vec::new(),
+        }
+    }
+}
+
 /// FFI-safe progress event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgressEvent {
@@ -250,6 +284,42 @@ pub const fn crate_name() -> &'static str {
 #[must_use]
 pub const fn protocol_version() -> &'static str {
     mosaic_crypto::protocol_version()
+}
+
+/// Returns deterministic public crypto/domain vectors for wrapper parity tests.
+#[must_use]
+pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVectorSnapshot {
+    let envelope_header = mosaic_domain::golden_vectors::envelope_header_bytes();
+    let header_result = parse_shard_header_for_ffi(&envelope_header);
+    if header_result.code != ClientErrorCode::Ok {
+        return CryptoDomainGoldenVectorSnapshot::error(header_result.code);
+    }
+
+    let manifest_transcript = match mosaic_domain::golden_vectors::manifest_transcript_bytes() {
+        Ok(value) => value,
+        Err(_) => {
+            return CryptoDomainGoldenVectorSnapshot::error(ClientErrorCode::InternalStatePoisoned);
+        }
+    };
+
+    let identity_vector = match mosaic_crypto::golden_vectors::identity_public_vector() {
+        Ok(value) => value,
+        Err(error) => return CryptoDomainGoldenVectorSnapshot::error(map_crypto_error(error)),
+    };
+
+    CryptoDomainGoldenVectorSnapshot {
+        code: ClientErrorCode::Ok,
+        envelope_header: envelope_header.to_vec(),
+        envelope_epoch_id: header_result.epoch_id,
+        envelope_shard_index: header_result.shard_index,
+        envelope_tier: header_result.tier,
+        envelope_nonce: header_result.nonce,
+        manifest_transcript,
+        identity_message: mosaic_crypto::golden_vectors::IDENTITY_MESSAGE.to_vec(),
+        identity_signing_pubkey: identity_vector.signing_pubkey().to_vec(),
+        identity_encryption_pubkey: identity_vector.encryption_pubkey().to_vec(),
+        identity_signature: identity_vector.signature().to_vec(),
+    }
 }
 
 /// Parses a shard header into a FFI-stable result.

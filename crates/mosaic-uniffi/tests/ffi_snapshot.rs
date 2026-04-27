@@ -3,7 +3,8 @@ use mosaic_domain::{ShardEnvelopeHeader, ShardTier};
 use mosaic_uniffi::{
     AccountUnlockRequest, account_key_handle_is_open, android_progress_probe,
     close_account_key_handle, close_identity_handle, create_identity_handle,
-    identity_signing_pubkey, parse_envelope_header, uniffi_api_snapshot, unlock_account_key,
+    crypto_domain_golden_vector_snapshot, identity_signing_pubkey, parse_envelope_header,
+    uniffi_api_snapshot, unlock_account_key,
 };
 use zeroize::Zeroizing;
 
@@ -20,7 +21,7 @@ const ACCOUNT_SALT: [u8; 16] = [
 fn uniffi_facade_exposes_stable_ffi_spike_surface() {
     assert_eq!(
         uniffi_api_snapshot(),
-        "mosaic-uniffi ffi-spike:v3 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign)"
+        "mosaic-uniffi ffi-spike:v4 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
     );
 }
 
@@ -77,6 +78,34 @@ fn uniffi_facade_maps_header_results_without_secret_outputs() {
     assert_eq!(result.shard_index, 22);
     assert_eq!(result.tier, 3);
     assert_eq!(result.nonce, vec![9; 24]);
+}
+
+#[test]
+fn uniffi_facade_returns_crypto_domain_golden_vectors_without_secret_outputs() {
+    let native = mosaic_client::crypto_domain_golden_vector_snapshot();
+    let result = crypto_domain_golden_vector_snapshot();
+
+    assert_eq!(result.code, native.code.as_u16());
+    assert_eq!(result.envelope_header, native.envelope_header);
+    assert_eq!(result.envelope_epoch_id, native.envelope_epoch_id);
+    assert_eq!(result.envelope_shard_index, native.envelope_shard_index);
+    assert_eq!(result.envelope_tier, native.envelope_tier);
+    assert_eq!(result.envelope_nonce, native.envelope_nonce);
+    assert_eq!(result.manifest_transcript, native.manifest_transcript);
+    assert_eq!(result.identity_message, native.identity_message);
+    assert_eq!(
+        result.identity_signing_pubkey,
+        native.identity_signing_pubkey
+    );
+    assert_eq!(
+        result.identity_encryption_pubkey,
+        native.identity_encryption_pubkey
+    );
+    assert_eq!(result.identity_signature, native.identity_signature);
+    assert!(result.identity_message.is_empty());
+    assert_eq!(result.identity_signing_pubkey.len(), 32);
+    assert_eq!(result.identity_encryption_pubkey.len(), 32);
+    assert_eq!(result.identity_signature.len(), 64);
 }
 
 #[test]

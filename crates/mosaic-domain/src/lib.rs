@@ -243,6 +243,80 @@ pub fn canonical_manifest_transcript_bytes(
     Ok(bytes)
 }
 
+/// Deterministic public vectors shared by native Rust and platform wrappers.
+pub mod golden_vectors {
+    use super::{
+        ManifestShardRef, ManifestTranscript, ManifestTranscriptError, ShardEnvelopeHeader,
+        ShardTier, canonical_manifest_transcript_bytes,
+    };
+
+    /// Fixed epoch ID used by the envelope header vector.
+    pub const ENVELOPE_EPOCH_ID: u32 = 0x0102_0304;
+    /// Fixed shard index used by the envelope header vector.
+    pub const ENVELOPE_SHARD_INDEX: u32 = 0x0506_0708;
+    /// Fixed public envelope nonce used by the header vector.
+    pub const ENVELOPE_NONCE: [u8; 24] = [
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+        0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+    ];
+
+    const MANIFEST_ALBUM_ID: [u8; 16] = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+        0x0f,
+    ];
+    const MANIFEST_EPOCH_ID: u32 = 7;
+    const MANIFEST_ENCRYPTED_META: [u8; 3] = [0xaa, 0xbb, 0xcc];
+
+    /// Returns the deterministic serialized envelope header vector.
+    #[must_use]
+    pub fn envelope_header_bytes() -> [u8; super::SHARD_ENVELOPE_HEADER_LEN] {
+        ShardEnvelopeHeader::new(
+            ENVELOPE_EPOCH_ID,
+            ENVELOPE_SHARD_INDEX,
+            ENVELOPE_NONCE,
+            ShardTier::Preview,
+        )
+        .to_bytes()
+    }
+
+    /// Returns deterministic canonical manifest transcript bytes.
+    ///
+    /// The encrypted metadata bytes are fixed ciphertext-like test bytes and do
+    /// not contain plaintext photo metadata.
+    ///
+    /// # Errors
+    /// Returns transcript construction errors if the fixed vector stops
+    /// satisfying the canonical manifest transcript rules.
+    pub fn manifest_transcript_bytes() -> Result<Vec<u8>, ManifestTranscriptError> {
+        let shards = [
+            shard_ref(1, ShardTier::Original, 0x20, 0x22),
+            shard_ref(0, ShardTier::Thumbnail, 0x10, 0x11),
+        ];
+        let transcript = ManifestTranscript::new(
+            MANIFEST_ALBUM_ID,
+            MANIFEST_EPOCH_ID,
+            &MANIFEST_ENCRYPTED_META,
+            &shards,
+        );
+
+        canonical_manifest_transcript_bytes(&transcript)
+    }
+
+    fn shard_ref(
+        chunk_index: u32,
+        tier: ShardTier,
+        first_id_byte: u8,
+        hash_byte: u8,
+    ) -> ManifestShardRef {
+        let mut shard_id = [0_u8; 16];
+        for (offset, byte) in shard_id.iter_mut().enumerate() {
+            *byte = first_id_byte + offset as u8;
+        }
+
+        ManifestShardRef::new(chunk_index, shard_id, tier, [hash_byte; 32])
+    }
+}
+
 /// Parsed shard envelope header.
 ///
 /// The raw 64 bytes returned by [`ShardEnvelopeHeader::to_bytes`] are the AAD

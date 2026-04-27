@@ -70,6 +70,22 @@ pub struct IdentityHandleResult {
     pub wrapped_seed: Vec<u8>,
 }
 
+/// UniFFI record for public crypto/domain golden-vector snapshots.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CryptoDomainGoldenVectorSnapshot {
+    pub code: u16,
+    pub envelope_header: Vec<u8>,
+    pub envelope_epoch_id: u32,
+    pub envelope_shard_index: u32,
+    pub envelope_tier: u8,
+    pub envelope_nonce: Vec<u8>,
+    pub manifest_transcript: Vec<u8>,
+    pub identity_message: Vec<u8>,
+    pub identity_signing_pubkey: Vec<u8>,
+    pub identity_encryption_pubkey: Vec<u8>,
+    pub identity_signature: Vec<u8>,
+}
+
 /// Returns the crate name for smoke tests and generated wrapper diagnostics.
 #[must_use]
 pub const fn crate_name() -> &'static str {
@@ -85,7 +101,7 @@ pub const fn protocol_version() -> &'static str {
 /// Returns the stable UniFFI API snapshot for this FFI spike.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v3 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign)"
+    "mosaic-uniffi ffi-spike:v4 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
 }
 
 /// Parses a shard envelope header through the UniFFI export surface.
@@ -224,6 +240,13 @@ pub fn close_identity_handle(handle: u64) -> u16 {
     }
 }
 
+/// Returns deterministic public crypto/domain golden vectors through UniFFI.
+#[uniffi::export]
+#[must_use]
+pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVectorSnapshot {
+    crypto_domain_vector_from_client(mosaic_client::crypto_domain_golden_vector_snapshot())
+}
+
 fn identity_result_from_client(
     result: mosaic_client::IdentityHandleResult,
 ) -> IdentityHandleResult {
@@ -240,6 +263,24 @@ fn bytes_result_from_client(result: mosaic_client::BytesResult) -> BytesResult {
     BytesResult {
         code: result.code.as_u16(),
         bytes: result.bytes,
+    }
+}
+
+fn crypto_domain_vector_from_client(
+    result: mosaic_client::CryptoDomainGoldenVectorSnapshot,
+) -> CryptoDomainGoldenVectorSnapshot {
+    CryptoDomainGoldenVectorSnapshot {
+        code: result.code.as_u16(),
+        envelope_header: result.envelope_header,
+        envelope_epoch_id: result.envelope_epoch_id,
+        envelope_shard_index: result.envelope_shard_index,
+        envelope_tier: result.envelope_tier,
+        envelope_nonce: result.envelope_nonce,
+        manifest_transcript: result.manifest_transcript,
+        identity_message: result.identity_message,
+        identity_signing_pubkey: result.identity_signing_pubkey,
+        identity_encryption_pubkey: result.identity_encryption_pubkey,
+        identity_signature: result.identity_signature,
     }
 }
 
