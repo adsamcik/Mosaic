@@ -120,6 +120,21 @@ fn closing_unlocked_account_handle_cascades_to_identity_handles() {
         encryption_result.code,
         ClientErrorCode::IdentityHandleNotFound
     );
+    assert!(encryption_result.bytes.is_empty());
+
+    let signature_result =
+        sign_manifest_with_identity(identity_result.handle, b"manifest transcript");
+    assert_eq!(
+        signature_result.code,
+        ClientErrorCode::IdentityHandleNotFound
+    );
+    assert!(signature_result.bytes.is_empty());
+
+    let close_again = match close_account_key_handle(account_result.handle) {
+        Ok(()) => panic!("double-closing an account handle should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(close_again.code, ClientErrorCode::SecretHandleNotFound);
 }
 
 #[test]

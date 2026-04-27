@@ -1,11 +1,13 @@
-use mosaic_crypto::{KdfProfile, derive_account_key};
+use mosaic_client::ClientErrorCode;
+use mosaic_crypto::{KdfProfile, MAX_KDF_MEMORY_KIB, derive_account_key};
 use mosaic_domain::{ShardEnvelopeHeader, ShardTier};
 use mosaic_uniffi::{
     AccountUnlockRequest, account_key_handle_is_open, android_progress_probe,
     close_account_key_handle, close_epoch_key_handle, close_identity_handle,
     create_epoch_key_handle, create_identity_handle, crypto_domain_golden_vector_snapshot,
     decrypt_shard_with_epoch_handle, encrypt_shard_with_epoch_handle, epoch_key_handle_is_open,
-    identity_signing_pubkey, open_epoch_key_handle, parse_envelope_header, uniffi_api_snapshot,
+    identity_encryption_pubkey, identity_signing_pubkey, open_epoch_key_handle,
+    open_identity_handle, parse_envelope_header, sign_manifest_with_identity, uniffi_api_snapshot,
     unlock_account_key,
 };
 use zeroize::Zeroizing;
@@ -200,12 +202,150 @@ fn uniffi_facade_propagates_progress_boundary_and_zero_steps() {
     assert!(zero_steps.events.is_empty());
 }
 
+#[test]
+fn uniffi_error_paths_return_zero_handles_and_empty_sensitive_outputs() {
+    let invalid_salt = unlock_account_key(
+        PASSWORD.to_vec(),
+        unlock_request_with(
+            vec![0_u8; 24 + 16 + 1],
+            vec![0_u8; 15],
+            ACCOUNT_SALT.to_vec(),
+            64 * 1024,
+        ),
+    );
+    assert_eq!(
+        invalid_salt.code,
+        ClientErrorCode::InvalidSaltLength.as_u16()
+    );
+    assert_eq!(invalid_salt.handle, 0);
+
+    let costly_profile = unlock_account_key(
+        PASSWORD.to_vec(),
+        unlock_request_with(
+            vec![0_u8; 24 + 16 + 1],
+            USER_SALT.to_vec(),
+            ACCOUNT_SALT.to_vec(),
+            MAX_KDF_MEMORY_KIB + 1,
+        ),
+    );
+    assert_eq!(
+        costly_profile.code,
+        ClientErrorCode::KdfProfileTooCostly.as_u16()
+    );
+    assert_eq!(costly_profile.handle, 0);
+
+    let short_wrapped_key = unlock_account_key(
+        PASSWORD.to_vec(),
+        unlock_request_with(
+            vec![0_u8; 24 + 16],
+            USER_SALT.to_vec(),
+            ACCOUNT_SALT.to_vec(),
+            64 * 1024,
+        ),
+    );
+    assert_eq!(
+        short_wrapped_key.code,
+        ClientErrorCode::WrappedKeyTooShort.as_u16()
+    );
+    assert_eq!(short_wrapped_key.handle, 0);
+
+    let missing_identity = create_identity_handle(0);
+    assert_eq!(
+        missing_identity.code,
+        ClientErrorCode::SecretHandleNotFound.as_u16()
+    );
+    assert_eq!(missing_identity.handle, 0);
+    assert!(missing_identity.signing_pubkey.is_empty());
+    assert!(missing_identity.encryption_pubkey.is_empty());
+    assert!(missing_identity.wrapped_seed.is_empty());
+
+    let missing_open_identity = open_identity_handle(Vec::new(), 0);
+    assert_eq!(
+        missing_open_identity.code,
+        ClientErrorCode::SecretHandleNotFound.as_u16()
+    );
+    assert_eq!(missing_open_identity.handle, 0);
+    assert!(missing_open_identity.signing_pubkey.is_empty());
+    assert!(missing_open_identity.encryption_pubkey.is_empty());
+    assert!(missing_open_identity.wrapped_seed.is_empty());
+
+    let missing_signing_pubkey = identity_signing_pubkey(0);
+    assert_eq!(
+        missing_signing_pubkey.code,
+        ClientErrorCode::IdentityHandleNotFound.as_u16()
+    );
+    assert!(missing_signing_pubkey.bytes.is_empty());
+
+    let missing_encryption_pubkey = identity_encryption_pubkey(0);
+    assert_eq!(
+        missing_encryption_pubkey.code,
+        ClientErrorCode::IdentityHandleNotFound.as_u16()
+    );
+    assert!(missing_encryption_pubkey.bytes.is_empty());
+
+    let missing_signature = sign_manifest_with_identity(0, b"manifest transcript".to_vec());
+    assert_eq!(
+        missing_signature.code,
+        ClientErrorCode::IdentityHandleNotFound.as_u16()
+    );
+    assert!(missing_signature.bytes.is_empty());
+
+    let missing_epoch = create_epoch_key_handle(0, 99);
+    assert_eq!(
+        missing_epoch.code,
+        ClientErrorCode::SecretHandleNotFound.as_u16()
+    );
+    assert_eq!(missing_epoch.handle, 0);
+    assert_eq!(missing_epoch.epoch_id, 0);
+    assert!(missing_epoch.wrapped_epoch_seed.is_empty());
+
+    let missing_open_epoch = open_epoch_key_handle(Vec::new(), 0, 99);
+    assert_eq!(
+        missing_open_epoch.code,
+        ClientErrorCode::SecretHandleNotFound.as_u16()
+    );
+    assert_eq!(missing_open_epoch.handle, 0);
+    assert_eq!(missing_open_epoch.epoch_id, 0);
+    assert!(missing_open_epoch.wrapped_epoch_seed.is_empty());
+
+    let missing_encrypt = encrypt_shard_with_epoch_handle(0, b"plaintext".to_vec(), 1, 1);
+    assert_eq!(
+        missing_encrypt.code,
+        ClientErrorCode::EpochHandleNotFound.as_u16()
+    );
+    assert!(missing_encrypt.envelope_bytes.is_empty());
+    assert!(missing_encrypt.sha256.is_empty());
+
+    let missing_decrypt = decrypt_shard_with_epoch_handle(0, b"not parsed first".to_vec());
+    assert_eq!(
+        missing_decrypt.code,
+        ClientErrorCode::EpochHandleNotFound.as_u16()
+    );
+    assert!(missing_decrypt.plaintext.is_empty());
+}
+
 fn unlock_request(wrapped_account_key: Vec<u8>) -> AccountUnlockRequest {
     AccountUnlockRequest {
         user_salt: USER_SALT.to_vec(),
         account_salt: ACCOUNT_SALT.to_vec(),
         wrapped_account_key,
         kdf_memory_kib: 64 * 1024,
+        kdf_iterations: 3,
+        kdf_parallelism: 1,
+    }
+}
+
+fn unlock_request_with(
+    wrapped_account_key: Vec<u8>,
+    user_salt: Vec<u8>,
+    account_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+) -> AccountUnlockRequest {
+    AccountUnlockRequest {
+        user_salt,
+        account_salt,
+        wrapped_account_key,
+        kdf_memory_kib,
         kdf_iterations: 3,
         kdf_parallelism: 1,
     }
