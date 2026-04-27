@@ -1,17 +1,93 @@
+use mosaic_crypto::{KdfProfile, derive_account_key};
 use mosaic_domain::{ShardEnvelopeHeader, ShardTier};
 use mosaic_wasm::{
-    close_identity_handle, create_identity_handle, crypto_domain_golden_vector_snapshot,
-    identity_signing_pubkey, parse_envelope_header, wasm_api_snapshot, wasm_progress_probe,
+    AccountUnlockRequest, account_key_handle_is_open, close_account_key_handle,
+    close_epoch_key_handle, close_identity_handle, create_epoch_key_handle, create_identity_handle,
+    crypto_domain_golden_vector_snapshot, decrypt_shard_with_epoch_handle,
+    encrypt_shard_with_epoch_handle, epoch_key_handle_is_open, identity_signing_pubkey,
+    open_epoch_key_handle, parse_envelope_header, unlock_account_key, wasm_api_snapshot,
+    wasm_progress_probe,
 };
 
+const PASSWORD: &[u8] = b"correct horse battery staple";
+const WRONG_PASSWORD: &[u8] = b"wrong horse battery staple";
+const USER_SALT: [u8; 16] = [
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+];
+const ACCOUNT_SALT: [u8; 16] = [
+    0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
+];
 const MAX_PROGRESS_EVENTS: u32 = 10_000;
 
 #[test]
 fn wasm_facade_exposes_stable_ffi_spike_surface() {
     assert_eq!(
         wasm_api_snapshot(),
-        "mosaic-wasm ffi-spike:v3 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult identity(create/open/close/pubkeys/sign) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+        "mosaic-wasm ffi-spike:v4 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
     );
+}
+
+#[test]
+fn wasm_account_and_epoch_facades_return_stable_codes_and_opaque_handles() {
+    let wrong_password_result = unlock_account_key(
+        WRONG_PASSWORD.to_vec(),
+        unlock_request(wrapped_account_key()),
+    );
+    assert_eq!(wrong_password_result.code, 205);
+    assert_eq!(wrong_password_result.handle, 0);
+
+    let account_result =
+        unlock_account_key(PASSWORD.to_vec(), unlock_request(wrapped_account_key()));
+    assert_eq!(account_result.code, 0);
+    assert_ne!(account_result.handle, 0);
+
+    let account_status = account_key_handle_is_open(account_result.handle);
+    assert_eq!(account_status.code, 0);
+    assert!(account_status.is_open);
+
+    let epoch_result = create_epoch_key_handle(account_result.handle, 13);
+    assert_eq!(epoch_result.code, 0);
+    assert_ne!(epoch_result.handle, 0);
+    assert_eq!(epoch_result.epoch_id, 13);
+    assert_eq!(epoch_result.wrapped_epoch_seed.len(), 24 + 32 + 16);
+
+    let encrypted = encrypt_shard_with_epoch_handle(
+        epoch_result.handle,
+        b"wasm-local media bytes".to_vec(),
+        6,
+        3,
+    );
+    assert_eq!(encrypted.code, 0);
+    assert!(!encrypted.envelope_bytes.is_empty());
+    assert!(!encrypted.sha256.is_empty());
+
+    let decrypted = decrypt_shard_with_epoch_handle(epoch_result.handle, encrypted.envelope_bytes);
+    assert_eq!(decrypted.code, 0);
+    assert_eq!(decrypted.plaintext, b"wasm-local media bytes");
+
+    let invalid_tier = encrypt_shard_with_epoch_handle(epoch_result.handle, Vec::new(), 6, 9);
+    assert_eq!(invalid_tier.code, 103);
+    assert!(invalid_tier.envelope_bytes.is_empty());
+    assert!(invalid_tier.sha256.is_empty());
+
+    assert_eq!(close_epoch_key_handle(epoch_result.handle), 0);
+
+    let epoch_status = epoch_key_handle_is_open(epoch_result.handle);
+    assert_eq!(epoch_status.code, 0);
+    assert!(!epoch_status.is_open);
+
+    let reopened = open_epoch_key_handle(
+        epoch_result.wrapped_epoch_seed,
+        account_result.handle,
+        epoch_result.epoch_id,
+    );
+    assert_eq!(reopened.code, 0);
+    assert_ne!(reopened.handle, 0);
+    assert!(reopened.wrapped_epoch_seed.is_empty());
+
+    assert_eq!(close_epoch_key_handle(reopened.handle), 0);
+    assert_eq!(close_epoch_key_handle(reopened.handle), 403);
+    assert_eq!(close_account_key_handle(account_result.handle), 0);
 }
 
 #[test]
@@ -111,4 +187,28 @@ fn wasm_identity_operations_reject_zero_handle_without_outputs() {
     assert!(pubkey_result.bytes.is_empty());
 
     assert_eq!(close_identity_handle(0), 401);
+}
+
+fn unlock_request(wrapped_account_key: Vec<u8>) -> AccountUnlockRequest {
+    AccountUnlockRequest {
+        user_salt: USER_SALT.to_vec(),
+        account_salt: ACCOUNT_SALT.to_vec(),
+        wrapped_account_key,
+        kdf_memory_kib: 64 * 1024,
+        kdf_iterations: 3,
+        kdf_parallelism: 1,
+    }
+}
+
+fn wrapped_account_key() -> Vec<u8> {
+    let profile = match KdfProfile::new(64 * 1024, 3, 1) {
+        Ok(value) => value,
+        Err(error) => panic!("minimum Mosaic profile should be valid: {error:?}"),
+    };
+    let material =
+        match derive_account_key(PASSWORD.to_vec().into(), &USER_SALT, &ACCOUNT_SALT, profile) {
+            Ok(value) => value,
+            Err(error) => panic!("account key should derive: {error:?}"),
+        };
+    material.wrapped_account_key
 }

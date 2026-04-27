@@ -455,6 +455,7 @@ dependencies = [
  "mosaic-crypto",
  "mosaic-domain",
  "wasm-bindgen",
+ "zeroize",
 ]
 
 [[package]]

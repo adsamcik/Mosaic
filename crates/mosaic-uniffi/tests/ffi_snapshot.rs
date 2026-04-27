@@ -2,9 +2,11 @@ use mosaic_crypto::{KdfProfile, derive_account_key};
 use mosaic_domain::{ShardEnvelopeHeader, ShardTier};
 use mosaic_uniffi::{
     AccountUnlockRequest, account_key_handle_is_open, android_progress_probe,
-    close_account_key_handle, close_identity_handle, create_identity_handle,
-    crypto_domain_golden_vector_snapshot, identity_signing_pubkey, parse_envelope_header,
-    uniffi_api_snapshot, unlock_account_key,
+    close_account_key_handle, close_epoch_key_handle, close_identity_handle,
+    create_epoch_key_handle, create_identity_handle, crypto_domain_golden_vector_snapshot,
+    decrypt_shard_with_epoch_handle, encrypt_shard_with_epoch_handle, epoch_key_handle_is_open,
+    identity_signing_pubkey, open_epoch_key_handle, parse_envelope_header, uniffi_api_snapshot,
+    unlock_account_key,
 };
 use zeroize::Zeroizing;
 
@@ -22,7 +24,7 @@ const MAX_PROGRESS_EVENTS: u32 = 10_000;
 fn uniffi_facade_exposes_stable_ffi_spike_surface() {
     assert_eq!(
         uniffi_api_snapshot(),
-        "mosaic-uniffi ffi-spike:v4 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+        "mosaic-uniffi ffi-spike:v5 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
     );
 }
 
@@ -66,6 +68,67 @@ fn uniffi_account_unlock_facade_returns_stable_codes_and_opaque_handles() {
     assert!(!status.is_open);
 
     assert_eq!(close_account_key_handle(result.handle), 400);
+}
+
+#[test]
+fn uniffi_epoch_facade_encrypts_decrypts_and_returns_stable_error_codes() {
+    let account_result =
+        unlock_account_key(PASSWORD.to_vec(), unlock_request(wrapped_account_key()));
+    assert_eq!(account_result.code, 0);
+    assert_ne!(account_result.handle, 0);
+
+    let missing_account = create_epoch_key_handle(u64::MAX, 1);
+    assert_eq!(missing_account.code, 400);
+    assert_eq!(missing_account.handle, 0);
+    assert!(missing_account.wrapped_epoch_seed.is_empty());
+
+    let create_result = create_epoch_key_handle(account_result.handle, 11);
+    assert_eq!(create_result.code, 0);
+    assert_ne!(create_result.handle, 0);
+    assert_eq!(create_result.epoch_id, 11);
+    assert_eq!(create_result.wrapped_epoch_seed.len(), 24 + 32 + 16);
+
+    let status = epoch_key_handle_is_open(create_result.handle);
+    assert_eq!(status.code, 0);
+    assert!(status.is_open);
+
+    let encrypted = encrypt_shard_with_epoch_handle(
+        create_result.handle,
+        b"ffi-local media bytes".to_vec(),
+        4,
+        1,
+    );
+    assert_eq!(encrypted.code, 0);
+    assert!(!encrypted.envelope_bytes.is_empty());
+    assert!(!encrypted.sha256.is_empty());
+
+    let decrypted = decrypt_shard_with_epoch_handle(create_result.handle, encrypted.envelope_bytes);
+    assert_eq!(decrypted.code, 0);
+    assert_eq!(decrypted.plaintext, b"ffi-local media bytes");
+
+    let invalid_tier = encrypt_shard_with_epoch_handle(create_result.handle, Vec::new(), 4, 9);
+    assert_eq!(invalid_tier.code, 103);
+    assert!(invalid_tier.envelope_bytes.is_empty());
+    assert!(invalid_tier.sha256.is_empty());
+
+    assert_eq!(close_epoch_key_handle(create_result.handle), 0);
+
+    let status = epoch_key_handle_is_open(create_result.handle);
+    assert_eq!(status.code, 0);
+    assert!(!status.is_open);
+
+    let open_result = open_epoch_key_handle(
+        create_result.wrapped_epoch_seed,
+        account_result.handle,
+        create_result.epoch_id,
+    );
+    assert_eq!(open_result.code, 0);
+    assert_ne!(open_result.handle, 0);
+    assert!(open_result.wrapped_epoch_seed.is_empty());
+
+    assert_eq!(close_epoch_key_handle(open_result.handle), 0);
+    assert_eq!(close_epoch_key_handle(open_result.handle), 403);
+    assert_eq!(close_account_key_handle(account_result.handle), 0);
 }
 
 #[test]

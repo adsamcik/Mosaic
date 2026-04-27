@@ -70,6 +70,40 @@ pub struct IdentityHandleResult {
     pub wrapped_seed: Vec<u8>,
 }
 
+/// UniFFI record for epoch-key handle results.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct EpochKeyHandleResult {
+    pub code: u16,
+    pub handle: u64,
+    pub epoch_id: u32,
+    pub wrapped_epoch_seed: Vec<u8>,
+}
+
+/// UniFFI record for epoch-key handle status checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct EpochKeyHandleStatusResult {
+    pub code: u16,
+    pub is_open: bool,
+}
+
+/// UniFFI record for encrypted shard results.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct EncryptedShardResult {
+    pub code: u16,
+    pub envelope_bytes: Vec<u8>,
+    pub sha256: String,
+}
+
+/// UniFFI record for decrypted shard results.
+///
+/// This record carries client-local plaintext media bytes on success and
+/// intentionally does not implement `Debug`.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DecryptedShardResult {
+    pub code: u16,
+    pub plaintext: Vec<u8>,
+}
+
 /// UniFFI record for public crypto/domain golden-vector snapshots.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CryptoDomainGoldenVectorSnapshot {
@@ -101,7 +135,7 @@ pub const fn protocol_version() -> &'static str {
 /// Returns the stable UniFFI API snapshot for this FFI spike.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v4 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+    "mosaic-uniffi ffi-spike:v5 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
 }
 
 /// Parses a shard envelope header through the UniFFI export surface.
@@ -240,6 +274,87 @@ pub fn close_identity_handle(handle: u64) -> u16 {
     }
 }
 
+/// Creates a new epoch-key handle for an existing account-key handle.
+#[uniffi::export]
+#[must_use]
+pub fn create_epoch_key_handle(account_key_handle: u64, epoch_id: u32) -> EpochKeyHandleResult {
+    epoch_result_from_client(mosaic_client::create_epoch_key_handle(
+        account_key_handle,
+        epoch_id,
+    ))
+}
+
+/// Opens an epoch-key handle from wrapped epoch seed bytes.
+#[uniffi::export]
+#[must_use]
+pub fn open_epoch_key_handle(
+    wrapped_epoch_seed: Vec<u8>,
+    account_key_handle: u64,
+    epoch_id: u32,
+) -> EpochKeyHandleResult {
+    epoch_result_from_client(mosaic_client::open_epoch_key_handle(
+        &wrapped_epoch_seed,
+        account_key_handle,
+        epoch_id,
+    ))
+}
+
+/// Returns whether an epoch-key handle is currently open.
+#[uniffi::export]
+#[must_use]
+pub fn epoch_key_handle_is_open(handle: u64) -> EpochKeyHandleStatusResult {
+    match mosaic_client::epoch_key_handle_is_open(handle) {
+        Ok(is_open) => EpochKeyHandleStatusResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            is_open,
+        },
+        Err(error) => EpochKeyHandleStatusResult {
+            code: error.code.as_u16(),
+            is_open: false,
+        },
+    }
+}
+
+/// Closes an epoch-key handle and returns the stable error code.
+#[uniffi::export]
+#[must_use]
+pub fn close_epoch_key_handle(handle: u64) -> u16 {
+    match mosaic_client::close_epoch_key_handle(handle) {
+        Ok(()) => mosaic_client::ClientErrorCode::Ok.as_u16(),
+        Err(error) => error.code.as_u16(),
+    }
+}
+
+/// Encrypts shard bytes with a Rust-owned epoch-key handle.
+#[uniffi::export]
+#[must_use]
+pub fn encrypt_shard_with_epoch_handle(
+    handle: u64,
+    plaintext: Vec<u8>,
+    shard_index: u32,
+    tier_byte: u8,
+) -> EncryptedShardResult {
+    encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
+        handle,
+        &plaintext,
+        shard_index,
+        tier_byte,
+    ))
+}
+
+/// Decrypts shard envelope bytes with a Rust-owned epoch-key handle.
+#[uniffi::export]
+#[must_use]
+pub fn decrypt_shard_with_epoch_handle(
+    handle: u64,
+    envelope_bytes: Vec<u8>,
+) -> DecryptedShardResult {
+    decrypted_shard_result_from_client(mosaic_client::decrypt_shard_with_epoch_handle(
+        handle,
+        &envelope_bytes,
+    ))
+}
+
 /// Returns deterministic public crypto/domain golden vectors through UniFFI.
 #[uniffi::export]
 #[must_use]
@@ -263,6 +378,34 @@ fn bytes_result_from_client(result: mosaic_client::BytesResult) -> BytesResult {
     BytesResult {
         code: result.code.as_u16(),
         bytes: result.bytes,
+    }
+}
+
+fn epoch_result_from_client(result: mosaic_client::EpochKeyHandleResult) -> EpochKeyHandleResult {
+    EpochKeyHandleResult {
+        code: result.code.as_u16(),
+        handle: result.handle,
+        epoch_id: result.epoch_id,
+        wrapped_epoch_seed: result.wrapped_epoch_seed,
+    }
+}
+
+fn encrypted_shard_result_from_client(
+    result: mosaic_client::EncryptedShardResult,
+) -> EncryptedShardResult {
+    EncryptedShardResult {
+        code: result.code.as_u16(),
+        envelope_bytes: result.envelope_bytes,
+        sha256: result.sha256,
+    }
+}
+
+fn decrypted_shard_result_from_client(
+    result: mosaic_client::DecryptedShardResult,
+) -> DecryptedShardResult {
+    DecryptedShardResult {
+        code: result.code.as_u16(),
+        plaintext: result.plaintext,
     }
 }
 

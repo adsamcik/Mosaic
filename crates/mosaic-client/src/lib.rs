@@ -7,11 +7,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use mosaic_crypto::{
-    IdentityKeypair, KdfProfile, MosaicCryptoError, SecretKey, derive_identity_keypair,
-    generate_identity_seed, sign_manifest_with_identity as crypto_sign_manifest_with_identity,
-    unwrap_account_key, unwrap_key, wrap_key,
+    EpochKeyMaterial, IdentityKeypair, KdfProfile, MosaicCryptoError, SecretKey, decrypt_shard,
+    derive_epoch_key_material, derive_identity_keypair, encrypt_shard, generate_epoch_key_material,
+    generate_identity_seed, get_tier_key,
+    sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_account_key,
+    unwrap_key, wrap_key,
 };
-use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader};
+use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
 use zeroize::{Zeroize, Zeroizing};
 
 /// Stable client error codes exported through FFI facades.
@@ -43,6 +45,7 @@ pub enum ClientErrorCode {
     SecretHandleNotFound = 400,
     IdentityHandleNotFound = 401,
     HandleSpaceExhausted = 402,
+    EpochHandleNotFound = 403,
     InternalStatePoisoned = 500,
 }
 
@@ -177,6 +180,94 @@ impl IdentityHandleResult {
     }
 }
 
+/// FFI-safe epoch-key handle result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EpochKeyHandleResult {
+    pub code: ClientErrorCode,
+    pub handle: u64,
+    pub epoch_id: u32,
+    pub wrapped_epoch_seed: Vec<u8>,
+}
+
+impl EpochKeyHandleResult {
+    fn ok(handle: u64, epoch_id: u32, wrapped_epoch_seed: Vec<u8>) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            handle,
+            epoch_id,
+            wrapped_epoch_seed,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            handle: 0,
+            epoch_id: 0,
+            wrapped_epoch_seed: Vec::new(),
+        }
+    }
+}
+
+/// FFI-safe epoch-key handle status result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EpochKeyHandleStatusResult {
+    pub code: ClientErrorCode,
+    pub is_open: bool,
+}
+
+/// FFI-safe encrypted shard result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncryptedShardResult {
+    pub code: ClientErrorCode,
+    pub envelope_bytes: Vec<u8>,
+    pub sha256: String,
+}
+
+impl EncryptedShardResult {
+    fn ok(envelope_bytes: Vec<u8>, sha256: String) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            envelope_bytes,
+            sha256,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            envelope_bytes: Vec::new(),
+            sha256: String::new(),
+        }
+    }
+}
+
+/// FFI-safe decrypted shard result.
+///
+/// This type carries client-local plaintext media bytes on success and
+/// intentionally does not implement `Debug`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DecryptedShardResult {
+    pub code: ClientErrorCode,
+    pub plaintext: Vec<u8>,
+}
+
+impl DecryptedShardResult {
+    fn ok(plaintext: Vec<u8>) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            plaintext,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            plaintext: Vec::new(),
+        }
+    }
+}
+
 /// FFI-safe public golden-vector snapshot for cross-platform wrapper tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CryptoDomainGoldenVectorSnapshot {
@@ -270,12 +361,38 @@ impl Drop for IdentityRecord {
 static NEXT_IDENTITY_HANDLE: AtomicU64 = AtomicU64::new(1);
 static IDENTITY_REGISTRY: OnceLock<Mutex<HashMap<u64, IdentityRecord>>> = OnceLock::new();
 
+struct EpochRecord {
+    account_handle: u64,
+    epoch_id: u32,
+    key_material: EpochKeyMaterial,
+    open: bool,
+}
+
+impl EpochRecord {
+    fn close(&mut self) {
+        self.open = false;
+    }
+}
+
+impl Drop for EpochRecord {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+static NEXT_EPOCH_HANDLE: AtomicU64 = AtomicU64::new(1);
+static EPOCH_REGISTRY: OnceLock<Mutex<HashMap<u64, EpochRecord>>> = OnceLock::new();
+
 fn secret_registry() -> &'static Mutex<HashMap<u64, SecretRecord>> {
     SECRET_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn identity_registry() -> &'static Mutex<HashMap<u64, IdentityRecord>> {
     IDENTITY_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn epoch_registry() -> &'static Mutex<HashMap<u64, EpochRecord>> {
+    EPOCH_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Returns the crate name for smoke tests and FFI wrapper diagnostics.
@@ -434,7 +551,7 @@ pub fn close_secret_handle(handle: u64) -> Result<(), ClientError> {
         }
     }
 
-    if let Err(error) = close_identity_handles_for_account(handle) {
+    if let Err(error) = close_child_handles_for_account(handle) {
         if let Some(record) = guard.get_mut(&handle) {
             record.open = true;
         }
@@ -502,6 +619,86 @@ pub fn open_identity_handle(
     match open_identity_handle_result(wrapped_identity_seed, account_key_handle) {
         Ok(value) => value,
         Err(error) => IdentityHandleResult::error(error.code),
+    }
+}
+
+/// Creates a new Rust-owned epoch-key handle and returns the wrapped epoch seed.
+#[must_use]
+pub fn create_epoch_key_handle(account_key_handle: u64, epoch_id: u32) -> EpochKeyHandleResult {
+    match create_epoch_key_handle_result(account_key_handle, epoch_id) {
+        Ok(value) => value,
+        Err(error) => EpochKeyHandleResult::error(error.code),
+    }
+}
+
+/// Opens a Rust-owned epoch-key handle from a wrapped epoch seed.
+#[must_use]
+pub fn open_epoch_key_handle(
+    wrapped_epoch_seed: &[u8],
+    account_key_handle: u64,
+    epoch_id: u32,
+) -> EpochKeyHandleResult {
+    match open_epoch_key_handle_result(wrapped_epoch_seed, account_key_handle, epoch_id) {
+        Ok(value) => value,
+        Err(error) => EpochKeyHandleResult::error(error.code),
+    }
+}
+
+/// Returns whether an opaque epoch-key handle is still open.
+pub fn epoch_key_handle_is_open(handle: u64) -> Result<bool, ClientError> {
+    let registry = epoch_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "epoch registry lock was poisoned",
+        )
+    })?;
+
+    Ok(guard.get(&handle).is_some_and(|record| record.open))
+}
+
+/// Closes and wipes a Rust-owned opaque epoch-key handle.
+pub fn close_epoch_key_handle(handle: u64) -> Result<(), ClientError> {
+    let registry = epoch_registry();
+    let mut guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "epoch registry lock was poisoned",
+        )
+    })?;
+
+    match guard.remove(&handle) {
+        Some(mut record) if record.open => {
+            record.close();
+            Ok(())
+        }
+        _ => Err(ClientError::new(
+            ClientErrorCode::EpochHandleNotFound,
+            "epoch handle is not open",
+        )),
+    }
+}
+
+/// Encrypts plaintext shard bytes with a Rust-owned epoch-key handle.
+#[must_use]
+pub fn encrypt_shard_with_epoch_handle(
+    handle: u64,
+    plaintext: &[u8],
+    shard_index: u32,
+    tier_byte: u8,
+) -> EncryptedShardResult {
+    match encrypt_shard_with_epoch_handle_result(handle, plaintext, shard_index, tier_byte) {
+        Ok(value) => value,
+        Err(error) => EncryptedShardResult::error(error.code),
+    }
+}
+
+/// Decrypts encrypted shard envelope bytes with a Rust-owned epoch-key handle.
+#[must_use]
+pub fn decrypt_shard_with_epoch_handle(handle: u64, envelope_bytes: &[u8]) -> DecryptedShardResult {
+    match decrypt_shard_with_epoch_handle_result(handle, envelope_bytes) {
+        Ok(value) => value,
+        Err(error) => DecryptedShardResult::error(error.code),
     }
 }
 
@@ -642,6 +839,107 @@ fn insert_identity_handle(
     Ok(result)
 }
 
+fn create_epoch_key_handle_result(
+    account_key_handle: u64,
+    epoch_id: u32,
+) -> Result<EpochKeyHandleResult, ClientError> {
+    let account_key = account_secret_key_from_handle(account_key_handle)?;
+    let key_material = generate_epoch_key_material(epoch_id).map_err(client_error_from_crypto)?;
+    let wrapped_epoch_seed = wrap_key(key_material.epoch_seed().as_bytes(), &account_key)
+        .map_err(client_error_from_crypto)?;
+
+    insert_epoch_key_handle(account_key_handle, key_material, wrapped_epoch_seed)
+}
+
+fn open_epoch_key_handle_result(
+    wrapped_epoch_seed: &[u8],
+    account_key_handle: u64,
+    epoch_id: u32,
+) -> Result<EpochKeyHandleResult, ClientError> {
+    let account_key = account_secret_key_from_handle(account_key_handle)?;
+    let mut epoch_seed =
+        unwrap_key(wrapped_epoch_seed, &account_key).map_err(client_error_from_crypto)?;
+    let key_material = derive_epoch_key_material(epoch_id, epoch_seed.as_mut_slice())
+        .map_err(client_error_from_crypto)?;
+
+    insert_epoch_key_handle(account_key_handle, key_material, Vec::new())
+}
+
+fn insert_epoch_key_handle(
+    account_handle: u64,
+    key_material: EpochKeyMaterial,
+    wrapped_epoch_seed: Vec<u8>,
+) -> Result<EpochKeyHandleResult, ClientError> {
+    let handle = allocate_handle(&NEXT_EPOCH_HANDLE)?;
+    let epoch_id = key_material.epoch_id();
+    let result = EpochKeyHandleResult::ok(handle, epoch_id, wrapped_epoch_seed);
+
+    let registry = epoch_registry();
+    let mut guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "epoch registry lock was poisoned",
+        )
+    })?;
+    if guard.contains_key(&handle) {
+        return Err(ClientError::new(
+            ClientErrorCode::HandleSpaceExhausted,
+            "epoch handle space is exhausted",
+        ));
+    }
+    guard.insert(
+        handle,
+        EpochRecord {
+            account_handle,
+            epoch_id,
+            key_material,
+            open: true,
+        },
+    );
+
+    Ok(result)
+}
+
+fn encrypt_shard_with_epoch_handle_result(
+    handle: u64,
+    plaintext: &[u8],
+    shard_index: u32,
+    tier_byte: u8,
+) -> Result<EncryptedShardResult, ClientError> {
+    let tier = ShardTier::try_from(tier_byte).map_err(client_error_from_domain)?;
+    with_epoch(handle, |record| {
+        let tier_key = get_tier_key(&record.key_material, tier);
+        let encrypted = encrypt_shard(plaintext, tier_key, record.epoch_id, shard_index, tier)
+            .map_err(client_error_from_crypto)?;
+        Ok(EncryptedShardResult::ok(encrypted.bytes, encrypted.sha256))
+    })
+}
+
+fn decrypt_shard_with_epoch_handle_result(
+    handle: u64,
+    envelope_bytes: &[u8],
+) -> Result<DecryptedShardResult, ClientError> {
+    with_epoch(handle, |record| {
+        let header_bytes = if envelope_bytes.len() >= mosaic_domain::SHARD_ENVELOPE_HEADER_LEN {
+            &envelope_bytes[..mosaic_domain::SHARD_ENVELOPE_HEADER_LEN]
+        } else {
+            envelope_bytes
+        };
+        let header = ShardEnvelopeHeader::parse(header_bytes).map_err(client_error_from_domain)?;
+        if header.epoch_id() != record.epoch_id {
+            return Err(ClientError::new(
+                ClientErrorCode::AuthenticationFailed,
+                "envelope epoch does not match epoch handle",
+            ));
+        }
+
+        let tier_key = get_tier_key(&record.key_material, header.tier());
+        let plaintext =
+            decrypt_shard(envelope_bytes, tier_key).map_err(client_error_from_crypto)?;
+        Ok(DecryptedShardResult::ok(plaintext.to_vec()))
+    })
+}
+
 fn account_secret_key_from_handle(handle: u64) -> Result<SecretKey, ClientError> {
     let mut account_key_bytes = {
         let registry = secret_registry();
@@ -667,16 +965,32 @@ fn account_secret_key_from_handle(handle: u64) -> Result<SecretKey, ClientError>
     SecretKey::from_bytes(account_key_bytes.as_mut_slice()).map_err(client_error_from_crypto)
 }
 
-fn close_identity_handles_for_account(account_handle: u64) -> Result<(), ClientError> {
-    let registry = identity_registry();
-    let mut guard = registry.lock().map_err(|_| {
+fn close_child_handles_for_account(account_handle: u64) -> Result<(), ClientError> {
+    let identity_registry = identity_registry();
+    let mut identity_guard = identity_registry.lock().map_err(|_| {
         ClientError::new(
             ClientErrorCode::InternalStatePoisoned,
             "identity registry lock was poisoned",
         )
     })?;
 
-    guard.retain(|_, record| {
+    let epoch_registry = epoch_registry();
+    let mut epoch_guard = epoch_registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "epoch registry lock was poisoned",
+        )
+    })?;
+
+    identity_guard.retain(|_, record| {
+        if record.account_handle == account_handle {
+            record.close();
+            false
+        } else {
+            true
+        }
+    });
+    epoch_guard.retain(|_, record| {
         if record.account_handle == account_handle {
             record.close();
             false
@@ -685,6 +999,30 @@ fn close_identity_handles_for_account(account_handle: u64) -> Result<(), ClientE
         }
     });
     Ok(())
+}
+
+fn with_epoch<T>(
+    handle: u64,
+    action: impl FnOnce(&EpochRecord) -> Result<T, ClientError>,
+) -> Result<T, ClientError> {
+    let registry = epoch_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "epoch registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::EpochHandleNotFound,
+                "epoch handle is not open",
+            )
+        })?;
+
+    action(record)
 }
 
 fn with_identity<T>(
@@ -716,6 +1054,10 @@ fn bytes_error(error: ClientError) -> BytesResult {
         code: error.code,
         bytes: Vec::new(),
     }
+}
+
+fn client_error_from_domain(error: MosaicDomainError) -> ClientError {
+    ClientError::new(map_domain_error(error), "domain validation failed")
 }
 
 fn client_error_from_crypto(error: MosaicCryptoError) -> ClientError {
