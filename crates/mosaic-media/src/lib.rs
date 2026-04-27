@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+pub const MAX_IMAGE_PIXELS: u32 = 32 * 1024 * 1024;
 
 /// Supported image container formats for dependency-free media boundary checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,6 +11,18 @@ pub enum MediaFormat {
     Jpeg,
     Png,
     WebP,
+}
+
+impl MediaFormat {
+    /// Returns the canonical MIME type for this media format.
+    #[must_use]
+    pub const fn mime_type(self) -> &'static str {
+        match self {
+            Self::Jpeg => "image/jpeg",
+            Self::Png => "image/png",
+            Self::WebP => "image/webp",
+        }
+    }
 }
 
 /// Recognized metadata categories stripped from gallery tier bytes.
@@ -33,7 +46,18 @@ pub enum MosaicMediaError {
     InvalidJpeg,
     InvalidPng,
     InvalidWebP,
+    InvalidDimensions,
+    UnsupportedFormat,
     OutputTooLarge,
+}
+
+/// Container-level image metadata needed before tier planning and encryption.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageMetadata {
+    pub format: MediaFormat,
+    pub mime_type: &'static str,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Result of stripping recognized metadata from an image container.
@@ -66,6 +90,31 @@ pub fn strip_known_metadata(
     }
 }
 
+/// Inspects supported image bytes and returns dependency-free container metadata.
+///
+/// This reads only container headers. It does not decode pixels, allocate output
+/// tiers, preserve metadata, or trust MIME labels supplied by the platform.
+///
+/// # Errors
+/// Returns `UnsupportedFormat` if the magic bytes do not identify JPEG, PNG, or
+/// WebP; otherwise returns a format-specific error for malformed/truncated
+/// headers or `InvalidDimensions` for zero or out-of-budget dimensions.
+pub fn inspect_image(bytes: &[u8]) -> Result<ImageMetadata, MosaicMediaError> {
+    let format = detect_format(bytes)?;
+    let (width, height) = match format {
+        MediaFormat::Jpeg => inspect_jpeg_dimensions(bytes)?,
+        MediaFormat::Png => inspect_png_dimensions(bytes)?,
+        MediaFormat::WebP => inspect_webp_dimensions(bytes)?,
+    };
+
+    Ok(ImageMetadata {
+        format,
+        mime_type: format.mime_type(),
+        width,
+        height,
+    })
+}
+
 /// Returns the crate name for smoke tests and media prototype diagnostics.
 #[must_use]
 pub const fn crate_name() -> &'static str {
@@ -76,6 +125,250 @@ pub const fn crate_name() -> &'static str {
 #[must_use]
 pub const fn protocol_version() -> &'static str {
     mosaic_domain::PROTOCOL_VERSION
+}
+
+fn detect_format(bytes: &[u8]) -> Result<MediaFormat, MosaicMediaError> {
+    if bytes.starts_with(&[0xff, 0xd8]) {
+        return Ok(MediaFormat::Jpeg);
+    }
+    if bytes.starts_with(PNG_SIGNATURE) {
+        return Ok(MediaFormat::Png);
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+        return Ok(MediaFormat::WebP);
+    }
+    Err(MosaicMediaError::UnsupportedFormat)
+}
+
+fn validate_dimensions(width: u32, height: u32) -> Result<(u32, u32), MosaicMediaError> {
+    if width == 0 || height == 0 {
+        return Err(MosaicMediaError::InvalidDimensions);
+    }
+
+    let pixels = u64::from(width) * u64::from(height);
+    if pixels > u64::from(MAX_IMAGE_PIXELS) {
+        return Err(MosaicMediaError::InvalidDimensions);
+    }
+
+    Ok((width, height))
+}
+
+fn inspect_jpeg_dimensions(bytes: &[u8]) -> Result<(u32, u32), MosaicMediaError> {
+    if !bytes.starts_with(&[0xff, 0xd8]) {
+        return Err(MosaicMediaError::InvalidJpeg);
+    }
+
+    let mut offset = 2;
+    while offset < bytes.len() {
+        if bytes.get(offset) != Some(&0xff) {
+            return Err(MosaicMediaError::InvalidJpeg);
+        }
+        offset += 1;
+
+        while bytes.get(offset) == Some(&0xff) {
+            offset += 1;
+        }
+
+        let marker = match bytes.get(offset) {
+            Some(value) => *value,
+            None => return Err(MosaicMediaError::InvalidJpeg),
+        };
+        offset += 1;
+
+        if marker == 0xda || marker == 0xd9 {
+            return Err(MosaicMediaError::InvalidJpeg);
+        }
+
+        if marker == 0x01 || (0xd0..=0xd7).contains(&marker) {
+            continue;
+        }
+
+        let length_end = match offset.checked_add(2) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidJpeg),
+        };
+        let length_bytes = match bytes.get(offset..length_end) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidJpeg),
+        };
+        let segment_len = usize::from(u16::from_be_bytes([length_bytes[0], length_bytes[1]]));
+        if segment_len < 2 {
+            return Err(MosaicMediaError::InvalidJpeg);
+        }
+
+        let segment_end = match offset.checked_add(segment_len) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidJpeg),
+        };
+        let payload_start = offset + 2;
+        let payload = match bytes.get(payload_start..segment_end) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidJpeg),
+        };
+
+        if is_jpeg_start_of_frame(marker) {
+            if payload.len() < 5 {
+                return Err(MosaicMediaError::InvalidJpeg);
+            }
+            let height = u32::from(u16::from_be_bytes([payload[1], payload[2]]));
+            let width = u32::from(u16::from_be_bytes([payload[3], payload[4]]));
+            // DNL-deferred JPEG height uses zero in SOF and requires scanning past
+            // the first entropy-coded scan; this header-only gate rejects it.
+            return validate_dimensions(width, height);
+        }
+
+        offset = segment_end;
+    }
+
+    Err(MosaicMediaError::InvalidJpeg)
+}
+
+fn is_jpeg_start_of_frame(marker: u8) -> bool {
+    matches!(
+        marker,
+        0xc0 | 0xc1 | 0xc2 | 0xc3 | 0xc5 | 0xc6 | 0xc7 | 0xc9 | 0xca | 0xcb | 0xcd | 0xce | 0xcf
+    )
+}
+
+fn inspect_png_dimensions(bytes: &[u8]) -> Result<(u32, u32), MosaicMediaError> {
+    if !bytes.starts_with(PNG_SIGNATURE) {
+        return Err(MosaicMediaError::InvalidPng);
+    }
+
+    let mut offset = PNG_SIGNATURE.len();
+    let length_bytes = match bytes.get(offset..offset + 4) {
+        Some(value) => value,
+        None => return Err(MosaicMediaError::InvalidPng),
+    };
+    let payload_len = u32::from_be_bytes([
+        length_bytes[0],
+        length_bytes[1],
+        length_bytes[2],
+        length_bytes[3],
+    ]);
+    if payload_len != 13 {
+        return Err(MosaicMediaError::InvalidPng);
+    }
+    offset += 4;
+
+    if bytes.get(offset..offset + 4) != Some(b"IHDR") {
+        return Err(MosaicMediaError::InvalidPng);
+    }
+    offset += 4;
+
+    let payload = match bytes.get(offset..offset + 13) {
+        Some(value) => value,
+        None => return Err(MosaicMediaError::InvalidPng),
+    };
+    let width = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+    let height = u32::from_be_bytes([payload[4], payload[5], payload[6], payload[7]]);
+    validate_dimensions(width, height)
+}
+
+fn inspect_webp_dimensions(bytes: &[u8]) -> Result<(u32, u32), MosaicMediaError> {
+    if bytes.len() < 12 || !bytes.starts_with(b"RIFF") || bytes.get(8..12) != Some(b"WEBP") {
+        return Err(MosaicMediaError::InvalidWebP);
+    }
+
+    let mut offset = 12;
+    while offset < bytes.len() {
+        let kind_end = match offset.checked_add(4) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidWebP),
+        };
+        let chunk_type = match bytes.get(offset..kind_end) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidWebP),
+        };
+        offset = kind_end;
+
+        let size_end = match offset.checked_add(4) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidWebP),
+        };
+        let size_bytes = match bytes.get(offset..size_end) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidWebP),
+        };
+        let payload_len_u32 =
+            u32::from_le_bytes([size_bytes[0], size_bytes[1], size_bytes[2], size_bytes[3]]);
+        let payload_len = match usize::try_from(payload_len_u32) {
+            Ok(value) => value,
+            Err(_) => return Err(MosaicMediaError::InvalidWebP),
+        };
+        offset = size_end;
+
+        let payload_end = match offset.checked_add(payload_len) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidWebP),
+        };
+        let padded_end = match payload_end.checked_add(payload_len % 2) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidWebP),
+        };
+        let payload = match bytes.get(offset..payload_end) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidWebP),
+        };
+        if bytes.get(payload_end..padded_end).is_none() {
+            return Err(MosaicMediaError::InvalidWebP);
+        }
+
+        if let Some(dimensions) = inspect_webp_dimension_chunk(chunk_type, payload)? {
+            return Ok(dimensions);
+        }
+
+        offset = padded_end;
+    }
+
+    Err(MosaicMediaError::InvalidWebP)
+}
+
+fn inspect_webp_dimension_chunk(
+    chunk_type: &[u8],
+    payload: &[u8],
+) -> Result<Option<(u32, u32)>, MosaicMediaError> {
+    match chunk_type {
+        b"VP8 " => inspect_vp8_dimensions(payload).map(Some),
+        b"VP8L" => inspect_vp8l_dimensions(payload).map(Some),
+        b"VP8X" => inspect_vp8x_dimensions(payload).map(Some),
+        _ => Ok(None),
+    }
+}
+
+fn inspect_vp8_dimensions(payload: &[u8]) -> Result<(u32, u32), MosaicMediaError> {
+    if payload.len() < 10 || payload.get(3..6) != Some(&[0x9d, 0x01, 0x2a]) {
+        return Err(MosaicMediaError::InvalidWebP);
+    }
+
+    let width = u32::from(u16::from_le_bytes([payload[6], payload[7]]) & 0x3fff);
+    let height = u32::from(u16::from_le_bytes([payload[8], payload[9]]) & 0x3fff);
+    validate_dimensions(width, height)
+}
+
+fn inspect_vp8l_dimensions(payload: &[u8]) -> Result<(u32, u32), MosaicMediaError> {
+    if payload.len() < 5 || payload[0] != 0x2f {
+        return Err(MosaicMediaError::InvalidWebP);
+    }
+
+    let bits = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
+    let width = (bits & 0x3fff) + 1;
+    let height = ((bits >> 14) & 0x3fff) + 1;
+    validate_dimensions(width, height)
+}
+
+fn inspect_vp8x_dimensions(payload: &[u8]) -> Result<(u32, u32), MosaicMediaError> {
+    if payload.len() < 10 {
+        return Err(MosaicMediaError::InvalidWebP);
+    }
+
+    let width = read_u24_le(&payload[4..7]) + 1;
+    let height = read_u24_le(&payload[7..10]) + 1;
+    validate_dimensions(width, height)
+}
+
+fn read_u24_le(bytes: &[u8]) -> u32 {
+    u32::from(bytes[0]) | (u32::from(bytes[1]) << 8) | (u32::from(bytes[2]) << 16)
 }
 
 fn strip_jpeg_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
@@ -331,7 +624,8 @@ fn classify_webp_metadata(chunk_type: &[u8]) -> Option<MetadataKind> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MediaFormat, MetadataKind, strip_known_metadata};
+    use super::{ImageMetadata, MediaFormat, MetadataKind, MosaicMediaError, inspect_image};
+    use super::{MAX_IMAGE_PIXELS, strip_known_metadata};
 
     #[test]
     fn uses_domain_protocol_version() {
@@ -460,6 +754,114 @@ mod tests {
         assert_eq!(usize::try_from(declared_size), Ok(stripped.bytes.len() - 8));
     }
 
+    #[test]
+    fn inspects_jpeg_dimensions_from_start_of_frame() {
+        let input = jpeg_with_segments(&[
+            jpeg_segment(0xe1, b"Exif\0\0gps coordinates"),
+            jpeg_sof_segment(0xc0, 3024, 4032),
+            jpeg_segment(0xdb, &[0_u8; 65]),
+        ]);
+
+        assert_eq!(
+            inspect_image(&input),
+            Ok(ImageMetadata {
+                format: MediaFormat::Jpeg,
+                mime_type: "image/jpeg",
+                width: 4032,
+                height: 3024,
+            })
+        );
+    }
+
+    #[test]
+    fn inspects_png_dimensions_from_ihdr() {
+        let input = png_with_chunks(&[
+            png_ihdr_chunk(3840, 2160),
+            png_chunk(*b"IDAT", b"pixel bytes"),
+            png_chunk(*b"IEND", b""),
+        ]);
+
+        assert_eq!(
+            inspect_image(&input),
+            Ok(ImageMetadata {
+                format: MediaFormat::Png,
+                mime_type: "image/png",
+                width: 3840,
+                height: 2160,
+            })
+        );
+    }
+
+    #[test]
+    fn inspects_webp_dimensions_from_vp8_vp8l_and_vp8x_chunks() {
+        let lossy = webp_with_chunks(&[webp_vp8_chunk(640, 480)]);
+        let lossless = webp_with_chunks(&[webp_vp8l_chunk(1024, 768)]);
+        let extended = webp_with_chunks(&[webp_vp8x_chunk(1920, 1080)]);
+
+        assert_eq!(
+            inspect_image(&lossy),
+            Ok(ImageMetadata {
+                format: MediaFormat::WebP,
+                mime_type: "image/webp",
+                width: 640,
+                height: 480,
+            })
+        );
+        assert_eq!(
+            inspect_image(&lossless),
+            Ok(ImageMetadata {
+                format: MediaFormat::WebP,
+                mime_type: "image/webp",
+                width: 1024,
+                height: 768,
+            })
+        );
+        assert_eq!(
+            inspect_image(&extended),
+            Ok(ImageMetadata {
+                format: MediaFormat::WebP,
+                mime_type: "image/webp",
+                width: 1920,
+                height: 1080,
+            })
+        );
+    }
+
+    #[test]
+    fn inspection_rejects_truncated_or_unrecognized_headers() {
+        assert_eq!(
+            inspect_image(&[0xff, 0xd8]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+        assert_eq!(
+            inspect_image(b"\x89PNG\r\n\x1a\n\0\0"),
+            Err(MosaicMediaError::InvalidPng)
+        );
+        assert_eq!(
+            inspect_image(b"RIFF\x04\0\0\0WEBP"),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+        assert_eq!(
+            inspect_image(b"not an image"),
+            Err(MosaicMediaError::UnsupportedFormat)
+        );
+    }
+
+    #[test]
+    fn inspection_rejects_zero_and_excessive_dimensions() {
+        let zero_png = png_with_chunks(&[png_ihdr_chunk(0, 1)]);
+        let excessive_png = png_with_chunks(&[png_ihdr_chunk(MAX_IMAGE_PIXELS + 1, 1)]);
+
+        assert_eq!(
+            inspect_image(&zero_png),
+            Err(MosaicMediaError::InvalidDimensions)
+        );
+        assert_eq!(
+            inspect_image(&excessive_png),
+            Err(MosaicMediaError::InvalidDimensions)
+        );
+    }
+
     fn jpeg_segment(marker: u8, payload: &[u8]) -> Vec<u8> {
         let length = match u16::try_from(payload.len() + 2) {
             Ok(value) => value,
@@ -493,6 +895,22 @@ mod tests {
         bytes.extend_from_slice(payload);
         bytes.extend_from_slice(&[0, 0, 0, 0]);
         bytes
+    }
+
+    fn jpeg_sof_segment(marker: u8, height: u16, width: u16) -> Vec<u8> {
+        let mut payload = vec![8];
+        payload.extend_from_slice(&height.to_be_bytes());
+        payload.extend_from_slice(&width.to_be_bytes());
+        payload.extend_from_slice(&[3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0]);
+        jpeg_segment(marker, &payload)
+    }
+
+    fn png_ihdr_chunk(width: u32, height: u32) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&width.to_be_bytes());
+        payload.extend_from_slice(&height.to_be_bytes());
+        payload.extend_from_slice(&[8, 2, 0, 0, 0]);
+        png_chunk(*b"IHDR", &payload)
     }
 
     fn png_with_chunks(chunks: &[Vec<u8>]) -> Vec<u8> {
@@ -531,6 +949,32 @@ mod tests {
             bytes.extend_from_slice(chunk);
         }
         bytes
+    }
+
+    fn webp_vp8_chunk(width: u16, height: u16) -> Vec<u8> {
+        let mut payload = vec![0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a];
+        payload.extend_from_slice(&(width & 0x3fff).to_le_bytes());
+        payload.extend_from_slice(&(height & 0x3fff).to_le_bytes());
+        payload.extend_from_slice(b"frame");
+        webp_chunk(*b"VP8 ", &payload)
+    }
+
+    fn webp_vp8l_chunk(width: u32, height: u32) -> Vec<u8> {
+        let width_minus_one = width - 1;
+        let height_minus_one = height - 1;
+        let bits = width_minus_one | (height_minus_one << 14);
+        let mut payload = vec![0x2f];
+        payload.extend_from_slice(&bits.to_le_bytes());
+        webp_chunk(*b"VP8L", &payload)
+    }
+
+    fn webp_vp8x_chunk(width: u32, height: u32) -> Vec<u8> {
+        let width_minus_one = width - 1;
+        let height_minus_one = height - 1;
+        let mut payload = vec![0; 10];
+        payload[4..7].copy_from_slice(&width_minus_one.to_le_bytes()[..3]);
+        payload[7..10].copy_from_slice(&height_minus_one.to_le_bytes()[..3]);
+        webp_chunk(*b"VP8X", &payload)
     }
 
     fn contains_ascii(haystack: &[u8], needle: &[u8]) -> bool {
