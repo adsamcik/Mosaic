@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+pub const NORMAL_EXIF_ORIENTATION: u8 = 1;
 pub const MAX_IMAGE_PIXELS: u32 = 32 * 1024 * 1024;
 
 /// Supported image container formats for dependency-free media boundary checks.
@@ -58,6 +59,7 @@ pub struct ImageMetadata {
     pub mime_type: &'static str,
     pub width: u32,
     pub height: u32,
+    pub orientation: u8,
 }
 
 /// Result of stripping recognized metadata from an image container.
@@ -101,18 +103,56 @@ pub fn strip_known_metadata(
 /// headers or `InvalidDimensions` for zero or out-of-budget dimensions.
 pub fn inspect_image(bytes: &[u8]) -> Result<ImageMetadata, MosaicMediaError> {
     let format = detect_format(bytes)?;
-    let (width, height) = match format {
+    let (raw_width, raw_height) = match format {
         MediaFormat::Jpeg => inspect_jpeg_dimensions(bytes)?,
         MediaFormat::Png => inspect_png_dimensions(bytes)?,
         MediaFormat::WebP => inspect_webp_dimensions(bytes)?,
     };
+    let orientation = extract_exif_orientation(format, bytes)?;
+    let (width, height) = normalize_dimensions_by_orientation(raw_width, raw_height, orientation)?;
 
     Ok(ImageMetadata {
         format,
         mime_type: format.mime_type(),
         width,
         height,
+        orientation,
     })
+}
+
+/// Extracts the canonical EXIF orientation value used for display normalization.
+///
+/// This slice parses JPEG APP1 EXIF TIFF IFD0 tag `0x0112`. Missing, malformed,
+/// or out-of-range orientation metadata returns `1` because EXIF is optional and
+/// stripped from gallery tier bytes. Malformed JPEG container boundaries still
+/// return `InvalidJpeg`.
+///
+/// # Errors
+/// Returns `InvalidJpeg` when JPEG marker boundaries are malformed.
+pub fn extract_exif_orientation(format: MediaFormat, bytes: &[u8]) -> Result<u8, MosaicMediaError> {
+    match format {
+        MediaFormat::Jpeg => extract_jpeg_exif_orientation(bytes),
+        MediaFormat::Png | MediaFormat::WebP => Ok(NORMAL_EXIF_ORIENTATION),
+    }
+}
+
+/// Applies EXIF orientation display policy to container dimensions.
+///
+/// Orientations `5..=8` transpose the display dimensions. Unknown orientation
+/// values are canonicalized to normal orientation to match EXIF fallback policy.
+///
+/// # Errors
+/// Returns `InvalidDimensions` for zero or over-budget normalized dimensions.
+pub fn normalize_dimensions_by_orientation(
+    width: u32,
+    height: u32,
+    orientation: u8,
+) -> Result<(u32, u32), MosaicMediaError> {
+    if orientation_swaps_dimensions(canonical_exif_orientation(u16::from(orientation))) {
+        return validate_dimensions(height, width);
+    }
+
+    validate_dimensions(width, height)
 }
 
 /// Returns the crate name for smoke tests and media prototype diagnostics.
@@ -151,6 +191,160 @@ fn validate_dimensions(width: u32, height: u32) -> Result<(u32, u32), MosaicMedi
     }
 
     Ok((width, height))
+}
+
+fn extract_jpeg_exif_orientation(bytes: &[u8]) -> Result<u8, MosaicMediaError> {
+    if !bytes.starts_with(&[0xff, 0xd8]) {
+        return Err(MosaicMediaError::InvalidJpeg);
+    }
+
+    let mut offset = 2;
+    while offset < bytes.len() {
+        if bytes.get(offset) != Some(&0xff) {
+            return Err(MosaicMediaError::InvalidJpeg);
+        }
+        offset += 1;
+
+        while bytes.get(offset) == Some(&0xff) {
+            offset += 1;
+        }
+
+        let marker = match bytes.get(offset) {
+            Some(value) => *value,
+            None => return Err(MosaicMediaError::InvalidJpeg),
+        };
+        offset += 1;
+
+        if marker == 0xda || marker == 0xd9 {
+            return Ok(NORMAL_EXIF_ORIENTATION);
+        }
+
+        if marker == 0x01 || (0xd0..=0xd7).contains(&marker) {
+            continue;
+        }
+
+        let length_end = match offset.checked_add(2) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidJpeg),
+        };
+        let length_bytes = match bytes.get(offset..length_end) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidJpeg),
+        };
+        let segment_len = usize::from(u16::from_be_bytes([length_bytes[0], length_bytes[1]]));
+        if segment_len < 2 {
+            return Err(MosaicMediaError::InvalidJpeg);
+        }
+
+        let segment_end = match offset.checked_add(segment_len) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidJpeg),
+        };
+        let payload_start = offset + 2;
+        let payload = match bytes.get(payload_start..segment_end) {
+            Some(value) => value,
+            None => return Err(MosaicMediaError::InvalidJpeg),
+        };
+
+        if marker == 0xe1 && payload.starts_with(b"Exif\0\0") {
+            return Ok(parse_tiff_orientation(&payload[6..]));
+        }
+
+        offset = segment_end;
+    }
+
+    Ok(NORMAL_EXIF_ORIENTATION)
+}
+
+fn parse_tiff_orientation(tiff: &[u8]) -> u8 {
+    let little_endian = match tiff.get(0..2) {
+        Some(b"II") => true,
+        Some(b"MM") => false,
+        _ => return NORMAL_EXIF_ORIENTATION,
+    };
+
+    if read_tiff_u16(tiff, 2, little_endian) != Some(42) {
+        return NORMAL_EXIF_ORIENTATION;
+    }
+
+    let ifd_offset =
+        match read_tiff_u32(tiff, 4, little_endian).and_then(|value| usize::try_from(value).ok()) {
+            Some(value) => value,
+            None => return NORMAL_EXIF_ORIENTATION,
+        };
+    let entry_count = match read_tiff_u16(tiff, ifd_offset, little_endian) {
+        Some(value) => value,
+        None => return NORMAL_EXIF_ORIENTATION,
+    };
+    let entries_start = match ifd_offset.checked_add(2) {
+        Some(value) => value,
+        None => return NORMAL_EXIF_ORIENTATION,
+    };
+
+    for entry_index in 0..entry_count {
+        let entry_offset = match entries_start.checked_add(usize::from(entry_index) * 12) {
+            Some(value) => value,
+            None => return NORMAL_EXIF_ORIENTATION,
+        };
+        let entry_end = match entry_offset.checked_add(12) {
+            Some(value) => value,
+            None => return NORMAL_EXIF_ORIENTATION,
+        };
+        if tiff.get(entry_offset..entry_end).is_none() {
+            return NORMAL_EXIF_ORIENTATION;
+        }
+
+        let tag = read_tiff_u16(tiff, entry_offset, little_endian);
+        if tag != Some(0x0112) {
+            continue;
+        }
+
+        let value_type = read_tiff_u16(tiff, entry_offset + 2, little_endian);
+        let value_count = read_tiff_u32(tiff, entry_offset + 4, little_endian);
+        if value_type != Some(3) || value_count != Some(1) {
+            return NORMAL_EXIF_ORIENTATION;
+        }
+
+        let orientation = read_tiff_u16(tiff, entry_offset + 8, little_endian)
+            .unwrap_or(u16::from(NORMAL_EXIF_ORIENTATION));
+        return canonical_exif_orientation(orientation);
+    }
+
+    NORMAL_EXIF_ORIENTATION
+}
+
+fn read_tiff_u16(bytes: &[u8], offset: usize, little_endian: bool) -> Option<u16> {
+    let end = offset.checked_add(2)?;
+    let data = bytes.get(offset..end)?;
+    let raw = [data[0], data[1]];
+    Some(if little_endian {
+        u16::from_le_bytes(raw)
+    } else {
+        u16::from_be_bytes(raw)
+    })
+}
+
+fn read_tiff_u32(bytes: &[u8], offset: usize, little_endian: bool) -> Option<u32> {
+    let end = offset.checked_add(4)?;
+    let data = bytes.get(offset..end)?;
+    let raw = [data[0], data[1], data[2], data[3]];
+    Some(if little_endian {
+        u32::from_le_bytes(raw)
+    } else {
+        u32::from_be_bytes(raw)
+    })
+}
+
+fn canonical_exif_orientation(orientation: u16) -> u8 {
+    if (1..=8).contains(&orientation) {
+        orientation as u8
+    } else {
+        NORMAL_EXIF_ORIENTATION
+    }
+}
+
+fn orientation_swaps_dimensions(orientation: u8) -> bool {
+    matches!(orientation, 5..=8)
 }
 
 fn inspect_jpeg_dimensions(bytes: &[u8]) -> Result<(u32, u32), MosaicMediaError> {
@@ -624,7 +818,10 @@ fn classify_webp_metadata(chunk_type: &[u8]) -> Option<MetadataKind> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ImageMetadata, MediaFormat, MetadataKind, MosaicMediaError, inspect_image};
+    use super::{
+        ImageMetadata, MediaFormat, MetadataKind, MosaicMediaError, extract_exif_orientation,
+        inspect_image, normalize_dimensions_by_orientation,
+    };
     use super::{MAX_IMAGE_PIXELS, strip_known_metadata};
 
     #[test]
@@ -769,8 +966,134 @@ mod tests {
                 mime_type: "image/jpeg",
                 width: 4032,
                 height: 3024,
+                orientation: 1,
             })
         );
+    }
+
+    #[test]
+    fn inspects_jpeg_orientation_and_normalized_display_dimensions() {
+        let input = jpeg_with_segments(&[
+            jpeg_exif_orientation_segment(6, false),
+            jpeg_sof_segment(0xc0, 3024, 4032),
+        ]);
+
+        assert_eq!(extract_exif_orientation(MediaFormat::Jpeg, &input), Ok(6));
+        assert_eq!(
+            inspect_image(&input),
+            Ok(ImageMetadata {
+                format: MediaFormat::Jpeg,
+                mime_type: "image/jpeg",
+                width: 3024,
+                height: 4032,
+                orientation: 6,
+            })
+        );
+    }
+
+    #[test]
+    fn extracts_big_and_little_endian_jpeg_exif_orientation() {
+        for little_endian in [false, true] {
+            let input = jpeg_with_segments(&[
+                jpeg_exif_orientation_segment(8, little_endian),
+                jpeg_sof_segment(0xc0, 1200, 800),
+            ]);
+
+            assert_eq!(extract_exif_orientation(MediaFormat::Jpeg, &input), Ok(8));
+        }
+    }
+
+    #[test]
+    fn orientation_defaults_to_normal_when_absent_or_invalid() {
+        let without_exif = jpeg_with_segments(&[jpeg_sof_segment(0xc0, 1200, 800)]);
+        let invalid_orientation = jpeg_with_segments(&[
+            jpeg_exif_orientation_segment(42, false),
+            jpeg_sof_segment(0xc0, 1200, 800),
+        ]);
+
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &without_exif),
+            Ok(1)
+        );
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &invalid_orientation),
+            Ok(1)
+        );
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Png, &png_with_chunks(&[png_ihdr_chunk(1, 1)])),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn malformed_tiff_orientation_metadata_defaults_to_normal() {
+        let bad_byte_order = jpeg_with_segments(&[
+            jpeg_exif_segment(b"ZZ\x00\x2a\x00\x00\x00\x08\x00\x00"),
+            jpeg_sof_segment(0xc0, 1200, 800),
+        ]);
+        let bad_magic = jpeg_with_segments(&[
+            jpeg_exif_segment(b"MM\x00\x00\x00\x00\x00\x08\x00\x00"),
+            jpeg_sof_segment(0xc0, 1200, 800),
+        ]);
+        let truncated_ifd_entry = jpeg_with_segments(&[
+            jpeg_exif_segment(b"MM\x00\x2a\x00\x00\x00\x08\x00\x01\x01\x12"),
+            jpeg_sof_segment(0xc0, 1200, 800),
+        ]);
+
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &bad_byte_order),
+            Ok(1)
+        );
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &bad_magic),
+            Ok(1)
+        );
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &truncated_ifd_entry),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn normalizes_dimensions_only_for_rotated_or_transposed_orientations() {
+        for orientation in [1, 2, 3, 4] {
+            assert_eq!(
+                normalize_dimensions_by_orientation(640, 480, orientation),
+                Ok((640, 480))
+            );
+        }
+
+        for orientation in [5, 6, 7, 8] {
+            assert_eq!(
+                normalize_dimensions_by_orientation(640, 480, orientation),
+                Ok((480, 640))
+            );
+        }
+
+        assert_eq!(
+            normalize_dimensions_by_orientation(640, 480, 42),
+            Ok((640, 480))
+        );
+    }
+
+    #[test]
+    fn stripped_jpeg_no_longer_exposes_orientation_metadata() {
+        let input = jpeg_with_segments(&[
+            jpeg_exif_orientation_segment(6, false),
+            jpeg_sof_segment(0xc0, 3024, 4032),
+        ]);
+
+        let stripped = match strip_known_metadata(MediaFormat::Jpeg, &input) {
+            Ok(value) => value,
+            Err(error) => panic!("JPEG EXIF orientation should strip: {error:?}"),
+        };
+
+        assert_eq!(stripped.removed, vec![MetadataKind::Exif]);
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &stripped.bytes),
+            Ok(1)
+        );
+        assert!(!contains_ascii(&stripped.bytes, b"Exif"));
     }
 
     #[test]
@@ -788,6 +1111,7 @@ mod tests {
                 mime_type: "image/png",
                 width: 3840,
                 height: 2160,
+                orientation: 1,
             })
         );
     }
@@ -805,6 +1129,7 @@ mod tests {
                 mime_type: "image/webp",
                 width: 640,
                 height: 480,
+                orientation: 1,
             })
         );
         assert_eq!(
@@ -814,6 +1139,7 @@ mod tests {
                 mime_type: "image/webp",
                 width: 1024,
                 height: 768,
+                orientation: 1,
             })
         );
         assert_eq!(
@@ -823,6 +1149,7 @@ mod tests {
                 mime_type: "image/webp",
                 width: 1920,
                 height: 1080,
+                orientation: 1,
             })
         );
     }
@@ -903,6 +1230,41 @@ mod tests {
         payload.extend_from_slice(&width.to_be_bytes());
         payload.extend_from_slice(&[3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0]);
         jpeg_segment(marker, &payload)
+    }
+
+    fn jpeg_exif_orientation_segment(orientation: u16, little_endian: bool) -> Vec<u8> {
+        let mut payload = b"Exif\0\0".to_vec();
+        if little_endian {
+            payload.extend_from_slice(b"II");
+            payload.extend_from_slice(&42_u16.to_le_bytes());
+            payload.extend_from_slice(&8_u32.to_le_bytes());
+            payload.extend_from_slice(&1_u16.to_le_bytes());
+            payload.extend_from_slice(&0x0112_u16.to_le_bytes());
+            payload.extend_from_slice(&3_u16.to_le_bytes());
+            payload.extend_from_slice(&1_u32.to_le_bytes());
+            payload.extend_from_slice(&orientation.to_le_bytes());
+            payload.extend_from_slice(&[0, 0]);
+            payload.extend_from_slice(&0_u32.to_le_bytes());
+        } else {
+            payload.extend_from_slice(b"MM");
+            payload.extend_from_slice(&42_u16.to_be_bytes());
+            payload.extend_from_slice(&8_u32.to_be_bytes());
+            payload.extend_from_slice(&1_u16.to_be_bytes());
+            payload.extend_from_slice(&0x0112_u16.to_be_bytes());
+            payload.extend_from_slice(&3_u16.to_be_bytes());
+            payload.extend_from_slice(&1_u32.to_be_bytes());
+            payload.extend_from_slice(&orientation.to_be_bytes());
+            payload.extend_from_slice(&[0, 0]);
+            payload.extend_from_slice(&0_u32.to_be_bytes());
+        }
+
+        jpeg_segment(0xe1, &payload)
+    }
+
+    fn jpeg_exif_segment(tiff_payload: &[u8]) -> Vec<u8> {
+        let mut payload = b"Exif\0\0".to_vec();
+        payload.extend_from_slice(tiff_payload);
+        jpeg_segment(0xe1, &payload)
     }
 
     fn png_ihdr_chunk(width: u32, height: u32) -> Vec<u8> {
