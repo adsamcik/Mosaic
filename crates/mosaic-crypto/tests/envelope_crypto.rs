@@ -247,3 +247,41 @@ fn key_wrap_rejects_short_wrapped_input() {
 
     assert_eq!(error, MosaicCryptoError::WrappedKeyTooShort { actual: 40 });
 }
+
+#[test]
+fn key_wrap_rejects_empty_payload_and_detects_nonce_or_tag_tampering() {
+    let wrapper = secret_key_from(WRONG_KEY_BYTES);
+
+    assert_eq!(
+        wrap_key(&[], &wrapper),
+        Err(MosaicCryptoError::InvalidInputLength { actual: 0 })
+    );
+
+    let minimum_plaintext = [0x7a_u8];
+    let minimum_wrapped = match wrap_key(&minimum_plaintext, &wrapper) {
+        Ok(value) => value,
+        Err(error) => panic!("minimum one-byte payload should wrap: {error:?}"),
+    };
+    assert_eq!(minimum_wrapped.len(), 24 + minimum_plaintext.len() + 16);
+
+    let minimum_unwrapped = match unwrap_key(&minimum_wrapped, &wrapper) {
+        Ok(value) => value,
+        Err(error) => panic!("minimum one-byte payload should unwrap: {error:?}"),
+    };
+    assert_eq!(minimum_unwrapped.as_slice(), minimum_plaintext.as_slice());
+
+    let mut tampered_nonce = minimum_wrapped.clone();
+    tampered_nonce[0] ^= 0x01;
+    assert_eq!(
+        unwrap_key(&tampered_nonce, &wrapper),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+
+    let mut tampered_tag = minimum_wrapped;
+    let tag_index = tampered_tag.len() - 1;
+    tampered_tag[tag_index] ^= 0x01;
+    assert_eq!(
+        unwrap_key(&tampered_tag, &wrapper),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+}

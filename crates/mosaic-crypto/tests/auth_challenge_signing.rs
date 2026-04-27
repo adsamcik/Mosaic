@@ -1,7 +1,7 @@
 use mosaic_crypto::{
-    AuthSignature, AuthSigningPublicKey, AuthSigningSecretKey, KdfProfile, MosaicCryptoError,
-    build_auth_challenge_transcript, derive_auth_signing_keypair, sign_auth_challenge,
-    verify_auth_challenge,
+    AUTH_CHALLENGE_CONTEXT, AuthSignature, AuthSigningPublicKey, AuthSigningSecretKey, KdfProfile,
+    MosaicCryptoError, build_auth_challenge_transcript, derive_auth_signing_keypair,
+    sign_auth_challenge, verify_auth_challenge,
 };
 use zeroize::Zeroizing;
 
@@ -99,6 +99,63 @@ fn auth_transcript_without_timestamp_matches_backend_format() {
         &signature,
         keypair.public_key()
     ));
+}
+
+#[test]
+fn auth_transcript_validates_username_edges_and_timestamp_boundaries() {
+    assert_eq!(
+        build_auth_challenge_transcript("", None, &CHALLENGE),
+        Err(MosaicCryptoError::InvalidUsername)
+    );
+    assert_eq!(
+        build_auth_challenge_transcript("user\0name", None, &CHALLENGE),
+        Err(MosaicCryptoError::InvalidUsername)
+    );
+    assert_eq!(
+        build_auth_challenge_transcript("user\nname", None, &CHALLENGE),
+        Err(MosaicCryptoError::InvalidUsername)
+    );
+
+    let max_username = "a".repeat(256);
+    let expected_len = AUTH_CHALLENGE_CONTEXT.len() + 4 + max_username.len() + 8 + CHALLENGE.len();
+    let username_len_offset = AUTH_CHALLENGE_CONTEXT.len();
+    let username_offset = username_len_offset + 4;
+    let timestamp_offset = username_offset + max_username.len();
+    let expected_username_len = 256_u32.to_be_bytes();
+
+    let zero_timestamp = match build_auth_challenge_transcript(&max_username, Some(0), &CHALLENGE) {
+        Ok(value) => value,
+        Err(error) => panic!("maximum valid username with zero timestamp should build: {error:?}"),
+    };
+
+    assert_eq!(zero_timestamp.len(), expected_len);
+    assert_eq!(
+        &zero_timestamp[username_len_offset..username_offset],
+        expected_username_len.as_slice()
+    );
+    assert_eq!(
+        &zero_timestamp[timestamp_offset..timestamp_offset + 8],
+        0_u64.to_be_bytes().as_slice()
+    );
+    assert_eq!(
+        &zero_timestamp[timestamp_offset + 8..],
+        CHALLENGE.as_slice()
+    );
+
+    let max_timestamp =
+        match build_auth_challenge_transcript(&max_username, Some(u64::MAX), &CHALLENGE) {
+            Ok(value) => value,
+            Err(error) => {
+                panic!("maximum valid username with maximum timestamp should build: {error:?}")
+            }
+        };
+
+    assert_eq!(max_timestamp.len(), expected_len);
+    assert_eq!(
+        &max_timestamp[timestamp_offset..timestamp_offset + 8],
+        u64::MAX.to_be_bytes().as_slice()
+    );
+    assert_eq!(&max_timestamp[timestamp_offset + 8..], CHALLENGE.as_slice());
 }
 
 #[test]

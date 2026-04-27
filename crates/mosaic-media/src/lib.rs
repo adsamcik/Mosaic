@@ -2082,6 +2082,26 @@ mod tests {
     }
 
     #[test]
+    fn inspection_rejects_partial_magic_prefixes_as_unsupported() {
+        assert_eq!(
+            inspect_image(&[0xff]),
+            Err(MosaicMediaError::UnsupportedFormat)
+        );
+        assert_eq!(
+            inspect_image(b"\x89PNG\r\n\x1a"),
+            Err(MosaicMediaError::UnsupportedFormat)
+        );
+        assert_eq!(
+            inspect_image(b"RIFF\0\0\0\0WEB"),
+            Err(MosaicMediaError::UnsupportedFormat)
+        );
+        assert_eq!(
+            inspect_image(b"RIFF\0\0\0\0WEBX"),
+            Err(MosaicMediaError::UnsupportedFormat)
+        );
+    }
+
+    #[test]
     fn inspection_rejects_zero_and_excessive_dimensions() {
         let zero_png = png_with_chunks(&[png_ihdr_chunk(0, 1)]);
         let excessive_png = png_with_chunks(&[png_ihdr_chunk(MAX_IMAGE_PIXELS + 1, 1)]);

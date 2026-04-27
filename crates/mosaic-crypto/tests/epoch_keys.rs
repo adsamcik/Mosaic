@@ -127,3 +127,25 @@ fn standalone_content_key_derivation_matches_epoch_material() {
 
     assert!(content_key.as_bytes() == epoch.content_key().as_bytes());
 }
+
+#[test]
+fn boundary_epoch_ids_derive_without_overflow_and_zeroize_sources() {
+    let mut zero_epoch_seed = [0x13_u8; 32];
+    let zero_epoch = match derive_epoch_key_material(0, &mut zero_epoch_seed) {
+        Ok(value) => value,
+        Err(error) => panic!("zero epoch id should derive: {error:?}"),
+    };
+
+    assert_eq!(zero_epoch.epoch_id(), 0);
+    assert!(zero_epoch_seed.iter().all(|byte| *byte == 0));
+
+    let mut max_epoch_seed = [0x37_u8; 32];
+    let max_epoch = match derive_epoch_key_material(u32::MAX, &mut max_epoch_seed) {
+        Ok(value) => value,
+        Err(error) => panic!("maximum epoch id should derive: {error:?}"),
+    };
+
+    assert_eq!(max_epoch.epoch_id(), u32::MAX);
+    assert!(max_epoch_seed.iter().all(|byte| *byte == 0));
+    assert!(zero_epoch.content_key().as_bytes() != max_epoch.content_key().as_bytes());
+}

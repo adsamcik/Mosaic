@@ -124,6 +124,21 @@ fn identity_public_key_validation_rejects_bad_lengths_and_weak_points() {
         MosaicCryptoError::InvalidKeyLength { actual: 31 }
     );
 
+    let long_error = match IdentitySigningPublicKey::from_bytes(&[0_u8; 33]) {
+        Ok(_) => panic!("long identity public key should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        long_error,
+        MosaicCryptoError::InvalidKeyLength { actual: 33 }
+    );
+
+    let zero_point_error = match IdentitySigningPublicKey::from_bytes(&[0_u8; 32]) {
+        Ok(_) => panic!("zero identity point should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(zero_point_error, MosaicCryptoError::InvalidPublicKey);
+
     let mut weak_identity_point = [0_u8; 32];
     weak_identity_point[0] = 1;
     let weak_error = match IdentitySigningPublicKey::from_bytes(&weak_identity_point) {

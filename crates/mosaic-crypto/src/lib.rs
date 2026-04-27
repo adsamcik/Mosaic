@@ -1297,9 +1297,16 @@ pub fn decrypt_shard(
 /// Output format: `nonce(24) || ciphertext || tag(16)`.
 ///
 /// # Errors
+/// - `InvalidInputLength` if `key_bytes` is empty or exceeds 100 MiB.
 /// - `RngFailure` if the OS CSPRNG is unavailable.
 /// - `AuthenticationFailed` if the AEAD cipher reports an unexpected error.
 pub fn wrap_key(key_bytes: &[u8], wrapper: &SecretKey) -> Result<Vec<u8>, MosaicCryptoError> {
+    if key_bytes.is_empty() || key_bytes.len() > MAX_SHARD_BYTES {
+        return Err(MosaicCryptoError::InvalidInputLength {
+            actual: key_bytes.len(),
+        });
+    }
+
     let mut nonce_bytes = [0u8; 24];
     getrandom::fill(&mut nonce_bytes).map_err(|_| MosaicCryptoError::RngFailure)?;
 

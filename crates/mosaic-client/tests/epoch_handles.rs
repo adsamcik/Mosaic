@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use mosaic_client::{
     ClientErrorCode, close_account_key_handle, close_epoch_key_handle, create_epoch_key_handle,
     decrypt_shard_with_epoch_handle, encrypt_shard_with_epoch_handle, epoch_key_handle_is_open,
@@ -176,6 +178,25 @@ fn epoch_handle_rejects_closed_missing_and_tampered_wrapped_seed_without_outputs
     assert!(encrypt_closed.envelope_bytes.is_empty());
     assert!(encrypt_closed.sha256.is_empty());
 
+    close_account_once(account_handle);
+}
+
+#[test]
+fn epoch_handle_allocation_returns_unique_opaque_handles() {
+    let account_handle = open_account_handle();
+    let mut handles = HashSet::new();
+
+    for epoch_id in 0..64 {
+        let result = create_epoch_key_handle(account_handle, epoch_id);
+        assert_eq!(result.code, ClientErrorCode::Ok);
+        assert_ne!(result.handle, 0);
+        assert_eq!(result.epoch_id, epoch_id);
+        assert!(handles.insert(result.handle));
+    }
+
+    for handle in handles {
+        close_epoch_once(handle);
+    }
     close_account_once(account_handle);
 }
 
