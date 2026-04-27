@@ -19,6 +19,9 @@ const MAX_SHARD_BYTES: usize = 100 * 1024 * 1024;
 /// Minimum valid wrapped key length: 24-byte nonce + 16-byte AEAD tag + 1-byte payload.
 const MIN_WRAPPED_KEY_BYTES: usize = 24 + 16 + 1;
 
+/// Backend LocalAuth username length limit.
+const MAX_AUTH_USERNAME_BYTES: usize = 256;
+
 /// Minimum Mosaic Argon2id memory cost in KiB (64 MiB).
 const MIN_KDF_MEMORY_KIB: u32 = 64 * 1024;
 
@@ -42,6 +45,15 @@ const SALT_BYTES: usize = 16;
 
 /// HKDF-SHA256 domain separation label for deriving L1 root keys from L0.
 const ROOT_KEY_INFO: &[u8] = b"mosaic:root-key:v1";
+
+/// LocalAuth challenge transcript context. Must match the backend verifier.
+pub const AUTH_CHALLENGE_CONTEXT: &[u8] = b"Mosaic_Auth_Challenge_v1";
+
+/// LocalAuth server challenge length.
+pub const AUTH_CHALLENGE_BYTES: usize = 32;
+
+/// HKDF-SHA256 domain separation label for password-rooted auth signing seeds.
+const AUTH_SIGNING_KEY_INFO: &[u8] = b"mosaic:auth-signing:v1";
 
 /// HKDF-SHA256 domain separation label for thumbnail shard keys.
 const THUMB_KEY_INFO: &[u8] = b"mosaic:tier:thumb:v1";
@@ -84,6 +96,8 @@ pub enum MosaicCryptoError {
     InvalidSignatureLength { actual: usize },
     /// Public signing key bytes did not decode as a valid Ed25519 verifying key.
     InvalidPublicKey,
+    /// Auth username was empty or otherwise invalid for transcript construction.
+    InvalidUsername,
 }
 
 /// Opaque 32-byte secret key that zeroizes its contents on drop.
@@ -245,6 +259,130 @@ impl ManifestSigningKeypair {
     /// Returns the public verifying key.
     #[must_use]
     pub const fn public_key(&self) -> &ManifestSigningPublicKey {
+        &self.public_key
+    }
+}
+
+/// Rust-owned Ed25519 LocalAuth signing secret.
+///
+/// Stores the 32-byte Ed25519 seed in zeroizing memory. Intentionally does not
+/// implement `Clone`, `Copy`, `Debug`, `Display`, or serialization traits.
+pub struct AuthSigningSecretKey(Zeroizing<[u8; SIGNING_SEED_BYTES]>);
+
+impl AuthSigningSecretKey {
+    /// Constructs an auth signing secret from a 32-byte Ed25519 seed.
+    ///
+    /// The caller-provided seed is zeroized on success and invalid length.
+    ///
+    /// # Errors
+    /// Returns `InvalidKeyLength` if `seed` is not exactly 32 bytes.
+    pub fn from_seed(seed: &mut [u8]) -> Result<Self, MosaicCryptoError> {
+        if seed.len() != SIGNING_SEED_BYTES {
+            let actual = seed.len();
+            seed.zeroize();
+            return Err(MosaicCryptoError::InvalidKeyLength { actual });
+        }
+
+        let mut seed_bytes = Zeroizing::new([0_u8; SIGNING_SEED_BYTES]);
+        seed_bytes.copy_from_slice(seed);
+        seed.zeroize();
+        Ok(Self(seed_bytes))
+    }
+
+    /// Derives the public Ed25519 verifying key for this auth signing secret.
+    #[must_use]
+    pub fn public_key(&self) -> AuthSigningPublicKey {
+        let signing_key = SigningKey::from_bytes(&self.0);
+        AuthSigningPublicKey(signing_key.verifying_key().to_bytes())
+    }
+}
+
+impl Drop for AuthSigningSecretKey {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+/// Ed25519 LocalAuth signing public key.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct AuthSigningPublicKey([u8; SIGNING_PUBLIC_KEY_BYTES]);
+
+impl AuthSigningPublicKey {
+    /// Constructs an auth public key from raw bytes.
+    ///
+    /// # Errors
+    /// Returns `InvalidKeyLength` if `bytes` is not exactly 32 bytes, or
+    /// `InvalidPublicKey` if the bytes are not accepted by the Ed25519 verifier.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MosaicCryptoError> {
+        if bytes.len() != SIGNING_PUBLIC_KEY_BYTES {
+            return Err(MosaicCryptoError::InvalidKeyLength {
+                actual: bytes.len(),
+            });
+        }
+
+        let mut public_key = [0_u8; SIGNING_PUBLIC_KEY_BYTES];
+        public_key.copy_from_slice(bytes);
+        let verifying_key = VerifyingKey::from_bytes(&public_key)
+            .map_err(|_| MosaicCryptoError::InvalidPublicKey)?;
+        if verifying_key.is_weak() {
+            return Err(MosaicCryptoError::InvalidPublicKey);
+        }
+        Ok(Self(public_key))
+    }
+
+    /// Returns the raw 32-byte public key.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; SIGNING_PUBLIC_KEY_BYTES] {
+        &self.0
+    }
+}
+
+/// Ed25519 detached LocalAuth signature.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct AuthSignature([u8; SIGNATURE_BYTES]);
+
+impl AuthSignature {
+    /// Constructs an auth signature from raw bytes.
+    ///
+    /// # Errors
+    /// Returns `InvalidSignatureLength` if `bytes` is not exactly 64 bytes.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MosaicCryptoError> {
+        if bytes.len() != SIGNATURE_BYTES {
+            return Err(MosaicCryptoError::InvalidSignatureLength {
+                actual: bytes.len(),
+            });
+        }
+
+        let mut signature = [0_u8; SIGNATURE_BYTES];
+        signature.copy_from_slice(bytes);
+        Ok(Self(signature))
+    }
+
+    /// Returns the raw 64-byte detached signature.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; SIGNATURE_BYTES] {
+        &self.0
+    }
+}
+
+/// LocalAuth signing keypair.
+pub struct AuthSigningKeypair {
+    secret_key: AuthSigningSecretKey,
+    public_key: AuthSigningPublicKey,
+}
+
+impl AuthSigningKeypair {
+    /// Returns the Rust-owned auth signing secret.
+    #[must_use]
+    pub const fn secret_key(&self) -> &AuthSigningSecretKey {
+        &self.secret_key
+    }
+
+    /// Returns the public auth verifying key.
+    #[must_use]
+    pub const fn public_key(&self) -> &AuthSigningPublicKey {
         &self.public_key
     }
 }
@@ -462,6 +600,142 @@ pub fn unwrap_account_key(
     }
 
     SecretKey::from_bytes(account_key_bytes.as_mut_slice())
+}
+
+/// Derives the password-rooted LocalAuth signing keypair.
+///
+/// This is separate from the L1/L2 account-key hierarchy: it exists only to
+/// authenticate account unlock before the server returns wrapped account state.
+///
+/// # Errors
+/// - `InvalidSaltLength` if `user_salt` is not exactly 16 bytes.
+/// - `KdfProfileTooWeak` if the profile is below policy.
+/// - `KdfFailure` if Argon2id/HKDF reports an error.
+pub fn derive_auth_signing_keypair(
+    password: Zeroizing<Vec<u8>>,
+    user_salt: &[u8],
+    profile: KdfProfile,
+) -> Result<AuthSigningKeypair, MosaicCryptoError> {
+    validate_salt(user_salt)?;
+
+    let argon_params = Params::new(
+        profile.memory_kib(),
+        profile.iterations(),
+        profile.parallelism(),
+        Some(profile.output_len()),
+    )
+    .map_err(|_| MosaicCryptoError::KdfFailure)?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params.clone());
+
+    let mut master_key = Zeroizing::new([0_u8; KEY_BYTES]);
+    let mut memory_blocks = Zeroizing::new(vec![Block::default(); argon_params.block_count()]);
+    argon2
+        .hash_password_into_with_memory(
+            password.as_slice(),
+            user_salt,
+            &mut master_key[..],
+            memory_blocks.as_mut_slice(),
+        )
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+
+    let mut auth_seed = Zeroizing::new([0_u8; SIGNING_SEED_BYTES]);
+    Hkdf::<Sha256>::new(Some(user_salt), &master_key[..])
+        .expand(AUTH_SIGNING_KEY_INFO, &mut auth_seed[..])
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+
+    let secret_key = AuthSigningSecretKey::from_seed(&mut auth_seed[..])?;
+    let public_key = secret_key.public_key();
+
+    Ok(AuthSigningKeypair {
+        secret_key,
+        public_key,
+    })
+}
+
+/// Builds the canonical LocalAuth challenge transcript verified by the backend.
+///
+/// Transcript format:
+/// `Mosaic_Auth_Challenge_v1 || username_len_be_u32 || username_utf8 ||
+/// timestamp_be_u64? || challenge_32`.
+///
+/// # Errors
+/// Returns `InvalidUsername` for empty or whitespace-only usernames, or
+/// `InvalidInputLength` if the challenge is not exactly 32 bytes.
+pub fn build_auth_challenge_transcript(
+    username: &str,
+    timestamp_ms: Option<u64>,
+    challenge: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    let username_bytes = validate_auth_username(username)?;
+    if challenge.len() != AUTH_CHALLENGE_BYTES {
+        return Err(MosaicCryptoError::InvalidInputLength {
+            actual: challenge.len(),
+        });
+    }
+
+    let username_len =
+        u32::try_from(username_bytes.len()).map_err(|_| MosaicCryptoError::InvalidInputLength {
+            actual: username_bytes.len(),
+        })?;
+
+    let timestamp_len = if timestamp_ms.is_some() { 8 } else { 0 };
+    let capacity = AUTH_CHALLENGE_CONTEXT.len() + 4 + username_bytes.len() + timestamp_len + 32;
+    let mut transcript = Vec::with_capacity(capacity);
+    transcript.extend_from_slice(AUTH_CHALLENGE_CONTEXT);
+    transcript.extend_from_slice(&username_len.to_be_bytes());
+    transcript.extend_from_slice(username_bytes);
+    if let Some(value) = timestamp_ms {
+        transcript.extend_from_slice(&value.to_be_bytes());
+    }
+    transcript.extend_from_slice(challenge);
+    Ok(transcript)
+}
+
+fn validate_auth_username(username: &str) -> Result<&[u8], MosaicCryptoError> {
+    let bytes = username.as_bytes();
+    if bytes.is_empty() || bytes.len() > MAX_AUTH_USERNAME_BYTES {
+        return Err(MosaicCryptoError::InvalidUsername);
+    }
+
+    if bytes
+        .iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'-' | b'@' | b'.'))
+    {
+        Ok(bytes)
+    } else {
+        Err(MosaicCryptoError::InvalidUsername)
+    }
+}
+
+/// Signs canonical LocalAuth challenge transcript bytes.
+#[must_use]
+pub fn sign_auth_challenge(
+    transcript_bytes: &[u8],
+    secret_key: &AuthSigningSecretKey,
+) -> AuthSignature {
+    let signing_key = SigningKey::from_bytes(&secret_key.0);
+    let signature: Ed25519Signature = signing_key.sign(transcript_bytes);
+    AuthSignature(signature.to_bytes())
+}
+
+/// Verifies a canonical LocalAuth challenge transcript signature.
+///
+/// Returns `false` for wrong keys, tampered transcripts, or tampered signatures.
+#[must_use]
+pub fn verify_auth_challenge(
+    transcript_bytes: &[u8],
+    signature: &AuthSignature,
+    public_key: &AuthSigningPublicKey,
+) -> bool {
+    let verifying_key = match VerifyingKey::from_bytes(public_key.as_bytes()) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let signature = Ed25519Signature::from_bytes(signature.as_bytes());
+
+    verifying_key
+        .verify_strict(transcript_bytes, &signature)
+        .is_ok()
 }
 
 /// Generates fresh per-epoch key material for a new album epoch.

@@ -33,6 +33,7 @@ pub enum ClientErrorCode {
     KdfFailure = 210,
     InvalidSignatureLength = 211,
     InvalidPublicKey = 212,
+    InvalidUsername = 213,
     OperationCancelled = 300,
     SecretHandleNotFound = 400,
     InternalStatePoisoned = 500,
@@ -289,6 +290,7 @@ fn map_crypto_error(error: MosaicCryptoError) -> ClientErrorCode {
         MosaicCryptoError::KdfFailure => ClientErrorCode::KdfFailure,
         MosaicCryptoError::InvalidSignatureLength { .. } => ClientErrorCode::InvalidSignatureLength,
         MosaicCryptoError::InvalidPublicKey => ClientErrorCode::InvalidPublicKey,
+        MosaicCryptoError::InvalidUsername => ClientErrorCode::InvalidUsername,
     }
 }
 
