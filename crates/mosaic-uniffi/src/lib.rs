@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+use zeroize::Zeroize;
+
 /// UniFFI record for header parse results.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct HeaderResult {
@@ -33,6 +35,31 @@ pub struct BytesResult {
     pub bytes: Vec<u8>,
 }
 
+/// UniFFI record for non-secret account unlock parameters.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct AccountUnlockRequest {
+    pub user_salt: Vec<u8>,
+    pub account_salt: Vec<u8>,
+    pub wrapped_account_key: Vec<u8>,
+    pub kdf_memory_kib: u32,
+    pub kdf_iterations: u32,
+    pub kdf_parallelism: u32,
+}
+
+/// UniFFI record for account unlock results.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct AccountUnlockResult {
+    pub code: u16,
+    pub handle: u64,
+}
+
+/// UniFFI record for account-key handle status checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct AccountKeyHandleStatusResult {
+    pub code: u16,
+    pub is_open: bool,
+}
+
 /// UniFFI record for identity handle results.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct IdentityHandleResult {
@@ -58,7 +85,7 @@ pub const fn protocol_version() -> &'static str {
 /// Returns the stable UniFFI API snapshot for this FFI spike.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v2 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult identity(create/open/close/pubkeys/sign)"
+    "mosaic-uniffi ffi-spike:v3 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign)"
 }
 
 /// Parses a shard envelope header through the UniFFI export surface.
@@ -90,6 +117,56 @@ pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> Pr
                 total_steps: event.total_steps,
             })
             .collect(),
+    }
+}
+
+/// Unwraps an account key into a Rust-owned opaque account-key handle.
+#[uniffi::export]
+#[must_use]
+pub fn unlock_account_key(
+    mut password: Vec<u8>,
+    request: AccountUnlockRequest,
+) -> AccountUnlockResult {
+    let result = mosaic_client::unlock_account_key(mosaic_client::AccountUnlockRequest {
+        password: password.as_mut_slice(),
+        user_salt: &request.user_salt,
+        account_salt: &request.account_salt,
+        wrapped_account_key: &request.wrapped_account_key,
+        kdf_memory_kib: request.kdf_memory_kib,
+        kdf_iterations: request.kdf_iterations,
+        kdf_parallelism: request.kdf_parallelism,
+    });
+    password.zeroize();
+
+    AccountUnlockResult {
+        code: result.code.as_u16(),
+        handle: result.handle,
+    }
+}
+
+/// Returns whether an account-key handle is currently open.
+#[uniffi::export]
+#[must_use]
+pub fn account_key_handle_is_open(handle: u64) -> AccountKeyHandleStatusResult {
+    match mosaic_client::account_key_handle_is_open(handle) {
+        Ok(is_open) => AccountKeyHandleStatusResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            is_open,
+        },
+        Err(error) => AccountKeyHandleStatusResult {
+            code: error.code.as_u16(),
+            is_open: false,
+        },
+    }
+}
+
+/// Closes an account-key handle and returns the stable error code.
+#[uniffi::export]
+#[must_use]
+pub fn close_account_key_handle(handle: u64) -> u16 {
+    match mosaic_client::close_account_key_handle(handle) {
+        Ok(()) => mosaic_client::ClientErrorCode::Ok.as_u16(),
+        Err(error) => error.code.as_u16(),
     }
 }
 

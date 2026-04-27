@@ -7,8 +7,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use mosaic_crypto::{
-    IdentityKeypair, MosaicCryptoError, SecretKey, derive_identity_keypair, generate_identity_seed,
-    sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_key, wrap_key,
+    IdentityKeypair, KdfProfile, MosaicCryptoError, SecretKey, derive_identity_keypair,
+    generate_identity_seed, sign_manifest_with_identity as crypto_sign_manifest_with_identity,
+    unwrap_account_key, unwrap_key, wrap_key,
 };
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader};
 use zeroize::{Zeroize, Zeroizing};
@@ -55,6 +56,8 @@ impl ClientErrorCode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientError {
     pub code: ClientErrorCode,
+    /// Redacted diagnostic text for logs/UI. This must never include password bytes,
+    /// key material, plaintext metadata, or other secret/user-provided content.
     pub message: String,
 }
 
@@ -104,6 +107,40 @@ impl HeaderResult {
 pub struct BytesResult {
     pub code: ClientErrorCode,
     pub bytes: Vec<u8>,
+}
+
+/// FFI-adjacent account unlock request.
+///
+/// This type intentionally does not derive `Debug`, `Clone`, `Copy`, or serialization traits
+/// because it carries caller-owned password bytes.
+pub struct AccountUnlockRequest<'a> {
+    pub password: &'a mut [u8],
+    pub user_salt: &'a [u8],
+    pub account_salt: &'a [u8],
+    pub wrapped_account_key: &'a [u8],
+    pub kdf_memory_kib: u32,
+    pub kdf_iterations: u32,
+    pub kdf_parallelism: u32,
+}
+
+/// FFI-safe account unlock result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountUnlockResult {
+    pub code: ClientErrorCode,
+    pub handle: u64,
+}
+
+impl AccountUnlockResult {
+    const fn ok(handle: u64) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            handle,
+        }
+    }
+
+    const fn error(code: ClientErrorCode) -> Self {
+        Self { code, handle: 0 }
+    }
 }
 
 /// FFI-safe identity handle result.
@@ -260,6 +297,22 @@ pub fn open_secret_handle(secret: &[u8]) -> Result<u64, ClientError> {
     Ok(handle)
 }
 
+/// Unwraps an account key and stores it behind a Rust-owned opaque handle.
+///
+/// The caller-provided password buffer is zeroized before this function returns on every path.
+#[must_use]
+pub fn unlock_account_key(request: AccountUnlockRequest<'_>) -> AccountUnlockResult {
+    match unlock_account_key_result(request) {
+        Ok(handle) => AccountUnlockResult::ok(handle),
+        Err(error) => AccountUnlockResult::error(error.code),
+    }
+}
+
+/// Returns whether an opaque account-key handle is still open.
+pub fn account_key_handle_is_open(handle: u64) -> Result<bool, ClientError> {
+    secret_handle_is_open(handle)
+}
+
 /// Returns whether an opaque secret handle is still open.
 pub fn secret_handle_is_open(handle: u64) -> Result<bool, ClientError> {
     let registry = secret_registry();
@@ -273,32 +326,81 @@ pub fn secret_handle_is_open(handle: u64) -> Result<bool, ClientError> {
     Ok(guard.get(&handle).is_some_and(|record| record.open))
 }
 
+/// Closes and wipes an opaque account-key handle, cascading to linked identity handles.
+pub fn close_account_key_handle(handle: u64) -> Result<(), ClientError> {
+    close_secret_handle(handle)
+}
+
 /// Closes and wipes a Rust-owned opaque secret handle.
 pub fn close_secret_handle(handle: u64) -> Result<(), ClientError> {
-    {
-        let registry = secret_registry();
-        let mut guard = registry.lock().map_err(|_| {
-            ClientError::new(
-                ClientErrorCode::InternalStatePoisoned,
-                "secret registry lock was poisoned",
-            )
-        })?;
+    let registry = secret_registry();
+    let mut guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "secret registry lock was poisoned",
+        )
+    })?;
 
-        match guard.remove(&handle) {
-            Some(mut record) if record.open => {
-                record.close();
-            }
-            _ => {
-                return Err(ClientError::new(
-                    ClientErrorCode::SecretHandleNotFound,
-                    "secret handle is not open",
-                ));
-            }
+    match guard.get_mut(&handle) {
+        Some(record) if record.open => {
+            record.open = false;
+        }
+        _ => {
+            return Err(ClientError::new(
+                ClientErrorCode::SecretHandleNotFound,
+                "secret handle is not open",
+            ));
         }
     }
 
-    close_identity_handles_for_account(handle)?;
+    if let Err(error) = close_identity_handles_for_account(handle) {
+        if let Some(record) = guard.get_mut(&handle) {
+            record.open = true;
+        }
+        return Err(error);
+    }
+
+    match guard.remove(&handle) {
+        Some(mut record) => {
+            record.close();
+        }
+        None => {
+            return Err(ClientError::new(
+                ClientErrorCode::SecretHandleNotFound,
+                "secret handle is not open",
+            ));
+        }
+    }
+
     Ok(())
+}
+
+fn unlock_account_key_result(request: AccountUnlockRequest<'_>) -> Result<u64, ClientError> {
+    let AccountUnlockRequest {
+        password,
+        user_salt,
+        account_salt,
+        wrapped_account_key,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    } = request;
+
+    let password_copy = Zeroizing::new(password.to_vec());
+    password.zeroize();
+
+    let profile = KdfProfile::new(kdf_memory_kib, kdf_iterations, kdf_parallelism)
+        .map_err(client_error_from_crypto)?;
+    let account_key = unwrap_account_key(
+        password_copy,
+        user_salt,
+        account_salt,
+        wrapped_account_key,
+        profile,
+    )
+    .map_err(client_error_from_crypto)?;
+
+    open_secret_handle(account_key.as_bytes())
 }
 
 /// Creates a new Rust-owned identity handle and returns the wrapped identity seed.

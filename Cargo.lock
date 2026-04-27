@@ -444,6 +444,7 @@ dependencies = [
  "mosaic-crypto",
  "mosaic-domain",
  "uniffi",
+ "zeroize",
 ]
 
 [[package]]

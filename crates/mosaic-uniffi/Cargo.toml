@@ -15,6 +15,7 @@ mosaic-client = { path = "../mosaic-client", version = "0.1.0" }
 mosaic-crypto = { path = "../mosaic-crypto", version = "0.1.0" }
 mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
 uniffi = { version = "=0.31.1", default-features = false, features = ["scaffolding-ffi-buffer-fns"] }
+zeroize = "=1.8.2"
 
 [lints]
 workspace = true
