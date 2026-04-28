@@ -1,19 +1,19 @@
 package org.mosaic.android.foundation
 
-private data class AutoImportTestCase(
+private data class AutoImportQueueContractTestCase(
   val name: String,
   val body: () -> Unit,
 )
 
 fun main() {
   val tests = listOf(
-    AutoImportTestCase("auto-import queue records reject privacy-forbidden fields", ::autoImportQueueRejectsPrivacyForbiddenFields),
-    AutoImportTestCase("manual picker uploads cannot replace logical photo records", ::manualPickerUploadsCannotReplaceLogicalPhotos),
-    AutoImportTestCase("retry backoff cancel and resume metadata stays privacy-safe", ::retryBackoffCancelAndResumeIsPrivacySafe),
-    AutoImportTestCase("asset drift creates replacement versions under same logical photo", ::assetDriftCreatesReplacementVersions),
-    AutoImportTestCase("TUS offset reconciliation is deterministic", ::tusOffsetReconciliationIsDeterministic),
-    AutoImportTestCase("manifest finalization is idempotent", ::manifestFinalizationIsIdempotent),
-    AutoImportTestCase("stuck encrypted staged data retention defaults to seven days", ::retentionDefaultsToSevenDays),
+    AutoImportQueueContractTestCase("auto-import queue records reject privacy-forbidden fields", ::autoImportQueueRejectsPrivacyForbiddenFields),
+    AutoImportQueueContractTestCase("manual picker uploads cannot replace logical photo records", ::manualPickerUploadsCannotReplaceLogicalPhotos),
+    AutoImportQueueContractTestCase("retry backoff cancel and resume metadata stays privacy-safe", ::retryBackoffCancelAndResumeIsPrivacySafe),
+    AutoImportQueueContractTestCase("asset drift creates replacement versions under same logical photo", ::assetDriftCreatesReplacementVersions),
+    AutoImportQueueContractTestCase("TUS offset reconciliation is deterministic", ::tusOffsetReconciliationIsDeterministic),
+    AutoImportQueueContractTestCase("manifest finalization is idempotent", ::manifestFinalizationIsIdempotent),
+    AutoImportQueueContractTestCase("stuck encrypted staged data retention defaults to seven days", ::retentionDefaultsToSevenDays),
   )
 
   var failed = 0
