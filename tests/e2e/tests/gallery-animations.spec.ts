@@ -9,6 +9,7 @@
  * incompatibility. See docs/TROUBLESHOOTING.md for details.
  */
 
+import type { Page } from '@playwright/test';
 import {
     AppShell,
     createAlbumViaUI,
@@ -19,6 +20,61 @@ import {
     test,
     TEST_PASSWORD
 } from '../fixtures-enhanced';
+
+const ANIMATION_POLL_INTERVALS = [100, 250, 500, 1000];
+
+async function waitForAnimationFrames(page: Page, frameCount = 2): Promise<void> {
+  await page.evaluate(
+    (frames) =>
+      new Promise<void>((resolve) => {
+        const step = () => {
+          frames -= 1;
+          if (frames <= 0) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }),
+    frameCount,
+  );
+}
+
+async function scrollPhotoGridToBottom(page: Page): Promise<void> {
+  const grid = page
+    .locator(
+      '[data-testid="photo-grid"], [data-testid="mosaic-photo-grid"], [data-testid="justified-grid"]',
+    )
+    .first();
+
+  await expect(grid).toBeVisible({ timeout: 10000 });
+  await grid.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  await waitForAnimationFrames(page);
+}
+
+async function waitForVisibleAnimationTilesSettled(
+  page: Page,
+  timeout = 10000,
+): Promise<void> {
+  await expect(async () => {
+    const states = await page.locator('.animated-tile:visible').evaluateAll((tiles) =>
+      tiles.map((tile) => ({
+        phase: tile.getAttribute('data-animation-phase'),
+        settled: tile.classList.contains('animation-settled'),
+      })),
+    );
+
+    expect(states.length).toBeGreaterThan(0);
+    for (const state of states) {
+      expect(state.phase).toBe('entered');
+      expect(state.settled).toBe(true);
+    }
+  }).toPass({ timeout, intervals: ANIMATION_POLL_INTERVALS });
+}
 
 test.describe('Gallery Animations @p2 @gallery @ui', () => {
   test.describe('Photo Enter Animations', () => {
@@ -222,20 +278,8 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
       // Wait for all photos
       await gallery.expectPhotoCount(12, 120000);
 
-      // Scroll to bottom
-      await user.page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-
-      // INTENTIONAL: Wait for scroll event to propagate and virtualization to update
-      await user.page.waitForTimeout(500);
-
-      // All visible tiles should eventually settle
-      const visibleTiles = user.page.locator('.animated-tile:visible');
-      const visibleCount = await visibleTiles.count();
-
-      if (visibleCount > 0) {
-        // At least first visible should be settled
-        await expect(visibleTiles.first()).toHaveClass(/animation-settled/, { timeout: 5000 });
-      }
+      await scrollPhotoGridToBottom(user.page);
+      await waitForVisibleAnimationTilesSettled(user.page);
     });
   });
 });

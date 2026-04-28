@@ -8,6 +8,7 @@
  * - Offline resilience
  */
 
+import type { Page, Response } from '@playwright/test';
 import {
   AppShell,
   CreateAlbumDialogPage,
@@ -22,6 +23,15 @@ import {
 } from '../fixtures-enhanced';
 import { waitForCondition, waitForNetworkIdle } from '../framework';
 import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT, UI_TIMEOUT } from '../framework/timeouts';
+
+const ALBUM_SYNC_ENDPOINT = /\/api\/albums\/[^/?]+\/sync\?/;
+
+function waitForAlbumSyncResponse(page: Page): Promise<Response> {
+  return page.waitForResponse(
+    (response) => ALBUM_SYNC_ENDPOINT.test(response.url()),
+    { timeout: 60000 },
+  );
+}
 
 test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
   // Run these tests serially to avoid resource contention between multi-browser sessions
@@ -651,38 +661,13 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
     await gallery1.waitForLoad();
     await gallery2.waitForLoad();
 
-    // Upload from both sessions concurrently
+    // Upload from both sessions concurrently. Use the page object's durable
+    // upload wait so both manifests are committed before the reload-based sync.
     const testImage = generateTestImage();
-
-    // For concurrent uploads, use setFileInput instead of uploadPhoto
-    // uploadPhoto waits for button state changes which can race between sessions
-    // Instead, trigger both uploads and then wait for results separately
-    
-    // Start uploads almost simultaneously using the low-level file input method
-    await gallery1.setFileInput(testImage, 'session1-photo.png');
-    await gallery2.setFileInput(testImage, 'session2-photo.png');
-
-    // Wait for uploads to complete on both sessions
-    // Each session should see at least one photo after their upload completes
-    await expect(gallery1.photos.first()).toBeVisible({ timeout: 60000 });
-    await expect(gallery2.photos.first()).toBeVisible({ timeout: 60000 });
-
-    // Wait for upload buttons to return to "Upload" state (not "Uploading")
-    // This ensures the uploads are fully committed before reload
-    const uploadBtn1 = page1.getByTestId('upload-button');
-    const uploadBtn2 = page2.getByTestId('upload-button');
-    
-    await expect(async () => {
-      const text1 = await uploadBtn1.textContent();
-      const text2 = await uploadBtn2.textContent();
-      expect(text1?.includes('Uploading')).toBe(false);
-      expect(text2?.includes('Uploading')).toBe(false);
-    }).toPass({ timeout: 60000, intervals: [500, 1000, 2000] });
-
-    // Each session should at minimum see its own upload completed
-    // Cross-session sync may take additional time, which is why we reload
-    await expect(gallery1.photos.first()).toBeVisible({ timeout: 60000 });
-    await expect(gallery2.photos.first()).toBeVisible({ timeout: 60000 });
+    await Promise.all([
+      gallery1.uploadPhoto(testImage, 'session1-photo.png'),
+      gallery2.uploadPhoto(Buffer.from(testImage), 'session2-photo.png'),
+    ]);
 
     // Wait for server to persist both uploads (API calls to complete)
     await waitForNetworkIdle(page1, { timeout: 30000, urlPattern: /\/api\// });
@@ -715,7 +700,11 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
     const appShell2 = new AppShell(page2);
     await appShell2.waitForLoad();
 
-    // Navigate to the album on both pages
+    // Navigate to the album on both pages. Arm sync response waits before
+    // clicking so the initial album sync cannot race past the test.
+    const page1InitialSync = waitForAlbumSyncResponse(page1);
+    const page2InitialSync = waitForAlbumSyncResponse(page2);
+
     await expect(page1.getByTestId('album-card').first()).toBeVisible({ timeout: 30000 });
     await expect(page2.getByTestId('album-card').first()).toBeVisible({ timeout: 30000 });
     await page1.getByTestId('album-card').first().click();
@@ -723,6 +712,20 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
 
     await gallery1.waitForLoad();
     await gallery2.waitForLoad();
+
+    const [page1SyncResponse, page2SyncResponse] = await Promise.all([
+      page1InitialSync,
+      page2InitialSync,
+    ]);
+    expect(page1SyncResponse.ok()).toBe(true);
+    expect(page2SyncResponse.ok()).toBe(true);
+
+    await Promise.all([
+      gallery1.waitForSync(),
+      gallery2.waitForSync(),
+      waitForNetworkIdle(page1, { timeout: 30000, urlPattern: /\/api\// }),
+      waitForNetworkIdle(page2, { timeout: 30000, urlPattern: /\/api\// }),
+    ]);
 
     // Both should show both photos (using polling wait instead of fixed timeout)
     await expect(async () => {
