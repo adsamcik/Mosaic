@@ -28,6 +28,11 @@ const tsCryptoCompatibilityAllowlist = new Map<string, string>([
   ['workers/types.ts', 'temporary EncryptedShard worker API type'],
 ]);
 
+const directSodiumPrimitiveAllowlist = new Map<string, string>([
+  ['workers/crypto.worker.ts', 'central TypeScript crypto compatibility facade'],
+  ['workers/db.worker.ts', 'local OPFS snapshot encryption adapter'],
+]);
+
 function normalizePath(path: string): string {
   return path.split(sep).join('/');
 }
@@ -95,5 +100,11 @@ describe('web Rust crypto cutover boundaries', () => {
     );
 
     expect(unclassified).toEqual([]);
+  });
+
+  it('keeps direct libsodium primitive imports behind known worker adapters', () => {
+    expect(importersMatching(/from\s+['"]libsodium-wrappers-sumo['"]/)).toEqual(
+      [...directSodiumPrimitiveAllowlist.keys()].sort(),
+    );
   });
 });
