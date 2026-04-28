@@ -25,6 +25,7 @@ object PassthroughManualUploadQueueStore : ManualUploadQueueStore {
 class AndroidManualUploadCoordinator(
   private val idFactory: ManualUploadQueueRecordIdFactory,
   private val queueStore: ManualUploadQueueStore = PassthroughManualUploadQueueStore,
+  private val clientCoreHandoff: ManualUploadClientCoreHandoff? = null,
 ) {
   fun readiness(
     sessionState: ShellSessionState,
@@ -71,11 +72,28 @@ class AndroidManualUploadCoordinator(
       return ManualUploadQueueResult.notQueued(ManualUploadStatus.INVALID_SELECTION)
     }
 
+    val storedRecord = try {
+      queueStore.createOrReturn(queueRecord)
+    } catch (_: RuntimeException) {
+      return ManualUploadQueueResult.notQueued(ManualUploadStatus.INTERNAL_ERROR)
+    }
+    val handoffRequest = ManualUploadClientCoreHandoffRequest.fromQueueRecord(storedRecord)
+    val handoffResult = try {
+      clientCoreHandoff?.prepareManualUpload(handoffRequest)
+    } catch (_: RuntimeException) {
+      ManualUploadClientCoreHandoffResult(
+        status = ManualUploadClientCoreHandoffStatus.DEFERRED,
+        uploadJobId = null,
+        acceptedByteCount = null,
+        stableCode = RustClientCoreUploadStableCode.CLIENT_CORE_INVALID_SNAPSHOT,
+      )
+    }
+
     return try {
-      val storedRecord = queueStore.createOrReturn(queueRecord)
       ManualUploadQueueResult.queued(
         queueRecord = storedRecord,
-        clientCoreHandoffRequest = ManualUploadClientCoreHandoffRequest.fromQueueRecord(storedRecord),
+        clientCoreHandoffRequest = handoffRequest,
+        clientCoreHandoffResult = handoffResult,
       )
     } catch (_: RuntimeException) {
       ManualUploadQueueResult.notQueued(ManualUploadStatus.INTERNAL_ERROR)
@@ -87,6 +105,7 @@ class ManualUploadQueueResult private constructor(
   val status: ManualUploadStatus,
   val queueRecord: PrivacySafeUploadQueueRecord?,
   val clientCoreHandoffRequest: ManualUploadClientCoreHandoffRequest?,
+  val clientCoreHandoffResult: ManualUploadClientCoreHandoffResult?,
 ) {
   init {
     require((status == ManualUploadStatus.QUEUED) == (queueRecord != null && clientCoreHandoffRequest != null)) {
@@ -111,16 +130,19 @@ class ManualUploadQueueResult private constructor(
         status = status,
         queueRecord = null,
         clientCoreHandoffRequest = null,
+        clientCoreHandoffResult = null,
       )
     }
 
     fun queued(
       queueRecord: PrivacySafeUploadQueueRecord,
       clientCoreHandoffRequest: ManualUploadClientCoreHandoffRequest,
+      clientCoreHandoffResult: ManualUploadClientCoreHandoffResult? = null,
     ): ManualUploadQueueResult = ManualUploadQueueResult(
       status = ManualUploadStatus.QUEUED,
       queueRecord = queueRecord,
       clientCoreHandoffRequest = clientCoreHandoffRequest,
+      clientCoreHandoffResult = clientCoreHandoffResult,
     )
   }
 }
@@ -130,6 +152,8 @@ value class ManualUploadJobId(val value: String) {
   init {
     require(value.isNotBlank()) { "upload job id is required" }
   }
+
+  override fun toString(): String = "ManualUploadJobId(<redacted>)"
 }
 
 @JvmInline
@@ -137,6 +161,8 @@ value class ManualUploadAssetId(val value: String) {
   init {
     require(value.isNotBlank()) { "asset id is required" }
   }
+
+  override fun toString(): String = "ManualUploadAssetId(<redacted>)"
 }
 
 enum class ManualUploadHandoffStage {
@@ -214,10 +240,18 @@ data class ManualUploadClientCoreHandoffResult(
   val status: ManualUploadClientCoreHandoffStatus,
   val uploadJobId: ManualUploadJobId?,
   val acceptedByteCount: Long?,
+  val stableCode: Int = 0,
+  val clientCorePhase: String? = null,
+  val clientCoreEffects: List<String> = emptyList(),
 ) {
   init {
     require(acceptedByteCount == null || acceptedByteCount >= 0) { "accepted byte count must not be negative" }
   }
+
+  override fun toString(): String =
+    "ManualUploadClientCoreHandoffResult(status=$status, uploadJobId=<opaque>, " +
+      "acceptedByteCount=$acceptedByteCount, stableCode=$stableCode, " +
+      "clientCorePhase=$clientCorePhase, clientCoreEffects=$clientCoreEffects)"
 }
 
 interface ManualUploadClientCoreHandoff {

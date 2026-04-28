@@ -20,6 +20,10 @@ fun main() {
     TestCase("manual upload queues from staged receipt without retaining raw URI", ::manualUploadQueuesFromStagedReceipt),
     TestCase("manual upload result strings redact staged sources and handles", ::manualUploadResultStringsRedactStagedSourcesAndHandles),
     TestCase("client core handoff DTO carries only opaque upload fields", ::clientCoreHandoffDtoCarriesOnlyOpaqueUploadFields),
+    TestCase("generated rust upload bridge maps manual handoff to client core state machine", ::generatedRustUploadBridgeMapsManualHandoffToClientCoreStateMachine),
+    TestCase("generated rust upload bridge maps invalid transition and init errors safely", ::generatedRustUploadBridgeMapsInvalidTransitionAndInitErrorsSafely),
+    TestCase("generated rust upload bridge strings redact staged source and client secrets", ::generatedRustUploadBridgeStringsRedactStagedSourceAndClientSecrets),
+    TestCase("manual upload coordinator optionally prepares client core handoff", ::manualUploadCoordinatorOptionallyPreparesClientCoreHandoff),
     TestCase("fake rust bridge models account unlock lifecycle", ::fakeRustBridgeModelsUnlockLifecycle),
     TestCase("generated rust bridge maps UniFFI account calls", ::generatedRustBridgeMapsUniFfiAccountCalls),
     TestCase("work policy defaults to foreground dataSync", ::workPolicyDefaultsToForegroundDataSync),
@@ -377,6 +381,140 @@ private fun clientCoreHandoffDtoCarriesOnlyOpaqueUploadFields() {
   }
 }
 
+private fun generatedRustUploadBridgeMapsManualHandoffToClientCoreStateMachine() {
+  val api = FakeGeneratedRustUploadApi()
+  val bridge = GeneratedRustUploadBridge(
+    api = api,
+    nowUnixMs = { 1_700_000_000_000 },
+    maxRetryCount = 3,
+  )
+  val record = validQueueRecord()
+  val request = ManualUploadClientCoreHandoffRequest.fromQueueRecord(
+    record = record,
+    uploadJobId = ManualUploadJobId("upload-job-1"),
+    assetId = ManualUploadAssetId("asset-1"),
+  )
+
+  val result = bridge.prepareManualUpload(request)
+
+  assertEquals(ManualUploadClientCoreHandoffStatus.ACCEPTED, result.status)
+  assertEquals(ManualUploadJobId("upload-job-1"), result.uploadJobId)
+  assertEquals(record.contentLengthBytes, result.acceptedByteCount)
+  assertEquals(RustClientCoreUploadStableCode.OK, result.stableCode)
+  assertEquals("AwaitingPreparedMedia", result.clientCorePhase)
+  assertEquals(listOf("PrepareMedia"), result.clientCoreEffects)
+
+  val initRequest = requireNotNull(api.lastInitRequest) { "bridge must initialize upload state machine" }
+  assertEquals("upload-job-1", initRequest.jobId)
+  assertEquals("album-1", initRequest.albumId)
+  assertEquals("asset-1", initRequest.assetId)
+  assertEquals(0, initRequest.epochId)
+  assertEquals(1_700_000_000_000, initRequest.nowUnixMs)
+  assertEquals(3, initRequest.maxRetryCount)
+  assertEquals("StartRequested", api.lastAdvanceEvent?.kind)
+}
+
+private fun generatedRustUploadBridgeMapsInvalidTransitionAndInitErrorsSafely() {
+  val invalidTransitionApi = FakeGeneratedRustUploadApi(
+    advanceCode = RustClientCoreUploadStableCode.CLIENT_CORE_INVALID_TRANSITION,
+  )
+  val invalidTransition = GeneratedRustUploadBridge(invalidTransitionApi)
+    .prepareManualUpload(clientCoreUploadRequestWithSecrets())
+
+  assertEquals(ManualUploadClientCoreHandoffStatus.REJECTED, invalidTransition.status)
+  assertEquals(RustClientCoreUploadStableCode.CLIENT_CORE_INVALID_TRANSITION, invalidTransition.stableCode)
+  assertEquals(null, invalidTransition.uploadJobId)
+  assertEquals(null, invalidTransition.acceptedByteCount)
+
+  val invalidSnapshotApi = FakeGeneratedRustUploadApi(
+    initCode = RustClientCoreUploadStableCode.CLIENT_CORE_INVALID_SNAPSHOT,
+  )
+  val invalidSnapshot = GeneratedRustUploadBridge(invalidSnapshotApi)
+    .prepareManualUpload(clientCoreUploadRequestWithSecrets())
+
+  assertEquals(ManualUploadClientCoreHandoffStatus.REJECTED, invalidSnapshot.status)
+  assertEquals(RustClientCoreUploadStableCode.CLIENT_CORE_INVALID_SNAPSHOT, invalidSnapshot.stableCode)
+  assertEquals(null, invalidSnapshot.uploadJobId)
+  assertEquals(null, invalidSnapshot.acceptedByteCount)
+}
+
+private fun generatedRustUploadBridgeStringsRedactStagedSourceAndClientSecrets() {
+  val request = clientCoreUploadRequestWithSecrets()
+  val ffiRequest = RustClientCoreUploadJobFfiRequest.from(
+    request = request,
+    nowUnixMs = 1_700_000_000_000,
+    maxRetryCount = 2,
+  )
+  val snapshot = RustClientCoreUploadJobFfiSnapshot.initialFrom(ffiRequest)
+  val snapshotWithRefs = snapshot.copy(
+    completedShards = listOf(
+      RustClientCoreUploadShardRef(
+        tier = 1,
+        shardIndex = 2,
+        shardId = "raw-client-secret-shard",
+        sha256 = "raw-client-secret-sha256",
+        uploaded = true,
+      ),
+    ),
+    hasManifestReceipt = true,
+    manifestReceipt = RustClientCoreManifestReceipt(
+      manifestId = "raw-client-secret-manifest",
+      manifestVersion = 1,
+    ),
+  )
+  val event = RustClientCoreUploadJobFfiEvent.startRequested()
+  val result = GeneratedRustUploadBridge(FakeGeneratedRustUploadApi())
+    .prepareManualUpload(request)
+
+  val rendered = listOf(
+    ffiRequest.toString(),
+    snapshot.toString(),
+    snapshotWithRefs.toString(),
+    event.toString(),
+    RustClientCoreUploadJobFfiEffect.prepareMedia().toString(),
+    result.toString(),
+  )
+  val forbidden = listOf(
+    "mosaic-staged://",
+    "content://",
+    "client-secret",
+    "raw-client-secret",
+    "raw picker",
+    "filename",
+    "EXIF",
+    "GPS",
+  )
+
+  for (text in rendered) {
+    for (term in forbidden) {
+      assertFalse(text.contains(term, ignoreCase = true))
+    }
+  }
+}
+
+private fun manualUploadCoordinatorOptionallyPreparesClientCoreHandoff() {
+  val handoff = FakeManualUploadClientCoreHandoff()
+  val coordinator = manualUploadCoordinator(
+    store = FakeManualUploadQueueStore(),
+    handoff = handoff,
+  )
+
+  val result = coordinator.queueOnePhoto(
+    sessionState = authenticatedUnlockedSession(),
+    destinationAlbumId = AlbumId("album-1"),
+    receipt = stagedUploadReceipt(),
+  )
+
+  assertEquals(ManualUploadStatus.QUEUED, result.status)
+  val request = requireNotNull(result.clientCoreHandoffRequest) { "queued result must include handoff request" }
+  assertEquals(request, handoff.lastRequest)
+  val handoffResult = requireNotNull(result.clientCoreHandoffResult) {
+    "coordinator must retain optional client-core handoff result"
+  }
+  assertEquals(ManualUploadClientCoreHandoffStatus.ACCEPTED, handoffResult.status)
+  assertEquals(request.byteCount, handoffResult.acceptedByteCount)
+}
+
 private fun fakeRustBridgeModelsUnlockLifecycle() {
   val bridge = FakeRustAccountBridge()
   assertEquals("mosaic-v1", bridge.protocolVersion())
@@ -602,6 +740,20 @@ private fun validQueueRecordForPublicStringScan(staged: StagedMediaReference): P
     createdAtEpochMillis = 3001,
   )
 
+private fun clientCoreUploadRequestWithSecrets(): ManualUploadClientCoreHandoffRequest =
+  ManualUploadClientCoreHandoffRequest.fromQueueRecord(
+    record = PrivacySafeUploadQueueRecord.create(
+      id = QueueRecordId("raw-client-secret-queue"),
+      serverAccountId = ServerAccountId("server-account-1"),
+      albumId = AlbumId("album-1"),
+      stagedSource = StagedMediaReference.of("mosaic-staged://raw-client-secret/source"),
+      contentLengthBytes = 512,
+      createdAtEpochMillis = 3002,
+    ),
+    uploadJobId = ManualUploadJobId("raw-client-secret-upload-job"),
+    assetId = ManualUploadAssetId("raw-client-secret-asset"),
+  )
+
 private fun authenticatedUnlockedSession(): ShellSessionState = ShellSessionState.initial()
   .withServerAuthenticated(ServerAccountId("server-account-1"))
   .withCryptoUnlocked(AccountKeyHandle(42), "mosaic-v1")
@@ -614,9 +766,11 @@ private fun stagedUploadReceipt(): PhotoPickerReadReceipt = PhotoPickerReadRecei
 
 private fun manualUploadCoordinator(
   store: ManualUploadQueueStore = FakeManualUploadQueueStore(),
+  handoff: ManualUploadClientCoreHandoff? = null,
 ): AndroidManualUploadCoordinator = AndroidManualUploadCoordinator(
   idFactory = ManualUploadQueueRecordIdFactory { _, _ -> QueueRecordId("queue-manual-1") },
   queueStore = store,
+  clientCoreHandoff = handoff,
 )
 
 private fun unlockRequest(): AccountUnlockRequest = AccountUnlockRequest(
@@ -701,6 +855,38 @@ private class FakeGeneratedRustMediaApi(
   override fun planMediaTiers(request: RustMediaPlanFfiRequest): RustMediaPlanFfiResult {
     lastRequest = request
     return results.removeFirst()
+  }
+}
+
+private class FakeGeneratedRustUploadApi(
+  private val initCode: Int = RustClientCoreUploadStableCode.OK,
+  private val advanceCode: Int = RustClientCoreUploadStableCode.OK,
+) : GeneratedRustUploadApi {
+  var lastInitRequest: RustClientCoreUploadJobFfiRequest? = null
+    private set
+  var lastAdvanceSnapshot: RustClientCoreUploadJobFfiSnapshot? = null
+    private set
+  var lastAdvanceEvent: RustClientCoreUploadJobFfiEvent? = null
+    private set
+
+  override fun initUploadJob(request: RustClientCoreUploadJobFfiRequest): RustClientCoreUploadJobFfiResult {
+    lastInitRequest = request
+    return RustClientCoreUploadJobFfiResult(
+      code = initCode,
+      snapshot = RustClientCoreUploadJobFfiSnapshot.initialFrom(request),
+    )
+  }
+
+  override fun advanceUploadJob(
+    snapshot: RustClientCoreUploadJobFfiSnapshot,
+    event: RustClientCoreUploadJobFfiEvent,
+  ): RustClientCoreUploadJobTransitionFfiResult {
+    lastAdvanceSnapshot = snapshot
+    lastAdvanceEvent = event
+    return RustClientCoreUploadJobTransitionFfiResult(
+      code = advanceCode,
+      transition = RustClientCoreUploadJobFfiTransition.awaitingPreparedMedia(snapshot),
+    )
   }
 }
 
