@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,12 @@ interface ContractShard {
   tier: number;
   index: number;
   shardId: string;
+  sha256: string;
+}
+
+interface ContractWebShard {
+  id: string;
+  bytesBase64: string;
   sha256: string;
 }
 
@@ -39,11 +46,7 @@ interface ContractFixture {
     shardIds: string[];
     tieredShards: Array<{ shardId: string; tier: number }>;
   };
-  webShard: {
-    id: string;
-    bytesBase64: string;
-    sha256: string;
-  };
+  webShards: ContractWebShard[];
   forbiddenPlaintextTerms: string[];
 }
 
@@ -105,6 +108,19 @@ function loadFixture(): ContractFixture {
 
 function fromBase64(value: string): Uint8Array {
   return new Uint8Array(Buffer.from(value, 'base64'));
+}
+
+function sha256Hex(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function verifiedShardBytes(shard: ContractWebShard): Uint8Array {
+  const bytes = fromBase64(shard.bytesBase64);
+  expect(
+    sha256Hex(bytes),
+    `fixture bytes for shard ${shard.id} must match declared sha256`,
+  ).toBe(shard.sha256);
+  return bytes;
 }
 
 function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -247,39 +263,111 @@ describe('Android manual upload cross-client contract', () => {
     }
   });
 
-  it('downloads the fixture shard as opaque bytes without decoding plaintext metadata', async () => {
+  it('cryptographically verifies every completed shard hash against fixture bytes', () => {
     const fixture = loadFixture();
-    const shardBytes = fromBase64(fixture.webShard.bytesBase64);
+    const completedShardIds = fixture.clientCore.completedShards
+      .map((shard) => shard.shardId)
+      .sort();
+    const webShardIds = fixture.webShards.map((shard) => shard.id).sort();
+
+    expect(new Set(completedShardIds).size).toBe(completedShardIds.length);
+    expect(new Set(webShardIds).size).toBe(webShardIds.length);
+    expect(webShardIds).toEqual(completedShardIds);
+    expect([...fixture.backendManifestRequest.shardIds].sort()).toEqual(
+      completedShardIds,
+    );
+    expect(
+      fixture.backendManifestRequest.tieredShards
+        .map((shard) => shard.shardId)
+        .sort(),
+    ).toEqual(completedShardIds);
+
+    const webShardsById = new Map(
+      fixture.webShards.map((shard) => [shard.id, shard]),
+    );
+    for (const completedShard of fixture.clientCore.completedShards) {
+      const webShard = webShardsById.get(completedShard.shardId);
+      if (!webShard) {
+        throw new Error(
+          `completed shard ${completedShard.shardId} must include fixture bytes`,
+        );
+      }
+
+      expect(completedShard.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(webShard.sha256).toBe(completedShard.sha256);
+      expect(sha256Hex(fromBase64(webShard.bytesBase64))).toBe(
+        completedShard.sha256,
+      );
+    }
+  });
+
+  it('downloads the fixture shards as opaque bytes without decoding plaintext metadata', async () => {
+    const fixture = loadFixture();
+    const shardBytesById = new Map(
+      fixture.webShards.map((shard) => [shard.id, verifiedShardBytes(shard)]),
+    );
     const progress = vi.fn();
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      headers: {
-        get: vi.fn((name: string) =>
-          name.toLowerCase() === 'content-length'
-            ? String(shardBytes.byteLength)
-            : null,
-        ),
-      },
-      body: null,
-      arrayBuffer: vi.fn().mockResolvedValue(asArrayBuffer(shardBytes)),
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const requestUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.pathname
+            : input.url;
+      const shardId = requestUrl.slice(requestUrl.lastIndexOf('/') + 1);
+      const shardBytes = shardBytesById.get(shardId);
+      if (!shardBytes) {
+        throw new Error(`unexpected shard download request for ${shardId}`);
+      }
+
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: {
+          get: vi.fn((name: string) =>
+            name.toLowerCase() === 'content-length'
+              ? String(shardBytes.byteLength)
+              : null,
+          ),
+        },
+        body: null,
+        arrayBuffer: vi.fn().mockResolvedValue(asArrayBuffer(shardBytes)),
+      });
     });
     globalThis.fetch = fetchMock;
 
-    const downloaded = await downloadShard(fixture.webShard.id, progress);
+    for (const webShard of fixture.webShards) {
+      const expectedBytes = shardBytesById.get(webShard.id);
+      if (!expectedBytes) {
+        throw new Error(
+          `missing verified bytes for fixture shard ${webShard.id}`,
+        );
+      }
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      `/api/shards/${fixture.webShard.id}`,
-      { credentials: 'same-origin' },
-    );
-    expect(downloaded).toEqual(shardBytes);
-    expect(progress).toHaveBeenCalledWith(
-      shardBytes.byteLength,
-      shardBytes.byteLength,
-    );
-    const renderedBytes = Buffer.from(downloaded).toString('utf8');
-    for (const forbidden of fixture.forbiddenPlaintextTerms) {
-      expect(renderedBytes).not.toContain(forbidden);
+      const downloaded = await downloadShard(webShard.id, progress);
+
+      expect(downloaded).toEqual(expectedBytes);
+      const renderedBytes = Buffer.from(downloaded).toString('utf8');
+      for (const forbidden of fixture.forbiddenPlaintextTerms) {
+        expect(renderedBytes).not.toContain(forbidden);
+      }
+    }
+    for (const [index, webShard] of fixture.webShards.entries()) {
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        index + 1,
+        `/api/shards/${webShard.id}`,
+        { credentials: 'same-origin' },
+      );
+      const shardBytes = shardBytesById.get(webShard.id);
+      if (!shardBytes) {
+        throw new Error(
+          `missing verified bytes for fixture shard ${webShard.id}`,
+        );
+      }
+      expect(progress).toHaveBeenCalledWith(
+        shardBytes.byteLength,
+        shardBytes.byteLength,
+      );
     }
   });
 });

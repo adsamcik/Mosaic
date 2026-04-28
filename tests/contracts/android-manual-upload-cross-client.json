@@ -27,13 +27,13 @@
         "tier": 2,
         "index": 1,
         "shardId": "018f05a4-8b31-7c00-8c00-000000000302",
-        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "sha256": "153bf799afb8f6dbada558f0007131142160f97ab4e31359a2dd5627ce89200e"
       },
       {
         "tier": 3,
         "index": 2,
         "shardId": "018f05a4-8b31-7c00-8c00-000000000303",
-        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        "sha256": "44c59663cbdb3db443191b71986ecfcd7ae686cc288230c5db11420636dd4884"
       }
     ],
     "manifestReceipt": {
@@ -80,11 +80,23 @@
       "018f05a4-8b31-7c00-8c00-000000000303"
     ]
   },
-  "webShard": {
-    "id": "018f05a4-8b31-7c00-8c00-000000000301",
-    "bytesBase64": "U0d6awMFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJA==",
-    "sha256": "f2adc50b7efb0dff2bd7c9387dbf2c8f7dda53b97d65b64513b7e52406f6df24"
-  },
+  "webShards": [
+    {
+      "id": "018f05a4-8b31-7c00-8c00-000000000301",
+      "bytesBase64": "U0d6awMFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJA==",
+      "sha256": "f2adc50b7efb0dff2bd7c9387dbf2c8f7dda53b97d65b64513b7e52406f6df24"
+    },
+    {
+      "id": "018f05a4-8b31-7c00-8c00-000000000302",
+      "bytesBase64": "oKOmqayvsrW4u77BxMfKzdDT1tnc3+Ll6Ovu8fT3+v0AAwYJDA8SFRgbHiEkJyot",
+      "sha256": "153bf799afb8f6dbada558f0007131142160f97ab4e31359a2dd5627ce89200e"
+    },
+    {
+      "id": "018f05a4-8b31-7c00-8c00-000000000303",
+      "bytesBase64": "XUx/bhkIOyrVxPfmkYCzok18bx4JOCvaxfTnloGwo1J9bB8OOSjbyvXkl4axoFNCbRwPPinYy/rllIe2oVBDcg==",
+      "sha256": "44c59663cbdb3db443191b71986ecfcd7ae686cc288230c5db11420636dd4884"
+    }
+  ],
   "forbiddenPlaintextTerms": [
     "IMG_0001.jpg",
     "content://",
