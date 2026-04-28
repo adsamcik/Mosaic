@@ -107,4 +107,12 @@ describe('web Rust crypto cutover boundaries', () => {
       [...directSodiumPrimitiveAllowlist.keys()].sort(),
     );
   });
+
+  it('keeps reference-only TypeScript crypto mocks out of production web source', () => {
+    expect(
+      importersMatching(
+        /(?:from\s+['"][^'"]*(?:@mosaic\/crypto\/mock|libs\/crypto\/src\/mock|\/src\/mock)['"]|import\(\s*['"][^'"]*(?:@mosaic\/crypto\/mock|libs\/crypto\/src\/mock|\/src\/mock)['"]\s*\))/,
+      ),
+    ).toEqual([]);
+  });
 });
