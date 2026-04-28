@@ -1,0 +1,102 @@
+{
+  "contractVersion": 1,
+  "proofName": "android-manual-upload-cross-client",
+  "androidHandoff": {
+    "uploadJobId": "upload-job-band3-cross-client",
+    "albumId": "018f05a4-8b31-7c00-8c00-0000000000a3",
+    "assetId": "asset-band3-cross-client",
+    "queueRecordId": "queue-band3-cross-client",
+    "stagedSource": "mosaic-staged://band3-cross-client/source",
+    "byteCount": 6144,
+    "stage": "STAGED_SOURCE_READY"
+  },
+  "clientCore": {
+    "localJobId": "queue-band3-cross-client",
+    "uploadId": "upload-job-band3-cross-client",
+    "albumId": "018f05a4-8b31-7c00-8c00-0000000000a3",
+    "assetId": "asset-band3-cross-client",
+    "epochId": 7,
+    "completedShards": [
+      {
+        "tier": 1,
+        "index": 0,
+        "shardId": "018f05a4-8b31-7c00-8c00-000000000301",
+        "sha256": "f2adc50b7efb0dff2bd7c9387dbf2c8f7dda53b97d65b64513b7e52406f6df24"
+      },
+      {
+        "tier": 2,
+        "index": 1,
+        "shardId": "018f05a4-8b31-7c00-8c00-000000000302",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "tier": 3,
+        "index": 2,
+        "shardId": "018f05a4-8b31-7c00-8c00-000000000303",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "manifestReceipt": {
+      "manifestId": "018f05a4-8b31-7c00-8c00-0000000000b3",
+      "version": 12
+    }
+  },
+  "backendManifestRequest": {
+    "albumId": "018f05a4-8b31-7c00-8c00-0000000000a3",
+    "encryptedMetaBase64": "wwEA/xAgMEBVZneI",
+    "signature": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+Pw==",
+    "signerPubkey": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "shardIds": [
+      "018f05a4-8b31-7c00-8c00-000000000301",
+      "018f05a4-8b31-7c00-8c00-000000000302",
+      "018f05a4-8b31-7c00-8c00-000000000303"
+    ],
+    "tieredShards": [
+      {
+        "shardId": "018f05a4-8b31-7c00-8c00-000000000301",
+        "tier": 1
+      },
+      {
+        "shardId": "018f05a4-8b31-7c00-8c00-000000000302",
+        "tier": 2
+      },
+      {
+        "shardId": "018f05a4-8b31-7c00-8c00-000000000303",
+        "tier": 3
+      }
+    ]
+  },
+  "webSyncManifest": {
+    "id": "018f05a4-8b31-7c00-8c00-0000000000b3",
+    "albumId": "018f05a4-8b31-7c00-8c00-0000000000a3",
+    "versionCreated": 12,
+    "isDeleted": false,
+    "encryptedMeta": "wwEA/xAgMEBVZneI",
+    "signature": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+Pw==",
+    "signerPubkey": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "shardIds": [
+      "018f05a4-8b31-7c00-8c00-000000000301",
+      "018f05a4-8b31-7c00-8c00-000000000302",
+      "018f05a4-8b31-7c00-8c00-000000000303"
+    ]
+  },
+  "webShard": {
+    "id": "018f05a4-8b31-7c00-8c00-000000000301",
+    "bytesBase64": "U0d6awMFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJA==",
+    "sha256": "f2adc50b7efb0dff2bd7c9387dbf2c8f7dda53b97d65b64513b7e52406f6df24"
+  },
+  "forbiddenPlaintextTerms": [
+    "IMG_0001.jpg",
+    "content://",
+    "file://",
+    "gps",
+    "latitude",
+    "longitude",
+    "EXIF",
+    "caption",
+    "rawKey",
+    "decryptedMetadata",
+    "PLAINTEXT",
+    "RAW_MEDIA"
+  ]
+}

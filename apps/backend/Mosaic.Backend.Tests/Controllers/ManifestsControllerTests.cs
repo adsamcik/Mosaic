@@ -84,6 +84,105 @@ public class ManifestsControllerTests
     }
 
     [Fact]
+    public async Task Create_AcceptsCrossClientManualUploadFixture_AndPreservesOpaqueFields()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+        var fixture = LoadCrossClientContractFixture();
+        var manifestRequest = fixture.GetProperty("backendManifestRequest");
+        var androidHandoff = fixture.GetProperty("androidHandoff");
+        var clientCore = fixture.GetProperty("clientCore");
+        var albumId = Guid.Parse(FixtureString(manifestRequest, "albumId"));
+        var encryptedMeta = Convert.FromBase64String(FixtureString(manifestRequest, "encryptedMetaBase64"));
+        var signature = FixtureString(manifestRequest, "signature");
+        var signerPubkey = FixtureString(manifestRequest, "signerPubkey");
+        var tieredShards = FixtureTieredShards(manifestRequest);
+        var shardIds = tieredShards.Select(shard => shard.ShardId).ToList();
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        db.Albums.Add(new Album
+        {
+            Id = albumId,
+            OwnerId = owner.Id,
+            CurrentEpochId = FixtureInt(clientCore, "epochId"),
+            CurrentVersion = FixtureLong(clientCore.GetProperty("manifestReceipt"), "version") - 1,
+            EncryptedName = "opaque-album-name"
+        });
+        db.AlbumMembers.Add(new AlbumMember
+        {
+            AlbumId = albumId,
+            UserId = owner.Id,
+            Role = AlbumRoles.Owner
+        });
+        db.AlbumLimits.Add(new AlbumLimits
+        {
+            AlbumId = albumId,
+            CurrentPhotoCount = 0,
+            CurrentSizeBytes = 0
+        });
+
+        foreach (var tieredShard in tieredShards)
+        {
+            db.Shards.Add(new Shard
+            {
+                Id = Guid.Parse(tieredShard.ShardId),
+                UploaderId = owner.Id,
+                StorageKey = $"band3-contract/{tieredShard.ShardId}",
+                SizeBytes = FixtureLong(androidHandoff, "byteCount") / tieredShards.Count,
+                Status = ShardStatus.PENDING
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var request = new CreateManifestRequest(
+            AlbumId: albumId,
+            EncryptedMeta: encryptedMeta,
+            Signature: signature,
+            SignerPubkey: signerPubkey,
+            ShardIds: shardIds,
+            TieredShards: tieredShards);
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        // Act
+        var createResult = await controller.Create(request);
+
+        // Assert
+        var createdResult = Assert.IsType<CreatedResult>(createResult);
+        var responseJson = JsonSerializer.Serialize(createdResult.Value);
+        foreach (var forbidden in FixtureForbiddenPlaintextTerms(fixture))
+        {
+            Assert.DoesNotContain(forbidden, responseJson, StringComparison.Ordinal);
+            Assert.DoesNotContain(forbidden, JsonSerializer.Serialize(request), StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain(FixtureString(manifestRequest, "encryptedMetaBase64"), responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(signature, responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(signerPubkey, responseJson, StringComparison.Ordinal);
+
+        var manifestId = GetResponseProperty<Guid>(createdResult.Value, "Id");
+        var persisted = await db.Manifests.SingleAsync(m => m.Id == manifestId);
+        Assert.Equal(albumId, persisted.AlbumId);
+        Assert.Equal(encryptedMeta, persisted.EncryptedMeta);
+        Assert.Equal(signature, persisted.Signature);
+        Assert.Equal(signerPubkey, persisted.SignerPubkey);
+        Assert.Equal(FixtureLong(clientCore.GetProperty("manifestReceipt"), "version"), persisted.VersionCreated);
+
+        var linkedShards = await db.ManifestShards
+            .Where(ms => ms.ManifestId == manifestId)
+            .OrderBy(ms => ms.ChunkIndex)
+            .ToListAsync();
+        Assert.Equal(tieredShards.Count, linkedShards.Count);
+        for (var index = 0; index < tieredShards.Count; index++)
+        {
+            Assert.Equal(Guid.Parse(tieredShards[index].ShardId), linkedShards[index].ShardId);
+            Assert.Equal(tieredShards[index].Tier, linkedShards[index].Tier);
+            Assert.Equal(ShardStatus.ACTIVE, (await db.Shards.SingleAsync(s => s.Id == linkedShards[index].ShardId)).Status);
+        }
+    }
+
+    [Fact]
     public async Task Create_ReturnsGenericShardError_WithoutEchoingOpaqueAndroidManifestFields()
     {
         // Arrange
@@ -602,4 +701,51 @@ public class ManifestsControllerTests
             Convert.ToBase64String(encryptedMeta),
             Convert.ToBase64String(TestDataBuilder.GenerateRandomBytes(64)),
             Convert.ToBase64String(signerPubkey));
+
+    private static JsonElement LoadCrossClientContractFixture()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                "tests",
+                "contracts",
+                "android-manual-upload-cross-client.json");
+            if (File.Exists(candidate))
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(candidate));
+                return document.RootElement.Clone();
+            }
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("Unable to locate android manual upload cross-client contract fixture");
+    }
+
+    private static string FixtureString(JsonElement element, string propertyName)
+        => element.GetProperty(propertyName).GetString()
+            ?? throw new InvalidOperationException($"Fixture property {propertyName} is missing");
+
+    private static int FixtureInt(JsonElement element, string propertyName)
+        => element.GetProperty(propertyName).GetInt32();
+
+    private static long FixtureLong(JsonElement element, string propertyName)
+        => element.GetProperty(propertyName).GetInt64();
+
+    private static List<TieredShardInfo> FixtureTieredShards(JsonElement manifestRequest)
+        => manifestRequest
+            .GetProperty("tieredShards")
+            .EnumerateArray()
+            .Select(shard => new TieredShardInfo(
+                FixtureString(shard, "shardId"),
+                FixtureInt(shard, "tier")))
+            .ToList();
+
+    private static List<string> FixtureForbiddenPlaintextTerms(JsonElement fixture)
+        => fixture
+            .GetProperty("forbiddenPlaintextTerms")
+            .EnumerateArray()
+            .Select(term => term.GetString() ?? throw new InvalidOperationException("Fixture forbidden term is missing"))
+            .ToList();
 }

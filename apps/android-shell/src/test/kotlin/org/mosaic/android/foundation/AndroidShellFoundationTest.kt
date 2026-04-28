@@ -1,5 +1,8 @@
 package org.mosaic.android.foundation
 
+import java.nio.file.Files
+import java.nio.file.Paths
+
 private data class TestCase(
   val name: String,
   val body: () -> Unit,
@@ -24,6 +27,7 @@ fun main() {
     TestCase("generated rust upload bridge maps invalid transition and init errors safely", ::generatedRustUploadBridgeMapsInvalidTransitionAndInitErrorsSafely),
     TestCase("generated rust upload bridge strings redact staged source and client secrets", ::generatedRustUploadBridgeStringsRedactStagedSourceAndClientSecrets),
     TestCase("manual upload coordinator optionally prepares client core handoff", ::manualUploadCoordinatorOptionallyPreparesClientCoreHandoff),
+    TestCase("cross-client fixture maps to opaque manual upload handoff", ::crossClientFixtureMapsToOpaqueManualUploadHandoff),
     TestCase("fake rust bridge models account unlock lifecycle", ::fakeRustBridgeModelsUnlockLifecycle),
     TestCase("generated rust bridge maps UniFFI account calls", ::generatedRustBridgeMapsUniFfiAccountCalls),
     TestCase("work policy defaults to foreground dataSync", ::workPolicyDefaultsToForegroundDataSync),
@@ -515,6 +519,42 @@ private fun manualUploadCoordinatorOptionallyPreparesClientCoreHandoff() {
   assertEquals(request.byteCount, handoffResult.acceptedByteCount)
 }
 
+private fun crossClientFixtureMapsToOpaqueManualUploadHandoff() {
+  val fixture = crossClientContractFixture()
+  val record = PrivacySafeUploadQueueRecord.create(
+    id = QueueRecordId(fixtureString(fixture, "queueRecordId")),
+    serverAccountId = ServerAccountId("server-account-band3-contract"),
+    albumId = AlbumId(fixtureString(fixture, "albumId")),
+    stagedSource = StagedMediaReference.of(fixtureString(fixture, "stagedSource")),
+    contentLengthBytes = fixtureLong(fixture, "byteCount"),
+    createdAtEpochMillis = 1_700_000_000_000,
+  )
+  val request = ManualUploadClientCoreHandoffRequest.fromQueueRecord(
+    record = record,
+    uploadJobId = ManualUploadJobId(fixtureString(fixture, "uploadJobId")),
+    assetId = ManualUploadAssetId(fixtureString(fixture, "assetId")),
+  )
+  val handoff = FakeManualUploadClientCoreHandoff()
+
+  val accepted = handoff.prepareManualUpload(request)
+
+  assertEquals(ManualUploadClientCoreHandoffStatus.ACCEPTED, accepted.status)
+  assertEquals(request.uploadJobId, accepted.uploadJobId)
+  assertEquals(record.contentLengthBytes, accepted.acceptedByteCount)
+  assertEquals(record.albumId, request.albumId)
+  assertEquals(record.id, request.queueRecordId)
+  assertEquals(record.stagedSource, request.stagedSource)
+  assertEquals(ManualUploadHandoffStage.STAGED_SOURCE_READY, request.stage)
+  assertTrue(fixture.contains("\"backendManifestRequest\""))
+  assertTrue(fixture.contains("\"webSyncManifest\""))
+  assertTrue(fixture.contains("\"tieredShards\""))
+
+  val rendered = listOf(record.toString(), request.toString(), accepted.toString()).joinToString("\n")
+  fixtureForbiddenTerms(fixture).forEach { forbidden ->
+    assertFalse(rendered.contains(forbidden, ignoreCase = true))
+  }
+}
+
 private fun fakeRustBridgeModelsUnlockLifecycle() {
   val bridge = FakeRustAccountBridge()
   assertEquals("mosaic-v1", bridge.protocolVersion())
@@ -763,6 +803,42 @@ private fun stagedUploadReceipt(): PhotoPickerReadReceipt = PhotoPickerReadRecei
   contentLengthBytes = 2048,
   stagedAtEpochMillis = 7001,
 )
+
+private fun crossClientContractFixture(): String {
+  val start = Paths.get(System.getProperty("user.dir")).toAbsolutePath()
+  val fixture = generateSequence(start) { it.parent }
+    .map { it.resolve("tests").resolve("contracts").resolve("android-manual-upload-cross-client.json") }
+    .firstOrNull { Files.exists(it) }
+    ?: throw IllegalStateException("Unable to locate android manual upload cross-client contract fixture")
+  return Files.readString(fixture)
+}
+
+private fun fixtureString(fixture: String, property: String): String =
+  Regex("\"${Regex.escape(property)}\"\\s*:\\s*\"([^\"]+)\"")
+    .find(fixture)
+    ?.groupValues
+    ?.get(1)
+    ?: throw AssertionError("Missing string fixture property $property")
+
+private fun fixtureLong(fixture: String, property: String): Long =
+  Regex("\"${Regex.escape(property)}\"\\s*:\\s*(\\d+)")
+    .find(fixture)
+    ?.groupValues
+    ?.get(1)
+    ?.toLong()
+    ?: throw AssertionError("Missing numeric fixture property $property")
+
+private fun fixtureForbiddenTerms(fixture: String): List<String> {
+  val terms = Regex(
+    "\"forbiddenPlaintextTerms\"\\s*:\\s*\\[(.*?)]",
+    setOf(RegexOption.DOT_MATCHES_ALL),
+  ).find(fixture)
+    ?.groupValues
+    ?.get(1)
+    ?: throw AssertionError("Missing forbidden plaintext terms in fixture")
+
+  return Regex("\"([^\"]+)\"").findAll(terms).map { it.groupValues[1] }.toList()
+}
 
 private fun manualUploadCoordinator(
   store: ManualUploadQueueStore = FakeManualUploadQueueStore(),
