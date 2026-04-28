@@ -10,6 +10,7 @@ The module contains only foundation contracts:
 - a media generation port stub and generated-UniFFI media bridge seam for future media-tier integration;
 - a Photo Picker immediate-read abstraction;
 - privacy-safe upload queue records;
+- auto-import durable queue contracts for local-only dedupe identity, asset drift/version replacement, TUS offset reconciliation, idempotent manifest finalization, retry/cancel/resume metadata, and 7-day staged-data retention;
 - foreground `dataSync` work policy defaults.
 - an auto-import scheduler/progress/cancellation seam with upload-only background capability modeling.
 
