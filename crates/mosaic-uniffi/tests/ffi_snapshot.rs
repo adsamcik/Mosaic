@@ -3,12 +3,13 @@ use mosaic_crypto::{KdfProfile, MAX_KDF_MEMORY_KIB, derive_account_key};
 use mosaic_domain::{ShardEnvelopeHeader, ShardTier};
 use mosaic_uniffi::{
     AccountUnlockRequest, account_key_handle_is_open, android_progress_probe,
-    close_account_key_handle, close_epoch_key_handle, close_identity_handle,
-    create_epoch_key_handle, create_identity_handle, crypto_domain_golden_vector_snapshot,
-    decrypt_shard_with_epoch_handle, encrypt_shard_with_epoch_handle, epoch_key_handle_is_open,
-    identity_encryption_pubkey, identity_signing_pubkey, open_epoch_key_handle,
-    open_identity_handle, parse_envelope_header, sign_manifest_with_identity, uniffi_api_snapshot,
-    unlock_account_key,
+    canonical_metadata_sidecar_bytes, close_account_key_handle, close_epoch_key_handle,
+    close_identity_handle, create_epoch_key_handle, create_identity_handle,
+    crypto_domain_golden_vector_snapshot, decrypt_shard_with_epoch_handle,
+    encrypt_metadata_sidecar_with_epoch_handle, encrypt_shard_with_epoch_handle,
+    epoch_key_handle_is_open, identity_encryption_pubkey, identity_signing_pubkey,
+    open_epoch_key_handle, open_identity_handle, parse_envelope_header,
+    sign_manifest_with_identity, uniffi_api_snapshot, unlock_account_key,
 };
 use zeroize::Zeroizing;
 
@@ -26,7 +27,7 @@ const MAX_PROGRESS_EVENTS: u32 = 10_000;
 fn uniffi_facade_exposes_stable_ffi_spike_surface() {
     assert_eq!(
         uniffi_api_snapshot(),
-        "mosaic-uniffi ffi-spike:v5 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+        "mosaic-uniffi ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
     );
 }
 
@@ -172,6 +173,70 @@ fn uniffi_facade_returns_crypto_domain_golden_vectors_without_secret_outputs() {
     assert_eq!(result.identity_signing_pubkey.len(), 32);
     assert_eq!(result.identity_encryption_pubkey.len(), 32);
     assert_eq!(result.identity_signature.len(), 64);
+}
+
+#[test]
+fn uniffi_facade_encrypts_canonical_metadata_sidecar_with_epoch_handle() {
+    let account_result =
+        unlock_account_key(PASSWORD.to_vec(), unlock_request(wrapped_account_key()));
+    assert_eq!(account_result.code, 0);
+
+    let epoch_result = create_epoch_key_handle(account_result.handle, 42);
+    assert_eq!(epoch_result.code, 0);
+
+    let sidecar = canonical_metadata_sidecar_bytes(
+        [0x11; 16].to_vec(),
+        [0x22; 16].to_vec(),
+        epoch_result.epoch_id,
+        encoded_metadata_fields(&[(1, &[6, 0]), (4, b"image/jpeg")]),
+    );
+    assert_eq!(sidecar.code, 0);
+    assert!(sidecar.bytes.starts_with(b"Mosaic_Metadata_v1"));
+
+    let encrypted = encrypt_metadata_sidecar_with_epoch_handle(
+        epoch_result.handle,
+        [0x11; 16].to_vec(),
+        [0x22; 16].to_vec(),
+        epoch_result.epoch_id,
+        encoded_metadata_fields(&[(1, &[6, 0]), (4, b"image/jpeg")]),
+        0,
+    );
+    assert_eq!(encrypted.code, 0);
+    assert!(!encrypted.envelope_bytes.is_empty());
+    assert!(!encrypted.sha256.is_empty());
+
+    let decrypted = decrypt_shard_with_epoch_handle(epoch_result.handle, encrypted.envelope_bytes);
+    assert_eq!(decrypted.code, 0);
+    assert!(decrypted.plaintext.starts_with(b"Mosaic_Metadata_v1"));
+
+    let second_encrypted = encrypt_metadata_sidecar_with_epoch_handle(
+        epoch_result.handle,
+        [0x11; 16].to_vec(),
+        [0x22; 16].to_vec(),
+        epoch_result.epoch_id,
+        encoded_metadata_fields(&[(3, &[1, 0, 0, 0, 2, 0, 0, 0])]),
+        7,
+    );
+    assert_eq!(second_encrypted.code, 0);
+    let header = parse_envelope_header(second_encrypted.envelope_bytes[..64].to_vec());
+    assert_eq!(header.code, 0);
+    assert_eq!(header.epoch_id, 42);
+    assert_eq!(header.shard_index, 7);
+    assert_eq!(header.tier, 1);
+
+    let invalid = encrypt_metadata_sidecar_with_epoch_handle(
+        epoch_result.handle,
+        [0x11; 15].to_vec(),
+        [0x22; 16].to_vec(),
+        epoch_result.epoch_id,
+        Vec::new(),
+        0,
+    );
+    assert_eq!(invalid.code, ClientErrorCode::InvalidInputLength.as_u16());
+    assert!(invalid.envelope_bytes.is_empty());
+
+    assert_eq!(close_epoch_key_handle(epoch_result.handle), 0);
+    assert_eq!(close_account_key_handle(account_result.handle), 0);
 }
 
 #[test]
@@ -366,4 +431,14 @@ fn wrapped_account_key() -> Vec<u8> {
         Err(error) => panic!("account key should derive: {error:?}"),
     };
     material.wrapped_account_key
+}
+
+fn encoded_metadata_fields(fields: &[(u16, &[u8])]) -> Vec<u8> {
+    let mut encoded = Vec::new();
+    for (tag, value) in fields {
+        encoded.extend_from_slice(&tag.to_le_bytes());
+        encoded.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        encoded.extend_from_slice(value);
+    }
+    encoded
 }
