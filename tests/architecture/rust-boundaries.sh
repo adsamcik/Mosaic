@@ -41,7 +41,7 @@ allowed = {
     "mosaic-client": {"mosaic-domain", "mosaic-crypto"},
     "mosaic-media": {"mosaic-domain"},
     "mosaic-wasm": {"mosaic-domain", "mosaic-crypto", "mosaic-client"},
-    "mosaic-uniffi": {"mosaic-domain", "mosaic-crypto", "mosaic-client"},
+    "mosaic-uniffi": {"mosaic-domain", "mosaic-crypto", "mosaic-client", "mosaic-media"},
 }
 
 for package_name in expected:

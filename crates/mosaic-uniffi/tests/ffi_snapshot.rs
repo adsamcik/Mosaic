@@ -3,13 +3,15 @@ use mosaic_crypto::{KdfProfile, MAX_KDF_MEMORY_KIB, derive_account_key};
 use mosaic_domain::{ShardEnvelopeHeader, ShardTier};
 use mosaic_uniffi::{
     AccountUnlockRequest, account_key_handle_is_open, android_progress_probe,
-    canonical_metadata_sidecar_bytes, close_account_key_handle, close_epoch_key_handle,
-    close_identity_handle, create_epoch_key_handle, create_identity_handle,
-    crypto_domain_golden_vector_snapshot, decrypt_shard_with_epoch_handle,
+    canonical_media_metadata_sidecar_bytes, canonical_metadata_sidecar_bytes,
+    close_account_key_handle, close_epoch_key_handle, close_identity_handle,
+    create_epoch_key_handle, create_identity_handle, crypto_domain_golden_vector_snapshot,
+    decrypt_shard_with_epoch_handle, encrypt_media_metadata_sidecar_with_epoch_handle,
     encrypt_metadata_sidecar_with_epoch_handle, encrypt_shard_with_epoch_handle,
     epoch_key_handle_is_open, identity_encryption_pubkey, identity_signing_pubkey,
-    open_epoch_key_handle, open_identity_handle, parse_envelope_header, protocol_version,
-    sign_manifest_with_identity, uniffi_api_snapshot, unlock_account_key,
+    inspect_media_image, open_epoch_key_handle, open_identity_handle, parse_envelope_header,
+    plan_media_tier_layout, protocol_version, sign_manifest_with_identity, uniffi_api_snapshot,
+    unlock_account_key,
 };
 use zeroize::Zeroizing;
 
@@ -22,12 +24,13 @@ const ACCOUNT_SALT: [u8; 16] = [
     0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
 ];
 const MAX_PROGRESS_EVENTS: u32 = 10_000;
+const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 
 #[test]
 fn uniffi_facade_exposes_stable_ffi_spike_surface() {
     assert_eq!(
         uniffi_api_snapshot(),
-        "mosaic-uniffi ffi-spike:v6 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+        "mosaic-uniffi ffi-spike:v7 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
     );
 }
 
@@ -245,6 +248,119 @@ fn uniffi_facade_encrypts_canonical_metadata_sidecar_with_epoch_handle() {
 }
 
 #[test]
+fn uniffi_facade_exposes_media_inspection_and_tier_planning_for_android_bridge() {
+    let image = png_bytes(4032, 3024);
+
+    let metadata = inspect_media_image(image);
+
+    assert_eq!(metadata.code, 0);
+    assert_eq!(metadata.format, "png");
+    assert_eq!(metadata.mime_type, "image/png");
+    assert_eq!(metadata.width, 4032);
+    assert_eq!(metadata.height, 3024);
+    assert_eq!(metadata.orientation, 1);
+
+    let layout = plan_media_tier_layout(metadata.width, metadata.height);
+    assert_eq!(layout.code, 0);
+    assert_eq!(layout.thumbnail.tier, 1);
+    assert_eq!(layout.thumbnail.width, 256);
+    assert_eq!(layout.thumbnail.height, 192);
+    assert_eq!(layout.preview.tier, 2);
+    assert_eq!(layout.preview.width, 1024);
+    assert_eq!(layout.preview.height, 768);
+    assert_eq!(layout.original.tier, 3);
+    assert_eq!(layout.original.width, 4032);
+    assert_eq!(layout.original.height, 3024);
+
+    let unsupported = inspect_media_image(b"not an image".to_vec());
+    assert_eq!(
+        unsupported.code,
+        ClientErrorCode::UnsupportedMediaFormat.as_u16()
+    );
+    assert_eq!(unsupported.format, "");
+    assert_eq!(unsupported.width, 0);
+
+    let invalid_layout = plan_media_tier_layout(0, 3024);
+    assert_eq!(
+        invalid_layout.code,
+        ClientErrorCode::InvalidMediaDimensions.as_u16()
+    );
+    assert_eq!(invalid_layout.original.width, 0);
+}
+
+#[test]
+fn uniffi_facade_builds_and_encrypts_media_metadata_sidecar_from_inspected_media() {
+    let media = png_bytes(1920, 1080);
+    let canonical = canonical_media_metadata_sidecar_bytes(
+        [0x11; 16].to_vec(),
+        [0x22; 16].to_vec(),
+        42,
+        media.clone(),
+    );
+    assert_eq!(canonical.code, 0);
+    assert!(canonical.bytes.starts_with(b"Mosaic_Metadata_v1"));
+    assert!(
+        canonical
+            .bytes
+            .windows(9)
+            .any(|window| window == b"image/png")
+    );
+
+    let mut dimension_field = Vec::new();
+    dimension_field.extend_from_slice(&1920_u32.to_le_bytes());
+    dimension_field.extend_from_slice(&1080_u32.to_le_bytes());
+    assert!(
+        canonical
+            .bytes
+            .windows(dimension_field.len())
+            .any(|window| window == dimension_field.as_slice())
+    );
+    assert!(
+        !canonical
+            .bytes
+            .windows(PNG_SIGNATURE.len())
+            .any(|window| window == PNG_SIGNATURE)
+    );
+
+    let account_result =
+        unlock_account_key(PASSWORD.to_vec(), unlock_request(wrapped_account_key()));
+    assert_eq!(account_result.code, 0);
+    let epoch_result = create_epoch_key_handle(account_result.handle, 42);
+    assert_eq!(epoch_result.code, 0);
+
+    let encrypted = encrypt_media_metadata_sidecar_with_epoch_handle(
+        epoch_result.handle,
+        [0x11; 16].to_vec(),
+        [0x22; 16].to_vec(),
+        epoch_result.epoch_id,
+        media,
+        3,
+    );
+    assert_eq!(encrypted.code, 0);
+    assert!(!encrypted.envelope_bytes.is_empty());
+    assert!(!encrypted.sha256.is_empty());
+
+    let decrypted = decrypt_shard_with_epoch_handle(epoch_result.handle, encrypted.envelope_bytes);
+    assert_eq!(decrypted.code, 0);
+    assert_eq!(decrypted.plaintext, canonical.bytes);
+
+    let invalid_media = canonical_media_metadata_sidecar_bytes(
+        [0x11; 16].to_vec(),
+        [0x22; 16].to_vec(),
+        42,
+        b"not an image".to_vec(),
+    );
+    assert_eq!(
+        invalid_media.code,
+        ClientErrorCode::UnsupportedMediaFormat.as_u16()
+    );
+    assert!(invalid_media.bytes.is_empty());
+
+    assert_eq!(close_epoch_key_handle(epoch_result.handle), 0);
+    assert_eq!(close_account_key_handle(account_result.handle), 0);
+}
+
+#[test]
 fn uniffi_facade_returns_progress_events_with_stable_error_code() {
     let result = android_progress_probe(3, Some(1));
 
@@ -446,4 +562,17 @@ fn encoded_metadata_fields(fields: &[(u16, &[u8])]) -> Vec<u8> {
         encoded.extend_from_slice(value);
     }
     encoded
+}
+
+fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = PNG_SIGNATURE.to_vec();
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&width.to_be_bytes());
+    ihdr.extend_from_slice(&height.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+    bytes.extend_from_slice(&(ihdr.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(b"IHDR");
+    bytes.extend_from_slice(&ihdr);
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes
 }

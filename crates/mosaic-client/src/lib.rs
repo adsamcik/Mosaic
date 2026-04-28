@@ -47,6 +47,13 @@ pub enum ClientErrorCode {
     HandleSpaceExhausted = 402,
     EpochHandleNotFound = 403,
     InternalStatePoisoned = 500,
+    UnsupportedMediaFormat = 600,
+    InvalidMediaContainer = 601,
+    InvalidMediaDimensions = 602,
+    MediaOutputTooLarge = 603,
+    MediaMetadataMismatch = 604,
+    InvalidMediaSidecar = 605,
+    MediaAdapterOutputMismatch = 606,
 }
 
 impl ClientErrorCode {

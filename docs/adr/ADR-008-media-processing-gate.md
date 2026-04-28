@@ -24,6 +24,23 @@ The MVP may use platform-native media adapters if they satisfy:
 
 The media prototype must compare AVIF and WebP as canonical output candidates. Security and metadata correctness outrank quality; quality outranks performance/size.
 
+### Android manual upload closeout evidence
+
+As of 2026-04-28, the Android one-photo encrypted upload MVP can proceed with
+platform-native codec adapters while using Rust for the media-core rules that
+must match Mosaic protocol behavior:
+
+- dependency-free container inspection for JPEG, PNG, and WebP,
+- canonical thumbnail/preview/original tier dimension planning,
+- recognized metadata sidecar construction from inspected media metadata,
+- metadata sidecar encryption through the existing epoch-handle envelope path,
+- stable UniFFI exports for Android bridge tests.
+
+This closes the media-core readiness evidence needed before the manual Android
+upload MVP. It does not adopt Rust codecs. The broader Rust codec prototype
+remains required before replacing native adapters with Rust encode/decode
+implementations, especially for HEIC/HEIF and AVIF cross-platform measurements.
+
 ## Options Considered
 
 ### Put all codecs and image processing in Rust immediately

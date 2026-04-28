@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 
 use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// UniFFI record for header parse results.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -121,6 +121,34 @@ pub struct CryptoDomainGoldenVectorSnapshot {
     pub identity_signature: Vec<u8>,
 }
 
+/// UniFFI record for dependency-free media inspection results.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MediaMetadataResult {
+    pub code: u16,
+    pub format: String,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub orientation: u8,
+}
+
+/// UniFFI record for one planned media tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct MediaTierDimensions {
+    pub tier: u8,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// UniFFI record for canonical media tier layout planning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct MediaTierLayoutResult {
+    pub code: u16,
+    pub thumbnail: MediaTierDimensions,
+    pub preview: MediaTierDimensions,
+    pub original: MediaTierDimensions,
+}
+
 /// Returns the crate name for smoke tests and generated wrapper diagnostics.
 #[must_use]
 pub const fn crate_name() -> &'static str {
@@ -137,7 +165,7 @@ pub fn protocol_version() -> String {
 /// Returns the stable UniFFI API snapshot for this FFI spike.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v6 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+    "mosaic-uniffi ffi-spike:v7 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
 }
 
 /// Parses a shard envelope header through the UniFFI export surface.
@@ -329,6 +357,102 @@ pub fn encrypt_metadata_sidecar_with_epoch_handle(
     result
 }
 
+/// Inspects media bytes for Android adapter planning without decoding pixels.
+#[uniffi::export]
+#[must_use]
+pub fn inspect_media_image(bytes: Vec<u8>) -> MediaMetadataResult {
+    let bytes = Zeroizing::new(bytes);
+    match mosaic_media::inspect_image(&bytes) {
+        Ok(metadata) => media_metadata_result_ok(metadata),
+        Err(error) => MediaMetadataResult {
+            code: map_media_error(error),
+            format: String::new(),
+            mime_type: String::new(),
+            width: 0,
+            height: 0,
+            orientation: 0,
+        },
+    }
+}
+
+/// Plans canonical thumbnail, preview, and original tier dimensions.
+#[uniffi::export]
+#[must_use]
+pub fn plan_media_tier_layout(width: u32, height: u32) -> MediaTierLayoutResult {
+    match mosaic_media::plan_tier_layout(width, height) {
+        Ok(layout) => MediaTierLayoutResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            thumbnail: media_tier_dimensions(layout.thumbnail),
+            preview: media_tier_dimensions(layout.preview),
+            original: media_tier_dimensions(layout.original),
+        },
+        Err(error) => MediaTierLayoutResult {
+            code: map_media_error(error),
+            thumbnail: empty_media_tier_dimensions(),
+            preview: empty_media_tier_dimensions(),
+            original: empty_media_tier_dimensions(),
+        },
+    }
+}
+
+/// Builds plaintext canonical metadata sidecar bytes from inspected media bytes.
+///
+/// The returned bytes are client-local plaintext metadata and must be encrypted before
+/// manifest binding, persistence, upload, or logging.
+#[uniffi::export]
+#[must_use]
+pub fn canonical_media_metadata_sidecar_bytes(
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    media_bytes: Vec<u8>,
+) -> BytesResult {
+    match media_metadata_sidecar_bytes_result(&album_id, &photo_id, epoch_id, media_bytes) {
+        Ok(bytes) => BytesResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            bytes,
+        },
+        Err(code) => BytesResult {
+            code,
+            bytes: Vec::new(),
+        },
+    }
+}
+
+/// Encrypts inspected media metadata sidecar bytes with a Rust-owned epoch-key handle.
+#[uniffi::export]
+#[must_use]
+pub fn encrypt_media_metadata_sidecar_with_epoch_handle(
+    handle: u64,
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    media_bytes: Vec<u8>,
+    shard_index: u32,
+) -> EncryptedShardResult {
+    let mut plaintext =
+        match media_metadata_sidecar_bytes_result(&album_id, &photo_id, epoch_id, media_bytes) {
+            Ok(bytes) => bytes,
+            Err(code) => {
+                return EncryptedShardResult {
+                    code,
+                    envelope_bytes: Vec::new(),
+                    sha256: String::new(),
+                };
+            }
+        };
+
+    let result =
+        encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
+            handle,
+            &plaintext,
+            shard_index,
+            ShardTier::Thumbnail.to_byte(),
+        ));
+    plaintext.zeroize();
+    result
+}
+
 /// Closes an identity handle and returns the stable error code.
 #[uniffi::export]
 #[must_use]
@@ -505,6 +629,25 @@ fn canonical_metadata_sidecar_bytes_result(
     mosaic_domain::canonical_metadata_sidecar_bytes(&sidecar).map_err(map_metadata_sidecar_error)
 }
 
+fn media_metadata_sidecar_bytes_result(
+    album_id: &[u8],
+    photo_id: &[u8],
+    epoch_id: u32,
+    media_bytes: Vec<u8>,
+) -> Result<Vec<u8>, u16> {
+    let album_id = uuid_bytes(album_id)?;
+    let photo_id = uuid_bytes(photo_id)?;
+    let media_bytes = Zeroizing::new(media_bytes);
+    let metadata = mosaic_media::inspect_image(&media_bytes).map_err(map_media_error)?;
+    let sidecar_ids = mosaic_media::MediaSidecarIds {
+        album_id,
+        photo_id,
+        epoch_id,
+    };
+    mosaic_media::canonical_media_metadata_sidecar_bytes(sidecar_ids, metadata)
+        .map_err(map_media_error)
+}
+
 fn uuid_bytes(bytes: &[u8]) -> Result<[u8; 16], u16> {
     if bytes.len() != 16 {
         return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
@@ -546,6 +689,69 @@ fn metadata_fields_from_encoded(
 
 fn map_metadata_sidecar_error(_error: MetadataSidecarError) -> u16 {
     mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()
+}
+
+fn map_media_error(error: mosaic_media::MosaicMediaError) -> u16 {
+    match error {
+        mosaic_media::MosaicMediaError::UnsupportedFormat => {
+            mosaic_client::ClientErrorCode::UnsupportedMediaFormat.as_u16()
+        }
+        mosaic_media::MosaicMediaError::InvalidJpeg
+        | mosaic_media::MosaicMediaError::InvalidPng
+        | mosaic_media::MosaicMediaError::InvalidWebP => {
+            mosaic_client::ClientErrorCode::InvalidMediaContainer.as_u16()
+        }
+        mosaic_media::MosaicMediaError::InvalidDimensions => {
+            mosaic_client::ClientErrorCode::InvalidMediaDimensions.as_u16()
+        }
+        mosaic_media::MosaicMediaError::OutputTooLarge => {
+            mosaic_client::ClientErrorCode::MediaOutputTooLarge.as_u16()
+        }
+        mosaic_media::MosaicMediaError::ImageMetadataMismatch => {
+            mosaic_client::ClientErrorCode::MediaMetadataMismatch.as_u16()
+        }
+        mosaic_media::MosaicMediaError::MetadataSidecar(_) => {
+            mosaic_client::ClientErrorCode::InvalidMediaSidecar.as_u16()
+        }
+        mosaic_media::MosaicMediaError::EncodedTierMismatch { .. } => {
+            mosaic_client::ClientErrorCode::MediaAdapterOutputMismatch.as_u16()
+        }
+    }
+}
+
+fn media_metadata_result_ok(metadata: mosaic_media::ImageMetadata) -> MediaMetadataResult {
+    MediaMetadataResult {
+        code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+        format: media_format_name(metadata.format).to_owned(),
+        mime_type: metadata.mime_type.to_owned(),
+        width: metadata.width,
+        height: metadata.height,
+        orientation: metadata.orientation,
+    }
+}
+
+const fn media_format_name(format: mosaic_media::MediaFormat) -> &'static str {
+    match format {
+        mosaic_media::MediaFormat::Jpeg => "jpeg",
+        mosaic_media::MediaFormat::Png => "png",
+        mosaic_media::MediaFormat::WebP => "webp",
+    }
+}
+
+const fn media_tier_dimensions(dimensions: mosaic_media::TierDimensions) -> MediaTierDimensions {
+    MediaTierDimensions {
+        tier: dimensions.tier.to_byte(),
+        width: dimensions.width,
+        height: dimensions.height,
+    }
+}
+
+const fn empty_media_tier_dimensions() -> MediaTierDimensions {
+    MediaTierDimensions {
+        tier: 0,
+        width: 0,
+        height: 0,
+    }
 }
 
 uniffi::setup_scaffolding!();

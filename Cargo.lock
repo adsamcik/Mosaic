@@ -443,6 +443,7 @@ dependencies = [
  "mosaic-client",
  "mosaic-crypto",
  "mosaic-domain",
+ "mosaic-media",
  "uniffi",
  "zeroize",
 ]
