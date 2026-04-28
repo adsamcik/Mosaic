@@ -14,6 +14,12 @@ fun main() {
     TestCase("photo picker contract stages immediate reads before queueing", ::photoPickerStagesImmediateReads),
     TestCase("photo picker selection string output redacts raw URI", ::photoPickerSelectionStringOutputRedactsRawUri),
     TestCase("manual upload receipt and queue reject raw URI and zero bytes", ::manualUploadReceiptAndQueueRejectRawUriAndZeroBytes),
+    TestCase("manual upload rejects queueing before server auth", ::manualUploadRejectsQueueingBeforeServerAuth),
+    TestCase("manual upload rejects queueing before crypto unlock", ::manualUploadRejectsQueueingBeforeCryptoUnlock),
+    TestCase("manual upload rejects missing destination album", ::manualUploadRejectsMissingDestinationAlbum),
+    TestCase("manual upload queues from staged receipt without retaining raw URI", ::manualUploadQueuesFromStagedReceipt),
+    TestCase("manual upload result strings redact staged sources and handles", ::manualUploadResultStringsRedactStagedSourcesAndHandles),
+    TestCase("client core handoff DTO carries only opaque upload fields", ::clientCoreHandoffDtoCarriesOnlyOpaqueUploadFields),
     TestCase("fake rust bridge models account unlock lifecycle", ::fakeRustBridgeModelsUnlockLifecycle),
     TestCase("generated rust bridge maps UniFFI account calls", ::generatedRustBridgeMapsUniFfiAccountCalls),
     TestCase("work policy defaults to foreground dataSync", ::workPolicyDefaultsToForegroundDataSync),
@@ -206,6 +212,169 @@ private fun manualUploadReceiptAndQueueRejectRawUriAndZeroBytes() {
     contentLengthBytes = 0,
   )
   assertEquals(0, genericCandidate.contentLengthBytes)
+}
+
+private fun manualUploadRejectsQueueingBeforeServerAuth() {
+  val coordinator = manualUploadCoordinator()
+
+  val result = coordinator.queueOnePhoto(
+    sessionState = ShellSessionState.initial(),
+    destinationAlbumId = AlbumId("album-1"),
+    receipt = stagedUploadReceipt(),
+  )
+
+  assertEquals(ManualUploadStatus.NEEDS_AUTH, result.status)
+  assertEquals(null, result.queueRecord)
+  assertEquals(null, result.clientCoreHandoffRequest)
+}
+
+private fun manualUploadRejectsQueueingBeforeCryptoUnlock() {
+  val coordinator = manualUploadCoordinator()
+  val serverOnly = ShellSessionState.initial()
+    .withServerAuthenticated(ServerAccountId("server-account-1"))
+
+  val result = coordinator.queueOnePhoto(
+    sessionState = serverOnly,
+    destinationAlbumId = AlbumId("album-1"),
+    receipt = stagedUploadReceipt(),
+  )
+
+  assertEquals(ManualUploadStatus.NEEDS_CRYPTO_UNLOCK, result.status)
+  assertEquals(null, result.queueRecord)
+  assertEquals(null, result.clientCoreHandoffRequest)
+}
+
+private fun manualUploadRejectsMissingDestinationAlbum() {
+  val coordinator = manualUploadCoordinator()
+
+  val ready = coordinator.readiness(
+    sessionState = authenticatedUnlockedSession(),
+    destinationAlbumId = AlbumId("album-1"),
+  )
+  assertEquals(ManualUploadStatus.READY_TO_QUEUE, ready)
+
+  val result = coordinator.queueOnePhoto(
+    sessionState = authenticatedUnlockedSession(),
+    destinationAlbumId = null,
+    receipt = stagedUploadReceipt(),
+  )
+
+  assertEquals(ManualUploadStatus.NEEDS_ALBUM, result.status)
+  assertEquals(null, result.queueRecord)
+  assertEquals(null, result.clientCoreHandoffRequest)
+}
+
+private fun manualUploadQueuesFromStagedReceipt() {
+  val store = FakeManualUploadQueueStore()
+  val coordinator = manualUploadCoordinator(store)
+  val reader = FakePhotoPickerImmediateReader(
+    stagedSource = StagedMediaReference.of("mosaic-staged://manual-upload/source-1"),
+  )
+  val selection = PhotoPickerSelection(
+    contentUri = EphemeralContentUri("content://picker/session/manual-upload-1"),
+    selectedAtEpochMillis = 7000,
+  )
+  val receipt = reader.readImmediately(selection)
+
+  val result = coordinator.queueOnePhoto(
+    sessionState = authenticatedUnlockedSession(),
+    destinationAlbumId = AlbumId("album-1"),
+    receipt = receipt,
+  )
+
+  assertEquals(ManualUploadStatus.QUEUED, result.status)
+  val record = requireNotNull(result.queueRecord) { "queued result must include queue record" }
+  assertEquals(QueueRecordId("queue-manual-1"), record.id)
+  assertEquals(AlbumId("album-1"), record.albumId)
+  assertEquals(receipt.stagedSource, record.stagedSource)
+  assertEquals(receipt.contentLengthBytes, record.contentLengthBytes)
+  assertEquals(receipt.stagedAtEpochMillis, record.createdAtEpochMillis)
+  assertEquals(record, store.lastRecord)
+
+  val handoffRequest = requireNotNull(result.clientCoreHandoffRequest) {
+    "queued result must include a future client-core handoff request"
+  }
+  assertEquals(record.id, handoffRequest.queueRecordId)
+  assertEquals(record.albumId, handoffRequest.albumId)
+  assertEquals(record.stagedSource, handoffRequest.stagedSource)
+  assertEquals(record.contentLengthBytes, handoffRequest.byteCount)
+
+  assertFalse(record.toString().contains(selection.contentUri.value))
+  assertFalse(result.toString().contains(selection.contentUri.value))
+  assertFalse(handoffRequest.toString().contains(selection.contentUri.value))
+}
+
+private fun manualUploadResultStringsRedactStagedSourcesAndHandles() {
+  val coordinator = manualUploadCoordinator()
+  val session = ShellSessionState.initial()
+    .withServerAuthenticated(ServerAccountId("server-account-1"))
+    .withCryptoUnlocked(AccountKeyHandle(4242), "mosaic-v1")
+
+  val result = coordinator.queueOnePhoto(
+    sessionState = session,
+    destinationAlbumId = AlbumId("album-1"),
+    receipt = stagedUploadReceipt(),
+  )
+
+  assertEquals(ManualUploadStatus.QUEUED, result.status)
+  val resultText = result.toString()
+  val handoffText = requireNotNull(result.clientCoreHandoffRequest).toString()
+
+  assertFalse(resultText.contains("mosaic-staged://"))
+  assertFalse(resultText.contains("content://"))
+  assertFalse(resultText.contains("4242"))
+  assertTrue(resultText.contains("<redacted>"))
+  assertFalse(handoffText.contains("mosaic-staged://"))
+  assertFalse(handoffText.contains("content://"))
+  assertFalse(handoffText.contains("4242"))
+  assertTrue(handoffText.contains("<redacted>"))
+}
+
+private fun clientCoreHandoffDtoCarriesOnlyOpaqueUploadFields() {
+  val record = validQueueRecord()
+  val request = ManualUploadClientCoreHandoffRequest.fromQueueRecord(
+    record = record,
+    uploadJobId = ManualUploadJobId("upload-job-1"),
+    assetId = ManualUploadAssetId("asset-1"),
+  )
+  val handoff = FakeManualUploadClientCoreHandoff()
+
+  val result = handoff.prepareManualUpload(request)
+
+  assertEquals(ManualUploadClientCoreHandoffStatus.ACCEPTED, result.status)
+  assertEquals(ManualUploadJobId("upload-job-1"), result.uploadJobId)
+  assertEquals(record.contentLengthBytes, result.acceptedByteCount)
+  assertEquals(request, handoff.lastRequest)
+
+  val text = request.toString()
+  val forbiddenTerms = listOf(
+    "content://",
+    "mosaic-staged://",
+    "filename",
+    "IMG_0001.jpg",
+    "EXIF",
+    "GPS",
+    "camera",
+    "device",
+    "private",
+    "secret",
+  )
+  forbiddenTerms.forEach { forbidden ->
+    assertFalse(text.contains(forbidden, ignoreCase = true))
+  }
+
+  expectThrows("handoff DTO rejects forbidden plaintext fields") {
+    ManualUploadClientCoreHandoffRequest.fromQueueRecord(
+      record = record,
+      prohibited = ProhibitedQueuePayload(
+        filename = "IMG_0001.jpg",
+        exif = mapOf("Model" to "camera"),
+        gps = "50.087,14.421",
+        deviceMetadata = mapOf("Make" to "device"),
+        rawUri = "content://media/external/images/1",
+      ),
+    )
+  }
 }
 
 private fun fakeRustBridgeModelsUnlockLifecycle() {
@@ -433,6 +602,23 @@ private fun validQueueRecordForPublicStringScan(staged: StagedMediaReference): P
     createdAtEpochMillis = 3001,
   )
 
+private fun authenticatedUnlockedSession(): ShellSessionState = ShellSessionState.initial()
+  .withServerAuthenticated(ServerAccountId("server-account-1"))
+  .withCryptoUnlocked(AccountKeyHandle(42), "mosaic-v1")
+
+private fun stagedUploadReceipt(): PhotoPickerReadReceipt = PhotoPickerReadReceipt(
+  stagedSource = StagedMediaReference.of("mosaic-staged://manual-upload/source-1"),
+  contentLengthBytes = 2048,
+  stagedAtEpochMillis = 7001,
+)
+
+private fun manualUploadCoordinator(
+  store: ManualUploadQueueStore = FakeManualUploadQueueStore(),
+): AndroidManualUploadCoordinator = AndroidManualUploadCoordinator(
+  idFactory = ManualUploadQueueRecordIdFactory { _, _ -> QueueRecordId("queue-manual-1") },
+  queueStore = store,
+)
+
 private fun unlockRequest(): AccountUnlockRequest = AccountUnlockRequest(
   userSalt = ByteArray(16) { 1 },
   accountSalt = ByteArray(16) { 2 },
@@ -530,6 +716,32 @@ private class FakePhotoPickerImmediateReader(
       stagedSource = stagedSource,
       contentLengthBytes = 2048,
       stagedAtEpochMillis = selection.selectedAtEpochMillis + 1,
+    )
+  }
+}
+
+private class FakeManualUploadQueueStore : ManualUploadQueueStore {
+  var lastRecord: PrivacySafeUploadQueueRecord? = null
+    private set
+
+  override fun createOrReturn(record: PrivacySafeUploadQueueRecord): PrivacySafeUploadQueueRecord {
+    lastRecord = record
+    return record
+  }
+}
+
+private class FakeManualUploadClientCoreHandoff : ManualUploadClientCoreHandoff {
+  var lastRequest: ManualUploadClientCoreHandoffRequest? = null
+    private set
+
+  override fun prepareManualUpload(
+    request: ManualUploadClientCoreHandoffRequest,
+  ): ManualUploadClientCoreHandoffResult {
+    lastRequest = request
+    return ManualUploadClientCoreHandoffResult(
+      status = ManualUploadClientCoreHandoffStatus.ACCEPTED,
+      uploadJobId = request.uploadJobId,
+      acceptedByteCount = request.byteCount,
     )
   }
 }
