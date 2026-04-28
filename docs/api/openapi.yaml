@@ -144,9 +144,21 @@ paths:
       operationId: listAlbums
       summary: List albums the user has access to
       tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/PageSkip'
+        - $ref: '#/components/parameters/PageTake'
       responses:
         '200':
           description: List of albums
+          headers:
+            X-Pagination-Skip:
+              $ref: '#/components/headers/PaginationSkip'
+            X-Pagination-Take:
+              $ref: '#/components/headers/PaginationTake'
+            X-Pagination-Total-Count:
+              $ref: '#/components/headers/PaginationTotalCount'
+            X-Pagination-Has-More:
+              $ref: '#/components/headers/PaginationHasMore'
           content:
             application/json:
               schema:
@@ -254,9 +266,20 @@ paths:
       tags: [Members]
       parameters:
         - $ref: '#/components/parameters/AlbumId'
+        - $ref: '#/components/parameters/PageSkip'
+        - $ref: '#/components/parameters/PageTake'
       responses:
         '200':
           description: List of members
+          headers:
+            X-Pagination-Skip:
+              $ref: '#/components/headers/PaginationSkip'
+            X-Pagination-Take:
+              $ref: '#/components/headers/PaginationTake'
+            X-Pagination-Total-Count:
+              $ref: '#/components/headers/PaginationTotalCount'
+            X-Pagination-Has-More:
+              $ref: '#/components/headers/PaginationHasMore'
           content:
             application/json:
               schema:
@@ -536,9 +559,20 @@ paths:
       tags: [Share Links]
       parameters:
         - $ref: '#/components/parameters/AlbumId'
+        - $ref: '#/components/parameters/PageSkip'
+        - $ref: '#/components/parameters/PageTake'
       responses:
         '200':
           description: List of share links
+          headers:
+            X-Pagination-Skip:
+              $ref: '#/components/headers/PaginationSkip'
+            X-Pagination-Take:
+              $ref: '#/components/headers/PaginationTake'
+            X-Pagination-Total-Count:
+              $ref: '#/components/headers/PaginationTotalCount'
+            X-Pagination-Has-More:
+              $ref: '#/components/headers/PaginationHasMore'
           content:
             application/json:
               schema:
@@ -588,9 +622,20 @@ paths:
       tags: [Share Links]
       parameters:
         - $ref: '#/components/parameters/AlbumId'
+        - $ref: '#/components/parameters/PageSkip'
+        - $ref: '#/components/parameters/PageTake'
       responses:
         '200':
           description: List of share links with encrypted secrets
+          headers:
+            X-Pagination-Skip:
+              $ref: '#/components/headers/PaginationSkip'
+            X-Pagination-Take:
+              $ref: '#/components/headers/PaginationTake'
+            X-Pagination-Total-Count:
+              $ref: '#/components/headers/PaginationTotalCount'
+            X-Pagination-Has-More:
+              $ref: '#/components/headers/PaginationHasMore'
           content:
             application/json:
               schema:
@@ -745,9 +790,20 @@ paths:
           schema:
             type: string
           description: URL-safe base64 encoded link ID
+        - $ref: '#/components/parameters/PageSkip'
+        - $ref: '#/components/parameters/PageTake'
       responses:
         '200':
           description: List of photo manifests
+          headers:
+            X-Pagination-Skip:
+              $ref: '#/components/headers/PaginationSkip'
+            X-Pagination-Take:
+              $ref: '#/components/headers/PaginationTake'
+            X-Pagination-Total-Count:
+              $ref: '#/components/headers/PaginationTotalCount'
+            X-Pagination-Has-More:
+              $ref: '#/components/headers/PaginationHasMore'
           content:
             application/json:
               schema:
@@ -1079,6 +1135,45 @@ components:
       schema:
         type: string
         format: uuid
+
+    PageSkip:
+      name: skip
+      in: query
+      required: false
+      description: Number of rows to skip before returning a page.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+    PageTake:
+      name: take
+      in: query
+      required: false
+      description: Page size. Values are clamped to the backend maximum of 100.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+
+  headers:
+    PaginationSkip:
+      description: Normalized skip value applied by the backend.
+      schema:
+        type: integer
+    PaginationTake:
+      description: Normalized take value applied by the backend.
+      schema:
+        type: integer
+    PaginationTotalCount:
+      description: Total rows available for the query before paging.
+      schema:
+        type: integer
+    PaginationHasMore:
+      description: Whether another page exists after this response.
+      schema:
+        type: boolean
 
   # ===========================================================================
   # Responses

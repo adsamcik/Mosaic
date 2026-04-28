@@ -234,6 +234,112 @@ public class ManifestsController : ControllerBase
     }
 
     /// <summary>
+    /// Update encrypted metadata for an existing manifest without changing shard references.
+    /// </summary>
+    [HttpPatch("{manifestId:guid}/metadata")]
+    public async Task<IActionResult> UpdateMetadata(Guid manifestId, [FromBody] UpdateManifestMetadataRequest request)
+    {
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            var manifest = await _db.Manifests
+                .IgnoreQueryFilters()
+                .Include(m => m.Album)
+                .FirstOrDefaultAsync(m => m.Id == manifestId);
+
+            if (manifest == null || manifest.IsDeleted)
+            {
+                return NotFound();
+            }
+
+            // Lock album row (FOR UPDATE is PostgreSQL-only; SQLite uses simpler locking)
+            Album? album;
+            if (_db.UsesLiteProvider())
+            {
+                album = await _db.Albums.FindAsync(manifest.AlbumId);
+            }
+            else
+            {
+                album = await _db.Albums
+                    .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", manifest.AlbumId)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (album == null)
+            {
+                return NotFound();
+            }
+
+            var (_, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id, new NotFoundResult());
+            if (memberError != null) return memberError;
+
+            if (!TryDecodeBase64(request.EncryptedMeta, out var encryptedMeta) || encryptedMeta.Length < 16)
+            {
+                return Problem(
+                    detail: "encryptedMeta must be valid base64 and at least 16 bytes",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!TryDecodeBase64(request.Signature, out var signatureBytes) || signatureBytes.Length == 0)
+            {
+                return Problem(
+                    detail: "signature must be valid base64 and non-empty",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!TryDecodeBase64(request.SignerPubkey, out var signerPubkeyBytes) || signerPubkeyBytes.Length != 32)
+            {
+                return Problem(
+                    detail: "signerPubkey must be valid base64 and exactly 32 bytes",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var activeEpochSignPubkeys = await _db.EpochKeys
+                .Join(
+                    _db.AlbumMembers,
+                    ek => new { ek.AlbumId, UserId = ek.RecipientId },
+                    am => new { am.AlbumId, am.UserId },
+                    (ek, am) => new { EpochKey = ek, Member = am })
+                .Where(x => x.EpochKey.AlbumId == album.Id && x.Member.RevokedAt == null)
+                .Select(x => x.EpochKey.SignPubkey)
+                .ToListAsync();
+
+            if (!activeEpochSignPubkeys.Any(pubkey => pubkey.AsSpan().SequenceEqual(signerPubkeyBytes)))
+            {
+                return Problem(
+                    detail: "signerPubkey does not match any active epoch sign key for this album",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            manifest.EncryptedMeta = encryptedMeta;
+            manifest.Signature = request.Signature;
+            manifest.SignerPubkey = request.SignerPubkey;
+            manifest.VersionCreated = album.CurrentVersion + 1;
+            manifest.UpdatedAt = DateTime.UtcNow;
+            album.CurrentVersion++;
+            album.UpdatedAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            _logger.LogInformation(
+                "Manifest {ManifestId} metadata updated by {UserId}, new version {Version}",
+                manifest.Id,
+                user.Id,
+                manifest.VersionCreated);
+
+            return Ok(new { id = manifest.Id, versionCreated = manifest.VersionCreated });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Get a specific manifest
     /// </summary>
     [HttpGet("{manifestId}")]
@@ -341,6 +447,26 @@ public class ManifestsController : ControllerBase
         {
             await tx.RollbackAsync();
             throw;
+        }
+    }
+
+    private static bool TryDecodeBase64(string? value, out byte[] bytes)
+    {
+        bytes = [];
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            bytes = Convert.FromBase64String(value);
+            return bytes.Length > 0;
+        }
+        catch (FormatException)
+        {
+            return false;
         }
     }
 }

@@ -65,6 +65,36 @@ public class UsersControllerTests
     }
 
     [Fact]
+    public async Task GetMe_ReturnsAccountSalt_WhenStored()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        var accountSalt = Enumerable.Range(1, 16).Select(i => (byte)i).ToArray();
+        var user = await builder.CreateUserAsync(TestAuthSub, "existing-pubkey");
+        user.AccountSalt = accountSalt;
+        await db.SaveChangesAsync();
+
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.GetMe();
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var accountSaltProperty = okResult.Value!.GetType().GetProperty("AccountSalt");
+        Assert.NotNull(accountSaltProperty);
+        Assert.Equal(Convert.ToBase64String(accountSalt), accountSaltProperty.GetValue(okResult.Value));
+    }
+
+    [Fact]
     public async Task UpdateMe_SetsIdentityPubkey_WhenEmpty()
     {
         // Arrange

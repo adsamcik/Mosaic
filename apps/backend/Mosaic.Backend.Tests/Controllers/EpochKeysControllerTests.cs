@@ -377,6 +377,61 @@ public class EpochKeysControllerTests
     }
 
     [Fact]
+    public async Task Create_UpdatesExistingOwnerEpochKey_WhenOwnerResealsInitialKey()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var existingKey = await builder.CreateEpochKeyAsync(
+            album,
+            owner,
+            epochId: 1,
+            encryptedKeyBundle: [1, 1, 1],
+            ownerSignature: [2, 2, 2],
+            sharerPubkey: [3, 3, 3],
+            signPubkey: [4, 4, 4]);
+
+        var controller = new EpochKeysController(db, new MockCurrentUserService(db), new EpochKeyRotationService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var request = new CreateEpochKeyRequest(
+            RecipientId: owner.Id,
+            EpochId: 1,
+            EncryptedKeyBundle: [9, 9, 9],
+            OwnerSignature: [8, 8, 8],
+            SharerPubkey: [7, 7, 7],
+            SignPubkey: [6, 6, 6]
+        );
+
+        // Act
+        var result = await controller.Create(album.Id, request);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.NotNull(okResult.Value);
+
+        var updatedKey = await db.EpochKeys.FindAsync(existingKey.Id);
+        Assert.NotNull(updatedKey);
+        Assert.Equal(request.EncryptedKeyBundle, updatedKey.EncryptedKeyBundle);
+        Assert.Equal(request.OwnerSignature, updatedKey.OwnerSignature);
+        Assert.Equal(request.SharerPubkey, updatedKey.SharerPubkey);
+        Assert.Equal(request.SignPubkey, updatedKey.SignPubkey);
+        Assert.Single(db.EpochKeys.Where(ek =>
+            ek.AlbumId == album.Id &&
+            ek.RecipientId == owner.Id &&
+            ek.EpochId == 1));
+    }
+
+    [Fact]
     public async Task Get_ReturnsEpochKey_WhenRecipientRequests()
     {
         // Arrange

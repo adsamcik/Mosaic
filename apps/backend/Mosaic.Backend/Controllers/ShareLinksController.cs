@@ -174,8 +174,11 @@ public class ShareLinksController : ControllerBase
     /// List all share links for an album (owner only)
     /// </summary>
     [HttpGet("api/albums/{albumId}/share-links")]
-    public async Task<IActionResult> List(Guid albumId)
+    public async Task<IActionResult> List(Guid albumId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
+        skip = Math.Max(0, skip);
+        take = Math.Clamp(take, 1, 100);
+
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
@@ -191,6 +194,9 @@ public class ShareLinksController : ControllerBase
 
         var links = shareLinks
             .OrderByDescending(sl => sl.CreatedAt)
+            .ThenBy(sl => sl.Id)
+            .Skip(skip)
+            .Take(take)
             .Select(sl => new ShareLinkResponse
             {
                 Id = sl.Id,
@@ -203,6 +209,7 @@ public class ShareLinksController : ControllerBase
                 CreatedAt = sl.CreatedAt
             }).ToList();
 
+        Response.AddPaginationHeaders(skip, take, shareLinks.Count);
         return Ok(links);
     }
 
@@ -210,8 +217,11 @@ public class ShareLinksController : ControllerBase
     /// List active share links with owner-encrypted secrets (owner only, for epoch rotation)
     /// </summary>
     [HttpGet("api/albums/{albumId}/share-links/with-secrets")]
-    public async Task<IActionResult> ListWithSecrets(Guid albumId)
+    public async Task<IActionResult> ListWithSecrets(Guid albumId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
+        skip = Math.Max(0, skip);
+        take = Math.Clamp(take, 1, 100);
+
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
@@ -237,7 +247,8 @@ public class ShareLinksController : ControllerBase
                 sl.OwnerEncryptedSecret,
                 sl.ExpiresAt,
                 sl.MaxUses,
-                sl.UseCount
+                sl.UseCount,
+                sl.CreatedAt
             })
             .ToListAsync();
 
@@ -245,6 +256,13 @@ public class ShareLinksController : ControllerBase
         var links = allLinks
             .Where(sl => (!sl.ExpiresAt.HasValue || sl.ExpiresAt.Value > now) &&
                          (!sl.MaxUses.HasValue || sl.UseCount < sl.MaxUses.Value))
+            .OrderByDescending(sl => sl.CreatedAt)
+            .ThenBy(sl => sl.Id)
+            .ToList();
+
+        var page = links
+            .Skip(skip)
+            .Take(take)
             .Select(sl => new ShareLinkWithSecretResponse
             {
                 Id = sl.Id,
@@ -255,7 +273,8 @@ public class ShareLinksController : ControllerBase
             })
             .ToList();
 
-        return Ok(links);
+        Response.AddPaginationHeaders(skip, take, links.Count);
+        return Ok(page);
     }
 
     /// <summary>

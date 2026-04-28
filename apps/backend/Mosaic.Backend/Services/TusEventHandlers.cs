@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
@@ -213,7 +214,7 @@ public static class TusEventHandlers
         if (metadata != null && metadata.TryGetValue("sha256", out var hashMetadata))
         {
             var clientHash = hashMetadata.GetString(Encoding.UTF8);
-            if (!string.Equals(sha256Hex, clientHash, StringComparison.OrdinalIgnoreCase))
+            if (!Sha256Matches(sha256Hex, clientHash))
             {
                 await CleanupFailedUploadAsync(context.Store, fileId, reservation, services, context.CancellationToken);
                 throw new InvalidOperationException(
@@ -275,34 +276,49 @@ public static class TusEventHandlers
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-
-        var expiredReservations = await db.TusUploadReservations
-            .Where(r => r.ExpiresAt <= DateTime.UtcNow)
-            .OrderBy(r => r.ExpiresAt)
-            .Take(100)
-            .ToListAsync(cancellationToken);
-
-        if (expiredReservations.Count == 0)
-        {
-            return 0;
-        }
+        var logger = scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger(typeof(TusEventHandlers).FullName!);
 
         var tusStore = new tusdotnet.Stores.TusDiskStore(configuration["Storage:Path"] ?? "./data/blobs");
         var deletedCount = 0;
 
-        foreach (var reservation in expiredReservations)
+        while (!cancellationToken.IsCancellationRequested)
         {
-            if (tusStore is ITusTerminationStore terminationStore)
+            var expiredReservations = await db.TusUploadReservations
+                .Where(r => r.ExpiresAt <= DateTime.UtcNow)
+                .OrderBy(r => r.ExpiresAt)
+                .Take(100)
+                .ToListAsync(cancellationToken);
+
+            if (expiredReservations.Count == 0)
             {
-                await terminationStore.DeleteFileAsync(reservation.FileId, cancellationToken);
+                break;
             }
 
-            await AdjustQuotaAsync(db, reservation.UserId, -reservation.ReservedBytes, enforceLimit: false);
-            db.TusUploadReservations.Remove(reservation);
-            deletedCount++;
+            foreach (var reservation in expiredReservations)
+            {
+                if (tusStore is ITusTerminationStore terminationStore)
+                {
+                    try
+                    {
+                        await terminationStore.DeleteFileAsync(reservation.FileId, cancellationToken);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        logger?.LogWarning(
+                            ex,
+                            "Failed to delete expired Tus upload file {FileId}; releasing reservation anyway",
+                            reservation.FileId);
+                    }
+                }
+
+                await AdjustQuotaAsync(db, reservation.UserId, -reservation.ReservedBytes, enforceLimit: false);
+                db.TusUploadReservations.Remove(reservation);
+                deletedCount++;
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
         }
 
-        await db.SaveChangesAsync(cancellationToken);
         return deletedCount;
     }
 
@@ -329,6 +345,63 @@ public static class TusEventHandlers
         }
 
         return (fileSize, sha256Hex, metadata);
+    }
+
+    private static bool Sha256Matches(string? serverSha256Hex, string clientHash)
+    {
+        var clientSha256Hex = NormalizeSha256Hash(clientHash);
+        return serverSha256Hex != null
+            && clientSha256Hex != null
+            && string.Equals(serverSha256Hex, clientSha256Hex, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? NormalizeSha256Hash(string hash)
+    {
+        var trimmed = hash.Trim();
+        if (trimmed.Length == 64 && IsHex(trimmed))
+        {
+            return trimmed.ToLowerInvariant();
+        }
+
+        var normalizedBase64 = trimmed.Replace('-', '+').Replace('_', '/');
+        var remainder = normalizedBase64.Length % 4;
+        if (remainder == 1)
+        {
+            return null;
+        }
+
+        if (remainder != 0)
+        {
+            normalizedBase64 = normalizedBase64.PadRight(normalizedBase64.Length + 4 - remainder, '=');
+        }
+
+        try
+        {
+            var bytes = Convert.FromBase64String(normalizedBase64);
+            return bytes.Length == SHA256.HashSizeInBytes
+                ? Convert.ToHexString(bytes).ToLowerInvariant()
+                : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsHex(string value)
+    {
+        foreach (var c in value)
+        {
+            var isHex = c is >= '0' and <= '9'
+                or >= 'a' and <= 'f'
+                or >= 'A' and <= 'F';
+            if (!isHex)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static async Task CleanupFailedUploadAsync(

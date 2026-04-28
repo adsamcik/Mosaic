@@ -24,3 +24,9 @@ public record CreateManifestRequest(
 /// Shard info with tier assignment
 /// </summary>
 public record TieredShardInfo([MaxLength(64)] string ShardId, int Tier);
+
+public record UpdateManifestMetadataRequest(
+    [MaxLength(1048576)] string EncryptedMeta,
+    [MaxLength(256)] string Signature,
+    [MaxLength(128)] string SignerPubkey
+);

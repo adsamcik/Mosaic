@@ -146,6 +146,46 @@ public class GarbageCollectionServiceTests
     }
 
     [Fact]
+    public async Task CleanTrashedShards_ProcessesAllEligibleBatchesInOneRun()
+    {
+        var storage = new MockStorageService();
+        var (service, db, _) = CreateService(storage);
+        var builder = new TestDataBuilder(db);
+        var uploader = await builder.CreateUserAsync("batch-uploader");
+        var quota = await db.UserQuotas.FindAsync(uploader.Id);
+        quota!.UsedStorageBytes = 250_000;
+
+        var oldStatusTime = DateTime.UtcNow.AddDays(-8);
+        var shards = Enumerable.Range(0, 250)
+            .Select(i => new Shard
+            {
+                Id = Guid.NewGuid(),
+                UploaderId = uploader.Id,
+                StorageKey = $"trashed-{i}",
+                SizeBytes = 1_000,
+                Status = ShardStatus.TRASHED,
+                StatusUpdatedAt = oldStatusTime
+            })
+            .ToList();
+
+        foreach (var shard in shards)
+        {
+            storage.AddFile(shard.StorageKey);
+        }
+
+        db.Shards.AddRange(shards);
+        await db.SaveChangesAsync();
+
+        var cleaned = await service.CleanTrashedShards();
+
+        Assert.Equal(250, cleaned);
+        Assert.Empty(db.Shards);
+        Assert.Equal(250, storage.DeletedKeys.Count);
+        quota = await db.UserQuotas.FindAsync(uploader.Id);
+        Assert.Equal(0, quota!.UsedStorageBytes);
+    }
+
+    [Fact]
     public async Task CleanExpiredAlbums_ClampsQuotaToZero_WhenAlbumSizeExceedsUsedStorage()
     {
         // Arrange — data inconsistency where album size > used storage

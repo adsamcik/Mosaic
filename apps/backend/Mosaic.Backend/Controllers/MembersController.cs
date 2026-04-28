@@ -42,9 +42,15 @@ public class MembersController : ControllerBase
         var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
         if (accessError != null) return accessError;
 
-        var members = await _db.AlbumMembers
+        var query = _db.AlbumMembers
             .AsNoTracking()
-            .Where(am => am.AlbumId == albumId)
+            .Where(am => am.AlbumId == albumId);
+
+        var totalCount = await query.CountAsync();
+
+        var members = await query
+            .OrderBy(am => am.JoinedAt)
+            .ThenBy(am => am.UserId)
             .Skip(skip)
             .Take(take)
             .Select(am => new
@@ -57,6 +63,7 @@ public class MembersController : ControllerBase
             })
             .ToListAsync();
 
+        Response.AddPaginationHeaders(skip, take, totalCount);
         return Ok(members);
     }
 

@@ -40,6 +40,7 @@ public class UsersController : ControllerBase
             user.IsAdmin,
             EncryptedSalt = user.EncryptedSalt != null ? Convert.ToBase64String(user.EncryptedSalt) : null,
             SaltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null,
+            AccountSalt = user.AccountSalt != null ? Convert.ToBase64String(user.AccountSalt) : null,
             WrappedAccountKey = user.WrappedAccountKey != null ? Convert.ToBase64String(user.WrappedAccountKey) : null,
             Quota = quota != null ? new
             {

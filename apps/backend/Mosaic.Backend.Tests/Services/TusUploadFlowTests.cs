@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
@@ -99,6 +100,45 @@ public sealed class TusUploadFlowTests : IDisposable
         Assert.Equal(2048, quota!.UsedStorageBytes);
         Assert.Null(await _db.TusUploadReservations.FindAsync(fileId));
         Assert.Equal(2048, _db.Shards.Single(s => s.Id == Guid.Parse(fileId)).SizeBytes);
+    }
+
+    [Fact]
+    public async Task OnFileComplete_AcceptsBase64UrlSha256MetadataFromWebClient()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync("web-hash-user");
+        var album = await builder.CreateAlbumAsync(user);
+        var payload = Encoding.UTF8.GetBytes("encrypted shard envelope bytes");
+        var clientSha256 = Base64UrlEncode(SHA256.HashData(payload));
+        var serverSha256Hex = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+
+        var fileId = Guid.NewGuid().ToString();
+        _db.TusUploadReservations.Add(new TusUploadReservation
+        {
+            FileId = fileId,
+            UserId = user.Id,
+            AlbumId = album.Id,
+            ReservedBytes = payload.Length,
+            UploadLength = payload.Length,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        });
+        await _db.SaveChangesAsync();
+
+        var metadata = CreateMetadata(album.Id, clientSha256);
+        var store = new FakeTusStore();
+        store.AddFile(fileId, payload, metadata);
+        var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create("web-hash-user"), ctx =>
+        {
+            ctx.FileId = fileId;
+            ctx.Store = store;
+        });
+
+        await TusEventHandlers.OnFileComplete(fileComplete, _provider);
+
+        _db.ChangeTracker.Clear();
+        var shard = await _db.Shards.SingleAsync(s => s.Id == Guid.Parse(fileId));
+        Assert.Equal(serverSha256Hex, shard.Sha256);
+        Assert.Null(await _db.TusUploadReservations.FindAsync(fileId));
     }
 
     [Fact]
@@ -219,11 +259,19 @@ public sealed class TusUploadFlowTests : IDisposable
         return ctx;
     }
 
-    private static Dictionary<string, tusdotnet.Models.Metadata> CreateMetadata(Guid albumId)
+    private static Dictionary<string, tusdotnet.Models.Metadata> CreateMetadata(Guid albumId, string? sha256 = null)
     {
         var header = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.ToString()))}";
+        if (!string.IsNullOrWhiteSpace(sha256))
+        {
+            header += $",sha256 {Convert.ToBase64String(Encoding.UTF8.GetBytes(sha256))}";
+        }
+
         return tusdotnet.Models.Metadata.Parse(header);
     }
+
+    private static string Base64UrlEncode(byte[] bytes)
+        => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     private static TContext CreateContext<TContext>(HttpContext httpContext, Action<TContext> configure)
         where TContext : EventContext<TContext>, new()

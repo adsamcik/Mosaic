@@ -302,9 +302,13 @@ public class ShareLinkAccessController : ControllerBase
         }
 
         // Get non-deleted manifests for the album with pagination
-        var manifests = await _db.Manifests
+        var query = _db.Manifests
             .AsNoTracking()
-            .Where(m => m.AlbumId == shareLink.AlbumId && !m.IsDeleted)
+            .Where(m => m.AlbumId == shareLink.AlbumId && !m.IsDeleted);
+
+        var totalCount = await query.CountAsync();
+
+        var manifests = await query
             .Include(m => m.ManifestShards.OrderBy(ms => ms.ChunkIndex))
             .OrderBy(m => m.VersionCreated)
             .Skip(skip)
@@ -325,6 +329,7 @@ public class ShareLinkAccessController : ControllerBase
             })
             .ToListAsync();
 
+        Response.AddPaginationHeaders(skip, take, totalCount);
         return Ok(manifests);
     }
 

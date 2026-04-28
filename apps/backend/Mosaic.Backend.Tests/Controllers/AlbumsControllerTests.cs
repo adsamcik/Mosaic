@@ -67,6 +67,36 @@ public class AlbumsControllerTests
     }
 
     [Fact]
+    public async Task List_AddsPaginationHeaders()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        await builder.CreateAlbumAsync(user);
+        await builder.CreateAlbumAsync(user);
+        await builder.CreateAlbumAsync(user);
+
+        var controller = new AlbumsController(db, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.List(skip: 1, take: 1);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var albums = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        Assert.Single(albums);
+        Assert.Equal("1", controller.Response.Headers["X-Pagination-Skip"].ToString());
+        Assert.Equal("1", controller.Response.Headers["X-Pagination-Take"].ToString());
+        Assert.Equal("3", controller.Response.Headers["X-Pagination-Total-Count"].ToString());
+        Assert.Equal("true", controller.Response.Headers["X-Pagination-Has-More"].ToString());
+    }
+
+    [Fact]
     public async Task List_ExcludesRevokedMemberships()
     {
         // Arrange

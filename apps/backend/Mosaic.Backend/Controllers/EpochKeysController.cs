@@ -64,7 +64,7 @@ public class EpochKeysController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership or editor role
-        var (_, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
+        var (member, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
         if (memberError != null) return memberError;
 
         // Check recipient exists
@@ -90,13 +90,32 @@ public class EpochKeysController : ControllerBase
 
         // Check for existing key (fast path - handles normal duplicates)
         var existingKey = await _db.EpochKeys
-            .AnyAsync(ek =>
+            .FirstOrDefaultAsync(ek =>
                 ek.AlbumId == albumId &&
                 ek.RecipientId == request.RecipientId &&
                 ek.EpochId == request.EpochId);
 
-        if (existingKey)
+        if (existingKey != null)
         {
+            if (request.RecipientId == user.Id && member!.Role == AlbumRoles.Owner)
+            {
+                existingKey.EncryptedKeyBundle = request.EncryptedKeyBundle;
+                existingKey.OwnerSignature = request.OwnerSignature;
+                existingKey.SharerPubkey = request.SharerPubkey;
+                existingKey.SignPubkey = request.SignPubkey;
+
+                await _db.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    existingKey.Id,
+                    existingKey.AlbumId,
+                    existingKey.RecipientId,
+                    existingKey.EpochId,
+                    existingKey.CreatedAt
+                });
+            }
+
             return Problem(
                 detail: "Epoch key already exists for this album/recipient/epoch",
                 statusCode: StatusCodes.Status409Conflict);

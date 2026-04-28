@@ -2,6 +2,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.ShareLinks;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Tests.Helpers;
@@ -41,6 +42,35 @@ public class ShareLinksControllerTests
                     Nonce = TestDataBuilder.GenerateRandomBytes(24),
                     EncryptedKey = TestDataBuilder.GenerateRandomBytes(48)
                 }
+            }
+        };
+    }
+
+    private static async Task<(Album Album, ShareLink ShareLink)> CreateSharedAlbumWithManifestsAsync(
+        TestDataBuilder builder,
+        int manifestCount)
+    {
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+
+        for (var version = 1; version <= manifestCount; version++)
+        {
+            var manifest = await builder.CreateManifestAsync(album, [shard]);
+            manifest.VersionCreated = version;
+        }
+
+        var shareLink = await builder.CreateShareLinkAsync(album, accessTier: 3);
+        return (album, shareLink);
+    }
+
+    private static ShareLinkAccessController CreateShareLinkAccessController(MosaicDbContext db)
+    {
+        return new ShareLinkAccessController(db, TestConfiguration.Create(), new MockStorageService())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.CreateUnauthenticated()
             }
         };
     }
@@ -501,6 +531,42 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
+    public async Task List_AppliesSkipTakeAndAddsPaginationHeaders()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var oldest = await builder.CreateShareLinkAsync(album, accessTier: 1);
+        var middle = await builder.CreateShareLinkAsync(album, accessTier: 2);
+        var newest = await builder.CreateShareLinkAsync(album, accessTier: 3);
+        oldest.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-3);
+        middle.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-2);
+        newest.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await db.SaveChangesAsync();
+
+        var controller = new ShareLinksController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var result = await controller.List(album.Id, skip: 1, take: 1);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var links = Assert.IsAssignableFrom<List<ShareLinkResponse>>(okResult.Value);
+        var link = Assert.Single(links);
+        Assert.Equal(middle.Id, link.Id);
+        Assert.Equal("1", controller.Response.Headers["X-Pagination-Skip"].ToString());
+        Assert.Equal("1", controller.Response.Headers["X-Pagination-Take"].ToString());
+        Assert.Equal("3", controller.Response.Headers["X-Pagination-Total-Count"].ToString());
+        Assert.Equal("true", controller.Response.Headers["X-Pagination-Has-More"].ToString());
+    }
+
+    [Fact]
     public async Task List_ReturnsNotFound_WhenAlbumDoesNotExist()
     {
         // Arrange
@@ -589,6 +655,42 @@ public class ShareLinksControllerTests
         Assert.Single(links);
         Assert.Equal(shareLink.Id, links[0].Id);
         Assert.NotNull(links[0].OwnerEncryptedSecret);
+    }
+
+    [Fact]
+    public async Task ListWithSecrets_AppliesSkipTakeAndAddsPaginationHeaders()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var oldest = await builder.CreateShareLinkAsync(album, accessTier: 1, ownerEncryptedSecret: TestDataBuilder.GenerateRandomBytes(40));
+        var middle = await builder.CreateShareLinkAsync(album, accessTier: 2, ownerEncryptedSecret: TestDataBuilder.GenerateRandomBytes(40));
+        var newest = await builder.CreateShareLinkAsync(album, accessTier: 3, ownerEncryptedSecret: TestDataBuilder.GenerateRandomBytes(40));
+        oldest.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-3);
+        middle.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-2);
+        newest.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await db.SaveChangesAsync();
+
+        var controller = new ShareLinksController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var result = await controller.ListWithSecrets(album.Id, skip: 1, take: 1);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var links = Assert.IsAssignableFrom<List<ShareLinkWithSecretResponse>>(okResult.Value);
+        var link = Assert.Single(links);
+        Assert.Equal(middle.Id, link.Id);
+        Assert.Equal("1", controller.Response.Headers["X-Pagination-Skip"].ToString());
+        Assert.Equal("1", controller.Response.Headers["X-Pagination-Take"].ToString());
+        Assert.Equal("3", controller.Response.Headers["X-Pagination-Total-Count"].ToString());
+        Assert.Equal("true", controller.Response.Headers["X-Pagination-Has-More"].ToString());
     }
 
     [Fact]
@@ -1534,6 +1636,70 @@ public class ShareLinksControllerTests
         var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
         Assert.Equal(2, photos.Count);
         Assert.All(photos, p => Assert.Single(p.ShardIds));
+    }
+
+    [Fact]
+    public async Task GetPhotos_AppliesSkipAndTakeInVersionOrder()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+        var (_, shareLink) = await CreateSharedAlbumWithManifestsAsync(builder, manifestCount: 125);
+        var controller = CreateShareLinkAccessController(db);
+
+        // Act
+        var result = await controller.GetPhotos(ToBase64Url(shareLink.LinkId), skip: 100, take: 25);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        Assert.Equal(25, photos.Count);
+        Assert.Equal(
+            Enumerable.Range(101, 25).Select(i => (long)i).ToArray(),
+            photos.Select(p => p.VersionCreated).ToArray());
+        Assert.Equal("100", controller.Response.Headers["X-Pagination-Skip"].ToString());
+        Assert.Equal("25", controller.Response.Headers["X-Pagination-Take"].ToString());
+        Assert.Equal("125", controller.Response.Headers["X-Pagination-Total-Count"].ToString());
+        Assert.Equal("false", controller.Response.Headers["X-Pagination-Has-More"].ToString());
+    }
+
+    [Fact]
+    public async Task GetPhotos_ClampsTakeToMaximumPageSize()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+        var (_, shareLink) = await CreateSharedAlbumWithManifestsAsync(builder, manifestCount: 125);
+        var controller = CreateShareLinkAccessController(db);
+
+        // Act
+        var result = await controller.GetPhotos(ToBase64Url(shareLink.LinkId), skip: 0, take: 500);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        Assert.Equal(100, photos.Count);
+        Assert.Equal(1, photos[0].VersionCreated);
+        Assert.Equal(100, photos[^1].VersionCreated);
+    }
+
+    [Fact]
+    public async Task GetPhotos_NormalizesInvalidPagingParameters()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+        var (_, shareLink) = await CreateSharedAlbumWithManifestsAsync(builder, manifestCount: 3);
+        var controller = CreateShareLinkAccessController(db);
+
+        // Act
+        var result = await controller.GetPhotos(ToBase64Url(shareLink.LinkId), skip: -10, take: 0);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        var photo = Assert.Single(photos);
+        Assert.Equal(1, photo.VersionCreated);
     }
 
     [Fact]

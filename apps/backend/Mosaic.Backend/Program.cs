@@ -80,7 +80,9 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options 
 
 builder.Services.AddOpenApi();
 
-// Global rate limiting - 100 requests per minute per IP
+// Global rate limiting - relaxed in E2E Testing because Playwright runs many
+// isolated users in parallel from localhost.
+var globalRateLimitPermitLimit = builder.Environment.IsEnvironment("Testing") ? 10_000 : 100;
 builder.Services.AddRateLimiter(options =>
 {
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
@@ -88,7 +90,7 @@ builder.Services.AddRateLimiter(options =>
         var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         return RateLimitPartition.GetFixedWindowLimiter(remoteIp, _ => new FixedWindowRateLimiterOptions
         {
-            PermitLimit = 100,
+            PermitLimit = globalRateLimitPermitLimit,
             Window = TimeSpan.FromMinutes(1),
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
             QueueLimit = 5

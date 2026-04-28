@@ -42,7 +42,7 @@ public class GarbageCollectionService : BackgroundService
 
                 expiredUploadReservations = await TusEventHandlers.CleanupExpiredReservations(_services, stoppingToken);
                 orphanedBlobs = await CleanExpiredPendingShards();
-                orphanedBlobs += await CleanTrashedShards();
+                orphanedBlobs += await CleanTrashedShards(stoppingToken);
                 expiredAlbums = await CleanExpiredAlbums();
                 await CleanExpiredShareLinkGrants();
                 expiredLinks = await CleanExpiredShareLinks();
@@ -88,78 +88,98 @@ public class GarbageCollectionService : BackgroundService
         return count;
     }
 
-    internal async Task<int> CleanTrashedShards()
+    internal async Task<int> CleanTrashedShards(CancellationToken cancellationToken = default)
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
         var storage = scope.ServiceProvider.GetRequiredService<IStorageService>();
 
-        var toDelete = await db.Shards
-            .Where(s => s.Status == ShardStatus.TRASHED
-                     && s.StatusUpdatedAt < DateTime.UtcNow.AddDays(-7))
-            .OrderBy(s => s.StatusUpdatedAt)
-            .Take(100)  // Batch to avoid long transactions
-            .ToListAsync();
+        var totalDeleted = 0;
+        var cutoff = DateTime.UtcNow.AddDays(-7);
 
-        if (toDelete.Count == 0)
+        while (!cancellationToken.IsCancellationRequested)
         {
-            return 0;
-        }
+            var toDelete = await db.Shards
+                .Where(s => s.Status == ShardStatus.TRASHED
+                         && s.StatusUpdatedAt < cutoff)
+                .OrderBy(s => s.StatusUpdatedAt)
+                .Take(100)  // Batch to avoid long transactions
+                .ToListAsync(cancellationToken);
 
-        // Delete storage files in parallel (max 10 concurrent)
-        var semaphore = new SemaphoreSlim(10);
-        var deleteTasks = toDelete.Select(async shard =>
-        {
-            await semaphore.WaitAsync();
-            try
+            if (toDelete.Count == 0)
             {
-                await storage.DeleteAsync(shard.StorageKey);
-                return (shard, success: true);
+                break;
             }
-            catch (Exception ex)
-            {
-                _logger.StorageError(ex, $"delete shard {shard.Id}");
-                return (shard, success: false);
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        }).ToList();
 
-        var results = await Task.WhenAll(deleteTasks);
-        var successfulShards = results.Where(r => r.success).Select(r => r.shard).ToList();
-
-        // Batch update database for successful deletes
-        var now = DateTime.UtcNow;
-
-        foreach (var shard in successfulShards)
-        {
-            // Reclaim quota
-            if (shard.UploaderId.HasValue)
+            // Delete storage files in parallel (max 10 concurrent)
+            var semaphore = new SemaphoreSlim(10);
+            var deleteTasks = toDelete.Select(async shard =>
             {
-                if (db.Database.IsRelational())
+                await semaphore.WaitAsync(cancellationToken);
+                try
                 {
-                    await db.Database.ExecuteSqlAsync(
-                        $"UPDATE user_quotas SET used_storage_bytes = used_storage_bytes - {shard.SizeBytes}, updated_at = {now} WHERE user_id = {shard.UploaderId.Value}");
+                    await storage.DeleteAsync(shard.StorageKey);
+                    return (shard, success: true);
                 }
-                else
+                catch (Exception ex)
                 {
-                    var quota = await db.UserQuotas.FindAsync(shard.UploaderId.Value);
-                    if (quota != null)
+                    _logger.StorageError(ex, $"delete shard {shard.Id}");
+                    return (shard, success: false);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }).ToList();
+
+            var results = await Task.WhenAll(deleteTasks);
+            var successfulShards = results.Where(r => r.success).Select(r => r.shard).ToList();
+
+            if (successfulShards.Count == 0)
+            {
+                break;
+            }
+
+            // Batch update database for successful deletes
+            var now = DateTime.UtcNow;
+
+            foreach (var shard in successfulShards)
+            {
+                // Reclaim quota
+                if (shard.UploaderId.HasValue)
+                {
+                    if (db.Database.IsRelational())
                     {
-                        quota.UsedStorageBytes = Math.Max(0, quota.UsedStorageBytes - shard.SizeBytes);
-                        quota.UpdatedAt = now;
+                        if (db.UsesLiteProvider())
+                        {
+                            await db.Database.ExecuteSqlAsync(
+                                $"UPDATE user_quotas SET used_storage_bytes = MAX(0, used_storage_bytes - {shard.SizeBytes}), updated_at = {now} WHERE user_id = {shard.UploaderId.Value}");
+                        }
+                        else
+                        {
+                            await db.Database.ExecuteSqlAsync(
+                                $"UPDATE user_quotas SET used_storage_bytes = GREATEST(0, used_storage_bytes - {shard.SizeBytes}), updated_at = {now} WHERE user_id = {shard.UploaderId.Value}");
+                        }
+                    }
+                    else
+                    {
+                        var quota = await db.UserQuotas.FindAsync(shard.UploaderId.Value);
+                        if (quota != null)
+                        {
+                            quota.UsedStorageBytes = Math.Max(0, quota.UsedStorageBytes - shard.SizeBytes);
+                            quota.UpdatedAt = now;
+                        }
                     }
                 }
+
+                db.Shards.Remove(shard);
             }
 
-            db.Shards.Remove(shard);
+            await db.SaveChangesAsync(cancellationToken);
+            totalDeleted += successfulShards.Count;
         }
 
-        await db.SaveChangesAsync();
-
-        return successfulShards.Count;
+        return totalDeleted;
     }
 
     internal async Task<int> CleanExpiredAlbums()

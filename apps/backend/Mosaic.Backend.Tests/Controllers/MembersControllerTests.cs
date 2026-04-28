@@ -44,6 +44,40 @@ public class MembersControllerTests
     }
 
     [Fact]
+    public async Task List_AddsPaginationHeaders()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        for (var i = 0; i < 3; i++)
+        {
+            var member = await builder.CreateUserAsync($"member-{i}");
+            await builder.AddMemberAsync(album, member, "viewer", owner);
+        }
+
+        var controller = new MembersController(db, config, new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<MembersController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var result = await controller.List(album.Id, skip: 1, take: 2);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var members = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        Assert.Equal(2, members.Count());
+        Assert.Equal("1", controller.Response.Headers["X-Pagination-Skip"].ToString());
+        Assert.Equal("2", controller.Response.Headers["X-Pagination-Take"].ToString());
+        Assert.Equal("4", controller.Response.Headers["X-Pagination-Total-Count"].ToString());
+        Assert.Equal("true", controller.Response.Headers["X-Pagination-Has-More"].ToString());
+    }
+
+    [Fact]
     public async Task List_ReturnsForbid_WhenUserNotMember()
     {
         // Arrange

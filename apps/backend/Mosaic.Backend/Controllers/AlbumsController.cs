@@ -44,9 +44,15 @@ public class AlbumsController : ControllerBase
 
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
-        var albums = await _db.AlbumMembers
+        var query = _db.AlbumMembers
             .AsNoTracking()
-            .Where(am => am.UserId == user.Id && am.RevokedAt == null)
+            .Where(am => am.UserId == user.Id && am.RevokedAt == null);
+
+        var totalCount = await query.CountAsync();
+
+        var albums = await query
+            .OrderBy(am => am.Album.CreatedAt)
+            .ThenBy(am => am.AlbumId)
             .Skip(skip)
             .Take(take)
             .Select(am => new
@@ -64,6 +70,7 @@ public class AlbumsController : ControllerBase
             })
             .ToListAsync();
 
+        Response.AddPaginationHeaders(skip, take, totalCount);
         return Ok(albums);
     }
 
