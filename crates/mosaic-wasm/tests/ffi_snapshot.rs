@@ -5,9 +5,11 @@ use mosaic_wasm::{
     AccountUnlockRequest, account_key_handle_is_open, close_account_key_handle,
     close_epoch_key_handle, close_identity_handle, create_epoch_key_handle, create_identity_handle,
     crypto_domain_golden_vector_snapshot, decrypt_shard_with_epoch_handle,
-    encrypt_shard_with_epoch_handle, epoch_key_handle_is_open, identity_encryption_pubkey,
-    identity_signing_pubkey, open_epoch_key_handle, open_identity_handle, parse_envelope_header,
-    sign_manifest_with_identity, unlock_account_key, wasm_api_snapshot, wasm_progress_probe,
+    encrypt_metadata_sidecar_with_epoch_handle, encrypt_shard_with_epoch_handle,
+    epoch_key_handle_is_open, identity_encryption_pubkey, identity_signing_pubkey,
+    open_epoch_key_handle, open_identity_handle, parse_envelope_header,
+    sign_manifest_with_identity, unlock_account_key, verify_manifest_with_identity,
+    wasm_api_snapshot, wasm_progress_probe,
 };
 
 const PASSWORD: &[u8] = b"correct horse battery staple";
@@ -24,7 +26,7 @@ const MAX_PROGRESS_EVENTS: u32 = 10_000;
 fn wasm_facade_exposes_stable_ffi_spike_surface() {
     assert_eq!(
         wasm_api_snapshot(),
-        "mosaic-wasm ffi-spike:v4 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+        "mosaic-wasm ffi-spike:v5 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
     );
 }
 
@@ -147,6 +149,108 @@ fn wasm_facade_returns_crypto_domain_golden_vectors_without_secret_outputs() {
 }
 
 #[test]
+fn wasm_facade_verifies_identity_manifest_signatures() {
+    let account_result =
+        unlock_account_key(PASSWORD.to_vec(), unlock_request(wrapped_account_key()));
+    assert_eq!(account_result.code, 0);
+
+    let identity = create_identity_handle(account_result.handle);
+    assert_eq!(identity.code, 0);
+    assert_ne!(identity.handle, 0);
+
+    let transcript = b"canonical manifest transcript".to_vec();
+    let signature = sign_manifest_with_identity(identity.handle, transcript.clone());
+    assert_eq!(signature.code, 0);
+    assert_eq!(signature.bytes.len(), 64);
+
+    assert_eq!(
+        verify_manifest_with_identity(
+            transcript.clone(),
+            signature.bytes.clone(),
+            identity.signing_pubkey.clone()
+        ),
+        ClientErrorCode::Ok.as_u16()
+    );
+
+    let mut tampered_transcript = transcript;
+    tampered_transcript[0] ^= 0x01;
+    assert_eq!(
+        verify_manifest_with_identity(
+            tampered_transcript,
+            signature.bytes.clone(),
+            identity.signing_pubkey.clone()
+        ),
+        ClientErrorCode::AuthenticationFailed.as_u16()
+    );
+    assert_eq!(
+        verify_manifest_with_identity(vec![1, 2, 3], vec![0; 63], identity.signing_pubkey),
+        ClientErrorCode::InvalidSignatureLength.as_u16()
+    );
+    assert_eq!(
+        verify_manifest_with_identity(vec![1, 2, 3], signature.bytes, vec![0; 31]),
+        ClientErrorCode::InvalidKeyLength.as_u16()
+    );
+
+    assert_eq!(close_identity_handle(identity.handle), 0);
+    assert_eq!(close_account_key_handle(account_result.handle), 0);
+}
+
+#[test]
+fn wasm_facade_encrypts_canonical_metadata_sidecar_with_epoch_handle() {
+    let account_result =
+        unlock_account_key(PASSWORD.to_vec(), unlock_request(wrapped_account_key()));
+    assert_eq!(account_result.code, 0);
+
+    let epoch_result = create_epoch_key_handle(account_result.handle, 42);
+    assert_eq!(epoch_result.code, 0);
+
+    let encrypted = encrypt_metadata_sidecar_with_epoch_handle(
+        epoch_result.handle,
+        [0x11; 16].to_vec(),
+        [0x22; 16].to_vec(),
+        epoch_result.epoch_id,
+        encoded_metadata_fields(&[(1, &[6, 0]), (4, b"image/jpeg")]),
+        0,
+    );
+    assert_eq!(encrypted.code, 0);
+    assert!(!encrypted.envelope_bytes.is_empty());
+    assert!(!encrypted.sha256.is_empty());
+
+    let decrypted = decrypt_shard_with_epoch_handle(epoch_result.handle, encrypted.envelope_bytes);
+    assert_eq!(decrypted.code, 0);
+    assert!(decrypted.plaintext.starts_with(b"Mosaic_Metadata_v1"));
+
+    let second_encrypted = encrypt_metadata_sidecar_with_epoch_handle(
+        epoch_result.handle,
+        [0x11; 16].to_vec(),
+        [0x22; 16].to_vec(),
+        epoch_result.epoch_id,
+        encoded_metadata_fields(&[(3, &[1, 0, 0, 0, 2, 0, 0, 0])]),
+        7,
+    );
+    assert_eq!(second_encrypted.code, 0);
+    let header = parse_envelope_header(second_encrypted.envelope_bytes[..64].to_vec());
+    assert_eq!(header.code, 0);
+    assert_eq!(header.epoch_id, 42);
+    assert_eq!(header.shard_index, 7);
+    assert_eq!(header.tier, 1);
+
+    let invalid = encrypt_metadata_sidecar_with_epoch_handle(
+        epoch_result.handle,
+        [0x11; 15].to_vec(),
+        [0x22; 16].to_vec(),
+        epoch_result.epoch_id,
+        Vec::new(),
+        0,
+    );
+    assert_eq!(invalid.code, ClientErrorCode::InvalidInputLength.as_u16());
+    assert!(invalid.envelope_bytes.is_empty());
+
+    assert_eq!(close_epoch_key_handle(epoch_result.handle), 0);
+    assert_eq!(close_account_key_handle(account_result.handle), 0);
+}
+
+#[test]
 fn wasm_facade_returns_progress_events_with_stable_error_code() {
     let result = wasm_progress_probe(3, Some(1));
 
@@ -189,7 +293,6 @@ fn wasm_identity_operations_reject_zero_handle_without_outputs() {
 
     assert_eq!(close_identity_handle(0), 401);
 }
-
 
 #[test]
 fn wasm_error_paths_return_zero_handles_and_empty_sensitive_outputs() {
@@ -324,7 +427,6 @@ fn unlock_request(wrapped_account_key: Vec<u8>) -> AccountUnlockRequest {
     }
 }
 
-
 fn unlock_request_with(
     wrapped_account_key: Vec<u8>,
     user_salt: Vec<u8>,
@@ -352,4 +454,18 @@ fn wrapped_account_key() -> Vec<u8> {
             Err(error) => panic!("account key should derive: {error:?}"),
         };
     material.wrapped_account_key
+}
+
+fn encoded_metadata_fields(fields: &[(u16, &[u8])]) -> Vec<u8> {
+    let mut encoded = Vec::new();
+    for (tag, value) in fields {
+        encoded.extend_from_slice(&tag.to_le_bytes());
+        let len = match u32::try_from(value.len()) {
+            Ok(value) => value,
+            Err(error) => panic!("test metadata value length should fit u32: {error:?}"),
+        };
+        encoded.extend_from_slice(&len.to_le_bytes());
+        encoded.extend_from_slice(value);
+    }
+    encoded
 }

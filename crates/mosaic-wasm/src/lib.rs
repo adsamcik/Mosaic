@@ -5,6 +5,8 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 use zeroize::Zeroize;
 
+use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
+
 /// Rust-side WASM facade result for header parsing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeaderResult {
@@ -568,7 +570,7 @@ pub const fn protocol_version() -> &'static str {
 /// Returns the stable WASM API snapshot for this FFI spike.
 #[must_use]
 pub const fn wasm_api_snapshot() -> &'static str {
-    "mosaic-wasm ffi-spike:v4 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+    "mosaic-wasm ffi-spike:v5 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
 }
 
 /// Parses a shard envelope header for Rust-side wrapper tests.
@@ -654,6 +656,76 @@ pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: Vec<u8>) -> By
         handle,
         &transcript_bytes,
     ))
+}
+
+/// Verifies manifest transcript bytes with a public identity signing key.
+#[must_use]
+pub fn verify_manifest_with_identity(
+    transcript_bytes: Vec<u8>,
+    signature: Vec<u8>,
+    public_key: Vec<u8>,
+) -> u16 {
+    mosaic_client::verify_manifest_with_identity(&transcript_bytes, &signature, &public_key)
+        .as_u16()
+}
+
+/// Builds canonical plaintext metadata sidecar bytes from a compact encoded field list.
+///
+/// `encoded_fields` is a repeated sequence of `tag:u16le | value_len:u32le | value`.
+#[must_use]
+pub fn canonical_metadata_sidecar_bytes(
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    encoded_fields: Vec<u8>,
+) -> BytesResult {
+    match canonical_metadata_sidecar_bytes_result(&album_id, &photo_id, epoch_id, &encoded_fields) {
+        Ok(bytes) => BytesResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            bytes,
+        },
+        Err(code) => BytesResult {
+            code,
+            bytes: Vec::new(),
+        },
+    }
+}
+
+/// Encrypts canonical metadata sidecar bytes with a Rust-owned epoch-key handle.
+#[must_use]
+pub fn encrypt_metadata_sidecar_with_epoch_handle(
+    handle: u64,
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    encoded_fields: Vec<u8>,
+    shard_index: u32,
+) -> EncryptedShardResult {
+    let mut plaintext = match canonical_metadata_sidecar_bytes_result(
+        &album_id,
+        &photo_id,
+        epoch_id,
+        &encoded_fields,
+    ) {
+        Ok(bytes) => bytes,
+        Err(code) => {
+            return EncryptedShardResult {
+                code,
+                envelope_bytes: Vec::new(),
+                sha256: String::new(),
+            };
+        }
+    };
+
+    let result =
+        encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
+            handle,
+            &plaintext,
+            shard_index,
+            ShardTier::Thumbnail.to_byte(),
+        ));
+    plaintext.zeroize();
+    result
 }
 
 /// Creates a new epoch-key handle for an existing account-key handle.
@@ -871,6 +943,55 @@ pub fn sign_manifest_with_identity_js(handle: u64, transcript_bytes: Vec<u8>) ->
     js_bytes_result_from_rust(sign_manifest_with_identity(handle, transcript_bytes))
 }
 
+/// Verifies manifest transcript bytes through WASM.
+#[wasm_bindgen(js_name = verifyManifestWithIdentity)]
+#[must_use]
+pub fn verify_manifest_with_identity_js(
+    transcript_bytes: Vec<u8>,
+    signature: Vec<u8>,
+    public_key: Vec<u8>,
+) -> u16 {
+    verify_manifest_with_identity(transcript_bytes, signature, public_key)
+}
+
+/// Builds canonical metadata sidecar bytes through WASM.
+#[wasm_bindgen(js_name = canonicalMetadataSidecarBytes)]
+#[must_use]
+pub fn canonical_metadata_sidecar_bytes_js(
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    encoded_fields: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(canonical_metadata_sidecar_bytes(
+        album_id,
+        photo_id,
+        epoch_id,
+        encoded_fields,
+    ))
+}
+
+/// Encrypts metadata sidecar bytes with an epoch handle through WASM.
+#[wasm_bindgen(js_name = encryptMetadataSidecarWithEpochHandle)]
+#[must_use]
+pub fn encrypt_metadata_sidecar_with_epoch_handle_js(
+    handle: u64,
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    encoded_fields: Vec<u8>,
+    shard_index: u32,
+) -> JsEncryptedShardResult {
+    js_encrypted_shard_result_from_rust(encrypt_metadata_sidecar_with_epoch_handle(
+        handle,
+        album_id,
+        photo_id,
+        epoch_id,
+        encoded_fields,
+        shard_index,
+    ))
+}
+
 /// Creates a new epoch-key handle through WASM.
 #[wasm_bindgen(js_name = createEpochKeyHandle)]
 #[must_use]
@@ -1062,6 +1183,62 @@ fn crypto_domain_vector_from_client(
         identity_encryption_pubkey: result.identity_encryption_pubkey,
         identity_signature: result.identity_signature,
     }
+}
+
+fn canonical_metadata_sidecar_bytes_result(
+    album_id: &[u8],
+    photo_id: &[u8],
+    epoch_id: u32,
+    encoded_fields: &[u8],
+) -> Result<Vec<u8>, u16> {
+    let album_id = uuid_bytes(album_id)?;
+    let photo_id = uuid_bytes(photo_id)?;
+    let fields = metadata_fields_from_encoded(encoded_fields)?;
+    let sidecar = MetadataSidecar::new(album_id, photo_id, epoch_id, &fields);
+    mosaic_domain::canonical_metadata_sidecar_bytes(&sidecar).map_err(map_metadata_sidecar_error)
+}
+
+fn uuid_bytes(bytes: &[u8]) -> Result<[u8; 16], u16> {
+    if bytes.len() != 16 {
+        return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
+    }
+    let mut value = [0_u8; 16];
+    value.copy_from_slice(bytes);
+    Ok(value)
+}
+
+fn metadata_fields_from_encoded(
+    encoded_fields: &[u8],
+) -> Result<Vec<MetadataSidecarField<'_>>, u16> {
+    let mut fields = Vec::new();
+    let mut offset = 0_usize;
+    while offset < encoded_fields.len() {
+        let remaining = &encoded_fields[offset..];
+        if remaining.len() < 6 {
+            return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
+        }
+
+        let tag = u16::from_le_bytes([remaining[0], remaining[1]]);
+        let value_len =
+            u32::from_le_bytes([remaining[2], remaining[3], remaining[4], remaining[5]]) as usize;
+        offset += 6;
+
+        let end = match offset.checked_add(value_len) {
+            Some(value) => value,
+            None => return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()),
+        };
+        if end > encoded_fields.len() {
+            return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
+        }
+
+        fields.push(MetadataSidecarField::new(tag, &encoded_fields[offset..end]));
+        offset = end;
+    }
+    Ok(fields)
+}
+
+fn map_metadata_sidecar_error(_error: MetadataSidecarError) -> u16 {
+    mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()
 }
 
 fn js_account_unlock_result_from_rust(result: AccountUnlockResult) -> JsAccountUnlockResult {

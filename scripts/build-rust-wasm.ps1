@@ -33,6 +33,13 @@ try {
         --target web `
         --out-dir $OutDir `
         "$ProjectRoot/target/wasm32-unknown-unknown/release/mosaic_wasm.wasm"
+
+    $WebOutDir = Join-Path $ProjectRoot "apps/web/src/generated/mosaic-wasm"
+    New-Item -ItemType Directory -Force -Path $WebOutDir | Out-Null
+    Copy-Item -Force -Path (Join-Path $OutDir "mosaic_wasm.js") -Destination $WebOutDir
+    Copy-Item -Force -Path (Join-Path $OutDir "mosaic_wasm.d.ts") -Destination $WebOutDir
+    Copy-Item -Force -Path (Join-Path $OutDir "mosaic_wasm_bg.wasm") -Destination $WebOutDir
+    Copy-Item -Force -Path (Join-Path $OutDir "mosaic_wasm_bg.wasm.d.ts") -Destination $WebOutDir
 }
 finally {
     Pop-Location

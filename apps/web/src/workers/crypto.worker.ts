@@ -18,10 +18,8 @@ import {
   encryptShard as cryptoEncryptShard,
   generateEpochKey as cryptoGenerateEpochKey,
   generateLinkSecret as cryptoGenerateLinkSecret,
-  peekHeader as cryptoPeekHeader,
   signManifest as cryptoSignManifest,
   unwrapTierKeyFromLink as cryptoUnwrapTierKeyFromLink,
-  verifyManifest as cryptoVerifyManifest,
   verifyShard as cryptoVerifyShard,
   wrapTierKeyForLink as cryptoWrapTierKeyForLink,
   deriveAuthKeypair,
@@ -38,6 +36,11 @@ import {
   verifyAndOpenBundle,
   type IdentityKeypair,
 } from '@mosaic/crypto';
+import {
+  getRustCryptoCore,
+  parseEnvelopeHeaderFromRust,
+  verifyLegacyManifestWithRust,
+} from './rust-crypto-core';
 
 // Create scoped logger for crypto worker
 const log = createLogger('CryptoWorker');
@@ -45,8 +48,8 @@ const log = createLogger('CryptoWorker');
 /**
  * Crypto Worker Implementation
  *
- * Real implementation using libsodium-wrappers-sumo and @mosaic/crypto.
- * All cryptographic operations run in this dedicated worker thread.
+ * Rust/WASM-backed implementation for supported Mosaic protocol surfaces with
+ * temporary TypeScript reference compatibility for raw-key legacy callers.
  */
 class CryptoWorker implements CryptoWorkerApi {
   /** Session key derived from password for database encryption */
@@ -291,7 +294,7 @@ class CryptoWorker implements CryptoWorkerApi {
     await this.ensureSodiumReady();
 
     // Peek at the envelope header to determine which tier key to use
-    const header = cryptoPeekHeader(envelope);
+    const header = await this.peekHeader(envelope);
     const { thumbKey, previewKey, fullKey } = deriveTierKeys(epochSeed);
 
     // Select the appropriate tier key based on the envelope's tier byte
@@ -366,13 +369,8 @@ class CryptoWorker implements CryptoWorkerApi {
   async peekHeader(
     envelope: Uint8Array,
   ): Promise<{ epochId: number; shardId: number; tier: number }> {
-    // peekHeader is synchronous but we expose it as async for consistency
-    const header = cryptoPeekHeader(envelope);
-    return {
-      epochId: header.epochId,
-      shardId: header.shardId,
-      tier: header.tier,
-    };
+    const rust = await getRustCryptoCore();
+    return parseEnvelopeHeaderFromRust(rust, envelope);
   }
 
   /**
@@ -443,8 +441,8 @@ class CryptoWorker implements CryptoWorkerApi {
     signature: Uint8Array,
     pubKey: Uint8Array,
   ): Promise<boolean> {
-    await this.ensureSodiumReady();
-    return cryptoVerifyManifest(manifest, signature, pubKey);
+    const rust = await getRustCryptoCore();
+    return verifyLegacyManifestWithRust(rust, manifest, signature, pubKey);
   }
 
   /**

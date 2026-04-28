@@ -7,11 +7,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use mosaic_crypto::{
-    EpochKeyMaterial, IdentityKeypair, KdfProfile, MosaicCryptoError, SecretKey, decrypt_shard,
-    derive_epoch_key_material, derive_identity_keypair, encrypt_shard, generate_epoch_key_material,
-    generate_identity_seed, get_tier_key,
-    sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_account_key,
-    unwrap_key, wrap_key,
+    EpochKeyMaterial, IdentityKeypair, IdentitySignature, IdentitySigningPublicKey, KdfProfile,
+    MosaicCryptoError, SecretKey, decrypt_shard, derive_epoch_key_material,
+    derive_identity_keypair, encrypt_shard, generate_epoch_key_material, generate_identity_seed,
+    get_tier_key, sign_manifest_with_identity as crypto_sign_manifest_with_identity,
+    unwrap_account_key, unwrap_key, verify_manifest_identity_signature, wrap_key,
 };
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
 use zeroize::{Zeroize, Zeroizing};
@@ -757,6 +757,32 @@ pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: &[u8]) -> Byte
         }
     })
     .unwrap_or_else(bytes_error)
+}
+
+/// Verifies manifest transcript bytes with a public identity signing key.
+///
+/// Returns a stable error code so web/Android bindings can reject invalid
+/// signatures without exposing cryptographic library internals.
+#[must_use]
+pub fn verify_manifest_with_identity(
+    transcript_bytes: &[u8],
+    signature_bytes: &[u8],
+    public_key_bytes: &[u8],
+) -> ClientErrorCode {
+    let signature = match IdentitySignature::from_bytes(signature_bytes) {
+        Ok(value) => value,
+        Err(error) => return map_crypto_error(error),
+    };
+    let public_key = match IdentitySigningPublicKey::from_bytes(public_key_bytes) {
+        Ok(value) => value,
+        Err(error) => return map_crypto_error(error),
+    };
+
+    if verify_manifest_identity_signature(transcript_bytes, &signature, &public_key) {
+        ClientErrorCode::Ok
+    } else {
+        ClientErrorCode::AuthenticationFailed
+    }
 }
 
 /// Closes and wipes a Rust-owned opaque identity handle.

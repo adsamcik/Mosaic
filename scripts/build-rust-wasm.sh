@@ -29,3 +29,10 @@ wasm-bindgen \
   --target web \
   --out-dir "$out_dir" \
   "$PROJECT_ROOT/target/wasm32-unknown-unknown/release/mosaic_wasm.wasm"
+
+web_out_dir="$PROJECT_ROOT/apps/web/src/generated/mosaic-wasm"
+mkdir -p "$web_out_dir"
+cp "$out_dir/mosaic_wasm.js" "$web_out_dir/"
+cp "$out_dir/mosaic_wasm.d.ts" "$web_out_dir/"
+cp "$out_dir/mosaic_wasm_bg.wasm" "$web_out_dir/"
+cp "$out_dir/mosaic_wasm_bg.wasm.d.ts" "$web_out_dir/"
