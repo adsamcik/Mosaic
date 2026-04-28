@@ -185,7 +185,7 @@ export class LoginPage {
   }
 
   async expectFormVisible(): Promise<void> {
-    await expect(this.form).toBeVisible({ timeout: NETWORK_TIMEOUT.NAVIGATION });
+    await this.waitForForm(NETWORK_TIMEOUT.NAVIGATION);
   }
 
   /**
@@ -270,6 +270,7 @@ export class LoginPage {
    */
   async loginOrRegister(password: string, username: string): Promise<void> {
     console.log('[LoginPage] loginOrRegister() called');
+    await this.waitForForm();
     
     // Check if LocalAuth mode (username field visible)
     const isLocalAuth = await this.usernameInput.isVisible({ timeout: 2000 }).catch(() => false);

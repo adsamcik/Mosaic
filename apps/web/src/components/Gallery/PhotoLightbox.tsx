@@ -53,9 +53,9 @@ export interface PhotoLightboxProps {
 
 /** Loading state for the full-resolution photo */
 type LoadState =
-  | { status: 'loading'; progress: number; thumbnailUrl?: string | undefined }
-  | { status: 'loaded'; result: PhotoLoadResult }
-  | { status: 'error'; error: Error };
+  | { status: 'loading'; photoId: string; progress: number; thumbnailUrl?: string | undefined }
+  | { status: 'loaded'; photoId: string; result: PhotoLoadResult }
+  | { status: 'error'; photoId: string; error: Error };
 
 /**
  * Translate a `<video>` MediaError into a human-readable, actionable message.
@@ -125,6 +125,7 @@ export function PhotoLightbox({
   const { t } = useTranslation();
   const [loadState, setLoadState] = useState<LoadState>({
     status: 'loading',
+    photoId: photo.id,
     progress: 0,
   });
   const [showInfo, setShowInfo] = useState(false);
@@ -198,6 +199,7 @@ export function PhotoLightbox({
     if (!epochReadKey || !originalShards || originalShards.length === 0) {
       setLoadState({
         status: 'error',
+        photoId: photo.id,
         error: new Error('Missing epoch key or shard IDs'),
       });
       return;
@@ -206,7 +208,7 @@ export function PhotoLightbox({
     // Check if photo is already cached - if so, use it immediately without showing loading state
     const cached = getCachedPhoto(fullResPhotoId);
     if (cached) {
-      setLoadState({ status: 'loaded', result: cached });
+      setLoadState({ status: 'loaded', photoId: photo.id, result: cached });
       return () => {
         releasePhoto(fullResPhotoId);
       };
@@ -218,6 +220,7 @@ export function PhotoLightbox({
       // Set loading state with embedded thumbnail for immediate display
       setLoadState({ 
         status: 'loading', 
+        photoId: photo.id,
         progress: 0,
         thumbnailUrl: embeddedThumbnailUrl,
       });
@@ -234,6 +237,7 @@ export function PhotoLightbox({
                 const progress = total > 0 ? loaded / total : 0;
                 setLoadState({ 
                   status: 'loading', 
+                  photoId: photo.id,
                   progress,
                   thumbnailUrl: embeddedThumbnailUrl,
                 });
@@ -243,12 +247,13 @@ export function PhotoLightbox({
         );
 
         if (!cancelled) {
-          setLoadState({ status: 'loaded', result });
+          setLoadState({ status: 'loaded', photoId: photo.id, result });
         }
       } catch (error) {
         if (!cancelled) {
           setLoadState({
             status: 'error',
+            photoId: photo.id,
             error: error instanceof Error ? error : new Error(String(error)),
           });
         }
@@ -261,7 +266,7 @@ export function PhotoLightbox({
       cancelled = true;
       releasePhoto(fullResPhotoId);
     };
-  }, [fullResPhotoId, originalShards, photo.mimeType, epochReadKey, embeddedThumbnailUrl]);
+  }, [fullResPhotoId, originalShards, photo.id, photo.mimeType, epochReadKey, embeddedThumbnailUrl]);
 
   // Preload next/previous photos - use original shards only
   useEffect(() => {
@@ -290,30 +295,40 @@ export function PhotoLightbox({
   const handleRetry = useCallback(() => {
     if (!epochReadKey || !originalShards?.length) return;
 
-    setLoadState({ status: 'loading', progress: 0, thumbnailUrl: embeddedThumbnailUrl });
+    setLoadState({ status: 'loading', photoId: photo.id, progress: 0, thumbnailUrl: embeddedThumbnailUrl });
 
     loadPhoto(fullResPhotoId, originalShards, epochReadKey, photo.mimeType, {
       skipCache: true,
       onProgress: (loaded, total) => {
         const progress = total > 0 ? loaded / total : 0;
-        setLoadState({ status: 'loading', progress, thumbnailUrl: embeddedThumbnailUrl });
+        setLoadState({ status: 'loading', photoId: photo.id, progress, thumbnailUrl: embeddedThumbnailUrl });
       },
     })
-      .then((result) => setLoadState({ status: 'loaded', result }))
+      .then((result) => setLoadState({ status: 'loaded', photoId: photo.id, result }))
       .catch((error) =>
         setLoadState({
           status: 'error',
+          photoId: photo.id,
           error: error instanceof Error ? error : new Error(String(error)),
         }),
       );
-  }, [fullResPhotoId, originalShards, photo.mimeType, epochReadKey, embeddedThumbnailUrl]);
+  }, [fullResPhotoId, originalShards, photo.id, photo.mimeType, epochReadKey, embeddedThumbnailUrl]);
 
   // Get album permissions for download/edit capabilities
   const { canDownload, canUpload } = useAlbumPermissions();
+  const effectiveLoadState: LoadState =
+    loadState.photoId === photo.id
+      ? loadState
+      : {
+          status: 'loading',
+          photoId: photo.id,
+          progress: 0,
+          thumbnailUrl: embeddedThumbnailUrl,
+        };
 
   // Handle download button click
   const handleDownload = useCallback(() => {
-    if (loadState.status !== 'loaded') return;
+    if (loadState.status !== 'loaded' || loadState.photoId !== photo.id) return;
 
     // Create a temporary anchor element to trigger download
     const link = document.createElement('a');
@@ -322,7 +337,7 @@ export function PhotoLightbox({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [loadState, photo.filename]);
+  }, [loadState, photo.id, photo.filename]);
 
   const handleRotate = useCallback(async () => {
     if (isRotating) return;
@@ -531,7 +546,7 @@ export function PhotoLightbox({
 
   // Render loading state - shows thumbnail as background if available
   const renderLoading = () => {
-    const loadingState = loadState as { progress: number; thumbnailUrl?: string };
+    const loadingState = effectiveLoadState as { progress: number; thumbnailUrl?: string };
     const hasThumbnail = !!loadingState.thumbnailUrl;
     
     return (
@@ -590,7 +605,7 @@ export function PhotoLightbox({
         </svg>
       </span>
       <p className="lightbox-error-message">
-        Failed to load photo: {(loadState as { error: Error }).error.message}
+        Failed to load photo: {(effectiveLoadState as { error: Error }).error.message}
       </p>
       <button
         className="button-primary lightbox-retry-button"
@@ -604,7 +619,7 @@ export function PhotoLightbox({
 
   // Render loaded photo or video
   const renderPhoto = () => {
-    const blobUrl = (loadState as { result: PhotoLoadResult }).result.blobUrl;
+    const blobUrl = (effectiveLoadState as { result: PhotoLoadResult }).result.blobUrl;
 
     if (isVideo) {
       return (
@@ -648,11 +663,13 @@ export function PhotoLightbox({
 
     return (
       <img
+        key={photo.id}
         src={blobUrl}
         alt={photo.filename}
         className="lightbox-image"
         style={{ transform: `rotate(${displayRotation}deg)` }}
         data-testid="lightbox-image"
+        data-photo-id={photo.id}
       />
     );
   };
@@ -679,10 +696,10 @@ export function PhotoLightbox({
             </dd>
           </>
         )}
-        {loadState.status === 'loaded' && (
+        {effectiveLoadState.status === 'loaded' && (
           <>
             <dt>{t('lightbox.metadata.fileSize')}</dt>
-            <dd>{formatFileSize(loadState.result.size)}</dd>
+            <dd>{formatFileSize(effectiveLoadState.result.size)}</dd>
           </>
         )}
         <dt>{t('lightbox.metadata.format')}</dt>
@@ -832,9 +849,9 @@ export function PhotoLightbox({
 
       {/* Photo container */}
       <div className="lightbox-content">
-        {loadState.status === 'loading' && renderLoading()}
-        {loadState.status === 'error' && renderError()}
-        {loadState.status === 'loaded' && renderPhoto()}
+        {effectiveLoadState.status === 'loading' && renderLoading()}
+        {effectiveLoadState.status === 'error' && renderError()}
+        {effectiveLoadState.status === 'loaded' && renderPhoto()}
       </div>
 
       {/* Info toggle button */}
@@ -867,7 +884,7 @@ export function PhotoLightbox({
       )}
 
       {/* Download button */}
-      {canDownload && loadState.status === 'loaded' && (
+      {canDownload && effectiveLoadState.status === 'loaded' && (
         <button
           className="lightbox-download-button"
           onClick={handleDownload}
@@ -894,7 +911,7 @@ export function PhotoLightbox({
       )}
 
       {/* Rotate button */}
-      {canUpload && loadState.status === 'loaded' && (
+      {canUpload && effectiveLoadState.status === 'loaded' && (
         <button
           className="lightbox-rotate-button"
           onClick={() => void handleRotate()}

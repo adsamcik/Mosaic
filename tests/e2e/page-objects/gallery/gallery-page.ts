@@ -2,7 +2,7 @@
  * Gallery Page Object
  */
 
-import { type Page, type Locator, expect } from '../base';
+import { type Page, type Locator, expect, UI_TIMEOUT } from '../base';
 
 export class GalleryPage {
   readonly page: Page;
@@ -49,6 +49,40 @@ export class GalleryPage {
 
   async waitForOwnerPermissions(timeout = 30000): Promise<void> {
     await expect(this.albumSettingsButton).toBeVisible({ timeout });
+  }
+
+  private async openAlbumSettingsMenuWithAction(
+    action: Locator,
+    timeout = 30000
+  ): Promise<void> {
+    await this.waitForOwnerPermissions(timeout);
+
+    await expect(async () => {
+      if (!(await this.albumSettingsMenu.isVisible().catch(() => false))) {
+        await this.albumSettingsButton.click();
+      }
+
+      await expect(this.albumSettingsMenu).toBeVisible({
+        timeout: UI_TIMEOUT.VISIBLE,
+      });
+      await expect(action).toBeVisible({ timeout: UI_TIMEOUT.VISIBLE });
+    }).toPass({ timeout, intervals: [100, 250, 500, 1000] });
+  }
+
+  private async clickAlbumSettingsAction(
+    action: Locator,
+    openedSurface: Locator,
+    timeout = 30000
+  ): Promise<void> {
+    await expect(async () => {
+      if (await openedSurface.isVisible().catch(() => false)) {
+        return;
+      }
+
+      await this.openAlbumSettingsMenuWithAction(action, timeout);
+      await action.click();
+      await expect(openedSurface).toBeVisible({ timeout: UI_TIMEOUT.VISIBLE });
+    }).toPass({ timeout, intervals: [100, 250, 500, 1000] });
   }
 
   /**
@@ -318,8 +352,6 @@ export class GalleryPage {
   }
 
   async openMembers(): Promise<void> {
-    await this.waitForOwnerPermissions();
-
     const membersPanel = this.page.getByTestId('member-panel');
     const isPanelOpen = await membersPanel.isVisible().catch(() => false);
     if (isPanelOpen) {
@@ -327,16 +359,8 @@ export class GalleryPage {
       await closeBtn.click();
       await expect(membersPanel).toBeHidden({ timeout: 5000 });
     }
-    
-    await expect(async () => {
-      const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
-      if (!isMenuVisible) {
-        await this.albumSettingsButton.click();
-        await expect(this.albumSettingsMenu).toBeVisible({ timeout: 2000 });
-      }
-      await expect(this.membersButton).toBeVisible({ timeout: 2000 });
-      await this.membersButton.click();
-    }).toPass({ timeout: 15000, intervals: [100, 500, 1000] });
+
+    await this.clickAlbumSettingsAction(this.membersButton, membersPanel, 30000);
   }
 
   async setViewMode(mode: 'justified' | 'grid' | 'map'): Promise<void> {
@@ -354,78 +378,43 @@ export class GalleryPage {
   }
 
   async openShareLinks(): Promise<void> {
-    await this.waitForOwnerPermissions();
-
-    await expect(async () => {
-      const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
-      if (!isMenuVisible) {
-        await this.albumSettingsButton.click();
-        await expect(this.albumSettingsMenu).toBeVisible({ timeout: 2000 });
-      }
-      await expect(this.shareButton).toBeVisible({ timeout: 2000 });
-      await this.shareButton.click();
-    }).toPass({ timeout: 15000, intervals: [100, 500, 1000] });
+    await this.clickAlbumSettingsAction(
+      this.shareButton,
+      this.page.getByTestId('share-links-panel'),
+      30000
+    );
   }
 
   async openAlbumSettings(): Promise<void> {
-    await this.waitForOwnerPermissions();
-
     await expect(async () => {
       const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
       if (!isMenuVisible) {
         await this.albumSettingsButton.click();
-        await expect(this.albumSettingsMenu).toBeVisible({ timeout: 2000 });
+        await expect(this.albumSettingsMenu).toBeVisible({
+          timeout: UI_TIMEOUT.VISIBLE,
+        });
       }
-    }).toPass({ timeout: 15000, intervals: [100, 500, 1000] });
+    }).toPass({ timeout: 15000, intervals: [100, 250, 500, 1000] });
   }
 
   async openRenameDialog(): Promise<void> {
-    await this.waitForOwnerPermissions();
-
-    await expect(async () => {
-      const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
-      const isRenameButtonVisible = isMenuVisible && await this.renameAlbumButton.isVisible().catch(() => false);
-      
-      if (isMenuVisible && !isRenameButtonVisible) {
-        await this.page.keyboard.press('Escape');
-        await expect(this.albumSettingsMenu).toBeHidden({ timeout: 1000 }).catch(() => {});
-      }
-      
-      if (!await this.albumSettingsMenu.isVisible().catch(() => false)) {
-        await this.albumSettingsButton.click();
-        await expect(this.albumSettingsMenu).toBeVisible({ timeout: 2000 });
-      }
-      
-      await expect(this.renameAlbumButton).toBeVisible({ timeout: 2000 });
-      await this.renameAlbumButton.click();
-    }).toPass({ timeout: 15000, intervals: [100, 500, 1000] });
+    await this.clickAlbumSettingsAction(
+      this.renameAlbumButton,
+      this.page.getByTestId('rename-album-dialog'),
+      30000
+    );
   }
 
   async clickDeleteAlbum(): Promise<void> {
-    await this.waitForOwnerPermissions();
-
-    await expect(async () => {
-      const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
-      const isDeleteButtonVisible = isMenuVisible && await this.deleteAlbumButton.isVisible().catch(() => false);
-      
-      if (isMenuVisible && !isDeleteButtonVisible) {
-        await this.page.keyboard.press('Escape');
-        await expect(this.albumSettingsMenu).toBeHidden({ timeout: 1000 }).catch(() => {});
-      }
-      
-      if (!await this.albumSettingsMenu.isVisible().catch(() => false)) {
-        await this.albumSettingsButton.click();
-        await expect(this.albumSettingsMenu).toBeVisible({ timeout: 2000 });
-      }
-      
-      await expect(this.deleteAlbumButton).toBeVisible({ timeout: 2000 });
-      await this.deleteAlbumButton.click();
-    }).toPass({ timeout: 15000, intervals: [100, 500, 1000] });
+    await this.clickAlbumSettingsAction(
+      this.deleteAlbumButton,
+      this.page.getByTestId('delete-album-dialog'),
+      30000
+    );
   }
 
   async expectDeleteButtonVisible(): Promise<void> {
-    await this.openAlbumSettings();
-    await expect(this.deleteAlbumButton).toBeVisible({ timeout: 5000 });
+    await this.openAlbumSettingsMenuWithAction(this.deleteAlbumButton, 30000);
   }
 
   async expectDeleteButtonHidden(): Promise<void> {

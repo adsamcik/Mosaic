@@ -254,7 +254,8 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
 
       console.log('[TEST] Phase 3: Re-logging in');
 
-      await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
+      await loginPage.waitForForm();
+      await loginPage.login(TEST_CONSTANTS.PASSWORD, testUser);
       await loginPage.expectLoginSuccess();
       await appShell.waitForLoad();
 

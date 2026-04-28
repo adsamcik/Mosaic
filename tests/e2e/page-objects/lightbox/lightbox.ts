@@ -35,13 +35,19 @@ export class Lightbox {
     await expect(this.container).toBeHidden({ timeout });
   }
 
-  async waitForImage(timeout = 30000): Promise<void> {
+  async waitForImage(timeout = 30000, expectedPhotoId?: string): Promise<void> {
     await expect(this.image).toBeVisible({ timeout });
     await this.page.waitForFunction(
-      () => {
+      (photoId) => {
         const img = document.querySelector('[data-testid="lightbox-image"]') as HTMLImageElement;
-        return img && img.complete && img.naturalWidth > 0;
+        return (
+          img &&
+          img.complete &&
+          img.naturalWidth > 0 &&
+          (!photoId || img.dataset.photoId === photoId)
+        );
       },
+      expectedPhotoId ?? null,
       { timeout }
     );
   }
@@ -61,12 +67,48 @@ export class Lightbox {
     await this.waitForClose();
   }
 
-  async goToNext(): Promise<void> {
+  async goToNext(timeout = 30000): Promise<void> {
+    const previousPhotoId = await this.image.getAttribute('data-photo-id').catch(() => null);
+    const previousSrc = await this.image.getAttribute('src').catch(() => null);
+
     await this.nextButton.click();
+
+    await this.page.waitForFunction(
+      ({ photoId, src }) => {
+        const img = document.querySelector('[data-testid="lightbox-image"]') as HTMLImageElement | null;
+        if (!img || !img.complete || img.naturalWidth <= 0) {
+          return false;
+        }
+
+        const photoChanged = photoId ? img.dataset.photoId !== photoId : true;
+        const srcChanged = src ? img.getAttribute('src') !== src : true;
+        return photoChanged && srcChanged;
+      },
+      { photoId: previousPhotoId, src: previousSrc },
+      { timeout }
+    );
   }
 
-  async goToPrevious(): Promise<void> {
+  async goToPrevious(timeout = 30000): Promise<void> {
+    const previousPhotoId = await this.image.getAttribute('data-photo-id').catch(() => null);
+    const previousSrc = await this.image.getAttribute('src').catch(() => null);
+
     await this.prevButton.click();
+
+    await this.page.waitForFunction(
+      ({ photoId, src }) => {
+        const img = document.querySelector('[data-testid="lightbox-image"]') as HTMLImageElement | null;
+        if (!img || !img.complete || img.naturalWidth <= 0) {
+          return false;
+        }
+
+        const photoChanged = photoId ? img.dataset.photoId !== photoId : true;
+        const srcChanged = src ? img.getAttribute('src') !== src : true;
+        return photoChanged && srcChanged;
+      },
+      { photoId: previousPhotoId, src: previousSrc },
+      { timeout }
+    );
   }
 
   async navigateWithKeyboard(direction: 'left' | 'right'): Promise<void> {
