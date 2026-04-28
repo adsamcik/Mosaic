@@ -146,6 +146,92 @@ pub fn advance_album_sync(
 Pure functions are preferred because they are easy to persist, export through
 UniFFI/WASM, and test without platform services.
 
+### Phase B reducer contract
+
+The contract/vector tests define the minimal public DTO shape Phase B adapters
+can rely on. Implementations may add fields, but these fields and variants must
+remain stable:
+
+- `UploadJobRequest { job_id, album_id, local_asset_id, retry_budget }`
+- `UploadJobSnapshot` with persistence-safe fields:
+  - `job_id`, `album_id`, `local_asset_id`
+  - `phase`
+  - `retry_budget`, `retry_count`, `retry_target_phase`
+  - `last_error_code`, `last_error_stage`
+  - `epoch_id`
+  - `planned_shard_count`, `current_shard_index`,
+    `completed_shard_count`
+  - `manifest_id`, `manifest_version`
+  - `confirmed_remote_asset_id`
+- `UploadJobEvent` variants:
+  - `StartRequested`
+  - `ResumeRequested`
+  - `PreparedMedia { planned_shard_count }`
+  - `EpochHandleReady { epoch_id }`
+  - `ShardEncrypted { tier, index, encrypted_sha256, encrypted_size_bytes }`
+  - `ShardUploadCreated { tier, index, upload_id }`
+  - `ShardUploaded { tier, index, shard_id, encrypted_sha256 }`
+  - `ManifestCreated { manifest_id, version }`
+  - `ManifestOutcomeUnknown { error_code }`
+  - `SyncConfirmed { local_asset_id, remote_asset_id }`
+  - `RetryableFailure { stage, code, retry_after_ms }`
+  - `RetryTimerElapsed`
+  - `CancelRequested`
+- `UploadJobEffect` variants:
+  - `PrepareMedia { job_id, album_id, local_asset_id }`
+  - `OpenEpochHandle { job_id, album_id }`
+  - `EncryptShard { job_id, epoch_id, tier, index }`
+  - `CreateShardUpload { job_id, tier, index, encrypted_sha256 }`
+  - `UploadShard { job_id, tier, index, upload_id }`
+  - `CreateManifest { job_id, album_id, local_asset_id,
+    completed_shard_count }`
+  - `RequestSyncConfirmation { album_id, local_asset_id }`
+  - `RecoverManifestBySync { album_id, local_asset_id }`
+  - `ScheduleRetry { job_id, retry_count, target_phase, after_ms }`
+
+Upload retry budget is the number of retry timers the reducer may schedule.
+For a budget of `2`, the first two retryable failures schedule retries and the
+third retryable failure transitions to `Failed` without a third timer.
+
+`ResumeRequested` re-emits the next missing actionable effect for the current
+snapshot without replaying completed shard work. If shard `0` is already marked
+complete in the snapshot, recovery must continue at shard `1` and must not
+request encryption, upload creation, or upload bytes for shard `0`.
+
+Manifest recovery is keyed by `local_asset_id`. `SyncConfirmed` only confirms a
+job in `ManifestCommitUnknown` or `AwaitingSyncConfirmation` when its
+`local_asset_id` matches the upload snapshot.
+
+- `AlbumSyncRequest { album_id, initial_cursor, retry_budget }`
+- `AlbumSyncSnapshot` with persistence-safe fields:
+  - `album_id`, `phase`, `cursor`, `retry_budget`, `retry_count`
+  - `last_error_code`, `last_error_stage`
+  - `rerun_requested`
+- `AlbumSyncEvent` variants:
+  - `StartRequested`
+  - `PageFetched { requested_cursor, next_cursor, item_count, has_more }`
+  - `PageApplied { applied_cursor }`
+  - `RetryableFailure { stage, code, retry_after_ms }`
+  - `RetryTimerElapsed`
+  - `CancelRequested`
+- `AlbumSyncEffect` variants:
+  - `FetchPage { album_id, cursor }`
+  - `ApplyPage { album_id, next_cursor, item_count, has_more }`
+  - `ScheduleRetry { album_id, retry_count, target_phase, after_ms }`
+
+A duplicate `StartRequested` for the same album while a sync is active must not
+emit another `FetchPage`. It sets one sticky rerun flag; when the active cycle
+finishes, the reducer emits exactly one fresh `FetchPage` and clears the flag.
+
+When `has_more` is true, a fetched page must advance from
+`requested_cursor` to a different `next_cursor`. A non-advancing page returns
+the stable `ClientErrorCode::SyncPageDidNotAdvance` error instead of spinning.
+
+The existing media adapter uses `ClientErrorCode` values in the `600..=606`
+range. Client-core orchestration errors should use the next stable block
+(for example `700+`) while preserving variant names such as
+`SyncPageDidNotAdvance`.
+
 ## FFI boundary
 
 The first FFI surface should be DTO-only:
@@ -167,8 +253,8 @@ Rules:
 
 ## Error, cancellation, and retry model
 
-Reserve stable client-core orchestration error codes, for example in the `600+`
-range:
+Reserve stable client-core orchestration error codes in a block that does not
+overlap existing media-adapter codes, for example in the `700+` range:
 
 - invalid state transition
 - missing required event payload
