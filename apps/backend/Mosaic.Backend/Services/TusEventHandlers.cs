@@ -39,6 +39,7 @@ public static class TusEventHandlers
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+        var timeProvider = scope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
 
         var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
@@ -50,7 +51,7 @@ public static class TusEventHandlers
         var albumId = TryGetAlbumId(context.Metadata);
         if (albumId.HasValue)
         {
-            var accessError = await ValidateAlbumAccessAsync(db, albumId.Value, user.Id);
+            var accessError = await ValidateAlbumAccessAsync(db, albumId.Value, user.Id, timeProvider);
             if (accessError != null)
             {
                 context.FailRequest(accessError);
@@ -79,6 +80,7 @@ public static class TusEventHandlers
     {
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+        var timeProvider = scope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         var httpContext = context.HttpContext;
 
         var authSub = httpContext.Items["AuthSub"] as string;
@@ -114,8 +116,8 @@ public static class TusEventHandlers
             ?? TryGetAlbumId(context.Metadata);
         reservation.ReservedBytes = httpContext.Items[ReservedBytesItemKey] as long? ?? context.UploadLength;
         reservation.UploadLength = context.UploadLength;
-        reservation.ExpiresAt = DateTime.UtcNow.Add(ReservationLifetime);
-        reservation.CreatedAt = DateTime.UtcNow;
+        reservation.ExpiresAt = timeProvider.GetUtcNow().UtcDateTime.Add(ReservationLifetime);
+        reservation.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
         await db.SaveChangesAsync();
     }
@@ -138,6 +140,7 @@ public static class TusEventHandlers
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+        var timeProvider = scope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
 
         var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
@@ -202,6 +205,7 @@ public static class TusEventHandlers
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+        var timeProvider = scope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
 
         var reservation = await db.TusUploadReservations.FirstOrDefaultAsync(r => r.FileId == fileId);
         if (reservation == null)
@@ -223,7 +227,7 @@ public static class TusEventHandlers
         }
 
         var accessError = reservation.AlbumId.HasValue
-            ? await ValidateAlbumAccessAsync(db, reservation.AlbumId.Value, reservation.UserId)
+            ? await ValidateAlbumAccessAsync(db, reservation.AlbumId.Value, reservation.UserId, timeProvider)
             : null;
         if (accessError != null)
         {
@@ -241,7 +245,7 @@ public static class TusEventHandlers
                 StorageKey = fileId,
                 SizeBytes = fileSize,
                 Status = ShardStatus.PENDING,
-                PendingExpiresAt = DateTime.UtcNow.AddHours(24),
+                PendingExpiresAt = timeProvider.GetUtcNow().UtcDateTime.AddHours(24),
                 Sha256 = sha256Hex
             });
 
@@ -276,6 +280,7 @@ public static class TusEventHandlers
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var timeProvider = scope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         var logger = scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger(typeof(TusEventHandlers).FullName!);
 
         var tusStore = new tusdotnet.Stores.TusDiskStore(configuration["Storage:Path"] ?? "./data/blobs");
@@ -284,7 +289,7 @@ public static class TusEventHandlers
         while (!cancellationToken.IsCancellationRequested)
         {
             var expiredReservations = await db.TusUploadReservations
-                .Where(r => r.ExpiresAt <= DateTime.UtcNow)
+                .Where(r => r.ExpiresAt <= timeProvider.GetUtcNow().UtcDateTime)
                 .OrderBy(r => r.ExpiresAt)
                 .Take(100)
                 .ToListAsync(cancellationToken);
@@ -440,7 +445,7 @@ public static class TusEventHandlers
         return Guid.TryParse(albumIdStr, out var albumId) ? albumId : null;
     }
 
-    private static async Task<string?> ValidateAlbumAccessAsync(MosaicDbContext db, Guid albumId, Guid userId)
+    private static async Task<string?> ValidateAlbumAccessAsync(MosaicDbContext db, Guid albumId, Guid userId, TimeProvider timeProvider)
     {
         var album = await db.Albums.AsNoTracking().FirstOrDefaultAsync(a => a.Id == albumId);
         if (album == null)
@@ -448,7 +453,7 @@ public static class TusEventHandlers
             return "Album not found";
         }
 
-        if (album.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (album.ExpiresAt.HasValue && album.ExpiresAt.Value <= timeProvider.GetUtcNow())
         {
             return "Album has expired";
         }

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Manifests;
 using Mosaic.Backend.Data.Entities;
@@ -17,17 +18,26 @@ public class ManifestsController : ControllerBase
     private readonly IQuotaSettingsService _quotaService;
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<ManifestsController> _logger;
+    private readonly IAlbumExpirationService _expirationService;
+    private readonly TimeProvider _timeProvider;
 
     public ManifestsController(
         MosaicDbContext db,
         IQuotaSettingsService quotaService,
         ICurrentUserService currentUserService,
-        ILogger<ManifestsController> logger)
+        ILogger<ManifestsController> logger,
+        IAlbumExpirationService? expirationService = null,
+        TimeProvider? timeProvider = null)
     {
         _db = db;
         _quotaService = quotaService;
         _currentUserService = currentUserService;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _expirationService = expirationService ?? new AlbumExpirationService(
+            db,
+            _timeProvider,
+            NullLogger<AlbumExpirationService>.Instance);
 
     }
 
@@ -107,8 +117,21 @@ public class ManifestsController : ControllerBase
             }
 
             // 2. Verify membership
-            var (membership, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id);
+            var (_, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id);
             if (memberError != null) return memberError;
+
+            if (_expirationService.IsExpired(album.ExpiresAt))
+            {
+                await _expirationService.EnforceAlbumExpirationAsync(album.Id);
+                return StatusCode(StatusCodes.Status410Gone);
+            }
+
+            if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
+            {
+                return Problem(
+                    detail: "expiresAt must be in the future",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
 
             // 3. Validate shards
             var shards = await _db.Shards
@@ -178,7 +201,8 @@ public class ManifestsController : ControllerBase
                 VersionCreated = album.CurrentVersion,
                 EncryptedMeta = request.EncryptedMeta,
                 Signature = request.Signature,
-                SignerPubkey = request.SignerPubkey
+                SignerPubkey = request.SignerPubkey,
+                ExpiresAt = request.ExpiresAt
             };
             _db.Manifests.Add(manifest);
 
@@ -223,6 +247,7 @@ public class ManifestsController : ControllerBase
             return Created($"/api/manifests/{manifest.Id}", new
             {
                 manifest.Id,
+                manifest.ExpiresAt,
                 Version = album.CurrentVersion
             });
         }
@@ -274,6 +299,12 @@ public class ManifestsController : ControllerBase
 
             var (_, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id, new NotFoundResult());
             if (memberError != null) return memberError;
+
+            if (_expirationService.IsExpired(album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
+            {
+                await _expirationService.EnforceManifestExpirationAsync(manifestId);
+                return StatusCode(StatusCodes.Status410Gone);
+            }
 
             if (!TryDecodeBase64(request.EncryptedMeta, out var encryptedMeta) || encryptedMeta.Length < 16)
             {
@@ -340,6 +371,56 @@ public class ManifestsController : ControllerBase
     }
 
     /// <summary>
+    /// Update photo expiration settings. Album owners and editors can update photo lifecycle metadata.
+    /// </summary>
+    [HttpPatch("{manifestId:guid}/expiration")]
+    public async Task<IActionResult> UpdateExpiration(Guid manifestId, [FromBody] UpdateManifestExpirationRequest request)
+    {
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
+
+        var manifest = await _db.Manifests
+            .IgnoreQueryFilters()
+            .Include(m => m.Album)
+            .FirstOrDefaultAsync(m => m.Id == manifestId);
+
+        if (manifest == null || manifest.IsDeleted)
+        {
+            return NotFound();
+        }
+
+        var (_, memberError) = await _db.RequireAlbumEditorAsync(manifest.AlbumId, user.Id, new NotFoundResult());
+        if (memberError != null) return memberError;
+
+        if (_expirationService.IsExpired(manifest.Album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
+        {
+            await _expirationService.EnforceManifestExpirationAsync(manifestId);
+            return StatusCode(StatusCodes.Status410Gone);
+        }
+
+        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
+        {
+            return Problem(
+                detail: "expiresAt must be in the future",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        manifest.ExpiresAt = request.ExpiresAt;
+        manifest.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        manifest.Album.CurrentVersion++;
+        manifest.Album.UpdatedAt = manifest.UpdatedAt;
+        manifest.VersionCreated = manifest.Album.CurrentVersion;
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            manifest.Id,
+            manifest.ExpiresAt,
+            manifest.VersionCreated
+        });
+    }
+
+    /// <summary>
     /// Get a specific manifest
     /// </summary>
     [HttpGet("{manifestId}")]
@@ -349,6 +430,7 @@ public class ManifestsController : ControllerBase
 
         var manifest = await _db.Manifests
             .AsNoTracking()
+            .Include(m => m.Album)
             .Include(m => m.ManifestShards.OrderBy(ms => ms.ChunkIndex))
             .FirstOrDefaultAsync(m => m.Id == manifestId);
 
@@ -361,6 +443,12 @@ public class ManifestsController : ControllerBase
         var accessError = await _db.RequireAlbumMemberAsync(manifest.AlbumId, user.Id);
         if (accessError != null) return accessError;
 
+        if (_expirationService.IsExpired(manifest.Album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
+        {
+            await _expirationService.EnforceManifestExpirationAsync(manifestId);
+            return StatusCode(StatusCodes.Status410Gone);
+        }
+
         return Ok(new
         {
             manifest.Id,
@@ -370,6 +458,7 @@ public class ManifestsController : ControllerBase
             manifest.EncryptedMeta,
             manifest.Signature,
             manifest.SignerPubkey,
+            manifest.ExpiresAt,
             // Legacy format for backward compatibility
             ShardIds = manifest.ManifestShards.Select(ms => ms.ShardId),
             // New format with tier info
@@ -415,8 +504,14 @@ public class ManifestsController : ControllerBase
             }
 
             // Verify editor/owner access
-            var (membership, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id);
+            var (_, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id);
             if (memberError != null) return memberError;
+
+            if (_expirationService.IsExpired(album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
+            {
+                await _expirationService.EnforceManifestExpirationAsync(manifestId);
+                return StatusCode(StatusCodes.Status410Gone);
+            }
 
             // Soft delete
             manifest.IsDeleted = true;

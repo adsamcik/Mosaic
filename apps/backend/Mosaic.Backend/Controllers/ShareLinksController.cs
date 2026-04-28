@@ -16,13 +16,16 @@ public class ShareLinksController : ControllerBase
 {
     private readonly MosaicDbContext _db;
     private readonly ICurrentUserService _currentUserService;
+    private readonly TimeProvider _timeProvider;
 
     public ShareLinksController(
         MosaicDbContext db,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        TimeProvider? timeProvider = null)
     {
         _db = db;
         _currentUserService = currentUserService;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -39,7 +42,7 @@ public class ShareLinksController : ControllerBase
         if (ownerError != null) return ownerError;
 
         // Reject creating share links for expired albums
-        if (album!.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (album!.ExpiresAt.HasValue && album.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Gone(new { error = "Album has expired" });
         }
@@ -94,7 +97,7 @@ public class ShareLinksController : ControllerBase
             }
         }
 
-        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Problem(
                 detail: "expiresAt must be in the future",
@@ -232,7 +235,7 @@ public class ShareLinksController : ControllerBase
         // Only return active (non-revoked, non-expired) links with stored secrets
         // Note: For SQLite compatibility, we load all links for this album and filter client-side
         // since SQLite doesn't support DateTimeOffset comparisons in LINQ queries
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var allLinks = await _db.ShareLinks
             .AsNoTracking()
             .Where(sl => sl.AlbumId == albumId &&
@@ -349,7 +352,7 @@ public class ShareLinksController : ControllerBase
         }
 
         // Validate ExpiresAt if provided and not null
-        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Problem(
                 detail: "expiresAt must be in the future",

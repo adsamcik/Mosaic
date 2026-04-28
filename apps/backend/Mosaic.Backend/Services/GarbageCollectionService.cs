@@ -13,14 +13,16 @@ public class GarbageCollectionService : BackgroundService
 
     private readonly IServiceProvider _services;
     private readonly ILogger<GarbageCollectionService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public GarbageCollectionService(
         IServiceProvider services,
-        ILogger<GarbageCollectionService> logger)
+        ILogger<GarbageCollectionService> logger,
+        TimeProvider? timeProvider = null)
     {
         _services = services;
         _logger = logger;
-
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,7 +45,8 @@ public class GarbageCollectionService : BackgroundService
                 expiredUploadReservations = await TusEventHandlers.CleanupExpiredReservations(_services, stoppingToken);
                 orphanedBlobs = await CleanExpiredPendingShards();
                 orphanedBlobs += await CleanTrashedShards(stoppingToken);
-                expiredAlbums = await CleanExpiredAlbums();
+                expiredAlbums = await CleanExpiredAlbums(stoppingToken);
+                expiredAlbums += await CleanExpiredManifests(stoppingToken);
                 await CleanExpiredShareLinkGrants();
                 expiredLinks = await CleanExpiredShareLinks();
 
@@ -95,7 +98,7 @@ public class GarbageCollectionService : BackgroundService
         var storage = scope.ServiceProvider.GetRequiredService<IStorageService>();
 
         var totalDeleted = 0;
-        var cutoff = DateTime.UtcNow.AddDays(-7);
+        var cutoff = _timeProvider.GetUtcNow().UtcDateTime.AddDays(-7);
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -141,7 +144,7 @@ public class GarbageCollectionService : BackgroundService
             }
 
             // Batch update database for successful deletes
-            var now = DateTime.UtcNow;
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
 
             foreach (var shard in successfulShards)
             {
@@ -182,81 +185,25 @@ public class GarbageCollectionService : BackgroundService
         return totalDeleted;
     }
 
-    internal async Task<int> CleanExpiredAlbums()
+    internal async Task<int> CleanExpiredAlbums(CancellationToken cancellationToken = default)
     {
         using var scope = _services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+        var expirationService = scope.ServiceProvider.GetRequiredService<IAlbumExpirationService>();
+        var deletedCount = await expirationService.SweepExpiredAlbumsAsync(cancellationToken);
 
-        var now = DateTimeOffset.UtcNow;
-
-        var deletedCount = 0;
-
-        // Process expired albums in batches of 10
-        while (true)
+        if (deletedCount > 0)
         {
-            List<Album> expiredAlbums;
-
-            if (db.UsesLiteProvider())
-            {
-                // SQLite doesn't support DateTimeOffset in WHERE or ORDER BY clauses,
-                // so we load albums with expiration dates and filter/sort client-side.
-                // This is acceptable for garbage collection on small datasets.
-                expiredAlbums = (await db.Albums
-                    .Where(a => a.ExpiresAt != null)
-                    .ToListAsync())
-                    .Where(a => a.ExpiresAt <= now)
-                    .OrderBy(a => a.ExpiresAt)
-                    .Take(10)
-                    .ToList();
-            }
-            else
-            {
-                // PostgreSQL supports server-side DateTimeOffset filtering - much more efficient
-                expiredAlbums = await db.Albums
-                    .Where(a => a.ExpiresAt != null && a.ExpiresAt <= now)
-                    .OrderBy(a => a.ExpiresAt)
-                    .Take(10)
-                    .ToListAsync();
-            }
-
-            if (expiredAlbums.Count == 0)
-            {
-                break;
-            }
-
-            foreach (var album in expiredAlbums)
-            {
-                try
-                {
-                    var manifestIds = await db.Manifests
-                        .IgnoreQueryFilters()
-                        .Where(m => m.AlbumId == album.Id)
-                        .Select(m => m.Id)
-                        .ToListAsync();
-
-                    await ShardReferenceCleanup.DetachManifestShardsAsync(db, manifestIds, DateTime.UtcNow);
-
-                    var quota = await db.UserQuotas.FindAsync(album.OwnerId);
-                    if (quota != null)
-                    {
-                        quota.CurrentAlbumCount = Math.Max(0, quota.CurrentAlbumCount - 1);
-                        quota.UpdatedAt = DateTime.UtcNow;
-                    }
-
-                    db.Albums.Remove(album);
-                    await db.SaveChangesAsync();
-
-                    _logger.ExpiredAlbumsCleaned(1);
-                    deletedCount++;
-                }
-                catch (Exception ex)
-                {
-                    _logger.DatabaseError(ex, $"delete expired album {album.Id}");
-                }
-            }
+            _logger.ExpiredAlbumsCleaned(deletedCount);
         }
 
         return deletedCount;
+    }
+
+    internal async Task<int> CleanExpiredManifests(CancellationToken cancellationToken = default)
+    {
+        using var scope = _services.CreateScope();
+        var expirationService = scope.ServiceProvider.GetRequiredService<IAlbumExpirationService>();
+        return await expirationService.SweepExpiredManifestsAsync(cancellationToken: cancellationToken);
     }
 
     internal async Task<int> CleanExpiredShareLinks()
@@ -264,7 +211,7 @@ public class GarbageCollectionService : BackgroundService
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
 
-        var expirationCutoff = DateTimeOffset.UtcNow.Subtract(ExpiredShareLinkRetention);
+        var expirationCutoff = _timeProvider.GetUtcNow().Subtract(ExpiredShareLinkRetention);
         var totalDeleted = 0;
 
         // Delete share links that expired 30+ days ago in batches
@@ -311,7 +258,7 @@ public class GarbageCollectionService : BackgroundService
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
 
-        var expirationCutoff = DateTimeOffset.UtcNow.Subtract(ExpiredShareLinkGrantRetentionBuffer);
+        var expirationCutoff = _timeProvider.GetUtcNow().Subtract(ExpiredShareLinkGrantRetentionBuffer);
         var totalDeleted = 0;
 
         while (true)

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
@@ -19,17 +20,26 @@ public class AlbumsController : ControllerBase
     private readonly IQuotaSettingsService _quotaService;
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<AlbumsController> _logger;
+    private readonly IAlbumExpirationService _expirationService;
+    private readonly TimeProvider _timeProvider;
 
     public AlbumsController(
         MosaicDbContext db,
         IQuotaSettingsService quotaService,
         ICurrentUserService currentUserService,
-        ILogger<AlbumsController> logger)
+        ILogger<AlbumsController> logger,
+        IAlbumExpirationService? expirationService = null,
+        TimeProvider? timeProvider = null)
     {
         _db = db;
         _quotaService = quotaService;
         _currentUserService = currentUserService;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _expirationService = expirationService ?? new AlbumExpirationService(
+            db,
+            _timeProvider,
+            NullLogger<AlbumExpirationService>.Instance);
 
     }
 
@@ -44,9 +54,12 @@ public class AlbumsController : ControllerBase
 
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
+        var now = _timeProvider.GetUtcNow();
         var query = _db.AlbumMembers
             .AsNoTracking()
-            .Where(am => am.UserId == user.Id && am.RevokedAt == null);
+            .Where(am => am.UserId == user.Id
+                && am.RevokedAt == null
+                && (am.Album.ExpiresAt == null || am.Album.ExpiresAt > now));
 
         var totalCount = await query.CountAsync();
 
@@ -119,7 +132,7 @@ public class AlbumsController : ControllerBase
         }
 
         // Validate expiration if provided
-        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Problem(
                 detail: "expiresAt must be in the future",
@@ -251,6 +264,12 @@ public class AlbumsController : ControllerBase
             return NotFound();
         }
 
+        if (_expirationService.IsExpired(album.ExpiresAt))
+        {
+            await _expirationService.EnforceAlbumExpirationAsync(albumId);
+            return StatusCode(StatusCodes.Status410Gone);
+        }
+
         return Ok(new
         {
             album.Id,
@@ -277,8 +296,14 @@ public class AlbumsController : ControllerBase
         var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
         if (ownerError != null) return ownerError;
 
+        if (_expirationService.IsExpired(album!.ExpiresAt))
+        {
+            await _expirationService.EnforceAlbumExpirationAsync(albumId);
+            return StatusCode(StatusCodes.Status410Gone);
+        }
+
         // Validate expiresAt if provided (null is allowed to remove expiration)
-        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Problem(
                 detail: "expiresAt must be in the future",
@@ -336,11 +361,13 @@ public class AlbumsController : ControllerBase
             return NotFound();
         }
 
-        // Reject sync for expired albums
-        if (album.ExpiresAt.HasValue && album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (_expirationService.IsExpired(album.ExpiresAt))
         {
+            await _expirationService.EnforceAlbumExpirationAsync(albumId);
             return StatusCode(StatusCodes.Status410Gone);
         }
+
+        await _expirationService.SweepExpiredManifestsAsync(albumId);
 
         var manifests = await _db.Manifests
             .IgnoreQueryFilters()
@@ -357,6 +384,7 @@ public class AlbumsController : ControllerBase
                 m.EncryptedMeta,
                 m.Signature,
                 m.SignerPubkey,
+                m.ExpiresAt,
                 // Legacy format for backward compatibility
                 ShardIds = m.ManifestShards
                     .OrderBy(ms => ms.ChunkIndex)
@@ -387,6 +415,12 @@ public class AlbumsController : ControllerBase
 
         var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
         if (ownerError != null) return ownerError;
+
+        if (_expirationService.IsExpired(album!.ExpiresAt))
+        {
+            await _expirationService.EnforceAlbumExpirationAsync(albumId);
+            return StatusCode(StatusCodes.Status410Gone);
+        }
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
@@ -440,6 +474,12 @@ public class AlbumsController : ControllerBase
             return NotFound();
         }
 
+        if (_expirationService.IsExpired(album.ExpiresAt))
+        {
+            await _expirationService.EnforceAlbumExpirationAsync(albumId);
+            return StatusCode(StatusCodes.Status410Gone);
+        }
+
         // Validate encrypted name
         if (string.IsNullOrWhiteSpace(request.EncryptedName))
         {
@@ -484,6 +524,12 @@ public class AlbumsController : ControllerBase
         if (album == null)
         {
             return NotFound();
+        }
+
+        if (_expirationService.IsExpired(album.ExpiresAt))
+        {
+            await _expirationService.EnforceAlbumExpirationAsync(albumId);
+            return StatusCode(StatusCodes.Status410Gone);
         }
 
         // Update encrypted description (null is allowed to clear description)

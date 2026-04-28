@@ -73,5 +73,6 @@ public class ShareLinkPhotoResponse
     public required byte[] EncryptedMeta { get; set; }
     public required string Signature { get; set; }
     public required string SignerPubkey { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
     public required List<Guid> ShardIds { get; set; }
 }

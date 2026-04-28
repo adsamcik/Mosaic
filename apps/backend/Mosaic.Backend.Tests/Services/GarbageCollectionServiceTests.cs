@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
@@ -31,6 +32,9 @@ public class GarbageCollectionServiceTests
         var services = new ServiceCollection();
         services.AddSingleton(db);
         services.AddSingleton(storage);
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddSingleton<ILogger<AlbumExpirationService>>(NullLogger<AlbumExpirationService>.Instance);
+        services.AddScoped<IAlbumExpirationService, AlbumExpirationService>();
         var provider = services.BuildServiceProvider();
 
         var config = CreateConfig();

@@ -21,14 +21,17 @@ public class ShareLinkAccessController : ControllerBase
 
     private readonly MosaicDbContext _db;
     private readonly IStorageService _storage;
+    private readonly TimeProvider _timeProvider;
 
     public ShareLinkAccessController(
         MosaicDbContext db,
         IConfiguration config,
-        IStorageService storage)
+        IStorageService storage,
+        TimeProvider? timeProvider = null)
     {
         _db = db;
         _storage = storage;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _ = config;
     }
 
@@ -46,7 +49,7 @@ public class ShareLinkAccessController : ControllerBase
             ShareLinkId = shareLink.Id,
             TokenHash = HashGrantToken(rawToken),
             GrantedUseCount = shareLink.UseCount,
-            ExpiresAt = DateTimeOffset.UtcNow.Add(GrantLifetime)
+            ExpiresAt = _timeProvider.GetUtcNow().Add(GrantLifetime)
         });
 
         var staleGrants = await _db.ShareLinkGrants
@@ -68,7 +71,7 @@ public class ShareLinkAccessController : ControllerBase
         }
 
         var tokenHash = HashGrantToken(token);
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
 
         var grants = await _db.ShareLinkGrants
             .AsNoTracking()
@@ -124,13 +127,13 @@ public class ShareLinkAccessController : ControllerBase
         }
 
         // Check if album has expired
-        if (shareLink.Album.ExpiresAt.HasValue && shareLink.Album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (shareLink.Album.ExpiresAt.HasValue && shareLink.Album.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Gone(new { error = "Album has expired" });
         }
 
         // Check if expired
-        if (shareLink.ExpiresAt.HasValue && shareLink.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (shareLink.ExpiresAt.HasValue && shareLink.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Gone(new { error = "This link has expired" });
         }
@@ -301,10 +304,13 @@ public class ShareLinkAccessController : ControllerBase
             }
         }
 
-        // Get non-deleted manifests for the album with pagination
+        // Get non-deleted, non-expired manifests for the album with pagination
+        var now = _timeProvider.GetUtcNow();
         var query = _db.Manifests
             .AsNoTracking()
-            .Where(m => m.AlbumId == shareLink.AlbumId && !m.IsDeleted);
+            .Where(m => m.AlbumId == shareLink.AlbumId
+                && !m.IsDeleted
+                && (m.ExpiresAt == null || m.ExpiresAt > now));
 
         var totalCount = await query.CountAsync();
 
@@ -321,6 +327,7 @@ public class ShareLinkAccessController : ControllerBase
                 EncryptedMeta = m.EncryptedMeta,
                 Signature = m.Signature,
                 SignerPubkey = m.SignerPubkey,
+                ExpiresAt = m.ExpiresAt,
                 ShardIds = m.ManifestShards
                     .Where(ms => ms.Tier <= shareLink.AccessTier)
                     .OrderBy(ms => ms.ChunkIndex)
@@ -392,12 +399,14 @@ public class ShareLinkAccessController : ControllerBase
                 statusCode: StatusCodes.Status404NotFound);
         }
 
-        // Verify the shard belongs to the linked album
+        // Verify the shard belongs to a non-expired photo in the linked album
+        var now = _timeProvider.GetUtcNow();
         var shardBelongsToAlbum = await _db.ManifestShards
             .Where(ms => ms.ShardId == shardId)
             .AnyAsync(ms =>
                 ms.Manifest.AlbumId == shareLink.AlbumId
                 && !ms.Manifest.IsDeleted
+                && (ms.Manifest.ExpiresAt == null || ms.Manifest.ExpiresAt > now)
                 && ms.Tier <= shareLink.AccessTier);
 
         if (!shardBelongsToAlbum)
@@ -430,12 +439,12 @@ public class ShareLinkAccessController : ControllerBase
         // Check album expiry - the Album navigation property must be loaded
         if (shareLink.Album != null &&
             shareLink.Album.ExpiresAt.HasValue &&
-            shareLink.Album.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+            shareLink.Album.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Gone(new { error = "Album has expired" });
         }
 
-        if (shareLink.ExpiresAt.HasValue && shareLink.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (shareLink.ExpiresAt.HasValue && shareLink.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Gone(new { error = "This link has expired" });
         }

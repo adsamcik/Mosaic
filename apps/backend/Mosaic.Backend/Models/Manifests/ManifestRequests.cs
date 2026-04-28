@@ -17,13 +17,19 @@ public record CreateManifestRequest(
     /// Optional list of shards with per-shard tier assignment.
     /// If provided, takes precedence over ShardIds.
     /// </summary>
-    [MaxLength(1000)] List<TieredShardInfo>? TieredShards = null
+    [MaxLength(1000)] List<TieredShardInfo>? TieredShards = null,
+    /// <summary>
+    /// Optional UTC expiration deadline for this photo. Null means no expiration.
+    /// </summary>
+    DateTimeOffset? ExpiresAt = null
 );
 
 /// <summary>
 /// Shard info with tier assignment
 /// </summary>
 public record TieredShardInfo([MaxLength(64)] string ShardId, int Tier);
+
+public record UpdateManifestExpirationRequest(DateTimeOffset? ExpiresAt);
 
 public record UpdateManifestMetadataRequest(
     [MaxLength(1048576)] string EncryptedMeta,

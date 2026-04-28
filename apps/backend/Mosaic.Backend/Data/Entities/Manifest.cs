@@ -17,6 +17,11 @@ public class Manifest
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>
+    /// When the photo manifest will be automatically deleted. Null means no expiration.
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
+
+    /// <summary>
     /// Concurrency token for optimistic locking. Automatically incremented on update.
     /// </summary>
     public uint RowVersion { get; set; }

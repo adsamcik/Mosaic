@@ -13,12 +13,18 @@ public class ShardsController : ControllerBase
     private readonly MosaicDbContext _db;
     private readonly IStorageService _storage;
     private readonly ICurrentUserService _currentUserService;
+    private readonly TimeProvider _timeProvider;
 
-    public ShardsController(MosaicDbContext db, IStorageService storage, ICurrentUserService currentUserService)
+    public ShardsController(
+        MosaicDbContext db,
+        IStorageService storage,
+        ICurrentUserService currentUserService,
+        TimeProvider? timeProvider = null)
     {
         _db = db;
         _storage = storage;
         _currentUserService = currentUserService;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -43,17 +49,14 @@ public class ShardsController : ControllerBase
             return NotFound();
         }
 
-        // Verify user has access to at least one album containing this shard
-        var hasAccess = await _db.ManifestShards
-            .Where(ms => ms.ShardId == shardId)
-            .AnyAsync(ms => _db.AlbumMembers.Any(am =>
-                am.AlbumId == ms.Manifest.AlbumId &&
-                am.UserId == user.Id &&
-                am.RevokedAt == null));
-
-        if (!hasAccess)
+        if (!await HasMemberReferenceAsync(shardId, user.Id))
         {
             return Forbid();
+        }
+
+        if (!await HasUnexpiredMemberAccessAsync(shardId, user.Id))
+        {
+            return NotFound();
         }
 
         // Set aggressive caching headers - shards are immutable (content-addressed)
@@ -87,20 +90,21 @@ public class ShardsController : ControllerBase
             return NotFound();
         }
 
-        // Only uploader or users with access can view metadata
-        if (shard.UploaderId != user.Id)
+        if (shard.Status == ShardStatus.ACTIVE)
         {
-            var hasAccess = await _db.ManifestShards
-                .Where(ms => ms.ShardId == shardId)
-                .AnyAsync(ms => _db.AlbumMembers.Any(am =>
-                    am.AlbumId == ms.Manifest.AlbumId &&
-                    am.UserId == user.Id &&
-                    am.RevokedAt == null));
-
-            if (!hasAccess)
+            if (!await HasMemberReferenceAsync(shardId, user.Id))
             {
                 return Forbid();
             }
+
+            if (!await HasUnexpiredMemberAccessAsync(shardId, user.Id))
+            {
+                return NotFound();
+            }
+        }
+        else if (shard.UploaderId != user.Id)
+        {
+            return Forbid();
         }
 
         return Ok(new
@@ -111,5 +115,30 @@ public class ShardsController : ControllerBase
             shard.StatusUpdatedAt,
             shard.Sha256
         });
+    }
+
+    private Task<bool> HasMemberReferenceAsync(Guid shardId, Guid userId)
+    {
+        return _db.ManifestShards
+            .Where(ms => ms.ShardId == shardId)
+            .AnyAsync(ms => !ms.Manifest.IsDeleted
+                && _db.AlbumMembers.Any(am =>
+                    am.AlbumId == ms.Manifest.AlbumId
+                    && am.UserId == userId
+                    && am.RevokedAt == null));
+    }
+
+    private Task<bool> HasUnexpiredMemberAccessAsync(Guid shardId, Guid userId)
+    {
+        var now = _timeProvider.GetUtcNow();
+        return _db.ManifestShards
+            .Where(ms => ms.ShardId == shardId)
+            .AnyAsync(ms => !ms.Manifest.IsDeleted
+                && (ms.Manifest.ExpiresAt == null || ms.Manifest.ExpiresAt > now)
+                && (ms.Manifest.Album.ExpiresAt == null || ms.Manifest.Album.ExpiresAt > now)
+                && _db.AlbumMembers.Any(am =>
+                    am.AlbumId == ms.Manifest.AlbumId
+                    && am.UserId == userId
+                    && am.RevokedAt == null));
     }
 }

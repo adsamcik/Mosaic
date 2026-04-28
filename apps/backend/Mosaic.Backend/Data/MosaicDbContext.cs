@@ -114,6 +114,10 @@ public class MosaicDbContext : DbContext
 
             e.HasIndex(m => new { m.AlbumId, m.VersionCreated });
 
+            // Index for efficient expired photo cleanup queries
+            e.HasIndex(m => m.ExpiresAt)
+                .HasFilter("expires_at IS NOT NULL");
+
             // Global query filter to exclude soft-deleted manifests
             e.HasQueryFilter(m => !m.IsDeleted);
 
