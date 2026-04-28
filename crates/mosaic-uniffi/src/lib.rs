@@ -121,6 +121,166 @@ pub struct CryptoDomainGoldenVectorSnapshot {
     pub identity_signature: Vec<u8>,
 }
 
+/// UniFFI record for a privacy-safe uploaded shard reference in an upload snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreUploadShardRef {
+    pub tier: u8,
+    pub shard_index: u32,
+    pub shard_id: String,
+    pub sha256: String,
+    pub uploaded: bool,
+}
+
+/// UniFFI record for a manifest receipt known after server commit.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreManifestReceipt {
+    pub manifest_id: String,
+    pub manifest_version: u64,
+}
+
+/// UniFFI record for initializing a client-core upload job state machine.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreUploadJobRequest {
+    pub job_id: String,
+    pub album_id: String,
+    pub asset_id: String,
+    pub epoch_id: u32,
+    pub now_unix_ms: u64,
+    pub max_retry_count: u32,
+}
+
+/// UniFFI record for a persistence-safe upload job snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreUploadJobSnapshot {
+    pub schema_version: u32,
+    pub job_id: String,
+    pub album_id: String,
+    pub asset_id: String,
+    pub epoch_id: u32,
+    pub phase: String,
+    pub active_tier: u8,
+    pub active_shard_index: u32,
+    pub completed_shards: Vec<ClientCoreUploadShardRef>,
+    pub has_manifest_receipt: bool,
+    pub manifest_receipt: ClientCoreManifestReceipt,
+    pub retry_count: u32,
+    pub next_retry_unix_ms: u64,
+    pub last_error_code: u16,
+    pub last_error_stage: String,
+    pub sync_confirmed: bool,
+    pub updated_at_unix_ms: u64,
+}
+
+/// UniFFI compact upload event record supplied by platform adapters.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreUploadJobEvent {
+    pub kind: String,
+    pub tier: u8,
+    pub shard_index: u32,
+    pub shard_id: String,
+    pub sha256: String,
+    pub manifest_id: String,
+    pub manifest_version: u64,
+    pub observed_asset_id: String,
+    pub retry_after_unix_ms: u64,
+    pub error_code: u16,
+}
+
+/// UniFFI compact upload effect record emitted to platform adapters.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreUploadJobEffect {
+    pub kind: String,
+    pub tier: u8,
+    pub shard_index: u32,
+}
+
+/// UniFFI upload transition record.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreUploadJobTransition {
+    pub snapshot: ClientCoreUploadJobSnapshot,
+    pub effects: Vec<ClientCoreUploadJobEffect>,
+}
+
+/// UniFFI upload initialization result.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreUploadJobResult {
+    pub code: u16,
+    pub snapshot: ClientCoreUploadJobSnapshot,
+}
+
+/// UniFFI upload advance result.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreUploadJobTransitionResult {
+    pub code: u16,
+    pub transition: ClientCoreUploadJobTransition,
+}
+
+/// UniFFI record for initializing an album sync coordinator.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreAlbumSyncRequest {
+    pub album_id: String,
+    pub request_id: String,
+    pub start_cursor: String,
+    pub now_unix_ms: u64,
+    pub max_retry_count: u32,
+}
+
+/// UniFFI record for a persistence-safe album sync snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreAlbumSyncSnapshot {
+    pub schema_version: u32,
+    pub album_id: String,
+    pub phase: String,
+    pub active_cursor: String,
+    pub pending_cursor: String,
+    pub rerun_requested: bool,
+    pub retry_count: u32,
+    pub next_retry_unix_ms: u64,
+    pub last_error_code: u16,
+    pub last_error_stage: String,
+    pub updated_at_unix_ms: u64,
+}
+
+/// UniFFI compact album sync event record supplied by platform adapters.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreAlbumSyncEvent {
+    pub kind: String,
+    pub fetched_cursor: String,
+    pub next_cursor: String,
+    pub applied_count: u32,
+    pub observed_asset_ids: Vec<String>,
+    pub retry_after_unix_ms: u64,
+    pub error_code: u16,
+}
+
+/// UniFFI compact album sync effect record emitted to platform adapters.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreAlbumSyncEffect {
+    pub kind: String,
+    pub cursor: String,
+}
+
+/// UniFFI album sync transition record.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreAlbumSyncTransition {
+    pub snapshot: ClientCoreAlbumSyncSnapshot,
+    pub effects: Vec<ClientCoreAlbumSyncEffect>,
+}
+
+/// UniFFI album sync initialization result.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreAlbumSyncResult {
+    pub code: u16,
+    pub snapshot: ClientCoreAlbumSyncSnapshot,
+}
+
+/// UniFFI album sync advance result.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreAlbumSyncTransitionResult {
+    pub code: u16,
+    pub transition: ClientCoreAlbumSyncTransition,
+}
+
 /// UniFFI record for dependency-free media inspection results.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MediaMetadataResult {
@@ -165,8 +325,16 @@ pub fn protocol_version() -> String {
 /// Returns the stable UniFFI API snapshot for this FFI spike.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v7 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+    "mosaic-uniffi ffi-spike:v8 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)"
 }
+
+const CLIENT_CORE_STATE_MACHINE_SURFACE: &str = "client-core-state-machines:v1 \
+upload(init_upload_job(ClientCoreUploadJobRequest)->ClientCoreUploadJobResult,\
+advance_upload_job(ClientCoreUploadJobSnapshot,ClientCoreUploadJobEvent)->ClientCoreUploadJobTransitionResult,\
+ClientCoreUploadJobSnapshot,ClientCoreUploadJobTransition,ClientCoreUploadJobEffect) \
+sync(init_album_sync(ClientCoreAlbumSyncRequest)->ClientCoreAlbumSyncResult,\
+advance_album_sync(ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncEvent)->ClientCoreAlbumSyncTransitionResult,\
+ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncTransition,ClientCoreAlbumSyncEffect)";
 
 /// Parses a shard envelope header through the UniFFI export surface.
 #[uniffi::export]
@@ -551,6 +719,85 @@ pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVectorSnapsho
     crypto_domain_vector_from_client(mosaic_client::crypto_domain_golden_vector_snapshot())
 }
 
+/// Returns the stable client-core state machine FFI proof surface.
+#[uniffi::export]
+#[must_use]
+pub fn client_core_state_machine_snapshot() -> String {
+    CLIENT_CORE_STATE_MACHINE_SURFACE.to_owned()
+}
+
+/// Initializes a client-core upload job through the UniFFI DTO surface.
+#[uniffi::export]
+#[must_use]
+pub fn init_upload_job(request: ClientCoreUploadJobRequest) -> ClientCoreUploadJobResult {
+    match mosaic_client::new_upload_job(upload_request_to_client(request)) {
+        Ok(snapshot) => ClientCoreUploadJobResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            snapshot: upload_snapshot_from_client(snapshot),
+        },
+        Err(error) => ClientCoreUploadJobResult {
+            code: error.code.as_u16(),
+            snapshot: empty_upload_snapshot(),
+        },
+    }
+}
+
+/// Advances a client-core upload job through the UniFFI DTO surface.
+#[uniffi::export]
+#[must_use]
+pub fn advance_upload_job(
+    snapshot: ClientCoreUploadJobSnapshot,
+    event: ClientCoreUploadJobEvent,
+) -> ClientCoreUploadJobTransitionResult {
+    let snapshot = upload_snapshot_to_client(snapshot);
+    match mosaic_client::advance_upload_job(&snapshot, upload_event_to_client(event)) {
+        Ok(transition) => ClientCoreUploadJobTransitionResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            transition: upload_transition_from_client(transition),
+        },
+        Err(error) => ClientCoreUploadJobTransitionResult {
+            code: error.code.as_u16(),
+            transition: empty_upload_transition(),
+        },
+    }
+}
+
+/// Initializes an album sync coordinator through the UniFFI DTO surface.
+#[uniffi::export]
+#[must_use]
+pub fn init_album_sync(request: ClientCoreAlbumSyncRequest) -> ClientCoreAlbumSyncResult {
+    match mosaic_client::new_album_sync(album_sync_request_to_client(request)) {
+        Ok(snapshot) => ClientCoreAlbumSyncResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            snapshot: album_sync_snapshot_from_client(snapshot),
+        },
+        Err(error) => ClientCoreAlbumSyncResult {
+            code: error.code.as_u16(),
+            snapshot: empty_album_sync_snapshot(),
+        },
+    }
+}
+
+/// Advances an album sync coordinator through the UniFFI DTO surface.
+#[uniffi::export]
+#[must_use]
+pub fn advance_album_sync(
+    snapshot: ClientCoreAlbumSyncSnapshot,
+    event: ClientCoreAlbumSyncEvent,
+) -> ClientCoreAlbumSyncTransitionResult {
+    let snapshot = album_sync_snapshot_to_client(snapshot);
+    match mosaic_client::advance_album_sync(&snapshot, album_sync_event_to_client(event)) {
+        Ok(transition) => ClientCoreAlbumSyncTransitionResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            transition: album_sync_transition_from_client(transition),
+        },
+        Err(error) => ClientCoreAlbumSyncTransitionResult {
+            code: error.code.as_u16(),
+            transition: empty_album_sync_transition(),
+        },
+    }
+}
+
 fn identity_result_from_client(
     result: mosaic_client::IdentityHandleResult,
 ) -> IdentityHandleResult {
@@ -613,6 +860,271 @@ fn crypto_domain_vector_from_client(
         identity_signing_pubkey: result.identity_signing_pubkey,
         identity_encryption_pubkey: result.identity_encryption_pubkey,
         identity_signature: result.identity_signature,
+    }
+}
+
+fn upload_request_to_client(
+    request: ClientCoreUploadJobRequest,
+) -> mosaic_client::UploadJobRequest {
+    mosaic_client::UploadJobRequest {
+        job_id: request.job_id,
+        album_id: request.album_id,
+        asset_id: request.asset_id,
+        epoch_id: request.epoch_id,
+        now_unix_ms: request.now_unix_ms,
+        max_retry_count: request.max_retry_count,
+    }
+}
+
+fn upload_snapshot_to_client(
+    snapshot: ClientCoreUploadJobSnapshot,
+) -> mosaic_client::UploadJobSnapshot {
+    mosaic_client::UploadJobSnapshot {
+        schema_version: snapshot.schema_version,
+        job_id: snapshot.job_id,
+        album_id: snapshot.album_id,
+        asset_id: snapshot.asset_id,
+        epoch_id: snapshot.epoch_id,
+        phase: snapshot.phase,
+        active_tier: snapshot.active_tier,
+        active_shard_index: snapshot.active_shard_index,
+        completed_shards: snapshot
+            .completed_shards
+            .into_iter()
+            .map(|shard| mosaic_client::UploadShardRef {
+                tier: shard.tier,
+                shard_index: shard.shard_index,
+                shard_id: shard.shard_id,
+                sha256: shard.sha256,
+                uploaded: shard.uploaded,
+            })
+            .collect(),
+        manifest_receipt: if snapshot.has_manifest_receipt {
+            Some(mosaic_client::ManifestReceipt {
+                manifest_id: snapshot.manifest_receipt.manifest_id,
+                manifest_version: snapshot.manifest_receipt.manifest_version,
+            })
+        } else {
+            None
+        },
+        retry_count: snapshot.retry_count,
+        next_retry_unix_ms: snapshot.next_retry_unix_ms,
+        last_error_code: snapshot.last_error_code,
+        last_error_stage: snapshot.last_error_stage,
+        sync_confirmed: snapshot.sync_confirmed,
+        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+    }
+}
+
+fn upload_event_to_client(event: ClientCoreUploadJobEvent) -> mosaic_client::UploadJobEvent {
+    mosaic_client::UploadJobEvent {
+        kind: event.kind,
+        tier: event.tier,
+        shard_index: event.shard_index,
+        shard_id: event.shard_id,
+        sha256: event.sha256,
+        manifest_id: event.manifest_id,
+        manifest_version: event.manifest_version,
+        observed_asset_id: event.observed_asset_id,
+        retry_after_unix_ms: event.retry_after_unix_ms,
+        error_code: event.error_code,
+    }
+}
+
+fn upload_snapshot_from_client(
+    snapshot: mosaic_client::UploadJobSnapshot,
+) -> ClientCoreUploadJobSnapshot {
+    let (has_manifest_receipt, manifest_receipt) = match snapshot.manifest_receipt {
+        Some(receipt) => (
+            true,
+            ClientCoreManifestReceipt {
+                manifest_id: receipt.manifest_id,
+                manifest_version: receipt.manifest_version,
+            },
+        ),
+        None => (false, empty_manifest_receipt()),
+    };
+
+    ClientCoreUploadJobSnapshot {
+        schema_version: snapshot.schema_version,
+        job_id: snapshot.job_id,
+        album_id: snapshot.album_id,
+        asset_id: snapshot.asset_id,
+        epoch_id: snapshot.epoch_id,
+        phase: snapshot.phase,
+        active_tier: snapshot.active_tier,
+        active_shard_index: snapshot.active_shard_index,
+        completed_shards: snapshot
+            .completed_shards
+            .into_iter()
+            .map(|shard| ClientCoreUploadShardRef {
+                tier: shard.tier,
+                shard_index: shard.shard_index,
+                shard_id: shard.shard_id,
+                sha256: shard.sha256,
+                uploaded: shard.uploaded,
+            })
+            .collect(),
+        has_manifest_receipt,
+        manifest_receipt,
+        retry_count: snapshot.retry_count,
+        next_retry_unix_ms: snapshot.next_retry_unix_ms,
+        last_error_code: snapshot.last_error_code,
+        last_error_stage: snapshot.last_error_stage,
+        sync_confirmed: snapshot.sync_confirmed,
+        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+    }
+}
+
+fn upload_transition_from_client(
+    transition: mosaic_client::UploadJobTransition,
+) -> ClientCoreUploadJobTransition {
+    ClientCoreUploadJobTransition {
+        snapshot: upload_snapshot_from_client(transition.snapshot),
+        effects: transition
+            .effects
+            .into_iter()
+            .map(|effect| ClientCoreUploadJobEffect {
+                kind: effect.kind,
+                tier: effect.tier,
+                shard_index: effect.shard_index,
+            })
+            .collect(),
+    }
+}
+
+fn album_sync_request_to_client(
+    request: ClientCoreAlbumSyncRequest,
+) -> mosaic_client::AlbumSyncRequest {
+    mosaic_client::AlbumSyncRequest {
+        album_id: request.album_id,
+        request_id: request.request_id,
+        start_cursor: request.start_cursor,
+        now_unix_ms: request.now_unix_ms,
+        max_retry_count: request.max_retry_count,
+    }
+}
+
+fn album_sync_snapshot_to_client(
+    snapshot: ClientCoreAlbumSyncSnapshot,
+) -> mosaic_client::AlbumSyncSnapshot {
+    mosaic_client::AlbumSyncSnapshot {
+        schema_version: snapshot.schema_version,
+        album_id: snapshot.album_id,
+        phase: snapshot.phase,
+        active_cursor: snapshot.active_cursor,
+        pending_cursor: snapshot.pending_cursor,
+        rerun_requested: snapshot.rerun_requested,
+        retry_count: snapshot.retry_count,
+        next_retry_unix_ms: snapshot.next_retry_unix_ms,
+        last_error_code: snapshot.last_error_code,
+        last_error_stage: snapshot.last_error_stage,
+        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+    }
+}
+
+fn album_sync_event_to_client(event: ClientCoreAlbumSyncEvent) -> mosaic_client::AlbumSyncEvent {
+    mosaic_client::AlbumSyncEvent {
+        kind: event.kind,
+        fetched_cursor: event.fetched_cursor,
+        next_cursor: event.next_cursor,
+        applied_count: event.applied_count,
+        observed_asset_ids: event.observed_asset_ids,
+        retry_after_unix_ms: event.retry_after_unix_ms,
+        error_code: event.error_code,
+    }
+}
+
+fn album_sync_snapshot_from_client(
+    snapshot: mosaic_client::AlbumSyncSnapshot,
+) -> ClientCoreAlbumSyncSnapshot {
+    ClientCoreAlbumSyncSnapshot {
+        schema_version: snapshot.schema_version,
+        album_id: snapshot.album_id,
+        phase: snapshot.phase,
+        active_cursor: snapshot.active_cursor,
+        pending_cursor: snapshot.pending_cursor,
+        rerun_requested: snapshot.rerun_requested,
+        retry_count: snapshot.retry_count,
+        next_retry_unix_ms: snapshot.next_retry_unix_ms,
+        last_error_code: snapshot.last_error_code,
+        last_error_stage: snapshot.last_error_stage,
+        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+    }
+}
+
+fn album_sync_transition_from_client(
+    transition: mosaic_client::AlbumSyncTransition,
+) -> ClientCoreAlbumSyncTransition {
+    ClientCoreAlbumSyncTransition {
+        snapshot: album_sync_snapshot_from_client(transition.snapshot),
+        effects: transition
+            .effects
+            .into_iter()
+            .map(|effect| ClientCoreAlbumSyncEffect {
+                kind: effect.kind,
+                cursor: effect.cursor,
+            })
+            .collect(),
+    }
+}
+
+fn empty_manifest_receipt() -> ClientCoreManifestReceipt {
+    ClientCoreManifestReceipt {
+        manifest_id: String::new(),
+        manifest_version: 0,
+    }
+}
+
+fn empty_upload_snapshot() -> ClientCoreUploadJobSnapshot {
+    ClientCoreUploadJobSnapshot {
+        schema_version: 0,
+        job_id: String::new(),
+        album_id: String::new(),
+        asset_id: String::new(),
+        epoch_id: 0,
+        phase: String::new(),
+        active_tier: 0,
+        active_shard_index: 0,
+        completed_shards: Vec::new(),
+        has_manifest_receipt: false,
+        manifest_receipt: empty_manifest_receipt(),
+        retry_count: 0,
+        next_retry_unix_ms: 0,
+        last_error_code: 0,
+        last_error_stage: String::new(),
+        sync_confirmed: false,
+        updated_at_unix_ms: 0,
+    }
+}
+
+fn empty_upload_transition() -> ClientCoreUploadJobTransition {
+    ClientCoreUploadJobTransition {
+        snapshot: empty_upload_snapshot(),
+        effects: Vec::new(),
+    }
+}
+
+fn empty_album_sync_snapshot() -> ClientCoreAlbumSyncSnapshot {
+    ClientCoreAlbumSyncSnapshot {
+        schema_version: 0,
+        album_id: String::new(),
+        phase: String::new(),
+        active_cursor: String::new(),
+        pending_cursor: String::new(),
+        rerun_requested: false,
+        retry_count: 0,
+        next_retry_unix_ms: 0,
+        last_error_code: 0,
+        last_error_stage: String::new(),
+        updated_at_unix_ms: 0,
+    }
+}
+
+fn empty_album_sync_transition() -> ClientCoreAlbumSyncTransition {
+    ClientCoreAlbumSyncTransition {
+        snapshot: empty_album_sync_snapshot(),
+        effects: Vec::new(),
     }
 }
 

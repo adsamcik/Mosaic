@@ -123,6 +123,166 @@ pub struct CryptoDomainGoldenVectorSnapshot {
     pub identity_signature: Vec<u8>,
 }
 
+/// Rust-side WASM facade privacy-safe uploaded shard reference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreUploadShardRef {
+    pub tier: u8,
+    pub shard_index: u32,
+    pub shard_id: String,
+    pub sha256: String,
+    pub uploaded: bool,
+}
+
+/// Rust-side WASM facade manifest receipt known after server commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreManifestReceipt {
+    pub manifest_id: String,
+    pub manifest_version: u64,
+}
+
+/// Rust-side WASM facade upload job initialization request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreUploadJobRequest {
+    pub job_id: String,
+    pub album_id: String,
+    pub asset_id: String,
+    pub epoch_id: u32,
+    pub now_unix_ms: u64,
+    pub max_retry_count: u32,
+}
+
+/// Rust-side WASM facade persistence-safe upload job snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreUploadJobSnapshot {
+    pub schema_version: u32,
+    pub job_id: String,
+    pub album_id: String,
+    pub asset_id: String,
+    pub epoch_id: u32,
+    pub phase: String,
+    pub active_tier: u8,
+    pub active_shard_index: u32,
+    pub completed_shards: Vec<ClientCoreUploadShardRef>,
+    pub has_manifest_receipt: bool,
+    pub manifest_receipt: ClientCoreManifestReceipt,
+    pub retry_count: u32,
+    pub next_retry_unix_ms: u64,
+    pub last_error_code: u16,
+    pub last_error_stage: String,
+    pub sync_confirmed: bool,
+    pub updated_at_unix_ms: u64,
+}
+
+/// Rust-side WASM facade compact upload event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreUploadJobEvent {
+    pub kind: String,
+    pub tier: u8,
+    pub shard_index: u32,
+    pub shard_id: String,
+    pub sha256: String,
+    pub manifest_id: String,
+    pub manifest_version: u64,
+    pub observed_asset_id: String,
+    pub retry_after_unix_ms: u64,
+    pub error_code: u16,
+}
+
+/// Rust-side WASM facade compact upload effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreUploadJobEffect {
+    pub kind: String,
+    pub tier: u8,
+    pub shard_index: u32,
+}
+
+/// Rust-side WASM facade upload transition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreUploadJobTransition {
+    pub snapshot: ClientCoreUploadJobSnapshot,
+    pub effects: Vec<ClientCoreUploadJobEffect>,
+}
+
+/// Rust-side WASM facade upload initialization result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreUploadJobResult {
+    pub code: u16,
+    pub snapshot: ClientCoreUploadJobSnapshot,
+}
+
+/// Rust-side WASM facade upload advance result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreUploadJobTransitionResult {
+    pub code: u16,
+    pub transition: ClientCoreUploadJobTransition,
+}
+
+/// Rust-side WASM facade album sync initialization request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreAlbumSyncRequest {
+    pub album_id: String,
+    pub request_id: String,
+    pub start_cursor: String,
+    pub now_unix_ms: u64,
+    pub max_retry_count: u32,
+}
+
+/// Rust-side WASM facade persistence-safe album sync snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreAlbumSyncSnapshot {
+    pub schema_version: u32,
+    pub album_id: String,
+    pub phase: String,
+    pub active_cursor: String,
+    pub pending_cursor: String,
+    pub rerun_requested: bool,
+    pub retry_count: u32,
+    pub next_retry_unix_ms: u64,
+    pub last_error_code: u16,
+    pub last_error_stage: String,
+    pub updated_at_unix_ms: u64,
+}
+
+/// Rust-side WASM facade compact album sync event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreAlbumSyncEvent {
+    pub kind: String,
+    pub fetched_cursor: String,
+    pub next_cursor: String,
+    pub applied_count: u32,
+    pub observed_asset_ids: Vec<String>,
+    pub retry_after_unix_ms: u64,
+    pub error_code: u16,
+}
+
+/// Rust-side WASM facade compact album sync effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreAlbumSyncEffect {
+    pub kind: String,
+    pub cursor: String,
+}
+
+/// Rust-side WASM facade album sync transition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreAlbumSyncTransition {
+    pub snapshot: ClientCoreAlbumSyncSnapshot,
+    pub effects: Vec<ClientCoreAlbumSyncEffect>,
+}
+
+/// Rust-side WASM facade album sync initialization result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreAlbumSyncResult {
+    pub code: u16,
+    pub snapshot: ClientCoreAlbumSyncSnapshot,
+}
+
+/// Rust-side WASM facade album sync advance result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientCoreAlbumSyncTransitionResult {
+    pub code: u16,
+    pub transition: ClientCoreAlbumSyncTransition,
+}
+
 /// WASM-bindgen class for header parse results.
 #[wasm_bindgen(js_name = HeaderResult)]
 pub struct JsHeaderResult {
@@ -570,8 +730,16 @@ pub const fn protocol_version() -> &'static str {
 /// Returns the stable WASM API snapshot for this FFI spike.
 #[must_use]
 pub const fn wasm_api_snapshot() -> &'static str {
-    "mosaic-wasm ffi-spike:v5 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+    "mosaic-wasm ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)"
 }
+
+const CLIENT_CORE_STATE_MACHINE_SURFACE: &str = "client-core-state-machines:v1 \
+upload(init_upload_job(ClientCoreUploadJobRequest)->ClientCoreUploadJobResult,\
+advance_upload_job(ClientCoreUploadJobSnapshot,ClientCoreUploadJobEvent)->ClientCoreUploadJobTransitionResult,\
+ClientCoreUploadJobSnapshot,ClientCoreUploadJobTransition,ClientCoreUploadJobEffect) \
+sync(init_album_sync(ClientCoreAlbumSyncRequest)->ClientCoreAlbumSyncResult,\
+advance_album_sync(ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncEvent)->ClientCoreAlbumSyncTransitionResult,\
+ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncTransition,ClientCoreAlbumSyncEffect)";
 
 /// Parses a shard envelope header for Rust-side wrapper tests.
 #[must_use]
@@ -807,6 +975,80 @@ pub fn decrypt_shard_with_epoch_handle(
 #[must_use]
 pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVectorSnapshot {
     crypto_domain_vector_from_client(mosaic_client::crypto_domain_golden_vector_snapshot())
+}
+
+/// Returns the stable client-core state machine WASM proof surface.
+#[must_use]
+pub fn client_core_state_machine_snapshot() -> String {
+    CLIENT_CORE_STATE_MACHINE_SURFACE.to_owned()
+}
+
+/// Initializes a client-core upload job through the Rust-side WASM DTO surface.
+#[must_use]
+pub fn init_upload_job(request: ClientCoreUploadJobRequest) -> ClientCoreUploadJobResult {
+    match mosaic_client::new_upload_job(upload_request_to_client(request)) {
+        Ok(snapshot) => ClientCoreUploadJobResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            snapshot: upload_snapshot_from_client(snapshot),
+        },
+        Err(error) => ClientCoreUploadJobResult {
+            code: error.code.as_u16(),
+            snapshot: empty_upload_snapshot(),
+        },
+    }
+}
+
+/// Advances a client-core upload job through the Rust-side WASM DTO surface.
+#[must_use]
+pub fn advance_upload_job(
+    snapshot: ClientCoreUploadJobSnapshot,
+    event: ClientCoreUploadJobEvent,
+) -> ClientCoreUploadJobTransitionResult {
+    let snapshot = upload_snapshot_to_client(snapshot);
+    match mosaic_client::advance_upload_job(&snapshot, upload_event_to_client(event)) {
+        Ok(transition) => ClientCoreUploadJobTransitionResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            transition: upload_transition_from_client(transition),
+        },
+        Err(error) => ClientCoreUploadJobTransitionResult {
+            code: error.code.as_u16(),
+            transition: empty_upload_transition(),
+        },
+    }
+}
+
+/// Initializes an album sync coordinator through the Rust-side WASM DTO surface.
+#[must_use]
+pub fn init_album_sync(request: ClientCoreAlbumSyncRequest) -> ClientCoreAlbumSyncResult {
+    match mosaic_client::new_album_sync(album_sync_request_to_client(request)) {
+        Ok(snapshot) => ClientCoreAlbumSyncResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            snapshot: album_sync_snapshot_from_client(snapshot),
+        },
+        Err(error) => ClientCoreAlbumSyncResult {
+            code: error.code.as_u16(),
+            snapshot: empty_album_sync_snapshot(),
+        },
+    }
+}
+
+/// Advances an album sync coordinator through the Rust-side WASM DTO surface.
+#[must_use]
+pub fn advance_album_sync(
+    snapshot: ClientCoreAlbumSyncSnapshot,
+    event: ClientCoreAlbumSyncEvent,
+) -> ClientCoreAlbumSyncTransitionResult {
+    let snapshot = album_sync_snapshot_to_client(snapshot);
+    match mosaic_client::advance_album_sync(&snapshot, album_sync_event_to_client(event)) {
+        Ok(transition) => ClientCoreAlbumSyncTransitionResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            transition: album_sync_transition_from_client(transition),
+        },
+        Err(error) => ClientCoreAlbumSyncTransitionResult {
+            code: error.code.as_u16(),
+            transition: empty_album_sync_transition(),
+        },
+    }
 }
 
 /// Closes an identity handle and returns the stable error code.
@@ -1065,6 +1307,165 @@ pub fn crypto_domain_golden_vector_snapshot_js() -> JsCryptoDomainGoldenVectorSn
     js_crypto_domain_vector_from_rust(crypto_domain_golden_vector_snapshot())
 }
 
+/// Returns the client-core state machine surface through WASM.
+#[wasm_bindgen(js_name = clientCoreStateMachineSnapshot)]
+#[must_use]
+pub fn client_core_state_machine_snapshot_js() -> String {
+    client_core_state_machine_snapshot()
+}
+
+/// Initializes a client-core upload job through a primitive WASM proof surface.
+#[wasm_bindgen(js_name = initUploadJob)]
+#[must_use]
+pub fn init_upload_job_js(
+    job_id: String,
+    album_id: String,
+    asset_id: String,
+    epoch_id: u32,
+    now_unix_ms: u64,
+    max_retry_count: u32,
+) -> String {
+    upload_job_result_json(init_upload_job(ClientCoreUploadJobRequest {
+        job_id,
+        album_id,
+        asset_id,
+        epoch_id,
+        now_unix_ms,
+        max_retry_count,
+    }))
+}
+
+/// Advances a client-core upload job through a primitive WASM proof surface.
+#[wasm_bindgen(js_name = advanceUploadJob)]
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn advance_upload_job_js(
+    job_id: String,
+    album_id: String,
+    asset_id: String,
+    epoch_id: u32,
+    phase: String,
+    active_tier: u8,
+    active_shard_index: u32,
+    retry_count: u32,
+    next_retry_unix_ms: u64,
+    last_error_code: u16,
+    last_error_stage: String,
+    sync_confirmed: bool,
+    updated_at_unix_ms: u64,
+    event_kind: String,
+    event_tier: u8,
+    event_shard_index: u32,
+    event_shard_id: String,
+    event_sha256: String,
+    event_manifest_id: String,
+    event_manifest_version: u64,
+    observed_asset_id: String,
+    retry_after_unix_ms: u64,
+    event_error_code: u16,
+) -> String {
+    upload_job_transition_result_json(advance_upload_job(
+        ClientCoreUploadJobSnapshot {
+            schema_version: 1,
+            job_id,
+            album_id,
+            asset_id,
+            epoch_id,
+            phase,
+            active_tier,
+            active_shard_index,
+            completed_shards: Vec::new(),
+            has_manifest_receipt: false,
+            manifest_receipt: empty_manifest_receipt(),
+            retry_count,
+            next_retry_unix_ms,
+            last_error_code,
+            last_error_stage,
+            sync_confirmed,
+            updated_at_unix_ms,
+        },
+        ClientCoreUploadJobEvent {
+            kind: event_kind,
+            tier: event_tier,
+            shard_index: event_shard_index,
+            shard_id: event_shard_id,
+            sha256: event_sha256,
+            manifest_id: event_manifest_id,
+            manifest_version: event_manifest_version,
+            observed_asset_id,
+            retry_after_unix_ms,
+            error_code: event_error_code,
+        },
+    ))
+}
+
+/// Initializes an album sync coordinator through a primitive WASM proof surface.
+#[wasm_bindgen(js_name = initAlbumSync)]
+#[must_use]
+pub fn init_album_sync_js(
+    album_id: String,
+    request_id: String,
+    start_cursor: String,
+    now_unix_ms: u64,
+    max_retry_count: u32,
+) -> String {
+    album_sync_result_json(init_album_sync(ClientCoreAlbumSyncRequest {
+        album_id,
+        request_id,
+        start_cursor,
+        now_unix_ms,
+        max_retry_count,
+    }))
+}
+
+/// Advances an album sync coordinator through a primitive WASM proof surface.
+#[wasm_bindgen(js_name = advanceAlbumSync)]
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn advance_album_sync_js(
+    album_id: String,
+    phase: String,
+    active_cursor: String,
+    pending_cursor: String,
+    rerun_requested: bool,
+    retry_count: u32,
+    next_retry_unix_ms: u64,
+    last_error_code: u16,
+    last_error_stage: String,
+    updated_at_unix_ms: u64,
+    event_kind: String,
+    fetched_cursor: String,
+    next_cursor: String,
+    applied_count: u32,
+    retry_after_unix_ms: u64,
+    event_error_code: u16,
+) -> String {
+    album_sync_transition_result_json(advance_album_sync(
+        ClientCoreAlbumSyncSnapshot {
+            schema_version: 1,
+            album_id,
+            phase,
+            active_cursor,
+            pending_cursor,
+            rerun_requested,
+            retry_count,
+            next_retry_unix_ms,
+            last_error_code,
+            last_error_stage,
+            updated_at_unix_ms,
+        },
+        ClientCoreAlbumSyncEvent {
+            kind: event_kind,
+            fetched_cursor,
+            next_cursor,
+            applied_count,
+            observed_asset_ids: Vec::new(),
+            retry_after_unix_ms,
+            error_code: event_error_code,
+        },
+    ))
+}
+
 /// Closes an identity handle through WASM.
 #[wasm_bindgen(js_name = closeIdentityHandle)]
 #[must_use]
@@ -1183,6 +1584,331 @@ fn crypto_domain_vector_from_client(
         identity_encryption_pubkey: result.identity_encryption_pubkey,
         identity_signature: result.identity_signature,
     }
+}
+
+fn upload_request_to_client(
+    request: ClientCoreUploadJobRequest,
+) -> mosaic_client::UploadJobRequest {
+    mosaic_client::UploadJobRequest {
+        job_id: request.job_id,
+        album_id: request.album_id,
+        asset_id: request.asset_id,
+        epoch_id: request.epoch_id,
+        now_unix_ms: request.now_unix_ms,
+        max_retry_count: request.max_retry_count,
+    }
+}
+
+fn upload_snapshot_to_client(
+    snapshot: ClientCoreUploadJobSnapshot,
+) -> mosaic_client::UploadJobSnapshot {
+    mosaic_client::UploadJobSnapshot {
+        schema_version: snapshot.schema_version,
+        job_id: snapshot.job_id,
+        album_id: snapshot.album_id,
+        asset_id: snapshot.asset_id,
+        epoch_id: snapshot.epoch_id,
+        phase: snapshot.phase,
+        active_tier: snapshot.active_tier,
+        active_shard_index: snapshot.active_shard_index,
+        completed_shards: snapshot
+            .completed_shards
+            .into_iter()
+            .map(|shard| mosaic_client::UploadShardRef {
+                tier: shard.tier,
+                shard_index: shard.shard_index,
+                shard_id: shard.shard_id,
+                sha256: shard.sha256,
+                uploaded: shard.uploaded,
+            })
+            .collect(),
+        manifest_receipt: if snapshot.has_manifest_receipt {
+            Some(mosaic_client::ManifestReceipt {
+                manifest_id: snapshot.manifest_receipt.manifest_id,
+                manifest_version: snapshot.manifest_receipt.manifest_version,
+            })
+        } else {
+            None
+        },
+        retry_count: snapshot.retry_count,
+        next_retry_unix_ms: snapshot.next_retry_unix_ms,
+        last_error_code: snapshot.last_error_code,
+        last_error_stage: snapshot.last_error_stage,
+        sync_confirmed: snapshot.sync_confirmed,
+        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+    }
+}
+
+fn upload_event_to_client(event: ClientCoreUploadJobEvent) -> mosaic_client::UploadJobEvent {
+    mosaic_client::UploadJobEvent {
+        kind: event.kind,
+        tier: event.tier,
+        shard_index: event.shard_index,
+        shard_id: event.shard_id,
+        sha256: event.sha256,
+        manifest_id: event.manifest_id,
+        manifest_version: event.manifest_version,
+        observed_asset_id: event.observed_asset_id,
+        retry_after_unix_ms: event.retry_after_unix_ms,
+        error_code: event.error_code,
+    }
+}
+
+fn upload_snapshot_from_client(
+    snapshot: mosaic_client::UploadJobSnapshot,
+) -> ClientCoreUploadJobSnapshot {
+    let (has_manifest_receipt, manifest_receipt) = match snapshot.manifest_receipt {
+        Some(receipt) => (
+            true,
+            ClientCoreManifestReceipt {
+                manifest_id: receipt.manifest_id,
+                manifest_version: receipt.manifest_version,
+            },
+        ),
+        None => (false, empty_manifest_receipt()),
+    };
+
+    ClientCoreUploadJobSnapshot {
+        schema_version: snapshot.schema_version,
+        job_id: snapshot.job_id,
+        album_id: snapshot.album_id,
+        asset_id: snapshot.asset_id,
+        epoch_id: snapshot.epoch_id,
+        phase: snapshot.phase,
+        active_tier: snapshot.active_tier,
+        active_shard_index: snapshot.active_shard_index,
+        completed_shards: snapshot
+            .completed_shards
+            .into_iter()
+            .map(|shard| ClientCoreUploadShardRef {
+                tier: shard.tier,
+                shard_index: shard.shard_index,
+                shard_id: shard.shard_id,
+                sha256: shard.sha256,
+                uploaded: shard.uploaded,
+            })
+            .collect(),
+        has_manifest_receipt,
+        manifest_receipt,
+        retry_count: snapshot.retry_count,
+        next_retry_unix_ms: snapshot.next_retry_unix_ms,
+        last_error_code: snapshot.last_error_code,
+        last_error_stage: snapshot.last_error_stage,
+        sync_confirmed: snapshot.sync_confirmed,
+        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+    }
+}
+
+fn upload_transition_from_client(
+    transition: mosaic_client::UploadJobTransition,
+) -> ClientCoreUploadJobTransition {
+    ClientCoreUploadJobTransition {
+        snapshot: upload_snapshot_from_client(transition.snapshot),
+        effects: transition
+            .effects
+            .into_iter()
+            .map(|effect| ClientCoreUploadJobEffect {
+                kind: effect.kind,
+                tier: effect.tier,
+                shard_index: effect.shard_index,
+            })
+            .collect(),
+    }
+}
+
+fn album_sync_request_to_client(
+    request: ClientCoreAlbumSyncRequest,
+) -> mosaic_client::AlbumSyncRequest {
+    mosaic_client::AlbumSyncRequest {
+        album_id: request.album_id,
+        request_id: request.request_id,
+        start_cursor: request.start_cursor,
+        now_unix_ms: request.now_unix_ms,
+        max_retry_count: request.max_retry_count,
+    }
+}
+
+fn album_sync_snapshot_to_client(
+    snapshot: ClientCoreAlbumSyncSnapshot,
+) -> mosaic_client::AlbumSyncSnapshot {
+    mosaic_client::AlbumSyncSnapshot {
+        schema_version: snapshot.schema_version,
+        album_id: snapshot.album_id,
+        phase: snapshot.phase,
+        active_cursor: snapshot.active_cursor,
+        pending_cursor: snapshot.pending_cursor,
+        rerun_requested: snapshot.rerun_requested,
+        retry_count: snapshot.retry_count,
+        next_retry_unix_ms: snapshot.next_retry_unix_ms,
+        last_error_code: snapshot.last_error_code,
+        last_error_stage: snapshot.last_error_stage,
+        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+    }
+}
+
+fn album_sync_event_to_client(event: ClientCoreAlbumSyncEvent) -> mosaic_client::AlbumSyncEvent {
+    mosaic_client::AlbumSyncEvent {
+        kind: event.kind,
+        fetched_cursor: event.fetched_cursor,
+        next_cursor: event.next_cursor,
+        applied_count: event.applied_count,
+        observed_asset_ids: event.observed_asset_ids,
+        retry_after_unix_ms: event.retry_after_unix_ms,
+        error_code: event.error_code,
+    }
+}
+
+fn album_sync_snapshot_from_client(
+    snapshot: mosaic_client::AlbumSyncSnapshot,
+) -> ClientCoreAlbumSyncSnapshot {
+    ClientCoreAlbumSyncSnapshot {
+        schema_version: snapshot.schema_version,
+        album_id: snapshot.album_id,
+        phase: snapshot.phase,
+        active_cursor: snapshot.active_cursor,
+        pending_cursor: snapshot.pending_cursor,
+        rerun_requested: snapshot.rerun_requested,
+        retry_count: snapshot.retry_count,
+        next_retry_unix_ms: snapshot.next_retry_unix_ms,
+        last_error_code: snapshot.last_error_code,
+        last_error_stage: snapshot.last_error_stage,
+        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+    }
+}
+
+fn album_sync_transition_from_client(
+    transition: mosaic_client::AlbumSyncTransition,
+) -> ClientCoreAlbumSyncTransition {
+    ClientCoreAlbumSyncTransition {
+        snapshot: album_sync_snapshot_from_client(transition.snapshot),
+        effects: transition
+            .effects
+            .into_iter()
+            .map(|effect| ClientCoreAlbumSyncEffect {
+                kind: effect.kind,
+                cursor: effect.cursor,
+            })
+            .collect(),
+    }
+}
+
+fn empty_manifest_receipt() -> ClientCoreManifestReceipt {
+    ClientCoreManifestReceipt {
+        manifest_id: String::new(),
+        manifest_version: 0,
+    }
+}
+
+fn empty_upload_snapshot() -> ClientCoreUploadJobSnapshot {
+    ClientCoreUploadJobSnapshot {
+        schema_version: 0,
+        job_id: String::new(),
+        album_id: String::new(),
+        asset_id: String::new(),
+        epoch_id: 0,
+        phase: String::new(),
+        active_tier: 0,
+        active_shard_index: 0,
+        completed_shards: Vec::new(),
+        has_manifest_receipt: false,
+        manifest_receipt: empty_manifest_receipt(),
+        retry_count: 0,
+        next_retry_unix_ms: 0,
+        last_error_code: 0,
+        last_error_stage: String::new(),
+        sync_confirmed: false,
+        updated_at_unix_ms: 0,
+    }
+}
+
+fn empty_upload_transition() -> ClientCoreUploadJobTransition {
+    ClientCoreUploadJobTransition {
+        snapshot: empty_upload_snapshot(),
+        effects: Vec::new(),
+    }
+}
+
+fn empty_album_sync_snapshot() -> ClientCoreAlbumSyncSnapshot {
+    ClientCoreAlbumSyncSnapshot {
+        schema_version: 0,
+        album_id: String::new(),
+        phase: String::new(),
+        active_cursor: String::new(),
+        pending_cursor: String::new(),
+        rerun_requested: false,
+        retry_count: 0,
+        next_retry_unix_ms: 0,
+        last_error_code: 0,
+        last_error_stage: String::new(),
+        updated_at_unix_ms: 0,
+    }
+}
+
+fn empty_album_sync_transition() -> ClientCoreAlbumSyncTransition {
+    ClientCoreAlbumSyncTransition {
+        snapshot: empty_album_sync_snapshot(),
+        effects: Vec::new(),
+    }
+}
+
+fn upload_job_result_json(result: ClientCoreUploadJobResult) -> String {
+    upload_snapshot_json(result.code, &result.snapshot)
+}
+
+fn upload_job_transition_result_json(result: ClientCoreUploadJobTransitionResult) -> String {
+    upload_snapshot_json(result.code, &result.transition.snapshot)
+}
+
+fn upload_snapshot_json(code: u16, snapshot: &ClientCoreUploadJobSnapshot) -> String {
+    format!(
+        "{{\"code\":{},\"schemaVersion\":{},\"jobId\":\"{}\",\"albumId\":\"{}\",\"assetId\":\"{}\",\"phase\":\"{}\",\"shardRefCount\":{}}}",
+        code,
+        snapshot.schema_version,
+        json_escape(&snapshot.job_id),
+        json_escape(&snapshot.album_id),
+        json_escape(&snapshot.asset_id),
+        json_escape(&snapshot.phase),
+        snapshot.completed_shards.len()
+    )
+}
+
+fn album_sync_result_json(result: ClientCoreAlbumSyncResult) -> String {
+    album_sync_snapshot_json(result.code, &result.snapshot)
+}
+
+fn album_sync_transition_result_json(result: ClientCoreAlbumSyncTransitionResult) -> String {
+    album_sync_snapshot_json(result.code, &result.transition.snapshot)
+}
+
+fn album_sync_snapshot_json(code: u16, snapshot: &ClientCoreAlbumSyncSnapshot) -> String {
+    format!(
+        "{{\"code\":{},\"schemaVersion\":{},\"albumId\":\"{}\",\"phase\":\"{}\",\"rerunRequested\":{}}}",
+        code,
+        snapshot.schema_version,
+        json_escape(&snapshot.album_id),
+        json_escape(&snapshot.phase),
+        snapshot.rerun_requested
+    )
+}
+
+fn json_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\u{08}' => escaped.push_str("\\b"),
+            '\u{0c}' => escaped.push_str("\\f"),
+            character if character.is_control() => {
+                escaped.push_str(&format!("\\u{:04x}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped
 }
 
 fn canonical_metadata_sidecar_bytes_result(

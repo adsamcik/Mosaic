@@ -2,16 +2,22 @@ use mosaic_client::ClientErrorCode;
 use mosaic_crypto::{KdfProfile, MAX_KDF_MEMORY_KIB, derive_account_key};
 use mosaic_domain::{ShardEnvelopeHeader, ShardTier};
 use mosaic_uniffi::{
-    AccountUnlockRequest, account_key_handle_is_open, android_progress_probe,
+    AccountUnlockRequest, ClientCoreAlbumSyncEffect, ClientCoreAlbumSyncEvent,
+    ClientCoreAlbumSyncRequest, ClientCoreAlbumSyncResult, ClientCoreAlbumSyncSnapshot,
+    ClientCoreAlbumSyncTransition, ClientCoreAlbumSyncTransitionResult, ClientCoreManifestReceipt,
+    ClientCoreUploadJobEffect, ClientCoreUploadJobEvent, ClientCoreUploadJobRequest,
+    ClientCoreUploadJobResult, ClientCoreUploadJobSnapshot, ClientCoreUploadJobTransition,
+    ClientCoreUploadJobTransitionResult, ClientCoreUploadShardRef, account_key_handle_is_open,
+    advance_album_sync, advance_upload_job, android_progress_probe,
     canonical_media_metadata_sidecar_bytes, canonical_metadata_sidecar_bytes,
-    close_account_key_handle, close_epoch_key_handle, close_identity_handle,
-    create_epoch_key_handle, create_identity_handle, crypto_domain_golden_vector_snapshot,
-    decrypt_shard_with_epoch_handle, encrypt_media_metadata_sidecar_with_epoch_handle,
-    encrypt_metadata_sidecar_with_epoch_handle, encrypt_shard_with_epoch_handle,
-    epoch_key_handle_is_open, identity_encryption_pubkey, identity_signing_pubkey,
-    inspect_media_image, open_epoch_key_handle, open_identity_handle, parse_envelope_header,
-    plan_media_tier_layout, protocol_version, sign_manifest_with_identity, uniffi_api_snapshot,
-    unlock_account_key,
+    client_core_state_machine_snapshot, close_account_key_handle, close_epoch_key_handle,
+    close_identity_handle, create_epoch_key_handle, create_identity_handle,
+    crypto_domain_golden_vector_snapshot, decrypt_shard_with_epoch_handle,
+    encrypt_media_metadata_sidecar_with_epoch_handle, encrypt_metadata_sidecar_with_epoch_handle,
+    encrypt_shard_with_epoch_handle, epoch_key_handle_is_open, identity_encryption_pubkey,
+    identity_signing_pubkey, init_album_sync, init_upload_job, inspect_media_image,
+    open_epoch_key_handle, open_identity_handle, parse_envelope_header, plan_media_tier_layout,
+    protocol_version, sign_manifest_with_identity, uniffi_api_snapshot, unlock_account_key,
 };
 use zeroize::Zeroizing;
 
@@ -30,8 +36,140 @@ const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 fn uniffi_facade_exposes_stable_ffi_spike_surface() {
     assert_eq!(
         uniffi_api_snapshot(),
-        "mosaic-uniffi ffi-spike:v7 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+        "mosaic-uniffi ffi-spike:v8 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)"
     );
+}
+
+#[test]
+fn uniffi_facade_exposes_client_core_state_machine_surface() {
+    let surface = client_core_state_machine_snapshot();
+
+    for expected in [
+        "client-core-state-machines:v1",
+        "init_upload_job",
+        "advance_upload_job",
+        "init_album_sync",
+        "advance_album_sync",
+        "ClientCoreUploadJobRequest",
+        "ClientCoreUploadJobSnapshot",
+        "ClientCoreUploadJobEvent",
+        "ClientCoreUploadJobTransition",
+        "ClientCoreAlbumSyncRequest",
+        "ClientCoreAlbumSyncSnapshot",
+        "ClientCoreAlbumSyncEvent",
+        "ClientCoreAlbumSyncTransition",
+    ] {
+        assert!(
+            surface.contains(expected),
+            "client-core surface should mention {expected}: {surface}"
+        );
+    }
+
+    assert_forbidden_client_core_snapshot_terms_absent(&surface);
+    assert_forbidden_client_core_snapshot_terms_absent(uniffi_api_snapshot());
+
+    let _init_upload: fn(ClientCoreUploadJobRequest) -> ClientCoreUploadJobResult = init_upload_job;
+    let _advance_upload: fn(
+        ClientCoreUploadJobSnapshot,
+        ClientCoreUploadJobEvent,
+    ) -> ClientCoreUploadJobTransitionResult = advance_upload_job;
+    let _init_sync: fn(ClientCoreAlbumSyncRequest) -> ClientCoreAlbumSyncResult = init_album_sync;
+    let _advance_sync: fn(
+        ClientCoreAlbumSyncSnapshot,
+        ClientCoreAlbumSyncEvent,
+    ) -> ClientCoreAlbumSyncTransitionResult = advance_album_sync;
+}
+
+#[test]
+fn uniffi_client_core_dtos_keep_persisted_records_privacy_safe() {
+    let upload_snapshot = ClientCoreUploadJobSnapshot {
+        schema_version: 1,
+        job_id: "job-local-123".to_owned(),
+        album_id: "album-local-456".to_owned(),
+        asset_id: "asset-local-789".to_owned(),
+        epoch_id: 7,
+        phase: "AwaitingSyncConfirmation".to_owned(),
+        active_tier: 2,
+        active_shard_index: 3,
+        completed_shards: vec![ClientCoreUploadShardRef {
+            tier: 2,
+            shard_index: 3,
+            shard_id: "shard-ref-3".to_owned(),
+            sha256: "sha256-safe-digest".to_owned(),
+            uploaded: true,
+        }],
+        has_manifest_receipt: true,
+        manifest_receipt: ClientCoreManifestReceipt {
+            manifest_id: "manifest-safe-id".to_owned(),
+            manifest_version: 4,
+        },
+        retry_count: 1,
+        next_retry_unix_ms: 1_700_000_000_000,
+        last_error_code: 0,
+        last_error_stage: String::new(),
+        sync_confirmed: false,
+        updated_at_unix_ms: 1_700_000_000_001,
+    };
+    let upload_transition = ClientCoreUploadJobTransition {
+        snapshot: upload_snapshot.clone(),
+        effects: vec![ClientCoreUploadJobEffect {
+            kind: "CreateManifest".to_owned(),
+            tier: 0,
+            shard_index: 0,
+        }],
+    };
+    let upload_event = ClientCoreUploadJobEvent {
+        kind: "ShardUploaded".to_owned(),
+        tier: 2,
+        shard_index: 3,
+        shard_id: "shard-ref-3".to_owned(),
+        sha256: "sha256-safe-digest".to_owned(),
+        manifest_id: String::new(),
+        manifest_version: 0,
+        observed_asset_id: String::new(),
+        retry_after_unix_ms: 0,
+        error_code: 0,
+    };
+    let sync_snapshot = ClientCoreAlbumSyncSnapshot {
+        schema_version: 1,
+        album_id: "album-local-456".to_owned(),
+        phase: "FetchingPage".to_owned(),
+        active_cursor: "cursor-safe".to_owned(),
+        pending_cursor: String::new(),
+        rerun_requested: false,
+        retry_count: 0,
+        next_retry_unix_ms: 0,
+        last_error_code: 0,
+        last_error_stage: String::new(),
+        updated_at_unix_ms: 1_700_000_000_002,
+    };
+    let sync_transition = ClientCoreAlbumSyncTransition {
+        snapshot: sync_snapshot.clone(),
+        effects: vec![ClientCoreAlbumSyncEffect {
+            kind: "FetchPage".to_owned(),
+            cursor: "cursor-safe".to_owned(),
+        }],
+    };
+    let sync_event = ClientCoreAlbumSyncEvent {
+        kind: "PageApplied".to_owned(),
+        fetched_cursor: "cursor-safe".to_owned(),
+        next_cursor: "cursor-next".to_owned(),
+        applied_count: 2,
+        observed_asset_ids: vec!["asset-local-789".to_owned()],
+        retry_after_unix_ms: 0,
+        error_code: 0,
+    };
+
+    for rendered in [
+        format!("{upload_snapshot:?}"),
+        format!("{upload_transition:?}"),
+        format!("{upload_event:?}"),
+        format!("{sync_snapshot:?}"),
+        format!("{sync_transition:?}"),
+        format!("{sync_event:?}"),
+    ] {
+        assert_forbidden_client_core_snapshot_terms_absent(&rendered);
+    }
 }
 
 #[test]
@@ -508,6 +646,22 @@ fn uniffi_error_paths_return_zero_handles_and_empty_sensitive_outputs() {
         ClientErrorCode::EpochHandleNotFound.as_u16()
     );
     assert!(missing_decrypt.plaintext.is_empty());
+}
+
+fn assert_forbidden_client_core_snapshot_terms_absent(rendered: &str) {
+    for forbidden in [
+        "password",
+        "private_key",
+        "plaintext",
+        "file_uri",
+        "picker_uri",
+        "filename",
+    ] {
+        assert!(
+            !rendered.to_lowercase().contains(forbidden),
+            "client-core snapshot/API surface must not expose forbidden term {forbidden}: {rendered}"
+        );
+    }
 }
 
 fn unlock_request(wrapped_account_key: Vec<u8>) -> AccountUnlockRequest {
