@@ -142,6 +142,8 @@ test.describe('Logout Storage Clearing @p0 @security @auth', () => {
 
     // Navigate to album list to trigger any localStorage writes
     await user.page.reload();
+    const loginPage = new LoginPage(user.page);
+    await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
     await appShell.waitForLoad();
 
     // Step 2: Check localStorage for any cached data
@@ -171,7 +173,6 @@ test.describe('Logout Storage Clearing @p0 @security @auth', () => {
     await appShell.logout();
 
     // Wait for login form to appear
-    const loginPage = new LoginPage(user.page);
     await loginPage.expectFormVisible();
 
     // Step 4: Verify localStorage sensitive data is cleared

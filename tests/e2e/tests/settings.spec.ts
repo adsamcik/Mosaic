@@ -85,19 +85,21 @@ test.describe('Settings Page @p2 @ui', () => {
 
   test('P1-SETTINGS-6: can toggle auto-sync setting', async ({ loggedInPage: page }) => {
     const autoSyncToggle = page.getByTestId('auto-sync-toggle');
-    await expect(autoSyncToggle).toBeVisible();
+    const autoSyncSwitch = page.locator('label.toggle-switch').filter({ has: autoSyncToggle });
+    await expect(autoSyncToggle).toBeAttached();
+    await expect(autoSyncSwitch).toBeVisible();
 
     // Get initial state
     const isChecked = await autoSyncToggle.isChecked();
 
     // Toggle
-    await autoSyncToggle.click();
+    await autoSyncSwitch.click();
 
     // Verify state changed
     await expect(autoSyncToggle).toBeChecked({ checked: !isChecked });
 
     // Toggle back
-    await autoSyncToggle.click();
+    await autoSyncSwitch.click();
     await expect(autoSyncToggle).toBeChecked({ checked: isChecked });
   });
 
@@ -267,7 +269,7 @@ test.describe('Language Settings @p1 @ui', () => {
     await expect(settingsTitle).toHaveText('Settings', { timeout: 2000 });
   });
 
-  test('P1-SETTINGS-15: language preference persists after page reload', async ({ loggedInPage: page }) => {
+  test('P1-SETTINGS-15: language preference persists after page reload', async ({ loggedInPage: page, testUser }) => {
     const settingsPage = new SettingsPage(page);
     const languageSelect = page.getByTestId('language-select');
 
@@ -279,6 +281,8 @@ test.describe('Language Settings @p1 @ui', () => {
 
     // Reload the page
     await page.reload();
+    const loginPage = new LoginPage(page);
+    await loginPage.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
     
     // Wait for settings page to load again
     await settingsPage.waitForLoad();
@@ -522,6 +526,7 @@ test.describe('Language Detection @p2 @ui', () => {
 
     // Reload page
     await page.reload();
+    await loginPage.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
     await settingsPage.waitForLoad();
 
     // Should remain English (manual preference overrides locale)

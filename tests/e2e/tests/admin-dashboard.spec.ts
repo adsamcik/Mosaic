@@ -170,6 +170,9 @@ async function loginAsAdmin(user: AuthenticatedUser): Promise<void> {
 
   // Step 3: Register and login normally.
   await loginUser(user);
+
+  // Step 4: Backend admin middleware checks the persisted database flag.
+  await promoteToAdmin(user.email);
 }
 
 test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {

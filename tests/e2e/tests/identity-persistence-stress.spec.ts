@@ -127,13 +127,7 @@ test.describe('Identity Persistence: Stress and Logout Tests @p1 @auth @crypto @
 
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      // Re-login if needed
-      const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
-      if (needsLogin) {
-        console.log('[TEST] Re-login required after reload');
-        await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-        await loginPage.expectLoginSuccess();
-      }
+      await loginPage.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
 
       // Wait for app to fully initialize after login/session restore
       await appShell.waitForLoad();
@@ -197,13 +191,7 @@ test.describe('Identity Persistence: Stress and Logout Tests @p1 @auth @crypto @
 
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      // Re-login if needed
-      const needsLoginFinal = await loginPage.loginForm.isVisible().catch(() => false);
-      if (needsLoginFinal) {
-        console.log('[TEST] Re-login required for final verification');
-        await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-        await loginPage.expectLoginSuccess();
-      }
+      await loginPage.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
 
       // Wait for app to fully initialize after login/session restore
       await appShell.waitForLoad();

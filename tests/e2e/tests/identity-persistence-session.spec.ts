@@ -127,21 +127,8 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
       // Hard reload to simulate page refresh
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      // Check if we need to re-login
-      const needsLogin = await loginPage.loginForm.isVisible().catch(() => false);
-      
-      if (needsLogin) {
-        console.log('[TEST] Re-login required after reload');
-        // Use loginWithUsername directly since user was just logged in and definitely exists
-        await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
-        await loginPage.expectLoginSuccess();
-        // Wait for app shell to fully load after login
-        await appShell.waitForLoad();
-      } else {
-        console.log('[TEST] Session persisted, no re-login needed');
-        // Even with session restore, wait for app to fully initialize
-        await appShell.waitForLoad();
-      }
+      await loginPage.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
+      await appShell.waitForLoad();
 
       // Wait for album list to finish loading (either cards appear or empty state)
       // This ensures the /api/albums call has completed before we check for album-card

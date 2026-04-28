@@ -108,15 +108,7 @@ test.describe('Error Handling @p1 @security', () => {
 
       // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
-      
-      if (needsLogin) {
-        // Re-login using loginOrRegister to handle LocalAuth mode (which requires username)
-        await loginPage.loginOrRegister(TEST_PASSWORD, user.email);
-        await loginPage.expectLoginSuccess();
-      } else {
-        await appShell.waitForLoad();
-      }
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Should be able to see album
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
@@ -194,12 +186,7 @@ test.describe('Error Handling @p1 @security', () => {
 
       // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
-      
-      if (needsLogin) {
-        await loginPage.login(TEST_PASSWORD);
-        await loginPage.expectLoginSuccess();
-      }
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Should be back to normal
       await appShell.waitForLoad();
@@ -222,12 +209,7 @@ test.describe('Error Handling @p1 @security', () => {
 
       // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
-      
-      if (needsLogin) {
-        await loginPage.login(TEST_PASSWORD);
-        await loginPage.expectLoginSuccess();
-      }
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Should work normally
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });

@@ -72,6 +72,11 @@ Write-Host "  Mosaic E2E Test Runner" -ForegroundColor Magenta
 Write-Host "========================================" -ForegroundColor Magenta
 Write-Info "Repository: $RepoRoot"
 
+$E2EEnvironment = "Testing"
+$E2EConnectionString = "Host=localhost;Database=mosaic;Username=mosaic;Password=dev"
+$BackendLogPath = Join-Path $RepoRoot "tests/e2e/backend-output.txt"
+$BackendErrorLogPath = Join-Path $RepoRoot "tests/e2e/backend-error-output.txt"
+
 # Cleanup function
 function Invoke-Cleanup {
     if ($script:CleanupDone) { return }
@@ -92,7 +97,7 @@ function Invoke-Cleanup {
     }
     
     # Kill any orphaned processes on our ports
-    $portsToClean = @(5173, 8080)
+    $portsToClean = @(5173, 5000, 8080)
     foreach ($port in $portsToClean) {
         $proc = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | 
                 Select-Object -ExpandProperty OwningProcess -Unique
@@ -145,12 +150,22 @@ try {
     Write-Step "Running database migrations..."
     
     Push-Location "$RepoRoot/apps/backend/Mosaic.Backend"
-    $migrationResult = dotnet ef database update 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Info "Migration output: $migrationResult"
-        # Don't fail - migrations might already be applied
+    $previousAspNetCoreEnvironment = $env:ASPNETCORE_ENVIRONMENT
+    $previousConnectionString = $env:ConnectionStrings__Default
+    $env:ASPNETCORE_ENVIRONMENT = $E2EEnvironment
+    $env:ConnectionStrings__Default = $E2EConnectionString
+    try {
+        $migrationResult = dotnet ef database update 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Info "Migration output: $migrationResult"
+            # Don't fail - migrations might already be applied
+        }
     }
-    Pop-Location
+    finally {
+        $env:ASPNETCORE_ENVIRONMENT = $previousAspNetCoreEnvironment
+        $env:ConnectionStrings__Default = $previousConnectionString
+        Pop-Location
+    }
     Write-Success "Database migrations applied"
 
     # ==========================================================================
@@ -176,10 +191,10 @@ try {
     # ==========================================================================
     # Step 4: Start Backend
     # ==========================================================================
-    Write-Step "Starting .NET backend on port 8080..."
+    Write-Step "Starting .NET backend on port 5000..."
     
-    # Kill any existing process on port 8080
-    $existing = Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue | 
+    # Kill any existing process on port 5000
+    $existing = Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue | 
                 Select-Object -ExpandProperty OwningProcess -Unique
     if ($existing) {
         Stop-Process -Id $existing -Force -ErrorAction SilentlyContinue
@@ -187,17 +202,48 @@ try {
     }
     
     $backendPath = "$RepoRoot/apps/backend/Mosaic.Backend"
+    Remove-Item -Path $BackendLogPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $BackendErrorLogPath -Force -ErrorAction SilentlyContinue
     
     # Set environment variables for E2E tests:
     # - Development mode loads appsettings.Development.json (has trusted proxies for localhost)
     # - ProxyAuth enabled so Remote-User header is recognized
     # - LocalAuth enabled for tests that use username/password
-    # Use cmd.exe with set commands to pass env vars to the process
-    $script:BackendProcess = Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c", "set ASPNETCORE_ENVIRONMENT=Development && set Auth__ProxyAuthEnabled=true && set Auth__LocalAuthEnabled=true && set Auth__TrustedProxies__0=127.0.0.0/8 && set Auth__TrustedProxies__1=::1/128 && dotnet run --urls=http://localhost:8080" `
-        -WorkingDirectory $backendPath `
-        -PassThru `
-        -WindowStyle Hidden
+    $previousAspNetCoreEnvironment = $env:ASPNETCORE_ENVIRONMENT
+    $previousConnectionString = $env:ConnectionStrings__Default
+    $previousRunMigrations = $env:RUN_MIGRATIONS
+    $previousProxyAuth = $env:Auth__ProxyAuthEnabled
+    $previousLocalAuth = $env:Auth__LocalAuthEnabled
+    $previousAllowDualMode = $env:Auth__AllowDualMode
+    $previousTrustedProxy0 = $env:Auth__TrustedProxies__0
+    $previousTrustedProxy1 = $env:Auth__TrustedProxies__1
+    $env:ASPNETCORE_ENVIRONMENT = $E2EEnvironment
+    $env:ConnectionStrings__Default = $E2EConnectionString
+    $env:RUN_MIGRATIONS = "true"
+    $env:Auth__ProxyAuthEnabled = "true"
+    $env:Auth__LocalAuthEnabled = "true"
+    $env:Auth__AllowDualMode = "true"
+    $env:Auth__TrustedProxies__0 = "127.0.0.0/8"
+    $env:Auth__TrustedProxies__1 = "::1/128"
+    try {
+        $script:BackendProcess = Start-Process -FilePath "dotnet" `
+            -ArgumentList @("run", "--no-launch-profile", "--urls=http://localhost:5000") `
+            -WorkingDirectory $backendPath `
+            -RedirectStandardOutput $BackendLogPath `
+            -RedirectStandardError $BackendErrorLogPath `
+            -PassThru `
+            -WindowStyle Hidden
+    }
+    finally {
+        $env:ASPNETCORE_ENVIRONMENT = $previousAspNetCoreEnvironment
+        $env:ConnectionStrings__Default = $previousConnectionString
+        $env:RUN_MIGRATIONS = $previousRunMigrations
+        $env:Auth__ProxyAuthEnabled = $previousProxyAuth
+        $env:Auth__LocalAuthEnabled = $previousLocalAuth
+        $env:Auth__AllowDualMode = $previousAllowDualMode
+        $env:Auth__TrustedProxies__0 = $previousTrustedProxy0
+        $env:Auth__TrustedProxies__1 = $previousTrustedProxy1
+    }
     
     # Wait for backend to be ready
     Write-Info "Waiting for backend to be ready (max 60s)..."
@@ -211,12 +257,20 @@ try {
         # Check if process died
         if ($script:BackendProcess.HasExited) {
             Write-Fail "Backend process died during startup (exit code: $($script:BackendProcess.ExitCode))"
+            if (Test-Path $BackendLogPath) {
+                Write-Info "Backend output:"
+                Get-Content $BackendLogPath | Select-Object -Last 80
+            }
+            if (Test-Path $BackendErrorLogPath) {
+                Write-Info "Backend error output:"
+                Get-Content $BackendErrorLogPath | Select-Object -Last 80
+            }
             exit 1
         }
         
         try {
             # Use /health (not /api/health) - this endpoint bypasses auth
-            $response = Invoke-WebRequest -Uri "http://localhost:8080/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
+            $response = Invoke-WebRequest -Uri "http://localhost:5000/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
             if ($response.StatusCode -eq 200) {
                 $backendReady = $true
             }
@@ -227,13 +281,21 @@ try {
     
     if (-not $backendReady) {
         Write-Fail "Backend did not become ready within ${maxWait}s"
+        if (Test-Path $BackendLogPath) {
+            Write-Info "Backend output:"
+            Get-Content $BackendLogPath | Select-Object -Last 80
+        }
+        if (Test-Path $BackendErrorLogPath) {
+            Write-Info "Backend error output:"
+            Get-Content $BackendErrorLogPath | Select-Object -Last 80
+        }
         # Kill the hung process
         if (-not $script:BackendProcess.HasExited) {
             Stop-Process -Id $script:BackendProcess.Id -Force -ErrorAction SilentlyContinue
         }
         exit 1
     }
-    Write-Success "Backend is ready at http://localhost:8080"
+    Write-Success "Backend is ready at http://localhost:5000"
 
     # ==========================================================================
     # Step 5: Start Frontend

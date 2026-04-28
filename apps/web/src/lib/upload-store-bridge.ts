@@ -243,10 +243,8 @@ export function initUploadStoreBridge(): () => void {
     tieredShards?: TieredShardIds,
   ) => {
     handleComplete(task, shardIds);
-    // Note: previousOnComplete may be async (creates manifest)
-    // We call it but don't await - let it run in parallel
     // Forward all parameters including tieredShards
-    void previousOnComplete?.(task, shardIds, tieredShards);
+    return previousOnComplete?.(task, shardIds, tieredShards);
   };
 
   // Set up error handler (chains with existing)

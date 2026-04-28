@@ -43,6 +43,26 @@ const SALT_ENCRYPTION_ITERATIONS = 100000;
 
 type SessionListener = () => void;
 
+function legacyAccountSaltFromUserId(userId: string): Uint8Array {
+  const userIdBytes = new TextEncoder().encode(userId).slice(0, 16);
+  const accountSalt = new Uint8Array(16);
+  accountSalt.set(userIdBytes);
+  return accountSalt;
+}
+
+function resolveAccountSalt(user: User): Uint8Array {
+  if (!user.accountSalt) {
+    return legacyAccountSaltFromUserId(user.id);
+  }
+
+  const accountSalt = fromBase64(user.accountSalt);
+  if (accountSalt.length !== 16) {
+    throw new Error('Invalid account salt length');
+  }
+
+  return accountSalt;
+}
+
 /**
  * Error thrown when salt decryption fails (wrong password on new device)
  */
@@ -434,12 +454,7 @@ class SessionManager {
       userSalt = fromBase64(storedSalt);
     }
 
-    // Account salt is derived from user ID for deterministic derivation
-    const accountSalt = new TextEncoder()
-      .encode(this._currentUser.id)
-      .slice(0, 16);
-    const paddedAccountSalt = new Uint8Array(16);
-    paddedAccountSalt.set(accountSalt);
+    const accountSalt = resolveAccountSalt(this._currentUser);
 
     // Initialize crypto worker with password and salts
     // Use wrapped account key if available to preserve identity
@@ -449,14 +464,14 @@ class SessionManager {
       await cryptoClient.initWithWrappedKey(
         password,
         userSalt,
-        paddedAccountSalt,
+        accountSalt,
         wrappedKey,
       );
     } else {
       log.warn(
         'Session restore without wrapped account key - identity may differ!',
       );
-      await cryptoClient.init(password, userSalt, paddedAccountSalt);
+      await cryptoClient.init(password, userSalt, accountSalt);
     }
 
     // Derive identity keypair for epoch key operations
@@ -472,7 +487,7 @@ class SessionManager {
     this.notify();
 
     // Cache keys for automatic restore on next reload
-    await this.cacheSessionKeys(userSalt, paddedAccountSalt);
+    await this.cacheSessionKeys(userSalt, accountSalt);
 
     // Subscribe to settings changes to update idle timeout
     this.settingsUnsubscribe = subscribeToSettings(() => {
@@ -544,15 +559,7 @@ class SessionManager {
       await api.updateCurrentUser({ encryptedSalt, saltNonce });
     }
 
-    // Account salt is derived from user ID for deterministic derivation
-    // This ensures the same keys are derived regardless of device
-    const accountSalt = new TextEncoder()
-      .encode(this._currentUser.id)
-      .slice(0, 16);
-
-    // Pad to 16 bytes if user ID is shorter
-    const paddedAccountSalt = new Uint8Array(16);
-    paddedAccountSalt.set(accountSalt);
+    const accountSalt = resolveAccountSalt(this._currentUser);
 
     // Initialize crypto worker with password and salts
     // Use wrapped account key if available to preserve identity
@@ -562,12 +569,12 @@ class SessionManager {
       await cryptoClient.initWithWrappedKey(
         password,
         userSalt,
-        paddedAccountSalt,
+        accountSalt,
         wrappedKey,
       );
     } else {
       // First login - generate new key and store it
-      await cryptoClient.init(password, userSalt, paddedAccountSalt);
+      await cryptoClient.init(password, userSalt, accountSalt);
 
       // Derive identity to get public key
       await cryptoClient.deriveIdentity();
@@ -607,7 +614,7 @@ class SessionManager {
     this.notify();
 
     // Cache keys for automatic restore on next reload
-    await this.cacheSessionKeys(userSalt, paddedAccountSalt);
+    await this.cacheSessionKeys(userSalt, accountSalt);
 
     // Subscribe to settings changes to update idle timeout
     this.settingsUnsubscribe = subscribeToSettings(() => {

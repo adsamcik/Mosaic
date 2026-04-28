@@ -71,5 +71,5 @@ export async function processLegacyUpload(
   ctx.onProgress?.(task);
 
   await ctx.updatePersistedTask(task.id, { status: 'complete' });
-  ctx.onComplete?.(task, shardIds);
+  await ctx.onComplete?.(task, shardIds);
 }

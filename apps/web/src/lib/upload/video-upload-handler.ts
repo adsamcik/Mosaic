@@ -48,6 +48,15 @@ export async function processVideoUpload(
     log.warn(
       `Video frame extraction failed for ${task.file.name}, falling back to legacy upload: ${errMsg}`,
     );
+    task.videoMetadata = {
+      isVideo: true,
+      duration: 0,
+      width: task.originalWidth ?? 0,
+      height: task.originalHeight ?? 0,
+    };
+    await ctx.updatePersistedTask(task.id, {
+      videoMetadata: task.videoMetadata,
+    });
     const crypto = await getCryptoClient();
     await processLegacyUpload(task, crypto, ctx);
     return;
@@ -230,7 +239,7 @@ export async function processVideoUpload(
       `Video upload complete for ${task.file.name}: ${allShardIds.length} shards ` +
       `(1 thumbnail + ${originalShards.length} original chunks)`,
     );
-    ctx.onComplete?.(task, allShardIds, tieredShards);
+    await ctx.onComplete?.(task, allShardIds, tieredShards);
   } catch (error) {
     log.error(`processVideoUpload failed for ${task.file.name}:`, error);
     throw error;

@@ -304,6 +304,36 @@ describe('Session Restore', () => {
       expect(mockApi.getCurrentUser).not.toHaveBeenCalled();
       expect(session.currentUser).toEqual(mockUser);
     });
+
+    it('uses the server account salt when unwrapping an existing account key', async () => {
+      const { session } = await getSessionModule();
+
+      const userSalt = new Uint8Array(16).fill(8);
+      const accountSalt = new Uint8Array(
+        Array.from({ length: 16 }, (_, index) => index + 1),
+      );
+      const wrappedAccountKey = new Uint8Array(72).fill(9);
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...userSalt)),
+      );
+
+      const returningUser: User = {
+        ...mockUser,
+        accountSalt: btoa(String.fromCharCode(...accountSalt)),
+        wrappedAccountKey: btoa(String.fromCharCode(...wrappedAccountKey)),
+      };
+
+      await session.restoreSession('test-password', returningUser);
+
+      expect(mockCryptoClient.initWithWrappedKey).toHaveBeenCalledWith(
+        'test-password',
+        userSalt,
+        accountSalt,
+        wrappedAccountKey,
+      );
+      expect(mockCryptoClient.init).not.toHaveBeenCalled();
+    });
   });
 
   describe('login marks session active', () => {

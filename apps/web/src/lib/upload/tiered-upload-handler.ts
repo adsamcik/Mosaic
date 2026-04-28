@@ -187,7 +187,7 @@ export async function processTieredUpload(
     log.info(
       `Tiered upload complete for ${task.file.name}: ${shardIds.join(', ')}`,
     );
-    ctx.onComplete?.(task, shardIds, tieredShards);
+    await ctx.onComplete?.(task, shardIds, tieredShards);
   } catch (error) {
     log.error(`processTieredUpload failed for ${task.file.name}:`, error);
     throw error;

@@ -122,13 +122,7 @@ test.describe('Album Management @p1 @album', () => {
       // Reload page
       await page.reload();
 
-      // Check if we need to re-login (session may persist)
-      const needsLogin = await loginPage.loginForm.isVisible({ timeout: 5000 }).catch(() => false);
-      
-      if (needsLogin) {
-        await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-        await loginPage.expectLoginSuccess();
-      }
+      await loginPage.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
 
       // Album should still be visible
       await appShell.waitForLoad();

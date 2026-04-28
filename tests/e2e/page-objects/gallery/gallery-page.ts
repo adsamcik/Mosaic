@@ -47,6 +47,10 @@ export class GalleryPage {
     await expect(this.gallery).toBeVisible({ timeout });
   }
 
+  async waitForOwnerPermissions(timeout = 30000): Promise<void> {
+    await expect(this.albumSettingsButton).toBeVisible({ timeout });
+  }
+
   /**
    * Get photos locator
    */
@@ -314,6 +318,8 @@ export class GalleryPage {
   }
 
   async openMembers(): Promise<void> {
+    await this.waitForOwnerPermissions();
+
     const membersPanel = this.page.getByTestId('member-panel');
     const isPanelOpen = await membersPanel.isVisible().catch(() => false);
     if (isPanelOpen) {
@@ -348,6 +354,8 @@ export class GalleryPage {
   }
 
   async openShareLinks(): Promise<void> {
+    await this.waitForOwnerPermissions();
+
     await expect(async () => {
       const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
       if (!isMenuVisible) {
@@ -360,6 +368,8 @@ export class GalleryPage {
   }
 
   async openAlbumSettings(): Promise<void> {
+    await this.waitForOwnerPermissions();
+
     await expect(async () => {
       const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
       if (!isMenuVisible) {
@@ -370,6 +380,8 @@ export class GalleryPage {
   }
 
   async openRenameDialog(): Promise<void> {
+    await this.waitForOwnerPermissions();
+
     await expect(async () => {
       const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
       const isRenameButtonVisible = isMenuVisible && await this.renameAlbumButton.isVisible().catch(() => false);
@@ -390,6 +402,8 @@ export class GalleryPage {
   }
 
   async clickDeleteAlbum(): Promise<void> {
+    await this.waitForOwnerPermissions();
+
     await expect(async () => {
       const isMenuVisible = await this.albumSettingsMenu.isVisible().catch(() => false);
       const isDeleteButtonVisible = isMenuVisible && await this.deleteAlbumButton.isVisible().catch(() => false);

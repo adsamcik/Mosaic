@@ -259,6 +259,64 @@ describe('UploadQueue — Video Upload Pipeline', () => {
       expect(generateTieredImages).toHaveBeenCalled();
     });
 
+    it('waits for async image completion before resolving the upload task', async () => {
+      mockGetMimeType.mockResolvedValue('image/png');
+      mockIsSupportedVideoType.mockReturnValue(false);
+      (isSupportedImageType as Mock).mockReturnValue(true);
+
+      const { generateTieredImages, encryptTieredImages } = await import(
+        '../src/lib/thumbnail-generator'
+      );
+      (generateTieredImages as Mock).mockResolvedValue({
+        thumbnail: { width: 200, height: 150 },
+        preview: { width: 800, height: 600 },
+        originalWidth: 1920,
+        originalHeight: 1080,
+      });
+      (encryptTieredImages as Mock).mockResolvedValue({
+        originalWidth: 1920,
+        originalHeight: 1080,
+        thumbnail: {
+          width: 200,
+          height: 150,
+          encrypted: { ciphertext: new Uint8Array([1]), sha256: 'sha-t' },
+        },
+        preview: {
+          width: 800,
+          height: 600,
+          encrypted: { ciphertext: new Uint8Array([2]), sha256: 'sha-p' },
+        },
+        original: {
+          encrypted: { ciphertext: new Uint8Array([3]), sha256: 'sha-o' },
+        },
+      });
+
+      let releaseCompletion!: () => void;
+      let completionStarted = false;
+      let processResolved = false;
+      uploadQueue.onComplete = vi.fn(async () => {
+        completionStarted = true;
+        await new Promise<void>((resolve) => {
+          releaseCompletion = resolve;
+        });
+      });
+
+      const task = createTask({
+        file: createFakeFile('photo.png', 5000, 'image/png'),
+      });
+      const processing = queue.processTask(task).then(() => {
+        processResolved = true;
+      });
+
+      await vi.waitFor(() => expect(completionStarted).toBe(true));
+      await Promise.resolve();
+      expect(processResolved).toBe(false);
+
+      releaseCompletion();
+      await processing;
+      expect(processResolved).toBe(true);
+    });
+
     it('routes unsupported files to processLegacyUpload', async () => {
       mockGetMimeType.mockResolvedValue('application/pdf');
       mockIsSupportedVideoType.mockReturnValue(false);
@@ -294,8 +352,13 @@ describe('UploadQueue — Video Upload Pipeline', () => {
 
       // Should have fallen back to legacy upload path (uses crypto-client)
       expect(mockEncryptShard).toHaveBeenCalled();
-      // Should NOT have video metadata
-      expect(task.videoMetadata).toBeUndefined();
+      // The fallback still preserves video identity so manifest/UI render it as video.
+      expect(task.videoMetadata).toEqual({
+        isVideo: true,
+        duration: 0,
+        width: 0,
+        height: 0,
+      });
     });
 
     it('does not call encryptShard from @mosaic/crypto on fallback', async () => {

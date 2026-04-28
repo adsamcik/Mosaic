@@ -164,7 +164,7 @@ export type CompleteCallback = (
   task: UploadTask,
   shardIds: string[],
   tieredShards?: TieredShardIds,
-) => void;
+) => void | Promise<void>;
 export type ErrorCallback = (task: UploadTask, error: Error) => void;
 
 /** Context passed to upload handlers for callbacks and shared operations */

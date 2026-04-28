@@ -108,6 +108,75 @@ export class LoginPage {
     await expect(this.page.getByTestId('app-shell')).toBeVisible({ timeout });
   }
 
+  async unlockAfterReload(
+    password: string = TEST_PASSWORD,
+    username?: string,
+    timeout = CRYPTO_TIMEOUT.BATCH,
+  ): Promise<void> {
+    await expect(async () => {
+      const hasAppShell = await this.page
+        .getByTestId('app-shell')
+        .isVisible()
+        .catch(() => false);
+      const hasLoginForm = await this.form.isVisible().catch(() => false);
+      expect(hasAppShell || hasLoginForm).toBe(true);
+    }).toPass({ timeout, intervals: [100, 250, 500, 1000] });
+
+    const appShell = this.page.getByTestId('app-shell');
+    const hasAppShell = await appShell.isVisible().catch(() => false);
+    if (hasAppShell) {
+      const stayedUnlocked = await expect(async () => {
+        await expect(appShell).toBeVisible({ timeout: 500 });
+        expect(await this.form.isVisible().catch(() => false)).toBe(false);
+      })
+        .toPass({ timeout: 2000, intervals: [250, 500] })
+        .then(() => true)
+        .catch(() => false);
+
+      if (!stayedUnlocked) {
+        await expect(this.form).toBeVisible({ timeout });
+      } else {
+        return;
+      }
+    }
+
+    const hasLoginForm = await this.form.isVisible().catch(() => false);
+    if (!hasLoginForm) {
+      await expect(this.form.or(appShell)).toBeVisible({ timeout });
+    }
+
+    if (await appShell.isVisible().catch(() => false)) {
+      const stayedUnlocked = await expect(async () => {
+        await expect(appShell).toBeVisible({ timeout: 500 });
+        expect(await this.form.isVisible().catch(() => false)).toBe(false);
+      })
+        .toPass({ timeout: 2000, intervals: [250, 500] })
+        .then(() => true)
+        .catch(() => false);
+
+      if (stayedUnlocked) {
+        return;
+      }
+    }
+
+    if (!(await this.form.isVisible().catch(() => false))) {
+      await expect(this.form).toBeVisible({ timeout });
+    }
+
+    await this.waitForForm(timeout);
+    const isLocalAuth = await this.usernameInput
+      .isVisible({ timeout: 2000 })
+      .catch(() => false);
+
+    if (isLocalAuth && username) {
+      await this.loginWithUsername(username, password);
+    } else {
+      await this.login(password, username);
+    }
+
+    await this.expectLoginSuccess(timeout);
+  }
+
   async expectError(text?: string | RegExp): Promise<void> {
     await expect(this.errorMessage).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
     if (text) {

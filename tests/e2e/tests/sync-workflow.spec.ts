@@ -167,19 +167,11 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
       // Reload page and wait for DOM to be ready
       await page.reload({ waitUntil: 'domcontentloaded' });
 
-      // Check if we need to re-login (session may persist)
-      // Use longer timeout to allow for initial render
-      const needsLogin = await loginPage.loginForm.isVisible({ timeout: UI_TIMEOUT.DIALOG }).catch(() => false);
-      if (needsLogin) {
-        await loginPage.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-        await loginPage.expectLoginSuccess();
-        await appShell.waitForLoad();
-      } else {
-        await appShell.waitForLoad();
-      }
+      await loginPage.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
 
       // Navigate to home to see albums list
       await page.goto('/', { waitUntil: 'domcontentloaded' });
+      await loginPage.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
       await appShell.waitForLoad();
 
       // Navigate back to album (album sync happens during waitForLoad)
@@ -384,7 +376,9 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
     if (!uploadButtonVisible) {
       // Reload to restore full app state
       await page.reload({ waitUntil: 'domcontentloaded' });
+      await loginPage.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
       await gallery.waitForLoad();
+      await gallery.waitForOwnerPermissions();
     }
 
     // Now wait for upload button to be ready
@@ -700,21 +694,18 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
       page2.reload({ waitUntil: 'domcontentloaded' }),
     ]);
 
-    // Re-login if needed - login check has 10s timeout for app initialization
-    if (await login1.loginForm.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await login1.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-      await login1.expectLoginSuccess();
-    }
-
-    if (await login2.loginForm.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await login2.loginOrRegister(TEST_CONSTANTS.PASSWORD, testUser);
-      await login2.expectLoginSuccess();
-    }
+    await login1.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
+    await login2.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser);
 
     // Navigate to home first to ensure we're on the album list
     await Promise.all([
       page1.goto('/', { waitUntil: 'domcontentloaded' }),
       page2.goto('/', { waitUntil: 'domcontentloaded' }),
+    ]);
+
+    await Promise.all([
+      login1.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser),
+      login2.unlockAfterReload(TEST_CONSTANTS.PASSWORD, testUser),
     ]);
 
     // Wait for app shell and album cards on both pages

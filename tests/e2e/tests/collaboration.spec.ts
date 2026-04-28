@@ -37,7 +37,7 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
       trackAlbum(albumResult.id, alice.email);
 
       // Reload and ensure logged in
-      await reloadAndEnsureLoggedIn(alice.page, TEST_PASSWORD);
+      await reloadAndEnsureLoggedIn(alice.page, TEST_PASSWORD, alice.email);
 
       // Navigate to album
       await expect(alice.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
@@ -146,8 +146,8 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
       trackAlbum(bobAlbum.id, bob.email);
 
       // Reload both and ensure logged in
-      await reloadAndEnsureLoggedIn(alice.page, TEST_PASSWORD);
-      await reloadAndEnsureLoggedIn(bob.page, TEST_PASSWORD);
+      await reloadAndEnsureLoggedIn(alice.page, TEST_PASSWORD, alice.email);
+      await reloadAndEnsureLoggedIn(bob.page, TEST_PASSWORD, bob.email);
 
       // Each should see only their own album (unless sharing is set up)
       const aliceAppShell = new AppShell(alice.page);
@@ -218,17 +218,9 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
       await membersPanel.close();
 
       // Step 5: Verify Bob can see the shared album
-      // Use simple reload — session cookie persists, no need for full re-login
       await bob.page.reload();
-      await expect(
-        bob.page.getByTestId('app-shell').or(bob.page.getByTestId('login-form'))
-      ).toBeVisible({ timeout: 30000 });
-      const needsLogin = await bob.page.getByTestId('login-form').isVisible().catch(() => false);
-      if (needsLogin) {
-        const loginPage = new LoginPage(bob.page);
-        await loginPage.login(TEST_PASSWORD);
-        await loginPage.expectLoginSuccess();
-      }
+      const bobLoginPage = new LoginPage(bob.page);
+      await bobLoginPage.unlockAfterReload(TEST_PASSWORD, bob.email);
 
       const bobAppShell = new AppShell(bob.page);
       await bobAppShell.waitForLoad();
@@ -266,6 +258,7 @@ test.describe('Collaboration @p1 @sharing @multi-user @slow', () => {
       await bob.page.bringToFront();
       await expect(async () => {
         await bob.page.reload();
+        await bobLoginPage.unlockAfterReload(TEST_PASSWORD, bob.email);
         await expect(bob.page.getByTestId('app-shell')).toBeVisible({ timeout: 30000 });
         const count = await bob.page.getByTestId('album-card').count();
         expect(count).toBe(0);

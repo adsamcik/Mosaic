@@ -34,24 +34,8 @@ test.describe('Session Management @p1 @auth', () => {
       // Reload page
       await user.page.reload();
 
-      // Wait for page to stabilize after reload - either login form or app shell should appear
-      await expect(
-        user.page.locator('[data-testid="app-shell"], [data-testid="login-form"]').first()
-      ).toBeVisible({ timeout: 30000 });
-
-      // Session should restore without requiring password
-      // Either we see the app shell directly, or we need to re-login
-      const hasAppShell = await user.page
-        .getByTestId('app-shell')
-        .isVisible()
-        .catch(() => false);
-
-      if (!hasAppShell) {
-        // Need to re-login
-        const loginPage = new LoginPage(user.page);
-        await loginPage.login(TEST_PASSWORD);
-        await loginPage.expectLoginSuccess();
-      }
+      const loginPage = new LoginPage(user.page);
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Should be logged in
       await appShell.waitForLoad();
@@ -362,13 +346,9 @@ test.describe('Session Management @p1 @auth', () => {
       // Reload and verify setting is still 15 minutes
       await user.page.reload();
       
-      // Re-login if needed
+      // Unlock session restore if needed
       const loginPage = new LoginPage(user.page);
-      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
-      if (needsLogin) {
-        await loginPage.login(TEST_PASSWORD);
-        await loginPage.expectLoginSuccess();
-      }
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
       
       await appShell.waitForLoad();
       await appShell.openSettings();

@@ -287,26 +287,13 @@ export async function createAlbumViaUI(
  */
 export async function reloadAndEnsureLoggedIn(
   page: Page,
-  password: string = TEST_PASSWORD
+  password: string = TEST_PASSWORD,
+  username?: string,
 ): Promise<void> {
   await page.reload();
-  
-  // Wait for either login form or app shell to appear
-  const loginForm = page.getByTestId('login-form');
-  const appShell = page.getByTestId('app-shell');
-  
-  // Wait for one of them to be visible
-  await expect(loginForm.or(appShell)).toBeVisible({ timeout: 10000 });
-  
-  // Check which one is visible
-  const isLoggedIn = await appShell.isVisible().catch(() => false);
-  
-  if (!isLoggedIn) {
-    const loginPage = new LoginPage(page);
-    await loginPage.waitForForm();
-    await loginPage.login(password);
-    await loginPage.expectLoginSuccess();
-  }
+
+  const loginPage = new LoginPage(page);
+  await loginPage.unlockAfterReload(password, username);
 }
 
 /**

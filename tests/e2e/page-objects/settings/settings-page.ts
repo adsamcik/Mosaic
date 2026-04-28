@@ -8,6 +8,7 @@ export class SettingsPage {
   readonly container: Locator;
   readonly themeSelect: Locator;
   readonly autoSyncToggle: Locator;
+  readonly autoSyncSwitch: Locator;
   readonly keyCacheDurationSelect: Locator;
   readonly idleTimeoutSelect: Locator;
   readonly saveButton: Locator;
@@ -18,6 +19,7 @@ export class SettingsPage {
     this.container = page.getByTestId('settings-page');
     this.themeSelect = page.getByLabel(/theme/i);
     this.autoSyncToggle = page.getByLabel(/auto.*sync/i);
+    this.autoSyncSwitch = page.locator('label.toggle-switch').filter({ has: page.getByTestId('auto-sync-toggle') });
     this.keyCacheDurationSelect = page.getByLabel(/remember|cache|session/i);
     this.idleTimeoutSelect = page.getByTestId('idle-timeout-select');
     this.saveButton = page.getByRole('button', { name: /save/i });
@@ -35,7 +37,7 @@ export class SettingsPage {
   async setAutoSync(enabled: boolean): Promise<void> {
     const isChecked = await this.autoSyncToggle.isChecked();
     if (isChecked !== enabled) {
-      await this.autoSyncToggle.click();
+      await this.autoSyncSwitch.click();
     }
   }
 

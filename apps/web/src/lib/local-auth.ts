@@ -91,6 +91,9 @@ export async function verifyAuth(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      throw new Error(error.error || 'Invalid credentials');
+    }
     throw new Error(error.error || `Auth verify failed: ${response.status}`);
   }
 

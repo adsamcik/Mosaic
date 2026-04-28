@@ -132,7 +132,8 @@ test.describe('Album Management @p1 @album', () => {
 
       // Refresh to see the album
       await user.page.reload();
-      await user.page.waitForLoadState('domcontentloaded');
+      const loginPage = new LoginPage(user.page);
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Click on album
       const appShell = new AppShell(user.page);
@@ -157,7 +158,8 @@ test.describe('Album Management @p1 @album', () => {
 
       // Refresh to see the album
       await user.page.reload();
-      await user.page.waitForLoadState('domcontentloaded');
+      const loginPage = new LoginPage(user.page);
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Navigate to album
       const appShell = new AppShell(user.page);
@@ -206,17 +208,8 @@ test.describe('Album Management @p1 @album', () => {
       // Reload page
       await user.page.reload();
 
-      // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
-      
-      if (needsLogin) {
-        await loginPage.login(TEST_PASSWORD);
-        await loginPage.expectLoginSuccess();
-      } else {
-        // Session persisted, just wait for app shell to load
-        await appShell.waitForLoad();
-      }
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Album should still be there
       await expect(user.page.getByTestId('album-card').filter({ hasText: albumName })).toBeVisible({
@@ -239,7 +232,8 @@ test.describe('Album Management @p1 @album', () => {
 
       // Refresh to see the album
       await user.page.reload();
-      await user.page.waitForLoadState('domcontentloaded');
+      const loginPage = new LoginPage(user.page);
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Navigate to album
       const appShell = new AppShell(user.page);
@@ -283,7 +277,8 @@ test.describe('Album Management @p1 @album', () => {
 
       // Refresh to see the album
       await user.page.reload();
-      await user.page.waitForLoadState('domcontentloaded');
+      const loginPage = new LoginPage(user.page);
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Verify album exists
       const appShell = new AppShell(user.page);
@@ -328,7 +323,8 @@ test.describe('Album Management @p1 @album', () => {
 
       // Refresh to see the album
       await user.page.reload();
-      await user.page.waitForLoadState('domcontentloaded');
+      const loginPage = new LoginPage(user.page);
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Verify album exists
       const appShell = new AppShell(user.page);
@@ -353,17 +349,7 @@ test.describe('Album Management @p1 @album', () => {
       // Reload page
       await user.page.reload();
 
-      // Check if we need to re-login (session may persist)
-      const loginPage = new LoginPage(user.page);
-      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
-      
-      if (needsLogin) {
-        await loginPage.login(TEST_PASSWORD);
-        await loginPage.expectLoginSuccess();
-      } else {
-        // Session persisted, just wait for app shell to load
-        await appShell.waitForLoad();
-      }
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Album should not be there - either empty state or no album cards
       const albumCards = user.page.getByTestId('album-card');

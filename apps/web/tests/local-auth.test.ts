@@ -124,6 +124,18 @@ describe('LocalAuth', () => {
         verifyAuth('testuser', 'challenge-123', 'badsig', 1234567890),
       ).rejects.toThrow('Invalid credentials');
     });
+
+    it('maps empty 401 responses to invalid credentials', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({}),
+      });
+
+      await expect(
+        verifyAuth('testuser', 'challenge-123', 'badsig', 1234567890),
+      ).rejects.toThrow('Invalid credentials');
+    });
   });
 
   describe('registerUser', () => {

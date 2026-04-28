@@ -138,7 +138,7 @@ test.describe('Video Upload @p1 @photo @crypto @slow', () => {
 
       // The play overlay should be visible on the video thumbnail
       const playOverlay = page.getByTestId('video-play-overlay');
-      await expect(playOverlay.first()).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
+      await expect(playOverlay.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
     });
   });
 

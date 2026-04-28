@@ -17,7 +17,6 @@ import {
     test,
     TEST_PASSWORD
 } from '../fixtures-enhanced';
-import { waitForNetworkIdle } from '../framework';
 
 test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
   test.describe('Photo Upload', () => {
@@ -200,22 +199,16 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
       await gallery.uploadPhoto(testImage, testContext.generatePhotoName(1));
       await gallery.expectPhotoCount(1);
       
-      // Wait for upload to be fully synced before reloading (API calls complete)
-      await waitForNetworkIdle(user.page, { timeout: 30000, urlPattern: /\/api\// });
+      // Wait for the optimistic upload item to be promoted to a synced photo before reloading.
+      await gallery.waitForSync();
+      await gallery.expectPhotoCount(1);
 
       // Reload page
       await user.page.reload();
 
-      // Check if we need to re-login (session may persist)
+      // Check if we need to unlock session restore (session may persist)
       const loginPage = new LoginPage(user.page);
-      const needsLogin = await loginPage.form.isVisible({ timeout: 10000 }).catch(() => false);
-      
-      if (needsLogin) {
-        // Use loginOrRegister to handle LocalAuth mode (which requires username)
-        // Note: AuthenticatedUser uses 'email' as the username (it's also the unique identifier)
-        await loginPage.loginOrRegister(TEST_PASSWORD, user.email);
-        await loginPage.expectLoginSuccess();
-      }
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
       
       const appShell = new AppShell(user.page);
       await appShell.waitForLoad();

@@ -31,6 +31,8 @@ test.describe('Album Rename @p1 @album', () => {
 
       // Reload to see the album (since we created it after login)
       await user.page.reload();
+      const loginPage = new LoginPage(user.page);
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // Navigate to album
       const appShell = new AppShell(user.page);
@@ -134,6 +136,8 @@ test.describe('Album Rename @p1 @album', () => {
 
       // Reload to see the album (since we created it after login)
       await user.page.reload();
+      const loginPage = new LoginPage(user.page);
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       const appShell = new AppShell(user.page);
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
@@ -166,6 +170,8 @@ test.describe('Album Rename @p1 @album', () => {
 
       // Reload to see the album (since we created it after login)
       await user.page.reload();
+      const loginPage = new LoginPage(user.page);
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       const appShell = new AppShell(user.page);
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
@@ -266,18 +272,8 @@ test.describe('Album Rename @p1 @album', () => {
       // Reload page
       await user.page.reload();
 
-      // Check if we need to re-login (session may persist)
       const loginPage = new LoginPage(user.page);
-      const needsLogin = await loginPage.form.isVisible({ timeout: 5000 }).catch(() => false);
-      
-      if (needsLogin) {
-        await loginPage.login(TEST_PASSWORD);
-        await loginPage.expectLoginSuccess();
-      } else {
-        // Session persisted, just wait for app shell to load
-        const appShell = new AppShell(user.page);
-        await appShell.waitForLoad();
-      }
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       // After reload, we're inside the album - navigate back to albums list
       const appShellAfterReload = new AppShell(user.page);
@@ -303,6 +299,8 @@ test.describe('Album Rename @p1 @album', () => {
 
       // Reload to see the album (since we created it after login)
       await user.page.reload();
+      const loginPage = new LoginPage(user.page);
+      await loginPage.unlockAfterReload(TEST_PASSWORD, user.email);
 
       const appShell = new AppShell(user.page);
       await expect(user.page.getByTestId('album-card')).toBeVisible({ timeout: 10000 });
