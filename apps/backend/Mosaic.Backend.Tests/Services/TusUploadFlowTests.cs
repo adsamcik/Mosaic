@@ -142,6 +142,73 @@ public sealed class TusUploadFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task OnFileComplete_PersistsAndroidOpaqueShard_WhenMimeMetadataDoesNotMatchCiphertext()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync("android-opaque-user");
+        var album = await builder.CreateAlbumAsync(user);
+        var payload = Encoding.UTF8.GetBytes("not-a-jpeg encrypted Android shard envelope; exif=private-gps");
+        var clientSha256 = Base64UrlEncode(SHA256.HashData(payload));
+        var serverSha256Hex = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        var plaintextFilename = "android-cleartext-private-location.jpg";
+
+        var fileId = Guid.NewGuid().ToString();
+        _db.TusUploadReservations.Add(new TusUploadReservation
+        {
+            FileId = fileId,
+            UserId = user.Id,
+            AlbumId = album.Id,
+            ReservedBytes = payload.Length,
+            UploadLength = payload.Length,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        });
+        await _db.SaveChangesAsync();
+
+        var metadata = CreateMetadata(
+            album.Id,
+            clientSha256,
+            new Dictionary<string, string>
+            {
+                ["contentType"] = "image/jpeg",
+                ["filename"] = plaintextFilename
+            });
+        var store = new FakeTusStore();
+        store.AddFile(fileId, payload, metadata);
+        var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create("android-opaque-user"), ctx =>
+        {
+            ctx.FileId = fileId;
+            ctx.Store = store;
+        });
+
+        await TusEventHandlers.OnFileComplete(fileComplete, _provider);
+
+        _db.ChangeTracker.Clear();
+        var shard = await _db.Shards.SingleAsync(s => s.Id == Guid.Parse(fileId));
+        Assert.Equal(payload.Length, shard.SizeBytes);
+        Assert.Equal(serverSha256Hex, shard.Sha256);
+        Assert.Equal(fileId, shard.StorageKey);
+        Assert.Equal(ShardStatus.PENDING, shard.Status);
+        var shardEntityType = _db.Model.FindEntityType(typeof(Shard));
+        Assert.NotNull(shardEntityType);
+        var shardProperties = shardEntityType.GetProperties().ToList();
+        Assert.DoesNotContain(shardProperties, property =>
+            property.Name.Contains("filename", StringComparison.OrdinalIgnoreCase) ||
+            property.Name.Contains("contenttype", StringComparison.OrdinalIgnoreCase) ||
+            property.Name.Contains("mime", StringComparison.OrdinalIgnoreCase));
+        var persistedShardTextValues = shardProperties
+            .Where(property => property.ClrType == typeof(string))
+            .Select(property => property.PropertyInfo?.GetValue(shard) as string)
+            .Where(value => value != null)
+            .Cast<string>();
+        Assert.All(persistedShardTextValues, persistedValue =>
+        {
+            Assert.DoesNotContain(plaintextFilename, persistedValue, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("image/jpeg", persistedValue, StringComparison.OrdinalIgnoreCase);
+        });
+        Assert.Null(await _db.TusUploadReservations.FindAsync(fileId));
+    }
+
+    [Fact]
     public async Task OnAuthorize_RejectsPatchFromDifferentUser()
     {
         var builder = new TestDataBuilder(_db);
@@ -259,12 +326,22 @@ public sealed class TusUploadFlowTests : IDisposable
         return ctx;
     }
 
-    private static Dictionary<string, tusdotnet.Models.Metadata> CreateMetadata(Guid albumId, string? sha256 = null)
+    private static Dictionary<string, tusdotnet.Models.Metadata> CreateMetadata(
+        Guid albumId,
+        string? sha256 = null,
+        IReadOnlyDictionary<string, string>? extraMetadata = null)
     {
         var header = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.ToString()))}";
         if (!string.IsNullOrWhiteSpace(sha256))
         {
             header += $",sha256 {Convert.ToBase64String(Encoding.UTF8.GetBytes(sha256))}";
+        }
+        if (extraMetadata != null)
+        {
+            foreach (var (key, value) in extraMetadata)
+            {
+                header += $",{key} {Convert.ToBase64String(Encoding.UTF8.GetBytes(value))}";
+            }
         }
 
         return tusdotnet.Models.Metadata.Parse(header);

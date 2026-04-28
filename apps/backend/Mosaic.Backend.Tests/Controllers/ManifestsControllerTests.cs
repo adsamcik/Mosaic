@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text;
+using System.Text.Json;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
@@ -29,6 +31,130 @@ public class ManifestsControllerTests
         {
             ControllerContext = { HttpContext = TestHttpContext.Create(authSub) }
         };
+    }
+
+    [Fact]
+    public async Task Create_AcceptsAndroidOnePhotoOpaqueManifest_WithoutEchoingOpaqueFields()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.PENDING, sizeBytes: 4096);
+        var plaintextSentinel = "android-cleartext-filename=IMG_0001.jpg;gps=50.087,14.421";
+        var encryptedMeta = Encoding.UTF8.GetBytes(plaintextSentinel);
+        var signature = Convert.ToBase64String(Encoding.UTF8.GetBytes("android-signature-opaque-contract"));
+        var signerPubkey = Convert.ToBase64String(TestDataBuilder.GenerateRandomBytes(32));
+        var encryptedMetaBase64 = Convert.ToBase64String(encryptedMeta);
+        var request = new CreateManifestRequest(
+            AlbumId: album.Id,
+            EncryptedMeta: encryptedMeta,
+            Signature: signature,
+            SignerPubkey: signerPubkey,
+            ShardIds: [],
+            TieredShards: [new TieredShardInfo(shard.Id.ToString(), (int)ShardTier.Original)]);
+
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        // Act
+        var createResult = await controller.Create(request);
+
+        // Assert
+        var createdResult = Assert.IsType<CreatedResult>(createResult);
+        var responseJson = JsonSerializer.Serialize(createdResult.Value);
+        Assert.DoesNotContain(plaintextSentinel, responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(encryptedMetaBase64, responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(signature, responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(signerPubkey, responseJson, StringComparison.Ordinal);
+
+        var manifestId = GetResponseProperty<Guid>(createdResult.Value, "Id");
+        var persisted = await db.Manifests.SingleAsync(m => m.Id == manifestId);
+        Assert.Equal(encryptedMeta, persisted.EncryptedMeta);
+        Assert.Equal(signature, persisted.Signature);
+        Assert.Equal(signerPubkey, persisted.SignerPubkey);
+
+        var manifestShard = await db.ManifestShards.SingleAsync(ms => ms.ManifestId == manifestId);
+        Assert.Equal(shard.Id, manifestShard.ShardId);
+        Assert.Equal((int)ShardTier.Original, manifestShard.Tier);
+        Assert.Equal(ShardStatus.ACTIVE, (await db.Shards.SingleAsync(s => s.Id == shard.Id)).Status);
+    }
+
+    [Fact]
+    public async Task Create_ReturnsGenericShardError_WithoutEchoingOpaqueAndroidManifestFields()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var plaintextSentinel = "android-cleartext-title=Hidden place;gps=50.087,14.421";
+        var encryptedMeta = Encoding.UTF8.GetBytes(plaintextSentinel);
+        var encryptedMetaBase64 = Convert.ToBase64String(encryptedMeta);
+        var signature = Convert.ToBase64String(Encoding.UTF8.GetBytes("android-error-signature-opaque-contract"));
+        var signerPubkey = Convert.ToBase64String(TestDataBuilder.GenerateRandomBytes(32));
+        var request = new CreateManifestRequest(
+            AlbumId: album.Id,
+            EncryptedMeta: encryptedMeta,
+            Signature: signature,
+            SignerPubkey: signerPubkey,
+            ShardIds: [Guid.NewGuid().ToString()]);
+
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        // Act
+        var createResult = await controller.Create(request);
+
+        // Assert
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(createResult);
+        Assert.Equal("Some shards not found", ProblemDetailsAssertions.GetDetail(badRequest));
+        var responseJson = JsonSerializer.Serialize(badRequest.Value);
+        Assert.DoesNotContain(plaintextSentinel, responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(encryptedMetaBase64, responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(signature, responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(signerPubkey, responseJson, StringComparison.Ordinal);
+        Assert.Empty(await db.Manifests.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Create_ReturnsForbidForViewer_AndDoesNotPersistAndroidManifest()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var viewer = await builder.CreateUserAsync(ViewerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.AddMemberAsync(album, viewer, AlbumRoles.Viewer, owner);
+        var shard = await builder.CreateShardAsync(viewer, ShardStatus.PENDING, sizeBytes: 4096);
+        var encryptedMeta = Encoding.UTF8.GetBytes("viewer opaque metadata should remain unpersisted");
+        var request = new CreateManifestRequest(
+            AlbumId: album.Id,
+            EncryptedMeta: encryptedMeta,
+            Signature: Convert.ToBase64String(Encoding.UTF8.GetBytes("viewer-signature-should-stay-opaque")),
+            SignerPubkey: Convert.ToBase64String(TestDataBuilder.GenerateRandomBytes(32)),
+            ShardIds: [],
+            TieredShards: [new TieredShardInfo(shard.Id.ToString(), (int)ShardTier.Original)]);
+
+        var controller = CreateController(db, config, quotaService, ViewerAuthSub);
+
+        // Act
+        var createResult = await controller.Create(request);
+
+        // Assert
+        var forbid = Assert.IsType<ForbidResult>(createResult);
+        Assert.Empty(forbid.AuthenticationSchemes);
+        Assert.Empty(await db.Manifests.ToListAsync());
+        Assert.Equal(ShardStatus.PENDING, (await db.Shards.SingleAsync(s => s.Id == shard.Id)).Status);
     }
 
     [Fact]
