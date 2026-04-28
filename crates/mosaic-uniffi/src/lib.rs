@@ -786,7 +786,10 @@ pub fn advance_album_sync(
     event: ClientCoreAlbumSyncEvent,
 ) -> ClientCoreAlbumSyncTransitionResult {
     let snapshot = album_sync_snapshot_to_client(snapshot);
-    match mosaic_client::advance_album_sync(&snapshot, album_sync_event_to_client(event)) {
+    match mosaic_client::advance_album_sync(
+        &snapshot,
+        album_sync_event_to_client(event, &snapshot.album_id),
+    ) {
         Ok(transition) => ClientCoreAlbumSyncTransitionResult {
             code: mosaic_client::ClientErrorCode::Ok.as_u16(),
             transition: album_sync_transition_from_client(transition),
@@ -867,11 +870,10 @@ fn upload_request_to_client(
     request: ClientCoreUploadJobRequest,
 ) -> mosaic_client::UploadJobRequest {
     mosaic_client::UploadJobRequest {
-        job_id: request.job_id,
+        local_job_id: request.job_id.clone(),
+        upload_id: request.job_id,
         album_id: request.album_id,
         asset_id: request.asset_id,
-        epoch_id: request.epoch_id,
-        now_unix_ms: request.now_unix_ms,
         max_retry_count: request.max_retry_count,
     }
 }
@@ -879,55 +881,147 @@ fn upload_request_to_client(
 fn upload_snapshot_to_client(
     snapshot: ClientCoreUploadJobSnapshot,
 ) -> mosaic_client::UploadJobSnapshot {
+    let asset_id = snapshot.asset_id.clone();
+    let pending_shard = snapshot
+        .completed_shards
+        .iter()
+        .find(|shard| !shard.uploaded)
+        .map(|shard| mosaic_client::PendingShardRef {
+            tier: shard.tier,
+            index: shard.shard_index,
+            sha256: shard.sha256.clone(),
+            shard_id: if shard.shard_id.is_empty() {
+                None
+            } else {
+                Some(shard.shard_id.clone())
+            },
+        });
+    let completed_shards: Vec<_> = snapshot
+        .completed_shards
+        .iter()
+        .filter(|shard| shard.uploaded)
+        .map(|shard| mosaic_client::CompletedShardRef {
+            tier: shard.tier,
+            index: shard.shard_index,
+            shard_id: shard.shard_id.clone(),
+            sha256: shard.sha256.clone(),
+        })
+        .collect();
+    let planned_shards =
+        upload_planned_shards_from_dto(&snapshot, &completed_shards, &pending_shard);
+    let manifest_receipt = if snapshot.has_manifest_receipt {
+        Some(mosaic_client::ManifestReceipt {
+            manifest_id: snapshot.manifest_receipt.manifest_id,
+            version: snapshot.manifest_receipt.manifest_version,
+        })
+    } else {
+        None
+    };
+    let retry_target_phase = upload_phase_from_string(&snapshot.last_error_stage);
+    let last_error_code = client_error_code_from_u16(snapshot.last_error_code);
+
     mosaic_client::UploadJobSnapshot {
-        schema_version: snapshot.schema_version,
-        job_id: snapshot.job_id,
+        schema_version: schema_version_u16(snapshot.schema_version),
+        local_job_id: snapshot.job_id.clone(),
+        upload_id: snapshot.job_id,
         album_id: snapshot.album_id,
-        asset_id: snapshot.asset_id,
-        epoch_id: snapshot.epoch_id,
-        phase: snapshot.phase,
-        active_tier: snapshot.active_tier,
-        active_shard_index: snapshot.active_shard_index,
-        completed_shards: snapshot
-            .completed_shards
-            .into_iter()
-            .map(|shard| mosaic_client::UploadShardRef {
-                tier: shard.tier,
-                shard_index: shard.shard_index,
-                shard_id: shard.shard_id,
-                sha256: shard.sha256,
-                uploaded: shard.uploaded,
-            })
-            .collect(),
-        manifest_receipt: if snapshot.has_manifest_receipt {
-            Some(mosaic_client::ManifestReceipt {
-                manifest_id: snapshot.manifest_receipt.manifest_id,
-                manifest_version: snapshot.manifest_receipt.manifest_version,
-            })
-        } else {
-            None
+        asset_id: asset_id.clone(),
+        epoch_id: (snapshot.epoch_id != 0).then_some(snapshot.epoch_id),
+        phase: upload_phase_from_string(&snapshot.phase)
+            .unwrap_or(mosaic_client::UploadJobPhase::Queued),
+        planned_shard_count: u32::try_from(planned_shards.len()).unwrap_or(u32::MAX),
+        planned_shards,
+        next_shard_index: snapshot.active_shard_index,
+        pending_shard,
+        completed_shards,
+        manifest_receipt,
+        retry: mosaic_client::UploadRetryMetadata {
+            attempt_count: snapshot.retry_count,
+            max_attempts: snapshot.retry_count,
+            retry_after_ms: (snapshot.next_retry_unix_ms != 0)
+                .then_some(snapshot.next_retry_unix_ms),
+            last_error_code,
+            last_error_stage: retry_target_phase,
+            retry_target_phase,
         },
-        retry_count: snapshot.retry_count,
-        next_retry_unix_ms: snapshot.next_retry_unix_ms,
-        last_error_code: snapshot.last_error_code,
-        last_error_stage: snapshot.last_error_stage,
-        sync_confirmed: snapshot.sync_confirmed,
-        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+        confirmation_metadata: snapshot.sync_confirmed.then_some({
+            mosaic_client::UploadSyncConfirmation {
+                asset_id,
+                confirmed_at_ms: snapshot.updated_at_unix_ms,
+                sync_cursor: None,
+            }
+        }),
+        failure_code: last_error_code,
     }
 }
 
 fn upload_event_to_client(event: ClientCoreUploadJobEvent) -> mosaic_client::UploadJobEvent {
-    mosaic_client::UploadJobEvent {
-        kind: event.kind,
-        tier: event.tier,
-        shard_index: event.shard_index,
-        shard_id: event.shard_id,
-        sha256: event.sha256,
-        manifest_id: event.manifest_id,
-        manifest_version: event.manifest_version,
-        observed_asset_id: event.observed_asset_id,
-        retry_after_unix_ms: event.retry_after_unix_ms,
-        error_code: event.error_code,
+    match event.kind.as_str() {
+        "StartRequested" | "Start" => mosaic_client::UploadJobEvent::StartRequested,
+        "MediaPrepared" | "PreparedMedia" => mosaic_client::UploadJobEvent::MediaPrepared {
+            plan: Some(mosaic_client::PreparedMediaPlan {
+                planned_shards: vec![mosaic_client::UploadShardSlot {
+                    tier: event.tier,
+                    index: event.shard_index,
+                }],
+            }),
+        },
+        "EpochHandleAcquired" | "EpochHandleReady" => {
+            mosaic_client::UploadJobEvent::EpochHandleAcquired {
+                epoch_id: Some(event.shard_index),
+            }
+        }
+        "ShardEncrypted" => mosaic_client::UploadJobEvent::ShardEncrypted {
+            shard: Some(mosaic_client::EncryptedShardRef {
+                tier: event.tier,
+                index: event.shard_index,
+                sha256: event.sha256,
+            }),
+        },
+        "ShardUploadCreated" => mosaic_client::UploadJobEvent::ShardUploadCreated {
+            upload: Some(mosaic_client::CreatedShardUpload {
+                tier: event.tier,
+                index: event.shard_index,
+                shard_id: event.shard_id,
+                sha256: event.sha256,
+            }),
+        },
+        "ShardUploaded" => mosaic_client::UploadJobEvent::ShardUploaded {
+            shard: Some(mosaic_client::CompletedShardRef {
+                tier: event.tier,
+                index: event.shard_index,
+                shard_id: event.shard_id,
+                sha256: event.sha256,
+            }),
+        },
+        "ManifestCreated" => mosaic_client::UploadJobEvent::ManifestCreated {
+            receipt: Some(mosaic_client::ManifestReceipt {
+                manifest_id: event.manifest_id,
+                version: event.manifest_version,
+            }),
+        },
+        "ManifestOutcomeUnknown" => mosaic_client::UploadJobEvent::ManifestOutcomeUnknown,
+        "SyncConfirmed" => mosaic_client::UploadJobEvent::SyncConfirmed {
+            confirmation: Some(mosaic_client::UploadSyncConfirmation {
+                asset_id: event.observed_asset_id,
+                confirmed_at_ms: 0,
+                sync_cursor: None,
+            }),
+        },
+        "RetryableFailure" => mosaic_client::UploadJobEvent::RetryableFailure {
+            code: client_error_code_from_u16(event.error_code)
+                .unwrap_or(mosaic_client::ClientErrorCode::InvalidInputLength),
+            retry_after_ms: (event.retry_after_unix_ms != 0).then_some(event.retry_after_unix_ms),
+        },
+        "RetryTimerElapsed" => mosaic_client::UploadJobEvent::RetryTimerElapsed,
+        "CancelRequested" => mosaic_client::UploadJobEvent::CancelRequested,
+        "NonRetryableFailure" => mosaic_client::UploadJobEvent::NonRetryableFailure {
+            code: client_error_code_from_u16(event.error_code)
+                .unwrap_or(mosaic_client::ClientErrorCode::InvalidInputLength),
+        },
+        _ => mosaic_client::UploadJobEvent::NonRetryableFailure {
+            code: mosaic_client::ClientErrorCode::ClientCoreInvalidTransition,
+        },
     }
 }
 
@@ -935,44 +1029,67 @@ fn upload_snapshot_from_client(
     snapshot: mosaic_client::UploadJobSnapshot,
 ) -> ClientCoreUploadJobSnapshot {
     let (has_manifest_receipt, manifest_receipt) = match snapshot.manifest_receipt {
-        Some(receipt) => (
+        Some(ref receipt) => (
             true,
             ClientCoreManifestReceipt {
-                manifest_id: receipt.manifest_id,
-                manifest_version: receipt.manifest_version,
+                manifest_id: receipt.manifest_id.clone(),
+                manifest_version: receipt.version,
             },
         ),
         None => (false, empty_manifest_receipt()),
     };
+    let pending_ref = snapshot
+        .pending_shard
+        .as_ref()
+        .map(|shard| ClientCoreUploadShardRef {
+            tier: shard.tier,
+            shard_index: shard.index,
+            shard_id: shard.shard_id.clone().unwrap_or_default(),
+            sha256: shard.sha256.clone(),
+            uploaded: false,
+        });
+    let active = upload_active_slot(&snapshot);
+    let last_error_code = snapshot
+        .retry
+        .last_error_code
+        .or(snapshot.failure_code)
+        .map_or(0, mosaic_client::ClientErrorCode::as_u16);
 
     ClientCoreUploadJobSnapshot {
-        schema_version: snapshot.schema_version,
-        job_id: snapshot.job_id,
+        schema_version: u32::from(snapshot.schema_version),
+        job_id: snapshot.local_job_id,
         album_id: snapshot.album_id,
         asset_id: snapshot.asset_id,
-        epoch_id: snapshot.epoch_id,
-        phase: snapshot.phase,
-        active_tier: snapshot.active_tier,
-        active_shard_index: snapshot.active_shard_index,
+        epoch_id: snapshot.epoch_id.unwrap_or_default(),
+        phase: upload_phase_to_string(snapshot.phase),
+        active_tier: active.as_ref().map_or(0, |slot| slot.tier),
+        active_shard_index: active.as_ref().map_or(0, |slot| slot.index),
         completed_shards: snapshot
             .completed_shards
             .into_iter()
             .map(|shard| ClientCoreUploadShardRef {
                 tier: shard.tier,
-                shard_index: shard.shard_index,
+                shard_index: shard.index,
                 shard_id: shard.shard_id,
                 sha256: shard.sha256,
-                uploaded: shard.uploaded,
+                uploaded: true,
             })
+            .chain(pending_ref)
             .collect(),
         has_manifest_receipt,
         manifest_receipt,
-        retry_count: snapshot.retry_count,
-        next_retry_unix_ms: snapshot.next_retry_unix_ms,
-        last_error_code: snapshot.last_error_code,
-        last_error_stage: snapshot.last_error_stage,
-        sync_confirmed: snapshot.sync_confirmed,
-        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+        retry_count: snapshot.retry.attempt_count,
+        next_retry_unix_ms: snapshot.retry.retry_after_ms.unwrap_or_default(),
+        last_error_code,
+        last_error_stage: snapshot
+            .retry
+            .last_error_stage
+            .map_or_else(String::new, upload_phase_to_string),
+        sync_confirmed: snapshot.confirmation_metadata.is_some(),
+        updated_at_unix_ms: snapshot
+            .confirmation_metadata
+            .as_ref()
+            .map_or(0, |confirmation| confirmation.confirmed_at_ms),
     }
 }
 
@@ -984,11 +1101,7 @@ fn upload_transition_from_client(
         effects: transition
             .effects
             .into_iter()
-            .map(|effect| ClientCoreUploadJobEffect {
-                kind: effect.kind,
-                tier: effect.tier,
-                shard_index: effect.shard_index,
-            })
+            .map(upload_effect_from_client)
             .collect(),
     }
 }
@@ -997,10 +1110,9 @@ fn album_sync_request_to_client(
     request: ClientCoreAlbumSyncRequest,
 ) -> mosaic_client::AlbumSyncRequest {
     mosaic_client::AlbumSyncRequest {
+        sync_id: request.request_id,
         album_id: request.album_id,
-        request_id: request.request_id,
-        start_cursor: request.start_cursor,
-        now_unix_ms: request.now_unix_ms,
+        initial_page_token: optional_string(request.start_cursor),
         max_retry_count: request.max_retry_count,
     }
 }
@@ -1008,48 +1120,105 @@ fn album_sync_request_to_client(
 fn album_sync_snapshot_to_client(
     snapshot: ClientCoreAlbumSyncSnapshot,
 ) -> mosaic_client::AlbumSyncSnapshot {
+    let retry_target_phase = album_sync_phase_from_string(&snapshot.last_error_stage);
+    let last_error_code = client_error_code_from_u16(snapshot.last_error_code);
+
     mosaic_client::AlbumSyncSnapshot {
-        schema_version: snapshot.schema_version,
+        schema_version: schema_version_u16(snapshot.schema_version),
+        sync_id: snapshot.album_id.clone(),
         album_id: snapshot.album_id,
-        phase: snapshot.phase,
-        active_cursor: snapshot.active_cursor,
-        pending_cursor: snapshot.pending_cursor,
+        phase: album_sync_phase_from_string(&snapshot.phase)
+            .unwrap_or(mosaic_client::AlbumSyncPhase::Idle),
+        initial_page_token: optional_string(snapshot.active_cursor.clone()),
+        next_page_token: optional_string(snapshot.active_cursor),
+        current_page: None,
         rerun_requested: snapshot.rerun_requested,
-        retry_count: snapshot.retry_count,
-        next_retry_unix_ms: snapshot.next_retry_unix_ms,
-        last_error_code: snapshot.last_error_code,
-        last_error_stage: snapshot.last_error_stage,
-        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+        completed_cycle_count: 0,
+        retry: mosaic_client::AlbumSyncRetryMetadata {
+            attempt_count: snapshot.retry_count,
+            max_attempts: snapshot.retry_count,
+            retry_after_ms: (snapshot.next_retry_unix_ms != 0)
+                .then_some(snapshot.next_retry_unix_ms),
+            last_error_code,
+            last_error_stage: retry_target_phase,
+            retry_target_phase,
+        },
+        failure_code: last_error_code,
     }
 }
 
-fn album_sync_event_to_client(event: ClientCoreAlbumSyncEvent) -> mosaic_client::AlbumSyncEvent {
-    mosaic_client::AlbumSyncEvent {
-        kind: event.kind,
-        fetched_cursor: event.fetched_cursor,
-        next_cursor: event.next_cursor,
-        applied_count: event.applied_count,
-        observed_asset_ids: event.observed_asset_ids,
-        retry_after_unix_ms: event.retry_after_unix_ms,
-        error_code: event.error_code,
+fn album_sync_event_to_client(
+    event: ClientCoreAlbumSyncEvent,
+    album_id: &str,
+) -> mosaic_client::AlbumSyncEvent {
+    match event.kind.as_str() {
+        "SyncRequested" | "StartRequested" | "Start" => {
+            mosaic_client::AlbumSyncEvent::SyncRequested {
+                request: Some(mosaic_client::AlbumSyncRequest {
+                    sync_id: if event.fetched_cursor.is_empty() {
+                        "sync".to_owned()
+                    } else {
+                        event.fetched_cursor
+                    },
+                    album_id: album_id.to_owned(),
+                    initial_page_token: optional_string(event.next_cursor),
+                    max_retry_count: 0,
+                }),
+            }
+        }
+        "PageFetched" => mosaic_client::AlbumSyncEvent::PageFetched {
+            page: Some(mosaic_client::SyncPageSummary {
+                previous_page_token: optional_string(event.fetched_cursor),
+                next_page_token: optional_string(event.next_cursor.clone()),
+                reached_end: event.next_cursor.is_empty(),
+                encrypted_item_count: event.applied_count,
+            }),
+        },
+        "PageApplied" => mosaic_client::AlbumSyncEvent::PageApplied,
+        "RetryableFailure" => mosaic_client::AlbumSyncEvent::RetryableFailure {
+            code: client_error_code_from_u16(event.error_code)
+                .unwrap_or(mosaic_client::ClientErrorCode::InvalidInputLength),
+            retry_after_ms: (event.retry_after_unix_ms != 0).then_some(event.retry_after_unix_ms),
+        },
+        "RetryTimerElapsed" => mosaic_client::AlbumSyncEvent::RetryTimerElapsed,
+        "CancelRequested" => mosaic_client::AlbumSyncEvent::CancelRequested,
+        "NonRetryableFailure" => mosaic_client::AlbumSyncEvent::NonRetryableFailure {
+            code: client_error_code_from_u16(event.error_code)
+                .unwrap_or(mosaic_client::ClientErrorCode::InvalidInputLength),
+        },
+        _ => mosaic_client::AlbumSyncEvent::NonRetryableFailure {
+            code: mosaic_client::ClientErrorCode::ClientCoreInvalidTransition,
+        },
     }
 }
 
 fn album_sync_snapshot_from_client(
     snapshot: mosaic_client::AlbumSyncSnapshot,
 ) -> ClientCoreAlbumSyncSnapshot {
+    let last_error_code = snapshot
+        .retry
+        .last_error_code
+        .or(snapshot.failure_code)
+        .map_or(0, mosaic_client::ClientErrorCode::as_u16);
+
     ClientCoreAlbumSyncSnapshot {
-        schema_version: snapshot.schema_version,
+        schema_version: u32::from(snapshot.schema_version),
         album_id: snapshot.album_id,
-        phase: snapshot.phase,
-        active_cursor: snapshot.active_cursor,
-        pending_cursor: snapshot.pending_cursor,
+        phase: album_sync_phase_to_string(snapshot.phase),
+        active_cursor: snapshot.next_page_token.unwrap_or_default(),
+        pending_cursor: snapshot
+            .current_page
+            .and_then(|page| page.next_page_token)
+            .unwrap_or_default(),
         rerun_requested: snapshot.rerun_requested,
-        retry_count: snapshot.retry_count,
-        next_retry_unix_ms: snapshot.next_retry_unix_ms,
-        last_error_code: snapshot.last_error_code,
-        last_error_stage: snapshot.last_error_stage,
-        updated_at_unix_ms: snapshot.updated_at_unix_ms,
+        retry_count: snapshot.retry.attempt_count,
+        next_retry_unix_ms: snapshot.retry.retry_after_ms.unwrap_or_default(),
+        last_error_code,
+        last_error_stage: snapshot
+            .retry
+            .last_error_stage
+            .map_or_else(String::new, album_sync_phase_to_string),
+        updated_at_unix_ms: 0,
     }
 }
 
@@ -1061,11 +1230,229 @@ fn album_sync_transition_from_client(
         effects: transition
             .effects
             .into_iter()
-            .map(|effect| ClientCoreAlbumSyncEffect {
-                kind: effect.kind,
-                cursor: effect.cursor,
-            })
+            .map(album_sync_effect_from_client)
             .collect(),
+    }
+}
+
+fn upload_planned_shards_from_dto(
+    snapshot: &ClientCoreUploadJobSnapshot,
+    completed_shards: &[mosaic_client::CompletedShardRef],
+    pending_shard: &Option<mosaic_client::PendingShardRef>,
+) -> Vec<mosaic_client::UploadShardSlot> {
+    let mut planned: Vec<_> = completed_shards
+        .iter()
+        .map(|shard| mosaic_client::UploadShardSlot {
+            tier: shard.tier,
+            index: shard.index,
+        })
+        .collect();
+    if let Some(shard) = pending_shard {
+        planned.push(mosaic_client::UploadShardSlot {
+            tier: shard.tier,
+            index: shard.index,
+        });
+    } else if snapshot.active_tier != 0 {
+        planned.push(mosaic_client::UploadShardSlot {
+            tier: snapshot.active_tier,
+            index: snapshot.active_shard_index,
+        });
+    }
+    planned.sort_by_key(|slot| (slot.tier, slot.index));
+    planned.dedup_by_key(|slot| (slot.tier, slot.index));
+    planned
+}
+
+fn upload_active_slot(
+    snapshot: &mosaic_client::UploadJobSnapshot,
+) -> Option<mosaic_client::UploadShardSlot> {
+    if let Some(shard) = &snapshot.pending_shard {
+        return Some(mosaic_client::UploadShardSlot {
+            tier: shard.tier,
+            index: shard.index,
+        });
+    }
+    if snapshot.phase == mosaic_client::UploadJobPhase::EncryptingShard {
+        return snapshot
+            .planned_shards
+            .iter()
+            .find(|slot| slot.index == snapshot.next_shard_index)
+            .cloned();
+    }
+    None
+}
+
+fn upload_effect_from_client(effect: mosaic_client::UploadJobEffect) -> ClientCoreUploadJobEffect {
+    match effect {
+        mosaic_client::UploadJobEffect::PrepareMedia => ClientCoreUploadJobEffect {
+            kind: "PrepareMedia".to_owned(),
+            tier: 0,
+            shard_index: 0,
+        },
+        mosaic_client::UploadJobEffect::AcquireEpochHandle => ClientCoreUploadJobEffect {
+            kind: "AcquireEpochHandle".to_owned(),
+            tier: 0,
+            shard_index: 0,
+        },
+        mosaic_client::UploadJobEffect::EncryptShard { tier, index } => ClientCoreUploadJobEffect {
+            kind: "EncryptShard".to_owned(),
+            tier,
+            shard_index: index,
+        },
+        mosaic_client::UploadJobEffect::CreateShardUpload { tier, index, .. } => {
+            ClientCoreUploadJobEffect {
+                kind: "CreateShardUpload".to_owned(),
+                tier,
+                shard_index: index,
+            }
+        }
+        mosaic_client::UploadJobEffect::UploadShard { tier, index, .. } => {
+            ClientCoreUploadJobEffect {
+                kind: "UploadShard".to_owned(),
+                tier,
+                shard_index: index,
+            }
+        }
+        mosaic_client::UploadJobEffect::CreateManifest => ClientCoreUploadJobEffect {
+            kind: "CreateManifest".to_owned(),
+            tier: 0,
+            shard_index: 0,
+        },
+        mosaic_client::UploadJobEffect::AwaitSyncConfirmation => ClientCoreUploadJobEffect {
+            kind: "AwaitSyncConfirmation".to_owned(),
+            tier: 0,
+            shard_index: 0,
+        },
+        mosaic_client::UploadJobEffect::RecoverManifestThroughSync => ClientCoreUploadJobEffect {
+            kind: "RecoverManifestThroughSync".to_owned(),
+            tier: 0,
+            shard_index: 0,
+        },
+        mosaic_client::UploadJobEffect::ScheduleRetry { target_phase, .. } => {
+            ClientCoreUploadJobEffect {
+                kind: format!("ScheduleRetry:{}", upload_phase_to_string(target_phase)),
+                tier: 0,
+                shard_index: 0,
+            }
+        }
+    }
+}
+
+fn album_sync_effect_from_client(
+    effect: mosaic_client::AlbumSyncEffect,
+) -> ClientCoreAlbumSyncEffect {
+    match effect {
+        mosaic_client::AlbumSyncEffect::FetchPage { page_token } => ClientCoreAlbumSyncEffect {
+            kind: "FetchPage".to_owned(),
+            cursor: page_token.unwrap_or_default(),
+        },
+        mosaic_client::AlbumSyncEffect::ApplyPage {
+            encrypted_item_count,
+        } => ClientCoreAlbumSyncEffect {
+            kind: "ApplyPage".to_owned(),
+            cursor: encrypted_item_count.to_string(),
+        },
+        mosaic_client::AlbumSyncEffect::ScheduleRetry { target_phase, .. } => {
+            ClientCoreAlbumSyncEffect {
+                kind: format!("ScheduleRetry:{}", album_sync_phase_to_string(target_phase)),
+                cursor: String::new(),
+            }
+        }
+    }
+}
+
+fn upload_phase_to_string(phase: mosaic_client::UploadJobPhase) -> String {
+    format!("{phase:?}")
+}
+
+fn upload_phase_from_string(value: &str) -> Option<mosaic_client::UploadJobPhase> {
+    match value {
+        "Queued" => Some(mosaic_client::UploadJobPhase::Queued),
+        "AwaitingPreparedMedia" => Some(mosaic_client::UploadJobPhase::AwaitingPreparedMedia),
+        "AwaitingEpochHandle" => Some(mosaic_client::UploadJobPhase::AwaitingEpochHandle),
+        "EncryptingShard" => Some(mosaic_client::UploadJobPhase::EncryptingShard),
+        "CreatingShardUpload" => Some(mosaic_client::UploadJobPhase::CreatingShardUpload),
+        "UploadingShard" => Some(mosaic_client::UploadJobPhase::UploadingShard),
+        "CreatingManifest" => Some(mosaic_client::UploadJobPhase::CreatingManifest),
+        "ManifestCommitUnknown" => Some(mosaic_client::UploadJobPhase::ManifestCommitUnknown),
+        "AwaitingSyncConfirmation" => Some(mosaic_client::UploadJobPhase::AwaitingSyncConfirmation),
+        "RetryWaiting" => Some(mosaic_client::UploadJobPhase::RetryWaiting),
+        "Confirmed" => Some(mosaic_client::UploadJobPhase::Confirmed),
+        "Cancelled" => Some(mosaic_client::UploadJobPhase::Cancelled),
+        "Failed" => Some(mosaic_client::UploadJobPhase::Failed),
+        _ => None,
+    }
+}
+
+fn album_sync_phase_to_string(phase: mosaic_client::AlbumSyncPhase) -> String {
+    format!("{phase:?}")
+}
+
+fn album_sync_phase_from_string(value: &str) -> Option<mosaic_client::AlbumSyncPhase> {
+    match value {
+        "Idle" => Some(mosaic_client::AlbumSyncPhase::Idle),
+        "FetchingPage" => Some(mosaic_client::AlbumSyncPhase::FetchingPage),
+        "ApplyingPage" => Some(mosaic_client::AlbumSyncPhase::ApplyingPage),
+        "RetryWaiting" => Some(mosaic_client::AlbumSyncPhase::RetryWaiting),
+        "Completed" => Some(mosaic_client::AlbumSyncPhase::Completed),
+        "Cancelled" => Some(mosaic_client::AlbumSyncPhase::Cancelled),
+        "Failed" => Some(mosaic_client::AlbumSyncPhase::Failed),
+        _ => None,
+    }
+}
+
+fn optional_string(value: String) -> Option<String> {
+    (!value.is_empty()).then_some(value)
+}
+
+fn schema_version_u16(value: u32) -> u16 {
+    u16::try_from(value).unwrap_or(0)
+}
+
+fn client_error_code_from_u16(value: u16) -> Option<mosaic_client::ClientErrorCode> {
+    match value {
+        0 => Some(mosaic_client::ClientErrorCode::Ok),
+        100 => Some(mosaic_client::ClientErrorCode::InvalidHeaderLength),
+        101 => Some(mosaic_client::ClientErrorCode::InvalidMagic),
+        102 => Some(mosaic_client::ClientErrorCode::UnsupportedVersion),
+        103 => Some(mosaic_client::ClientErrorCode::InvalidTier),
+        104 => Some(mosaic_client::ClientErrorCode::NonZeroReservedByte),
+        200 => Some(mosaic_client::ClientErrorCode::EmptyContext),
+        201 => Some(mosaic_client::ClientErrorCode::InvalidKeyLength),
+        202 => Some(mosaic_client::ClientErrorCode::InvalidInputLength),
+        203 => Some(mosaic_client::ClientErrorCode::InvalidEnvelope),
+        204 => Some(mosaic_client::ClientErrorCode::MissingCiphertext),
+        205 => Some(mosaic_client::ClientErrorCode::AuthenticationFailed),
+        206 => Some(mosaic_client::ClientErrorCode::RngFailure),
+        207 => Some(mosaic_client::ClientErrorCode::WrappedKeyTooShort),
+        208 => Some(mosaic_client::ClientErrorCode::KdfProfileTooWeak),
+        209 => Some(mosaic_client::ClientErrorCode::InvalidSaltLength),
+        210 => Some(mosaic_client::ClientErrorCode::KdfFailure),
+        211 => Some(mosaic_client::ClientErrorCode::InvalidSignatureLength),
+        212 => Some(mosaic_client::ClientErrorCode::InvalidPublicKey),
+        213 => Some(mosaic_client::ClientErrorCode::InvalidUsername),
+        214 => Some(mosaic_client::ClientErrorCode::KdfProfileTooCostly),
+        300 => Some(mosaic_client::ClientErrorCode::OperationCancelled),
+        400 => Some(mosaic_client::ClientErrorCode::SecretHandleNotFound),
+        401 => Some(mosaic_client::ClientErrorCode::IdentityHandleNotFound),
+        402 => Some(mosaic_client::ClientErrorCode::HandleSpaceExhausted),
+        403 => Some(mosaic_client::ClientErrorCode::EpochHandleNotFound),
+        500 => Some(mosaic_client::ClientErrorCode::InternalStatePoisoned),
+        600 => Some(mosaic_client::ClientErrorCode::UnsupportedMediaFormat),
+        601 => Some(mosaic_client::ClientErrorCode::InvalidMediaContainer),
+        602 => Some(mosaic_client::ClientErrorCode::InvalidMediaDimensions),
+        603 => Some(mosaic_client::ClientErrorCode::MediaOutputTooLarge),
+        604 => Some(mosaic_client::ClientErrorCode::MediaMetadataMismatch),
+        605 => Some(mosaic_client::ClientErrorCode::InvalidMediaSidecar),
+        606 => Some(mosaic_client::ClientErrorCode::MediaAdapterOutputMismatch),
+        700 => Some(mosaic_client::ClientErrorCode::ClientCoreInvalidTransition),
+        701 => Some(mosaic_client::ClientErrorCode::ClientCoreMissingEventPayload),
+        702 => Some(mosaic_client::ClientErrorCode::ClientCoreRetryBudgetExhausted),
+        703 => Some(mosaic_client::ClientErrorCode::ClientCoreSyncPageDidNotAdvance),
+        704 => Some(mosaic_client::ClientErrorCode::ClientCoreManifestOutcomeUnknown),
+        705 => Some(mosaic_client::ClientErrorCode::ClientCoreUnsupportedSnapshotVersion),
+        706 => Some(mosaic_client::ClientErrorCode::ClientCoreInvalidSnapshot),
+        _ => None,
     }
 }
 

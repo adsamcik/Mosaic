@@ -2,22 +2,23 @@ use std::fmt::Debug;
 
 use mosaic_client::{
     AlbumSyncEffect, AlbumSyncEvent, AlbumSyncPhase, AlbumSyncRequest, AlbumSyncSnapshot,
-    ClientErrorCode, UploadJobEffect, UploadJobEvent, UploadJobPhase, UploadJobRequest,
-    UploadJobSnapshot, advance_album_sync, advance_upload_job, new_album_sync, new_upload_job,
+    ClientError, ClientErrorCode, CompletedShardRef, CreatedShardUpload, EncryptedShardRef,
+    ManifestReceipt, PreparedMediaPlan, SyncPageSummary, UploadJobEffect, UploadJobEvent,
+    UploadJobPhase, UploadJobRequest, UploadJobSnapshot, UploadShardSlot, UploadSyncConfirmation,
+    advance_album_sync, advance_upload_job, new_album_sync, new_upload_job,
 };
 
-const JOB_ID: &str = "job-band2-001";
+const LOCAL_JOB_ID: &str = "job-band2-001";
+const UPLOAD_ID: &str = "upload-band2-001";
 const ALBUM_ID: &str = "album-band2-001";
-const LOCAL_ASSET_ID: &str = "asset-local-band2-001";
-const REMOTE_ASSET_ID: &str = "asset-remote-band2-001";
-const OTHER_ASSET_ID: &str = "asset-local-band2-other";
-const OTHER_REMOTE_ASSET_ID: &str = "asset-remote-band2-other";
-const EPOCH_ID: u64 = 42;
+const ASSET_ID: &str = "asset-band2-001";
+const OTHER_ASSET_ID: &str = "asset-band2-other";
+const SYNC_ID: &str = "sync-band2-001";
+const EPOCH_ID: u32 = 42;
 const ORIGINAL_TIER: u8 = 3;
 const SHARD_ZERO_SHA256: &str =
     "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 const SHARD_ZERO_ID: &str = "shard-band2-000";
-const UPLOAD_ZERO_ID: &str = "upload-band2-000";
 const MANIFEST_ID: &str = "manifest-band2-001";
 const RETRY_BUDGET: u32 = 2;
 const RETRY_DELAY_MS: u64 = 1_500;
@@ -29,12 +30,13 @@ fn upload_happy_path_emits_effects_and_persists_safe_fields() {
     let mut snapshot = new_upload_snapshot(upload_request(RETRY_BUDGET));
 
     assert_eq!(snapshot.phase, UploadJobPhase::Queued);
-    assert_eq!(snapshot.job_id, JOB_ID);
+    assert_eq!(snapshot.local_job_id, LOCAL_JOB_ID);
+    assert_eq!(snapshot.upload_id, UPLOAD_ID);
     assert_eq!(snapshot.album_id, ALBUM_ID);
-    assert_eq!(snapshot.local_asset_id, LOCAL_ASSET_ID);
-    assert_eq!(snapshot.retry_budget, RETRY_BUDGET);
-    assert_eq!(snapshot.retry_count, 0);
-    assert_eq!(snapshot.completed_shard_count, 0);
+    assert_eq!(snapshot.asset_id, ASSET_ID);
+    assert_eq!(snapshot.retry.max_attempts, RETRY_BUDGET);
+    assert_eq!(snapshot.retry.attempt_count, 0);
+    assert!(snapshot.completed_shards.is_empty());
 
     snapshot = advance_upload_ok(
         &snapshot,
@@ -46,33 +48,34 @@ fn upload_happy_path_emits_effects_and_persists_safe_fields() {
 
     snapshot = advance_upload_ok(
         &snapshot,
-        UploadJobEvent::PreparedMedia {
-            planned_shard_count: 1,
+        UploadJobEvent::MediaPrepared {
+            plan: Some(PreparedMediaPlan {
+                planned_shards: vec![slot(ORIGINAL_TIER, 0)],
+            }),
         },
         UploadJobPhase::AwaitingEpochHandle,
-        vec![open_epoch_handle_effect()],
+        vec![acquire_epoch_handle_effect()],
         &mut emitted_effects,
     );
     assert_eq!(snapshot.planned_shard_count, 1);
-    assert_eq!(snapshot.completed_shard_count, 0);
+    assert!(snapshot.completed_shards.is_empty());
 
     snapshot = advance_upload_ok(
         &snapshot,
-        UploadJobEvent::EpochHandleReady { epoch_id: EPOCH_ID },
+        UploadJobEvent::EpochHandleAcquired {
+            epoch_id: Some(EPOCH_ID),
+        },
         UploadJobPhase::EncryptingShard,
         vec![encrypt_shard_effect(0)],
         &mut emitted_effects,
     );
     assert_eq!(snapshot.epoch_id, Some(EPOCH_ID));
-    assert_eq!(snapshot.current_shard_index, 0);
+    assert_eq!(snapshot.next_shard_index, 0);
 
     snapshot = advance_upload_ok(
         &snapshot,
         UploadJobEvent::ShardEncrypted {
-            tier: ORIGINAL_TIER,
-            index: 0,
-            encrypted_sha256: SHARD_ZERO_SHA256.to_owned(),
-            encrypted_size_bytes: 4_096,
+            shard: Some(encrypted_shard(0, SHARD_ZERO_SHA256)),
         },
         UploadJobPhase::CreatingShardUpload,
         vec![create_shard_upload_effect(0, SHARD_ZERO_SHA256)],
@@ -82,67 +85,68 @@ fn upload_happy_path_emits_effects_and_persists_safe_fields() {
     snapshot = advance_upload_ok(
         &snapshot,
         UploadJobEvent::ShardUploadCreated {
-            tier: ORIGINAL_TIER,
-            index: 0,
-            upload_id: UPLOAD_ZERO_ID.to_owned(),
+            upload: Some(created_shard_upload(0, SHARD_ZERO_ID, SHARD_ZERO_SHA256)),
         },
         UploadJobPhase::UploadingShard,
-        vec![upload_shard_effect(0, UPLOAD_ZERO_ID)],
+        vec![upload_shard_effect(0, SHARD_ZERO_ID, SHARD_ZERO_SHA256)],
         &mut emitted_effects,
     );
 
     snapshot = advance_upload_ok(
         &snapshot,
         UploadJobEvent::ShardUploaded {
-            tier: ORIGINAL_TIER,
-            index: 0,
-            shard_id: SHARD_ZERO_ID.to_owned(),
-            encrypted_sha256: SHARD_ZERO_SHA256.to_owned(),
+            shard: Some(completed_shard(0, SHARD_ZERO_ID, SHARD_ZERO_SHA256)),
         },
         UploadJobPhase::CreatingManifest,
-        vec![create_manifest_effect(1)],
+        vec![create_manifest_effect()],
         &mut emitted_effects,
     );
-    assert_eq!(snapshot.completed_shard_count, 1);
+    assert_eq!(snapshot.completed_shards.len(), 1);
 
     snapshot = advance_upload_ok(
         &snapshot,
         UploadJobEvent::ManifestCreated {
-            manifest_id: MANIFEST_ID.to_owned(),
-            version: 7,
+            receipt: Some(ManifestReceipt {
+                manifest_id: MANIFEST_ID.to_owned(),
+                version: 7,
+            }),
         },
         UploadJobPhase::AwaitingSyncConfirmation,
-        vec![request_sync_confirmation_effect()],
+        vec![await_sync_confirmation_effect()],
         &mut emitted_effects,
     );
-    assert_eq!(snapshot.manifest_id.as_deref(), Some(MANIFEST_ID));
-    assert_eq!(snapshot.manifest_version, Some(7));
+    assert_eq!(
+        snapshot.manifest_receipt,
+        Some(ManifestReceipt {
+            manifest_id: MANIFEST_ID.to_owned(),
+            version: 7,
+        })
+    );
 
     snapshot = advance_upload_ok(
         &snapshot,
         UploadJobEvent::SyncConfirmed {
-            local_asset_id: LOCAL_ASSET_ID.to_owned(),
-            remote_asset_id: REMOTE_ASSET_ID.to_owned(),
+            confirmation: Some(sync_confirmation(ASSET_ID)),
         },
         UploadJobPhase::Confirmed,
         Vec::new(),
         &mut emitted_effects,
     );
     assert_eq!(
-        snapshot.confirmed_remote_asset_id.as_deref(),
-        Some(REMOTE_ASSET_ID)
+        snapshot.confirmation_metadata,
+        Some(sync_confirmation(ASSET_ID))
     );
 
     assert_eq!(
         emitted_effects,
         vec![
             prepare_media_effect(),
-            open_epoch_handle_effect(),
+            acquire_epoch_handle_effect(),
             encrypt_shard_effect(0),
             create_shard_upload_effect(0, SHARD_ZERO_SHA256),
-            upload_shard_effect(0, UPLOAD_ZERO_ID),
-            create_manifest_effect(1),
-            request_sync_confirmation_effect(),
+            upload_shard_effect(0, SHARD_ZERO_ID, SHARD_ZERO_SHA256),
+            create_manifest_effect(),
+            await_sync_confirmation_effect(),
         ]
     );
 }
@@ -154,7 +158,7 @@ fn upload_retry_records_metadata_returns_to_target_and_exhausts_budget() {
 
     snapshot = advance_upload_ok(
         &snapshot,
-        retryable_upload_failure("create_shard_upload", "http_503"),
+        retryable_upload_failure(),
         UploadJobPhase::RetryWaiting,
         vec![schedule_upload_retry_effect(
             1,
@@ -162,15 +166,18 @@ fn upload_retry_records_metadata_returns_to_target_and_exhausts_budget() {
         )],
         &mut emitted_effects,
     );
-    assert_eq!(snapshot.retry_count, 1);
+    assert_eq!(snapshot.retry.attempt_count, 1);
     assert_eq!(
-        snapshot.retry_target_phase,
+        snapshot.retry.retry_target_phase,
         Some(UploadJobPhase::CreatingShardUpload)
     );
-    assert_eq!(snapshot.last_error_code.as_deref(), Some("http_503"));
     assert_eq!(
-        snapshot.last_error_stage.as_deref(),
-        Some("create_shard_upload")
+        snapshot.retry.last_error_code,
+        Some(ClientErrorCode::InvalidInputLength)
+    );
+    assert_eq!(
+        snapshot.retry.last_error_stage,
+        Some(UploadJobPhase::CreatingShardUpload)
     );
 
     snapshot = advance_upload_ok(
@@ -183,7 +190,7 @@ fn upload_retry_records_metadata_returns_to_target_and_exhausts_budget() {
 
     snapshot = advance_upload_ok(
         &snapshot,
-        retryable_upload_failure("create_shard_upload", "http_503"),
+        retryable_upload_failure(),
         UploadJobPhase::RetryWaiting,
         vec![schedule_upload_retry_effect(
             2,
@@ -191,7 +198,7 @@ fn upload_retry_records_metadata_returns_to_target_and_exhausts_budget() {
         )],
         &mut emitted_effects,
     );
-    assert_eq!(snapshot.retry_count, RETRY_BUDGET);
+    assert_eq!(snapshot.retry.attempt_count, RETRY_BUDGET);
 
     snapshot = advance_upload_ok(
         &snapshot,
@@ -203,17 +210,15 @@ fn upload_retry_records_metadata_returns_to_target_and_exhausts_budget() {
 
     snapshot = advance_upload_ok(
         &snapshot,
-        retryable_upload_failure("create_shard_upload", "http_503"),
+        retryable_upload_failure(),
         UploadJobPhase::Failed,
         Vec::new(),
         &mut emitted_effects,
     );
-    assert_eq!(snapshot.retry_count, RETRY_BUDGET);
-    assert_eq!(snapshot.retry_target_phase, None);
-    assert_eq!(snapshot.last_error_code.as_deref(), Some("http_503"));
+    assert_eq!(snapshot.retry.attempt_count, RETRY_BUDGET);
     assert_eq!(
-        snapshot.last_error_stage.as_deref(),
-        Some("create_shard_upload")
+        snapshot.failure_code,
+        Some(ClientErrorCode::ClientCoreRetryBudgetExhausted)
     );
 
     assert_eq!(
@@ -245,108 +250,84 @@ fn upload_cancellation_before_work_and_manifest_uncertainty_recover_through_sync
         Vec::new(),
         &mut emitted_effects,
     );
-    assert_eq!(cancelled.completed_shard_count, 0);
-    assert_eq!(cancelled.manifest_id, None);
+    assert!(cancelled.completed_shards.is_empty());
+    assert_eq!(cancelled.manifest_receipt, None);
 
     let manifest_snapshot = upload_at_creating_manifest(RETRY_BUDGET, 1);
     let cancel_unknown = advance_upload_without_collecting(
         &manifest_snapshot,
         UploadJobEvent::CancelRequested,
         UploadJobPhase::ManifestCommitUnknown,
-        vec![recover_manifest_by_sync_effect()],
+        vec![recover_manifest_through_sync_effect()],
     );
     assert_eq!(
-        cancel_unknown.last_error_stage.as_deref(),
-        Some("manifest_commit")
+        cancel_unknown.failure_code,
+        Some(ClientErrorCode::ClientCoreManifestOutcomeUnknown)
     );
 
     let outcome_unknown = advance_upload_without_collecting(
         &manifest_snapshot,
-        UploadJobEvent::ManifestOutcomeUnknown {
-            error_code: "transport_unknown".to_owned(),
-        },
+        UploadJobEvent::ManifestOutcomeUnknown,
         UploadJobPhase::ManifestCommitUnknown,
-        vec![recover_manifest_by_sync_effect()],
+        vec![recover_manifest_through_sync_effect()],
     );
     assert_eq!(
-        outcome_unknown.last_error_code.as_deref(),
-        Some("transport_unknown")
-    );
-}
-
-#[test]
-fn upload_idempotency_skips_completed_shards_and_manifest_recovery_matches_local_asset() {
-    let mut emitted_effects = Vec::new();
-    let mut snapshot = upload_at_uploading_shard(RETRY_BUDGET, 2, 0, UPLOAD_ZERO_ID);
-
-    snapshot = advance_upload_ok(
-        &snapshot,
-        UploadJobEvent::ShardUploaded {
-            tier: ORIGINAL_TIER,
-            index: 0,
-            shard_id: SHARD_ZERO_ID.to_owned(),
-            encrypted_sha256: SHARD_ZERO_SHA256.to_owned(),
-        },
-        UploadJobPhase::EncryptingShard,
-        vec![encrypt_shard_effect(1)],
-        &mut emitted_effects,
-    );
-    assert_eq!(snapshot.completed_shard_count, 1);
-    assert_eq!(snapshot.current_shard_index, 1);
-
-    let resumed = advance_upload_without_collecting(
-        &snapshot,
-        UploadJobEvent::ResumeRequested,
-        UploadJobPhase::EncryptingShard,
-        vec![encrypt_shard_effect(1)],
-    );
-    assert_eq!(resumed.completed_shard_count, 1);
-    assert_eq!(resumed.current_shard_index, 1);
-
-    assert!(
-        emitted_effects.iter().all(|effect| !matches!(
-            effect,
-            UploadJobEffect::EncryptShard { index: 0, .. }
-                | UploadJobEffect::CreateShardUpload { index: 0, .. }
-                | UploadJobEffect::UploadShard { index: 0, .. }
-        )),
-        "completed shard 0 must not be re-requested: {emitted_effects:?}"
+        outcome_unknown.failure_code,
+        Some(ClientErrorCode::ClientCoreManifestOutcomeUnknown)
     );
 
-    let manifest_snapshot = upload_at_creating_manifest(RETRY_BUDGET, 1);
-    let unknown = advance_upload_without_collecting(
-        &manifest_snapshot,
-        UploadJobEvent::ManifestOutcomeUnknown {
-            error_code: "transport_unknown".to_owned(),
-        },
-        UploadJobPhase::ManifestCommitUnknown,
-        vec![recover_manifest_by_sync_effect()],
-    );
-
-    let still_unknown = advance_upload_without_collecting(
-        &unknown,
+    let mismatch = match advance_upload_job(
+        &outcome_unknown,
         UploadJobEvent::SyncConfirmed {
-            local_asset_id: OTHER_ASSET_ID.to_owned(),
-            remote_asset_id: OTHER_REMOTE_ASSET_ID.to_owned(),
+            confirmation: Some(sync_confirmation(OTHER_ASSET_ID)),
         },
-        UploadJobPhase::ManifestCommitUnknown,
-        Vec::new(),
-    );
-    assert_eq!(still_unknown.confirmed_remote_asset_id, None);
+    ) {
+        Ok(transition) => panic!("mismatched confirmation should fail: {transition:?}"),
+        Err(error) => error,
+    };
+    assert_redacted_error(mismatch, ClientErrorCode::ClientCoreInvalidTransition);
 
     let confirmed = advance_upload_without_collecting(
-        &still_unknown,
+        &outcome_unknown,
         UploadJobEvent::SyncConfirmed {
-            local_asset_id: LOCAL_ASSET_ID.to_owned(),
-            remote_asset_id: REMOTE_ASSET_ID.to_owned(),
+            confirmation: Some(sync_confirmation(ASSET_ID)),
         },
         UploadJobPhase::Confirmed,
         Vec::new(),
     );
     assert_eq!(
-        confirmed.confirmed_remote_asset_id.as_deref(),
-        Some(REMOTE_ASSET_ID)
+        confirmed.confirmation_metadata,
+        Some(sync_confirmation(ASSET_ID))
     );
+}
+
+#[test]
+fn upload_idempotency_rejects_reprocessing_completed_shards() {
+    let mut emitted_effects = Vec::new();
+    let mut snapshot = upload_at_uploading_shard(RETRY_BUDGET, 2, 0, SHARD_ZERO_ID);
+
+    snapshot = advance_upload_ok(
+        &snapshot,
+        UploadJobEvent::ShardUploaded {
+            shard: Some(completed_shard(0, SHARD_ZERO_ID, SHARD_ZERO_SHA256)),
+        },
+        UploadJobPhase::EncryptingShard,
+        vec![encrypt_shard_effect(1)],
+        &mut emitted_effects,
+    );
+    assert_eq!(snapshot.completed_shards.len(), 1);
+    assert_eq!(snapshot.next_shard_index, 1);
+
+    let duplicate = match advance_upload_job(
+        &snapshot,
+        UploadJobEvent::ShardEncrypted {
+            shard: Some(encrypted_shard(0, SHARD_ZERO_SHA256)),
+        },
+    ) {
+        Ok(transition) => panic!("completed shard should not be reprocessed: {transition:?}"),
+        Err(error) => error,
+    };
+    assert_redacted_error(duplicate, ClientErrorCode::ClientCoreInvalidTransition);
 }
 
 #[test]
@@ -357,14 +338,18 @@ fn sync_coordinator_dedupes_active_start_and_reruns_once() {
 
     snapshot = advance_album_ok(
         &snapshot,
-        AlbumSyncEvent::StartRequested,
+        AlbumSyncEvent::SyncRequested {
+            request: Some(sync_request(RETRY_BUDGET)),
+        },
         AlbumSyncPhase::FetchingPage,
         vec![fetch_page_effect(None)],
     );
 
     snapshot = advance_album_ok(
         &snapshot,
-        AlbumSyncEvent::StartRequested,
+        AlbumSyncEvent::SyncRequested {
+            request: Some(sync_request(RETRY_BUDGET)),
+        },
         AlbumSyncPhase::FetchingPage,
         Vec::new(),
     );
@@ -372,7 +357,9 @@ fn sync_coordinator_dedupes_active_start_and_reruns_once() {
 
     snapshot = advance_album_ok(
         &snapshot,
-        AlbumSyncEvent::StartRequested,
+        AlbumSyncEvent::SyncRequested {
+            request: Some(sync_request(RETRY_BUDGET)),
+        },
         AlbumSyncPhase::FetchingPage,
         Vec::new(),
     );
@@ -381,74 +368,57 @@ fn sync_coordinator_dedupes_active_start_and_reruns_once() {
     snapshot = advance_album_ok(
         &snapshot,
         AlbumSyncEvent::PageFetched {
-            requested_cursor: None,
-            next_cursor: Some(CURSOR_ONE.to_owned()),
-            item_count: 2,
-            has_more: true,
+            page: Some(SyncPageSummary {
+                previous_page_token: None,
+                next_page_token: None,
+                reached_end: true,
+                encrypted_item_count: 2,
+            }),
         },
         AlbumSyncPhase::ApplyingPage,
-        vec![apply_page_effect(Some(CURSOR_ONE.to_owned()), 2, true)],
+        vec![apply_page_effect(2)],
     );
 
     snapshot = advance_album_ok(
         &snapshot,
-        AlbumSyncEvent::PageApplied {
-            applied_cursor: Some(CURSOR_ONE.to_owned()),
-        },
-        AlbumSyncPhase::FetchingPage,
-        vec![fetch_page_effect(Some(CURSOR_ONE.to_owned()))],
-    );
-
-    snapshot = advance_album_ok(
-        &snapshot,
-        AlbumSyncEvent::PageFetched {
-            requested_cursor: Some(CURSOR_ONE.to_owned()),
-            next_cursor: None,
-            item_count: 1,
-            has_more: false,
-        },
-        AlbumSyncPhase::ApplyingPage,
-        vec![apply_page_effect(None, 1, false)],
-    );
-
-    snapshot = advance_album_ok(
-        &snapshot,
-        AlbumSyncEvent::PageApplied {
-            applied_cursor: None,
-        },
+        AlbumSyncEvent::PageApplied,
         AlbumSyncPhase::FetchingPage,
         vec![fetch_page_effect(None)],
     );
     assert!(!snapshot.rerun_requested);
+    assert_eq!(snapshot.completed_cycle_count, 1);
 
     snapshot = advance_album_ok(
         &snapshot,
         AlbumSyncEvent::PageFetched {
-            requested_cursor: None,
-            next_cursor: None,
-            item_count: 0,
-            has_more: false,
+            page: Some(SyncPageSummary {
+                previous_page_token: None,
+                next_page_token: None,
+                reached_end: true,
+                encrypted_item_count: 0,
+            }),
         },
         AlbumSyncPhase::ApplyingPage,
-        vec![apply_page_effect(None, 0, false)],
+        vec![apply_page_effect(0)],
     );
 
     snapshot = advance_album_ok(
         &snapshot,
-        AlbumSyncEvent::PageApplied {
-            applied_cursor: None,
-        },
+        AlbumSyncEvent::PageApplied,
         AlbumSyncPhase::Completed,
         Vec::new(),
     );
     assert!(!snapshot.rerun_requested);
+    assert_eq!(snapshot.completed_cycle_count, 2);
 }
 
 #[test]
 fn sync_coordinator_rejects_non_advancing_pages_with_stable_error() {
     let snapshot = advance_album_ok(
         &new_album_sync_snapshot(sync_request(RETRY_BUDGET)),
-        AlbumSyncEvent::StartRequested,
+        AlbumSyncEvent::SyncRequested {
+            request: Some(sync_request(RETRY_BUDGET)),
+        },
         AlbumSyncPhase::FetchingPage,
         vec![fetch_page_effect(None)],
     );
@@ -457,17 +427,17 @@ fn sync_coordinator_rejects_non_advancing_pages_with_stable_error() {
         &advance_album_ok(
             &snapshot,
             AlbumSyncEvent::PageFetched {
-                requested_cursor: None,
-                next_cursor: Some(CURSOR_ONE.to_owned()),
-                item_count: 5,
-                has_more: true,
+                page: Some(SyncPageSummary {
+                    previous_page_token: None,
+                    next_page_token: Some(CURSOR_ONE.to_owned()),
+                    reached_end: false,
+                    encrypted_item_count: 5,
+                }),
             },
             AlbumSyncPhase::ApplyingPage,
-            vec![apply_page_effect(Some(CURSOR_ONE.to_owned()), 5, true)],
+            vec![apply_page_effect(5)],
         ),
-        AlbumSyncEvent::PageApplied {
-            applied_cursor: Some(CURSOR_ONE.to_owned()),
-        },
+        AlbumSyncEvent::PageApplied,
         AlbumSyncPhase::FetchingPage,
         vec![fetch_page_effect(Some(CURSOR_ONE.to_owned()))],
     );
@@ -475,17 +445,19 @@ fn sync_coordinator_rejects_non_advancing_pages_with_stable_error() {
     let error = match advance_album_sync(
         &fetching_second_page,
         AlbumSyncEvent::PageFetched {
-            requested_cursor: Some(CURSOR_ONE.to_owned()),
-            next_cursor: Some(CURSOR_ONE.to_owned()),
-            item_count: 5,
-            has_more: true,
+            page: Some(SyncPageSummary {
+                previous_page_token: Some(CURSOR_ONE.to_owned()),
+                next_page_token: Some(CURSOR_ONE.to_owned()),
+                reached_end: false,
+                encrypted_item_count: 5,
+            }),
         },
     ) {
         Ok(transition) => panic!("non-advancing sync page should fail: {transition:?}"),
         Err(error) => error,
     };
 
-    assert_eq!(error.code, ClientErrorCode::SyncPageDidNotAdvance);
+    assert_redacted_error(error, ClientErrorCode::ClientCoreSyncPageDidNotAdvance);
 }
 
 #[test]
@@ -493,7 +465,7 @@ fn upload_and_sync_snapshot_debug_output_is_privacy_safe() {
     let queued_upload = new_upload_snapshot(upload_request(RETRY_BUDGET));
     let retrying_upload = advance_upload_without_collecting(
         &upload_at_creating_shard_upload(RETRY_BUDGET, 1),
-        retryable_upload_failure("create_shard_upload", "http_503"),
+        retryable_upload_failure(),
         UploadJobPhase::RetryWaiting,
         vec![schedule_upload_retry_effect(
             1,
@@ -502,20 +474,22 @@ fn upload_and_sync_snapshot_debug_output_is_privacy_safe() {
     );
     let manifest_unknown = advance_upload_without_collecting(
         &upload_at_creating_manifest(RETRY_BUDGET, 1),
-        UploadJobEvent::ManifestOutcomeUnknown {
-            error_code: "transport_unknown".to_owned(),
-        },
+        UploadJobEvent::ManifestOutcomeUnknown,
         UploadJobPhase::ManifestCommitUnknown,
-        vec![recover_manifest_by_sync_effect()],
+        vec![recover_manifest_through_sync_effect()],
     );
     let active_sync = advance_album_ok(
         &advance_album_ok(
             &new_album_sync_snapshot(sync_request(RETRY_BUDGET)),
-            AlbumSyncEvent::StartRequested,
+            AlbumSyncEvent::SyncRequested {
+                request: Some(sync_request(RETRY_BUDGET)),
+            },
             AlbumSyncPhase::FetchingPage,
             vec![fetch_page_effect(None)],
         ),
-        AlbumSyncEvent::StartRequested,
+        AlbumSyncEvent::SyncRequested {
+            request: Some(sync_request(RETRY_BUDGET)),
+        },
         AlbumSyncPhase::FetchingPage,
         Vec::new(),
     );
@@ -524,22 +498,33 @@ fn upload_and_sync_snapshot_debug_output_is_privacy_safe() {
     assert_privacy_safe_debug(&retrying_upload);
     assert_privacy_safe_debug(&manifest_unknown);
     assert_privacy_safe_debug(&active_sync);
+
+    let error = match new_upload_job(UploadJobRequest {
+        local_job_id: "content://picker/IMG_0001.jpg".to_owned(),
+        ..upload_request(RETRY_BUDGET)
+    }) {
+        Ok(snapshot) => panic!("raw picker URI should be rejected: {snapshot:?}"),
+        Err(error) => error,
+    };
+    assert_redacted_error(error, ClientErrorCode::ClientCoreInvalidSnapshot);
 }
 
 fn upload_request(retry_budget: u32) -> UploadJobRequest {
     UploadJobRequest {
-        job_id: JOB_ID.to_owned(),
+        local_job_id: LOCAL_JOB_ID.to_owned(),
+        upload_id: UPLOAD_ID.to_owned(),
         album_id: ALBUM_ID.to_owned(),
-        local_asset_id: LOCAL_ASSET_ID.to_owned(),
-        retry_budget,
+        asset_id: ASSET_ID.to_owned(),
+        max_retry_count: retry_budget,
     }
 }
 
 fn sync_request(retry_budget: u32) -> AlbumSyncRequest {
     AlbumSyncRequest {
+        sync_id: SYNC_ID.to_owned(),
         album_id: ALBUM_ID.to_owned(),
-        initial_cursor: None,
-        retry_budget,
+        initial_page_token: None,
+        max_retry_count: retry_budget,
     }
 }
 
@@ -572,16 +557,18 @@ fn upload_at_creating_shard_upload(
     );
     let snapshot = advance_upload_ok(
         &snapshot,
-        UploadJobEvent::PreparedMedia {
-            planned_shard_count,
+        UploadJobEvent::MediaPrepared {
+            plan: Some(media_plan(planned_shard_count)),
         },
         UploadJobPhase::AwaitingEpochHandle,
-        vec![open_epoch_handle_effect()],
+        vec![acquire_epoch_handle_effect()],
         &mut emitted_effects,
     );
     let snapshot = advance_upload_ok(
         &snapshot,
-        UploadJobEvent::EpochHandleReady { epoch_id: EPOCH_ID },
+        UploadJobEvent::EpochHandleAcquired {
+            epoch_id: Some(EPOCH_ID),
+        },
         UploadJobPhase::EncryptingShard,
         vec![encrypt_shard_effect(0)],
         &mut emitted_effects,
@@ -589,10 +576,7 @@ fn upload_at_creating_shard_upload(
     advance_upload_ok(
         &snapshot,
         UploadJobEvent::ShardEncrypted {
-            tier: ORIGINAL_TIER,
-            index: 0,
-            encrypted_sha256: SHARD_ZERO_SHA256.to_owned(),
-            encrypted_size_bytes: 4_096,
+            shard: Some(encrypted_shard(0, SHARD_ZERO_SHA256)),
         },
         UploadJobPhase::CreatingShardUpload,
         vec![create_shard_upload_effect(0, SHARD_ZERO_SHA256)],
@@ -603,37 +587,32 @@ fn upload_at_creating_shard_upload(
 fn upload_at_uploading_shard(
     retry_budget: u32,
     planned_shard_count: u32,
-    shard_index: u32,
-    upload_id: &str,
+    index: u32,
+    shard_id: &str,
 ) -> UploadJobSnapshot {
     let mut emitted_effects = Vec::new();
     let snapshot = upload_at_creating_shard_upload(retry_budget, planned_shard_count);
     advance_upload_ok(
         &snapshot,
         UploadJobEvent::ShardUploadCreated {
-            tier: ORIGINAL_TIER,
-            index: shard_index,
-            upload_id: upload_id.to_owned(),
+            upload: Some(created_shard_upload(index, shard_id, SHARD_ZERO_SHA256)),
         },
         UploadJobPhase::UploadingShard,
-        vec![upload_shard_effect(shard_index, upload_id)],
+        vec![upload_shard_effect(index, shard_id, SHARD_ZERO_SHA256)],
         &mut emitted_effects,
     )
 }
 
 fn upload_at_creating_manifest(retry_budget: u32, planned_shard_count: u32) -> UploadJobSnapshot {
     let mut emitted_effects = Vec::new();
-    let snapshot = upload_at_uploading_shard(retry_budget, planned_shard_count, 0, UPLOAD_ZERO_ID);
+    let snapshot = upload_at_uploading_shard(retry_budget, planned_shard_count, 0, SHARD_ZERO_ID);
     advance_upload_ok(
         &snapshot,
         UploadJobEvent::ShardUploaded {
-            tier: ORIGINAL_TIER,
-            index: 0,
-            shard_id: SHARD_ZERO_ID.to_owned(),
-            encrypted_sha256: SHARD_ZERO_SHA256.to_owned(),
+            shard: Some(completed_shard(0, SHARD_ZERO_ID, SHARD_ZERO_SHA256)),
         },
         UploadJobPhase::CreatingManifest,
-        vec![create_manifest_effect(1)],
+        vec![create_manifest_effect()],
         &mut emitted_effects,
     )
 }
@@ -688,126 +667,156 @@ fn advance_album_ok(
     transition.snapshot
 }
 
-fn retryable_upload_failure(stage: &str, code: &str) -> UploadJobEvent {
+fn media_plan(planned_shard_count: u32) -> PreparedMediaPlan {
+    PreparedMediaPlan {
+        planned_shards: (0..planned_shard_count)
+            .map(|index| slot(ORIGINAL_TIER, index))
+            .collect(),
+    }
+}
+
+fn retryable_upload_failure() -> UploadJobEvent {
     UploadJobEvent::RetryableFailure {
-        stage: stage.to_owned(),
-        code: code.to_owned(),
-        retry_after_ms: RETRY_DELAY_MS,
+        code: ClientErrorCode::InvalidInputLength,
+        retry_after_ms: Some(RETRY_DELAY_MS),
     }
 }
 
 fn prepare_media_effect() -> UploadJobEffect {
-    UploadJobEffect::PrepareMedia {
-        job_id: JOB_ID.to_owned(),
-        album_id: ALBUM_ID.to_owned(),
-        local_asset_id: LOCAL_ASSET_ID.to_owned(),
-    }
+    UploadJobEffect::PrepareMedia
 }
 
-fn open_epoch_handle_effect() -> UploadJobEffect {
-    UploadJobEffect::OpenEpochHandle {
-        job_id: JOB_ID.to_owned(),
-        album_id: ALBUM_ID.to_owned(),
-    }
+fn acquire_epoch_handle_effect() -> UploadJobEffect {
+    UploadJobEffect::AcquireEpochHandle
 }
 
 fn encrypt_shard_effect(index: u32) -> UploadJobEffect {
     UploadJobEffect::EncryptShard {
-        job_id: JOB_ID.to_owned(),
-        epoch_id: EPOCH_ID,
         tier: ORIGINAL_TIER,
         index,
     }
 }
 
-fn create_shard_upload_effect(index: u32, encrypted_sha256: &str) -> UploadJobEffect {
+fn create_shard_upload_effect(index: u32, sha256: &str) -> UploadJobEffect {
     UploadJobEffect::CreateShardUpload {
-        job_id: JOB_ID.to_owned(),
         tier: ORIGINAL_TIER,
         index,
-        encrypted_sha256: encrypted_sha256.to_owned(),
+        sha256: sha256.to_owned(),
     }
 }
 
-fn upload_shard_effect(index: u32, upload_id: &str) -> UploadJobEffect {
+fn upload_shard_effect(index: u32, shard_id: &str, sha256: &str) -> UploadJobEffect {
     UploadJobEffect::UploadShard {
-        job_id: JOB_ID.to_owned(),
         tier: ORIGINAL_TIER,
         index,
-        upload_id: upload_id.to_owned(),
+        shard_id: shard_id.to_owned(),
+        sha256: sha256.to_owned(),
     }
 }
 
-fn create_manifest_effect(completed_shard_count: u32) -> UploadJobEffect {
-    UploadJobEffect::CreateManifest {
-        job_id: JOB_ID.to_owned(),
-        album_id: ALBUM_ID.to_owned(),
-        local_asset_id: LOCAL_ASSET_ID.to_owned(),
-        completed_shard_count,
-    }
+fn create_manifest_effect() -> UploadJobEffect {
+    UploadJobEffect::CreateManifest
 }
 
-fn request_sync_confirmation_effect() -> UploadJobEffect {
-    UploadJobEffect::RequestSyncConfirmation {
-        album_id: ALBUM_ID.to_owned(),
-        local_asset_id: LOCAL_ASSET_ID.to_owned(),
-    }
+fn await_sync_confirmation_effect() -> UploadJobEffect {
+    UploadJobEffect::AwaitSyncConfirmation
 }
 
-fn schedule_upload_retry_effect(retry_count: u32, target_phase: UploadJobPhase) -> UploadJobEffect {
+fn schedule_upload_retry_effect(attempt: u32, target_phase: UploadJobPhase) -> UploadJobEffect {
     UploadJobEffect::ScheduleRetry {
-        job_id: JOB_ID.to_owned(),
-        retry_count,
+        attempt,
+        retry_after_ms: RETRY_DELAY_MS,
         target_phase,
-        after_ms: RETRY_DELAY_MS,
     }
 }
 
-fn recover_manifest_by_sync_effect() -> UploadJobEffect {
-    UploadJobEffect::RecoverManifestBySync {
-        album_id: ALBUM_ID.to_owned(),
-        local_asset_id: LOCAL_ASSET_ID.to_owned(),
-    }
+fn recover_manifest_through_sync_effect() -> UploadJobEffect {
+    UploadJobEffect::RecoverManifestThroughSync
 }
 
-fn fetch_page_effect(cursor: Option<String>) -> AlbumSyncEffect {
-    AlbumSyncEffect::FetchPage {
-        album_id: ALBUM_ID.to_owned(),
-        cursor,
-    }
+fn fetch_page_effect(page_token: Option<String>) -> AlbumSyncEffect {
+    AlbumSyncEffect::FetchPage { page_token }
 }
 
-fn apply_page_effect(
-    next_cursor: Option<String>,
-    item_count: u32,
-    has_more: bool,
-) -> AlbumSyncEffect {
+fn apply_page_effect(encrypted_item_count: u32) -> AlbumSyncEffect {
     AlbumSyncEffect::ApplyPage {
-        album_id: ALBUM_ID.to_owned(),
-        next_cursor,
-        item_count,
-        has_more,
+        encrypted_item_count,
+    }
+}
+
+fn slot(tier: u8, index: u32) -> UploadShardSlot {
+    UploadShardSlot { tier, index }
+}
+
+fn encrypted_shard(index: u32, sha256: &str) -> EncryptedShardRef {
+    EncryptedShardRef {
+        tier: ORIGINAL_TIER,
+        index,
+        sha256: sha256.to_owned(),
+    }
+}
+
+fn created_shard_upload(index: u32, shard_id: &str, sha256: &str) -> CreatedShardUpload {
+    CreatedShardUpload {
+        tier: ORIGINAL_TIER,
+        index,
+        shard_id: shard_id.to_owned(),
+        sha256: sha256.to_owned(),
+    }
+}
+
+fn completed_shard(index: u32, shard_id: &str, sha256: &str) -> CompletedShardRef {
+    CompletedShardRef {
+        tier: ORIGINAL_TIER,
+        index,
+        shard_id: shard_id.to_owned(),
+        sha256: sha256.to_owned(),
+    }
+}
+
+fn sync_confirmation(asset_id: &str) -> UploadSyncConfirmation {
+    UploadSyncConfirmation {
+        asset_id: asset_id.to_owned(),
+        confirmed_at_ms: 1_700_000_000,
+        sync_cursor: Some(CURSOR_ONE.to_owned()),
+    }
+}
+
+fn assert_redacted_error(error: ClientError, code: ClientErrorCode) {
+    assert_eq!(error.code, code);
+    for forbidden in [
+        "content://",
+        "file://",
+        "IMG_0001",
+        ".jpg",
+        OTHER_ASSET_ID,
+        ALBUM_ID,
+        ASSET_ID,
+    ] {
+        assert!(
+            !error.message.contains(forbidden),
+            "error message leaked forbidden payload marker {forbidden}: {error:?}"
+        );
     }
 }
 
 fn assert_privacy_safe_debug<T: Debug>(snapshot: &T) {
-    const FORBIDDEN_TERMS: [&str; 11] = [
+    let debug_text = format!("{snapshot:?}");
+    let lowered = debug_text.to_ascii_lowercase();
+    for term in [
+        "content://",
+        "file://",
         "password",
         "private",
         "secret",
         "plaintext",
         "filename",
-        "file_uri",
         "picker_uri",
         "exif",
         "gps",
         "camera",
         "device",
-    ];
-
-    let debug_text = format!("{snapshot:?}");
-    let lowered = debug_text.to_ascii_lowercase();
-    for term in FORBIDDEN_TERMS {
+    ] {
         assert!(
             !lowered.contains(term),
             "snapshot debug text contains forbidden term `{term}`: {debug_text}"
