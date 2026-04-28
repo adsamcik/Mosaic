@@ -104,6 +104,7 @@ fn uniffi_client_core_dtos_keep_persisted_records_privacy_safe() {
             manifest_version: 4,
         },
         retry_count: 1,
+        max_retry_count: 5,
         next_retry_unix_ms: 1_700_000_000_000,
         last_error_code: 0,
         last_error_stage: String::new(),
@@ -120,6 +121,7 @@ fn uniffi_client_core_dtos_keep_persisted_records_privacy_safe() {
     };
     let upload_event = ClientCoreUploadJobEvent {
         kind: "ShardUploaded".to_owned(),
+        epoch_id: 7,
         tier: 2,
         shard_index: 3,
         shard_id: "shard-ref-3".to_owned(),
@@ -138,6 +140,7 @@ fn uniffi_client_core_dtos_keep_persisted_records_privacy_safe() {
         pending_cursor: String::new(),
         rerun_requested: false,
         retry_count: 0,
+        max_retry_count: 4,
         next_retry_unix_ms: 0,
         last_error_code: 0,
         last_error_stage: String::new(),
@@ -170,6 +173,79 @@ fn uniffi_client_core_dtos_keep_persisted_records_privacy_safe() {
     ] {
         assert_forbidden_client_core_snapshot_terms_absent(&rendered);
     }
+}
+
+#[test]
+fn uniffi_upload_epoch_event_preserves_epoch_id_independently_of_shard_index() {
+    let initial = ClientCoreUploadJobSnapshot {
+        schema_version: 1,
+        job_id: "job-epoch-regression".to_owned(),
+        album_id: "album-epoch-regression".to_owned(),
+        asset_id: "asset-epoch-regression".to_owned(),
+        epoch_id: 0,
+        phase: "AwaitingEpochHandle".to_owned(),
+        active_tier: 3,
+        active_shard_index: 0,
+        completed_shards: Vec::new(),
+        has_manifest_receipt: false,
+        manifest_receipt: ClientCoreManifestReceipt {
+            manifest_id: String::new(),
+            manifest_version: 0,
+        },
+        retry_count: 0,
+        max_retry_count: 5,
+        next_retry_unix_ms: 0,
+        last_error_code: 0,
+        last_error_stage: String::new(),
+        sync_confirmed: false,
+        updated_at_unix_ms: 1_700_000_010_000,
+    };
+
+    let epoch_ready = advance_upload_job(initial, upload_event("EpochHandleAcquired", 42, 0, 0));
+
+    assert_eq!(epoch_ready.code, 0);
+    assert_eq!(epoch_ready.transition.snapshot.epoch_id, 42);
+    assert_eq!(epoch_ready.transition.snapshot.active_shard_index, 0);
+    assert_eq!(epoch_ready.transition.snapshot.max_retry_count, 5);
+}
+
+#[test]
+fn uniffi_upload_retry_budget_survives_snapshot_round_trip() {
+    let retrying = ClientCoreUploadJobSnapshot {
+        schema_version: 1,
+        job_id: "job-retry-regression".to_owned(),
+        album_id: "album-retry-regression".to_owned(),
+        asset_id: "asset-retry-regression".to_owned(),
+        epoch_id: 42,
+        phase: "RetryWaiting".to_owned(),
+        active_tier: 3,
+        active_shard_index: 0,
+        completed_shards: vec![ClientCoreUploadShardRef {
+            tier: 3,
+            shard_index: 0,
+            shard_id: String::new(),
+            sha256: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                .to_owned(),
+            uploaded: false,
+        }],
+        has_manifest_receipt: false,
+        manifest_receipt: ClientCoreManifestReceipt {
+            manifest_id: String::new(),
+            manifest_version: 0,
+        },
+        retry_count: 1,
+        max_retry_count: 5,
+        next_retry_unix_ms: 1_700_000_020_000,
+        last_error_code: ClientErrorCode::InvalidInputLength.as_u16(),
+        last_error_stage: "CreatingShardUpload".to_owned(),
+        sync_confirmed: false,
+        updated_at_unix_ms: 1_700_000_020_000,
+    };
+
+    let resumed = advance_upload_job(retrying, upload_event("RetryTimerElapsed", 0, 0, 0));
+    assert_eq!(resumed.code, 0);
+    assert_eq!(resumed.transition.snapshot.retry_count, 1);
+    assert_eq!(resumed.transition.snapshot.max_retry_count, 5);
 }
 
 #[test]
@@ -646,6 +722,28 @@ fn uniffi_error_paths_return_zero_handles_and_empty_sensitive_outputs() {
         ClientErrorCode::EpochHandleNotFound.as_u16()
     );
     assert!(missing_decrypt.plaintext.is_empty());
+}
+
+fn upload_event(
+    kind: &str,
+    epoch_id: u32,
+    shard_index: u32,
+    error_code: u16,
+) -> ClientCoreUploadJobEvent {
+    ClientCoreUploadJobEvent {
+        kind: kind.to_owned(),
+        epoch_id,
+        tier: 3,
+        shard_index,
+        shard_id: String::new(),
+        sha256: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            .to_owned(),
+        manifest_id: String::new(),
+        manifest_version: 0,
+        observed_asset_id: String::new(),
+        retry_after_unix_ms: 0,
+        error_code,
+    }
 }
 
 fn assert_forbidden_client_core_snapshot_terms_absent(rendered: &str) {

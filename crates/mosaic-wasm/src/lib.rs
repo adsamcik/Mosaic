@@ -166,6 +166,7 @@ pub struct ClientCoreUploadJobSnapshot {
     pub has_manifest_receipt: bool,
     pub manifest_receipt: ClientCoreManifestReceipt,
     pub retry_count: u32,
+    pub max_retry_count: u32,
     pub next_retry_unix_ms: u64,
     pub last_error_code: u16,
     pub last_error_stage: String,
@@ -177,6 +178,7 @@ pub struct ClientCoreUploadJobSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientCoreUploadJobEvent {
     pub kind: String,
+    pub epoch_id: u32,
     pub tier: u8,
     pub shard_index: u32,
     pub shard_id: String,
@@ -237,6 +239,7 @@ pub struct ClientCoreAlbumSyncSnapshot {
     pub pending_cursor: String,
     pub rerun_requested: bool,
     pub retry_count: u32,
+    pub max_retry_count: u32,
     pub next_retry_unix_ms: u64,
     pub last_error_code: u16,
     pub last_error_stage: String,
@@ -1351,12 +1354,14 @@ pub fn advance_upload_job_js(
     active_tier: u8,
     active_shard_index: u32,
     retry_count: u32,
+    max_retry_count: u32,
     next_retry_unix_ms: u64,
     last_error_code: u16,
     last_error_stage: String,
     sync_confirmed: bool,
     updated_at_unix_ms: u64,
     event_kind: String,
+    event_epoch_id: u32,
     event_tier: u8,
     event_shard_index: u32,
     event_shard_id: String,
@@ -1381,6 +1386,7 @@ pub fn advance_upload_job_js(
             has_manifest_receipt: false,
             manifest_receipt: empty_manifest_receipt(),
             retry_count,
+            max_retry_count,
             next_retry_unix_ms,
             last_error_code,
             last_error_stage,
@@ -1389,6 +1395,7 @@ pub fn advance_upload_job_js(
         },
         ClientCoreUploadJobEvent {
             kind: event_kind,
+            epoch_id: event_epoch_id,
             tier: event_tier,
             shard_index: event_shard_index,
             shard_id: event_shard_id,
@@ -1432,6 +1439,7 @@ pub fn advance_album_sync_js(
     pending_cursor: String,
     rerun_requested: bool,
     retry_count: u32,
+    max_retry_count: u32,
     next_retry_unix_ms: u64,
     last_error_code: u16,
     last_error_stage: String,
@@ -1452,6 +1460,7 @@ pub fn advance_album_sync_js(
             pending_cursor,
             rerun_requested,
             retry_count,
+            max_retry_count,
             next_retry_unix_ms,
             last_error_code,
             last_error_stage,
@@ -1660,7 +1669,7 @@ fn upload_snapshot_to_client(
         manifest_receipt,
         retry: mosaic_client::UploadRetryMetadata {
             attempt_count: snapshot.retry_count,
-            max_attempts: snapshot.retry_count,
+            max_attempts: snapshot.max_retry_count,
             retry_after_ms: (snapshot.next_retry_unix_ms != 0)
                 .then_some(snapshot.next_retry_unix_ms),
             last_error_code,
@@ -1691,7 +1700,7 @@ fn upload_event_to_client(event: ClientCoreUploadJobEvent) -> mosaic_client::Upl
         },
         "EpochHandleAcquired" | "EpochHandleReady" => {
             mosaic_client::UploadJobEvent::EpochHandleAcquired {
-                epoch_id: Some(event.shard_index),
+                epoch_id: Some(event.epoch_id),
             }
         }
         "ShardEncrypted" => mosaic_client::UploadJobEvent::ShardEncrypted {
@@ -1802,6 +1811,7 @@ fn upload_snapshot_from_client(
         has_manifest_receipt,
         manifest_receipt,
         retry_count: snapshot.retry.attempt_count,
+        max_retry_count: snapshot.retry.max_attempts,
         next_retry_unix_ms: snapshot.retry.retry_after_ms.unwrap_or_default(),
         last_error_code,
         last_error_stage: snapshot
@@ -1859,7 +1869,7 @@ fn album_sync_snapshot_to_client(
         completed_cycle_count: 0,
         retry: mosaic_client::AlbumSyncRetryMetadata {
             attempt_count: snapshot.retry_count,
-            max_attempts: snapshot.retry_count,
+            max_attempts: snapshot.max_retry_count,
             retry_after_ms: (snapshot.next_retry_unix_ms != 0)
                 .then_some(snapshot.next_retry_unix_ms),
             last_error_code,
@@ -1935,6 +1945,7 @@ fn album_sync_snapshot_from_client(
             .unwrap_or_default(),
         rerun_requested: snapshot.rerun_requested,
         retry_count: snapshot.retry.attempt_count,
+        max_retry_count: snapshot.retry.max_attempts,
         next_retry_unix_ms: snapshot.retry.retry_after_ms.unwrap_or_default(),
         last_error_code,
         last_error_stage: snapshot
@@ -2200,6 +2211,7 @@ fn empty_upload_snapshot() -> ClientCoreUploadJobSnapshot {
         has_manifest_receipt: false,
         manifest_receipt: empty_manifest_receipt(),
         retry_count: 0,
+        max_retry_count: 0,
         next_retry_unix_ms: 0,
         last_error_code: 0,
         last_error_stage: String::new(),
@@ -2224,6 +2236,7 @@ fn empty_album_sync_snapshot() -> ClientCoreAlbumSyncSnapshot {
         pending_cursor: String::new(),
         rerun_requested: false,
         retry_count: 0,
+        max_retry_count: 0,
         next_retry_unix_ms: 0,
         last_error_code: 0,
         last_error_stage: String::new(),
