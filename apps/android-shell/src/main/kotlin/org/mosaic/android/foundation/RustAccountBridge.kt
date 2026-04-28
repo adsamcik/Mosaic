@@ -33,7 +33,9 @@ enum class AccountUnlockCode {
   SUCCESS,
   AUTHENTICATION_FAILED,
   INVALID_SALT_LENGTH,
+  WRAPPED_KEY_TOO_SHORT,
   KDF_PROFILE_TOO_WEAK,
+  KDF_PROFILE_TOO_COSTLY,
   INTERNAL_ERROR,
 }
 
@@ -51,6 +53,7 @@ data class AccountUnlockResult(
 enum class AccountCloseCode {
   SUCCESS,
   NOT_FOUND,
+  INTERNAL_ERROR,
 }
 
 interface RustAccountBridge {

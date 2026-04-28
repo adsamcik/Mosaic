@@ -9,7 +9,7 @@ Included:
 - unwrap an existing wrapped L2 account key from password bytes, user salt, account salt, and KDF profile parameters;
 - store the unwrapped L2 account key in Rust-owned opaque handle storage;
 - return only a stable error code and opaque account-key handle;
-- expose UniFFI facade functions for Android account unlock, account-key handle status, and account-key handle close;
+- expose UniFFI facade functions for Android account unlock, account-key handle status, account-key handle close, and protocol-version probing;
 - preserve identity-handle workflows that create/open identities from an account-key handle and cascade-close identity handles when the account handle closes.
 
 Excluded:
@@ -84,6 +84,7 @@ crates/mosaic-uniffi
     unlock_account_key(password_bytes, request)
     account_key_handle_is_open(handle)
     close_account_key_handle(handle)
+    protocol_version()
   tests/ffi_snapshot.rs
     stable API snapshot and account unlock error/result mapping
 
@@ -111,7 +112,7 @@ Required tests:
 - weak KDF profile maps to `KdfProfileTooWeak` with handle `0`;
 - invalid user-salt and account-salt lengths map to `InvalidSaltLength` with handle `0`;
 - password input buffers are zeroized by the client unlock API on success and failure;
-- UniFFI snapshot includes account unlock, account-key handle status, and account-key close;
+- UniFFI snapshot includes account unlock, account-key handle status, account-key close, and protocol-version probing;
 - UniFFI unlock returns stable codes and opaque handles only.
 
 Final gate:

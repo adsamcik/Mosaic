@@ -128,15 +128,16 @@ pub const fn crate_name() -> &'static str {
 }
 
 /// Returns the domain protocol version this UniFFI facade is compiled against.
+#[uniffi::export]
 #[must_use]
-pub const fn protocol_version() -> &'static str {
-    mosaic_client::protocol_version()
+pub fn protocol_version() -> String {
+    mosaic_client::protocol_version().to_owned()
 }
 
 /// Returns the stable UniFFI API snapshot for this FFI spike.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+    "mosaic-uniffi ffi-spike:v6 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
 }
 
 /// Parses a shard envelope header through the UniFFI export surface.

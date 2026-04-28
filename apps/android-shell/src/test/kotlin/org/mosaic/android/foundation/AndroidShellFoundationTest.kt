@@ -13,6 +13,7 @@ fun main() {
     TestCase("crypto unlock before server authentication is rejected", ::cryptoUnlockBeforeServerAuthenticationRejected),
     TestCase("photo picker contract stages immediate reads before queueing", ::photoPickerStagesImmediateReads),
     TestCase("fake rust bridge models account unlock lifecycle", ::fakeRustBridgeModelsUnlockLifecycle),
+    TestCase("generated rust bridge maps UniFFI account calls", ::generatedRustBridgeMapsUniFfiAccountCalls),
     TestCase("work policy defaults to foreground dataSync", ::workPolicyDefaultsToForegroundDataSync),
     TestCase("media port exposes a stub and fake seam", ::mediaPortExposesStubAndFakeSeam),
   )
@@ -172,6 +173,57 @@ private fun fakeRustBridgeModelsUnlockLifecycle() {
   assertEquals(AccountCloseCode.NOT_FOUND, bridge.closeAccountKeyHandle(handle))
 }
 
+private fun generatedRustBridgeMapsUniFfiAccountCalls() {
+  val api = FakeGeneratedRustAccountApi()
+  val bridge = GeneratedRustAccountBridge(api)
+  assertEquals("mosaic-v1", bridge.protocolVersion())
+
+  val invalidSaltPassword = "correct horse battery staple".encodeToByteArray()
+  val invalidSalt = bridge.unlockAccountAndWipePassword(
+    invalidSaltPassword,
+    AccountUnlockRequest(
+      userSalt = ByteArray(15) { 1 },
+      accountSalt = ByteArray(16) { 2 },
+      wrappedAccountKey = ByteArray(64) { 3 },
+      kdfProfile = KdfProfile(memoryKiB = 65536, iterations = 3, parallelism = 1),
+    ),
+  )
+  assertEquals(AccountUnlockCode.INVALID_SALT_LENGTH, invalidSalt.code)
+  assertEquals(null, invalidSalt.handle)
+  assertTrue(invalidSaltPassword.all { it == 0.toByte() })
+  assertEquals(15, api.lastUnlockRequest?.userSalt?.size)
+  assertFalse(api.lastUnlockRequest.toString().contains("[B@"))
+
+  val weakKdfPassword = "correct horse battery staple".encodeToByteArray()
+  val weakKdf = bridge.unlockAccountAndWipePassword(
+    weakKdfPassword,
+    AccountUnlockRequest(
+      userSalt = ByteArray(16) { 1 },
+      accountSalt = ByteArray(16) { 2 },
+      wrappedAccountKey = ByteArray(64) { 3 },
+      kdfProfile = KdfProfile(memoryKiB = 32768, iterations = 3, parallelism = 1),
+    ),
+  )
+  assertEquals(AccountUnlockCode.KDF_PROFILE_TOO_WEAK, weakKdf.code)
+  assertEquals(null, weakKdf.handle)
+  assertTrue(weakKdfPassword.all { it == 0.toByte() })
+
+  val password = "correct horse battery staple".encodeToByteArray()
+  val unlocked = bridge.unlockAccountAndWipePassword(password, unlockRequest())
+  assertEquals(AccountUnlockCode.SUCCESS, unlocked.code)
+  assertTrue(password.all { it == 0.toByte() })
+  val handle = requireNotNull(unlocked.handle) { "success must include handle" }
+  assertEquals(1L, handle.value)
+  assertEquals(65536, api.lastUnlockRequest?.kdfMemoryKiB)
+  assertEquals(3, api.lastUnlockRequest?.kdfIterations)
+  assertEquals(1, api.lastUnlockRequest?.kdfParallelism)
+
+  assertTrue(bridge.isAccountKeyHandleOpen(handle))
+  assertEquals(AccountCloseCode.SUCCESS, bridge.closeAccountKeyHandle(handle))
+  assertFalse(bridge.isAccountKeyHandleOpen(handle))
+  assertEquals(AccountCloseCode.NOT_FOUND, bridge.closeAccountKeyHandle(handle))
+}
+
 private fun workPolicyDefaultsToForegroundDataSync() {
   val policy = AndroidWorkPolicies.uploadDrainPolicy
 
@@ -259,6 +311,45 @@ private class FakeRustAccountBridge : RustAccountBridge {
 
   override fun closeAccountKeyHandle(handle: AccountKeyHandle): AccountCloseCode =
     if (openHandles.remove(handle)) AccountCloseCode.SUCCESS else AccountCloseCode.NOT_FOUND
+}
+
+private class FakeGeneratedRustAccountApi : GeneratedRustAccountApi {
+  private var nextHandle = 1L
+  private val openHandles = mutableSetOf<Long>()
+  private val correctPassword = "correct horse battery staple".encodeToByteArray()
+
+  var lastUnlockRequest: RustAccountUnlockFfiRequest? = null
+    private set
+
+  override fun protocolVersion(): String = "mosaic-v1"
+
+  override fun unlockAccountKey(
+    password: ByteArray,
+    request: RustAccountUnlockFfiRequest,
+  ): RustAccountUnlockFfiResult {
+    lastUnlockRequest = request
+    if (request.userSalt.size != AccountUnlockRequest.SALT_LENGTH ||
+      request.accountSalt.size != AccountUnlockRequest.SALT_LENGTH
+    ) {
+      return RustAccountUnlockFfiResult(RustClientStableCode.INVALID_SALT_LENGTH, 0)
+    }
+    if (request.kdfMemoryKiB < 65536) {
+      return RustAccountUnlockFfiResult(RustClientStableCode.KDF_PROFILE_TOO_WEAK, 0)
+    }
+    if (!password.contentEquals(correctPassword)) {
+      return RustAccountUnlockFfiResult(RustClientStableCode.AUTHENTICATION_FAILED, 0)
+    }
+
+    val handle = nextHandle++
+    openHandles += handle
+    return RustAccountUnlockFfiResult(RustClientStableCode.OK, handle)
+  }
+
+  override fun accountKeyHandleIsOpen(handle: Long): RustAccountKeyHandleStatusFfiResult =
+    RustAccountKeyHandleStatusFfiResult(RustClientStableCode.OK, handle in openHandles)
+
+  override fun closeAccountKeyHandle(handle: Long): Int =
+    if (openHandles.remove(handle)) RustClientStableCode.OK else RustClientStableCode.SECRET_HANDLE_NOT_FOUND
 }
 
 private class FakePhotoPickerImmediateReader(

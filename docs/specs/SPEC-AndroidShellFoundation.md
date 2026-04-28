@@ -18,7 +18,7 @@ server auth success
   -> does NOT unlock local crypto
 
 account password + non-secret unlock parameters
-  -> RustAccountBridge.unlockAccount(...)
+  -> GeneratedRustAccountBridge / RustAccountBridge.unlockAccount(...)
   -> AccountUnlockResult(success, opaque AccountKeyHandle)
   -> CryptoUnlockState.Unlocked(handle, protocol_version)
 
@@ -53,6 +53,7 @@ apps/android-shell
     UploadQueueRecord.kt       # privacy-safe queue record and validation
     WorkPolicy.kt              # WorkManager/foreground dataSync policy model
     RustAccountBridge.kt       # UniFFI bridge seam for account unlock lifecycle
+    GeneratedRustAccountBridge.kt # generated-binding adapter/probe for stable Rust account codes
   src/test/kotlin/org/mosaic/android/foundation
     AndroidShellFoundationTest.kt
 
@@ -67,7 +68,7 @@ No durable queue persistence is added in this slice. When Room or another Androi
 
 TDD cycle:
 
-1. Add Kotlin tests first for state separation, queue privacy, fake Rust bridge lifecycle, media/photo-picker seams, and work policy defaults.
+1. Add Kotlin tests first for state separation, queue privacy, fake/generated Rust bridge lifecycle, media/photo-picker seams, and work policy defaults.
 2. Run `.\scripts\test-android-shell.ps1` and confirm RED from missing foundation contracts.
 3. Implement the narrow foundation contracts.
 4. Re-run Android shell tests until green.

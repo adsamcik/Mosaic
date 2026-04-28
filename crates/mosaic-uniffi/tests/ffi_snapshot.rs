@@ -8,7 +8,7 @@ use mosaic_uniffi::{
     crypto_domain_golden_vector_snapshot, decrypt_shard_with_epoch_handle,
     encrypt_metadata_sidecar_with_epoch_handle, encrypt_shard_with_epoch_handle,
     epoch_key_handle_is_open, identity_encryption_pubkey, identity_signing_pubkey,
-    open_epoch_key_handle, open_identity_handle, parse_envelope_header,
+    open_epoch_key_handle, open_identity_handle, parse_envelope_header, protocol_version,
     sign_manifest_with_identity, uniffi_api_snapshot, unlock_account_key,
 };
 use zeroize::Zeroizing;
@@ -27,8 +27,13 @@ const MAX_PROGRESS_EVENTS: u32 = 10_000;
 fn uniffi_facade_exposes_stable_ffi_spike_surface() {
     assert_eq!(
         uniffi_api_snapshot(),
-        "mosaic-uniffi ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
+        "mosaic-uniffi ffi-spike:v6 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot"
     );
+}
+
+#[test]
+fn uniffi_facade_exports_protocol_version_for_android_bridge_probe() {
+    assert_eq!(protocol_version(), "mosaic-v1");
 }
 
 #[test]
