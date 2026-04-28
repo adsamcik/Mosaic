@@ -87,8 +87,27 @@ if ($LASTEXITCODE -ne 0) {
     throw "Kotlin compilation failed with exit code $LASTEXITCODE"
 }
 
+$testSourceRoot = Join-Path $ModuleRoot "src\test\kotlin"
+$testMainClasses = @(
+    Get-ChildItem -LiteralPath $testSourceRoot -Recurse -File -Filter "*Test.kt" |
+        Sort-Object FullName |
+        ForEach-Object {
+            $relativePath = $_.FullName.Substring($testSourceRoot.Length + 1)
+            $relativeDirectory = Split-Path -Parent $relativePath
+            $packageName = $relativeDirectory -replace "\\", "."
+            $testClassName = "$([System.IO.Path]::GetFileNameWithoutExtension($_.Name))Kt"
+            if ([string]::IsNullOrWhiteSpace($packageName)) {
+                $testClassName
+            } else {
+                "$packageName.$testClassName"
+            }
+        }
+)
+
 Write-Host "==> Running Android shell foundation tests" -ForegroundColor Cyan
-& $kotlin -classpath "$ClassesDir;$KotlinStdlib" "org.mosaic.android.foundation.AndroidShellFoundationTestKt"
-if ($LASTEXITCODE -ne 0) {
-    throw "Android shell tests failed with exit code $LASTEXITCODE"
+foreach ($testMainClass in $testMainClasses) {
+    & $kotlin -classpath "$ClassesDir;$KotlinStdlib" $testMainClass
+    if ($LASTEXITCODE -ne 0) {
+        throw "Android shell tests failed for $testMainClass with exit code $LASTEXITCODE"
+    }
 }

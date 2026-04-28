@@ -11,6 +11,7 @@ The module contains only foundation contracts:
 - a Photo Picker immediate-read abstraction;
 - privacy-safe upload queue records;
 - foreground `dataSync` work policy defaults.
+- an auto-import scheduler/progress/cancellation seam with upload-only background capability modeling.
 
 Run validation from the repository root:
 
