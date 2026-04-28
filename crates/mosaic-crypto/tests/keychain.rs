@@ -1,6 +1,6 @@
 use mosaic_crypto::{
     KdfProfile, MAX_KDF_ITERATIONS, MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM, MosaicCryptoError,
-    derive_account_key, derive_root_key, unwrap_account_key,
+    derive_account_key, derive_root_key, unwrap_account_key, wrap_key,
 };
 use zeroize::Zeroizing;
 
@@ -190,6 +190,45 @@ fn account_key_unwrap_rejects_wrong_password_and_bad_salts() {
         bad_salt,
         MosaicCryptoError::InvalidSaltLength { actual: 15 }
     );
+}
+
+#[test]
+fn account_key_unwrap_rejects_authenticated_payloads_with_wrong_account_key_length() {
+    let profile = minimum_profile();
+    let root_key = match derive_root_key(
+        Zeroizing::new(PASSWORD.to_vec()),
+        &USER_SALT,
+        &ACCOUNT_SALT,
+        profile,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("root key should derive: {error:?}"),
+    };
+
+    for payload_len in [31_usize, 33] {
+        let payload = vec![0x5a_u8; payload_len];
+        let wrapped = match wrap_key(&payload, &root_key) {
+            Ok(value) => value,
+            Err(error) => panic!("payload should wrap: {error:?}"),
+        };
+        let error = match unwrap_account_key(
+            Zeroizing::new(PASSWORD.to_vec()),
+            &USER_SALT,
+            &ACCOUNT_SALT,
+            &wrapped,
+            profile,
+        ) {
+            Ok(_) => panic!("non-32-byte account key should fail"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error,
+            MosaicCryptoError::InvalidKeyLength {
+                actual: payload_len
+            }
+        );
+    }
 }
 
 fn minimum_profile() -> KdfProfile {

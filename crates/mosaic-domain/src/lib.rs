@@ -378,10 +378,10 @@ pub fn canonical_metadata_sidecar_bytes(
         }
 
         if let Some(previous) = previous_tag {
-            if field.tag() == previous {
-                return Err(MetadataSidecarError::DuplicateFieldTag { tag: field.tag() });
-            }
-            if field.tag() < previous {
+            if field.tag() <= previous {
+                if field.tag() == previous {
+                    return Err(MetadataSidecarError::DuplicateFieldTag { tag: field.tag() });
+                }
                 return Err(MetadataSidecarError::UnsortedFieldTag {
                     previous,
                     actual: field.tag(),
@@ -667,6 +667,11 @@ mod tests {
     #[test]
     fn exposes_protocol_version() {
         assert_eq!(super::PROTOCOL_VERSION, "mosaic-v1");
+    }
+
+    #[test]
+    fn exposes_crate_name_for_wrapper_diagnostics() {
+        assert_eq!(super::crate_name(), "mosaic-domain");
     }
 
     #[test]

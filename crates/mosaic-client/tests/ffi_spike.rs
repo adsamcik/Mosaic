@@ -30,6 +30,21 @@ fn parse_shard_header_maps_domain_errors_to_stable_codes() {
     assert_eq!(result.code, ClientErrorCode::NonZeroReservedByte);
     assert_eq!(result.epoch_id, 0);
     assert_eq!(result.nonce, Vec::<u8>::new());
+
+    let mut invalid_magic = ShardEnvelopeHeader::new(1, 2, NONCE, ShardTier::Thumbnail).to_bytes();
+    invalid_magic[0] ^= 1;
+    let result = parse_shard_header_for_ffi(&invalid_magic);
+    assert_eq!(result.code, ClientErrorCode::InvalidMagic);
+    assert_eq!(result.epoch_id, 0);
+    assert_eq!(result.nonce, Vec::<u8>::new());
+
+    let mut unsupported_version =
+        ShardEnvelopeHeader::new(1, 2, NONCE, ShardTier::Thumbnail).to_bytes();
+    unsupported_version[4] = 2;
+    let result = parse_shard_header_for_ffi(&unsupported_version);
+    assert_eq!(result.code, ClientErrorCode::UnsupportedVersion);
+    assert_eq!(result.epoch_id, 0);
+    assert_eq!(result.nonce, Vec::<u8>::new());
 }
 
 #[test]

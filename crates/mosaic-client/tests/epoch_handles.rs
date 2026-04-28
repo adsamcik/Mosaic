@@ -97,11 +97,21 @@ fn epoch_handle_decrypt_rejects_wrong_epoch_key_and_tampered_envelope_without_pl
     let account_handle = open_account_handle();
     let first_epoch = create_epoch_key_handle(account_handle, 3);
     let second_epoch = create_epoch_key_handle(account_handle, 3);
+    let different_epoch = create_epoch_key_handle(account_handle, 4);
     assert_eq!(first_epoch.code, ClientErrorCode::Ok);
     assert_eq!(second_epoch.code, ClientErrorCode::Ok);
+    assert_eq!(different_epoch.code, ClientErrorCode::Ok);
 
     let encrypted = encrypt_shard_with_epoch_handle(first_epoch.handle, PLAINTEXT, 5, 3);
     assert_eq!(encrypted.code, ClientErrorCode::Ok);
+
+    let epoch_mismatch_result =
+        decrypt_shard_with_epoch_handle(different_epoch.handle, &encrypted.envelope_bytes);
+    assert_eq!(
+        epoch_mismatch_result.code,
+        ClientErrorCode::AuthenticationFailed
+    );
+    assert!(epoch_mismatch_result.plaintext.is_empty());
 
     let wrong_key_result =
         decrypt_shard_with_epoch_handle(second_epoch.handle, &encrypted.envelope_bytes);
@@ -116,6 +126,7 @@ fn epoch_handle_decrypt_rejects_wrong_epoch_key_and_tampered_envelope_without_pl
 
     close_epoch_once(first_epoch.handle);
     close_epoch_once(second_epoch.handle);
+    close_epoch_once(different_epoch.handle);
     close_account_once(account_handle);
 }
 

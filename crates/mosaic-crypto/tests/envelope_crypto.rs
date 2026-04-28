@@ -139,6 +139,36 @@ fn shard_encryption_generates_fresh_nonce_inside_crypto() {
 }
 
 #[test]
+fn shard_encryption_and_key_wrap_accept_multi_megabyte_payloads_below_policy_cap() {
+    let key = secret_key_from(KEY_BYTES);
+    let payload = vec![0x5a_u8; 2 * 1024 * 1024];
+
+    let encrypted = match encrypt_shard(&payload, &key, 9, 1, ShardTier::Original) {
+        Ok(value) => value,
+        Err(error) => panic!("2 MiB shard should be below policy cap: {error:?}"),
+    };
+    let decrypted = match decrypt_shard(&encrypted.bytes, &key) {
+        Ok(value) => value,
+        Err(error) => panic!("2 MiB shard should decrypt: {error:?}"),
+    };
+    assert_eq!(decrypted.len(), payload.len());
+    assert_eq!(decrypted.first(), Some(&0x5a));
+    assert_eq!(decrypted.last(), Some(&0x5a));
+
+    let wrapped = match wrap_key(&payload, &key) {
+        Ok(value) => value,
+        Err(error) => panic!("2 MiB wrapped payload should be below policy cap: {error:?}"),
+    };
+    let unwrapped = match unwrap_key(&wrapped, &key) {
+        Ok(value) => value,
+        Err(error) => panic!("2 MiB wrapped payload should unwrap: {error:?}"),
+    };
+    assert_eq!(unwrapped.len(), payload.len());
+    assert_eq!(unwrapped.first(), Some(&0x5a));
+    assert_eq!(unwrapped.last(), Some(&0x5a));
+}
+
+#[test]
 fn shard_decryption_rejects_wrong_key_tampered_header_and_header_only_envelope() {
     let key = secret_key_from(KEY_BYTES);
     let wrong_key = secret_key_from(WRONG_KEY_BYTES);
@@ -168,6 +198,37 @@ fn shard_decryption_rejects_wrong_key_tampered_header_and_header_only_envelope()
         Err(error) => error,
     };
     assert_eq!(header_only_error, MosaicCryptoError::MissingCiphertext);
+}
+
+#[test]
+fn shard_decryption_rejects_short_envelopes_and_public_aad_tampering() {
+    let key = secret_key_from(KEY_BYTES);
+    let encrypted = match encrypt_shard(
+        b"authenticated",
+        &key,
+        0x1122_3344,
+        0x5566_7788,
+        ShardTier::Original,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("shard should encrypt: {error:?}"),
+    };
+
+    for len in [0_usize, 1, SHARD_ENVELOPE_HEADER_LEN - 1] {
+        assert_eq!(
+            decrypt_shard(&encrypted.bytes[..len], &key),
+            Err(MosaicCryptoError::InvalidEnvelope)
+        );
+    }
+
+    for index in [5_usize, 9, 13] {
+        let mut tampered = encrypted.bytes.clone();
+        tampered[index] ^= 0x01;
+        assert_eq!(
+            decrypt_shard(&tampered, &key),
+            Err(MosaicCryptoError::AuthenticationFailed)
+        );
+    }
 }
 
 #[test]
@@ -205,6 +266,22 @@ fn shard_decryption_classifies_structural_and_authenticated_tampering() {
     assert_eq!(
         decrypt_shard(&tampered_ciphertext, &key),
         Err(MosaicCryptoError::AuthenticationFailed)
+    );
+}
+
+#[test]
+fn sha256_bytes_matches_base64url_no_padding_vectors() {
+    assert_eq!(
+        sha256_bytes(b""),
+        "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+    );
+    assert_eq!(
+        sha256_bytes(b"abc"),
+        "ungWv48Bz-pBQUDeXa4iI7ADYaOWF3qctBD_YfIAFa0"
+    );
+    assert_eq!(
+        sha256_bytes(b"mosaic"),
+        "GYGMAOJ6U4GaTOE0HuB5Q1NQERDr7NHJiE2xiIQ5iNA"
     );
 }
 

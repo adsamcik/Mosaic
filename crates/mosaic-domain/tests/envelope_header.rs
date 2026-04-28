@@ -39,6 +39,35 @@ fn shard_header_parses_original_raw_bytes() {
 }
 
 #[test]
+fn shard_header_accessors_return_serialized_field_values() {
+    let header = ShardEnvelopeHeader::new(
+        0x1122_3344,
+        0x5566_7788,
+        [
+            0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad,
+            0xae, 0xaf, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7,
+        ],
+        ShardTier::Preview,
+    );
+    let bytes = header.to_bytes();
+    let parsed = match ShardEnvelopeHeader::parse(&bytes) {
+        Ok(value) => value,
+        Err(error) => panic!("valid header should parse: {error:?}"),
+    };
+
+    assert_eq!(parsed.epoch_id(), 0x1122_3344);
+    assert_eq!(parsed.shard_index(), 0x5566_7788);
+    assert_eq!(
+        parsed.nonce(),
+        &[
+            0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad,
+            0xae, 0xaf, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7,
+        ]
+    );
+    assert_eq!(parsed.tier(), ShardTier::Preview);
+}
+
+#[test]
 fn shard_header_rejects_only_non_exact_boundary_lengths_as_length_errors() {
     let bytes = ShardEnvelopeHeader::new(42, 7, NONCE, ShardTier::Original).to_bytes();
 
@@ -71,6 +100,17 @@ fn shard_header_rejects_non_zero_reserved_before_decrypt() {
     };
 
     assert_eq!(error, MosaicDomainError::NonZeroReservedByte { offset: 63 });
+}
+
+#[test]
+fn shard_header_rejects_unsupported_version_before_decrypt() {
+    let mut bytes = ShardEnvelopeHeader::new(42, 7, NONCE, ShardTier::Original).to_bytes();
+    bytes[4] = 2;
+
+    assert_eq!(
+        ShardEnvelopeHeader::parse(&bytes),
+        Err(MosaicDomainError::UnsupportedVersion { version: 2 })
+    );
 }
 
 #[test]

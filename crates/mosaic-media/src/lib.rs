@@ -1181,6 +1181,11 @@ mod tests {
     }
 
     #[test]
+    fn exposes_crate_name_for_wrapper_diagnostics() {
+        assert_eq!(super::crate_name(), "mosaic-media");
+    }
+
+    #[test]
     fn plans_landscape_tier_layout() {
         let layout = expect_tier_layout(4032, 3024);
 
@@ -1553,6 +1558,45 @@ mod tests {
         assert_eq!(
             tiers.each_ref().map(|output| (output.width, output.height)),
             [(256, 256), (1024, 1024), (3000, 3000)]
+        );
+
+        let consumed = generated.into_tiers();
+        assert_eq!(
+            consumed.each_ref().map(|output| output.tier),
+            [
+                ShardTier::Thumbnail,
+                ShardTier::Preview,
+                ShardTier::Original,
+            ]
+        );
+    }
+
+    #[test]
+    fn generated_media_with_sidecar_consumes_into_parts_without_reordering() {
+        let input = png_with_chunks(&[
+            png_ihdr_chunk(640, 480),
+            png_chunk(*b"IDAT", b"pixel bytes"),
+            png_chunk(*b"IEND", b""),
+        ]);
+        let ids = sidecar_ids();
+        let encoder = FakeEncoder::default();
+
+        let generated = match generate_tiers_with_sidecar(&input, ids, &encoder) {
+            Ok(value) => value,
+            Err(error) => panic!("tiers and sidecar should generate: {error:?}"),
+        };
+        let expected_sidecar = generated.metadata_sidecar().to_vec();
+
+        let (tiers, sidecar) = generated.into_parts();
+
+        assert_eq!(sidecar, expected_sidecar);
+        assert_eq!(
+            tiers.tiers().each_ref().map(|output| output.tier),
+            [
+                ShardTier::Thumbnail,
+                ShardTier::Preview,
+                ShardTier::Original,
+            ]
         );
     }
 
