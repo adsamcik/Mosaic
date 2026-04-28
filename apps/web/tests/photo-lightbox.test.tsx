@@ -7,8 +7,35 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PhotoLightbox } from '../src/components/Gallery/PhotoLightbox';
+import * as photoEditService from '../src/lib/photo-edit-service';
 import * as photoService from '../src/lib/photo-service';
 import type { PhotoMeta } from '../src/workers/types';
+
+const albumPermissionsMock = vi.hoisted(() => ({
+  permissions: {
+    role: 'owner',
+    isOwner: true,
+    canUpload: true,
+    canDelete: true,
+    canDownload: true,
+    canManageMembers: true,
+    canManageShareLinks: true,
+    canEditAlbum: true,
+    canSelect: true,
+  },
+}));
+
+const defaultAlbumPermissions = {
+  role: 'owner',
+  isOwner: true,
+  canUpload: true,
+  canDelete: true,
+  canDownload: true,
+  canManageMembers: true,
+  canManageShareLinks: true,
+  canEditAlbum: true,
+  canSelect: true,
+} as const;
 
 // Mock the photo-service
 vi.mock('../src/lib/photo-service', () => ({
@@ -20,17 +47,21 @@ vi.mock('../src/lib/photo-service', () => ({
   getCachedPhoto: vi.fn().mockReturnValue(null), // Not cached by default
 }));
 
+vi.mock('../src/lib/photo-edit-service', () => ({
+  rotatePhoto: vi.fn().mockResolvedValue({}),
+  updatePhotoDescription: vi.fn().mockResolvedValue({}),
+}));
+
 // Mock the AlbumPermissionsContext
 vi.mock('../src/contexts/AlbumPermissionsContext', () => ({
-  useAlbumPermissions: () => ({
-    isOwner: true,
-    canUpload: true,
-    canDelete: true,
-    canDownload: true,
-    canManageMembers: true,
-    canManageShareLinks: true,
-  }),
+  useAlbumPermissions: () => albumPermissionsMock.permissions,
 }));
+
+beforeEach(() => {
+  albumPermissionsMock.permissions = { ...defaultAlbumPermissions };
+  vi.mocked(photoEditService.rotatePhoto).mockResolvedValue({} as PhotoMeta);
+  vi.mocked(photoEditService.updatePhotoDescription).mockResolvedValue({} as PhotoMeta);
+});
 
 // Create a mock photo
 function createMockPhoto(overrides: Partial<PhotoMeta> = {}): PhotoMeta {
@@ -234,6 +265,463 @@ describe('PhotoLightbox', () => {
     const counter = container.querySelector('[data-testid="lightbox-counter"]');
     expect(counter).not.toBeNull();
     expect(counter?.textContent).toContain('vacation-photo.jpg');
+  });
+
+  describe('Rotate button', () => {
+    async function renderLoaded(photo: PhotoMeta) {
+      vi.mocked(photoService.getCachedPhoto).mockReturnValue(null);
+      vi.mocked(photoService.loadPhoto).mockResolvedValue({
+        blobUrl: 'blob:test-full',
+        size: 2048,
+      });
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    }
+
+    it('is hidden when canUpload is false', async () => {
+      albumPermissionsMock.permissions = {
+        ...defaultAlbumPermissions,
+        canUpload: false,
+      };
+
+      await renderLoaded(createMockPhoto());
+
+      expect(
+        container.querySelector('[data-testid="lightbox-rotate-button"]'),
+      ).toBeNull();
+    });
+
+    it('is visible when canUpload is true', async () => {
+      await renderLoaded(createMockPhoto());
+
+      const button = container.querySelector(
+        '[data-testid="lightbox-rotate-button"]',
+      ) as HTMLButtonElement | null;
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(false);
+    });
+
+    it('click rotates the displayed image', async () => {
+      const photo = createMockPhoto();
+      await renderLoaded(photo);
+
+      const button = container.querySelector(
+        '[data-testid="lightbox-rotate-button"]',
+      ) as HTMLButtonElement;
+
+      await act(async () => {
+        button.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const image = container.querySelector(
+        '[data-testid="lightbox-image"]',
+      ) as HTMLImageElement;
+      expect(image.style.transform).toContain('rotate(90deg)');
+      expect(photoEditService.rotatePhoto).toHaveBeenCalledTimes(1);
+      expect(photoEditService.rotatePhoto).toHaveBeenCalledWith(photo, 90);
+    });
+
+    it('keyboard r triggers rotation', async () => {
+      await renderLoaded(createMockPhoto());
+
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoEditService.rotatePhoto).toHaveBeenCalledTimes(1);
+    });
+
+    it('reverts optimistic rotation when rotation fails', async () => {
+      vi.mocked(photoEditService.rotatePhoto).mockRejectedValueOnce(
+        new Error('rotation failed'),
+      );
+      await renderLoaded(createMockPhoto());
+
+      const button = container.querySelector(
+        '[data-testid="lightbox-rotate-button"]',
+      ) as HTMLButtonElement;
+
+      await act(async () => {
+        button.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const image = container.querySelector(
+        '[data-testid="lightbox-image"]',
+      ) as HTMLImageElement;
+      expect(image.style.transform).toBe('rotate(0deg)');
+    });
+
+    it('resets displayRotation when navigating to a different photo', async () => {
+      const firstPhoto = createMockPhoto({ id: 'photo-rotated', rotation: 90 });
+      const secondPhoto = createMockPhoto({ id: 'photo-unrotated', rotation: 0 });
+
+      await renderLoaded(firstPhoto);
+
+      let image = container.querySelector(
+        '[data-testid="lightbox-image"]',
+      ) as HTMLImageElement;
+      expect(image.style.transform).toBe('rotate(90deg)');
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: secondPhoto,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      image = container.querySelector(
+        '[data-testid="lightbox-image"]',
+      ) as HTMLImageElement;
+      expect(image.style.transform).toBe('rotate(0deg)');
+    });
+  });
+
+  describe('Description editing', () => {
+    async function renderLoaded(
+      photo: PhotoMeta,
+      props: Partial<Parameters<typeof PhotoLightbox>[0]> = {},
+    ) {
+      vi.mocked(photoService.getCachedPhoto).mockReturnValue(null);
+      vi.mocked(photoService.loadPhoto).mockResolvedValue({
+        blobUrl: 'blob:test-full',
+        size: 2048,
+      });
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+            ...props,
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    }
+
+    function getDescriptionValue(): HTMLElement | null {
+      const descriptions = Array.from(
+        container.querySelectorAll('.lightbox-info-description'),
+      );
+      return descriptions[0] as HTMLElement | null;
+    }
+
+    function changeTextarea(textarea: HTMLTextAreaElement, value: string) {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      valueSetter?.call(textarea, value);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    it('is read-only when canUpload is false', async () => {
+      albumPermissionsMock.permissions = {
+        ...defaultAlbumPermissions,
+        canUpload: false,
+      };
+      const photo = createMockPhoto({ description: 'Read-only description' });
+
+      await renderLoaded(photo);
+
+      const description = getDescriptionValue();
+      expect(description?.textContent).toBe('Read-only description');
+      expect(description?.classList.contains('lightbox-description-clickable')).toBe(false);
+
+      await act(async () => {
+        description?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(container.querySelector('[data-testid="lightbox-description-textarea"]')).toBeNull();
+    });
+
+    it('hides empty description from viewers', async () => {
+      albumPermissionsMock.permissions = {
+        ...defaultAlbumPermissions,
+        canUpload: false,
+      };
+
+      await renderLoaded(createMockPhoto({ description: undefined }));
+
+      expect(container.textContent).not.toContain('lightbox.metadata.description');
+      expect(container.textContent).not.toContain('lightbox.description.placeholder');
+    });
+
+    it('shows an empty description placeholder for editors', async () => {
+      await renderLoaded(createMockPhoto({ description: undefined }));
+
+      const description = getDescriptionValue();
+      expect(container.textContent).toContain('lightbox.metadata.description');
+      expect(description?.textContent).toBe('lightbox.description.placeholder');
+      expect(description?.classList.contains('lightbox-description-placeholder')).toBe(true);
+    });
+
+    it('enters edit mode when clicking an editable description', async () => {
+      const photo = createMockPhoto({ description: 'Editable description' });
+      await renderLoaded(photo);
+
+      await act(async () => {
+        getDescriptionValue()?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const textarea = container.querySelector(
+        '[data-testid="lightbox-description-textarea"]',
+      ) as HTMLTextAreaElement | null;
+      expect(textarea).not.toBeNull();
+      expect(textarea?.value).toBe('Editable description');
+    });
+
+    it('saves edited description on blur', async () => {
+      const photo = createMockPhoto({ description: 'Old value' });
+      await renderLoaded(photo);
+
+      await act(async () => {
+        getDescriptionValue()?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const textarea = container.querySelector(
+        '[data-testid="lightbox-description-textarea"]',
+      ) as HTMLTextAreaElement;
+      await act(async () => {
+        changeTextarea(textarea, 'New value');
+        textarea.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoEditService.updatePhotoDescription).toHaveBeenCalledWith(photo, 'New value');
+    });
+
+    it('cancels with Escape after editing without saving on unmount blur', async () => {
+      await renderLoaded(createMockPhoto({ description: 'Keep me' }));
+
+      await act(async () => {
+        getDescriptionValue()?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const textarea = container.querySelector(
+        '[data-testid="lightbox-description-textarea"]',
+      ) as HTMLTextAreaElement;
+      textarea.focus();
+      expect(document.activeElement).toBe(textarea);
+      await act(async () => {
+        changeTextarea(textarea, 'Discard me');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      await act(async () => {
+        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        textarea.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+        textarea.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoEditService.updatePhotoDescription).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-testid="lightbox-description-textarea"]')).toBeNull();
+      expect(getDescriptionValue()?.textContent).toBe('Keep me');
+    });
+
+    it('cancels with Escape without saving when the draft is unchanged', async () => {
+      await renderLoaded(createMockPhoto({ description: 'Keep me' }));
+
+      await act(async () => {
+        getDescriptionValue()?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const textarea = container.querySelector(
+        '[data-testid="lightbox-description-textarea"]',
+      ) as HTMLTextAreaElement;
+      textarea.focus();
+      expect(document.activeElement).toBe(textarea);
+
+      await act(async () => {
+        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        textarea.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+        textarea.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoEditService.updatePhotoDescription).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-testid="lightbox-description-textarea"]')).toBeNull();
+      expect(getDescriptionValue()?.textContent).toBe('Keep me');
+    });
+
+    it('cancels with Escape after a prior successful save', async () => {
+      const originalPhoto = createMockPhoto({ description: 'Old value' });
+      await renderLoaded(originalPhoto);
+
+      await act(async () => {
+        getDescriptionValue()?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      let textarea = container.querySelector(
+        '[data-testid="lightbox-description-textarea"]',
+      ) as HTMLTextAreaElement;
+      await act(async () => {
+        changeTextarea(textarea, 'Saved value');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      await act(async () => {
+        textarea.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoEditService.updatePhotoDescription).toHaveBeenCalledTimes(1);
+      expect(photoEditService.updatePhotoDescription).toHaveBeenLastCalledWith(
+        originalPhoto,
+        'Saved value',
+      );
+
+      const savedPhoto = { ...originalPhoto, description: 'Saved value' };
+      await renderLoaded(savedPhoto);
+
+      await act(async () => {
+        getDescriptionValue()?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      textarea = container.querySelector(
+        '[data-testid="lightbox-description-textarea"]',
+      ) as HTMLTextAreaElement;
+      textarea.focus();
+      expect(document.activeElement).toBe(textarea);
+      await act(async () => {
+        changeTextarea(textarea, 'Discard after save');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      await act(async () => {
+        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        textarea.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+        textarea.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoEditService.updatePhotoDescription).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[data-testid="lightbox-description-textarea"]')).toBeNull();
+      expect(getDescriptionValue()?.textContent).toBe('Saved value');
+    });
+
+    it('saves with Ctrl+Enter', async () => {
+      const photo = createMockPhoto({ description: 'Old value' });
+      await renderLoaded(photo);
+
+      await act(async () => {
+        getDescriptionValue()?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const textarea = container.querySelector(
+        '[data-testid="lightbox-description-textarea"]',
+      ) as HTMLTextAreaElement;
+      await act(async () => {
+        changeTextarea(textarea, 'Keyboard save');
+        textarea.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(photoEditService.updatePhotoDescription).toHaveBeenCalledWith(photo, 'Keyboard save');
+    });
+
+    it('does not navigate with arrow keys while editing', async () => {
+      const onNext = vi.fn();
+      await renderLoaded(createMockPhoto({ description: 'Edit me' }), {
+        onNext,
+        hasNext: true,
+      });
+
+      await act(async () => {
+        getDescriptionValue()?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const textarea = container.querySelector(
+        '[data-testid="lightbox-description-textarea"]',
+      ) as HTMLTextAreaElement;
+      await act(async () => {
+        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(onNext).not.toHaveBeenCalled();
+    });
+
+    it('closes edit mode when navigating to a different photo', async () => {
+      const firstPhoto = createMockPhoto({ id: 'photo-a', description: 'First description' });
+      const secondPhoto = createMockPhoto({ id: 'photo-b', description: 'Second description' });
+      await renderLoaded(firstPhoto);
+
+      await act(async () => {
+        getDescriptionValue()?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(container.querySelector('[data-testid="lightbox-description-textarea"]')).not.toBeNull();
+
+      await act(async () => {
+        root.render(
+          createElement(PhotoLightbox, {
+            photo: secondPhoto,
+            epochReadKey: new Uint8Array(32),
+            onClose: vi.fn(),
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      expect(container.querySelector('[data-testid="lightbox-description-textarea"]')).toBeNull();
+      expect(getDescriptionValue()?.textContent).toBe('Second description');
+    });
+
+    it('closes and reverts to original description when saving fails', async () => {
+      vi.mocked(photoEditService.updatePhotoDescription).mockRejectedValueOnce(
+        new Error('save failed'),
+      );
+      const photo = createMockPhoto({ description: 'Original description' });
+      await renderLoaded(photo);
+
+      await act(async () => {
+        getDescriptionValue()?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      const textarea = container.querySelector(
+        '[data-testid="lightbox-description-textarea"]',
+      ) as HTMLTextAreaElement;
+      await act(async () => {
+        changeTextarea(textarea, 'Draft description');
+        textarea.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(container.querySelector('[data-testid="lightbox-description-textarea"]')).toBeNull();
+      expect(getDescriptionValue()?.textContent).toBe('Original description');
+    });
   });
 });
 
@@ -1136,21 +1624,48 @@ describe('Video Playback', () => {
   });
 
   describe('Video error handling', () => {
-    it('shows error state when video fails to load', async () => {
+    it('shows an inline overlay when video fails to play but keeps the blob loaded', async () => {
       await renderLoaded({ photo: createVideoPhoto() });
 
       const video = container.querySelector('video') as HTMLVideoElement;
       expect(video).not.toBeNull();
 
-      // Trigger the video onError handler
+      // Simulate the browser failing to decode the video (e.g. HEVC .mov on
+      // Chrome). Stub the readonly `error` getter to return a real
+      // MEDIA_ERR_SRC_NOT_SUPPORTED.
+      Object.defineProperty(video, 'error', {
+        configurable: true,
+        get: () => ({
+          code: 4,
+          MEDIA_ERR_ABORTED: 1,
+          MEDIA_ERR_NETWORK: 2,
+          MEDIA_ERR_DECODE: 3,
+          MEDIA_ERR_SRC_NOT_SUPPORTED: 4,
+          message: 'unsupported',
+        }),
+      });
+
       await act(async () => {
         video.dispatchEvent(new Event('error', { bubbles: false }));
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      const error = container.querySelector('[data-testid="lightbox-error"]');
-      expect(error).not.toBeNull();
-      expect(error?.textContent).toContain('Video playback failed');
+      // The lightbox stays in the loaded state — the blob is still cached
+      // and the user can navigate away, retry, or download it. The full
+      // 'Failed to load photo' error screen must NOT appear.
+      expect(container.querySelector('[data-testid="lightbox-error"]')).toBeNull();
+
+      const overlay = container.querySelector(
+        '[data-testid="lightbox-video-error"]',
+      );
+      expect(overlay).not.toBeNull();
+      expect(overlay?.textContent ?? '').toMatch(/cannot play this video format/i);
+
+      // Download fallback is offered (canDownload defaults to true under the
+      // test album-permissions context).
+      expect(
+        container.querySelector('[data-testid="lightbox-video-error-download"]'),
+      ).not.toBeNull();
     });
   });
 

@@ -45,6 +45,8 @@ export interface User {
   encryptedSalt?: string;
   /** Base64-encoded nonce used for salt encryption (12 bytes for AES-GCM) */
   saltNonce?: string;
+  /** Base64-encoded account salt for L1 derivation */
+  accountSalt?: string;
   /** Base64-encoded wrapped account key for identity persistence */
   wrappedAccountKey?: string;
 }
@@ -445,6 +447,17 @@ export interface ManifestCreated {
   version: number;
 }
 
+export interface UpdateManifestMetadataRequest {
+  encryptedMeta: string;
+  signature: string;
+  signerPubkey: string;
+}
+
+export interface ManifestMetadataUpdated {
+  id: string;
+  versionCreated: number;
+}
+
 // =============================================================================
 // Shard Types
 // =============================================================================
@@ -476,7 +489,7 @@ export interface MosaicApi {
   getUserByPubkey(pubkey: string): Promise<UserPublic>;
 
   // Albums
-  listAlbums(): Promise<Album[]>;
+  listAlbums(skip?: number, take?: number): Promise<Album[]>;
   createAlbum(request: CreateAlbumRequest): Promise<Album>;
   getAlbum(albumId: string): Promise<Album>;
   deleteAlbum(albumId: string): Promise<void>;
@@ -495,7 +508,11 @@ export interface MosaicApi {
   ): Promise<SyncResponse>;
 
   // Members
-  listAlbumMembers(albumId: string): Promise<AlbumMember[]>;
+  listAlbumMembers(
+    albumId: string,
+    skip?: number,
+    take?: number,
+  ): Promise<AlbumMember[]>;
   inviteToAlbum(albumId: string, request: InviteRequest): Promise<AlbumMember>;
   removeAlbumMember(albumId: string, userId: string): Promise<void>;
 
@@ -514,6 +531,10 @@ export interface MosaicApi {
   // Manifests
   createManifest(request: CreateManifestRequest): Promise<ManifestCreated>;
   getManifest(manifestId: string): Promise<ManifestRecord>;
+  updateManifestMetadata(
+    manifestId: string,
+    request: UpdateManifestMetadataRequest,
+  ): Promise<ManifestMetadataUpdated>;
   deleteManifest(manifestId: string): Promise<void>;
 
   // Shards
@@ -527,9 +548,15 @@ export interface MosaicApi {
   ): Promise<Album>;
 
   // Share Links
-  listShareLinks(albumId: string): Promise<ShareLinkResponse[]>;
+  listShareLinks(
+    albumId: string,
+    skip?: number,
+    take?: number,
+  ): Promise<ShareLinkResponse[]>;
   listShareLinksWithSecrets(
     albumId: string,
+    skip?: number,
+    take?: number,
   ): Promise<ShareLinkWithSecretResponse[]>;
   createShareLink(
     albumId: string,
@@ -549,7 +576,11 @@ export interface MosaicApi {
   // Anonymous Share Link Access (no auth required)
   getShareLinkInfo(linkIdBase64: string): Promise<LinkAccessResponse>;
   getShareLinkKeys(linkIdBase64: string): Promise<LinkEpochKeyResponse[]>;
-  getShareLinkPhotos(linkIdBase64: string): Promise<ShareLinkPhotoResponse[]>;
+  getShareLinkPhotos(
+    linkIdBase64: string,
+    skip?: number,
+    take?: number,
+  ): Promise<ShareLinkPhotoResponse[]>;
   getShareLinkShard(
     linkIdBase64: string,
     shardId: string,
@@ -560,7 +591,7 @@ export interface MosaicApi {
   updateQuotaDefaults(request: QuotaDefaults): Promise<QuotaDefaults>;
 
   // Admin - Users
-  listUsers(): Promise<AdminUserResponse[]>;
+  listUsers(skip?: number, take?: number): Promise<AdminUserResponse[]>;
   getUserQuota(userId: string): Promise<AdminUserQuota>;
   updateUserQuota(
     userId: string,
@@ -571,7 +602,7 @@ export interface MosaicApi {
   demoteFromAdmin(userId: string): Promise<void>;
 
   // Admin - Albums
-  listAllAlbums(): Promise<AdminAlbumResponse[]>;
+  listAllAlbums(skip?: number, take?: number): Promise<AdminAlbumResponse[]>;
   getAlbumLimits(albumId: string): Promise<AdminAlbumLimits>;
   updateAlbumLimits(
     albumId: string,

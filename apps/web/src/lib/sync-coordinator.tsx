@@ -16,6 +16,7 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { getDbClient } from './db-client';
 import { createLogger } from './logger';
+import { loadAllAlbumPhotos } from './photo-query-pagination';
 import { syncEngine, type SyncEventDetail } from './sync-engine';
 import { usePhotoStore, type PhotoItem } from '../stores/photo-store';
 import type { PhotoMeta } from '../workers/types';
@@ -217,9 +218,7 @@ class SyncCoordinator {
       // Ensure album is initialized
       store.initAlbum(albumId);
 
-      // Fetch all photos from local DB
-      // Using a large limit - in production, implement pagination
-      const photos = await db.getPhotos(albumId, 10000, 0);
+      const photos = await loadAllAlbumPhotos(db, albumId);
       log.info(
         `Found ${photos.length} photos in local DB for album ${albumId}`,
       );

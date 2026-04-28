@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { getDbClient } from '../lib/db-client';
 import { createLogger } from '../lib/logger';
+import {
+  loadAllAlbumPhotos,
+  searchAllAlbumPhotos,
+} from '../lib/photo-query-pagination';
 import { syncEngine, type SyncEventDetail } from '../lib/sync-engine';
 import {
   type AlbumPhotoState,
@@ -165,11 +169,9 @@ export function usePhotoList(
 
       let result: PhotoMeta[];
       if (searchQuery && searchQuery.trim().length > 0) {
-        // Use FTS5 search
-        result = await db.searchPhotos(albumId, searchQuery.trim());
+        result = await searchAllAlbumPhotos(db, albumId, searchQuery.trim());
       } else {
-        // Regular fetch - get all photos
-        result = await db.getPhotos(albumId, 10000, 0);
+        result = await loadAllAlbumPhotos(db, albumId);
       }
 
       setDbPhotos(result);

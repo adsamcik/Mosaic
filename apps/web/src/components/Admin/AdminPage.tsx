@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { getApi } from '../../lib/api';
+import { getApi, paginateAll } from '../../lib/api';
 import type {
   AdminStatsResponse,
   AdminUserResponse,
@@ -53,8 +53,8 @@ export function AdminPage({ onBack }: AdminPageProps) {
         await Promise.all([
           api.getStats(),
           api.getNearLimits(),
-          api.listUsers(),
-          api.listAllAlbums(),
+          paginateAll((skip, take) => api.listUsers(skip, take)),
+          paginateAll((skip, take) => api.listAllAlbums(skip, take)),
           api.getQuotaDefaults(),
         ]);
       setStats(statsData);

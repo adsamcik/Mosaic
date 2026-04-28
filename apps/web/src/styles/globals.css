@@ -1429,6 +1429,7 @@ button {
   object-fit: contain;
   outline: none;
   box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+  transition: transform 0.2s ease;
   animation: lightboxFadeIn 0.3s ease-out;
 }
 
@@ -1443,6 +1444,30 @@ button {
   padding: 1.5rem 2rem;
   border-radius: 12px;
   backdrop-filter: blur(4px);
+}
+
+.lightbox-video-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: var(--text-primary, #fff);
+  background: rgba(0, 0, 0, 0.85);
+  padding: 1.5rem 2rem;
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+  max-width: min(90vw, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+  z-index: 1005;
+}
+
+.lightbox-video-error p {
+  margin: 0;
+  line-height: 1.4;
 }
 
 @keyframes lightboxFadeIn {
@@ -1460,6 +1485,7 @@ button {
 .lightbox-nav,
 .lightbox-info-toggle,
 .lightbox-download-button,
+.lightbox-rotate-button,
 .lightbox-delete-button {
   position: absolute;
   background: rgba(255, 255, 255, 0.1);
@@ -1481,6 +1507,7 @@ button {
 .lightbox-nav:hover,
 .lightbox-info-toggle:hover,
 .lightbox-download-button:hover,
+.lightbox-rotate-button:hover,
 .lightbox-delete-button:hover {
   background: rgba(255, 255, 255, 0.2);
   transform: scale(1.1);
@@ -1514,9 +1541,14 @@ button {
   right: 74px;
 }
 
-.lightbox-delete-button {
+.lightbox-rotate-button {
   top: 20px;
   right: 128px;
+}
+
+.lightbox-delete-button {
+  top: 20px;
+  right: 182px;
   background: rgba(239, 68, 68, 0.2);
   border-color: rgba(239, 68, 68, 0.3);
   color: #fca5a5;
@@ -1581,6 +1613,51 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
+}
+
+.lightbox-info-description {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.lightbox-info-description.lightbox-description-clickable {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
+.lightbox-info-description.lightbox-description-clickable:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.lightbox-description-placeholder {
+  font-style: italic;
+  opacity: 0.65;
+}
+
+.lightbox-description-edit {
+  width: 100%;
+  min-height: 4rem;
+  max-height: 12rem;
+  resize: vertical;
+  font: inherit;
+  color: inherit;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+
+.lightbox-description-edit:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.lightbox-description-edit:disabled {
+  opacity: 0.6;
+  cursor: progress;
 }
 
 .lightbox-counter {
@@ -1939,6 +2016,7 @@ button {
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform 0.2s ease;
 }
 
 .photo-thumbnail:hover,
@@ -3586,9 +3664,16 @@ button {
     height: 36px;
   }
 
-  .lightbox-delete-button {
+  .lightbox-rotate-button {
     top: 12px;
     right: 100px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .lightbox-delete-button {
+    top: 12px;
+    right: 144px;
     width: 36px;
     height: 36px;
   }

@@ -363,6 +363,111 @@ describe('useLightbox', () => {
       expect(getResult().currentIndex).toBe(1);
       cleanup();
     });
+
+    // -------------------------------------------------------------------
+    // Regression tests for "viewer skips over pictures" bug.
+    //
+    // Before the fix, useLightbox tracked the open photo as a numeric
+    // index. When the parent's `photos` array changed under the open
+    // lightbox (background sync inserted a newer photo at index 0; a
+    // sibling grid deleted a photo; the album re-sorted), the integer
+    // index pointed at a different photo, so navigating forward by one
+    // appeared to "skip" a photo.
+    // -------------------------------------------------------------------
+
+    it('keeps the same photo on screen when a new photo is inserted at the top', () => {
+      const { getResult, updatePhotos, cleanup } = createHookTester(mockPhotos);
+
+      act(() => {
+        getResult().open(2); // viewing photo-3
+      });
+      expect(getResult().currentPhoto?.id).toBe('photo-3');
+
+      // Background sync inserts a new photo at index 0 (e.g. newest by date).
+      const newPhoto = createMockPhoto('photo-NEW', 99);
+      updatePhotos([newPhoto, ...mockPhotos]);
+
+      // The user must still see photo-3, just at a new index.
+      expect(getResult().currentPhoto?.id).toBe('photo-3');
+      expect(getResult().currentIndex).toBe(3);
+
+      // Navigating forward must advance to photo-4, not skip it.
+      act(() => {
+        getResult().next();
+      });
+      expect(getResult().currentPhoto?.id).toBe('photo-4');
+    });
+
+    it('keeps the same photo on screen when an earlier photo is removed', () => {
+      const { getResult, updatePhotos, cleanup } = createHookTester(mockPhotos);
+
+      act(() => {
+        getResult().open(3); // viewing photo-4
+      });
+      expect(getResult().currentPhoto?.id).toBe('photo-4');
+
+      // Another tab/grid deletes photo-2 (index 1).
+      updatePhotos(mockPhotos.filter((p) => p.id !== 'photo-2'));
+
+      expect(getResult().currentPhoto?.id).toBe('photo-4');
+      expect(getResult().currentIndex).toBe(2);
+
+      // Navigating backward goes to photo-3, not skipping it.
+      act(() => {
+        getResult().previous();
+      });
+      expect(getResult().currentPhoto?.id).toBe('photo-3');
+    });
+
+    it('adopts the photo at the same slot when the current photo is deleted (mid-list)', () => {
+      const { getResult, updatePhotos, cleanup } = createHookTester(mockPhotos);
+
+      act(() => {
+        getResult().open(2); // viewing photo-3
+      });
+
+      // Remove the currently-viewed photo.
+      updatePhotos(mockPhotos.filter((p) => p.id !== 'photo-3'));
+
+      // Slot 2 is now occupied by photo-4 — Google Photos style.
+      expect(getResult().currentPhoto?.id).toBe('photo-4');
+      expect(getResult().currentIndex).toBe(2);
+
+      // Navigation continues from the adopted photo.
+      act(() => {
+        getResult().next();
+      });
+      expect(getResult().currentPhoto?.id).toBe('photo-5');
+    });
+
+    it('falls back to the previous photo when the last photo is deleted', () => {
+      const { getResult, updatePhotos, cleanup } = createHookTester(mockPhotos);
+
+      act(() => {
+        getResult().open(4); // viewing photo-5 (last)
+      });
+
+      updatePhotos(mockPhotos.slice(0, 4));
+
+      expect(getResult().currentPhoto?.id).toBe('photo-4');
+      expect(getResult().hasNext).toBe(false);
+      cleanup();
+    });
+
+    it('keeps the displayed photo stable through a pure reorder', () => {
+      const { getResult, updatePhotos, cleanup } = createHookTester(mockPhotos);
+
+      act(() => {
+        getResult().open(1); // viewing photo-2
+      });
+
+      // Reverse the array — same IDs, different positions.
+      updatePhotos([...mockPhotos].reverse());
+
+      expect(getResult().currentPhoto?.id).toBe('photo-2');
+      expect(getResult().currentIndex).toBe(3);
+      cleanup();
+    });
   });
 
   describe('body scroll lock', () => {

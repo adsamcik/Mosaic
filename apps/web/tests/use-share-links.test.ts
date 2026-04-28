@@ -38,6 +38,18 @@ vi.mock('../src/lib/api', () => ({
   getApi: () => mockApi,
   toBase64: (arr: Uint8Array) => btoa(String.fromCharCode(...arr)),
   fromBase64: (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0)),
+  paginateAll: async <T>(
+    fetchPage: (skip: number, take: number) => Promise<T[]>,
+    pageSize = 100,
+  ): Promise<T[]> => {
+    const out: T[] = [];
+    for (let skip = 0; ; skip += pageSize) {
+      const page = await fetchPage(skip, pageSize);
+      out.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return out;
+  },
 }));
 
 // Mock the crypto client

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getDbClient } from '../lib/db-client';
+import {
+  loadAllAlbumPhotos,
+  searchAllAlbumPhotos,
+} from '../lib/photo-query-pagination';
 import type { PhotoMeta } from '../workers/types';
 
 /**
@@ -29,11 +33,9 @@ export function usePhotos(albumId: string, searchQuery?: string) {
 
         let result: PhotoMeta[];
         if (searchQuery && searchQuery.trim().length > 0) {
-          // Use FTS5 search
-          result = await db.searchPhotos(albumId, searchQuery.trim());
+          result = await searchAllAlbumPhotos(db, albumId, searchQuery.trim());
         } else {
-          // Regular fetch
-          result = await db.getPhotos(albumId, 1000, 0);
+          result = await loadAllAlbumPhotos(db, albumId);
         }
 
         if (!cancelled) {

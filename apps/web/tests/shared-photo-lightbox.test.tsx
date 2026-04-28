@@ -817,6 +817,19 @@ describe('SharedPhotoLightbox', () => {
   });
 
   describe('Video rendering with full access', () => {
+    it('applies rotation transform to rendered photos', async () => {
+      const { container: c } = await renderLightbox({
+        photo: { ...mockPhotoWithThumbnail, rotation: 90 },
+        accessTier: 3 as import('../src/lib/api-types').AccessTier,
+      });
+
+      const img = c.querySelector(
+        '[data-testid="lightbox-image"]',
+      ) as HTMLImageElement | null;
+      expect(img).toBeTruthy();
+      expect(img!.style.transform).toContain('rotate(90deg)');
+    });
+
     it('renders <video> with controls, autoPlay, playsInline when accessTier=3', async () => {
       const { container: c } = await renderLightbox({ accessTier: 3 as import('../src/lib/api-types').AccessTier });
 
@@ -826,6 +839,35 @@ describe('SharedPhotoLightbox', () => {
       expect(video!.controls).toBe(true);
       expect(video!.autoplay).toBe(true);
       expect(video!.getAttribute('playsinline')).not.toBeNull();
+    });
+
+    it('applies rotation transform to rendered videos without rotating the error overlay', async () => {
+      const { container: c } = await renderLightbox({
+        photo: { ...mockVideoPhoto, rotation: 180 },
+        accessTier: 3 as import('../src/lib/api-types').AccessTier,
+      });
+
+      const video = c.querySelector(
+        '[data-testid="lightbox-video"]',
+      ) as HTMLVideoElement | null;
+      expect(video).toBeTruthy();
+      expect(video!.style.transform).toContain('rotate(180deg)');
+
+      Object.defineProperty(video, 'error', {
+        configurable: true,
+        value: { code: 4, message: '' },
+      });
+
+      await act(async () => {
+        video!.dispatchEvent(new Event('error', { bubbles: true }));
+      });
+
+      const overlay = c.querySelector(
+        '[data-testid="lightbox-video-error"]',
+      ) as HTMLElement | null;
+      expect(overlay).toBeTruthy();
+      expect(overlay!.style.transform).not.toContain('rotate');
+      expect(overlay!.parentElement).toBe(video!.parentElement);
     });
 
     it('renders <img> for photos regardless of accessTier', async () => {

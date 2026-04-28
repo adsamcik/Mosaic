@@ -20,6 +20,18 @@ vi.mock('../src/lib/api', () => ({
   fromBase64: vi.fn(
     (str: string) => new Uint8Array(Buffer.from(str, 'base64')),
   ),
+  paginateAll: async <T>(
+    fetchPage: (skip: number, take: number) => Promise<T[]>,
+    pageSize = 100,
+  ): Promise<T[]> => {
+    const out: T[] = [];
+    for (let skip = 0; ; skip += pageSize) {
+      const page = await fetchPage(skip, pageSize);
+      out.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return out;
+  },
 }));
 
 vi.mock('../src/lib/crypto-client', () => ({
@@ -155,6 +167,46 @@ describe('epoch-rotation-service', () => {
       });
     });
 
+    it('seals the new key for every member when the membership spans multiple pages', async () => {
+      // Regression: previously `listAlbumMembers` was called once with the
+      // backend default cap (50). Albums with >50 members silently lost
+      // access to the new epoch key. Simulate a 120-member album returned
+      // across two full pages of 100 + a tail page of 20 and verify every
+      // member receives a sealed bundle.
+      const makeMember = (i: number) => ({
+        userId: `user-${i}`,
+        role: i === 0 ? 'owner' : 'editor',
+        joinedAt: `2024-01-${String((i % 28) + 1).padStart(2, '0')}T00:00:00Z`,
+        user: {
+          id: `user-${i}`,
+          identityPubkey: Buffer.from(`pubkey-${i}`).toString('base64'),
+        },
+      });
+      const allMembers = Array.from({ length: 120 }, (_, i) => makeMember(i));
+
+      mockApi.listAlbumMembers.mockImplementation(
+        async (_albumId: string, skip: number, take: number) =>
+          allMembers.slice(skip, skip + take),
+      );
+
+      const result = await rotateEpoch(albumId);
+
+      expect(result.recipientCount).toBe(120);
+      // One sealed bundle per member — proves no member was silently dropped.
+      expect(mockCrypto.createEpochKeyBundle).toHaveBeenCalledTimes(120);
+      // Pagination should have happened across multiple pages.
+      expect(mockApi.listAlbumMembers.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+      // The recipientId list passed to the rotate API must match every member.
+      const rotateCall = mockApi.rotateEpoch.mock.calls[0]?.[2] as
+        | { epochKeys: { recipientId: string }[] }
+        | undefined;
+      const recipientIds = rotateCall?.epochKeys.map((k) => k.recipientId) ?? [];
+      expect(new Set(recipientIds)).toEqual(
+        new Set(allMembers.map((m) => m.userId)),
+      );
+    });
+
     it('should call API methods in correct order', async () => {
       await rotateEpoch(albumId);
 
@@ -164,14 +216,26 @@ describe('epoch-rotation-service', () => {
       // Then generate new key
       expect(mockCrypto.generateEpochKey).toHaveBeenCalledWith(newEpochId);
 
-      // Then fetch members
-      expect(mockApi.listAlbumMembers).toHaveBeenCalledWith(albumId);
+      // Then fetch members (paginated)
+      expect(mockApi.listAlbumMembers).toHaveBeenCalledWith(
+        albumId,
+        expect.any(Number),
+        expect.any(Number),
+      );
 
-      // Then fetch share links
-      expect(mockApi.listShareLinksWithSecrets).toHaveBeenCalledWith(albumId);
+      // Then fetch share links (paginated)
+      expect(mockApi.listShareLinksWithSecrets).toHaveBeenCalledWith(
+        albumId,
+        expect.any(Number),
+        expect.any(Number),
+      );
 
-      // Then fetch members
-      expect(mockApi.listAlbumMembers).toHaveBeenCalledWith(albumId);
+      // Then fetch members (paginated)
+      expect(mockApi.listAlbumMembers).toHaveBeenCalledWith(
+        albumId,
+        expect.any(Number),
+        expect.any(Number),
+      );
 
       // Then create bundles for each member
       expect(mockCrypto.createEpochKeyBundle).toHaveBeenCalledTimes(2);
@@ -438,6 +502,45 @@ describe('epoch-rotation-service', () => {
             shareLinkKeys: expect.arrayContaining([
               expect.objectContaining({ shareLinkId: 'link-1' }),
               expect.objectContaining({ shareLinkId: 'link-2' }),
+            ]),
+          }),
+        );
+      });
+
+      it('should page through all active share links for epoch rotation', async () => {
+        const pagedLinks = Array.from({ length: 150 }, (_, i) => ({
+          ...mockShareLinks[i % mockShareLinks.length],
+          id: `link-${i}`,
+          linkId: Buffer.from(`linkId-${i}`).toString('base64'),
+          ownerEncryptedSecret: Buffer.from(`secret-${i}`).toString('base64'),
+        }));
+        mockApi.listShareLinksWithSecrets.mockImplementation(
+          (_albumId: string, skip = 0, take = 100) =>
+            Promise.resolve(pagedLinks.slice(skip, skip + take)),
+        );
+
+        const result = await rotateEpoch(albumId);
+
+        expect(result.shareLinkCount).toBe(150);
+        expect(mockApi.listShareLinksWithSecrets).toHaveBeenNthCalledWith(
+          1,
+          albumId,
+          0,
+          100,
+        );
+        expect(mockApi.listShareLinksWithSecrets).toHaveBeenNthCalledWith(
+          2,
+          albumId,
+          100,
+          100,
+        );
+        expect(mockApi.rotateEpoch).toHaveBeenCalledWith(
+          albumId,
+          newEpochId,
+          expect.objectContaining({
+            shareLinkKeys: expect.arrayContaining([
+              expect.objectContaining({ shareLinkId: 'link-0' }),
+              expect.objectContaining({ shareLinkId: 'link-149' }),
             ]),
           }),
         );

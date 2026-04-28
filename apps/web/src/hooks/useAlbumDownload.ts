@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { downloadAlbumAsZip, supportsFileSystemAccess, type AlbumDownloadProgress } from '../lib/album-download-service';
+import { downloadAlbumAsZip, supportsFileSystemAccess, type AlbumDownloadProgress, type AlbumDownloadResolver } from '../lib/album-download-service';
 import { createLogger } from '../lib/logger';
 import type { PhotoMeta } from '../workers/types';
 
@@ -12,8 +12,17 @@ export interface UseAlbumDownloadResult {
   progress: AlbumDownloadProgress | null;
   /** Error from last download attempt */
   error: Error | null;
-  /** Start downloading photos as a ZIP */
-  startDownload: (albumId: string, albumName: string, photos: PhotoMeta[]) => Promise<void>;
+  /**
+   * Start downloading photos as a ZIP. Pass `resolveOriginal` to override
+   * the default authenticated fetch+decrypt path (e.g. for share-link
+   * viewers).
+   */
+  startDownload: (
+    albumId: string,
+    albumName: string,
+    photos: PhotoMeta[],
+    resolveOriginal?: AlbumDownloadResolver,
+  ) => Promise<void>;
   /** Cancel the current download */
   cancel: () => void;
   /** Whether the browser supports streaming downloads (File System Access API) */
@@ -26,7 +35,12 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
   const [error, setError] = useState<Error | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const startDownload = useCallback(async (albumId: string, albumName: string, photos: PhotoMeta[]) => {
+  const startDownload = useCallback(async (
+    albumId: string,
+    albumName: string,
+    photos: PhotoMeta[],
+    resolveOriginal?: AlbumDownloadResolver,
+  ) => {
     if (isDownloading) return;
 
     setIsDownloading(true);
@@ -43,6 +57,7 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
         photos,
         onProgress: setProgress,
         signal: abortController.signal,
+        ...(resolveOriginal ? { resolveOriginal } : {}),
       });
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {

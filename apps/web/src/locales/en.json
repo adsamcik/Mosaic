@@ -279,6 +279,7 @@
     "showMetadata": "Show metadata",
     "hideMetadata": "Hide metadata",
     "download": "Download photo",
+    "rotate": "Rotate 90° clockwise",
     "delete": "Delete photo",
     "downloadOriginal": "Download Original",
     "hints": {
@@ -294,6 +295,12 @@
       "location": "Location",
       "tags": "Tags",
       "description": "Description"
+    },
+    "description": {
+      "placeholder": "Add description…",
+      "save": "Save",
+      "cancel": "Cancel",
+      "tooLong": "Description is too long (max 2000 characters)"
     }
   },
   "upload": {

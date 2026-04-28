@@ -29,6 +29,8 @@ import type {
   ManifestRecord,
   CreateManifestRequest,
   ManifestCreated,
+  UpdateManifestMetadataRequest,
+  ManifestMetadataUpdated,
   CreateShardRequest,
   ShardCreated,
   ShareLinkResponse,
@@ -128,6 +130,47 @@ async function apiRequest<T>(
   return response.json();
 }
 
+/**
+ * Maximum page size accepted by every paginated `*List*` backend endpoint.
+ * Backend caps `take` at 100; matching this minimises the number of round
+ * trips when paging through a large list.
+ */
+const MAX_PAGE_SIZE = 100;
+
+/**
+ * Build a `?skip=&take=` query string for the paginated list endpoints.
+ * Returns an empty string when both parameters are omitted so the URL stays
+ * identical to the legacy single-page calls (avoids cache-busting).
+ */
+function paginationQuery(skip?: number, take?: number): string {
+  if (skip === undefined && take === undefined) return '';
+  const params = new URLSearchParams();
+  if (skip !== undefined) params.set('skip', String(Math.max(0, skip)));
+  if (take !== undefined) {
+    params.set('take', String(Math.min(MAX_PAGE_SIZE, Math.max(1, take))));
+  }
+  return `?${params.toString()}`;
+}
+
+/**
+ * Drain a paginated endpoint by repeatedly calling `fetchPage(skip, take)`
+ * until a short page (or empty page) is returned. Used by callers that
+ * need the full list (e.g. epoch rotation must seal the new key for every
+ * member of the album, regardless of count).
+ */
+export async function paginateAll<T>(
+  fetchPage: (skip: number, take: number) => Promise<T[]>,
+  pageSize: number = MAX_PAGE_SIZE,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let skip = 0; ; skip += pageSize) {
+    const page = await fetchPage(skip, pageSize);
+    out.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return out;
+}
+
 // =============================================================================
 // API Client Implementation
 // =============================================================================
@@ -170,8 +213,8 @@ export function createApiClient(): MosaicApi {
     // =========================================================================
     // Albums
     // =========================================================================
-    async listAlbums(): Promise<Album[]> {
-      return apiRequest('/albums');
+    async listAlbums(skip?: number, take?: number): Promise<Album[]> {
+      return apiRequest(`/albums${paginationQuery(skip, take)}`);
     },
 
     async createAlbum(request: CreateAlbumRequest): Promise<Album> {
@@ -261,8 +304,14 @@ export function createApiClient(): MosaicApi {
     // =========================================================================
     // Members
     // =========================================================================
-    async listAlbumMembers(albumId: string): Promise<AlbumMember[]> {
-      return apiRequest(`/albums/${albumId}/members`);
+    async listAlbumMembers(
+      albumId: string,
+      skip?: number,
+      take?: number,
+    ): Promise<AlbumMember[]> {
+      return apiRequest(
+        `/albums/${albumId}/members${paginationQuery(skip, take)}`,
+      );
     },
 
     async inviteToAlbum(
@@ -325,6 +374,16 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/manifests/${manifestId}`);
     },
 
+    async updateManifestMetadata(
+      manifestId: string,
+      request: UpdateManifestMetadataRequest,
+    ): Promise<ManifestMetadataUpdated> {
+      return apiRequest(`/manifests/${manifestId}/metadata`, {
+        method: 'PATCH',
+        body: request,
+      });
+    },
+
     async deleteManifest(manifestId: string): Promise<void> {
       return apiRequest(`/manifests/${manifestId}`, {
         method: 'DELETE',
@@ -361,14 +420,24 @@ export function createApiClient(): MosaicApi {
     // =========================================================================
     // Share Links
     // =========================================================================
-    async listShareLinks(albumId: string): Promise<ShareLinkResponse[]> {
-      return apiRequest(`/albums/${albumId}/share-links`);
+    async listShareLinks(
+      albumId: string,
+      skip?: number,
+      take?: number,
+    ): Promise<ShareLinkResponse[]> {
+      return apiRequest(
+        `/albums/${albumId}/share-links${paginationQuery(skip, take)}`,
+      );
     },
 
     async listShareLinksWithSecrets(
       albumId: string,
+      skip?: number,
+      take?: number,
     ): Promise<ShareLinkWithSecretResponse[]> {
-      return apiRequest(`/albums/${albumId}/share-links/with-secrets`);
+      return apiRequest(
+        `/albums/${albumId}/share-links/with-secrets${paginationQuery(skip, take)}`,
+      );
     },
 
     async createShareLink(
@@ -423,8 +492,12 @@ export function createApiClient(): MosaicApi {
 
     async getShareLinkPhotos(
       linkIdBase64: string,
+      skip?: number,
+      take?: number,
     ): Promise<ShareLinkPhotoResponse[]> {
-      return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}/photos`);
+      return apiRequest(
+        `/s/${encodeURIComponent(linkIdBase64)}/photos${paginationQuery(skip, take)}`,
+      );
     },
 
     async getShareLinkShard(
@@ -458,8 +531,11 @@ export function createApiClient(): MosaicApi {
     // =========================================================================
     // Admin - Users
     // =========================================================================
-    async listUsers(): Promise<AdminUserResponse[]> {
-      return apiRequest('/admin/users');
+    async listUsers(skip?: number, take?: number): Promise<AdminUserResponse[]> {
+      const wrapped = await apiRequest<{ users: AdminUserResponse[] }>(
+        `/admin/users${paginationQuery(skip, take)}`,
+      );
+      return wrapped.users;
     },
 
     async getUserQuota(userId: string): Promise<AdminUserQuota> {
@@ -497,8 +573,14 @@ export function createApiClient(): MosaicApi {
     // =========================================================================
     // Admin - Albums
     // =========================================================================
-    async listAllAlbums(): Promise<AdminAlbumResponse[]> {
-      return apiRequest('/admin/albums');
+    async listAllAlbums(
+      skip?: number,
+      take?: number,
+    ): Promise<AdminAlbumResponse[]> {
+      const wrapped = await apiRequest<{ albums: AdminAlbumResponse[] }>(
+        `/admin/albums${paginationQuery(skip, take)}`,
+      );
+      return wrapped.albums;
     },
 
     async getAlbumLimits(albumId: string): Promise<AdminAlbumLimits> {

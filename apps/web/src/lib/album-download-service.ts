@@ -19,12 +19,28 @@ export interface AlbumDownloadProgress {
   totalFiles: number;
 }
 
+/**
+ * Strategy for fetching + decrypting the original bytes of a single photo.
+ *
+ * Defaults to the authenticated user flow (epoch-key + `/api/shards/{id}`).
+ * Share link viewers inject an alternate implementation that uses the public
+ * share endpoint and tier-specific keys.
+ */
+export type AlbumDownloadResolver = (photo: PhotoMeta) => Promise<Uint8Array>;
+
 export interface AlbumDownloadOptions {
   albumName: string;
   photos: PhotoMeta[];
   albumId: string;
   onProgress?: (progress: AlbumDownloadProgress) => void;
   signal?: AbortSignal;
+  /**
+   * Optional override for fetching + decrypting the original bytes of a
+   * photo. When omitted, the authenticated user flow is used. Provide a
+   * custom resolver for share-link viewers, who do not have access to
+   * `getOrFetchEpochKey` or the authenticated `/api/shards/{id}` endpoint.
+   */
+  resolveOriginal?: AlbumDownloadResolver;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +160,7 @@ async function blobDownload(
 // ---------------------------------------------------------------------------
 
 export async function downloadAlbumAsZip(options: AlbumDownloadOptions): Promise<void> {
-  const { albumName, photos, albumId, onProgress, signal } = options;
+  const { albumName, photos, albumId, onProgress, signal, resolveOriginal } = options;
 
   if (photos.length === 0) return;
 
@@ -159,9 +175,54 @@ export async function downloadAlbumAsZip(options: AlbumDownloadOptions): Promise
   });
   const filenames = deduplicateFilenames(photos);
 
+  // Default resolver: authenticated user flow (epoch seed + private shard
+  // endpoint). The crypto client is resolved lazily but cached so we only
+  // pay the worker handshake cost once per download even with many photos.
+  let cryptoClientPromise: ReturnType<typeof getCryptoClient> | null = null;
+  const getCryptoClientCached = () => {
+    if (!cryptoClientPromise) cryptoClientPromise = getCryptoClient();
+    return cryptoClientPromise;
+  };
+
+  const defaultResolver: AlbumDownloadResolver = async (photo) => {
+    const crypto = await getCryptoClientCached();
+    const bundle = await getOrFetchEpochKey(albumId, photo.epochId);
+
+    const shardIds = getOriginalShardIds(photo);
+    const shardHashes = getOriginalShardHashes(photo);
+
+    const encryptedShards = await downloadShards(shardIds);
+
+    const decryptedChunks: Uint8Array[] = [];
+    for (let i = 0; i < encryptedShards.length; i++) {
+      const shard = encryptedShards[i]!;
+
+      if (shardHashes?.[i]) {
+        const isValid = await crypto.verifyShard(shard, shardHashes[i]!);
+        if (!isValid) {
+          log.warn(`Shard integrity check failed for photo ${photo.id}, shard ${i}`);
+        }
+      }
+
+      const plaintext = await crypto.decryptShard(shard, bundle.epochSeed);
+      decryptedChunks.push(plaintext);
+    }
+
+    if (decryptedChunks.length === 1) return decryptedChunks[0]!;
+    const totalSize = decryptedChunks.reduce((sum, c) => sum + c.length, 0);
+    const combined = new Uint8Array(totalSize);
+    let offset = 0;
+    for (const chunk of decryptedChunks) {
+      combined.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return combined;
+  };
+
+  const resolve = resolveOriginal ?? defaultResolver;
+
   // Phase 2: Async generator that yields one decrypted file at a time
   async function* generateFiles() {
-    const crypto = await getCryptoClient();
     let completed = 0;
 
     for (const photo of photos) {
@@ -184,42 +245,7 @@ export async function downloadAlbumAsZip(options: AlbumDownloadOptions): Promise
       });
 
       try {
-        const bundle = await getOrFetchEpochKey(albumId, photo.epochId);
-
-        const shardIds = getOriginalShardIds(photo);
-        const shardHashes = getOriginalShardHashes(photo);
-
-        const encryptedShards = await downloadShards(shardIds);
-
-        // Verify + decrypt each shard
-        const decryptedChunks: Uint8Array[] = [];
-        for (let i = 0; i < encryptedShards.length; i++) {
-          const shard = encryptedShards[i]!;
-
-          if (shardHashes?.[i]) {
-            const isValid = await crypto.verifyShard(shard, shardHashes[i]!);
-            if (!isValid) {
-              log.warn(`Shard integrity check failed for photo ${photo.id}, shard ${i}`);
-            }
-          }
-
-          const plaintext = await crypto.decryptShard(shard, bundle.epochSeed);
-          decryptedChunks.push(plaintext);
-        }
-
-        // Combine multi-shard originals
-        let photoData: Uint8Array;
-        if (decryptedChunks.length === 1) {
-          photoData = decryptedChunks[0]!;
-        } else {
-          const totalSize = decryptedChunks.reduce((sum, c) => sum + c.length, 0);
-          photoData = new Uint8Array(totalSize);
-          let offset = 0;
-          for (const chunk of decryptedChunks) {
-            photoData.set(chunk, offset);
-            offset += chunk.length;
-          }
-        }
+        const photoData = await resolve(photo);
 
         yield {
           name: filename,

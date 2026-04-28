@@ -287,6 +287,7 @@
     "showMetadata": "Zobrazit metadata",
     "hideMetadata": "Skrýt metadata",
     "download": "Stáhnout fotku",
+    "rotate": "Otočit o 90° po směru hodinových ručiček",
     "delete": "Smazat fotku",
     "downloadOriginal": "Stáhnout originál",
     "hints": {
@@ -302,6 +303,12 @@
       "location": "Poloha",
       "tags": "Štítky",
       "description": "Popis"
+    },
+    "description": {
+      "placeholder": "Přidat popis…",
+      "save": "Uložit",
+      "cancel": "Zrušit",
+      "tooLong": "Popis je příliš dlouhý (max 2000 znaků)"
     }
   },
   "upload": {

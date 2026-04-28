@@ -10,6 +10,7 @@ import type {
   GeoPoint,
   PhotoMeta,
 } from './types';
+import { buildFtsSearchQuery } from './fts-query';
 
 // Create scoped logger for database worker
 const log = createLogger('DbWorker');
@@ -248,6 +249,12 @@ export class DbWorker implements DbWorkerApi {
     );
   }
 
+  private columnExists(table: string, column: string): boolean {
+    const result = this.getReadyDb().exec(`PRAGMA table_info(${table})`);
+    const rows = result[0]?.values ?? [];
+    return rows.some((row) => row[1] === column);
+  }
+
   /**
    * Create FTS5 table and triggers
    */
@@ -334,7 +341,9 @@ export class DbWorker implements DbWorkerApi {
           updated_at TEXT,
           shard_ids TEXT,
           epoch_id INTEGER,
-          description TEXT
+          description TEXT,
+          rotation INTEGER DEFAULT 0,
+          version_created INTEGER DEFAULT 0
         );
         
         -- Indexes for common queries
@@ -447,6 +456,42 @@ export class DbWorker implements DbWorkerApi {
       }
     }
 
+    // Version 6 -> 7: Add photo rotation column
+    if (this.getSchemaVersion() < 7) {
+      log.info('Running migration: v6 -> v7 (photo rotation)');
+
+      try {
+        if (!this.columnExists('photos', 'rotation')) {
+          db.run(`ALTER TABLE photos ADD COLUMN rotation INTEGER DEFAULT 0;`);
+        }
+
+        this.setSchemaVersion(7);
+        log.info('Photo rotation migration complete');
+      } catch (error) {
+        log.error('Failed to add photo rotation column', error);
+        throw error;
+      }
+    }
+
+    // Version 7 -> 8: Track manifest version for stale sync protection
+    if (this.getSchemaVersion() < 8) {
+      log.info('Running migration: v7 -> v8 (manifest version tracking)');
+
+      try {
+        if (!this.columnExists('photos', 'version_created')) {
+          db.run(
+            `ALTER TABLE photos ADD COLUMN version_created INTEGER DEFAULT 0;`,
+          );
+        }
+
+        this.setSchemaVersion(8);
+        log.info('Manifest version tracking migration complete');
+      } catch (error) {
+        log.error('Failed to add manifest version tracking column', error);
+        throw error;
+      }
+    }
+
     // Ensure FTS table exists (safety check for corrupted state)
     if (!this.ftsTableExists()) {
       log.warn('FTS table missing despite schema version, recreating...');
@@ -482,14 +527,27 @@ export class DbWorker implements DbWorkerApi {
   async insertManifests(manifests: DecryptedManifest[]): Promise<void> {
     const stmt = this.getReadyDb().prepare(`
       INSERT OR REPLACE INTO photos 
-      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description, thumbnail, thumb_width, thumb_height, blurhash, thumbnail_shard_id, thumbnail_shard_hash, preview_shard_id, preview_shard_hash, original_shard_ids, original_shard_hashes, thumbhash, is_video, duration)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description, thumbnail, thumb_width, thumb_height, blurhash, thumbnail_shard_id, thumbnail_shard_hash, preview_shard_id, preview_shard_hash, original_shard_ids, original_shard_hashes, thumbhash, is_video, duration, rotation, version_created)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const m of manifests) {
       if (m.isDeleted) {
         this.getReadyDb().run('DELETE FROM photos WHERE id = ?', [m.id]);
       } else {
+        const existing = this.getReadyDb().exec(
+          'SELECT version_created FROM photos WHERE id = ?',
+          [m.id],
+        );
+        const existingVersion =
+          (existing[0]?.values[0]?.[0] as number | undefined) ?? 0;
+        if (existingVersion > m.versionCreated) {
+          log.debug(
+            `Skipping manifest ${m.id}: stale version ${m.versionCreated} <= local ${existingVersion}`,
+          );
+          continue;
+        }
+
         log.debug('insertManifest', {
           id: m.id,
           hasThumbnail: !!m.meta.thumbnail,
@@ -537,6 +595,10 @@ export class DbWorker implements DbWorkerApi {
           // Video support (v6)
           m.meta.isVideo ? 1 : 0,
           m.meta.duration ?? null,
+          // Display rotation (v7)
+          m.meta.rotation ?? 0,
+          // Manifest version for stale sync protection (v8)
+          m.versionCreated,
         ]);
       }
     }
@@ -547,6 +609,30 @@ export class DbWorker implements DbWorkerApi {
 
   async deleteManifest(id: string): Promise<void> {
     this.getReadyDb().run('DELETE FROM photos WHERE id = ?', [id]);
+    await this.saveToOPFS();
+  }
+
+  async updatePhotoRotation(
+    photoId: string,
+    rotation: number,
+    versionCreated: number,
+  ): Promise<void> {
+    this.getReadyDb().run(
+      'UPDATE photos SET rotation = ?, version_created = ?, updated_at = ? WHERE id = ?',
+      [rotation, versionCreated, new Date().toISOString(), photoId],
+    );
+    await this.saveToOPFS();
+  }
+
+  async updatePhotoDescription(
+    photoId: string,
+    description: string | null,
+    versionCreated: number,
+  ): Promise<void> {
+    this.getReadyDb().run(
+      'UPDATE photos SET description = ?, version_created = ?, updated_at = ? WHERE id = ?',
+      [description, versionCreated, new Date().toISOString(), photoId],
+    );
     await this.saveToOPFS();
   }
 
@@ -587,16 +673,26 @@ export class DbWorker implements DbWorkerApi {
     return (result[0]?.values[0]?.[0] as number) ?? 0;
   }
 
-  async searchPhotos(albumId: string, query: string): Promise<PhotoMeta[]> {
+  async searchPhotos(
+    albumId: string,
+    query: string,
+    limit = 100,
+    offset = 0,
+  ): Promise<PhotoMeta[]> {
+    const ftsQuery = buildFtsSearchQuery(query);
+    if (!ftsQuery) {
+      return this.getPhotos(albumId, limit, offset);
+    }
+
     const result = this.getReadyDb().exec(
       `
       SELECT p.* FROM photos p
       INNER JOIN photos_fts fts ON p.rowid = fts.rowid
       WHERE p.album_id = ? AND photos_fts MATCH ?
       ORDER BY rank
-      LIMIT 100
+      LIMIT ? OFFSET ?
     `,
-      [albumId, query],
+      [albumId, ftsQuery, limit, offset],
     );
 
     return this.rowsToPhotos(result);
@@ -678,6 +774,10 @@ export class DbWorker implements DbWorkerApi {
       // Convert is_video INTEGER to boolean (v6)
       obj['isVideo'] = !!(obj['isVideo']);
       // duration is already REAL → number (or null), no conversion needed
+      // Keep rotation omitted for zero/default values to match manifest optional fields.
+      if (!obj['rotation']) {
+        delete obj['rotation'];
+      }
       return obj as unknown as PhotoMeta;
     });
   }

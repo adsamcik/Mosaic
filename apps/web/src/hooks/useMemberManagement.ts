@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { fromBase64, getApi, toBase64 } from '../lib/api';
+import { fromBase64, getApi, paginateAll, toBase64 } from '../lib/api';
 import type {
   AlbumMember,
   CreateEpochKeyRequest,
@@ -159,8 +159,9 @@ export function useMemberManagement(
       const user = await api.getCurrentUser();
       setCurrentUserId(user.id);
 
-      // Fetch members
-      const apiMembers = await api.listAlbumMembers(albumId);
+      const apiMembers = await paginateAll((skip, take) =>
+        api.listAlbumMembers(albumId, skip, take),
+      );
       const memberInfos = apiMembers.map(toMemberInfo);
 
       setMembers(memberInfos);

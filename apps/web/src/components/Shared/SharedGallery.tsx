@@ -6,11 +6,14 @@
  * based on the access tier granted by the link.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAlbumDownload } from '../../hooks/useAlbumDownload';
 import type { TierKey } from '../../hooks/useLinkKeys';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { createLogger } from '../../lib/logger';
+import { createShareLinkOriginalResolver } from '../../lib/shared-album-download';
 import type { PhotoMeta } from '../../workers/types';
+import { DownloadProgressOverlay } from '../Gallery/DownloadProgressOverlay';
 import { SharedMosaicPhotoGrid } from './SharedMosaicPhotoGrid';
 import { SharedPhotoGrid } from './SharedPhotoGrid';
 
@@ -86,24 +89,31 @@ export function SharedGallery({
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch(
-          `/api/s/${linkId}/photos`,
-          grantToken
-            ? {
-                headers: {
-                  'X-Share-Grant': grantToken,
-                },
-              }
-            : {},
-        );
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            errorData.error || `Failed to fetch photos: ${response.status}`,
+        // Backend caps `take` at 100 per request; page until we receive a
+        // short page so all photos in the album are loaded (fixes the bug
+        // where only the first 50 photos were ever shown).
+        const pageSize = 100;
+        const fetchInit: RequestInit = grantToken
+          ? { headers: { 'X-Share-Grant': grantToken } }
+          : {};
+        const photoResponses: ShareLinkPhotoResponse[] = [];
+        for (let skip = 0; ; skip += pageSize) {
+          const response = await fetch(
+            `/api/s/${linkId}/photos?skip=${skip}&take=${pageSize}`,
+            fetchInit,
           );
-        }
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(
+              errorData.error || `Failed to fetch photos: ${response.status}`,
+            );
+          }
 
-        const photoResponses: ShareLinkPhotoResponse[] = await response.json();
+          const page: ShareLinkPhotoResponse[] = await response.json();
+          photoResponses.push(...page);
+          if (cancelled) return;
+          if (page.length < pageSize) break;
+        }
 
         // Import crypto for decryption
         const { fromBase64 } = await import('@mosaic/crypto');
@@ -246,6 +256,28 @@ export function SharedGallery({
     [tierKeys],
   );
 
+  const albumDownload = useAlbumDownload();
+
+  const downloadResolver = useMemo(
+    () =>
+      createShareLinkOriginalResolver({
+        linkId,
+        grantToken: grantToken ?? undefined,
+        getTierKey,
+      }),
+    [linkId, grantToken, getTierKey],
+  );
+
+  const handleDownloadAll = useCallback(() => {
+    if (photos.length === 0) return;
+    void albumDownload.startDownload(
+      albumId,
+      albumName ?? 'Shared Album',
+      photos,
+      downloadResolver,
+    );
+  }, [photos, albumId, albumName, albumDownload, downloadResolver]);
+
   // Loading state
   if (isLoading || isLoadingKeys) {
     return (
@@ -302,6 +334,21 @@ export function SharedGallery({
             <span className="tier-badge tier-full">Full Access</span>
           )}
         </div>
+
+        {accessTier === 3 && photos.length > 0 && (
+          <button
+            type="button"
+            className="button-secondary gallery-download-all-btn"
+            onClick={handleDownloadAll}
+            disabled={albumDownload.isDownloading}
+            data-testid="shared-gallery-download-all"
+            title="Download all photos as ZIP"
+          >
+            {albumDownload.isDownloading
+              ? 'Downloading...'
+              : `Download all (${photos.length})`}
+          </button>
+        )}
 
         {/* View Toggle */}
         <div className="view-toggle" role="group" aria-label="View mode">
@@ -381,6 +428,13 @@ export function SharedGallery({
           />
         )}
       </div>
+
+      {albumDownload.isDownloading && albumDownload.progress && (
+        <DownloadProgressOverlay
+          progress={albumDownload.progress}
+          onCancel={albumDownload.cancel}
+        />
+      )}
     </div>
   );
 }

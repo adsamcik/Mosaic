@@ -153,6 +153,10 @@
   display: flex;
 }
 
+.gallery-download-all-btn {
+  white-space: nowrap;
+}
+
 /* Tier Badges */
 .tier-badge {
   padding: 6px 16px;

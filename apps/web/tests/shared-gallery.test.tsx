@@ -14,6 +14,19 @@ import type { AccessTier } from '../src/lib/api-types';
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
   decryptManifest: vi.fn(),
+  startDownload: vi.fn(),
+  cancelDownload: vi.fn(),
+  createShareLinkOriginalResolver: vi.fn(),
+  albumDownloadState: {
+    isDownloading: false,
+    progress: null as null | {
+      phase: 'preparing' | 'downloading' | 'complete' | 'cancelled' | 'error';
+      currentFileName: string;
+      completedFiles: number;
+      totalFiles: number;
+    },
+    error: null as Error | null,
+  },
 }));
 
 // Mock fetch globally
@@ -37,6 +50,34 @@ vi.mock('@mosaic/crypto', () => ({
         .map((c) => c.charCodeAt(0)),
     ),
   toBase64: (arr: Uint8Array) => btoa(String.fromCharCode(...arr)),
+}));
+
+vi.mock('../src/hooks/useAlbumDownload', () => ({
+  useAlbumDownload: () => ({
+    isDownloading: mocks.albumDownloadState.isDownloading,
+    progress: mocks.albumDownloadState.progress,
+    error: mocks.albumDownloadState.error,
+    startDownload: mocks.startDownload,
+    cancel: mocks.cancelDownload,
+    supportsStreaming: false,
+  }),
+}));
+
+vi.mock('../src/lib/shared-album-download', () => ({
+  createShareLinkOriginalResolver: mocks.createShareLinkOriginalResolver,
+}));
+
+vi.mock('../src/components/Gallery/DownloadProgressOverlay', () => ({
+  DownloadProgressOverlay: ({
+    progress,
+  }: {
+    progress: { phase: string };
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'download-progress-overlay' },
+      progress.phase,
+    ),
 }));
 
 // Mock SharedPhotoGrid
@@ -140,9 +181,8 @@ async function waitFor(
     if (Date.now() - start > timeout) {
       throw new Error('waitFor timed out');
     }
-    await new Promise((r) => setTimeout(r, interval));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, interval));
     });
   }
 }
@@ -151,6 +191,13 @@ describe('SharedGallery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = '';
+    mocks.albumDownloadState.isDownloading = false;
+    mocks.albumDownloadState.progress = null;
+    mocks.albumDownloadState.error = null;
+    mocks.startDownload.mockResolvedValue(undefined);
+    mocks.createShareLinkOriginalResolver.mockReturnValue(
+      async () => new Uint8Array([1, 2, 3]),
+    );
 
     // Default successful photo response
     mocks.fetch.mockResolvedValue({
@@ -258,11 +305,14 @@ describe('SharedGallery', () => {
 
       await waitFor(() => getByTestId('shared-photo-grid') !== null);
 
-      expect(mocks.fetch).toHaveBeenCalledWith('/api/s/test-link-id/photos', {
-        headers: {
-          'X-Share-Grant': 'grant-token-123',
+      expect(mocks.fetch).toHaveBeenCalledWith(
+        '/api/s/test-link-id/photos?skip=0&take=100',
+        {
+          headers: {
+            'X-Share-Grant': 'grant-token-123',
+          },
         },
-      });
+      );
 
       cleanup();
     });
@@ -472,7 +522,10 @@ describe('SharedGallery', () => {
 
       await waitFor(() => mocks.fetch.mock.calls.length > 0);
 
-      expect(mocks.fetch).toHaveBeenCalledWith('/api/s/test-link-id/photos', {});
+      expect(mocks.fetch).toHaveBeenCalledWith(
+        '/api/s/test-link-id/photos?skip=0&take=100',
+        {},
+      );
 
       cleanup();
     });
@@ -487,6 +540,237 @@ describe('SharedGallery', () => {
       });
 
       expect(mocks.fetch).not.toHaveBeenCalled();
+
+      cleanup();
+    });
+
+    it('should page through results until a short page is returned', async () => {
+      // Simulate an album with 150 photos: 2 full pages of 100, then 50.
+      const makePhoto = (i: number) => ({
+        id: `photo-${i}`,
+        versionCreated: i,
+        isDeleted: false,
+        encryptedMeta: btoa(`encrypted-meta-${i}`),
+        signature: btoa('signature'),
+        signerPubkey: btoa('pubkey'),
+        shardIds: [`shard-${i}`],
+      });
+      const fullPage = Array.from({ length: 100 }, (_, i) => makePhoto(i));
+      const tailPage = Array.from({ length: 50 }, (_, i) => makePhoto(100 + i));
+
+      mocks.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => fullPage })
+        .mockResolvedValueOnce({ ok: true, json: async () => tailPage });
+
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        grantToken: 'grant-token-123',
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
+      });
+
+      await waitFor(() => getByTestId('photo-count')?.textContent === '150');
+
+      expect(mocks.fetch).toHaveBeenNthCalledWith(
+        1,
+        '/api/s/test-link-id/photos?skip=0&take=100',
+        {
+          headers: {
+            'X-Share-Grant': 'grant-token-123',
+          },
+        },
+      );
+      expect(mocks.fetch).toHaveBeenNthCalledWith(
+        2,
+        '/api/s/test-link-id/photos?skip=100&take=100',
+        {
+          headers: {
+            'X-Share-Grant': 'grant-token-123',
+          },
+        },
+      );
+      expect(getByTestId('photo-count')?.textContent).toBe('150');
+
+      cleanup();
+    });
+
+    it('should request one empty trailing page for exact page-size albums', async () => {
+      const makePhoto = (i: number) => ({
+        id: `photo-${i}`,
+        versionCreated: i,
+        isDeleted: false,
+        encryptedMeta: btoa(`encrypted-meta-${i}`),
+        signature: btoa('signature'),
+        signerPubkey: btoa('pubkey'),
+        shardIds: [`shard-${i}`],
+      });
+
+      mocks.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => Array.from({ length: 100 }, (_, i) => makePhoto(i)),
+        })
+        .mockResolvedValueOnce({ ok: true, json: async () => [] });
+
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
+      });
+
+      await waitFor(() => getByTestId('photo-count')?.textContent === '100');
+
+      expect(mocks.fetch).toHaveBeenCalledTimes(2);
+      expect(mocks.fetch).toHaveBeenNthCalledWith(
+        2,
+        '/api/s/test-link-id/photos?skip=100&take=100',
+        {},
+      );
+      expect(getByTestId('photo-count')?.textContent).toBe('100');
+
+      cleanup();
+    });
+  });
+
+  describe('download all button', () => {
+    it('renders the Download All button only for full-access (tier 3) links', async () => {
+      // Tier 1: thumbnail-only - no button
+      const thumb = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 1,
+        tierKeys: createTierKeys(1, 1),
+        isLoadingKeys: false,
+      });
+      await waitFor(() => thumb.getByTestId('shared-photo-grid') !== null);
+      expect(thumb.getByTestId('shared-gallery-download-all')).toBeNull();
+      thumb.cleanup();
+
+      // Tier 2: preview - no button
+      const preview = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 2,
+        tierKeys: createTierKeys(1, 2),
+        isLoadingKeys: false,
+      });
+      await waitFor(() => preview.getByTestId('shared-photo-grid') !== null);
+      expect(preview.getByTestId('shared-gallery-download-all')).toBeNull();
+      preview.cleanup();
+
+      // Tier 3: full access - button visible
+      const full = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 3,
+        tierKeys: createTierKeys(1, 3),
+        isLoadingKeys: false,
+      });
+      await waitFor(() => full.getByTestId('shared-photo-grid') !== null);
+      const button = full.getByTestId('shared-gallery-download-all');
+      expect(button).not.toBeNull();
+      expect(button?.tagName).toBe('BUTTON');
+      full.cleanup();
+    });
+
+    it('downloads all photos loaded across pages with the share-link resolver', async () => {
+      const makePhoto = (i: number) => ({
+        id: `photo-${i}`,
+        versionCreated: i,
+        isDeleted: false,
+        encryptedMeta: btoa(`encrypted-meta-${i}`),
+        signature: btoa('signature'),
+        signerPubkey: btoa('pubkey'),
+        shardIds: [`shard-${i}`],
+      });
+      const fullPage = Array.from({ length: 100 }, (_, i) => makePhoto(i));
+      const tailPage = Array.from({ length: 50 }, (_, i) => makePhoto(100 + i));
+      const resolver = async () => new Uint8Array([9, 8, 7]);
+      let decryptIndex = 0;
+
+      mocks.fetch
+        .mockResolvedValueOnce({ ok: true, json: async () => fullPage })
+        .mockResolvedValueOnce({ ok: true, json: async () => tailPage });
+      mocks.createShareLinkOriginalResolver.mockReturnValue(resolver);
+      mocks.decryptManifest.mockImplementation(async () => {
+        const id = `photo-${decryptIndex++}`;
+        return {
+          id,
+          assetId: `asset-${id}`,
+          albumId: 'album-123',
+          filename: `${id}.jpg`,
+          mimeType: 'image/jpeg',
+          width: 1920,
+          height: 1080,
+          tags: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          shardIds: [`shard-${id}`],
+          originalShardIds: [`original-${id}`],
+          epochId: 1,
+        };
+      });
+
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 3,
+        grantToken: 'grant-token-123',
+        tierKeys: createTierKeys(1, 3),
+        isLoadingKeys: false,
+      });
+
+      await waitFor(() => getByTestId('photo-count')?.textContent === '150');
+
+      const button = getByTestId(
+        'shared-gallery-download-all',
+      ) as HTMLButtonElement;
+      act(() => {
+        button.click();
+      });
+
+      expect(mocks.createShareLinkOriginalResolver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          linkId: 'test-link-id',
+          grantToken: 'grant-token-123',
+          getTierKey: expect.any(Function),
+        }),
+      );
+      expect(mocks.startDownload).toHaveBeenCalledTimes(1);
+      const [albumId, albumName, photos, resolveOriginal] =
+        mocks.startDownload.mock.calls[0]!;
+      expect(albumId).toBe('album-123');
+      expect(albumName).toBe('Shared Album');
+      expect(photos).toHaveLength(150);
+      expect(resolveOriginal).toBe(resolver);
+
+      cleanup();
+    });
+
+    it('renders download progress while the shared album ZIP is downloading', async () => {
+      mocks.albumDownloadState.isDownloading = true;
+      mocks.albumDownloadState.progress = {
+        phase: 'downloading',
+        currentFileName: 'photo-1.jpg',
+        completedFiles: 1,
+        totalFiles: 2,
+      };
+
+      const { getByTestId, cleanup } = renderComponent({
+        linkId: 'test-link-id',
+        albumId: 'album-123',
+        accessTier: 3,
+        tierKeys: createTierKeys(1, 3),
+        isLoadingKeys: false,
+      });
+
+      await waitFor(() => getByTestId('shared-photo-grid') !== null);
+
+      expect(getByTestId('download-progress-overlay')).not.toBeNull();
 
       cleanup();
     });

@@ -182,6 +182,7 @@ npx playwright test auth-modes.spec.ts --project=chromium
 - Visual badges on album cards (info/warning/expired states)
 - Warning banners when approaching expiration
 - Automatic server-side cleanup via GarbageCollectionService (hourly, batched)
+- Cleanup drains all eligible trashed shards and expired upload reservations across batches in one run
 - Cascade deletion: all photos (shards), manifests, epoch keys, members cleaned up
 - Storage quota reclaimed automatically on expiration
 - Share links blocked for expired albums
@@ -298,8 +299,12 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Features:**
 - Long-press or checkbox selection
 - Floating action bar with bulk operations
+- Download action is gated by the centralized `canDownload` permission
 - Keyboard shortcuts: `Esc` (exit), `Ctrl+A` (select all), `Delete` (delete)
 - Visual feedback with scale/glow effects
+
+**Tests:**
+- Frontend: `apps/web/tests/selection-action-bar.test.tsx`
 
 ---
 
@@ -377,12 +382,18 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | ------------------ | -------------------------------------------------------------------------------------- |
 | Frontend Component | [components/Gallery/PhotoGrid.tsx](../apps/web/src/components/Gallery/PhotoGrid.tsx) |
 | Frontend Hook      | [hooks/usePhotos.ts](../apps/web/src/hooks/usePhotos.ts)                             |
+| Frontend Helper    | [lib/photo-query-pagination.ts](../apps/web/src/lib/photo-query-pagination.ts)       |
+| Worker             | [workers/db.worker.ts](../apps/web/src/workers/db.worker.ts)                         |
 
 **Features:**
 - TanStack Virtual for viewport-based rendering
 - Progressive thumbnail loading
 - Lazy decryption of visible photos
 - Responsive grid layout
+- Local SQLite photo and search queries page through all results instead of stopping at fixed 1,000/10,000-photo limits
+
+**Tests:**
+- Frontend: `apps/web/tests/photo-query-pagination.test.ts`
 
 ---
 
@@ -395,12 +406,15 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | ------------------ | ---------------------------------------------------------------------------------- |
 | Frontend Hook      | [hooks/useLightbox.ts](../apps/web/src/hooks/useLightbox.ts)                     |
 | Frontend Component | [components/Gallery/PhotoLightbox.tsx](../apps/web/src/components/Gallery/PhotoLightbox.tsx) |
+| Frontend Service   | [lib/photo-edit-service.ts](../apps/web/src/lib/photo-edit-service.ts)          |
+| Worker             | [workers/db.worker.ts](../apps/web/src/workers/db.worker.ts)                    |
 
 **Features:**
 - Full-resolution image loading
 - Swipe/arrow navigation
 - Pinch-to-zoom support
 - EXIF metadata display
+- Owner/editor inline editing for encrypted photo descriptions
 
 ---
 
@@ -454,11 +468,16 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Frontend Hook | [hooks/useShareLinks.ts](../apps/web/src/hooks/useShareLinks.ts)                 |
 | Frontend Hook | [hooks/useLinkKeys.ts](../apps/web/src/hooks/useLinkKeys.ts)                     |
 | Frontend UI   | [components/ShareLinks/](../apps/web/src/components/ShareLinks/)                 |
+| Shared Viewer | [components/Shared/SharedGallery.tsx](../apps/web/src/components/Shared/SharedGallery.tsx) |
 
 **Features:**
 - Time-limited share links
 - Password-protected links
 - View-only or download permissions
+- Public shared album galleries page through all photos instead of stopping at the first page
+- Full-access share links can download the shared album as a ZIP through client-side decryption
+- Member-management views page through all album members instead of stopping at the backend default page
+- Authenticated share-link lists support `skip`/`take`; epoch rotation drains every active share link before wrapping new tier keys
 
 ---
 
@@ -716,9 +735,10 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Layer | Location |
 |-------|----------|
 | Service | `apps/web/src/lib/album-download-service.ts` |
+| Shared Resolver | `apps/web/src/lib/shared-album-download.ts` |
 | Hook | `apps/web/src/hooks/useAlbumDownload.ts` |
 | Progress UI | `apps/web/src/components/Gallery/DownloadProgressOverlay.tsx` |
-| Integration | `apps/web/src/components/Gallery/Gallery.tsx` |
+| Integration | `apps/web/src/components/Gallery/Gallery.tsx`, `apps/web/src/components/Shared/SharedGallery.tsx` |
 
 **Features:**
 - Downloads original-quality photos (no re-encoding)
@@ -731,13 +751,17 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 - Handles photos across multiple epochs (key rotation)
 - Multi-shard photo reassembly for large originals
 - Zero-knowledge preserved: all decryption client-side
+- Full-access share-link viewers can download public shared albums without authenticated shard endpoints
 
 **Access Points:**
 - Album Settings dropdown → "Download All Photos"
 - Selection Action Bar → "Download (N)" for selected photos
+- Full-access shared album header → "Download all (N)"
 
 **Tests:**
 - Service: `apps/web/src/lib/__tests__/album-download-service.test.ts`
+- Shared Service: `apps/web/src/lib/__tests__/shared-album-download.test.ts`
+- Shared Gallery: `apps/web/tests/shared-gallery.test.tsx`
 
 ---
 
@@ -775,6 +799,10 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-04-28 | Photo Description Editing   | Added    | Owners/editors can edit encrypted photo descriptions from the lightbox without exposing plaintext to the server |
+| 2026-04-27 | Share Links / Album Download | Modified | Shared album viewers page through all photos; full-access share links can download all photos as a client-side decrypted ZIP |
+| 2026-04-27 | Gallery / Member Management | Modified | Local photo/search queries and member-management loads drain all pages; bulk download action now respects `canDownload` |
+| 2026-04-28 | Backend Pagination / Cleanup | Modified | Added share-link list pagination, pagination headers, epoch-rotation page draining, and full cleanup-batch draining |
 | 2026-04-07 | Video Support             | Added    | Upload, view, and share encrypted videos (MP4, WebM, MOV, MKV) with automatic thumbnail extraction |
 | 2026-04-07 | Temporary Albums (TTL)      | Added    | Auto-expiring albums with preset durations, visual badges, server-side GC cleanup |
 | 2026-04-07 | Album Download (ZIP Export) | Added    | Download all/selected photos as ZIP with streaming, progress tracking, and cancellation |

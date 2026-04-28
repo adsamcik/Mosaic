@@ -90,6 +90,12 @@ export const SharedPhotoThumbnail = memo(function SharedPhotoThumbnail({
     [onClick],
   );
 
+  // For 90°/270° rotations the rotated thumbnail may overflow its tile slightly. v1 trade-off.
+  const rotationStyle = {
+    transform: `rotate(${photo.rotation ?? 0}deg)`,
+    transformOrigin: 'center',
+  };
+
   const renderContent = () => {
     switch (state.status) {
       case 'idle':
@@ -102,6 +108,7 @@ export const SharedPhotoThumbnail = memo(function SharedPhotoThumbnail({
               className="photo-image photo-blurhash"
               data-testid="photo-blurhash"
               loading="lazy"
+              style={rotationStyle}
             />
           );
         }
@@ -121,6 +128,7 @@ export const SharedPhotoThumbnail = memo(function SharedPhotoThumbnail({
                 alt=""
                 className="photo-image photo-blurhash"
                 aria-hidden="true"
+                style={rotationStyle}
               />
             )}
             <div className="loading-spinner" />
@@ -135,6 +143,7 @@ export const SharedPhotoThumbnail = memo(function SharedPhotoThumbnail({
             className="photo-image"
             data-testid="photo-image"
             loading="lazy"
+            style={rotationStyle}
           />
         );
 

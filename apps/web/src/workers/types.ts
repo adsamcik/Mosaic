@@ -35,6 +35,8 @@ export interface PhotoMeta {
   thumbHeight?: number;
   /** User-provided description for the photo */
   description?: string;
+  /** Display rotation in degrees clockwise (0, 90, 180, or 270). Applied at render time; underlying pixels are not modified. */
+  rotation?: number;
   /** ThumbHash string (base64-encoded, ~25 bytes) for instant placeholder */
   thumbhash?: string;
   /** @deprecated Legacy BlurHash string - use thumbhash for new uploads */
@@ -165,6 +167,16 @@ export interface DbWorkerApi {
   // Manifest operations
   insertManifests(manifests: DecryptedManifest[]): Promise<void>;
   deleteManifest(id: string): Promise<void>;
+  updatePhotoRotation(
+    photoId: string,
+    rotation: number,
+    versionCreated: number,
+  ): Promise<void>;
+  updatePhotoDescription(
+    photoId: string,
+    description: string | null,
+    versionCreated: number,
+  ): Promise<void>;
 
   // Photo queries
   getPhotos(
@@ -173,7 +185,12 @@ export interface DbWorkerApi {
     offset: number,
   ): Promise<PhotoMeta[]>;
   getPhotoCount(albumId: string): Promise<number>;
-  searchPhotos(albumId: string, query: string): Promise<PhotoMeta[]>;
+  searchPhotos(
+    albumId: string,
+    query: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<PhotoMeta[]>;
   getPhotosForMap(albumId: string, bounds: Bounds): Promise<GeoPoint[]>;
   getPhotoById(id: string): Promise<PhotoMeta | null>;
 

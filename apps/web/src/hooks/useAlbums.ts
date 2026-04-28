@@ -6,7 +6,7 @@ import {
   getStoredEncryptedName,
   setStoredEncryptedName,
 } from '../lib/album-metadata-service';
-import { getApi, toBase64 } from '../lib/api';
+import { getApi, paginateAll, toBase64 } from '../lib/api';
 import type { Album as ApiAlbum } from '../lib/api-types';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getDbClient } from '../lib/db-client';
@@ -83,7 +83,9 @@ export function useAlbums() {
       setError(null);
 
       const api = getApi();
-      const apiAlbums = await api.listAlbums();
+      const apiAlbums = await paginateAll((skip, take) =>
+        api.listAlbums(skip, take),
+      );
 
       // Transform API albums to frontend format with placeholder names
       // Names will be decrypted asynchronously after initial load

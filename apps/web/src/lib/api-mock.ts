@@ -31,6 +31,8 @@ import type {
   ManifestRecord,
   CreateManifestRequest,
   ManifestCreated,
+  UpdateManifestMetadataRequest,
+  ManifestMetadataUpdated,
   CreateShardRequest,
   ShardCreated,
   ShareLinkResponse,
@@ -290,7 +292,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     // =========================================================================
     // Albums
     // =========================================================================
-    async listAlbums(): Promise<Album[]> {
+    async listAlbums(skip = 0, take = 50): Promise<Album[]> {
       await delay();
       // Return albums where user is a member
       const result: Album[] = [];
@@ -302,7 +304,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
           }
         }
       }
-      return result;
+      return result.slice(skip, skip + take);
     },
 
     async createAlbum(request: CreateAlbumRequest): Promise<Album> {
@@ -503,13 +505,17 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     // =========================================================================
     // Members
     // =========================================================================
-    async listAlbumMembers(albumId: string): Promise<AlbumMember[]> {
+    async listAlbumMembers(
+      albumId: string,
+      skip = 0,
+      take = 50,
+    ): Promise<AlbumMember[]> {
       await delay();
       const memberList = store.members.get(albumId);
       if (!memberList) {
         throw new Error(`Album not found: ${albumId}`);
       }
-      return memberList.map((m) => ({ ...m }));
+      return memberList.slice(skip, skip + take).map((m) => ({ ...m }));
     },
 
     async inviteToAlbum(
@@ -651,6 +657,36 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       return { ...manifest };
     },
 
+    async updateManifestMetadata(
+      manifestId: string,
+      request: UpdateManifestMetadataRequest,
+    ): Promise<ManifestMetadataUpdated> {
+      await delay();
+      const manifest = store.manifests.get(manifestId);
+      if (!manifest) {
+        throw new Error(`Manifest not found: ${manifestId}`);
+      }
+
+      const album = store.albums.get(manifest.albumId);
+      if (!album) {
+        throw new Error(`Album not found: ${manifest.albumId}`);
+      }
+
+      album.currentVersion++;
+      album.updatedAt = new Date().toISOString();
+
+      manifest.encryptedMeta = request.encryptedMeta;
+      manifest.signature = request.signature;
+      manifest.signerPubkey = request.signerPubkey;
+      manifest.versionCreated = album.currentVersion;
+      manifest.updatedAt = album.updatedAt;
+
+      return {
+        id: manifest.id,
+        versionCreated: album.currentVersion,
+      };
+    },
+
     async deleteManifest(manifestId: string): Promise<void> {
       await delay();
       const manifest = store.manifests.get(manifestId);
@@ -692,13 +728,19 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     // =========================================================================
     // Share Links
     // =========================================================================
-    async listShareLinks(_albumId: string): Promise<ShareLinkResponse[]> {
+    async listShareLinks(
+      _albumId: string,
+      _skip?: number,
+      _take?: number,
+    ): Promise<ShareLinkResponse[]> {
       await delay();
       return [];
     },
 
     async listShareLinksWithSecrets(
       _albumId: string,
+      _skip?: number,
+      _take?: number,
     ): Promise<ShareLinkWithSecretResponse[]> {
       await delay();
       return [];
@@ -807,6 +849,8 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
 
     async getShareLinkPhotos(
       _linkIdBase64: string,
+      _skip?: number,
+      _take?: number,
     ): Promise<ShareLinkPhotoResponse[]> {
       await delay();
       return [];
@@ -842,9 +886,9 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     // =========================================================================
     // Admin - Users (Mock)
     // =========================================================================
-    async listUsers(): Promise<AdminUserResponse[]> {
+    async listUsers(skip = 0, take = 50): Promise<AdminUserResponse[]> {
       await delay();
-      const userList = Array.from(store.users.values());
+      const userList = Array.from(store.users.values()).slice(skip, skip + take);
       return userList.map((u, i) => {
         const response: AdminUserResponse = {
           id: u.id,
@@ -913,9 +957,12 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     // =========================================================================
     // Admin - Albums (Mock)
     // =========================================================================
-    async listAllAlbums(): Promise<AdminAlbumResponse[]> {
+    async listAllAlbums(
+      skip = 0,
+      take = 50,
+    ): Promise<AdminAlbumResponse[]> {
       await delay();
-      const albumList = Array.from(store.albums.values());
+      const albumList = Array.from(store.albums.values()).slice(skip, skip + take);
       return albumList.map((a) => ({
         id: a.id,
         ownerId: a.ownerId,

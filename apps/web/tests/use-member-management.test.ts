@@ -29,6 +29,18 @@ vi.mock('../src/lib/api', () => ({
   }),
   toBase64: (data: Uint8Array) => Buffer.from(data).toString('base64'),
   fromBase64: (str: string) => new Uint8Array(Buffer.from(str, 'base64')),
+  paginateAll: async <T>(
+    fetchPage: (skip: number, take: number) => Promise<T[]>,
+    pageSize = 100,
+  ): Promise<T[]> => {
+    const out: T[] = [];
+    for (let skip = 0; ; skip += pageSize) {
+      const page = await fetchPage(skip, pageSize);
+      out.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return out;
+  },
 }));
 
 const mockGetIdentityPublicKey = vi.fn();

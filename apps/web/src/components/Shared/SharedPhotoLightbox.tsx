@@ -55,6 +55,30 @@ type PhotoState =
   | { status: 'error'; message: string };
 
 /**
+ * Translate a `<video>` MediaError into a human-readable, actionable
+ * message. Handles the common iPhone HEVC/.mov case where the file is
+ * intact but the user's browser cannot decode it.
+ *
+ * Uses numeric codes from the HTMLMediaElement spec instead of the
+ * `MediaError.MEDIA_ERR_*` constants because non-browser test runtimes
+ * (happy-dom, jsdom) do not expose them.
+ */
+function describeMediaError(error: MediaError, mimeType: string): string {
+  switch (error.code) {
+    case 1: // MEDIA_ERR_ABORTED
+      return 'Video playback was interrupted.';
+    case 2: // MEDIA_ERR_NETWORK
+      return 'Network error while loading the video.';
+    case 3: // MEDIA_ERR_DECODE
+      return 'This video could not be decoded — the file may be corrupted.';
+    case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED
+      return `Your browser cannot play this video format (${mimeType}). HEVC/H.265 inside .mov files is unsupported by most browsers; download the file to view it locally.`;
+    default:
+      return error.message || 'Video playback failed.';
+  }
+}
+
+/**
  * Shared Photo Lightbox
  * Full-screen viewer with keyboard navigation
  */
@@ -73,10 +97,20 @@ export function SharedPhotoLightbox({
 }: SharedPhotoLightboxProps) {
   const [state, setState] = useState<PhotoState>({ status: 'loading' });
   const [loadProgress, setLoadProgress] = useState(0);
+  // Keep `state` in 'loaded' so the underlying blob remains available for
+  // download even when the browser cannot decode the video (typical case:
+  // HEVC inside .mov uploaded from iPhone).
+  const [videoPlaybackError, setVideoPlaybackError] =
+    useState<MediaError | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const isVideo = photo.isVideo === true || isVideoMimeType(photo.mimeType);
   const videoNeedsOriginal = isVideo && accessTier < 3;
+
+  // Reset playback error when the user navigates to a different photo.
+  useEffect(() => {
+    setVideoPlaybackError(null);
+  }, [photo.id]);
 
   // Load photo when it changes
   // Strategy: Show thumbnail immediately, then load full-res shards in background
@@ -581,7 +615,10 @@ export function SharedPhotoLightbox({
                     src={state.blobUrl}
                     alt={photo.filename}
                     className="lightbox-image"
-                    style={{ opacity: 0.5 }}
+                    style={{
+                      opacity: 0.5,
+                      transform: `rotate(${photo.rotation ?? 0}deg)`,
+                    }}
                   />
                   <div className="lightbox-video-restricted-overlay">
                     <span className="error-icon">🎬</span>
@@ -589,23 +626,48 @@ export function SharedPhotoLightbox({
                   </div>
                 </div>
               ) : isVideo ? (
-                <video
-                  ref={videoRef}
-                  controls
-                  autoPlay
-                  playsInline
-                  className="lightbox-video"
-                  src={state.blobUrl}
-                  data-testid="lightbox-video"
-                  onError={() => {
-                    setState({ status: 'error', message: 'Video playback failed' });
-                  }}
-                />
+                <>
+                  <video
+                    key={state.blobUrl}
+                    ref={videoRef}
+                    controls
+                    autoPlay
+                    playsInline
+                    className="lightbox-video"
+                    src={state.blobUrl}
+                    style={{ transform: `rotate(${photo.rotation ?? 0}deg)` }}
+                    data-testid="lightbox-video"
+                    onLoadedData={() => setVideoPlaybackError(null)}
+                    onError={(event) => {
+                      const el = event.currentTarget;
+                      setVideoPlaybackError(el.error ?? null);
+                    }}
+                  />
+                  {videoPlaybackError && (
+                    <div
+                      className="lightbox-video-error"
+                      data-testid="lightbox-video-error"
+                    >
+                      <p>{describeMediaError(videoPlaybackError, photo.mimeType)}</p>
+                      {accessTier === 3 && (
+                        <a
+                          className="button-primary"
+                          href={state.blobUrl}
+                          download={photo.filename}
+                          data-testid="lightbox-video-error-download"
+                        >
+                          Download file
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </>
               ) : (
                 <img
                   src={state.blobUrl}
                   alt={photo.filename}
                   className="lightbox-image"
+                  style={{ transform: `rotate(${photo.rotation ?? 0}deg)` }}
                   data-testid="lightbox-image"
                 />
               )}

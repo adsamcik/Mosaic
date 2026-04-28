@@ -14,7 +14,7 @@ import type {
   ShareLinkResponse,
   WrappedKeyRequest,
 } from '../lib/api-types';
-import { getApi, toBase64 } from '../lib/api';
+import { getApi, paginateAll, toBase64 } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
 import { getCachedEpochIds, getEpochKey } from '../lib/epoch-key-store';
@@ -181,7 +181,9 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
       setError(null);
 
       const api = getApi();
-      const links = await api.listShareLinks(albumId);
+      const links = await paginateAll((skip, take) =>
+        api.listShareLinks(albumId, skip, take),
+      );
 
       // Transform to ShareLinkInfo and sort by creation date (newest first)
       const transformed = links

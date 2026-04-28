@@ -9,7 +9,7 @@
  * NEVER derive from previous epoch keys.
  */
 
-import { fromBase64, getApi, toBase64 } from './api';
+import { fromBase64, getApi, paginateAll, toBase64 } from './api';
 import type {
   AlbumMember,
   CreateEpochKeyRequest,
@@ -161,7 +161,9 @@ export async function rotateEpoch(
   onProgress?.(RotationStep.FETCHING_MEMBERS);
   let members: AlbumMember[];
   try {
-    members = await api.listAlbumMembers(albumId);
+    members = await paginateAll((skip, take) =>
+      api.listAlbumMembers(albumId, skip, take),
+    );
   } catch (err) {
     throw new EpochRotationError(
       'Failed to fetch remaining members',
@@ -245,7 +247,9 @@ export async function rotateEpoch(
   onProgress?.(RotationStep.FETCHING_SHARE_LINKS);
   let shareLinks: ShareLinkWithSecretResponse[] = [];
   try {
-    shareLinks = await api.listShareLinksWithSecrets(albumId);
+    shareLinks = await paginateAll((skip, take) =>
+      api.listShareLinksWithSecrets(albumId, skip, take),
+    );
   } catch (err) {
     throw new EpochRotationError(
       'Failed to fetch share links',

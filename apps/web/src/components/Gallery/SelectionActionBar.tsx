@@ -189,7 +189,7 @@ export function SelectionActionBar({
           )}
 
           {/* Download selected */}
-          {someSelected && onDownloadSelected && (
+          {permissions.canDownload && someSelected && onDownloadSelected && (
             <button
               className="action-bar-button action-bar-button-secondary"
               onClick={onDownloadSelected}

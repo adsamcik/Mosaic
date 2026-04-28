@@ -214,6 +214,20 @@ describe('useAlbumDownload', () => {
       expect((callArg.signal as AbortSignal).aborted).toBe(false);
       cleanup();
     });
+
+    it('passes a custom resolver to the service for alternate download sources', async () => {
+      const { methods, cleanup } = renderHook();
+      const resolver = vi.fn(async () => new Uint8Array([1, 2, 3]));
+
+      act(() => {
+        methods.startDownload('album-1', 'Album', [createMockPhoto()], resolver);
+      });
+      await flush();
+
+      const callArg = mocks.downloadAlbumAsZip.mock.calls[0]![0] as Record<string, unknown>;
+      expect(callArg.resolveOriginal).toBe(resolver);
+      cleanup();
+    });
   });
 
   describe('progress updates', () => {

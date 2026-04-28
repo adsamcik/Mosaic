@@ -104,6 +104,12 @@ export const JustifiedPhotoThumbnail = memo(function JustifiedPhotoThumbnail({
   const isClickable =
     placeholderUrl || embeddedThumbnailUrl || state.status === 'loaded';
 
+  // For 90°/270° rotations the rotated thumbnail may overflow its tile slightly. v1 trade-off: accept the visual imperfection rather than re-laying out the justified grid for rotated photos.
+  const rotationStyle = {
+    transform: `rotate(${photo.rotation ?? 0}deg)`,
+    transformOrigin: 'center',
+  };
+
   const handleClick = useCallback(
     (event: React.MouseEvent) => {
       if (selectionMode && onSelectionChange) {
@@ -181,7 +187,12 @@ export const JustifiedPhotoThumbnail = memo(function JustifiedPhotoThumbnail({
           className="justified-photo-image"
           data-testid="photo-image"
           loading="lazy"
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            ...rotationStyle,
+          }}
         />
       );
     }
@@ -194,7 +205,12 @@ export const JustifiedPhotoThumbnail = memo(function JustifiedPhotoThumbnail({
           alt={photo.filename}
           className="justified-photo-image justified-photo-thumbnail-embedded"
           data-testid="photo-image-embedded"
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            ...rotationStyle,
+          }}
         />
       );
     }
@@ -214,7 +230,12 @@ export const JustifiedPhotoThumbnail = memo(function JustifiedPhotoThumbnail({
             src={embeddedThumbnailUrl}
             alt={photo.filename}
             className="justified-photo-image justified-photo-thumbnail-embedded"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              ...rotationStyle,
+            }}
           />
           <div className="justified-photo-upgrade-overlay">
             <div className="loading-spinner-small" />

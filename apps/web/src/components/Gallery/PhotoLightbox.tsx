@@ -21,7 +21,11 @@ import {
   type PhotoLoadResult,
 } from '../../lib/photo-service';
 import { isVideoMimeType } from '../../lib/image-decoder';
+import { createLogger } from '../../lib/logger';
+import { rotatePhoto, updatePhotoDescription } from '../../lib/photo-edit-service';
 import type { PhotoMeta } from '../../workers/types';
+
+const log = createLogger('PhotoLightbox');
 
 /** Props for the PhotoLightbox component */
 export interface PhotoLightboxProps {
@@ -52,6 +56,31 @@ type LoadState =
   | { status: 'loading'; progress: number; thumbnailUrl?: string | undefined }
   | { status: 'loaded'; result: PhotoLoadResult }
   | { status: 'error'; error: Error };
+
+/**
+ * Translate a `<video>` MediaError into a human-readable, actionable message.
+ * Covers the common "user uploaded an iPhone HEVC .mov that Chrome/Firefox
+ * can't decode" case so the UI can offer a download fallback rather than
+ * a blank "Video playback failed".
+ *
+ * Uses numeric MediaError codes from the HTMLMediaElement spec instead of
+ * `MediaError.MEDIA_ERR_*` constants because the latter aren't exposed by
+ * non-browser test runtimes (happy-dom, jsdom).
+ */
+function describeMediaError(error: MediaError, mimeType: string): string {
+  switch (error.code) {
+    case 1: // MEDIA_ERR_ABORTED
+      return 'Video playback was interrupted.';
+    case 2: // MEDIA_ERR_NETWORK
+      return 'Network error while loading the video.';
+    case 3: // MEDIA_ERR_DECODE
+      return 'This video could not be decoded — the file may be corrupted.';
+    case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED
+      return `Your browser cannot play this video format (${mimeType}). HEVC/H.265 inside .mov files is unsupported by most browsers; download the file to view it locally.`;
+    default:
+      return error.message || 'Video playback failed.';
+  }
+}
 
 /**
  * Format file size for display
@@ -100,11 +129,39 @@ export function PhotoLightbox({
   });
   const [showInfo, setShowInfo] = useState(false);
   const [showHints, setShowHints] = useState(true);
+  const [displayRotation, setDisplayRotation] = useState(photo.rotation ?? 0);
+  const [isRotating, setIsRotating] = useState(false);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [draftDescription, setDraftDescription] = useState(photo.description ?? '');
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
+  // When a video fails to play (typically: HEVC inside a .mov file that the
+  // user's browser can't decode) we want to surface a clear message AND
+  // keep the underlying blob available so the user can still download the
+  // file. Storing the playback error separately preserves loadState.result.
+  const [videoPlaybackError, setVideoPlaybackError] =
+    useState<MediaError | null>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const justCancelledDescriptionRef = useRef(false);
 
   const isVideo = photo.isVideo === true || isVideoMimeType(photo.mimeType);
+
+  useEffect(() => {
+    setDisplayRotation(photo.rotation ?? 0);
+  }, [photo.id, photo.rotation]);
+
+  useEffect(() => {
+    justCancelledDescriptionRef.current = false;
+    setIsEditingDescription(false);
+    setDraftDescription(photo.description ?? '');
+  }, [photo.id, photo.description]);
+
+  // Reset any video playback error when the user navigates to a different
+  // photo so the new one starts from a clean slate.
+  useEffect(() => {
+    setVideoPlaybackError(null);
+  }, [photo.id]);
 
   // Auto-hide keyboard hints after 3 seconds
   useEffect(() => {
@@ -251,8 +308,8 @@ export function PhotoLightbox({
       );
   }, [fullResPhotoId, originalShards, photo.mimeType, epochReadKey, embeddedThumbnailUrl]);
 
-  // Get album permissions for download capability
-  const { canDownload } = useAlbumPermissions();
+  // Get album permissions for download/edit capabilities
+  const { canDownload, canUpload } = useAlbumPermissions();
 
   // Handle download button click
   const handleDownload = useCallback(() => {
@@ -266,6 +323,63 @@ export function PhotoLightbox({
     link.click();
     document.body.removeChild(link);
   }, [loadState, photo.filename]);
+
+  const handleRotate = useCallback(async () => {
+    if (isRotating) return;
+
+    const previous = displayRotation;
+    const optimistic = (previous + 90) % 360;
+    setDisplayRotation(optimistic);
+    setIsRotating(true);
+
+    try {
+      await rotatePhoto(photo, 90);
+    } catch (err) {
+      log.error('Rotation failed', err);
+      setDisplayRotation(previous);
+    } finally {
+      setIsRotating(false);
+    }
+  }, [photo, displayRotation, isRotating]);
+
+  const handleStartEditDescription = useCallback(() => {
+    if (!canUpload) return;
+    justCancelledDescriptionRef.current = false;
+    setDraftDescription(photo.description ?? '');
+    setIsEditingDescription(true);
+  }, [canUpload, photo.description]);
+
+  const handleCancelEditDescription = useCallback(() => {
+    justCancelledDescriptionRef.current = true;
+    setIsEditingDescription(false);
+    setDraftDescription(photo.description ?? '');
+  }, [photo.description]);
+
+  const handleSaveDescription = useCallback(async () => {
+    if (justCancelledDescriptionRef.current) {
+      justCancelledDescriptionRef.current = false;
+      return;
+    }
+    if (!isEditingDescription) return;
+    const trimmed = draftDescription.trim();
+    const normalized = trimmed.length === 0 ? null : trimmed;
+    const previous = photo.description ?? null;
+    if (normalized === previous) {
+      setIsEditingDescription(false);
+      return;
+    }
+    setIsSavingDescription(true);
+    try {
+      await updatePhotoDescription(photo, normalized);
+      setIsEditingDescription(false);
+    } catch (err) {
+      log.error('Failed to update description', err);
+      setDraftDescription(photo.description ?? '');
+      setIsEditingDescription(false);
+    } finally {
+      setIsSavingDescription(false);
+    }
+  }, [draftDescription, photo, isEditingDescription]);
 
   // Handle backdrop click (close on click outside photo)
   const handleBackdropClick = useCallback(
@@ -342,6 +456,15 @@ export function PhotoLightbox({
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLInputElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+
       // Let the video element handle its own keyboard events (space, etc.)
       if (isVideo && event.target instanceof HTMLVideoElement) {
         if (event.key === 'Escape') {
@@ -379,6 +502,13 @@ export function PhotoLightbox({
         case 'I':
           toggleInfo();
           break;
+        case 'r':
+        case 'R':
+          if (canUpload) {
+            event.preventDefault();
+            void handleRotate();
+          }
+          break;
         case ' ':
           // Prevent spacebar from scrolling when video is playing
           if (isVideo) {
@@ -397,7 +527,7 @@ export function PhotoLightbox({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, hasPrevious, onPrevious, hasNext, onNext, onDelete, toggleInfo, isVideo, pauseVideo]);
+  }, [onClose, hasPrevious, onPrevious, hasNext, onNext, onDelete, toggleInfo, isVideo, pauseVideo, canUpload, handleRotate]);
 
   // Render loading state - shows thumbnail as background if available
   const renderLoading = () => {
@@ -478,21 +608,41 @@ export function PhotoLightbox({
 
     if (isVideo) {
       return (
-        <video
-          ref={videoRef}
-          controls
-          autoPlay
-          playsInline
-          className="lightbox-video"
-          src={blobUrl}
-          data-testid="lightbox-video"
-          onError={() => {
-            setLoadState({
-              status: 'error',
-              error: new Error('Video playback failed'),
-            });
-          }}
-        />
+        <>
+          <video
+            // Force a fresh element per blob URL so we never inherit a
+            // pending error event from the previously-mounted video.
+            key={blobUrl}
+            ref={videoRef}
+            controls
+            autoPlay
+            playsInline
+            className="lightbox-video"
+            style={{ transform: `rotate(${displayRotation}deg)` }}
+            src={blobUrl}
+            data-testid="lightbox-video"
+            onLoadedData={() => setVideoPlaybackError(null)}
+            onError={(event) => {
+              const el = event.currentTarget;
+              setVideoPlaybackError(el.error ?? null);
+            }}
+          />
+          {videoPlaybackError && (
+            <div className="lightbox-video-error" data-testid="lightbox-video-error">
+              <p>{describeMediaError(videoPlaybackError, photo.mimeType)}</p>
+              {canDownload && (
+                <button
+                  type="button"
+                  className="button-primary"
+                  onClick={handleDownload}
+                  data-testid="lightbox-video-error-download"
+                >
+                  {t('lightbox.downloadFile', { defaultValue: 'Download file' })}
+                </button>
+              )}
+            </div>
+          )}
+        </>
       );
     }
 
@@ -501,6 +651,7 @@ export function PhotoLightbox({
         src={blobUrl}
         alt={photo.filename}
         className="lightbox-image"
+        style={{ transform: `rotate(${displayRotation}deg)` }}
         data-testid="lightbox-image"
       />
     );
@@ -550,10 +701,48 @@ export function PhotoLightbox({
             <dd>{photo.tags.join(', ')}</dd>
           </>
         )}
-        {photo.description && (
+        {(canUpload || photo.description) && (
           <>
             <dt>{t('lightbox.metadata.description')}</dt>
-            <dd className="lightbox-info-description">{photo.description}</dd>
+            {isEditingDescription ? (
+              <dd>
+                <textarea
+                  value={draftDescription}
+                  onChange={(event) => setDraftDescription(event.target.value)}
+                  onBlur={() => void handleSaveDescription()}
+                  onKeyDown={(event) => {
+                    event.stopPropagation();
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      handleCancelEditDescription();
+                      return;
+                    }
+                    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                      event.preventDefault();
+                      void handleSaveDescription();
+                    }
+                  }}
+                  maxLength={2000}
+                  autoFocus
+                  disabled={isSavingDescription}
+                  data-testid="lightbox-description-textarea"
+                  className="lightbox-description-edit"
+                />
+              </dd>
+            ) : (
+              <dd
+                className={[
+                  'lightbox-info-description',
+                  canUpload ? 'lightbox-description-clickable' : '',
+                  !photo.description && canUpload ? 'lightbox-description-placeholder' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                onClick={canUpload ? handleStartEditDescription : undefined}
+              >
+                {photo.description || t('lightbox.description.placeholder')}
+              </dd>
+            )}
           </>
         )}
       </dl>
@@ -700,6 +889,33 @@ export function PhotoLightbox({
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <polyline points="7 10 12 15 17 10" />
             <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        </button>
+      )}
+
+      {/* Rotate button */}
+      {canUpload && loadState.status === 'loaded' && (
+        <button
+          className="lightbox-rotate-button"
+          onClick={() => void handleRotate()}
+          disabled={isRotating}
+          aria-label={t('lightbox.rotate', { defaultValue: 'Rotate 90° clockwise' })}
+          title={t('lightbox.rotate', { defaultValue: 'Rotate 90° clockwise' })}
+          data-testid="lightbox-rotate-button"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 12a9 9 0 1 1-3-6.7" />
+            <polyline points="21 3 21 9 15 9" />
           </svg>
         </button>
       )}

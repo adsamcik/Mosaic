@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { getApi } from '../lib/api';
+import { getApi, paginateAll } from '../lib/api';
 import type { AlbumMember, AlbumRole } from '../lib/api-types';
 import { createLogger } from '../lib/logger';
 
@@ -54,7 +54,9 @@ export function useAlbumMembers(albumId: string): UseAlbumMembersReturn {
       const currentUser = await api.getCurrentUser();
 
       // Fetch members
-      const albumMembers = await api.listAlbumMembers(albumId);
+      const albumMembers = await paginateAll((skip, take) =>
+        api.listAlbumMembers(albumId, skip, take),
+      );
       setMembers(albumMembers);
 
       // Find current user's role
