@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data.Entities;
@@ -398,6 +399,31 @@ public class AlbumsControllerTests
     }
 
     [Fact]
+    public async Task Sync_Returns410_WhenAlbumExpiresAtCurrentUtcDeadline()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+        album.ExpiresAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+
+        var controller = new AlbumsController(db, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.Sync(album.Id, 0);
+
+        var statusResult = Assert.IsType<StatusCodeResult>(result);
+        Assert.Equal(StatusCodes.Status410Gone, statusResult.StatusCode);
+    }
+
+    [Fact]
     public async Task Sync_ReturnsDeletedManifestsAsTombstones()
     {
         using var db = TestDbContextFactory.Create();
@@ -636,6 +662,31 @@ public class AlbumsControllerTests
         var responseJson = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
         Assert.Contains("EncryptedName", responseJson);
         Assert.Contains(encryptedName, responseJson);
+    }
+
+    [Fact]
+    public async Task Get_Returns410ForExpiredAlbum()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+        album.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await db.SaveChangesAsync();
+
+        var controller = new AlbumsController(db, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.Get(album.Id);
+
+        var statusResult = Assert.IsType<StatusCodeResult>(result);
+        Assert.Equal(StatusCodes.Status410Gone, statusResult.StatusCode);
     }
 
     [Fact]
@@ -886,6 +937,36 @@ public class AlbumsControllerTests
         await db.Entry(album).ReloadAsync();
         Assert.Equal(futureDate, album.ExpiresAt);
         Assert.Equal(21, album.ExpirationWarningDays);
+    }
+
+    [Fact]
+    public async Task UpdateExpiration_ReturnsContractResponse_WithIdAndUpdatedAt()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+
+        var controller = new AlbumsController(db, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var futureDate = DateTimeOffset.UtcNow.AddDays(60);
+        var result = await controller.UpdateExpiration(album.Id, new UpdateExpirationRequest(futureDate, 14));
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(okResult.Value));
+        var root = json.RootElement;
+
+        Assert.Equal(album.Id, root.GetProperty("Id").GetGuid());
+        Assert.Equal(14, root.GetProperty("ExpirationWarningDays").GetInt32());
+        Assert.True(root.TryGetProperty("UpdatedAt", out var updatedAt), "Expiration update response must include updatedAt for optimistic client refresh.");
+        Assert.NotEqual(default, updatedAt.GetDateTime());
     }
 
     [Fact]

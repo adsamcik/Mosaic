@@ -535,6 +535,47 @@ describe('SyncContext', () => {
       });
     });
 
+    it('handles 410 from sync by cleaning up expired album data', async () => {
+      let capturedContext: ReturnType<typeof useSyncContext> | null = null;
+
+      vi.mocked(syncEngine.sync).mockRejectedValueOnce(
+        new ApiError(410, 'Gone', '{"error":"expired"}'),
+      );
+
+      act(() => {
+        root = createRoot(container);
+        root.render(
+          createElement(
+            SyncProvider,
+            null,
+            createElement(TestConsumer, {
+              onContext: (ctx) => {
+                capturedContext = ctx;
+              },
+            }),
+          ),
+        );
+      });
+
+      act(() => {
+        capturedContext!.registerAlbum('album-expired');
+      });
+
+      await act(async () => {
+        await capturedContext!.triggerSync('album-expired');
+      });
+
+      // Should have cleaned up local data through the purge helper with the
+      // 410-specific reason. Until 410 handling lands in SyncContext this
+      // remains red: the contract requires the same purge as 404 plus a
+      // distinct reason so blocker telemetry can distinguish expired-album
+      // purges from missing-album purges.
+      expect(mockPurgeLocalAlbum).toHaveBeenCalledWith({
+        albumId: 'album-expired',
+        reason: 'album-410',
+      });
+    });
+
     it('does not clean up on non-404 errors', async () => {
       let capturedContext: ReturnType<typeof useSyncContext> | null = null;
 
