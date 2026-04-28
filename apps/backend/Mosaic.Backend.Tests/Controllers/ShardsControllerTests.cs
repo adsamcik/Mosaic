@@ -80,7 +80,7 @@ public class ShardsControllerTests
     }
 
     [Fact]
-    public async Task Download_SetsCacheControlHeaders_WhenSuccessful()
+    public async Task Download_SetsNoStoreCacheHeaders_WhenSuccessful()
     {
         // Arrange
         using var db = TestDbContextFactory.Create();
@@ -109,9 +109,12 @@ public class ShardsControllerTests
         // Assert
         Assert.IsType<FileStreamResult>(result);
 
-        // Verify caching headers are set (shards are immutable)
-        Assert.Equal("public, max-age=31536000, immutable", httpContext.Response.Headers.CacheControl.ToString());
-        Assert.Equal($"\"{shard.Id}\"", httpContext.Response.Headers.ETag.ToString());
+        Assert.Equal("no-store, no-cache, max-age=0", httpContext.Response.Headers.CacheControl.ToString());
+        Assert.Equal("no-cache", httpContext.Response.Headers.Pragma.ToString());
+        Assert.Equal("0", httpContext.Response.Headers.Expires.ToString());
+        Assert.False(httpContext.Response.Headers.ContainsKey("ETag"));
+        Assert.DoesNotContain("public", httpContext.Response.Headers.CacheControl.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("immutable", httpContext.Response.Headers.CacheControl.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -59,9 +59,9 @@ public class ShardsController : ControllerBase
             return NotFound();
         }
 
-        // Set aggressive caching headers - shards are immutable (content-addressed)
-        Response.Headers.CacheControl = "public, max-age=31536000, immutable";
-        Response.Headers.ETag = $"\"{shardId}\"";
+        Response.Headers.CacheControl = "no-store, no-cache, max-age=0";
+        Response.Headers.Pragma = "no-cache";
+        Response.Headers.Expires = "0";
         
         // Add SHA256 for client-side integrity verification
         if (!string.IsNullOrEmpty(shard.Sha256))
