@@ -7,6 +7,15 @@
 
 import type { Argon2Params } from './types';
 
+declare const process:
+  | {
+      readonly env?: {
+        readonly NODE_ENV?: string;
+        readonly VITE_E2E_WEAK_KEYS?: string;
+      };
+    }
+  | undefined;
+
 /**
  * Detect if running on a mobile device.
  * Uses User-Agent heuristics for simplicity.

@@ -141,3 +141,76 @@ crates/mosaic-wasm/tests/ffi_snapshot.rs
    - `cd apps/web ; npm run test:run`
    - `.\scripts\run-e2e-tests.ps1`
 
+## Audit snapshot: web Rust cutover state
+
+Snapshot date: 2026-04-28. Source state: `agent/web-rust-audit` at `2b75e44`.
+
+This snapshot classifies the current web crypto/client-core paths. It does not
+authorize deletion of TypeScript crypto; it identifies which paths are canonical
+Rust/WASM today, which paths are intentional rollback/reference code, and which
+paths still block a web-thin-shell cleanup.
+
+### 1. Canonical Rust/WASM path already used
+
+| Path | Current role | Evidence |
+|------|--------------|----------|
+| `apps/web/src/generated/mosaic-wasm/*` | Generated Rust WASM binding artifact | Exports Rust account, identity, epoch, shard, manifest, metadata, and header functions. Web production currently consumes only the header-parse and manifest-verify subset through `rust-crypto-core.ts`. |
+| `apps/web/src/workers/rust-crypto-core.ts` | Canonical web Rust facade | Imports generated WASM, initializes it once, builds legacy manifest transcripts, verifies manifest signatures with Rust, and parses 64-byte envelope headers with Rust. |
+| `apps/web/src/workers/crypto.worker.ts` `peekHeader` / `verifyManifest` | Rust-backed worker API methods | `peekHeader` calls `parseEnvelopeHeaderFromRust`; `verifyManifest` calls `verifyLegacyManifestWithRust`. React code still reaches these through the existing Comlink worker seam. |
+| `crates/mosaic-crypto/**` and `crates/mosaic-wasm/**` | Canonical Rust implementation and WASM facade | Rust tests cover envelope crypto, identity, epoch keys, manifest signing, auth challenge signing, and WASM FFI snapshots. |
+| `apps/web/src/workers/__tests__/rust-crypto-core.test.ts` | Boundary unit coverage | Verifies legacy manifest transcript construction, Rust verifier delegation, input length rejection, header-only parsing, and result-object release. |
+
+### 2. Intentional rollback/reference path
+
+| Path | Current role | Evidence |
+|------|--------------|----------|
+| `libs/crypto/src/**` | TypeScript reference and rollback implementation | ADR-001 and ADR-003 keep TypeScript crypto as the temporary reference/rollback path until cross-client Rust upload/decrypt interoperability is proven. |
+| `libs/crypto/tests/**` and `libs/crypto/stryker.config.json` | Reference oracle test suite | Maintains security-invariant, envelope, auth, keychain, sharing, and mutation-test coverage for the TypeScript reference while migration is active. |
+| `libs/crypto/src/mock.ts` | Development/test mock implementation | No production web import was found. Keep only while tests or local harnesses need it. |
+
+### 3. Still-production TypeScript path blocking web-thin-shell cleanup
+
+| Path | Blocking behavior |
+|------|-------------------|
+| `apps/web/src/workers/crypto.worker.ts` | Most worker methods still use `@mosaic/crypto` or direct libsodium: account init/unlock, identity derivation, auth challenge signing, shard encryption/decryption, manifest encryption/signing, epoch bundle open/create, share-link wrapping, account-key wrapping, key export/import, and album content encryption. |
+| `apps/web/src/lib/session.ts` | Session restore/login still derives and exports raw web-visible account/session/identity keys through the TypeScript worker and uses browser WebCrypto for user-salt encryption. |
+| `apps/web/src/lib/local-auth.ts` | LocalAuth derives auth keys, signs challenges, initializes account keys, and registers public keys through the TypeScript worker path. |
+| `apps/web/src/lib/epoch-key-service.ts` and `apps/web/src/lib/epoch-key-store.ts` | Epoch bundles are opened through the TypeScript worker and unwrapped seeds/signing keys remain cached in TypeScript memory, with explicit memzero on replacement/logout. |
+| `apps/web/src/lib/manifest-service.ts` and `apps/web/src/lib/sync-engine.ts` | Upload manifests are encrypted/signed through TypeScript worker methods; sync verifies with Rust but still derives tier keys and decrypts metadata with TypeScript compatibility keys. |
+| `apps/web/src/lib/thumbnail-generator.ts`, `apps/web/src/lib/upload/tiered-upload-handler.ts`, `apps/web/src/lib/upload/video-upload-handler.ts`, and `apps/web/src/lib/upload/legacy-upload-handler.ts` | Image/video/non-image upload encryption is still TypeScript. Tiered image/video paths import `@mosaic/crypto` directly for tier keys and shard encryption; legacy upload calls the worker TypeScript encryption method. |
+| `apps/web/src/hooks/useLinkKeys.ts`, `apps/web/src/hooks/useShareLinks.ts`, and `apps/web/src/lib/epoch-rotation-service.ts` | Share-link ID/secret derivation, tier-key wrapping/unwrapping, and epoch-rotation link rewraps still use TypeScript crypto helpers. |
+| `apps/web/src/workers/db.worker.ts`, `apps/web/src/lib/key-cache.ts`, and `apps/web/src/lib/link-tier-key-store.ts` | Local-only storage encryption remains web TypeScript/browser crypto. This is not server-visible plaintext, but it is still client crypto outside the Rust core. |
+
+### 4. Dead code safe to remove later
+
+| Path | Removal condition |
+|------|-------------------|
+| `apps/web/src/lib/thumbnail-generator.ts` `generateTieredShards` | No production caller was found; current references are tests and feasibility docs. Remove only with targeted test/doc updates or after replacing callers with the Rust-backed upload pipeline. |
+| `libs/crypto/src/mock.ts` | No production web caller was found. Remove once no tests, examples, or local harnesses rely on the mock `CryptoLib`. |
+
+### Boundary guard added by this audit
+
+`apps/web/tests/rust-cutover-boundary.test.ts` scans `apps/web/src` and enforces:
+
+- generated `mosaic-wasm` imports stay behind `workers/rust-crypto-core.ts`;
+- the Rust crypto facade is imported only by `workers/crypto.worker.ts`;
+- every production `@mosaic/crypto` import remains explicitly classified as
+  compatibility debt.
+
+The guard is intentionally asymmetric: removing TypeScript imports does not fail
+the test, but adding a new unclassified TypeScript crypto import does.
+
+### Recommended cutover order
+
+1. Wire Rust WASM handle lifecycle in `crypto.worker.ts` for account unlock,
+   identity handles, and epoch handles before changing upload/sync callers.
+2. Move shard encryption/decryption and metadata sidecar encryption to the Rust
+   handle APIs, then migrate tiered image/video/legacy upload paths through the
+   worker instead of direct `@mosaic/crypto` imports.
+3. Move manifest signing to Rust identity handles and keep Rust verification as
+   the only verification path.
+4. Move LocalAuth challenge signing and session key export/import semantics to
+   Rust-backed opaque handles.
+5. After web↔Android encrypted media interoperability is green, remove the
+   TypeScript production crypto surfaces in a dedicated cleanup change while
+   keeping vector/reference tests until Rust coverage fully replaces them.
