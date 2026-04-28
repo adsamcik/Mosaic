@@ -106,7 +106,7 @@ class PrivacySafeUploadQueueRecord private constructor(
       prohibited: ProhibitedQueuePayload = ProhibitedQueuePayload.None,
     ): PrivacySafeUploadQueueRecord {
       prohibited.validateEmpty()
-      require(contentLengthBytes >= 0) { "content length must not be negative" }
+      require(contentLengthBytes > 0) { "queued upload content length must be positive" }
       require(createdAtEpochMillis >= 0) { "created timestamp must not be negative" }
       require(retryCount >= 0) { "retry count must not be negative" }
 

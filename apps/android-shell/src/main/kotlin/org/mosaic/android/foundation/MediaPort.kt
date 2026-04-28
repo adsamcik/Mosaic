@@ -5,6 +5,8 @@ value class MediaTierPlanId(val value: String) {
   init {
     require(value.isNotBlank()) { "media tier plan id is required" }
   }
+
+  override fun toString(): String = "MediaTierPlanId(<redacted>)"
 }
 
 data class MediaImportCandidate(

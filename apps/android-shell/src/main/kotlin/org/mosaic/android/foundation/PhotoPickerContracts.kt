@@ -26,7 +26,7 @@ data class PhotoPickerReadReceipt(
   val stagedAtEpochMillis: Long,
 ) {
   init {
-    require(contentLengthBytes >= 0) { "content length must not be negative" }
+    require(contentLengthBytes > 0) { "manual upload content length must be positive" }
     require(stagedAtEpochMillis >= 0) { "staged timestamp must not be negative" }
   }
 }

@@ -12,10 +12,15 @@ fun main() {
     TestCase("upload queue rejects privacy-forbidden fields", ::uploadQueueRejectsPrivacyForbiddenFields),
     TestCase("crypto unlock before server authentication is rejected", ::cryptoUnlockBeforeServerAuthenticationRejected),
     TestCase("photo picker contract stages immediate reads before queueing", ::photoPickerStagesImmediateReads),
+    TestCase("photo picker selection string output redacts raw URI", ::photoPickerSelectionStringOutputRedactsRawUri),
+    TestCase("manual upload receipt and queue reject raw URI and zero bytes", ::manualUploadReceiptAndQueueRejectRawUriAndZeroBytes),
     TestCase("fake rust bridge models account unlock lifecycle", ::fakeRustBridgeModelsUnlockLifecycle),
     TestCase("generated rust bridge maps UniFFI account calls", ::generatedRustBridgeMapsUniFfiAccountCalls),
     TestCase("work policy defaults to foreground dataSync", ::workPolicyDefaultsToForegroundDataSync),
     TestCase("media port exposes a stub and fake seam", ::mediaPortExposesStubAndFakeSeam),
+    TestCase("generated rust media bridge plans without raw picker data", ::generatedRustMediaBridgePlansWithoutRawPickerData),
+    TestCase("generated rust media bridge maps deferred and error statuses safely", ::generatedRustMediaBridgeMapsDeferredAndErrorStatusesSafely),
+    TestCase("public Android shell DTO strings avoid privacy-forbidden media text", ::publicAndroidShellDtoStringsAvoidPrivacyForbiddenMediaText),
   )
 
   var failed = 0
@@ -151,6 +156,58 @@ private fun photoPickerStagesImmediateReads() {
   assertFalse(queued.toString().contains(receipt.stagedSource.value))
 }
 
+private fun photoPickerSelectionStringOutputRedactsRawUri() {
+  val selection = PhotoPickerSelection(
+    contentUri = EphemeralContentUri("content://picker/session/raw-item"),
+    selectedAtEpochMillis = 2100,
+  )
+
+  assertEquals("content://picker/session/raw-item", selection.contentUri.value)
+  assertFalse(selection.toString().contains(selection.contentUri.value))
+  assertFalse(selection.toString().contains("content://"))
+  assertTrue(selection.toString().contains("<redacted>"))
+}
+
+private fun manualUploadReceiptAndQueueRejectRawUriAndZeroBytes() {
+  expectThrows("content URI receipt staging rejected") {
+    PhotoPickerReadReceipt(
+      stagedSource = StagedMediaReference.of("content://picker/session/item"),
+      contentLengthBytes = 2048,
+      stagedAtEpochMillis = 2200,
+    )
+  }
+  expectThrows("file URI receipt staging rejected") {
+    PhotoPickerReadReceipt(
+      stagedSource = StagedMediaReference.of("file:///sdcard/DCIM/raw.jpg"),
+      contentLengthBytes = 2048,
+      stagedAtEpochMillis = 2200,
+    )
+  }
+  expectThrows("manual upload receipt zero length rejected") {
+    PhotoPickerReadReceipt(
+      stagedSource = StagedMediaReference.of("mosaic-staged://queue-2/zero"),
+      contentLengthBytes = 0,
+      stagedAtEpochMillis = 2200,
+    )
+  }
+  expectThrows("queued manual upload zero length rejected") {
+    PrivacySafeUploadQueueRecord.create(
+      id = QueueRecordId("queue-zero"),
+      serverAccountId = ServerAccountId("server-account-1"),
+      albumId = AlbumId("album-1"),
+      stagedSource = StagedMediaReference.of("mosaic-staged://queue-zero/source"),
+      contentLengthBytes = 0,
+      createdAtEpochMillis = 2200,
+    )
+  }
+
+  val genericCandidate = MediaImportCandidate(
+    stagedSource = StagedMediaReference.of("mosaic-staged://generic/empty"),
+    contentLengthBytes = 0,
+  )
+  assertEquals(0, genericCandidate.contentLengthBytes)
+}
+
 private fun fakeRustBridgeModelsUnlockLifecycle() {
   val bridge = FakeRustAccountBridge()
   assertEquals("mosaic-v1", bridge.protocolVersion())
@@ -268,6 +325,93 @@ private fun mediaPortExposesStubAndFakeSeam() {
   assertEquals(candidate, fake.lastCandidate)
 }
 
+private fun generatedRustMediaBridgePlansWithoutRawPickerData() {
+  val api = FakeGeneratedRustMediaApi(
+    results = ArrayDeque(
+      listOf(
+        RustMediaPlanFfiResult(
+          code = RustMediaPlanStableCode.OK,
+          planId = "opaque-plan-1",
+        ),
+      ),
+    ),
+  )
+  val bridge = GeneratedRustMediaBridge(api)
+  val rawUri = "content://picker/session/should-not-leak"
+  val candidate = MediaImportCandidate(
+    stagedSource = StagedMediaReference.of("mosaic-staged://queue-3/source"),
+    contentLengthBytes = 4096,
+  )
+
+  val planned = bridge.planTiers(candidate)
+
+  assertEquals(MediaPlanStatus.PLANNED, planned.status)
+  assertEquals(MediaTierPlanId("opaque-plan-1"), planned.planId)
+  assertEquals(candidate.stagedSource, api.lastRequest?.stagedSource)
+  assertEquals(4096, api.lastRequest?.contentLengthBytes)
+  assertFalse(api.lastRequest.toString().contains(candidate.stagedSource.value))
+  assertFalse(api.lastRequest.toString().contains(rawUri))
+  assertFalse(planned.toString().contains(candidate.stagedSource.value))
+  assertFalse(planned.toString().contains(rawUri))
+  assertFalse(planned.toString().contains("opaque-plan-1"))
+}
+
+private fun generatedRustMediaBridgeMapsDeferredAndErrorStatusesSafely() {
+  val api = FakeGeneratedRustMediaApi(
+    results = ArrayDeque(
+      listOf(
+        RustMediaPlanFfiResult(code = RustMediaPlanStableCode.UNSUPPORTED, planId = "must-ignore-1"),
+        RustMediaPlanFfiResult(code = RustMediaPlanStableCode.DEFERRED, planId = "must-ignore-2"),
+        RustMediaPlanFfiResult(code = RustMediaPlanStableCode.INTERNAL_ERROR, planId = "must-ignore-3"),
+        RustMediaPlanFfiResult(code = 99999, planId = "must-ignore-4"),
+        RustMediaPlanFfiResult(code = RustMediaPlanStableCode.OK, planId = ""),
+      ),
+    ),
+  )
+  val bridge = GeneratedRustMediaBridge(api)
+  val candidate = MediaImportCandidate(
+    stagedSource = StagedMediaReference.of("mosaic-staged://queue-4/source"),
+    contentLengthBytes = 4096,
+  )
+
+  repeat(5) {
+    val deferred = bridge.planTiers(candidate)
+    assertEquals(MediaPlanStatus.DEFERRED, deferred.status)
+    assertEquals(null, deferred.planId)
+  }
+}
+
+private fun publicAndroidShellDtoStringsAvoidPrivacyForbiddenMediaText() {
+  val staged = StagedMediaReference.of("mosaic-staged://safe-token/source")
+  val safeDtos = listOf(
+    EphemeralContentUri("content://picker/session/redacted").toString(),
+    PhotoPickerSelection(
+      contentUri = EphemeralContentUri("content://picker/session/redacted"),
+      selectedAtEpochMillis = 2300,
+    ).toString(),
+    PhotoPickerReadReceipt(
+      stagedSource = staged,
+      contentLengthBytes = 2048,
+      stagedAtEpochMillis = 2301,
+    ).toString(),
+    staged.toString(),
+    MediaImportCandidate(staged, contentLengthBytes = 2048).toString(),
+    MediaPlanResult(MediaPlanStatus.PLANNED, MediaTierPlanId("opaque-plan-safe")).toString(),
+    MediaPlanResult(MediaPlanStatus.DEFERRED, null).toString(),
+    RustMediaPlanFfiRequest.from(MediaImportCandidate(staged, contentLengthBytes = 2048)).toString(),
+    RustMediaPlanFfiResult(RustMediaPlanStableCode.OK, "opaque-plan-safe").toString(),
+    validQueueRecordForPublicStringScan(staged).toString(),
+  )
+  val forbidden = listOf("content://", "file://", "filename", "EXIF", "GPS", "camera", "device", "private", "secret")
+
+  for (dto in safeDtos) {
+    val dtoLower = dto.lowercase()
+    for (term in forbidden) {
+      assertFalse(dtoLower.contains(term.lowercase()))
+    }
+  }
+}
+
 private fun validQueueRecord(prohibited: ProhibitedQueuePayload = ProhibitedQueuePayload.None): PrivacySafeUploadQueueRecord =
   PrivacySafeUploadQueueRecord.create(
     id = QueueRecordId("queue-private-test"),
@@ -277,6 +421,16 @@ private fun validQueueRecord(prohibited: ProhibitedQueuePayload = ProhibitedQueu
     contentLengthBytes = 512,
     createdAtEpochMillis = 3000,
     prohibited = prohibited,
+  )
+
+private fun validQueueRecordForPublicStringScan(staged: StagedMediaReference): PrivacySafeUploadQueueRecord =
+  PrivacySafeUploadQueueRecord.create(
+    id = QueueRecordId("queue-safe-scan"),
+    serverAccountId = ServerAccountId("server-account-scan"),
+    albumId = AlbumId("album-scan"),
+    stagedSource = staged,
+    contentLengthBytes = 2048,
+    createdAtEpochMillis = 3001,
   )
 
 private fun unlockRequest(): AccountUnlockRequest = AccountUnlockRequest(
@@ -350,6 +504,18 @@ private class FakeGeneratedRustAccountApi : GeneratedRustAccountApi {
 
   override fun closeAccountKeyHandle(handle: Long): Int =
     if (openHandles.remove(handle)) RustClientStableCode.OK else RustClientStableCode.SECRET_HANDLE_NOT_FOUND
+}
+
+private class FakeGeneratedRustMediaApi(
+  private val results: ArrayDeque<RustMediaPlanFfiResult>,
+) : GeneratedRustMediaApi {
+  var lastRequest: RustMediaPlanFfiRequest? = null
+    private set
+
+  override fun planMediaTiers(request: RustMediaPlanFfiRequest): RustMediaPlanFfiResult {
+    lastRequest = request
+    return results.removeFirst()
+  }
 }
 
 private class FakePhotoPickerImmediateReader(
