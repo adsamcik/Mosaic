@@ -1,20 +1,20 @@
 package org.mosaic.android.foundation
 
-private data class AutoImportTestCase(
+private data class AutoImportMediaPolicyTestCase(
   val name: String,
   val body: () -> Unit,
 )
 
 fun runAutoImportMediaPolicyTests(): Int {
   val tests = listOf(
-    AutoImportTestCase(
+    AutoImportMediaPolicyTestCase(
       "auto-import defaults stay disabled with Wi-Fi and battery safeguards",
       ::autoImportDefaultsStayDisabledWithSafeConstraints,
     ),
-    AutoImportTestCase("auto-import permission decisions are API-level aware", ::autoImportPermissionDecisionsAreApiAware),
-    AutoImportTestCase("auto-import requires selected album opt-in", ::autoImportRequiresSelectedAlbumOptIn),
-    AutoImportTestCase("auto-import durable media records reject raw URIs", ::autoImportDurableRecordsRejectRawUris),
-    AutoImportTestCase("auto-import durable records reject plaintext metadata", ::autoImportDurableRecordsRejectPlaintextMetadata),
+    AutoImportMediaPolicyTestCase("auto-import permission decisions are API-level aware", ::autoImportPermissionDecisionsAreApiAware),
+    AutoImportMediaPolicyTestCase("auto-import requires selected album opt-in", ::autoImportRequiresSelectedAlbumOptIn),
+    AutoImportMediaPolicyTestCase("auto-import durable media records reject raw URIs", ::autoImportDurableRecordsRejectRawUris),
+    AutoImportMediaPolicyTestCase("auto-import durable records reject plaintext metadata", ::autoImportDurableRecordsRejectPlaintextMetadata),
   )
 
   var failed = 0
@@ -33,6 +33,11 @@ fun runAutoImportMediaPolicyTests(): Int {
   }
 
   return tests.size
+}
+
+fun main() {
+  val testCount = runAutoImportMediaPolicyTests()
+  println("PASS $testCount auto-import media policy tests")
 }
 
 private fun autoImportDefaultsStayDisabledWithSafeConstraints() {

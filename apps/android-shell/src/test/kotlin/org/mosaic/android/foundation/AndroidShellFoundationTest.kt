@@ -52,9 +52,7 @@ fun main() {
     throw IllegalStateException("$failed Android shell foundation tests failed")
   }
 
-  val autoImportTestCount = runAutoImportMediaPolicyTests()
-
-  println("PASS ${tests.size + autoImportTestCount} Android shell foundation tests")
+  println("PASS ${tests.size} Android shell foundation tests")
 }
 
 private fun serverAndCryptoStateAreDistinct() {
