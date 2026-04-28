@@ -16,6 +16,9 @@ use mosaic_crypto::{
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
 use zeroize::{Zeroize, Zeroizing};
 
+pub mod state_machine;
+pub use state_machine::*;
+
 /// Stable client error codes exported through FFI facades.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
@@ -54,6 +57,13 @@ pub enum ClientErrorCode {
     MediaMetadataMismatch = 604,
     InvalidMediaSidecar = 605,
     MediaAdapterOutputMismatch = 606,
+    ClientCoreInvalidTransition = 700,
+    ClientCoreMissingEventPayload = 701,
+    ClientCoreRetryBudgetExhausted = 702,
+    ClientCoreSyncPageDidNotAdvance = 703,
+    ClientCoreManifestOutcomeUnknown = 704,
+    ClientCoreUnsupportedSnapshotVersion = 705,
+    ClientCoreInvalidSnapshot = 706,
 }
 
 impl ClientErrorCode {
@@ -74,7 +84,7 @@ pub struct ClientError {
 }
 
 impl ClientError {
-    fn new(code: ClientErrorCode, message: &str) -> Self {
+    pub(crate) fn new(code: ClientErrorCode, message: &str) -> Self {
         Self {
             code,
             message: message.to_owned(),
