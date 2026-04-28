@@ -69,6 +69,7 @@ export function CreateAlbumDialog({
   const [showExpiration, setShowExpiration] = useState(false);
   const [expirationMode, setExpirationMode] = useState<ExpirationMode>('7d');
   const [customDate, setCustomDate] = useState('');
+  const [expirationConfirmed, setExpirationConfirmed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Compute the expiration ISO string based on current mode
@@ -107,6 +108,7 @@ export function CreateAlbumDialog({
       setShowExpiration(false);
       setExpirationMode('7d');
       setCustomDate('');
+      setExpirationConfirmed(false);
     }
   }, [isOpen]);
 
@@ -133,6 +135,11 @@ export function CreateAlbumDialog({
 
     if (trimmedName.length > 100) {
       setLocalError(t('album.create.error.nameTooLong'));
+      return;
+    }
+
+    if (showExpiration && !expirationConfirmed) {
+      setLocalError(t('album.create.error.expirationAcknowledgementRequired'));
       return;
     }
 
@@ -170,7 +177,11 @@ export function CreateAlbumDialog({
       <button
         type="submit"
         form="create-album-form"
-        disabled={isCreating || !name.trim()}
+        disabled={
+          isCreating ||
+          !name.trim() ||
+          (showExpiration && (!expiresAt || !expirationConfirmed))
+        }
         className="button-primary"
         data-testid="create-button"
       >
@@ -219,7 +230,13 @@ export function CreateAlbumDialog({
           <button
             type="button"
             className="expiration-toggle"
-            onClick={() => setShowExpiration(!showExpiration)}
+            onClick={() => {
+              const next = !showExpiration;
+              setShowExpiration(next);
+              if (!next) {
+                setExpirationConfirmed(false);
+              }
+            }}
             aria-expanded={showExpiration}
             disabled={isCreating}
             data-testid="expiration-toggle"
@@ -235,6 +252,23 @@ export function CreateAlbumDialog({
               <div className="expiration-warning" role="alert">
                 ⚠️ {t('album.create.temporaryWarning')}
               </div>
+
+              <label
+                className="checkbox-row expiration-confirmation"
+                data-testid="expiration-confirmation-row"
+              >
+                <input
+                  type="checkbox"
+                  checked={expirationConfirmed}
+                  onChange={(e) => {
+                    setExpirationConfirmed(e.target.checked);
+                    setLocalError(null);
+                  }}
+                  disabled={isCreating}
+                  data-testid="expiration-confirm-checkbox"
+                />
+                <span>{t('album.create.expirationAcknowledge')}</span>
+              </label>
 
               <div className="form-group">
                 <label className="form-label">{t('album.create.duration')}</label>

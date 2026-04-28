@@ -856,7 +856,11 @@ describe('AlbumExpirationSettings', () => {
       });
 
       // Confirmation banner should appear
-      expect(getByTestId('expiration-confirmation')).not.toBeNull();
+      const confirmation = getByTestId('expiration-confirmation');
+      expect(confirmation).not.toBeNull();
+      expect(confirmation?.textContent).toContain(
+        'album.expiration.confirmServerEnforced',
+      );
       expect(getByTestId('confirm-expiration-button')).not.toBeNull();
       expect(getByTestId('cancel-expiration-button')).not.toBeNull();
 

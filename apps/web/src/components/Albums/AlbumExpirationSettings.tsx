@@ -422,6 +422,7 @@ export function AlbumExpirationSettings({
               date: formatDateForDisplay(expiresAt),
             })}
           </p>
+          <p>{t('album.expiration.confirmServerEnforced')}</p>
           <div className="confirmation-actions">
             <button
               type="button"

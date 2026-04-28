@@ -28,6 +28,8 @@ interface Album {
   decryptionFailed?: boolean;
   /** ISO 8601 date when album expires */
   expiresAt?: string | null;
+  /** Days before expiration to show warning */
+  expirationWarningDays?: number;
   /** Base64-encoded encrypted description from server (optional) */
   encryptedDescription?: string | null;
   /** Decrypted description (populated after decryption) */

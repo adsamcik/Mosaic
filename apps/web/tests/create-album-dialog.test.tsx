@@ -319,6 +319,14 @@ describe('CreateAlbumDialog', () => {
         preset30d.click();
       });
 
+      // Explicitly acknowledge destructive server-enforced expiration
+      const acknowledge = getByTestId(
+        'expiration-confirm-checkbox',
+      ) as HTMLInputElement;
+      act(() => {
+        acknowledge.click();
+      });
+
       // Submit the form
       const form = getByTestId('create-button') as HTMLButtonElement;
       await act(async () => {
@@ -419,6 +427,54 @@ describe('CreateAlbumDialog', () => {
       cleanup();
     });
 
+    it('requires explicit destructive acknowledgement before creating a temporary album', async () => {
+      const onCreate = vi.fn().mockResolvedValue(undefined);
+      const { getByTestId, container, cleanup } = renderDialog({ onCreate });
+
+      const input = getByTestId('album-name-input') as HTMLInputElement;
+      act(() => {
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        nativeInputValueSetter.call(input, 'Temp Album');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
+      const toggle = getByTestId('expiration-toggle') as HTMLButtonElement;
+      act(() => {
+        toggle.click();
+      });
+
+      expect(container.textContent).toContain('album.create.temporaryWarning');
+      expect(container.textContent).toContain('album.create.expirationAcknowledge');
+      expect((getByTestId('create-button') as HTMLButtonElement).disabled).toBe(true);
+
+      const acknowledge = getByTestId(
+        'expiration-confirm-checkbox',
+      ) as HTMLInputElement;
+      act(() => {
+        acknowledge.click();
+      });
+
+      expect((getByTestId('create-button') as HTMLButtonElement).disabled).toBe(false);
+
+      await act(async () => {
+        (getByTestId('create-button') as HTMLButtonElement).click();
+      });
+
+      expect(onCreate).toHaveBeenCalledWith(
+        'Temp Album',
+        expect.objectContaining({
+          expiresAt: expect.any(String),
+          expirationWarningDays: 7,
+        }),
+      );
+
+      cleanup();
+    });
+
     it('submits form with expiration options when enabled', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2024-06-01T12:00:00Z'));
@@ -448,6 +504,14 @@ describe('CreateAlbumDialog', () => {
       const preset30d = getByTestId('expiration-30d') as HTMLButtonElement;
       act(() => {
         preset30d.click();
+      });
+
+      // Explicitly acknowledge destructive server-enforced expiration
+      const acknowledge = getByTestId(
+        'expiration-confirm-checkbox',
+      ) as HTMLInputElement;
+      act(() => {
+        acknowledge.click();
       });
 
       // Submit the form

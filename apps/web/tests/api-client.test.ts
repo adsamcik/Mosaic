@@ -134,6 +134,24 @@ describe('updateAlbumExpiration', () => {
     expect(init.method).toBe('PATCH');
   });
 
+
+  it('serializes the album expiration request without encrypted metadata fields', async () => {
+    const api = getApi();
+    await api.updateAlbumExpiration('album-123', {
+      expiresAt: '2024-12-25T23:59:59Z',
+      expirationWarningDays: 7,
+    });
+
+    const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(JSON.parse(init.body as string)).toEqual({
+      expiresAt: '2024-12-25T23:59:59Z',
+      expirationWarningDays: 7,
+    });
+  });
+
   it('calls the correct URL pattern', async () => {
     const api = getApi();
     await api.updateAlbumExpiration('0190a0d4-cffe-7a55-9b8a-94e4ad9c4e51', {
@@ -321,5 +339,41 @@ describe('apiRequest response validation (M2)', () => {
     const apiErr = thrown as ApiError;
     expect(apiErr.status).toBe(403);
     expect(apiErr.statusText).toBe('Forbidden');
+  });
+});
+
+describe('updatePhotoExpiration', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 204,
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('uses a dependency-safe PATCH adapter with only lifecycle metadata', async () => {
+    const api = getApi();
+    await api.updatePhotoExpiration('manifest-123', {
+      expiresAt: '2024-12-25T23:59:59Z',
+      expirationWarningDays: 3,
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe('/api/manifests/manifest-123/expiration');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body as string)).toEqual({
+      expiresAt: '2024-12-25T23:59:59Z',
+      expirationWarningDays: 3,
+    });
   });
 });

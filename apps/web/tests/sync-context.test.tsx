@@ -87,6 +87,18 @@ vi.mock('../src/lib/epoch-key-service', () => ({
   }),
 }));
 
+// Mock local purge helper
+const mockPurgeLocalAlbum = vi.fn().mockResolvedValue({
+  albumId: 'album-gone',
+  purgedAlbum: true,
+  purgedPhotoIds: [],
+  removedUploadTasks: 0,
+  blockers: [],
+});
+vi.mock('../src/lib/local-purge', () => ({
+  purgeLocalAlbum: (...args: unknown[]) => mockPurgeLocalAlbum(...args),
+}));
+
 // Mock epoch key store
 const mockClearAlbumKeys = vi.fn();
 vi.mock('../src/lib/epoch-key-store', () => ({
@@ -126,6 +138,13 @@ describe('SyncContext', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPurgeLocalAlbum.mockResolvedValue({
+      albumId: 'album-gone',
+      purgedAlbum: true,
+      purgedPhotoIds: [],
+      removedUploadTasks: 0,
+      blockers: [],
+    });
     vi.useFakeTimers();
     mockAutoSyncEnabled = true;
     mockSettingsSubscribers.length = 0;
@@ -509,9 +528,11 @@ describe('SyncContext', () => {
         await capturedContext!.triggerSync('album-gone');
       });
 
-      // Should have cleaned up local data
-      expect(mockClearAlbumKeys).toHaveBeenCalledWith('album-gone');
-      expect(mockClearAlbumPhotos).toHaveBeenCalledWith('album-gone');
+      // Should have cleaned up local data through the purge helper
+      expect(mockPurgeLocalAlbum).toHaveBeenCalledWith({
+        albumId: 'album-gone',
+        reason: 'album-404',
+      });
     });
 
     it('does not clean up on non-404 errors', async () => {
@@ -540,8 +561,7 @@ describe('SyncContext', () => {
       });
 
       // Should NOT have cleaned up
-      expect(mockClearAlbumKeys).not.toHaveBeenCalled();
-      expect(mockClearAlbumPhotos).not.toHaveBeenCalled();
+      expect(mockPurgeLocalAlbum).not.toHaveBeenCalled();
     });
 
     it('does not clean up on network errors', async () => {
@@ -570,8 +590,7 @@ describe('SyncContext', () => {
       });
 
       // Should NOT have cleaned up — not an ApiError
-      expect(mockClearAlbumKeys).not.toHaveBeenCalled();
-      expect(mockClearAlbumPhotos).not.toHaveBeenCalled();
+      expect(mockPurgeLocalAlbum).not.toHaveBeenCalled();
     });
 
     it('handles cleanup errors gracefully', async () => {
@@ -579,9 +598,7 @@ describe('SyncContext', () => {
 
       // Make getAlbum throw a 404 AND make cleanup throw
       mockGetAlbum.mockRejectedValue(new ApiError(404, 'Not Found'));
-      mockClearAlbumKeys.mockImplementation(() => {
-        throw new Error('IndexedDB is broken');
-      });
+      mockPurgeLocalAlbum.mockRejectedValue(new Error('IndexedDB is broken'));
 
       act(() => {
         root = createRoot(container);
@@ -603,9 +620,11 @@ describe('SyncContext', () => {
         await capturedContext!.triggerSync('album-broken');
       });
 
-      // clearAlbumKeys was attempted
-      expect(mockClearAlbumKeys).toHaveBeenCalledWith('album-broken');
-      // clearAlbumPhotos was NOT reached because clearAlbumKeys threw first
+      // Local purge was attempted and its error was handled internally
+      expect(mockPurgeLocalAlbum).toHaveBeenCalledWith({
+        albumId: 'album-broken',
+        reason: 'album-404',
+      });
     });
   });
 });

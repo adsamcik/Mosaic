@@ -33,6 +33,7 @@ import type {
   ManifestCreated,
   UpdateManifestMetadataRequest,
   ManifestMetadataUpdated,
+  UpdatePhotoExpirationRequest,
   CreateShardRequest,
   ShardCreated,
   ShareLinkResponse,
@@ -705,6 +706,28 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       manifest.updatedAt = new Date().toISOString();
     },
 
+    async updatePhotoExpiration(
+      manifestId: string,
+      request: UpdatePhotoExpirationRequest,
+    ): Promise<void> {
+      await delay();
+      const manifest = store.manifests.get(manifestId);
+      if (!manifest) {
+        throw new Error(`Manifest not found: ${manifestId}`);
+      }
+      const updated: ManifestRecord = {
+        ...manifest,
+        updatedAt: new Date().toISOString(),
+      };
+      if (request.expiresAt !== undefined) {
+        updated.expiresAt = request.expiresAt;
+      }
+      if (request.expirationWarningDays !== undefined) {
+        updated.expirationWarningDays = request.expirationWarningDays;
+      }
+      store.manifests.set(manifestId, updated);
+    },
+
     // =========================================================================
     // Shards
     // =========================================================================
@@ -804,7 +827,8 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       if (request.expiresAt !== undefined) {
         updated.expiresAt = request.expiresAt;
       }
-      return updated;
+      store.albums.set(albumId, updated);
+      return { ...updated };
     },
 
     async updateShareLinkExpiration(

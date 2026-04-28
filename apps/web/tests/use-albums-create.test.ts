@@ -29,6 +29,9 @@ const mocks = vi.hoisted(() => ({
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   },
+  localPurge: {
+    purgeLocalAlbum: vi.fn(),
+  },
   memzero: vi.fn((buffer: Uint8Array) => buffer.fill(0)),
 }));
 
@@ -65,6 +68,10 @@ vi.mock('../src/lib/sync-engine', () => ({
   syncEngine: mocks.syncEngine,
 }));
 
+vi.mock('../src/lib/local-purge', () => ({
+  purgeLocalAlbum: mocks.localPurge.purgeLocalAlbum,
+}));
+
 vi.mock('@mosaic/crypto', () => ({
   memzero: mocks.memzero,
 }));
@@ -92,6 +99,8 @@ interface UseAlbumsResult {
     createdAt: string;
     isDecrypting: boolean;
     decryptionFailed: boolean;
+    expiresAt?: string | null;
+    expirationWarningDays?: number;
   } | null>;
 }
 
@@ -206,5 +215,43 @@ describe('useAlbums createAlbum', () => {
       }),
     );
     expect(mocks.api.deleteAlbum).not.toHaveBeenCalled();
+  });
+
+  it('passes expiration options to createAlbum and preserves them in local state', async () => {
+    renderHook();
+    await flush();
+
+    mocks.api.createAlbum.mockResolvedValueOnce({
+      id: 'album-expiring',
+      ownerId: 'user-123',
+      currentVersion: 1,
+      currentEpochId: 1,
+      createdAt: '2024-01-01T00:00:00Z',
+      expiresAt: '2024-02-01T00:00:00.000Z',
+      expirationWarningDays: 3,
+    });
+
+    let createdAlbum: Awaited<ReturnType<UseAlbumsResult['createAlbum']>> =
+      null;
+    await act(async () => {
+      createdAlbum = await hookResult.createAlbum('Temp Album', {
+        expiresAt: '2024-02-01T00:00:00.000Z',
+        expirationWarningDays: 3,
+      });
+    });
+
+    expect(mocks.api.createAlbum).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expiresAt: '2024-02-01T00:00:00.000Z',
+        expirationWarningDays: 3,
+      }),
+    );
+    expect(createdAlbum).toEqual(
+      expect.objectContaining({
+        id: 'album-expiring',
+        expiresAt: '2024-02-01T00:00:00.000Z',
+        expirationWarningDays: 3,
+      }),
+    );
   });
 });

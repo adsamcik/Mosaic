@@ -24,6 +24,9 @@ const mocks = vi.hoisted(() => ({
   },
   deriveTierKeys: vi.fn(),
   memzero: vi.fn((buffer: Uint8Array) => buffer.fill(0)),
+  localPurge: {
+    purgeLocalPhoto: vi.fn(),
+  },
 }));
 
 vi.mock('../src/lib/api', () => ({
@@ -56,6 +59,11 @@ vi.mock('@mosaic/crypto', () => ({
   memzero: mocks.memzero,
 }));
 
+
+vi.mock('../src/lib/local-purge', () => ({
+  purgeLocalPhoto: mocks.localPurge.purgeLocalPhoto,
+}));
+
 vi.mock('../src/lib/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
@@ -83,6 +91,13 @@ describe('syncEngine', () => {
     mocks.db.getAlbumVersion.mockResolvedValue(0);
     mocks.db.insertManifests.mockResolvedValue(undefined);
     mocks.db.setAlbumVersion.mockResolvedValue(undefined);
+    mocks.localPurge.purgeLocalPhoto.mockResolvedValue({
+      albumId: 'album-1',
+      purgedPhotoIds: ['manifest-deleted'],
+      purgedAlbum: false,
+      removedUploadTasks: 0,
+      blockers: [],
+    });
     mocks.crypto.verifyManifest.mockResolvedValue(true);
     mocks.crypto.decryptManifest.mockResolvedValue({
       assetId: 'asset-1',
@@ -266,6 +281,49 @@ describe('syncEngine', () => {
     );
 
     expect(mocks.api.syncAlbum).toHaveBeenCalledTimes(1000);
+  });
+
+
+  it('purges local photo data when sync observes a deleted manifest without decrypting metadata', async () => {
+    const signer = new Uint8Array(32).fill(9);
+    mocks.api.syncAlbum.mockResolvedValue({
+      manifests: [
+        {
+          id: 'manifest-deleted',
+          albumId: 'album-1',
+          versionCreated: 3,
+          isDeleted: true,
+          encryptedMeta: '',
+          signature: '',
+          signerPubkey: toBase64(signer),
+          shardIds: ['encrypted-shard-1'],
+        },
+      ],
+      currentEpochId: 7,
+      albumVersion: 3,
+      hasMore: false,
+    });
+
+    const syncEngine = await importSyncEngine();
+
+    await syncEngine.sync('album-1');
+
+    expect(mocks.localPurge.purgeLocalPhoto).toHaveBeenCalledWith({
+      albumId: 'album-1',
+      photoId: 'manifest-deleted',
+      reason: 'sync-deleted',
+    });
+    expect(mocks.crypto.verifyManifest).not.toHaveBeenCalled();
+    expect(mocks.crypto.decryptManifest).not.toHaveBeenCalled();
+    expect(mocks.db.insertManifests).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'manifest-deleted',
+        albumId: 'album-1',
+        isDeleted: true,
+        shardIds: ['encrypted-shard-1'],
+      }),
+    ]);
+    expect(mocks.db.setAlbumVersion).toHaveBeenCalledWith('album-1', 3);
   });
 
   it('skips manifests when server signer pubkey mismatches the cached epoch signing key', async () => {

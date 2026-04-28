@@ -13,6 +13,7 @@ import {
   setEpochKey as storeEpochKey,
 } from './epoch-key-store';
 import { createLogger } from './logger';
+import { purgeLocalPhoto } from './local-purge';
 
 const log = createLogger('SyncEngine');
 const MAX_SYNC_PAGINATION_ITERATIONS = 1000;
@@ -50,6 +51,39 @@ function keysMatch(left: Uint8Array, right: Uint8Array): boolean {
 
 function hasValidSigningKey(pubkey: Uint8Array): boolean {
   return pubkey.length === 32 && pubkey.some((byte) => byte !== 0);
+}
+
+function createDeletedManifestTombstone(manifest: {
+  id: string;
+  albumId: string;
+  versionCreated: number;
+  isDeleted: boolean;
+  shardIds: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}): DecryptedManifest {
+  const timestamp = manifest.updatedAt ?? manifest.createdAt ?? new Date(0).toISOString();
+  return {
+    id: manifest.id,
+    albumId: manifest.albumId,
+    versionCreated: manifest.versionCreated,
+    isDeleted: true,
+    meta: {
+      id: manifest.id,
+      assetId: manifest.id,
+      albumId: manifest.albumId,
+      filename: '',
+      mimeType: '',
+      width: 0,
+      height: 0,
+      tags: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      shardIds: [],
+      epochId: 0,
+    },
+    shardIds: manifest.shardIds,
+  };
 }
 
 /** Sync event types */
@@ -200,6 +234,16 @@ class SyncEngine extends EventTarget {
         const decrypted: DecryptedManifest[] = [];
         for (const manifest of response.manifests) {
           throwIfAborted(signal);
+
+          if (manifest.isDeleted) {
+            await purgeLocalPhoto({
+              albumId: manifest.albumId,
+              photoId: manifest.id,
+              reason: 'sync-deleted',
+            });
+            decrypted.push(createDeletedManifestTombstone(manifest));
+            continue;
+          }
 
           let thumbKey: Uint8Array | null = null;
           let previewKey: Uint8Array | null = null;

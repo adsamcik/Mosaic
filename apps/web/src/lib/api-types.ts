@@ -105,6 +105,14 @@ export interface UpdateExpirationRequest {
   expirationWarningDays?: number;
 }
 
+/** Request to update photo expiration settings. Lifecycle metadata only. */
+export interface UpdatePhotoExpirationRequest {
+  /** ISO 8601 date when photo expires, or null to remove expiration */
+  expiresAt?: string | null;
+  /** Days before expiration to show warning */
+  expirationWarningDays?: number;
+}
+
 /** Request to rename an album (update encrypted name) */
 export interface RenameAlbumRequest {
   /** Base64-encoded encrypted album name (encrypted with epoch read key) */
@@ -426,6 +434,10 @@ export interface ManifestRecord {
   signature: string;
   signerPubkey: string;
   shardIds: string[];
+  /** ISO 8601 date when this photo expires and will be deleted */
+  expiresAt?: string | null;
+  /** Days before expiration to show warning */
+  expirationWarningDays?: number;
   createdAt: string;
   updatedAt?: string;
 }
@@ -513,6 +525,10 @@ export interface MosaicApi {
     albumId: string,
     request: UpdateDescriptionRequest,
   ): Promise<UpdateDescriptionResponse>;
+  updateAlbumExpiration(
+    albumId: string,
+    request: UpdateExpirationRequest,
+  ): Promise<Album>;
   syncAlbum(
     albumId: string,
     since: number,
@@ -548,6 +564,10 @@ export interface MosaicApi {
     request: UpdateManifestMetadataRequest,
   ): Promise<ManifestMetadataUpdated>;
   deleteManifest(manifestId: string): Promise<void>;
+  updatePhotoExpiration(
+    manifestId: string,
+    request: UpdatePhotoExpirationRequest,
+  ): Promise<void>;
 
   // Shards
   downloadShard(shardId: string): Promise<Uint8Array>;

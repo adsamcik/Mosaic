@@ -68,6 +68,20 @@ export class UploadPersistence {
   }
 
   /**
+   * Delete all persisted tasks for an album. Used by local expiration purge.
+   */
+  async deleteTasksForAlbum(albumId: string): Promise<number> {
+    if (!this.db) return 0;
+
+    const tasks = await this.getAllTasks();
+    const matchingTasks = tasks.filter((task) => task.albumId === albumId);
+    for (const task of matchingTasks) {
+      await this.deleteTask(task.id);
+    }
+    return matchingTasks.length;
+  }
+
+  /**
    * Get all pending/in-progress tasks (excludes complete and permanently failed)
    */
   async getPendingTasks(): Promise<PersistedTask[]> {

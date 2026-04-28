@@ -50,6 +50,7 @@ import type {
   LinkEpochKeyResponse,
   ShareLinkPhotoResponse,
   UpdateExpirationRequest,
+  UpdatePhotoExpirationRequest,
   UpdateLinkExpirationRequest,
   QuotaDefaults,
   AdminUserResponse,
@@ -501,6 +502,16 @@ export function createApiClient(): MosaicApi {
     async deleteManifest(manifestId: string): Promise<void> {
       return apiRequest(`/manifests/${manifestId}`, {
         method: 'DELETE',
+      });
+    },
+
+    async updatePhotoExpiration(
+      manifestId: string,
+      request: UpdatePhotoExpirationRequest,
+    ): Promise<void> {
+      return apiRequest(`/manifests/${manifestId}/expiration`, {
+        method: 'PATCH',
+        body: request,
       });
     },
 

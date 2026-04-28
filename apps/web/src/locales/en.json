@@ -112,7 +112,8 @@
       "creating": "Creating...",
       "submit": "Create Album",
       "temporaryAlbum": "Temporary album",
-      "temporaryWarning": "Photos will be permanently deleted when this album expires",
+      "temporaryWarning": "Photos will be permanently deleted by the server when this album expires. This cannot be undone.",
+      "expirationAcknowledge": "I understand this is destructive and server-enforced.",
       "duration": "Duration",
       "days_7": "7 days",
       "days_30": "30 days",
@@ -122,7 +123,8 @@
       "expirationDate": "Expiration date",
       "error": {
         "nameRequired": "Album name is required",
-        "nameTooLong": "Album name must be 100 characters or less"
+        "nameTooLong": "Album name must be 100 characters or less",
+        "expirationAcknowledgementRequired": "Confirm that you understand temporary album expiration is destructive and server-enforced"
       }
     },
     "delete": {
@@ -138,7 +140,8 @@
       "namePlaceholder": "My Photos",
       "error": {
         "nameRequired": "Album name is required",
-        "nameTooLong": "Album name must be 100 characters or less"
+        "nameTooLong": "Album name must be 100 characters or less",
+        "expirationAcknowledgementRequired": "Confirm that you understand temporary album expiration is destructive and server-enforced"
       }
     },
     "editDescription": {
@@ -151,7 +154,7 @@
     },
     "expiration": {
       "title": "Expiration Settings",
-      "description": "Configure automatic album expiration. Expired albums and their photos will be permanently deleted.",
+      "description": "Configure server-enforced album expiration. Expired albums and their photos will be permanently deleted.",
       "enableLabel": "Enable album expiration",
       "expirationDateLabel": "Expiration Date",
       "daysRemaining": "{{days}} day remaining",
@@ -164,6 +167,7 @@
       "warningDaysClamped": "Warning period adjusted — album expires sooner than the configured warning period",
       "confirmTitle": "Confirm Expiration",
       "confirmMessage": "All photos in this album will be permanently deleted on {{date}}. This cannot be undone.",
+      "confirmServerEnforced": "The Mosaic server enforces this deadline and local cached data will be purged after sync observes deletion.",
       "confirm": "Confirm",
       "cancel": "Cancel",
       "error": {

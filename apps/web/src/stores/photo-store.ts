@@ -54,6 +54,7 @@ export interface PhotoStoreActions {
   // Album management
   initAlbum: (albumId: string) => void;
   setActiveAlbum: (albumId: string | null) => void;
+  purgeAlbum: (albumId: string) => void;
 
   // Fetch lifecycle
   startFetch: (albumId: string) => void;
@@ -153,6 +154,24 @@ export const usePhotoStore = create<PhotoStore>()(
     setActiveAlbum: (albumId: string | null) => {
       set((state) => {
         state.activeAlbumId = albumId;
+      });
+    },
+
+    purgeAlbum: (albumId: string) => {
+      set((state) => {
+        const album = state.albums.get(albumId);
+        if (!album) return;
+
+        for (const item of album.items.values()) {
+          if (item.localBlobUrl) {
+            URL.revokeObjectURL(item.localBlobUrl);
+          }
+        }
+
+        state.albums.delete(albumId);
+        if (state.activeAlbumId === albumId) {
+          state.activeAlbumId = null;
+        }
       });
     },
 

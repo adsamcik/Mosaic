@@ -11,8 +11,9 @@ import type { Album as ApiAlbum } from '../lib/api-types';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getDbClient } from '../lib/db-client';
 import { ensureEpochKeysLoaded } from '../lib/epoch-key-service';
-import { clearAlbumKeys, getCurrentEpochKey, setEpochKey } from '../lib/epoch-key-store';
+import { getCurrentEpochKey, setEpochKey } from '../lib/epoch-key-store';
 import { createLogger } from '../lib/logger';
+import { purgeLocalAlbum } from '../lib/local-purge';
 import { syncEngine } from '../lib/sync-engine';
 
 const log = createLogger('useAlbums');
@@ -89,18 +90,25 @@ export function useAlbums() {
 
       // Transform API albums to frontend format with placeholder names
       // Names will be decrypted asynchronously after initial load
-      const transformedAlbums: Album[] = apiAlbums.map((album) => ({
-        id: album.id,
-        // Placeholder name until decryption completes
-        name: `Album ${album.id.slice(0, 8)}`,
-        // Photo count loaded from local SQLite database
-        photoCount: 0,
-        createdAt: album.createdAt,
-        isDecrypting: true, // Mark as decrypting initially
-        decryptionFailed: false,
-        // Preserve encrypted name from server for decryption
-        encryptedName: album.encryptedName ?? null,
-      }));
+      const transformedAlbums: Album[] = apiAlbums.map((apiAlbum) => {
+        const album: Album = {
+          id: apiAlbum.id,
+          // Placeholder name until decryption completes
+          name: `Album ${apiAlbum.id.slice(0, 8)}`,
+          // Photo count loaded from local SQLite database
+          photoCount: 0,
+          createdAt: apiAlbum.createdAt,
+          isDecrypting: true, // Mark as decrypting initially
+          decryptionFailed: false,
+          // Preserve encrypted name from server for decryption
+          encryptedName: apiAlbum.encryptedName ?? null,
+          expiresAt: apiAlbum.expiresAt ?? null,
+        };
+        if (apiAlbum.expirationWarningDays !== undefined) {
+          album.expirationWarningDays = apiAlbum.expirationWarningDays;
+        }
+        return album;
+      });
 
       // Set initial state with placeholder names
       setAlbums(transformedAlbums);
@@ -257,15 +265,20 @@ export function useAlbums() {
       // Remove from local state
       setAlbums((prev) => prev.filter((a) => a.id !== albumId));
 
-      // Wipe epoch keys from memory (calls sodium.memzero on key material)
-      clearAlbumKeys(albumId);
-
-      // Clear local database photos for this album
+      // Wipe local metadata, cached thumbnails, upload references, and epoch keys.
       try {
-        const db = await getDbClient();
-        await db.clearAlbumPhotos(albumId);
-      } catch (dbErr) {
-        log.error(`Failed to clear local DB data for album ${albumId}:`, dbErr);
+        const result = await purgeLocalAlbum({
+          albumId,
+          reason: 'user-deleted',
+        });
+        if (result.blockers.length > 0) {
+          log.warn('Album local purge completed with blockers', {
+            albumId,
+            blockers: result.blockers,
+          });
+        }
+      } catch (purgeErr) {
+        log.error(`Failed to purge local data for album ${albumId}:`, purgeErr);
       }
 
       log.info(`Album ${albumId} deleted successfully`);
@@ -475,9 +488,15 @@ export function useAlbums() {
           decryptedName: name, // Mark as already decrypted
           photoCount: 0,
           createdAt: newAlbum.createdAt,
+          expiresAt: newAlbum.expiresAt ?? options?.expiresAt ?? null,
           isDecrypting: false,
           decryptionFailed: false,
         };
+        const expirationWarningDays =
+          newAlbum.expirationWarningDays ?? options?.expirationWarningDays;
+        if (expirationWarningDays !== undefined) {
+          album.expirationWarningDays = expirationWarningDays;
+        }
 
         // Add to local state
         setAlbums((prev) => [...prev, album]);

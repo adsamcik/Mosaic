@@ -113,7 +113,8 @@
       "creating": "Vytváření...",
       "submit": "Vytvořit album",
       "temporaryAlbum": "Dočasné album",
-      "temporaryWarning": "Fotky budou trvale smazány po vypršení tohoto alba",
+      "temporaryWarning": "Fotky budou při vypršení tohoto alba trvale smazány serverem. Tuto akci nelze vrátit zpět.",
+      "expirationAcknowledge": "Rozumím, že je to destruktivní a vynucené serverem.",
       "duration": "Trvání",
       "days_7": "7 dní",
       "days_30": "30 dní",
@@ -123,7 +124,8 @@
       "expirationDate": "Datum vypršení",
       "error": {
         "nameRequired": "Název alba je povinný",
-        "nameTooLong": "Název alba může mít maximálně 100 znaků"
+        "nameTooLong": "Název alba může mít maximálně 100 znaků",
+        "expirationAcknowledgementRequired": "Potvrďte, že rozumíte destruktivnímu vypršení alba vynucenému serverem"
       }
     },
     "delete": {
@@ -140,7 +142,8 @@
       "namePlaceholder": "Moje fotky",
       "error": {
         "nameRequired": "Název alba je povinný",
-        "nameTooLong": "Název alba může mít maximálně 100 znaků"
+        "nameTooLong": "Název alba může mít maximálně 100 znaků",
+        "expirationAcknowledgementRequired": "Potvrďte, že rozumíte destruktivnímu vypršení alba vynucenému serverem"
       }
     },
     "editDescription": {
@@ -153,7 +156,7 @@
     },
     "expiration": {
       "title": "Nastavení vypršení",
-      "description": "Nastavte automatické vypršení alba. Vypršelá alba a jejich fotky budou trvale smazány.",
+      "description": "Nastavte serverem vynucené vypršení alba. Vypršelá alba a jejich fotky budou trvale smazány.",
       "enableLabel": "Povolit vypršení alba",
       "expirationDateLabel": "Datum vypršení",
       "daysRemaining": "Zbývá {{days}} den",
@@ -167,6 +170,7 @@
       "warningDaysClamped": "Období upozornění bylo upraveno — album vyprší dříve než nastavené období upozornění",
       "confirmTitle": "Potvrdit vypršení",
       "confirmMessage": "Všechny fotky v tomto albu budou trvale smazány {{date}}. Tuto akci nelze vrátit zpět.",
+      "confirmServerEnforced": "Server Mosaic tento termín vynutí a lokálně uložená data budou po zjištění smazání synchronizací odstraněna.",
       "confirm": "Potvrdit",
       "cancel": "Zrušit",
       "error": {

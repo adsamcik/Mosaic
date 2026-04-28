@@ -9,10 +9,9 @@ import {
   type ReactNode,
 } from 'react';
 import { ApiError, getApi } from '../lib/api';
-import { getDbClient } from '../lib/db-client';
 import { getOrFetchEpochKey } from '../lib/epoch-key-service';
-import { clearAlbumKeys } from '../lib/epoch-key-store';
 import { createLogger } from '../lib/logger';
+import { purgeLocalAlbum } from '../lib/local-purge';
 import {
   getSettings,
   subscribeToSettings,
@@ -116,11 +115,18 @@ export function SyncProvider({ children }: SyncProviderProps) {
         log.warn(`Album ${albumId} no longer exists (404), cleaning up`);
         registeredAlbums.current.delete(albumId);
 
-        // Clear local data for the deleted album
+        // Clear local data for the deleted or expired album.
         try {
-          clearAlbumKeys(albumId);
-          const db = await getDbClient();
-          await db.clearAlbumPhotos(albumId);
+          const result = await purgeLocalAlbum({
+            albumId,
+            reason: 'album-404',
+          });
+          if (result.blockers.length > 0) {
+            log.warn('Album local purge completed with blockers', {
+              albumId,
+              blockers: result.blockers,
+            });
+          }
         } catch (cleanupErr) {
           log.error(`Failed to clean up local data for album ${albumId}:`, cleanupErr);
         }

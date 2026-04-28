@@ -167,31 +167,57 @@ npx playwright test auth-modes.spec.ts --project=chromium
 **Purpose:** Albums and individual photos can be configured with nullable server-visible UTC deadlines that make expired encrypted content inaccessible and eligible for deletion while preserving zero-knowledge content opacity.
 
 **Implementation:**
-| Layer              | Location |
-| ------------------ | -------- |
-| Backend Entity     | [Album.cs](../apps/backend/Mosaic.Backend/Data/Entities/Album.cs) — `ExpiresAt`, `ExpirationWarningDays` |
-| Backend Entity     | [Manifest.cs](../apps/backend/Mosaic.Backend/Data/Entities/Manifest.cs) — `ExpiresAt` |
-| Backend Service    | [AlbumExpirationService.cs](../apps/backend/Mosaic.Backend/Services/AlbumExpirationService.cs) — deterministic server-clock enforcement and sweeps |
-| Backend GC         | [GarbageCollectionService.cs](../apps/backend/Mosaic.Backend/Services/GarbageCollectionService.cs) — invokes album/photo expiration sweeps |
-| Backend API        | `PATCH /api/albums/{albumId}/expiration`, `POST /api/manifests`, `PATCH /api/manifests/{manifestId}/expiration` |
-| Backend Enforcement| Album, manifest, shard, share-link, and Tus upload endpoints block expired content |
+| Layer              | Location                                                                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend Entity     | [Album.cs](../apps/backend/Mosaic.Backend/Data/Entities/Album.cs) — `ExpiresAt`, `ExpirationWarningDays`                                            |
+| Backend Entity     | [Manifest.cs](../apps/backend/Mosaic.Backend/Data/Entities/Manifest.cs) — `ExpiresAt`                                                               |
+| Backend Service    | [AlbumExpirationService.cs](../apps/backend/Mosaic.Backend/Services/AlbumExpirationService.cs) — deterministic server-clock enforcement and sweeps  |
+| Backend GC         | [GarbageCollectionService.cs](../apps/backend/Mosaic.Backend/Services/GarbageCollectionService.cs) — invokes album/photo expiration sweeps          |
+| Backend API        | `PATCH /api/albums/{albumId}/expiration`, `POST /api/manifests`, `PATCH /api/manifests/{manifestId}/expiration`                                     |
+| Backend Enforcement| Album, manifest, shard, share-link, and Tus upload endpoints block expired content                                                                  |
+| Frontend API       | [api.ts](../apps/web/src/lib/api.ts) — album and photo expiration request adapters                                                                  |
+| Frontend Settings  | [AlbumExpirationSettings.tsx](../apps/web/src/components/Albums/AlbumExpirationSettings.tsx)                                                        |
+| Frontend Create    | [CreateAlbumDialog.tsx](../apps/web/src/components/Albums/CreateAlbumDialog.tsx)                                                                    |
+| Frontend Display   | [AlbumCard.tsx](../apps/web/src/components/Albums/AlbumCard.tsx) — expiration badges                                                                |
+| Local Purge        | [local-purge.ts](../apps/web/src/lib/local-purge.ts) — local decrypted cache, key, DB, and upload queue cleanup                                     |
 
 **Features:**
 - Expiration is opt-in: deadlines default to `null` for albums and photos.
 - Album owners can set/remove album expiration; album owners/editors can set/remove photo expiration.
 - Server `TimeProvider` authority validates future deadlines and decides expiry; client clocks are ignored.
+- Set expiration at album creation (preset durations: 7, 30, 90 days, or custom date)
+- Modify/remove expiration on existing albums via settings
+- Visual badges on album cards (info/warning/expired states)
+- Warning banners when approaching expiration
+- Temporary album creation requires explicit destructive acknowledgement before submit
 - Expired albums are hard-deleted through the expiration service, removing memberships, epoch keys, manifests, album content, and manifest-shard links.
 - Expired photos become deleted tombstones for sync, encrypted metadata is wiped from the active manifest row, and shard links are detached/trash-marked for existing shard cleanup.
 - Expired album/photo shards are not downloadable through direct or share-link routes.
 - Expired albums block sync, share-link access, and Tus uploads.
+- Automatic server-side cleanup via GarbageCollectionService (hourly, batched)
+- Cleanup drains all eligible trashed shards and expired upload reservations across batches in one run
+- Cascade deletion: all photos (shards), manifests, epoch keys, members cleaned up
+- Storage quota reclaimed automatically on expiration
+- Share links blocked for expired albums
+- Upload prevention for expired albums
+- Client-side cleanup (epoch keys wiped, local DB cleared) when album disappears
+- Expired/deleted albums and sync-deleted photos purge local decrypted metadata, thumbnails, cached album keys, queued upload references, and in-memory photo state
+- Photo expiration uses a lifecycle-metadata-only API adapter (`PATCH /api/manifests/{manifestId}/expiration`)
 
 **Limitations (v1):**
 - Garbage collection runs hourly, but endpoint-integrated checks also enforce expiry before serving protected backend content.
 - Existing trashed-shard cleanup remains responsible for final storage quota reclamation and opaque blob deletion.
-- This backend workstream does not add web or mobile UI for photo-specific expiration.
+- The web UI exposes album-level expiration controls only; photo-specific expiration is driven through the API adapter without dedicated per-photo UI.
+- No proactive member notifications — members see warnings only when opening the album
+- GC runs hourly — up to ~60 minute delay before actual deletion
+- Batch processing: max 10 expired albums per GC cycle
+- No minimum TTL enforcement
+- Album expiration/deletion sync is currently observed through 404 cleanup; a dedicated backend deleted-album sync signal is not yet available
+- Local purge removes queued/persisted upload references, but in-flight uploads cannot yet be aborted by album purge
 
 **Tests:**
-- Backend: `AlbumExpirationControllerTests`, `ManifestExpirationControllerTests`, `ShardExpirationAccessTests`, `AlbumExpirationServiceTests`, and affected controller/service suites.
+- Backend: `AlbumExpirationControllerTests`, `ManifestExpirationControllerTests`, `ShardExpirationAccessTests`, `AlbumExpirationServiceTests`, GC service tests, expiration endpoint tests, and affected controller/service suites.
+- Frontend: `apps/web/tests/` (expiration settings, create dialog, badge formatting, API adapters, sync tombstones, local purge)
 
 ---
 
@@ -864,6 +890,7 @@ ENV_VAR=value
 | 2026-04-29 | Sync Conflict Resolution     | Added    | Lane B: deterministic three-way block merge with LWW fallback for album content; expanded rust-cutover boundary guard to per-symbol classification |
 | 2026-04-29 | Android Main Module (Rust UniFFI APK) | Added | First real Android Gradle module wiring `mosaic-uniffi` cdylib + JNA Kotlin bindings into a debug APK; closes 11-bridge FFI drift between `apps/android-shell` and `crates/mosaic-uniffi` |
 | 2026-04-28 | Timed Album/Photo Expiration | Modified | Backend adds server-clock album/photo expiry, deterministic sweeps, access enforcement, and focused tests |
+| 2026-04-28 | Temporary Albums (TTL)      | Modified | Added explicit destructive acknowledgement, photo expiration adapter, and local purge wiring for expired/deleted client state |
 | 2026-04-28 | Photo Description Editing   | Added    | Owners/editors can edit encrypted photo descriptions from the lightbox without exposing plaintext to the server |
 | 2026-04-27 | Share Links / Album Download | Modified | Shared album viewers page through all photos; full-access share links can download all photos as a client-side decrypted ZIP |
 | 2026-04-27 | Gallery / Member Management | Modified | Local photo/search queries and member-management loads drain all pages; bulk download action now respects `canDownload` |

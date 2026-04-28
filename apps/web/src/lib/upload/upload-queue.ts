@@ -117,6 +117,23 @@ class UploadQueue {
   }
 
   /**
+   * Remove queued and persisted upload references for an album.
+   * Active uploads cannot be aborted by the current queue implementation.
+   */
+  async purgeAlbum(albumId: string): Promise<number> {
+    const queuedBefore = this.queue.length;
+    this.queue = this.queue.filter((task) => task.albumId !== albumId);
+    const removedQueued = queuedBefore - this.queue.length;
+
+    if (!this.persistence.isInitialized) {
+      return removedQueued;
+    }
+
+    const removedPersisted = await this.persistence.deleteTasksForAlbum(albumId);
+    return removedQueued + removedPersisted;
+  }
+
+  /**
    * Get all pending/in-progress tasks (excludes complete and permanently failed)
    */
   async getPendingTasks(): Promise<PersistedTask[]> {
