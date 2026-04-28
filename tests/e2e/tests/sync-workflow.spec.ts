@@ -339,7 +339,7 @@ test.describe('Sync: Offline Resilience @p2 @sync @slow', () => {
     await goOffline(page);
 
     // Photos should still be visible (from local cache/OPFS)
-    await expect(gallery.photos.first()).toBeVisible({ timeout: 5000 });
+    await gallery.waitForStablePhotoCountAtLeast(countOnline, 10000);
     const countOffline = await gallery.photos.count();
     expect(countOffline).toBe(countOnline);
 

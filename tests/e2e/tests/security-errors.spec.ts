@@ -543,18 +543,13 @@ test.describe('Error Handling: Quota & Limits @p2 @security', () => {
     const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
-    // Mock quota exceeded response - TUS uses 400 Bad Request with FailRequest()
-    await page.route('**/api/files', (route) => {
-      if (route.request().method() === 'POST') {
-        // TUS protocol: FailRequest returns 400 with plain text body
-        route.fulfill({
-          status: 400,
-          contentType: 'text/plain',
-          body: 'Storage quota exceeded',
-        });
-      } else {
-        route.continue();
-      }
+    // Mock quota exceeded response for both fresh and resumed TUS requests.
+    await page.route(/\/api\/files(?:\/.*)?$/, (route) => {
+      route.fulfill({
+        status: 413,
+        contentType: 'text/plain',
+        body: 'Storage quota exceeded',
+      });
     });
 
     // Trigger upload directly without using uploadPhoto() which expects success

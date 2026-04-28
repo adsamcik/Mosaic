@@ -109,6 +109,53 @@ export class GalleryPage {
     await expect(this.getPhotos()).toHaveCount(count, { timeout });
   }
 
+  async waitForStablePhotoCountAtLeast(count: number, timeout = 60000): Promise<void> {
+    await expect(async () => {
+      expect(await this.getPhotos().count()).toBeGreaterThanOrEqual(count);
+      await this.page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          })
+      );
+      expect(await this.getPhotos().count()).toBeGreaterThanOrEqual(count);
+    }).toPass({ timeout, intervals: [250, 500, 1000] });
+  }
+
+  async waitForStablePhotoCount(count: number, timeout = 60000): Promise<void> {
+    await expect(async () => {
+      await expect(this.page.getByTestId('photo-pending-overlay')).toHaveCount(0, {
+        timeout: 5000,
+      });
+      expect(await this.getPhotos().count()).toBe(count);
+      await this.page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          })
+      );
+      expect(await this.getPhotos().count()).toBe(count);
+    }).toPass({ timeout, intervals: [250, 500, 1000] });
+  }
+
+  async openPhotoInLightbox(index = 0, timeout = 60000): Promise<void> {
+    const lightbox = this.page.getByTestId('lightbox');
+
+    await expect(async () => {
+      await expect(this.page.getByTestId('photo-pending-overlay')).toHaveCount(0, {
+        timeout: 5000,
+      });
+      await this.waitForStablePhotoCountAtLeast(index + 1, 5000);
+
+      const photo = this.getPhotos().nth(index);
+      await expect(photo).toBeVisible({ timeout: 5000 });
+      await photo.scrollIntoViewIfNeeded();
+      await photo.click({ trial: true });
+      await photo.click();
+      await expect(lightbox).toBeVisible({ timeout: 3000 });
+    }).toPass({ timeout, intervals: [250, 500, 1000, 2000] });
+  }
+
   async expectEmptyState(): Promise<void> {
     await expect(this.emptyState.first()).toBeVisible({ timeout: 10000 });
   }
@@ -214,10 +261,11 @@ export class GalleryPage {
       const btn = this.page.getByTestId('upload-button');
       const buttonText = await btn.textContent().catch(() => '');
       const currentCount = await this.getPhotos().count();
+      const pendingOverlayCount = await this.page.getByTestId('photo-pending-overlay').count();
       const isUploading = buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
       
       if (completePollCount <= 3 || completePollCount % 5 === 0) {
-        console.log(`[GalleryPage PO] Complete poll #${completePollCount} at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}`);
+        console.log(`[GalleryPage PO] Complete poll #${completePollCount} at T+${Date.now() - startTime}ms: button="${buttonText}", photos=${currentCount}, pendingOverlays=${pendingOverlayCount}`);
       }
       
       expect(!isUploading && currentCount >= expectedCount).toBe(true);
@@ -283,9 +331,10 @@ export class GalleryPage {
       const btn = this.page.getByTestId('upload-button');
       const buttonText = await btn.textContent().catch(() => '');
       const currentCount = await this.getPhotos().count();
+      const pendingOverlayCount = await this.page.getByTestId('photo-pending-overlay').count();
       const isUploading = buttonText?.includes('Uploading') || /\d+%/.test(buttonText || '');
 
-      expect(!isUploading && currentCount >= expectedCount).toBe(true);
+      expect(!isUploading && currentCount === expectedCount && pendingOverlayCount === 0).toBe(true);
     }).toPass({ timeout: 90000, intervals: [100, 250, 500, 1000] });
 
     console.log(`[GalleryPage PO] Upload complete at T+${Date.now() - startTime}ms. Final count: ${await this.getPhotos().count()}`);

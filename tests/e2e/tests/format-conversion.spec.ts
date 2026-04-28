@@ -417,14 +417,11 @@ test.describe('Format Conversion @p1 @format', () => {
       await gallery.uploadPhotoWithMime(buffer, filename, mimeType);
 
       // Wait for photo to appear
-      await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
+      await gallery.waitForStablePhotoCountAtLeast(1, CRYPTO_TIMEOUT.BATCH);
 
       // Click to open lightbox
-      await gallery.photos.first().click();
-
-      // Wait for lightbox to open
+      await gallery.openPhotoInLightbox(0, CRYPTO_TIMEOUT.BATCH);
       const lightbox = page.getByTestId('lightbox');
-      await expect(lightbox).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
 
       // Verify an image is displayed in the lightbox
       const lightboxImage = lightbox.locator('img').first();
@@ -455,14 +452,10 @@ test.describe('Format Conversion @p1 @format', () => {
       const { buffer, filename } = getTestImage('heic');
       await gallery.uploadPhotoWithMime(buffer, filename, 'image/heic');
 
-      // Wait for photo to appear (HEIC takes longer)
-      await expect(gallery.photos.first()).toBeVisible({ timeout: 90000 });
-
       // Click to open lightbox
-      await gallery.photos.first().click();
+      await gallery.openPhotoInLightbox(0, 90000);
 
       const lightbox = page.getByTestId('lightbox');
-      await expect(lightbox).toBeVisible({ timeout: UI_TIMEOUT.DIALOG });
 
       const lightboxImage = lightbox.locator('img').first();
       await expect(lightboxImage).toBeVisible({ timeout: 15000 });

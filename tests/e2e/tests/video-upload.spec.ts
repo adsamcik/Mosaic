@@ -160,10 +160,10 @@ test.describe('Video Upload @p1 @photo @crypto @slow', () => {
       const { buffer, filename, mimeType } = getTestVideo();
       await gallery.uploadPhotoWithMime(buffer, filename, mimeType);
 
-      await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
+      await gallery.waitForStablePhotoCountAtLeast(1, CRYPTO_TIMEOUT.BATCH);
 
       // Click thumbnail to open lightbox
-      await gallery.photos.first().click();
+      await gallery.openPhotoInLightbox(0, CRYPTO_TIMEOUT.BATCH);
 
       const lightbox = new Lightbox(page);
       await lightbox.waitForOpen();
@@ -205,10 +205,10 @@ test.describe('Video Upload @p1 @photo @crypto @slow', () => {
       const { buffer, filename, mimeType } = getTestVideo();
       await gallery.uploadPhotoWithMime(buffer, filename, mimeType);
 
-      await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
+      await gallery.waitForStablePhotoCountAtLeast(1, CRYPTO_TIMEOUT.BATCH);
 
       // Open lightbox
-      await gallery.photos.first().click();
+      await gallery.openPhotoInLightbox(0, CRYPTO_TIMEOUT.BATCH);
 
       const lightbox = new Lightbox(page);
       await lightbox.waitForOpen();

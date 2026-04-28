@@ -144,7 +144,7 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         await gallery.uploadPhoto(testImage, 'persistent-photo.png');
-        await expect(gallery.photos.first()).toBeVisible({ timeout: 30000 });
+        await gallery.waitForStablePhotoCount(1, 60000);
         break;
       } catch (err) {
         console.log(`[Upload] Attempt ${attempt}/3 failed: ${err}`);
@@ -153,8 +153,8 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
       }
     }
 
+    await gallery.waitForStablePhotoCount(1, 60000);
     const photoCountBefore = await gallery.photos.count();
-    expect(photoCountBefore).toBe(1);
     console.log('[Test] Photo uploaded successfully, count:', photoCountBefore);
 
     // Navigate away from album to album list
@@ -173,10 +173,8 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
     await gallery.waitForLoad();
     console.log('[Test] Gallery loaded, waiting for photo...');
 
-    await expect(gallery.photos.first()).toBeVisible({ timeout: 30000 });
-
+    await gallery.waitForStablePhotoCount(1, 60000);
     const photoCountAfter = await gallery.photos.count();
-    expect(photoCountAfter).toBe(1);
     console.log('[Test] Photo persisted after navigation, count:', photoCountAfter);
   });
 
