@@ -8,7 +8,8 @@ private data class AutoImportSchedulerTestCase(
 fun main() {
   val tests = listOf(
     AutoImportSchedulerTestCase("auto-import defaults are disabled and constrained", ::autoImportDefaultsAreDisabledAndConstrained),
-    AutoImportSchedulerTestCase("enabled schedule requires destination and upload-only capability", ::enabledScheduleRequiresDestinationAndUploadOnlyCapability),
+    AutoImportSchedulerTestCase("enabled schedule requires durable upload-only destination", ::enabledScheduleRequiresDurableUploadOnlyDestination),
+    AutoImportSchedulerTestCase("gallery decrypt handles cannot become durable scheduler state", ::galleryDecryptHandlesCannotBecomeDurableSchedulerState),
     AutoImportSchedulerTestCase("device unlock gate blocks scheduling after reboot until first unlock", ::deviceUnlockGateBlocksSchedulingAfterRebootUntilFirstUnlock),
     AutoImportSchedulerTestCase("long-running transfer requires foreground dataSync notification", ::longRunningTransferRequiresForegroundDataSyncNotification),
     AutoImportSchedulerTestCase("transfer progress cancellation and resume states are explicit", ::transferProgressCancellationAndResumeStatesAreExplicit),
@@ -48,23 +49,11 @@ private fun autoImportDefaultsAreDisabledAndConstrained() {
   assertFalse(plan.canSchedule)
 }
 
-private fun enabledScheduleRequiresDestinationAndUploadOnlyCapability() {
+private fun enabledScheduleRequiresDurableUploadOnlyDestination() {
   val missingDestination = AutoImportScheduleSettings.enabled(destination = null)
   assertEquals(
     AutoImportScheduleStatus.NEEDS_DESTINATION_ALBUM,
     AutoImportSchedulerContract.evaluate(missingDestination).status,
-  )
-
-  val galleryHandleDestination = AutoImportDestinationSelection(
-    albumId = AlbumId("album-1"),
-    capability = AutoImportCapability.GalleryDecryptHandle(
-      serverAccountId = ServerAccountId("server-account-1"),
-      accountKeyHandle = AccountKeyHandle(4242),
-    ),
-  )
-  assertEquals(
-    AutoImportScheduleStatus.NEEDS_UPLOAD_ONLY_CAPABILITY,
-    AutoImportSchedulerContract.evaluate(AutoImportScheduleSettings.enabled(galleryHandleDestination)).status,
   )
 
   val destination = autoImportDestination()
@@ -72,6 +61,72 @@ private fun enabledScheduleRequiresDestinationAndUploadOnlyCapability() {
   assertEquals(AutoImportScheduleStatus.READY_TO_SCHEDULE, ready.status)
   assertTrue(ready.canSchedule)
   assertEquals(AutoImportNetworkConstraint.WIFI_ONLY, ready.constraints.network)
+}
+
+private fun galleryDecryptHandlesCannotBecomeDurableSchedulerState() {
+  val galleryHandleDestination = AutoImportDestinationSelection(
+    albumId = AlbumId("album-1"),
+    capability = AutoImportCapability.GalleryDecryptHandle(
+      serverAccountId = ServerAccountId("server-account-1"),
+      accountKeyHandle = AccountKeyHandle(4242),
+    ),
+  )
+
+  expectThrows("gallery decrypt handle cannot convert to background scheduler destination") {
+    galleryHandleDestination.toBackgroundScheduleDestination()
+  }
+  expectThrows("gallery decrypt handle cannot be persisted in schedule settings") {
+    val durableDestination = AutoImportBackgroundDestination.fromSelection(galleryHandleDestination)
+    AutoImportSchedulerContract.evaluate(AutoImportScheduleSettings.enabled(durableDestination))
+  }
+  expectThrows("album-mismatched upload-only capability cannot convert to scheduler destination") {
+    AutoImportDestinationSelection(
+      albumId = AlbumId("album-2"),
+      capability = autoImportUploadCapability(albumId = AlbumId("album-1")),
+    ).toBackgroundScheduleDestination()
+  }
+
+  val uploadOnlySelection = AutoImportDestinationSelection(
+    albumId = AlbumId("album-1"),
+    capability = autoImportUploadCapability(capabilityReference = AutoImportCapabilityReference("secret-capability-reference")),
+  )
+  val durableDestination = uploadOnlySelection.toBackgroundScheduleDestination()
+  val settings = AutoImportScheduleSettings.enabled(durableDestination)
+  val plan = AutoImportSchedulerContract.evaluate(settings)
+  val equivalentDestination = AutoImportBackgroundDestination.fromUploadOnly(
+    albumId = AlbumId("album-1"),
+    capability = autoImportUploadCapability(capabilityReference = AutoImportCapabilityReference("secret-capability-reference")),
+  )
+
+  assertEquals(AutoImportScheduleStatus.READY_TO_SCHEDULE, plan.status)
+  assertEquals(ServerAccountId("server-account-1"), durableDestination.serverAccountId)
+  assertEquals(AlbumId("album-1"), durableDestination.albumId)
+  assertEquals(AutoImportCapabilityReference("secret-capability-reference"), durableDestination.capabilityReference)
+  assertEquals(equivalentDestination, durableDestination)
+  assertEquals(equivalentDestination.hashCode(), durableDestination.hashCode())
+
+  val durableText = listOf(
+    durableDestination.toString(),
+    settings.toString(),
+    plan.toString(),
+  ).joinToString("\n")
+  val forbidden = listOf(
+    "secret-capability-reference",
+    "GalleryDecryptHandle",
+    "AccountKeyHandle",
+    "4242",
+    "content://",
+    "file://",
+    "IMG_0001.jpg",
+    "EXIF",
+    "GPS",
+    "caption",
+    "raw key",
+  )
+  for (term in forbidden) {
+    assertFalse(durableText.contains(term, ignoreCase = true))
+  }
+  assertTrue(durableText.contains("<redacted>") || durableText.contains("<opaque>"))
 }
 
 private fun deviceUnlockGateBlocksSchedulingAfterRebootUntilFirstUnlock() {
@@ -189,7 +244,7 @@ private fun autoImportStringsRemainPrivacySafe() {
 
   val safeText = listOf(
     destination.toString(),
-    destination.capability.toString(),
+    destination.capabilityReference.toString(),
     settings.toString(),
     plan.toString(),
     transfer.toString(),
@@ -245,18 +300,23 @@ private fun uploadOnlyBackgroundCapabilityIsSeparateFromGalleryDecryptHandle() {
     albumId = AlbumId("album-1"),
     capability = uploadOnly,
   )
-  val plan = AutoImportSchedulerContract.evaluate(AutoImportScheduleSettings.enabled(selected))
+  val durableDestination = selected.toBackgroundScheduleDestination()
+  val plan = AutoImportSchedulerContract.evaluate(AutoImportScheduleSettings.enabled(durableDestination))
   assertEquals(AutoImportScheduleStatus.READY_TO_SCHEDULE, plan.status)
+  assertEquals(uploadOnly.serverAccountId, durableDestination.serverAccountId)
+  assertEquals(uploadOnly.albumId, durableDestination.albumId)
+  assertEquals(uploadOnly.reference, durableDestination.capabilityReference)
   assertFalse(plan.toString().contains("4242"))
 }
 
 private fun autoImportDestination(
   albumId: AlbumId = AlbumId("album-1"),
   capabilityReference: AutoImportCapabilityReference = AutoImportCapabilityReference("upload-capability-1"),
-): AutoImportDestinationSelection = AutoImportDestinationSelection(
-  albumId = albumId,
-  capability = autoImportUploadCapability(albumId = albumId, capabilityReference = capabilityReference),
-)
+): AutoImportBackgroundDestination =
+  AutoImportDestinationSelection(
+    albumId = albumId,
+    capability = autoImportUploadCapability(albumId = albumId, capabilityReference = capabilityReference),
+  ).toBackgroundScheduleDestination()
 
 private fun autoImportUploadCapability(
   albumId: AlbumId = AlbumId("album-1"),

@@ -53,11 +53,60 @@ data class AutoImportDestinationSelection(
   val uploadOnlyCapability: AutoImportCapability.UploadOnly?
     get() = capability as? AutoImportCapability.UploadOnly
 
-  val hasAlbumBoundUploadCapability: Boolean
-    get() = uploadOnlyCapability?.albumId == albumId
-
   override fun toString(): String =
     "AutoImportDestinationSelection(albumId=<opaque>, capability=$capability)"
+
+  fun toBackgroundScheduleDestination(): AutoImportBackgroundDestination =
+    AutoImportBackgroundDestination.fromSelection(this)
+}
+
+class AutoImportBackgroundDestination private constructor(
+  val serverAccountId: ServerAccountId,
+  val albumId: AlbumId,
+  val capabilityReference: AutoImportCapabilityReference,
+) {
+  override fun equals(other: Any?): Boolean =
+    other is AutoImportBackgroundDestination &&
+      serverAccountId == other.serverAccountId &&
+      albumId == other.albumId &&
+      capabilityReference == other.capabilityReference
+
+  override fun hashCode(): Int {
+    var result = serverAccountId.hashCode()
+    result = 31 * result + albumId.hashCode()
+    result = 31 * result + capabilityReference.hashCode()
+    return result
+  }
+
+  override fun toString(): String =
+    "AutoImportBackgroundDestination(serverAccountId=<opaque>, albumId=<opaque>, capabilityReference=<redacted>)"
+
+  companion object {
+    fun fromSelection(selection: AutoImportDestinationSelection): AutoImportBackgroundDestination {
+      val uploadOnly = selection.uploadOnlyCapability
+      require(uploadOnly != null) {
+        "background auto-import scheduling requires an upload-only capability"
+      }
+      return fromUploadOnly(
+        albumId = selection.albumId,
+        capability = uploadOnly,
+      )
+    }
+
+    fun fromUploadOnly(
+      albumId: AlbumId,
+      capability: AutoImportCapability.UploadOnly,
+    ): AutoImportBackgroundDestination {
+      require(capability.albumId == albumId) {
+        "background auto-import upload capability must match the selected album"
+      }
+      return AutoImportBackgroundDestination(
+        serverAccountId = capability.serverAccountId,
+        albumId = albumId,
+        capabilityReference = capability.reference,
+      )
+    }
+  }
 }
 
 enum class AutoImportNetworkConstraint {
@@ -122,7 +171,7 @@ data class AutoImportForegroundNotificationPolicy(
 
 class AutoImportScheduleSettings private constructor(
   val enabled: Boolean,
-  val destination: AutoImportDestinationSelection?,
+  val destination: AutoImportBackgroundDestination?,
   val constraints: AutoImportConstraints,
   val deviceUnlockGate: AutoImportDeviceUnlockGate,
 ) {
@@ -142,7 +191,7 @@ class AutoImportScheduleSettings private constructor(
     )
 
     fun enabled(
-      destination: AutoImportDestinationSelection?,
+      destination: AutoImportBackgroundDestination?,
       constraints: AutoImportConstraints = AutoImportConstraints.default(),
       deviceUnlockGate: AutoImportDeviceUnlockGate = AutoImportDeviceUnlockGate.default(),
       prohibited: ProhibitedQueuePayload = ProhibitedQueuePayload.None,
@@ -161,14 +210,13 @@ class AutoImportScheduleSettings private constructor(
 enum class AutoImportScheduleStatus {
   DISABLED,
   NEEDS_DESTINATION_ALBUM,
-  NEEDS_UPLOAD_ONLY_CAPABILITY,
   WAITING_FOR_DEVICE_UNLOCK,
   READY_TO_SCHEDULE,
 }
 
 data class AutoImportSchedulePlan(
   val status: AutoImportScheduleStatus,
-  val destination: AutoImportDestinationSelection?,
+  val destination: AutoImportBackgroundDestination?,
   val constraints: AutoImportConstraints,
   val deviceUnlockGate: AutoImportDeviceUnlockGate,
   val foregroundNotification: AutoImportForegroundNotificationPolicy,
@@ -189,7 +237,6 @@ object AutoImportSchedulerContract {
     val status = when {
       !settings.enabled -> AutoImportScheduleStatus.DISABLED
       settings.destination == null -> AutoImportScheduleStatus.NEEDS_DESTINATION_ALBUM
-      !settings.destination.hasAlbumBoundUploadCapability -> AutoImportScheduleStatus.NEEDS_UPLOAD_ONLY_CAPABILITY
       settings.deviceUnlockGate.requiresDeviceUnlockedSinceBoot && !runtime.deviceUnlockedSinceBoot ->
         AutoImportScheduleStatus.WAITING_FOR_DEVICE_UNLOCK
       else -> AutoImportScheduleStatus.READY_TO_SCHEDULE
