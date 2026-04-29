@@ -61,11 +61,29 @@ export function segmentsToHtml(segments: RichTextSegment[]): string {
 
 /**
  * Convert TipTap HTML to RichTextSegments
+ *
+ * Uses DOMParser ('text/html') instead of div.innerHTML to build the
+ * tree. Per the HTML spec, parser-created documents have no browsing
+ * context, so <script> contents are not executed and onload/onerror
+ * handlers do not fire — even if a future TipTap extension or upstream
+ * change widened the set of tags emitted into this function.
  */
 export function htmlToSegments(html: string): RichTextSegment[] {
-  // Simple parsing - in production would use DOM parsing
-  const div = document.createElement('div');
-  div.innerHTML = html;
+  if (!html) {
+    return [{ text: '' }];
+  }
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(
+    `<!DOCTYPE html><html><body>${html}</body></html>`,
+    'text/html',
+  );
+
+  // text/html mode does not produce <parsererror>, but guard anyway.
+  if (doc.querySelector('parsererror')) {
+    return [{ text: html }];
+  }
+
   const segments: RichTextSegment[] = [];
 
   function walk(node: Node, formatting: Partial<RichTextSegment> = {}) {
@@ -104,7 +122,7 @@ export function htmlToSegments(html: string): RichTextSegment[] {
     }
   }
 
-  walk(div);
+  walk(doc.body);
   return segments.length > 0 ? segments : [{ text: '' }];
 }
 
