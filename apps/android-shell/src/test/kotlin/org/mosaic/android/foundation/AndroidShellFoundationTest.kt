@@ -30,6 +30,34 @@ fun main() {
     TestCase("cross-client fixture maps to opaque manual upload handoff", ::crossClientFixtureMapsToOpaqueManualUploadHandoff),
     TestCase("fake rust bridge models account unlock lifecycle", ::fakeRustBridgeModelsUnlockLifecycle),
     TestCase("generated rust bridge maps UniFFI account calls", ::generatedRustBridgeMapsUniFfiAccountCalls),
+    TestCase(
+      "accountUnlockRequest defensive copies isolate caller mutations",
+      ::accountUnlockRequestDefensiveCopiesIsolateCallerMutations,
+    ),
+    TestCase(
+      "accountUnlockRequest defensive copies isolate getter mutations",
+      ::accountUnlockRequestDefensiveCopiesIsolateGetterMutations,
+    ),
+    TestCase(
+      "accountUnlockRequest wipe zeroes internal bytes",
+      ::accountUnlockRequestWipeZeroesInternalBytes,
+    ),
+    TestCase(
+      "accountUnlockRequest toString redacts sensitive fields",
+      ::accountUnlockRequestToStringRedactsSensitiveFields,
+    ),
+    TestCase(
+      "unlockAccountWipingAll wipes both password and request",
+      ::unlockAccountWipingAllWipesBothPasswordAndRequest,
+    ),
+    TestCase(
+      "kdfProfile rejects values exceeding configured maxima",
+      ::kdfProfileRejectsValuesExceedingConfiguredMaxima,
+    ),
+    TestCase(
+      "kdfProfile accepts boundary values",
+      ::kdfProfileAcceptsBoundaryValues,
+    ),
     TestCase("work policy defaults to foreground dataSync", ::workPolicyDefaultsToForegroundDataSync),
     TestCase("media port exposes a stub and fake seam", ::mediaPortExposesStubAndFakeSeam),
     TestCase("generated rust media bridge plans without raw picker data", ::generatedRustMediaBridgePlansWithoutRawPickerData),
@@ -626,6 +654,150 @@ private fun generatedRustBridgeMapsUniFfiAccountCalls() {
   assertEquals(AccountCloseCode.SUCCESS, bridge.closeAccountKeyHandle(handle))
   assertFalse(bridge.isAccountKeyHandleOpen(handle))
   assertEquals(AccountCloseCode.NOT_FOUND, bridge.closeAccountKeyHandle(handle))
+}
+
+private fun accountUnlockRequestDefensiveCopiesIsolateCallerMutations() {
+  val originalUserSalt = ByteArray(16) { 1 }
+  val originalAccountSalt = ByteArray(16) { 2 }
+  val originalWrappedKey = ByteArray(64) { 3 }
+
+  val request = AccountUnlockRequest(
+    userSalt = originalUserSalt,
+    accountSalt = originalAccountSalt,
+    wrappedAccountKey = originalWrappedKey,
+    kdfProfile = KdfProfile(memoryKiB = 65536, iterations = 3, parallelism = 1),
+  )
+
+  originalUserSalt.fill(0x55)
+  originalAccountSalt.fill(0x66)
+  originalWrappedKey.fill(0x77)
+
+  assertTrue(request.userSalt.all { it == 1.toByte() })
+  assertTrue(request.accountSalt.all { it == 2.toByte() })
+  assertTrue(request.wrappedAccountKey.all { it == 3.toByte() })
+}
+
+private fun accountUnlockRequestDefensiveCopiesIsolateGetterMutations() {
+  val request = AccountUnlockRequest(
+    userSalt = ByteArray(16) { 1 },
+    accountSalt = ByteArray(16) { 2 },
+    wrappedAccountKey = ByteArray(64) { 3 },
+    kdfProfile = KdfProfile(memoryKiB = 65536, iterations = 3, parallelism = 1),
+  )
+
+  val firstUserSalt = request.userSalt
+  val firstAccountSalt = request.accountSalt
+  val firstWrappedKey = request.wrappedAccountKey
+
+  firstUserSalt.fill(0)
+  firstAccountSalt.fill(0)
+  firstWrappedKey.fill(0)
+
+  assertTrue(request.userSalt.all { it == 1.toByte() })
+  assertTrue(request.accountSalt.all { it == 2.toByte() })
+  assertTrue(request.wrappedAccountKey.all { it == 3.toByte() })
+
+  val secondUserSalt = request.userSalt
+  assertFalse(firstUserSalt === secondUserSalt)
+}
+
+private fun accountUnlockRequestWipeZeroesInternalBytes() {
+  val request = AccountUnlockRequest(
+    userSalt = ByteArray(16) { 1 },
+    accountSalt = ByteArray(16) { 2 },
+    wrappedAccountKey = ByteArray(64) { 3 },
+    kdfProfile = KdfProfile(memoryKiB = 65536, iterations = 3, parallelism = 1),
+  )
+
+  val priorUserSalt = request.userSalt
+  assertTrue(priorUserSalt.all { it == 1.toByte() })
+
+  request.wipe()
+
+  assertTrue(request.userSalt.all { it == 0.toByte() })
+  assertTrue(request.accountSalt.all { it == 0.toByte() })
+  assertTrue(request.wrappedAccountKey.all { it == 0.toByte() })
+  assertEquals(16, request.userSalt.size)
+  assertEquals(16, request.accountSalt.size)
+  assertEquals(64, request.wrappedAccountKey.size)
+}
+
+private fun accountUnlockRequestToStringRedactsSensitiveFields() {
+  val request = AccountUnlockRequest(
+    userSalt = ByteArray(16) { 1 },
+    accountSalt = ByteArray(16) { 2 },
+    wrappedAccountKey = ByteArray(64) { 3 },
+    kdfProfile = KdfProfile(memoryKiB = 65536, iterations = 3, parallelism = 1),
+  )
+
+  val rendered = request.toString()
+  assertTrue(rendered.contains("userSalt=<redacted>"))
+  assertTrue(rendered.contains("accountSalt=<redacted>"))
+  assertTrue(rendered.contains("wrappedAccountKey=<redacted>"))
+  assertFalse(rendered.contains("[B@"))
+  assertTrue(rendered.contains("kdfProfile="))
+  assertTrue(rendered.contains("memoryKiB=65536"))
+}
+
+private fun unlockAccountWipingAllWipesBothPasswordAndRequest() {
+  val bridge = FakeRustAccountBridge()
+  val password = "correct horse battery staple".encodeToByteArray()
+  val request = unlockRequest()
+
+  val result = bridge.unlockAccountWipingAll(password, request)
+
+  assertEquals(AccountUnlockCode.SUCCESS, result.code)
+  assertTrue(password.all { it == 0.toByte() })
+  assertTrue(request.userSalt.all { it == 0.toByte() })
+  assertTrue(request.accountSalt.all { it == 0.toByte() })
+  assertTrue(request.wrappedAccountKey.all { it == 0.toByte() })
+
+  val handle = requireNotNull(result.handle) { "success must include handle" }
+  assertTrue(bridge.isAccountKeyHandleOpen(handle))
+}
+
+private fun kdfProfileRejectsValuesExceedingConfiguredMaxima() {
+  expectThrows("memory above MAX_MEMORY_KIB") {
+    KdfProfile(memoryKiB = KdfProfile.MAX_MEMORY_KIB + 1, iterations = 3, parallelism = 1)
+  }
+  expectThrows("iterations above MAX_ITERATIONS") {
+    KdfProfile(memoryKiB = 65536, iterations = KdfProfile.MAX_ITERATIONS + 1, parallelism = 1)
+  }
+  expectThrows("parallelism above MAX_PARALLELISM") {
+    KdfProfile(memoryKiB = 65536, iterations = 3, parallelism = KdfProfile.MAX_PARALLELISM + 1)
+  }
+  expectThrows("Int.MAX_VALUE memory is rejected") {
+    KdfProfile(memoryKiB = Int.MAX_VALUE, iterations = 3, parallelism = 1)
+  }
+  expectThrows("Int.MAX_VALUE iterations is rejected") {
+    KdfProfile(memoryKiB = 65536, iterations = Int.MAX_VALUE, parallelism = 1)
+  }
+  expectThrows("Int.MAX_VALUE parallelism is rejected") {
+    KdfProfile(memoryKiB = 65536, iterations = 3, parallelism = Int.MAX_VALUE)
+  }
+}
+
+private fun kdfProfileAcceptsBoundaryValues() {
+  val maxProfile = KdfProfile(
+    memoryKiB = KdfProfile.MAX_MEMORY_KIB,
+    iterations = KdfProfile.MAX_ITERATIONS,
+    parallelism = KdfProfile.MAX_PARALLELISM,
+  )
+  assertEquals(KdfProfile.MAX_MEMORY_KIB, maxProfile.memoryKiB)
+  assertEquals(KdfProfile.MAX_ITERATIONS, maxProfile.iterations)
+  assertEquals(KdfProfile.MAX_PARALLELISM, maxProfile.parallelism)
+
+  val minProfile = KdfProfile(memoryKiB = 1, iterations = 1, parallelism = 1)
+  assertEquals(1, minProfile.memoryKiB)
+  assertEquals(1, minProfile.iterations)
+  assertEquals(1, minProfile.parallelism)
+
+  expectThrows("zero memory still rejected") {
+    KdfProfile(memoryKiB = 0, iterations = 1, parallelism = 1)
+  }
+  expectThrows("negative memory still rejected") {
+    KdfProfile(memoryKiB = -1, iterations = 1, parallelism = 1)
+  }
 }
 
 private fun workPolicyDefaultsToForegroundDataSync() {
