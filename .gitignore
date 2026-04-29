@@ -84,6 +84,16 @@ test-output.txt
 cookies.txt
 npm-audit-output.json
 
+# cargo-fuzz outputs (no source tracked in this dir; only Cargo.lock + target/)
+fuzz/
+
+# Kotlin / Gradle build caches
+.kotlin/
+
+# Build/test scratch outputs (cargo-mutants, gradle, vitest, etc.)
+*-out.txt
+*-out2.txt
+
 # E2E test outputs
 tests/e2e/*-tests.txt
 tests/e2e/full-suite.txt
