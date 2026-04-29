@@ -329,9 +329,6 @@ export async function getCurrentOrFetchEpochKey(
     log.debug('Got epoch key from cache', {
       albumId,
       epochId: current.epochId,
-      signPublicKeyPrefix: Array.from(current.signKeypair.publicKey.slice(0, 8))
-        .map((b: number) => b.toString(16).padStart(2, '0'))
-        .join(''),
     });
     return current;
   }

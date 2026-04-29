@@ -9,8 +9,11 @@ import { ToastContainer } from './components/Toast';
 import { ToastProvider } from './contexts/ToastContext';
 import { useTheme } from './hooks';
 import type { User } from './lib/api-types';
+import { createLogger } from './lib/logger';
 import { session } from './lib/session';
 import './styles/globals.css';
+
+const log = createLogger('App');
 
 /**
  * Check if the browser supports required crypto APIs.
@@ -76,7 +79,7 @@ export function App() {
   useEffect(() => {
     const cryptoCheck = checkCryptoSupport();
     if (!cryptoCheck.supported) {
-      console.error('[App] Crypto not supported:', cryptoCheck.reason);
+      log.error('Crypto not supported', { reason: cryptoCheck.reason });
       setCryptoError(cryptoCheck.reason || 'Crypto APIs not available');
       setIsCheckingSession(false);
     }
@@ -105,7 +108,7 @@ export function App() {
         }
       } catch (err) {
         // Session check failed - proceed to login form
-        console.debug('Session check failed:', err);
+        log.debug('Session check failed', { error: err });
       } finally {
         setIsCheckingSession(false);
       }
@@ -128,7 +131,7 @@ export function App() {
           })
           .catch((err) => {
             // Cache restore threw an error - proceed to login
-            console.debug('Cache restore failed:', err);
+            log.debug('Cache restore failed', { error: err });
             setIsCheckingSession(false);
           });
       } else {

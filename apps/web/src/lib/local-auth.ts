@@ -475,11 +475,26 @@ export interface DevLoginResponse {
 }
 
 /**
+ * Defense-in-depth guard: refuse to call dev-only endpoints from a production
+ * build. The backend should also reject these routes in production, but this
+ * client-side check prevents silent forwards-compat regressions if a dev-only
+ * function is accidentally wired into a production code path.
+ */
+function assertDevMode(): void {
+  if (!import.meta.env.DEV) {
+    throw new Error(
+      'Dev-only endpoint called in production build. Refusing.',
+    );
+  }
+}
+
+/**
  * Quick login for development mode.
  * Creates user and session without cryptographic verification.
  * Only works when backend is in Development + LocalAuth mode.
  */
 export async function devLogin(username: string): Promise<DevLoginResponse> {
+  assertDevMode();
   const response = await fetch('/api/dev-auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -504,6 +519,7 @@ export async function devUpdateKeys(keys: {
   wrappedAccountKey?: string;
   wrappedIdentitySeed?: string;
 }): Promise<void> {
+  assertDevMode();
   const response = await fetch('/api/dev-auth/update-keys', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

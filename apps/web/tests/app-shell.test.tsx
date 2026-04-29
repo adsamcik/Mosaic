@@ -280,3 +280,36 @@ describe('AppShell', () => {
     expect(container.querySelector('.logout-button')).toBeTruthy();
   });
 });
+
+/**
+ * L8: App.tsx must use the centralized `createLogger('App')` from
+ * `./lib/logger` instead of bare `console.error` / `console.debug` calls.
+ * The centralized logger respects production log-level configuration and
+ * routes through structured fields; bare `console.*` bypasses it.
+ *
+ * We verify this with a source-level inspection rather than rendering App,
+ * because adding the App-component mocks needed to render it (AppShell,
+ * LoginForm, SharedAlbumViewer, session) at file scope would conflict with
+ * the AppShell tests above, which import the real AppShell directly.
+ */
+describe('App component logger hygiene (L8)', () => {
+  it('uses createLogger from ./lib/logger and avoids console.error/console.debug', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const url = await import('node:url');
+
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const appSource = fs.readFileSync(
+      path.resolve(here, '../src/App.tsx'),
+      'utf-8',
+    );
+
+    // Must import and initialize the centralized logger
+    expect(appSource).toMatch(/from ['"]\.\/lib\/logger['"]/);
+    expect(appSource).toMatch(/createLogger\(['"]App['"]\)/);
+
+    // Must not bypass the centralized logger via direct console calls
+    expect(appSource).not.toMatch(/console\.error\s*\(/);
+    expect(appSource).not.toMatch(/console\.debug\s*\(/);
+  });
+});
