@@ -320,13 +320,19 @@ export async function rotateEpoch(
  * @param epochSeed - The new epoch's seed (32 bytes)
  * @returns Array of share link key updates for the rotation request
  */
-async function wrapKeysForShareLinks(
+// Exported for unit testing in __tests__/epoch-rotation-service.test.ts.
+export async function wrapKeysForShareLinks(
   shareLinks: ShareLinkWithSecretResponse[],
   epochSeed: Uint8Array,
 ): Promise<ShareLinkKeyUpdateRequest[]> {
   // Import crypto functions dynamically to avoid circular deps
-  const { deriveTierKeys, deriveLinkKeys, wrapTierKeyForLink, AccessTier } =
-    await import('@mosaic/crypto');
+  const {
+    deriveTierKeys,
+    deriveLinkKeys,
+    wrapTierKeyForLink,
+    AccessTier,
+    memzero,
+  } = await import('@mosaic/crypto');
 
   const crypto = await getCryptoClient();
   const results: ShareLinkKeyUpdateRequest[] = [];
@@ -334,72 +340,95 @@ async function wrapKeysForShareLinks(
   // Derive tier keys from the new epoch's seed
   const tierKeys = deriveTierKeys(epochSeed);
 
-  for (const link of shareLinks) {
-    // Skip links without owner-encrypted secrets
-    if (!link.ownerEncryptedSecret || link.isRevoked) {
-      continue;
-    }
+  try {
+    for (const link of shareLinks) {
+      // Skip links without owner-encrypted secrets
+      if (!link.ownerEncryptedSecret || link.isRevoked) {
+        continue;
+      }
 
-    try {
-      // Decrypt the owner-encrypted secret to recover the link secret
-      const encryptedSecret = fromBase64(link.ownerEncryptedSecret);
-      const linkSecret = await crypto.unwrapWithAccountKey(encryptedSecret);
+      // Per-iteration sensitive key material — declared outside the inner
+      // try so the inner finally can wipe whatever was successfully derived
+      // before any failure point.
+      let linkSecret: Uint8Array | undefined;
+      let wrappingKey: Uint8Array | undefined;
 
-      // Derive the wrapping key from the link secret
-      const { wrappingKey } = deriveLinkKeys(linkSecret);
+      try {
+        // Decrypt the owner-encrypted secret to recover the link secret
+        const encryptedSecret = fromBase64(link.ownerEncryptedSecret);
+        linkSecret = await crypto.unwrapWithAccountKey(encryptedSecret);
 
-      // Wrap tier keys up to the link's access tier
-      const wrappedKeys: ShareLinkKeyUpdateRequest['wrappedKeys'] = [];
+        // Derive the wrapping key from the link secret
+        const linkKeys = deriveLinkKeys(linkSecret);
+        wrappingKey = linkKeys.wrappingKey;
 
-      // Always wrap thumb key (tier 1)
-      const wrappedThumb = wrapTierKeyForLink(
-        tierKeys.thumbKey,
-        AccessTier.THUMB,
-        wrappingKey,
-      );
-      wrappedKeys.push({
-        tier: 1,
-        nonce: toBase64(wrappedThumb.nonce),
-        encryptedKey: toBase64(wrappedThumb.encryptedKey),
-      });
+        // Wrap tier keys up to the link's access tier
+        const wrappedKeys: ShareLinkKeyUpdateRequest['wrappedKeys'] = [];
 
-      // Wrap preview key if access tier >= 2
-      if (link.accessTier >= 2) {
-        const wrappedPreview = wrapTierKeyForLink(
-          tierKeys.previewKey,
-          AccessTier.PREVIEW,
+        // Always wrap thumb key (tier 1)
+        const wrappedThumb = wrapTierKeyForLink(
+          tierKeys.thumbKey,
+          AccessTier.THUMB,
           wrappingKey,
         );
         wrappedKeys.push({
-          tier: 2,
-          nonce: toBase64(wrappedPreview.nonce),
-          encryptedKey: toBase64(wrappedPreview.encryptedKey),
+          tier: 1,
+          nonce: toBase64(wrappedThumb.nonce),
+          encryptedKey: toBase64(wrappedThumb.encryptedKey),
         });
-      }
 
-      // Wrap full key if access tier >= 3
-      if (link.accessTier >= 3) {
-        const wrappedFull = wrapTierKeyForLink(
-          tierKeys.fullKey,
-          AccessTier.FULL,
-          wrappingKey,
-        );
-        wrappedKeys.push({
-          tier: 3,
-          nonce: toBase64(wrappedFull.nonce),
-          encryptedKey: toBase64(wrappedFull.encryptedKey),
+        // Wrap preview key if access tier >= 2
+        if (link.accessTier >= 2) {
+          const wrappedPreview = wrapTierKeyForLink(
+            tierKeys.previewKey,
+            AccessTier.PREVIEW,
+            wrappingKey,
+          );
+          wrappedKeys.push({
+            tier: 2,
+            nonce: toBase64(wrappedPreview.nonce),
+            encryptedKey: toBase64(wrappedPreview.encryptedKey),
+          });
+        }
+
+        // Wrap full key if access tier >= 3
+        if (link.accessTier >= 3) {
+          const wrappedFull = wrapTierKeyForLink(
+            tierKeys.fullKey,
+            AccessTier.FULL,
+            wrappingKey,
+          );
+          wrappedKeys.push({
+            tier: 3,
+            nonce: toBase64(wrappedFull.nonce),
+            encryptedKey: toBase64(wrappedFull.encryptedKey),
+          });
+        }
+
+        results.push({
+          shareLinkId: link.id,
+          wrappedKeys,
         });
+      } catch (err) {
+        // Log but don't fail rotation for individual share link failures
+        log.error(`Failed to wrap keys for share link ${link.id}:`, err);
+        // Continue with other links
+      } finally {
+        // SECURITY (M1): wipe per-link sensitive material on every path so
+        // recovered link secrets and derived wrapping keys never linger
+        // after this iteration completes.
+        if (linkSecret) memzero(linkSecret);
+        if (wrappingKey) memzero(wrappingKey);
       }
-
-      results.push({
-        shareLinkId: link.id,
-        wrappedKeys,
-      });
-    } catch (err) {
-      // Log but don't fail rotation for individual share link failures
-      log.error(`Failed to wrap keys for share link ${link.id}:`, err);
-      // Continue with other links
     }
+  } finally {
+    // SECURITY (M1): wipe tier keys derived from the epoch seed on both the
+    // success and the throw path. Without this, thumb/preview/full keys
+    // remain in worker memory after every rotation and could be enumerated
+    // by a debugger or in-worker XSS payload.
+    memzero(tierKeys.thumbKey);
+    memzero(tierKeys.previewKey);
+    memzero(tierKeys.fullKey);
   }
 
   return results;
