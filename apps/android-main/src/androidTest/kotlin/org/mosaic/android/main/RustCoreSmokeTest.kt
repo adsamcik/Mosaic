@@ -12,7 +12,6 @@ import org.mosaic.android.foundation.AccountKeyHandle
 import org.mosaic.android.foundation.AccountUnlockCode
 import org.mosaic.android.foundation.AccountUnlockRequest
 import org.mosaic.android.foundation.GeneratedRustAccountBridge
-import org.mosaic.android.foundation.HeaderParseCode
 import org.mosaic.android.foundation.KdfProfile
 import org.mosaic.android.foundation.unlockAccountAndWipePassword
 import org.mosaic.android.main.bridge.AndroidRustAccountApi
@@ -71,8 +70,8 @@ class RustCoreSmokeTest {
   @Test
   fun parseEnvelopeHeaderRejectsTooShortBytes() {
     val bridge = AndroidRustHeaderApi()
-    val result = bridge.parseEnvelopeHeader(ByteArray(8))
-    assertNotEquals(0, result.code)
+    val error = runCatching { bridge.parseEnvelopeHeader(ByteArray(8)) }.exceptionOrNull()
+    assertNotNull("short headers are rejected before crossing the FFI boundary", error)
   }
 
   @Test
