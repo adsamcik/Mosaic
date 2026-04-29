@@ -3,7 +3,7 @@
   "operation": "epoch.derive-tier-keys.v1",
   "protocolVersion": "mosaic-v1",
   "rust_canonical": false,
-  "description": "Derive (thumbKey, previewKey, fullKey, contentKey) from a 32-byte epoch seed. Locks the TS-shipped BLAKE2b-keyed derivation; Rust diverges (HKDF-SHA256). Discriminators are SHA-256 over the derived key bytes so the secret keys themselves do not appear in the corpus.",
+  "description": "Derive (thumbKey, previewKey, fullKey, contentKey) from a 32-byte epoch seed. Both Rust and TS now agree on BLAKE2b-keyed derivation (libsodium crypto_generichash with key=epoch_seed, msg=context_label, out_len=32). Discriminators are SHA-256 over the derived key bytes so the secret keys themselves do not appear in the corpus.",
   "algorithms": {
     "derivation": "BLAKE2b-256(key=epoch_seed, msg=context_label)",
     "contexts": "mosaic:tier:thumb:v1 | mosaic:tier:preview:v1 | mosaic:tier:full:v1 | mosaic:tier:content:v1"

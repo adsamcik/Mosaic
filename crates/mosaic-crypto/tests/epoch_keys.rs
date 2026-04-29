@@ -30,25 +30,25 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 #[test]
-fn epoch_tier_keys_match_hkdf_sha256_vectors() {
+fn epoch_tier_keys_match_blake2b_keyed_vectors() {
     let epoch = derive_epoch_from(ZERO_SEED, 7);
 
     assert_eq!(epoch.epoch_id(), 7);
     assert!(
         hex(epoch.thumb_key().as_bytes())
-            == "f7fcdd6a790a967e861af99f699d405d3028fdce126c16cc070b49d31250678d"
+            == "bf0269d2b1da019bb441ff453b911936794ebcdd3cb8a904f65edd969a124148"
     );
     assert!(
         hex(epoch.preview_key().as_bytes())
-            == "a234b3204adf478dd6e3a626d43a8c64143b8a8f0b030d664978f319a313530f"
+            == "d414a5f96fb87136dd1c55eee5520551cec4348a47ea2e39639bff23857f0244"
     );
     assert!(
         hex(epoch.full_key().as_bytes())
-            == "464ab509b8e6fcc9b88ecf07ab2205547b22337080eb42f6f6ee9ee5b0f53917"
+            == "9b633d1b035a316d69a0724f8b99dde184dd38c392c0387bd65920af47273dcd"
     );
     assert!(
         hex(epoch.content_key().as_bytes())
-            == "bea2ef6ce9247d666b92dacab015dd0ceea07bddd243e089480edd28e5e8e010"
+            == "4dddd1da34f5dd737704e159ce5ca80525fb29f7a6f5e3f228c7c019da560776"
     );
 }
 

@@ -9,7 +9,6 @@ The differential runner skips the Rust-side assertion for these vectors via `#[i
 | `tier-key-wrap` | `tests/vectors/tier_key_wrap.json` | `crypto_secretbox` (XSalsa20-Poly1305) over `nonce \|\| ciphertext` | `XChaCha20-Poly1305` (AEAD trait) over `nonce \|\| ciphertext` | Decide which AEAD wins for v1; align both ends. Most likely path: switch Rust `wrap_key`/`unwrap_key` to the libsodium-compatible XSalsa20 path so existing share links keep resolving, since these wrapped tier keys are persisted server-side. |
 | `auth-keypair` | `tests/vectors/auth_keypair.json` | `authSeed = BLAKE2b-256(msg = "Mosaic_AuthKey_v1" \|\| L0)` | `authSeed = HKDF-SHA256(salt = user_salt, info = "mosaic:auth-signing:v1", ikm = L0)` | Pick a single canonical KDF for the auth seed step. The TS form has shipped to users and rotating it invalidates registered auth pubkeys, so the safer cutover is to teach Rust the BLAKE2b form (it stays cleanly separated from the L0 → L1 chain). |
 | `account-unlock` | `tests/vectors/account_unlock.json` | L1 = `BLAKE2b(BLAKE2b("Mosaic_AccountKey_v1", account_salt), BLAKE2b("Mosaic_RootKey_v1", L0))`; wrap = `crypto_secretbox` | L1 = `HKDF-SHA256(salt = account_salt, ikm = L0, info = "mosaic:root-key:v1")`; wrap = `XChaCha20-Poly1305` | Same dilemma as `tier-key-wrap`: shipped wrapped account keys live server-side. Rust must adopt the BLAKE2b L1 chain *and* XSalsa20 wrap or migrate user records before flipping. |
-| `epoch-tier-keys` | `tests/vectors/epoch_derive.json` | `tierKey = BLAKE2b-256(key = epoch_seed, msg = "mosaic:tier:<tier>:v1")` | `tierKey = HKDF-SHA256(ikm = epoch_seed, info = "mosaic:tier:<tier>:v1")` | Tier keys are derived on demand from a sealed bundle, so a same-version cutover is feasible by switching Rust to BLAKE2b-keyed (or vice-versa) in lockstep with the WASM facade. The corpus locks the TS bytes via SHA-256 discriminators so neither side has to hold the actual key bytes. |
 
 ## Operation parity table
 
@@ -24,9 +23,9 @@ The differential runner skips the Rust-side assertion for these vectors via `#[i
 | `auth_challenge.json` | Ed25519 over framed transcript | ✅ | ✅ | byte-exact transcript + sig |
 | `auth_keypair.json` | seed → keypair | ✅ | ❌ | **deviation:auth-keypair** |
 | `account_unlock.json` | L1 derivation + wrap | ✅ | ❌ | **deviation:account-unlock** |
-| `epoch_derive.json` | tier-key derivation | ✅ | ❌ | **deviation:epoch-tier-keys** |
+| `epoch_derive.json` | tier-key derivation | ✅ | ✅ | byte-exact |
 | `sealed_bundle.json` | Ed25519 verify + crypto_box_seal_open | ✅ | ✅ | byte-exact open |
-| `manifest_transcript.json` | canonical transcript framing | n/a (TS lacks builder) | ✅ | Rust-canonical, TS skips with TODO ref Slice 0C |
+| `manifest_transcript.json` | canonical transcript framing | ✅ | ✅ | byte-exact (TS builder + signManifestCanonical added) |
 
 ## Procedure for closing a deviation
 

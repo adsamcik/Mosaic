@@ -7,10 +7,10 @@
  * any change in libs/crypto that breaks one of these vectors is a protocol
  * drift that the Rust core, WASM facade, and Android shell all need to react to.
  *
- * Vectors flagged `rust_canonical: true` (e.g. `manifest_transcript.json`) are
- * skipped because TS does not yet expose the corresponding builder; once Slice
- * 0C lands the TS-side helper, the skipped tests should switch to byte-exact
- * assertions.
+ * `manifest_transcript.json` is locked Rust-canonical: the TS-side helper
+ * `buildManifestTranscript` (libs/crypto/src/manifest.ts) mirrors Rust's
+ * `mosaic_domain::canonical_manifest_transcript_bytes` byte-for-byte, and the
+ * test below asserts that equivalence directly against the captured corpus.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -34,6 +34,7 @@ import {
   ShardTier,
   fromBase64,
   generateLinkSecret,
+  buildManifestTranscript,
 } from '../src/index';
 
 const CORPUS_DIR = resolve(__dirname, '..', '..', '..', 'tests', 'vectors');
@@ -47,6 +48,14 @@ function fromHex(value: string): Uint8Array {
     out[i] = parseInt(value.slice(i * 2, i * 2 + 2), 16);
   }
   return out;
+}
+
+function toHex(bytes: Uint8Array): string {
+  let result = '';
+  for (const byte of bytes) {
+    result += byte.toString(16).padStart(2, '0');
+  }
+  return result;
 }
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -380,11 +389,32 @@ describe('cross-client golden vector corpus (TS reference)', () => {
     ).toBe(true);
   });
 
-  it.skip(
-    'manifest_transcript.json — TODO Slice 0C: TS lacks build_manifest_transcript; locked Rust-canonical',
-    () => {
-      const v = loadVector('manifest_transcript.json');
-      expect(v.rust_canonical).toBe(true);
-    },
-  );
+  it('manifest_transcript.json — TS canonical builder matches Rust bytes', () => {
+    const v = loadVector('manifest_transcript.json') as unknown as {
+      expected: { transcriptHex: string };
+      inputs: {
+        albumIdHex: string;
+        epochId: number;
+        encryptedMetaHex: string;
+        shards: Array<{
+          chunkIndex: number;
+          tier: 1 | 2 | 3;
+          shardIdHex: string;
+          sha256Hex: string;
+        }>;
+      };
+    };
+    const built = buildManifestTranscript({
+      albumId: fromHex(v.inputs.albumIdHex),
+      epochId: v.inputs.epochId,
+      encryptedMeta: fromHex(v.inputs.encryptedMetaHex),
+      shards: v.inputs.shards.map((s) => ({
+        chunkIndex: s.chunkIndex,
+        tier: s.tier,
+        shardId: fromHex(s.shardIdHex),
+        sha256: fromHex(s.sha256Hex),
+      })),
+    });
+    expect(toHex(built)).toBe(v.expected.transcriptHex);
+  });
 });

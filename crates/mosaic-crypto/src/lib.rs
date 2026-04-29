@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 use argon2::{Algorithm, Argon2, Block, Params, Version};
+use blake2::Blake2bMac;
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, KeyInit, Payload},
@@ -93,16 +94,16 @@ pub const AUTH_CHALLENGE_BYTES: usize = 32;
 /// HKDF-SHA256 domain separation label for password-rooted auth signing seeds.
 const AUTH_SIGNING_KEY_INFO: &[u8] = b"mosaic:auth-signing:v1";
 
-/// HKDF-SHA256 domain separation label for thumbnail shard keys.
+/// BLAKE2b-keyed domain separation label for thumbnail shard keys.
 const THUMB_KEY_INFO: &[u8] = b"mosaic:tier:thumb:v1";
 
-/// HKDF-SHA256 domain separation label for preview shard keys.
+/// BLAKE2b-keyed domain separation label for preview shard keys.
 const PREVIEW_KEY_INFO: &[u8] = b"mosaic:tier:preview:v1";
 
-/// HKDF-SHA256 domain separation label for original shard keys.
+/// BLAKE2b-keyed domain separation label for original shard keys.
 const FULL_KEY_INFO: &[u8] = b"mosaic:tier:full:v1";
 
-/// HKDF-SHA256 domain separation label for album content keys.
+/// BLAKE2b-keyed domain separation label for album content keys.
 const CONTENT_KEY_INFO: &[u8] = b"mosaic:tier:content:v1";
 
 /// Crypto crate errors.
@@ -1214,12 +1215,14 @@ pub fn verify_manifest_transcript(
 
 /// Derives all current Mosaic tier/content keys from a 32-byte epoch seed.
 ///
-/// Rust v1 uses canonical HKDF-SHA256 with fixed Mosaic labels. The input seed
+/// Rust v1 uses BLAKE2b-256 keyed (libsodium `crypto_generichash` with
+/// `key = epoch_seed`, `msg = label`, `out_len = 32`) with fixed Mosaic labels,
+/// matching the shipped TypeScript reference byte-for-byte. The input seed
 /// buffer is zeroized before return on both success and invalid length.
 ///
 /// # Errors
 /// Returns `InvalidKeyLength` if `epoch_seed` is not exactly 32 bytes long, or
-/// `KdfFailure` if HKDF expansion reports an error.
+/// `KdfFailure` if BLAKE2b-keyed derivation reports an error.
 pub fn derive_epoch_key_material(
     epoch_id: u32,
     epoch_seed: &mut [u8],
@@ -1250,7 +1253,7 @@ pub fn derive_epoch_key_material(
 /// Derives the album content key from an epoch seed.
 ///
 /// # Errors
-/// Returns `KdfFailure` if HKDF expansion reports an error.
+/// Returns `KdfFailure` if BLAKE2b-keyed derivation reports an error.
 pub fn derive_content_key(epoch_seed: &SecretKey) -> Result<SecretKey, MosaicCryptoError> {
     derive_labeled_key(epoch_seed.as_bytes(), CONTENT_KEY_INFO)
 }
@@ -1265,11 +1268,23 @@ pub const fn get_tier_key(epoch_key: &EpochKeyMaterial, tier: ShardTier) -> &Sec
     }
 }
 
+/// Derives a 32-byte tier/content key as `BLAKE2b-256(key = seed, msg = info)`.
+///
+/// Matches libsodium `crypto_generichash(out_len = 32, msg = info, key = seed)`,
+/// which is the primitive used by the TypeScript reference (`epochs.ts`
+/// `deriveTierKey`). Switching this away from HKDF-SHA256 closed the
+/// `epoch-tier-keys` cross-implementation deviation; the BLAKE2b-keyed
+/// parameter block (zero salt, zero personalisation, `key_length = key.len()`,
+/// `digest_length = 32`) follows RFC 7693 §2.5 exactly as libsodium does, so
+/// both clients produce byte-identical output.
 fn derive_labeled_key(seed: &[u8], info: &[u8]) -> Result<SecretKey, MosaicCryptoError> {
-    let mut key_bytes = Zeroizing::new(vec![0_u8; KEY_BYTES]);
-    Hkdf::<Sha256>::new(None, seed)
-        .expand(info, key_bytes.as_mut_slice())
+    use blake2::digest::{KeyInit as Blake2KeyInit, Mac as Blake2Mac, consts::U32 as Blake2U32};
+    let mut mac = <Blake2bMac<Blake2U32> as Blake2KeyInit>::new_from_slice(seed)
         .map_err(|_| MosaicCryptoError::KdfFailure)?;
+    Blake2Mac::update(&mut mac, info);
+    let output = mac.finalize().into_bytes();
+    let mut key_bytes = Zeroizing::new(vec![0_u8; KEY_BYTES]);
+    key_bytes.as_mut_slice().copy_from_slice(&output);
     SecretKey::from_bytes(key_bytes.as_mut_slice())
 }
 

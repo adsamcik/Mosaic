@@ -82,6 +82,66 @@ export function verifyManifest(
 }
 
 /**
+ * Sign already-canonical Mosaic manifest transcript bytes.
+ *
+ * Unlike {@link signManifest}, this function does NOT prepend
+ * `MANIFEST_SIGN_CONTEXT` because the canonical bytes built by
+ * {@link buildManifestTranscript} already begin with that context. Use this
+ * for cross-implementation parity with Rust
+ * `mosaic_crypto::sign_manifest_transcript`.
+ *
+ * @param canonicalBytes - Output of {@link buildManifestTranscript}.
+ * @param signSecretKey - Ed25519 signing secret key (64 bytes).
+ * @returns Ed25519 signature (64 bytes).
+ * @throws CryptoError if key length is invalid.
+ */
+export function signManifestCanonical(
+  canonicalBytes: Uint8Array,
+  signSecretKey: Uint8Array,
+): Uint8Array {
+  if (signSecretKey.length !== SECRET_KEY_LENGTH) {
+    throw new CryptoError(
+      `Signing secret key must be ${SECRET_KEY_LENGTH} bytes, got ${signSecretKey.length}`,
+      CryptoErrorCode.INVALID_KEY_LENGTH,
+    );
+  }
+  return sodium.crypto_sign_detached(canonicalBytes, signSecretKey);
+}
+
+/**
+ * Verify a signature over already-canonical Mosaic manifest transcript bytes.
+ *
+ * Mirror of {@link signManifestCanonical} for cross-implementation parity with
+ * Rust `mosaic_crypto::verify_manifest_transcript`.
+ *
+ * @param canonicalBytes - Output of {@link buildManifestTranscript}.
+ * @param signature - Ed25519 signature (64 bytes).
+ * @param signPublicKey - Ed25519 signing public key (32 bytes).
+ * @returns true if the signature is valid.
+ */
+export function verifyManifestCanonical(
+  canonicalBytes: Uint8Array,
+  signature: Uint8Array,
+  signPublicKey: Uint8Array,
+): boolean {
+  if (signature.length !== SIGNATURE_LENGTH) {
+    return false;
+  }
+  if (signPublicKey.length !== PUBLIC_KEY_LENGTH) {
+    return false;
+  }
+  try {
+    return sodium.crypto_sign_verify_detached(
+      signature,
+      canonicalBytes,
+      signPublicKey,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Sign shard envelope (header + ciphertext).
  * Uses domain separation context to prevent signature reuse.
  *

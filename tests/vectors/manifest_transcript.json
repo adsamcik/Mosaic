@@ -3,7 +3,7 @@
   "operation": "manifest.transcript.canonical-bytes.v1",
   "protocolVersion": "mosaic-v1",
   "rust_canonical": true,
-  "description": "Canonical manifest transcript bytes. Rust-canonical: TS does not yet ship build_manifest_transcript; the TS runner skips this vector with a TODO referencing Slice 0C.",
+  "description": "Canonical manifest transcript bytes. Rust-canonical: TS now ships buildManifestTranscript (libs/crypto/src/manifest.ts) and signManifestCanonical / verifyManifestCanonical (libs/crypto/src/signer.ts) which mirror Rust mosaic_domain::canonical_manifest_transcript_bytes byte-for-byte and Rust mosaic_crypto::sign_manifest_transcript / verify_manifest_transcript respectively.",
   "algorithms": {
     "transcript": "\"Mosaic_Manifest_v1\" || version=1 || album_id(16) || epoch_id LE u32 || encrypted_meta_len LE u32 || encrypted_meta || shard_count LE u32 || (chunk_index LE u32 || tier(1) || shard_id(16) || sha256(32))*"
   },

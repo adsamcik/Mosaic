@@ -381,19 +381,46 @@ fn account_unlock_vector_currently_diverges() {
 }
 
 #[test]
-#[ignore = "deviation:epoch-tier-keys — TS derives via BLAKE2b(key=epoch_seed, msg=label); Rust uses HKDF-SHA256(ikm=seed, info=label). See tests/vectors/deviations.md"]
-fn epoch_derive_vector_currently_diverges() {
+fn epoch_derive_vector_matches_ts_blake2b_keyed() {
     let parsed = load("epoch_derive.json");
-    let vector = EpochDeriveVector::from(&parsed).expect("epoch_derive vector");
+    let vector = match EpochDeriveVector::from(&parsed) {
+        Ok(v) => v,
+        Err(e) => panic!("epoch_derive vector: {e}"),
+    };
     assert_eq!(vector.epoch_seed.len(), 32);
-    for (name, sha) in [
-        ("thumb", &vector.expected_thumb_key_sha256),
-        ("preview", &vector.expected_preview_key_sha256),
-        ("full", &vector.expected_full_key_sha256),
-        ("content", &vector.expected_content_key_sha256),
-    ] {
-        assert_eq!(sha.len(), 32, "{name} discriminator length");
-    }
+
+    let mut seed = vector.epoch_seed.clone();
+    let material = match mosaic_crypto::derive_epoch_key_material(0, seed.as_mut_slice()) {
+        Ok(m) => m,
+        Err(e) => panic!("derive epoch material: {e:?}"),
+    };
+
+    use sha2::{Digest, Sha256};
+    let thumb_sha = Sha256::digest(material.thumb_key().as_bytes());
+    let preview_sha = Sha256::digest(material.preview_key().as_bytes());
+    let full_sha = Sha256::digest(material.full_key().as_bytes());
+    let content_sha = Sha256::digest(material.content_key().as_bytes());
+
+    assert_eq!(
+        thumb_sha.as_slice(),
+        vector.expected_thumb_key_sha256.as_slice(),
+        "thumb"
+    );
+    assert_eq!(
+        preview_sha.as_slice(),
+        vector.expected_preview_key_sha256.as_slice(),
+        "preview"
+    );
+    assert_eq!(
+        full_sha.as_slice(),
+        vector.expected_full_key_sha256.as_slice(),
+        "full"
+    );
+    assert_eq!(
+        content_sha.as_slice(),
+        vector.expected_content_key_sha256.as_slice(),
+        "content"
+    );
 }
 
 #[test]

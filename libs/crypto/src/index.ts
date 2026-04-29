@@ -106,11 +106,17 @@ export {
 export {
   signManifest,
   verifyManifest,
+  signManifestCanonical,
+  verifyManifestCanonical,
   signShard,
   verifyShard as verifyShardSignature,
   signWithContext,
   verifyWithContext,
 } from './signer';
+
+// Re-export canonical manifest transcript builder
+export { buildManifestTranscript } from './manifest';
+export type { ManifestShardRef, ManifestTranscriptInputs } from './manifest';
 
 // Re-export epochs
 export {

@@ -339,6 +339,14 @@ export enum CryptoErrorCode {
   KEY_CONVERSION_FAILED = 'KEY_CONVERSION_FAILED',
   /** Invalid input (wrong size or format) */
   INVALID_INPUT = 'INVALID_INPUT',
+  /** Manifest transcript: encrypted_meta is empty (mirrors Rust ManifestTranscriptError::EmptyEncryptedMeta) */
+  EMPTY_ENCRYPTED_META = 'EMPTY_ENCRYPTED_META',
+  /** Manifest transcript: shards array is empty (mirrors Rust ManifestTranscriptError::EmptyShardList) */
+  EMPTY_SHARD_LIST = 'EMPTY_SHARD_LIST',
+  /** Manifest transcript: shard chunk indices are not exactly 0,1,2,...,n-1 (mirrors Rust ManifestTranscriptError::NonSequentialShardIndex) */
+  NON_SEQUENTIAL_SHARD_INDEX = 'NON_SEQUENTIAL_SHARD_INDEX',
+  /** Manifest transcript: a u32 length prefix would overflow (mirrors Rust ManifestTranscriptError::LengthTooLarge) */
+  LENGTH_TOO_LARGE = 'LENGTH_TOO_LARGE',
 }
 
 // =============================================================================
