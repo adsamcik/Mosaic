@@ -146,6 +146,23 @@ export function PhotoLightbox({
   const videoRef = useRef<HTMLVideoElement>(null);
   const justCancelledDescriptionRef = useRef(false);
 
+  // Ref callback that pauses the previously-mounted <video> the moment
+  // React detaches it (e.g. on photo navigation, when the loadState flips
+  // back to 'loading' and the <video> unmounts). Doing it here — rather
+  // than in a useEffect cleanup — guarantees we still hold a reference to
+  // the element. By the time a useEffect cleanup runs, React has already
+  // cleared `videoRef.current`, so a deferred pause would be a no-op.
+  const handleVideoRef = useCallback(
+    (el: HTMLVideoElement | null) => {
+      const previous = videoRef.current;
+      if (previous && previous !== el) {
+        previous.pause();
+      }
+      videoRef.current = el;
+    },
+    [],
+  );
+
   const isVideo = photo.isVideo === true || isVideoMimeType(photo.mimeType);
 
   useEffect(() => {
@@ -461,12 +478,16 @@ export function PhotoLightbox({
     }
   }, []);
 
-  // Pause video on close or navigation
+  // Pause video on close or unmount of the lightbox itself (the ref
+  // callback handles the photo-navigation case synchronously). The cleanup
+  // here is the safety net for the lightbox closing without a navigation.
   useEffect(() => {
     return () => {
-      pauseVideo();
+      if (videoRef.current) {
+        videoRef.current.pause();
+      }
     };
-  }, [photo.id, pauseVideo]);
+  }, []);
 
   // Keyboard navigation
   useEffect(() => {
@@ -628,7 +649,7 @@ export function PhotoLightbox({
             // Force a fresh element per blob URL so we never inherit a
             // pending error event from the previously-mounted video.
             key={blobUrl}
-            ref={videoRef}
+            ref={handleVideoRef}
             controls
             autoPlay
             playsInline

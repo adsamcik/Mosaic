@@ -617,10 +617,24 @@ export class DbWorker implements DbWorkerApi {
     rotation: number,
     versionCreated: number,
   ): Promise<void> {
-    this.getReadyDb().run(
-      'UPDATE photos SET rotation = ?, version_created = ?, updated_at = ? WHERE id = ?',
-      [rotation, versionCreated, new Date().toISOString(), photoId],
+    // Symmetric monotonicity guard with `insertManifests`: if a concurrent
+    // sync just delivered a newer manifest version for this row, our
+    // optimistic local write would otherwise regress `version_created`
+    // and re-arm the inbound-sync race the next time a manifest arrives.
+    // The atomic predicate makes the UPDATE a no-op when that's the case.
+    const db = this.getReadyDb();
+    db.run(
+      'UPDATE photos SET rotation = ?, version_created = ?, updated_at = ? WHERE id = ? AND version_created <= ?',
+      [rotation, versionCreated, new Date().toISOString(), photoId, versionCreated],
     );
+    // sql.js exposes getRowsModified at runtime but it isn't part of the
+    // shipped TypeScript definitions, hence the narrowing cast.
+    const rowsModified = (db as unknown as { getRowsModified(): number }).getRowsModified();
+    if (rowsModified === 0) {
+      log.debug(
+        `Skipping local rotation write for ${photoId}: incoming version ${versionCreated} not newer than local`,
+      );
+    }
     await this.saveToOPFS();
   }
 
@@ -629,10 +643,18 @@ export class DbWorker implements DbWorkerApi {
     description: string | null,
     versionCreated: number,
   ): Promise<void> {
-    this.getReadyDb().run(
-      'UPDATE photos SET description = ?, version_created = ?, updated_at = ? WHERE id = ?',
-      [description, versionCreated, new Date().toISOString(), photoId],
+    // See updatePhotoRotation for the rationale of the version_created guard.
+    const db = this.getReadyDb();
+    db.run(
+      'UPDATE photos SET description = ?, version_created = ?, updated_at = ? WHERE id = ? AND version_created <= ?',
+      [description, versionCreated, new Date().toISOString(), photoId, versionCreated],
     );
+    const rowsModified = (db as unknown as { getRowsModified(): number }).getRowsModified();
+    if (rowsModified === 0) {
+      log.debug(
+        `Skipping local description write for ${photoId}: incoming version ${versionCreated} not newer than local`,
+      );
+    }
     await this.saveToOPFS();
   }
 

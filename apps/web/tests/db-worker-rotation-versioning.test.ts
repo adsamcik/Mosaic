@@ -111,4 +111,52 @@ describe('DbWorker manifest rotation versioning', () => {
     photo = await worker.getPhotoById('photo-1');
     expect(photo?.rotation).toBe(180);
   });
+
+  it('updatePhotoRotation refuses to regress version_created when a newer sync has already landed', async () => {
+    // Sync delivers a manifest at version 10 with rotation 90.
+    await worker.insertManifests([makeManifest(10, 90)]);
+
+    // The user's optimistic rotation write returns from the server with
+    // version_created = 7 because their PATCH was based on a stale view of
+    // the album. The local row must NOT regress to version 7.
+    await worker.updatePhotoRotation('photo-1', 270, 7);
+
+    const photo = await worker.getPhotoById('photo-1');
+    expect(photo?.rotation).toBe(90);
+
+    // Confirm the version stayed at 10 by attempting to apply a manifest at
+    // version 8: it must still be skipped because the local row is at 10.
+    await worker.insertManifests([makeManifest(8, 0)]);
+    const reread = await worker.getPhotoById('photo-1');
+    expect(reread?.rotation).toBe(90);
+  });
+
+  it('updatePhotoRotation applies when the incoming version is newer or equal', async () => {
+    await worker.insertManifests([makeManifest(5, 0)]);
+
+    // Newer wins.
+    await worker.updatePhotoRotation('photo-1', 90, 6);
+    expect((await worker.getPhotoById('photo-1'))?.rotation).toBe(90);
+
+    // Equal wins (idempotent retry of the same write should be safe).
+    await worker.updatePhotoRotation('photo-1', 180, 6);
+    expect((await worker.getPhotoById('photo-1'))?.rotation).toBe(180);
+  });
+
+  it('updatePhotoDescription refuses to regress version_created when a newer sync has already landed', async () => {
+    await worker.insertManifests([makeManifest(10, 0)]);
+
+    // Optimistic description write returns at a stale version.
+    await worker.updatePhotoDescription('photo-1', 'late-write', 7);
+
+    const photo = await worker.getPhotoById('photo-1');
+    // Description stays whatever the manifest at v10 carried (none, in the
+    // makeManifest fixture). The stale write was rejected.
+    expect(photo?.description ?? null).toBeNull();
+
+    // Newer write still applies cleanly.
+    await worker.updatePhotoDescription('photo-1', 'fresh', 11);
+    const reread = await worker.getPhotoById('photo-1');
+    expect(reread?.description).toBe('fresh');
+  });
 });
