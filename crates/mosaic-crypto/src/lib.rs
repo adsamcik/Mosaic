@@ -239,6 +239,19 @@ impl ManifestSigningSecretKey {
     pub(crate) fn seed_bytes(&self) -> &[u8] {
         &self.0[..]
     }
+
+    /// Borrows the 32-byte Ed25519 seed for FFI handoff to the recipient
+    /// after a sealed bundle is opened.
+    ///
+    /// Sealed-bundle distribution intentionally transfers the per-epoch
+    /// signing seed to the recipient so they can sign new manifests in this
+    /// epoch. This accessor MUST only be used when building a result that
+    /// crosses the FFI boundary; never log, persist plaintext, or copy the
+    /// returned slice into a non-zeroizing buffer.
+    #[must_use]
+    pub fn expose_seed_bytes(&self) -> &[u8] {
+        &self.0[..]
+    }
 }
 
 impl Drop for ManifestSigningSecretKey {

@@ -36,6 +36,23 @@ export class AccountUnlockResult {
 }
 
 /**
+ * WASM-bindgen class for auth keypair derivation results.
+ */
+export class AuthKeypairResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * 32-byte Ed25519 LocalAuth public key. Non-secret.
+     */
+    readonly authPublicKey: Uint8Array;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+}
+
+/**
  * WASM-bindgen class for byte-array results.
  */
 export class BytesResult {
@@ -106,6 +123,23 @@ export class CryptoDomainGoldenVectorSnapshot {
 }
 
 /**
+ * WASM-bindgen class for decrypted album content results.
+ */
+export class DecryptedContentResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Client-local plaintext album content on successful decryption.
+     */
+    readonly plaintext: Uint8Array;
+}
+
+/**
  * WASM-bindgen class for decrypted shard results.
  */
 export class DecryptedShardResult {
@@ -120,6 +154,27 @@ export class DecryptedShardResult {
      * Client-local plaintext bytes on successful decryption.
      */
     readonly plaintext: Uint8Array;
+}
+
+/**
+ * WASM-bindgen class for encrypted album content results.
+ */
+export class EncryptedContentResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Ciphertext including the trailing 16-byte Poly1305 tag.
+     */
+    readonly ciphertext: Uint8Array;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * 24-byte XChaCha20 nonce.
+     */
+    readonly nonce: Uint8Array;
 }
 
 /**
@@ -244,6 +299,68 @@ export class IdentityHandleResult {
 }
 
 /**
+ * WASM-bindgen class for share-link key derivation results.
+ */
+export class LinkKeysResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * 16-byte server-visible share-link lookup ID.
+     */
+    readonly linkId: Uint8Array;
+    /**
+     * 32-byte client-side wrapping key. Callers MUST memzero after use.
+     */
+    readonly wrappingKey: Uint8Array;
+}
+
+/**
+ * WASM-bindgen class for opened-bundle results.
+ */
+export class OpenedBundleResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Album identifier the bundle was issued for.
+     */
+    readonly albumId: string;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Epoch identifier inside the bundle payload.
+     */
+    readonly epochId: number;
+    /**
+     * 32-byte epoch seed. Callers MUST memzero after deriving tier/content keys.
+     */
+    readonly epochSeed: Uint8Array;
+    /**
+     * 32-byte recipient Ed25519 public key from the payload.
+     */
+    readonly recipientPubkey: Uint8Array;
+    /**
+     * 32-byte per-epoch Ed25519 manifest signing public key.
+     */
+    readonly signPublicKey: Uint8Array;
+    /**
+     * 32-byte per-epoch Ed25519 manifest signing seed. Callers MUST memzero.
+     */
+    readonly signSecretSeed: Uint8Array;
+    /**
+     * Bundle format version recovered from the payload.
+     */
+    readonly version: number;
+}
+
+/**
  * WASM-bindgen class for progress events.
  */
 export class ProgressEvent {
@@ -278,14 +395,79 @@ export class ProgressResult {
 }
 
 /**
+ * WASM-bindgen class for sealed bundle results.
+ */
+export class SealedBundleResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Sealed-box ciphertext bytes.
+     */
+    readonly sealed: Uint8Array;
+    /**
+     * 32-byte sharer Ed25519 identity public key.
+     */
+    readonly sharerPubkey: Uint8Array;
+    /**
+     * 64-byte detached Ed25519 signature over `BUNDLE_SIGN_CONTEXT || sealed`.
+     */
+    readonly signature: Uint8Array;
+}
+
+/**
+ * WASM-bindgen class for wrapped tier key results.
+ */
+export class WrappedTierKeyResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Wrapped tier-key ciphertext including the 16-byte Poly1305 tag.
+     */
+    readonly encryptedKey: Uint8Array;
+    /**
+     * 24-byte XChaCha20 nonce used by the wrapping AEAD.
+     */
+    readonly nonce: Uint8Array;
+    /**
+     * Shard tier byte the wrapped key grants access to.
+     */
+    readonly tier: number;
+}
+
+/**
  * Returns account-key handle status through WASM.
  */
 export function accountKeyHandleIsOpen(handle: bigint): AccountKeyHandleStatusResult;
 
 /**
+ * Advances an album sync coordinator through a primitive WASM proof surface.
+ */
+export function advanceAlbumSync(album_id: string, phase: string, active_cursor: string, pending_cursor: string, rerun_requested: boolean, retry_count: number, max_retry_count: number, next_retry_unix_ms: bigint, last_error_code: number, last_error_stage: string, updated_at_unix_ms: bigint, event_kind: string, fetched_cursor: string, next_cursor: string, applied_count: number, retry_after_unix_ms: bigint, event_error_code: number): string;
+
+/**
+ * Advances a client-core upload job through a primitive WASM proof surface.
+ */
+export function advanceUploadJob(job_id: string, album_id: string, asset_id: string, epoch_id: number, phase: string, active_tier: number, active_shard_index: number, retry_count: number, max_retry_count: number, next_retry_unix_ms: bigint, last_error_code: number, last_error_stage: string, sync_confirmed: boolean, updated_at_unix_ms: bigint, event_kind: string, event_epoch_id: number, event_tier: number, event_shard_index: number, event_shard_id: string, event_sha256: string, event_manifest_id: string, event_manifest_version: bigint, observed_asset_id: string, retry_after_unix_ms: bigint, event_error_code: number): string;
+
+/**
  * Builds canonical metadata sidecar bytes through WASM.
  */
 export function canonicalMetadataSidecarBytes(album_id: Uint8Array, photo_id: Uint8Array, epoch_id: number, encoded_fields: Uint8Array): BytesResult;
+
+/**
+ * Returns the client-core state machine surface through WASM.
+ */
+export function clientCoreStateMachineSnapshot(): string;
 
 /**
  * Closes an account-key handle through WASM.
@@ -318,9 +500,34 @@ export function createIdentityHandle(account_key_handle: bigint): IdentityHandle
 export function cryptoDomainGoldenVectorSnapshot(): CryptoDomainGoldenVectorSnapshot;
 
 /**
+ * Decrypts album content with an epoch handle through WASM.
+ */
+export function decryptAlbumContent(epoch_handle: bigint, nonce: Uint8Array, ciphertext: Uint8Array): DecryptedContentResult;
+
+/**
  * Decrypts shard envelope bytes with an epoch-key handle through WASM.
  */
 export function decryptShardWithEpochHandle(handle: bigint, envelope_bytes: Uint8Array): DecryptedShardResult;
+
+/**
+ * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
+ */
+export function deriveAuthKeypairFromAccount(account_handle: bigint): AuthKeypairResult;
+
+/**
+ * Derives the content key from an epoch handle through WASM.
+ */
+export function deriveContentKeyFromEpoch(epoch_handle: bigint): BytesResult;
+
+/**
+ * Derives the (link_id, wrapping_key) pair from a share-link secret through WASM.
+ */
+export function deriveLinkKeys(link_secret: Uint8Array): LinkKeysResult;
+
+/**
+ * Encrypts album content with an epoch handle through WASM.
+ */
+export function encryptAlbumContent(epoch_handle: bigint, plaintext: Uint8Array): EncryptedContentResult;
 
 /**
  * Encrypts metadata sidecar bytes with an epoch handle through WASM.
@@ -338,6 +545,21 @@ export function encryptShardWithEpochHandle(handle: bigint, plaintext: Uint8Arra
 export function epochKeyHandleIsOpen(handle: bigint): EpochKeyHandleStatusResult;
 
 /**
+ * Generates a fresh share-link secret through WASM.
+ */
+export function generateLinkSecret(): BytesResult;
+
+/**
+ * Returns the LocalAuth Ed25519 public key for an account-key handle through WASM.
+ */
+export function getAuthPublicKeyFromAccount(account_handle: bigint): BytesResult;
+
+/**
+ * Returns a tier key for an epoch handle through WASM.
+ */
+export function getTierKeyFromEpoch(epoch_handle: bigint, tier_byte: number): BytesResult;
+
+/**
  * Returns an identity handle's X25519 public key through WASM.
  */
 export function identityEncryptionPubkey(handle: bigint): BytesResult;
@@ -346,6 +568,16 @@ export function identityEncryptionPubkey(handle: bigint): BytesResult;
  * Returns an identity handle's Ed25519 public key through WASM.
  */
 export function identitySigningPubkey(handle: bigint): BytesResult;
+
+/**
+ * Initializes an album sync coordinator through a primitive WASM proof surface.
+ */
+export function initAlbumSync(album_id: string, request_id: string, start_cursor: string, now_unix_ms: bigint, max_retry_count: number): string;
+
+/**
+ * Initializes a client-core upload job through a primitive WASM proof surface.
+ */
+export function initUploadJob(job_id: string, album_id: string, asset_id: string, epoch_id: number, now_unix_ms: bigint, max_retry_count: number): string;
 
 /**
  * Opens an epoch-key handle through WASM.
@@ -368,6 +600,16 @@ export function parseEnvelopeHeader(bytes: Uint8Array): HeaderResult;
 export function progressProbe(total_steps: number, cancel_after: bigint): ProgressResult;
 
 /**
+ * Seals and signs an epoch key bundle through WASM.
+ */
+export function sealAndSignBundle(identity_handle: bigint, recipient_pubkey: Uint8Array, album_id: string, epoch_id: number, epoch_seed: Uint8Array, sign_secret: Uint8Array, sign_public: Uint8Array): SealedBundleResult;
+
+/**
+ * Signs a LocalAuth challenge transcript with an account-key handle through WASM.
+ */
+export function signAuthChallengeWithAccount(account_handle: bigint, challenge_bytes: Uint8Array): BytesResult;
+
+/**
  * Signs manifest transcript bytes through WASM.
  */
 export function signManifestWithIdentity(handle: bigint, transcript_bytes: Uint8Array): BytesResult;
@@ -378,9 +620,34 @@ export function signManifestWithIdentity(handle: bigint, transcript_bytes: Uint8
 export function unlockAccountKey(password: Uint8Array, user_salt: Uint8Array, account_salt: Uint8Array, wrapped_account_key: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number): AccountUnlockResult;
 
 /**
+ * Unwraps a wrapped key with a 32-byte wrapper key through WASM.
+ */
+export function unwrapKey(wrapped: Uint8Array, wrapper_key: Uint8Array): BytesResult;
+
+/**
+ * Unwraps a tier key from a share-link record through WASM.
+ */
+export function unwrapTierKeyFromLink(nonce: Uint8Array, encrypted_key: Uint8Array, tier_byte: number, wrapping_key: Uint8Array): BytesResult;
+
+/**
+ * Verifies and opens a sealed epoch key bundle through WASM.
+ */
+export function verifyAndOpenBundle(identity_handle: bigint, sealed: Uint8Array, signature: Uint8Array, sharer_pubkey: Uint8Array, expected_album_id: string, expected_min_epoch: number, allow_legacy_empty: boolean): OpenedBundleResult;
+
+/**
  * Verifies manifest transcript bytes through WASM.
  */
 export function verifyManifestWithIdentity(transcript_bytes: Uint8Array, signature: Uint8Array, public_key: Uint8Array): number;
+
+/**
+ * Wraps a key with a 32-byte wrapper key through WASM.
+ */
+export function wrapKey(key_bytes: Uint8Array, wrapper_key: Uint8Array): BytesResult;
+
+/**
+ * Wraps a tier key for share-link distribution through WASM.
+ */
+export function wrapTierKeyForLink(epoch_handle: bigint, tier_byte: number, wrapping_key: Uint8Array): WrappedTierKeyResult;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -388,22 +655,28 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_accountkeyhandlestatusresult_free: (a: number, b: number) => void;
     readonly __wbg_accountunlockresult_free: (a: number, b: number) => void;
-    readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_authkeypairresult_free: (a: number, b: number) => void;
     readonly __wbg_cryptodomaingoldenvectorsnapshot_free: (a: number, b: number) => void;
+    readonly __wbg_encryptedcontentresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_epochkeyhandleresult_free: (a: number, b: number) => void;
     readonly __wbg_headerresult_free: (a: number, b: number) => void;
     readonly __wbg_identityhandleresult_free: (a: number, b: number) => void;
+    readonly __wbg_openedbundleresult_free: (a: number, b: number) => void;
     readonly __wbg_progressevent_free: (a: number, b: number) => void;
     readonly __wbg_progressresult_free: (a: number, b: number) => void;
+    readonly __wbg_sealedbundleresult_free: (a: number, b: number) => void;
     readonly accountKeyHandleIsOpen: (a: bigint) => number;
     readonly accountkeyhandlestatusresult_code: (a: number) => number;
     readonly accountkeyhandlestatusresult_isOpen: (a: number) => number;
     readonly accountunlockresult_code: (a: number) => number;
     readonly accountunlockresult_handle: (a: number) => bigint;
-    readonly bytesresult_bytes: (a: number, b: number) => void;
-    readonly bytesresult_code: (a: number) => number;
+    readonly advanceAlbumSync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: bigint, n: number, o: number, p: number, q: bigint, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: bigint, z: number) => void;
+    readonly advanceUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: bigint, p: number, q: number, r: number, s: number, t: bigint, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: bigint, g1: number, h1: number, i1: bigint, j1: number) => void;
+    readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
+    readonly authkeypairresult_code: (a: number) => number;
     readonly canonicalMetadataSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly clientCoreStateMachineSnapshot: (a: number) => void;
     readonly closeAccountKeyHandle: (a: bigint) => number;
     readonly closeEpochKeyHandle: (a: bigint) => number;
     readonly closeIdentityHandle: (a: bigint) => number;
@@ -421,9 +694,17 @@ export interface InitOutput {
     readonly cryptodomaingoldenvectorsnapshot_identitySignature: (a: number, b: number) => void;
     readonly cryptodomaingoldenvectorsnapshot_identitySigningPubkey: (a: number, b: number) => void;
     readonly cryptodomaingoldenvectorsnapshot_manifestTranscript: (a: number, b: number) => void;
+    readonly decryptAlbumContent: (a: bigint, b: number, c: number, d: number, e: number) => number;
     readonly decryptShardWithEpochHandle: (a: bigint, b: number, c: number) => number;
+    readonly deriveAuthKeypairFromAccount: (a: bigint) => number;
+    readonly deriveContentKeyFromEpoch: (a: bigint) => number;
+    readonly deriveLinkKeys: (a: number, b: number) => number;
+    readonly encryptAlbumContent: (a: bigint, b: number, c: number) => number;
     readonly encryptMetadataSidecarWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly encryptShardWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number) => number;
+    readonly encryptedcontentresult_ciphertext: (a: number, b: number) => void;
+    readonly encryptedcontentresult_code: (a: number) => number;
+    readonly encryptedcontentresult_nonce: (a: number, b: number) => void;
     readonly encryptedshardresult_code: (a: number) => number;
     readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
     readonly encryptedshardresult_sha256: (a: number, b: number) => void;
@@ -432,6 +713,9 @@ export interface InitOutput {
     readonly epochkeyhandleresult_epochId: (a: number) => number;
     readonly epochkeyhandleresult_handle: (a: number) => bigint;
     readonly epochkeyhandleresult_wrappedEpochSeed: (a: number, b: number) => void;
+    readonly generateLinkSecret: () => number;
+    readonly getAuthPublicKeyFromAccount: (a: bigint) => number;
+    readonly getTierKeyFromEpoch: (a: bigint, b: number) => number;
     readonly headerresult_code: (a: number) => number;
     readonly headerresult_epochId: (a: number) => number;
     readonly headerresult_nonce: (a: number, b: number) => void;
@@ -444,27 +728,64 @@ export interface InitOutput {
     readonly identityhandleresult_handle: (a: number) => bigint;
     readonly identityhandleresult_signingPubkey: (a: number, b: number) => void;
     readonly identityhandleresult_wrappedSeed: (a: number, b: number) => void;
+    readonly initAlbumSync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: number) => void;
+    readonly initUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: bigint, j: number) => void;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly openIdentityHandle: (a: number, b: number, c: bigint) => number;
+    readonly openedbundleresult_albumId: (a: number, b: number) => void;
+    readonly openedbundleresult_code: (a: number) => number;
+    readonly openedbundleresult_epochId: (a: number) => number;
+    readonly openedbundleresult_epochSeed: (a: number, b: number) => void;
+    readonly openedbundleresult_recipientPubkey: (a: number, b: number) => void;
+    readonly openedbundleresult_signPublicKey: (a: number, b: number) => void;
+    readonly openedbundleresult_signSecretSeed: (a: number, b: number) => void;
+    readonly openedbundleresult_version: (a: number) => number;
     readonly parseEnvelopeHeader: (a: number, b: number) => number;
     readonly progressProbe: (a: number, b: bigint) => number;
     readonly progressevent_completedSteps: (a: number) => number;
     readonly progressevent_totalSteps: (a: number) => number;
     readonly progressresult_code: (a: number) => number;
     readonly progressresult_eventPairs: (a: number, b: number) => void;
+    readonly sealAndSignBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => number;
+    readonly sealedbundleresult_code: (a: number) => number;
+    readonly sealedbundleresult_sealed: (a: number, b: number) => void;
+    readonly sealedbundleresult_sharerPubkey: (a: number, b: number) => void;
+    readonly sealedbundleresult_signature: (a: number, b: number) => void;
+    readonly signAuthChallengeWithAccount: (a: bigint, b: number, c: number) => number;
     readonly signManifestWithIdentity: (a: bigint, b: number, c: number) => number;
     readonly unlockAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
+    readonly unwrapKey: (a: number, b: number, c: number, d: number) => number;
+    readonly unwrapTierKeyFromLink: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly verifyAndOpenBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly verifyManifestWithIdentity: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly wrapKey: (a: number, b: number, c: number, d: number) => number;
+    readonly wrapTierKeyForLink: (a: bigint, b: number, c: number, d: number) => number;
+    readonly wrappedtierkeyresult_tier: (a: number) => number;
     readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
+    readonly __wbg_linkkeysresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
-    readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
+    readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
+    readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
     readonly epochkeyhandlestatusresult_code: (a: number) => number;
-    readonly decryptedshardresult_code: (a: number) => number;
+    readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
+    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
+    readonly linkkeysresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
     readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedcontentresult_code: (a: number) => number;
+    readonly bytesresult_code: (a: number) => number;
+    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedshardresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_code: (a: number) => number;
+    readonly linkkeysresult_wrappingKey: (a: number, b: number) => void;
+    readonly linkkeysresult_linkId: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
-    readonly __wbindgen_export2: (a: number, b: number, c: number) => void;
-    readonly __wbindgen_export3: (a: number, b: number) => number;
+    readonly __wbindgen_export2: (a: number, b: number) => number;
+    readonly __wbindgen_export3: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_export4: (a: number, b: number, c: number) => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;

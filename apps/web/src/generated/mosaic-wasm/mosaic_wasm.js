@@ -81,6 +81,55 @@ export class AccountUnlockResult {
 if (Symbol.dispose) AccountUnlockResult.prototype[Symbol.dispose] = AccountUnlockResult.prototype.free;
 
 /**
+ * WASM-bindgen class for auth keypair derivation results.
+ */
+export class AuthKeypairResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(AuthKeypairResult.prototype);
+        obj.__wbg_ptr = ptr;
+        AuthKeypairResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        AuthKeypairResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_authkeypairresult_free(ptr, 0);
+    }
+    /**
+     * 32-byte Ed25519 LocalAuth public key. Non-secret.
+     * @returns {Uint8Array}
+     */
+    get authPublicKey() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.authkeypairresult_authPublicKey(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.authkeypairresult_code(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) AuthKeypairResult.prototype[Symbol.dispose] = AuthKeypairResult.prototype.free;
+
+/**
  * WASM-bindgen class for byte-array results.
  */
 export class BytesResult {
@@ -112,7 +161,7 @@ export class BytesResult {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -177,7 +226,7 @@ export class CryptoDomainGoldenVectorSnapshot {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -194,7 +243,7 @@ export class CryptoDomainGoldenVectorSnapshot {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -227,7 +276,7 @@ export class CryptoDomainGoldenVectorSnapshot {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -244,7 +293,7 @@ export class CryptoDomainGoldenVectorSnapshot {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -261,7 +310,7 @@ export class CryptoDomainGoldenVectorSnapshot {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -278,7 +327,7 @@ export class CryptoDomainGoldenVectorSnapshot {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -295,7 +344,7 @@ export class CryptoDomainGoldenVectorSnapshot {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -303,6 +352,55 @@ export class CryptoDomainGoldenVectorSnapshot {
     }
 }
 if (Symbol.dispose) CryptoDomainGoldenVectorSnapshot.prototype[Symbol.dispose] = CryptoDomainGoldenVectorSnapshot.prototype.free;
+
+/**
+ * WASM-bindgen class for decrypted album content results.
+ */
+export class DecryptedContentResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(DecryptedContentResult.prototype);
+        obj.__wbg_ptr = ptr;
+        DecryptedContentResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        DecryptedContentResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_decryptedcontentresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.decryptedcontentresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Client-local plaintext album content on successful decryption.
+     * @returns {Uint8Array}
+     */
+    get plaintext() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.decryptedcontentresult_plaintext(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) DecryptedContentResult.prototype[Symbol.dispose] = DecryptedContentResult.prototype.free;
 
 /**
  * WASM-bindgen class for decrypted shard results.
@@ -344,7 +442,7 @@ export class DecryptedShardResult {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -352,6 +450,72 @@ export class DecryptedShardResult {
     }
 }
 if (Symbol.dispose) DecryptedShardResult.prototype[Symbol.dispose] = DecryptedShardResult.prototype.free;
+
+/**
+ * WASM-bindgen class for encrypted album content results.
+ */
+export class EncryptedContentResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(EncryptedContentResult.prototype);
+        obj.__wbg_ptr = ptr;
+        EncryptedContentResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        EncryptedContentResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_encryptedcontentresult_free(ptr, 0);
+    }
+    /**
+     * Ciphertext including the trailing 16-byte Poly1305 tag.
+     * @returns {Uint8Array}
+     */
+    get ciphertext() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.encryptedcontentresult_ciphertext(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.encryptedcontentresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * 24-byte XChaCha20 nonce.
+     * @returns {Uint8Array}
+     */
+    get nonce() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.encryptedcontentresult_nonce(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) EncryptedContentResult.prototype[Symbol.dispose] = EncryptedContentResult.prototype.free;
 
 /**
  * WASM-bindgen class for encrypted shard results.
@@ -393,7 +557,7 @@ export class EncryptedShardResult {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -416,7 +580,7 @@ export class EncryptedShardResult {
             return getStringFromWasm0(r0, r1);
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
-            wasm.__wbindgen_export2(deferred1_0, deferred1_1, 1);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
         }
     }
 }
@@ -478,7 +642,7 @@ export class EpochKeyHandleResult {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -575,7 +739,7 @@ export class HeaderResult {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -640,7 +804,7 @@ export class IdentityHandleResult {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -665,7 +829,7 @@ export class IdentityHandleResult {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -682,7 +846,7 @@ export class IdentityHandleResult {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -690,6 +854,208 @@ export class IdentityHandleResult {
     }
 }
 if (Symbol.dispose) IdentityHandleResult.prototype[Symbol.dispose] = IdentityHandleResult.prototype.free;
+
+/**
+ * WASM-bindgen class for share-link key derivation results.
+ */
+export class LinkKeysResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(LinkKeysResult.prototype);
+        obj.__wbg_ptr = ptr;
+        LinkKeysResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        LinkKeysResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_linkkeysresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.linkkeysresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * 16-byte server-visible share-link lookup ID.
+     * @returns {Uint8Array}
+     */
+    get linkId() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.linkkeysresult_linkId(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * 32-byte client-side wrapping key. Callers MUST memzero after use.
+     * @returns {Uint8Array}
+     */
+    get wrappingKey() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.linkkeysresult_wrappingKey(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) LinkKeysResult.prototype[Symbol.dispose] = LinkKeysResult.prototype.free;
+
+/**
+ * WASM-bindgen class for opened-bundle results.
+ */
+export class OpenedBundleResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(OpenedBundleResult.prototype);
+        obj.__wbg_ptr = ptr;
+        OpenedBundleResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        OpenedBundleResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_openedbundleresult_free(ptr, 0);
+    }
+    /**
+     * Album identifier the bundle was issued for.
+     * @returns {string}
+     */
+    get albumId() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.openedbundleresult_albumId(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.openedbundleresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Epoch identifier inside the bundle payload.
+     * @returns {number}
+     */
+    get epochId() {
+        const ret = wasm.openedbundleresult_epochId(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * 32-byte epoch seed. Callers MUST memzero after deriving tier/content keys.
+     * @returns {Uint8Array}
+     */
+    get epochSeed() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.openedbundleresult_epochSeed(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * 32-byte recipient Ed25519 public key from the payload.
+     * @returns {Uint8Array}
+     */
+    get recipientPubkey() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.openedbundleresult_recipientPubkey(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * 32-byte per-epoch Ed25519 manifest signing public key.
+     * @returns {Uint8Array}
+     */
+    get signPublicKey() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.openedbundleresult_signPublicKey(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * 32-byte per-epoch Ed25519 manifest signing seed. Callers MUST memzero.
+     * @returns {Uint8Array}
+     */
+    get signSecretSeed() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.openedbundleresult_signSecretSeed(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Bundle format version recovered from the payload.
+     * @returns {number}
+     */
+    get version() {
+        const ret = wasm.openedbundleresult_version(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) OpenedBundleResult.prototype[Symbol.dispose] = OpenedBundleResult.prototype.free;
 
 /**
  * WASM-bindgen class for progress events.
@@ -764,7 +1130,7 @@ export class ProgressResult {
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU32FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 4, 4);
+            wasm.__wbindgen_export4(r0, r1 * 4, 4);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
@@ -772,6 +1138,163 @@ export class ProgressResult {
     }
 }
 if (Symbol.dispose) ProgressResult.prototype[Symbol.dispose] = ProgressResult.prototype.free;
+
+/**
+ * WASM-bindgen class for sealed bundle results.
+ */
+export class SealedBundleResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SealedBundleResult.prototype);
+        obj.__wbg_ptr = ptr;
+        SealedBundleResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SealedBundleResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sealedbundleresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.sealedbundleresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Sealed-box ciphertext bytes.
+     * @returns {Uint8Array}
+     */
+    get sealed() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.sealedbundleresult_sealed(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * 32-byte sharer Ed25519 identity public key.
+     * @returns {Uint8Array}
+     */
+    get sharerPubkey() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.sealedbundleresult_sharerPubkey(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * 64-byte detached Ed25519 signature over `BUNDLE_SIGN_CONTEXT || sealed`.
+     * @returns {Uint8Array}
+     */
+    get signature() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.sealedbundleresult_signature(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) SealedBundleResult.prototype[Symbol.dispose] = SealedBundleResult.prototype.free;
+
+/**
+ * WASM-bindgen class for wrapped tier key results.
+ */
+export class WrappedTierKeyResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(WrappedTierKeyResult.prototype);
+        obj.__wbg_ptr = ptr;
+        WrappedTierKeyResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WrappedTierKeyResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wrappedtierkeyresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.wrappedtierkeyresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Wrapped tier-key ciphertext including the 16-byte Poly1305 tag.
+     * @returns {Uint8Array}
+     */
+    get encryptedKey() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.wrappedtierkeyresult_encryptedKey(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * 24-byte XChaCha20 nonce used by the wrapping AEAD.
+     * @returns {Uint8Array}
+     */
+    get nonce() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.wrappedtierkeyresult_nonce(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Shard tier byte the wrapped key grants access to.
+     * @returns {number}
+     */
+    get tier() {
+        const ret = wasm.wrappedtierkeyresult_tier(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) WrappedTierKeyResult.prototype[Symbol.dispose] = WrappedTierKeyResult.prototype.free;
 
 /**
  * Returns account-key handle status through WASM.
@@ -784,6 +1307,126 @@ export function accountKeyHandleIsOpen(handle) {
 }
 
 /**
+ * Advances an album sync coordinator through a primitive WASM proof surface.
+ * @param {string} album_id
+ * @param {string} phase
+ * @param {string} active_cursor
+ * @param {string} pending_cursor
+ * @param {boolean} rerun_requested
+ * @param {number} retry_count
+ * @param {number} max_retry_count
+ * @param {bigint} next_retry_unix_ms
+ * @param {number} last_error_code
+ * @param {string} last_error_stage
+ * @param {bigint} updated_at_unix_ms
+ * @param {string} event_kind
+ * @param {string} fetched_cursor
+ * @param {string} next_cursor
+ * @param {number} applied_count
+ * @param {bigint} retry_after_unix_ms
+ * @param {number} event_error_code
+ * @returns {string}
+ */
+export function advanceAlbumSync(album_id, phase, active_cursor, pending_cursor, rerun_requested, retry_count, max_retry_count, next_retry_unix_ms, last_error_code, last_error_stage, updated_at_unix_ms, event_kind, fetched_cursor, next_cursor, applied_count, retry_after_unix_ms, event_error_code) {
+    let deferred9_0;
+    let deferred9_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(phase, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(active_cursor, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(pending_cursor, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(last_error_stage, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len4 = WASM_VECTOR_LEN;
+        const ptr5 = passStringToWasm0(event_kind, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len5 = WASM_VECTOR_LEN;
+        const ptr6 = passStringToWasm0(fetched_cursor, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len6 = WASM_VECTOR_LEN;
+        const ptr7 = passStringToWasm0(next_cursor, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len7 = WASM_VECTOR_LEN;
+        wasm.advanceAlbumSync(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, rerun_requested, retry_count, max_retry_count, next_retry_unix_ms, last_error_code, ptr4, len4, updated_at_unix_ms, ptr5, len5, ptr6, len6, ptr7, len7, applied_count, retry_after_unix_ms, event_error_code);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred9_0 = r0;
+        deferred9_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred9_0, deferred9_1, 1);
+    }
+}
+
+/**
+ * Advances a client-core upload job through a primitive WASM proof surface.
+ * @param {string} job_id
+ * @param {string} album_id
+ * @param {string} asset_id
+ * @param {number} epoch_id
+ * @param {string} phase
+ * @param {number} active_tier
+ * @param {number} active_shard_index
+ * @param {number} retry_count
+ * @param {number} max_retry_count
+ * @param {bigint} next_retry_unix_ms
+ * @param {number} last_error_code
+ * @param {string} last_error_stage
+ * @param {boolean} sync_confirmed
+ * @param {bigint} updated_at_unix_ms
+ * @param {string} event_kind
+ * @param {number} event_epoch_id
+ * @param {number} event_tier
+ * @param {number} event_shard_index
+ * @param {string} event_shard_id
+ * @param {string} event_sha256
+ * @param {string} event_manifest_id
+ * @param {bigint} event_manifest_version
+ * @param {string} observed_asset_id
+ * @param {bigint} retry_after_unix_ms
+ * @param {number} event_error_code
+ * @returns {string}
+ */
+export function advanceUploadJob(job_id, album_id, asset_id, epoch_id, phase, active_tier, active_shard_index, retry_count, max_retry_count, next_retry_unix_ms, last_error_code, last_error_stage, sync_confirmed, updated_at_unix_ms, event_kind, event_epoch_id, event_tier, event_shard_index, event_shard_id, event_sha256, event_manifest_id, event_manifest_version, observed_asset_id, retry_after_unix_ms, event_error_code) {
+    let deferred11_0;
+    let deferred11_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(job_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(asset_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(phase, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(last_error_stage, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len4 = WASM_VECTOR_LEN;
+        const ptr5 = passStringToWasm0(event_kind, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len5 = WASM_VECTOR_LEN;
+        const ptr6 = passStringToWasm0(event_shard_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len6 = WASM_VECTOR_LEN;
+        const ptr7 = passStringToWasm0(event_sha256, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len7 = WASM_VECTOR_LEN;
+        const ptr8 = passStringToWasm0(event_manifest_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len8 = WASM_VECTOR_LEN;
+        const ptr9 = passStringToWasm0(observed_asset_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len9 = WASM_VECTOR_LEN;
+        wasm.advanceUploadJob(retptr, ptr0, len0, ptr1, len1, ptr2, len2, epoch_id, ptr3, len3, active_tier, active_shard_index, retry_count, max_retry_count, next_retry_unix_ms, last_error_code, ptr4, len4, sync_confirmed, updated_at_unix_ms, ptr5, len5, event_epoch_id, event_tier, event_shard_index, ptr6, len6, ptr7, len7, ptr8, len8, event_manifest_version, ptr9, len9, retry_after_unix_ms, event_error_code);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred11_0 = r0;
+        deferred11_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred11_0, deferred11_1, 1);
+    }
+}
+
+/**
  * Builds canonical metadata sidecar bytes through WASM.
  * @param {Uint8Array} album_id
  * @param {Uint8Array} photo_id
@@ -792,14 +1435,35 @@ export function accountKeyHandleIsOpen(handle) {
  * @returns {BytesResult}
  */
 export function canonicalMetadataSidecarBytes(album_id, photo_id, epoch_id, encoded_fields) {
-    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export3);
+    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(photo_id, wasm.__wbindgen_export3);
+    const ptr1 = passArray8ToWasm0(photo_id, wasm.__wbindgen_export2);
     const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(encoded_fields, wasm.__wbindgen_export3);
+    const ptr2 = passArray8ToWasm0(encoded_fields, wasm.__wbindgen_export2);
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.canonicalMetadataSidecarBytes(ptr0, len0, ptr1, len1, epoch_id, ptr2, len2);
     return BytesResult.__wrap(ret);
+}
+
+/**
+ * Returns the client-core state machine surface through WASM.
+ * @returns {string}
+ */
+export function clientCoreStateMachineSnapshot() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.clientCoreStateMachineSnapshot(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred1_0 = r0;
+        deferred1_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+    }
 }
 
 /**
@@ -863,16 +1527,77 @@ export function cryptoDomainGoldenVectorSnapshot() {
 }
 
 /**
+ * Decrypts album content with an epoch handle through WASM.
+ * @param {bigint} epoch_handle
+ * @param {Uint8Array} nonce
+ * @param {Uint8Array} ciphertext
+ * @returns {DecryptedContentResult}
+ */
+export function decryptAlbumContent(epoch_handle, nonce, ciphertext) {
+    const ptr0 = passArray8ToWasm0(nonce, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(ciphertext, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.decryptAlbumContent(epoch_handle, ptr0, len0, ptr1, len1);
+    return DecryptedContentResult.__wrap(ret);
+}
+
+/**
  * Decrypts shard envelope bytes with an epoch-key handle through WASM.
  * @param {bigint} handle
  * @param {Uint8Array} envelope_bytes
  * @returns {DecryptedShardResult}
  */
 export function decryptShardWithEpochHandle(handle, envelope_bytes) {
-    const ptr0 = passArray8ToWasm0(envelope_bytes, wasm.__wbindgen_export3);
+    const ptr0 = passArray8ToWasm0(envelope_bytes, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.decryptShardWithEpochHandle(handle, ptr0, len0);
     return DecryptedShardResult.__wrap(ret);
+}
+
+/**
+ * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
+ * @param {bigint} account_handle
+ * @returns {AuthKeypairResult}
+ */
+export function deriveAuthKeypairFromAccount(account_handle) {
+    const ret = wasm.deriveAuthKeypairFromAccount(account_handle);
+    return AuthKeypairResult.__wrap(ret);
+}
+
+/**
+ * Derives the content key from an epoch handle through WASM.
+ * @param {bigint} epoch_handle
+ * @returns {BytesResult}
+ */
+export function deriveContentKeyFromEpoch(epoch_handle) {
+    const ret = wasm.deriveContentKeyFromEpoch(epoch_handle);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Derives the (link_id, wrapping_key) pair from a share-link secret through WASM.
+ * @param {Uint8Array} link_secret
+ * @returns {LinkKeysResult}
+ */
+export function deriveLinkKeys(link_secret) {
+    const ptr0 = passArray8ToWasm0(link_secret, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.deriveLinkKeys(ptr0, len0);
+    return LinkKeysResult.__wrap(ret);
+}
+
+/**
+ * Encrypts album content with an epoch handle through WASM.
+ * @param {bigint} epoch_handle
+ * @param {Uint8Array} plaintext
+ * @returns {EncryptedContentResult}
+ */
+export function encryptAlbumContent(epoch_handle, plaintext) {
+    const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.encryptAlbumContent(epoch_handle, ptr0, len0);
+    return EncryptedContentResult.__wrap(ret);
 }
 
 /**
@@ -886,11 +1611,11 @@ export function decryptShardWithEpochHandle(handle, envelope_bytes) {
  * @returns {EncryptedShardResult}
  */
 export function encryptMetadataSidecarWithEpochHandle(handle, album_id, photo_id, epoch_id, encoded_fields, shard_index) {
-    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export3);
+    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(photo_id, wasm.__wbindgen_export3);
+    const ptr1 = passArray8ToWasm0(photo_id, wasm.__wbindgen_export2);
     const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(encoded_fields, wasm.__wbindgen_export3);
+    const ptr2 = passArray8ToWasm0(encoded_fields, wasm.__wbindgen_export2);
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.encryptMetadataSidecarWithEpochHandle(handle, ptr0, len0, ptr1, len1, epoch_id, ptr2, len2, shard_index);
     return EncryptedShardResult.__wrap(ret);
@@ -905,7 +1630,7 @@ export function encryptMetadataSidecarWithEpochHandle(handle, album_id, photo_id
  * @returns {EncryptedShardResult}
  */
 export function encryptShardWithEpochHandle(handle, plaintext, shard_index, tier_byte) {
-    const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_export3);
+    const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.encryptShardWithEpochHandle(handle, ptr0, len0, shard_index, tier_byte);
     return EncryptedShardResult.__wrap(ret);
@@ -919,6 +1644,36 @@ export function encryptShardWithEpochHandle(handle, plaintext, shard_index, tier
 export function epochKeyHandleIsOpen(handle) {
     const ret = wasm.epochKeyHandleIsOpen(handle);
     return EpochKeyHandleStatusResult.__wrap(ret);
+}
+
+/**
+ * Generates a fresh share-link secret through WASM.
+ * @returns {BytesResult}
+ */
+export function generateLinkSecret() {
+    const ret = wasm.generateLinkSecret();
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Returns the LocalAuth Ed25519 public key for an account-key handle through WASM.
+ * @param {bigint} account_handle
+ * @returns {BytesResult}
+ */
+export function getAuthPublicKeyFromAccount(account_handle) {
+    const ret = wasm.getAuthPublicKeyFromAccount(account_handle);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Returns a tier key for an epoch handle through WASM.
+ * @param {bigint} epoch_handle
+ * @param {number} tier_byte
+ * @returns {BytesResult}
+ */
+export function getTierKeyFromEpoch(epoch_handle, tier_byte) {
+    const ret = wasm.getTierKeyFromEpoch(epoch_handle, tier_byte);
+    return BytesResult.__wrap(ret);
 }
 
 /**
@@ -942,6 +1697,71 @@ export function identitySigningPubkey(handle) {
 }
 
 /**
+ * Initializes an album sync coordinator through a primitive WASM proof surface.
+ * @param {string} album_id
+ * @param {string} request_id
+ * @param {string} start_cursor
+ * @param {bigint} now_unix_ms
+ * @param {number} max_retry_count
+ * @returns {string}
+ */
+export function initAlbumSync(album_id, request_id, start_cursor, now_unix_ms, max_retry_count) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(request_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(start_cursor, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len2 = WASM_VECTOR_LEN;
+        wasm.initAlbumSync(retptr, ptr0, len0, ptr1, len1, ptr2, len2, now_unix_ms, max_retry_count);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred4_0 = r0;
+        deferred4_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
+ * Initializes a client-core upload job through a primitive WASM proof surface.
+ * @param {string} job_id
+ * @param {string} album_id
+ * @param {string} asset_id
+ * @param {number} epoch_id
+ * @param {bigint} now_unix_ms
+ * @param {number} max_retry_count
+ * @returns {string}
+ */
+export function initUploadJob(job_id, album_id, asset_id, epoch_id, now_unix_ms, max_retry_count) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(job_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(asset_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len2 = WASM_VECTOR_LEN;
+        wasm.initUploadJob(retptr, ptr0, len0, ptr1, len1, ptr2, len2, epoch_id, now_unix_ms, max_retry_count);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred4_0 = r0;
+        deferred4_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
  * Opens an epoch-key handle through WASM.
  * @param {Uint8Array} wrapped_epoch_seed
  * @param {bigint} account_key_handle
@@ -949,7 +1769,7 @@ export function identitySigningPubkey(handle) {
  * @returns {EpochKeyHandleResult}
  */
 export function openEpochKeyHandle(wrapped_epoch_seed, account_key_handle, epoch_id) {
-    const ptr0 = passArray8ToWasm0(wrapped_epoch_seed, wasm.__wbindgen_export3);
+    const ptr0 = passArray8ToWasm0(wrapped_epoch_seed, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.openEpochKeyHandle(ptr0, len0, account_key_handle, epoch_id);
     return EpochKeyHandleResult.__wrap(ret);
@@ -962,7 +1782,7 @@ export function openEpochKeyHandle(wrapped_epoch_seed, account_key_handle, epoch
  * @returns {IdentityHandleResult}
  */
 export function openIdentityHandle(wrapped_identity_seed, account_key_handle) {
-    const ptr0 = passArray8ToWasm0(wrapped_identity_seed, wasm.__wbindgen_export3);
+    const ptr0 = passArray8ToWasm0(wrapped_identity_seed, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.openIdentityHandle(ptr0, len0, account_key_handle);
     return IdentityHandleResult.__wrap(ret);
@@ -974,7 +1794,7 @@ export function openIdentityHandle(wrapped_identity_seed, account_key_handle) {
  * @returns {HeaderResult}
  */
 export function parseEnvelopeHeader(bytes) {
-    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export3);
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.parseEnvelopeHeader(ptr0, len0);
     return HeaderResult.__wrap(ret);
@@ -992,13 +1812,52 @@ export function progressProbe(total_steps, cancel_after) {
 }
 
 /**
+ * Seals and signs an epoch key bundle through WASM.
+ * @param {bigint} identity_handle
+ * @param {Uint8Array} recipient_pubkey
+ * @param {string} album_id
+ * @param {number} epoch_id
+ * @param {Uint8Array} epoch_seed
+ * @param {Uint8Array} sign_secret
+ * @param {Uint8Array} sign_public
+ * @returns {SealedBundleResult}
+ */
+export function sealAndSignBundle(identity_handle, recipient_pubkey, album_id, epoch_id, epoch_seed, sign_secret, sign_public) {
+    const ptr0 = passArray8ToWasm0(recipient_pubkey, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(epoch_seed, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray8ToWasm0(sign_secret, wasm.__wbindgen_export2);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passArray8ToWasm0(sign_public, wasm.__wbindgen_export2);
+    const len4 = WASM_VECTOR_LEN;
+    const ret = wasm.sealAndSignBundle(identity_handle, ptr0, len0, ptr1, len1, epoch_id, ptr2, len2, ptr3, len3, ptr4, len4);
+    return SealedBundleResult.__wrap(ret);
+}
+
+/**
+ * Signs a LocalAuth challenge transcript with an account-key handle through WASM.
+ * @param {bigint} account_handle
+ * @param {Uint8Array} challenge_bytes
+ * @returns {BytesResult}
+ */
+export function signAuthChallengeWithAccount(account_handle, challenge_bytes) {
+    const ptr0 = passArray8ToWasm0(challenge_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.signAuthChallengeWithAccount(account_handle, ptr0, len0);
+    return BytesResult.__wrap(ret);
+}
+
+/**
  * Signs manifest transcript bytes through WASM.
  * @param {bigint} handle
  * @param {Uint8Array} transcript_bytes
  * @returns {BytesResult}
  */
 export function signManifestWithIdentity(handle, transcript_bytes) {
-    const ptr0 = passArray8ToWasm0(transcript_bytes, wasm.__wbindgen_export3);
+    const ptr0 = passArray8ToWasm0(transcript_bytes, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.signManifestWithIdentity(handle, ptr0, len0);
     return BytesResult.__wrap(ret);
@@ -1016,16 +1875,74 @@ export function signManifestWithIdentity(handle, transcript_bytes) {
  * @returns {AccountUnlockResult}
  */
 export function unlockAccountKey(password, user_salt, account_salt, wrapped_account_key, kdf_memory_kib, kdf_iterations, kdf_parallelism) {
-    const ptr0 = passArray8ToWasm0(password, wasm.__wbindgen_export3);
+    const ptr0 = passArray8ToWasm0(password, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(user_salt, wasm.__wbindgen_export3);
+    const ptr1 = passArray8ToWasm0(user_salt, wasm.__wbindgen_export2);
     const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(account_salt, wasm.__wbindgen_export3);
+    const ptr2 = passArray8ToWasm0(account_salt, wasm.__wbindgen_export2);
     const len2 = WASM_VECTOR_LEN;
-    const ptr3 = passArray8ToWasm0(wrapped_account_key, wasm.__wbindgen_export3);
+    const ptr3 = passArray8ToWasm0(wrapped_account_key, wasm.__wbindgen_export2);
     const len3 = WASM_VECTOR_LEN;
     const ret = wasm.unlockAccountKey(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, kdf_memory_kib, kdf_iterations, kdf_parallelism);
     return AccountUnlockResult.__wrap(ret);
+}
+
+/**
+ * Unwraps a wrapped key with a 32-byte wrapper key through WASM.
+ * @param {Uint8Array} wrapped
+ * @param {Uint8Array} wrapper_key
+ * @returns {BytesResult}
+ */
+export function unwrapKey(wrapped, wrapper_key) {
+    const ptr0 = passArray8ToWasm0(wrapped, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(wrapper_key, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.unwrapKey(ptr0, len0, ptr1, len1);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Unwraps a tier key from a share-link record through WASM.
+ * @param {Uint8Array} nonce
+ * @param {Uint8Array} encrypted_key
+ * @param {number} tier_byte
+ * @param {Uint8Array} wrapping_key
+ * @returns {BytesResult}
+ */
+export function unwrapTierKeyFromLink(nonce, encrypted_key, tier_byte, wrapping_key) {
+    const ptr0 = passArray8ToWasm0(nonce, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(encrypted_key, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(wrapping_key, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.unwrapTierKeyFromLink(ptr0, len0, ptr1, len1, tier_byte, ptr2, len2);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Verifies and opens a sealed epoch key bundle through WASM.
+ * @param {bigint} identity_handle
+ * @param {Uint8Array} sealed
+ * @param {Uint8Array} signature
+ * @param {Uint8Array} sharer_pubkey
+ * @param {string} expected_album_id
+ * @param {number} expected_min_epoch
+ * @param {boolean} allow_legacy_empty
+ * @returns {OpenedBundleResult}
+ */
+export function verifyAndOpenBundle(identity_handle, sealed, signature, sharer_pubkey, expected_album_id, expected_min_epoch, allow_legacy_empty) {
+    const ptr0 = passArray8ToWasm0(sealed, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(signature, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(sharer_pubkey, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passStringToWasm0(expected_album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.verifyAndOpenBundle(identity_handle, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, expected_min_epoch, allow_legacy_empty);
+    return OpenedBundleResult.__wrap(ret);
 }
 
 /**
@@ -1036,14 +1953,43 @@ export function unlockAccountKey(password, user_salt, account_salt, wrapped_acco
  * @returns {number}
  */
 export function verifyManifestWithIdentity(transcript_bytes, signature, public_key) {
-    const ptr0 = passArray8ToWasm0(transcript_bytes, wasm.__wbindgen_export3);
+    const ptr0 = passArray8ToWasm0(transcript_bytes, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(signature, wasm.__wbindgen_export3);
+    const ptr1 = passArray8ToWasm0(signature, wasm.__wbindgen_export2);
     const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(public_key, wasm.__wbindgen_export3);
+    const ptr2 = passArray8ToWasm0(public_key, wasm.__wbindgen_export2);
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.verifyManifestWithIdentity(ptr0, len0, ptr1, len1, ptr2, len2);
     return ret;
+}
+
+/**
+ * Wraps a key with a 32-byte wrapper key through WASM.
+ * @param {Uint8Array} key_bytes
+ * @param {Uint8Array} wrapper_key
+ * @returns {BytesResult}
+ */
+export function wrapKey(key_bytes, wrapper_key) {
+    const ptr0 = passArray8ToWasm0(key_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(wrapper_key, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.wrapKey(ptr0, len0, ptr1, len1);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Wraps a tier key for share-link distribution through WASM.
+ * @param {bigint} epoch_handle
+ * @param {number} tier_byte
+ * @param {Uint8Array} wrapping_key
+ * @returns {WrappedTierKeyResult}
+ */
+export function wrapTierKeyForLink(epoch_handle, tier_byte, wrapping_key) {
+    const ptr0 = passArray8ToWasm0(wrapping_key, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.wrapTierKeyForLink(epoch_handle, tier_byte, ptr0, len0);
+    return WrappedTierKeyResult.__wrap(ret);
 }
 function __wbg_get_imports() {
     const import0 = {
@@ -1070,15 +2016,24 @@ const AccountKeyHandleStatusResultFinalization = (typeof FinalizationRegistry ==
 const AccountUnlockResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_accountunlockresult_free(ptr >>> 0, 1));
+const AuthKeypairResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_authkeypairresult_free(ptr >>> 0, 1));
 const BytesResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_bytesresult_free(ptr >>> 0, 1));
 const CryptoDomainGoldenVectorSnapshotFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_cryptodomaingoldenvectorsnapshot_free(ptr >>> 0, 1));
+const DecryptedContentResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_decryptedcontentresult_free(ptr >>> 0, 1));
 const DecryptedShardResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_decryptedshardresult_free(ptr >>> 0, 1));
+const EncryptedContentResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_encryptedcontentresult_free(ptr >>> 0, 1));
 const EncryptedShardResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_encryptedshardresult_free(ptr >>> 0, 1));
@@ -1094,12 +2049,24 @@ const HeaderResultFinalization = (typeof FinalizationRegistry === 'undefined')
 const IdentityHandleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_identityhandleresult_free(ptr >>> 0, 1));
+const LinkKeysResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_linkkeysresult_free(ptr >>> 0, 1));
+const OpenedBundleResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_openedbundleresult_free(ptr >>> 0, 1));
 const ProgressEventFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_progressevent_free(ptr >>> 0, 1));
 const ProgressResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_progressresult_free(ptr >>> 0, 1));
+const SealedBundleResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sealedbundleresult_free(ptr >>> 0, 1));
+const WrappedTierKeyResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wrappedtierkeyresult_free(ptr >>> 0, 1));
 
 function addHeapObject(obj) {
     if (heap_next === heap.length) heap.push(heap.length + 1);
@@ -1177,6 +2144,43 @@ function passArray8ToWasm0(arg, malloc) {
     return ptr;
 }
 
+function passStringToWasm0(arg, malloc, realloc) {
+    if (realloc === undefined) {
+        const buf = cachedTextEncoder.encode(arg);
+        const ptr = malloc(buf.length, 1) >>> 0;
+        getUint8ArrayMemory0().subarray(ptr, ptr + buf.length).set(buf);
+        WASM_VECTOR_LEN = buf.length;
+        return ptr;
+    }
+
+    let len = arg.length;
+    let ptr = malloc(len, 1) >>> 0;
+
+    const mem = getUint8ArrayMemory0();
+
+    let offset = 0;
+
+    for (; offset < len; offset++) {
+        const code = arg.charCodeAt(offset);
+        if (code > 0x7F) break;
+        mem[ptr + offset] = code;
+    }
+    if (offset !== len) {
+        if (offset !== 0) {
+            arg = arg.slice(offset);
+        }
+        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
+        const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
+        const ret = cachedTextEncoder.encodeInto(arg, view);
+
+        offset += ret.written;
+        ptr = realloc(ptr, len, offset, 1) >>> 0;
+    }
+
+    WASM_VECTOR_LEN = offset;
+    return ptr;
+}
+
 function takeObject(idx) {
     const ret = getObject(idx);
     dropObject(idx);
@@ -1195,6 +2199,19 @@ function decodeText(ptr, len) {
         numBytesDecoded = len;
     }
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
+}
+
+const cachedTextEncoder = new TextEncoder();
+
+if (!('encodeInto' in cachedTextEncoder)) {
+    cachedTextEncoder.encodeInto = function (arg, view) {
+        const buf = cachedTextEncoder.encode(arg);
+        view.set(buf);
+        return {
+            read: arg.length,
+            written: buf.length
+        };
+    };
 }
 
 let WASM_VECTOR_LEN = 0;

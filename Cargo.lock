@@ -504,6 +504,7 @@ dependencies = [
  "mosaic-client",
  "mosaic-crypto",
  "mosaic-domain",
+ "mosaic-vectors",
  "wasm-bindgen",
  "zeroize",
 ]

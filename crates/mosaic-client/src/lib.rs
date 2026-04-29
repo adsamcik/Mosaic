@@ -7,11 +7,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use mosaic_crypto::{
+    AuthSigningSecretKey, BundleValidationContext, EncryptedContent, EpochKeyBundle,
     EpochKeyMaterial, IdentityKeypair, IdentitySignature, IdentitySigningPublicKey, KdfProfile,
-    MosaicCryptoError, SecretKey, decrypt_shard, derive_epoch_key_material,
-    derive_identity_keypair, encrypt_shard, generate_epoch_key_material, generate_identity_seed,
-    get_tier_key, sign_manifest_with_identity as crypto_sign_manifest_with_identity,
-    unwrap_account_key, unwrap_key, verify_manifest_identity_signature, wrap_key,
+    LinkKeys, ManifestSigningSecretKey, MosaicCryptoError, SealedBundle, SecretKey, WrappedTierKey,
+    decrypt_content, decrypt_shard, derive_content_key, derive_epoch_key_material,
+    derive_identity_keypair, derive_link_keys as crypto_derive_link_keys, encrypt_content,
+    encrypt_shard, generate_epoch_key_material, generate_identity_seed,
+    generate_link_secret as crypto_generate_link_secret, get_tier_key,
+    seal_and_sign_bundle as crypto_seal_and_sign_bundle, sign_auth_challenge,
+    sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_account_key,
+    unwrap_key, unwrap_tier_key_from_link as crypto_unwrap_tier_key_from_link,
+    verify_and_open_bundle as crypto_verify_and_open_bundle, verify_manifest_identity_signature,
+    wrap_key, wrap_tier_key_for_link as crypto_wrap_tier_key_for_link,
 };
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
 use zeroize::{Zeroize, Zeroizing};
@@ -278,6 +285,231 @@ pub struct DecryptedShardResult {
 }
 
 impl DecryptedShardResult {
+    fn ok(plaintext: Vec<u8>) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            plaintext,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            plaintext: Vec::new(),
+        }
+    }
+}
+
+/// FFI-safe auth keypair derivation result.
+///
+/// The auth signing secret stays inside Rust (it is re-derived on demand for
+/// every `sign_auth_challenge_with_account_handle` call) so only the public
+/// key is exposed across the WASM boundary. Callers that want to memzero
+/// the public key bytes after use are free to do so but the value is not
+/// secret on its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthKeypairResult {
+    pub code: ClientErrorCode,
+    pub auth_public_key: Vec<u8>,
+}
+
+impl AuthKeypairResult {
+    fn ok(auth_public_key: Vec<u8>) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            auth_public_key,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            auth_public_key: Vec::new(),
+        }
+    }
+}
+
+/// FFI-safe link-key derivation result.
+///
+/// The 16-byte `link_id` is server-visible by design (it is the lookup
+/// token). The 32-byte `wrapping_key` stays client-side and callers MUST
+/// memzero the buffer after using it to wrap or unwrap tier keys.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkKeysResult {
+    pub code: ClientErrorCode,
+    pub link_id: Vec<u8>,
+    pub wrapping_key: Vec<u8>,
+}
+
+impl LinkKeysResult {
+    fn ok(link_id: Vec<u8>, wrapping_key: Vec<u8>) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            link_id,
+            wrapping_key,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            link_id: Vec::new(),
+            wrapping_key: Vec::new(),
+        }
+    }
+}
+
+/// FFI-safe wrapped tier key produced by `wrap_tier_key_for_link`.
+///
+/// Layout matches the TypeScript reference: `tier` byte, `nonce` 24 bytes,
+/// `encrypted_key` ciphertext (32 bytes payload + 16 bytes Poly1305 tag).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrappedTierKeyResult {
+    pub code: ClientErrorCode,
+    pub tier: u8,
+    pub nonce: Vec<u8>,
+    pub encrypted_key: Vec<u8>,
+}
+
+impl WrappedTierKeyResult {
+    fn ok(tier: u8, nonce: Vec<u8>, encrypted_key: Vec<u8>) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            tier,
+            nonce,
+            encrypted_key,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            tier: 0,
+            nonce: Vec::new(),
+            encrypted_key: Vec::new(),
+        }
+    }
+}
+
+/// FFI-safe sealed bundle result returned by `seal_and_sign_bundle_with_identity_handle`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SealedBundleResult {
+    pub code: ClientErrorCode,
+    pub sealed: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub sharer_pubkey: Vec<u8>,
+}
+
+impl SealedBundleResult {
+    fn ok(sealed: Vec<u8>, signature: Vec<u8>, sharer_pubkey: Vec<u8>) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            sealed,
+            signature,
+            sharer_pubkey,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            sealed: Vec::new(),
+            signature: Vec::new(),
+            sharer_pubkey: Vec::new(),
+        }
+    }
+}
+
+/// FFI-safe opened-bundle result.
+///
+/// Carries the recovered epoch seed, manifest signing seed/pubkey, and
+/// metadata fields. All secret bytes are caller-owned; callers MUST memzero
+/// `epoch_seed` and `sign_secret_seed` after they are consumed.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OpenedBundleResult {
+    pub code: ClientErrorCode,
+    pub version: u32,
+    pub album_id: String,
+    pub epoch_id: u32,
+    pub recipient_pubkey: Vec<u8>,
+    pub epoch_seed: Vec<u8>,
+    pub sign_secret_seed: Vec<u8>,
+    pub sign_public_key: Vec<u8>,
+}
+
+impl OpenedBundleResult {
+    fn ok(
+        version: u32,
+        album_id: String,
+        epoch_id: u32,
+        recipient_pubkey: Vec<u8>,
+        epoch_seed: Vec<u8>,
+        sign_secret_seed: Vec<u8>,
+        sign_public_key: Vec<u8>,
+    ) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            version,
+            album_id,
+            epoch_id,
+            recipient_pubkey,
+            epoch_seed,
+            sign_secret_seed,
+            sign_public_key,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            version: 0,
+            album_id: String::new(),
+            epoch_id: 0,
+            recipient_pubkey: Vec::new(),
+            epoch_seed: Vec::new(),
+            sign_secret_seed: Vec::new(),
+            sign_public_key: Vec::new(),
+        }
+    }
+}
+
+/// FFI-safe encrypted album content result (24-byte nonce + ciphertext+tag).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncryptedContentResult {
+    pub code: ClientErrorCode,
+    pub nonce: Vec<u8>,
+    pub ciphertext: Vec<u8>,
+}
+
+impl EncryptedContentResult {
+    fn ok(nonce: Vec<u8>, ciphertext: Vec<u8>) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            nonce,
+            ciphertext,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            nonce: Vec::new(),
+            ciphertext: Vec::new(),
+        }
+    }
+}
+
+/// FFI-safe decrypted album content result.
+///
+/// Carries client-local plaintext bytes on success and intentionally does
+/// not implement `Debug`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DecryptedContentResult {
+    pub code: ClientErrorCode,
+    pub plaintext: Vec<u8>,
+}
+
+impl DecryptedContentResult {
     fn ok(plaintext: Vec<u8>) -> Self {
         Self {
             code: ClientErrorCode::Ok,
@@ -832,6 +1064,436 @@ pub fn close_identity_handle(handle: u64) -> Result<(), ClientError> {
     }
 }
 
+/// Returns the per-tier 32-byte key bytes for an open epoch-key handle.
+///
+/// The returned bytes are the raw HKDF tier key. Callers MUST memzero the
+/// `BytesResult::bytes` buffer after use; the helper only ensures the in-Rust
+/// clone is wiped on drop.
+#[must_use]
+pub fn get_tier_key_from_epoch_handle(handle: u64, tier_byte: u8) -> BytesResult {
+    let tier = match ShardTier::try_from(tier_byte) {
+        Ok(value) => value,
+        Err(error) => return bytes_error_code(map_domain_error(error)),
+    };
+    match clone_tier_key_for_handle(handle, tier) {
+        Ok((_, key_bytes)) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: key_bytes.as_slice().to_vec(),
+        },
+        Err(error) => bytes_error(error),
+    }
+}
+
+/// Derives the album content encryption key from an epoch-key handle.
+///
+/// The 32-byte content key is HKDF-SHA256-derived from the epoch seed using
+/// the canonical Mosaic content label. Callers MUST memzero the returned
+/// bytes after use.
+#[must_use]
+pub fn derive_content_key_from_epoch_handle(handle: u64) -> BytesResult {
+    let mut seed_bytes = match clone_epoch_seed_for_handle(handle) {
+        Ok((_, bytes)) => bytes,
+        Err(error) => return bytes_error(error),
+    };
+    let epoch_seed = match SecretKey::from_bytes(seed_bytes.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return bytes_error_code(map_crypto_error(error)),
+    };
+    match derive_content_key(&epoch_seed) {
+        Ok(content_key) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: content_key.as_bytes().to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Wraps `key_bytes` with a caller-supplied 32-byte wrapper key.
+///
+/// Output layout: `nonce(24) || ciphertext_with_tag`. Internally builds a
+/// short-lived `SecretKey` from the supplied wrapper bytes and zeroizes it
+/// when the call returns.
+#[must_use]
+pub fn wrap_key_with_wrapper_bytes(key_bytes: &[u8], wrapper_key_bytes: &[u8]) -> BytesResult {
+    let mut wrapper_buf = Zeroizing::new(wrapper_key_bytes.to_vec());
+    let wrapper = match SecretKey::from_bytes(wrapper_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return bytes_error_code(map_crypto_error(error)),
+    };
+    match wrap_key(key_bytes, &wrapper) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes,
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Unwraps a previously wrapped key with a caller-supplied 32-byte wrapper key.
+#[must_use]
+pub fn unwrap_key_with_wrapper_bytes(wrapped: &[u8], wrapper_key_bytes: &[u8]) -> BytesResult {
+    let mut wrapper_buf = Zeroizing::new(wrapper_key_bytes.to_vec());
+    let wrapper = match SecretKey::from_bytes(wrapper_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return bytes_error_code(map_crypto_error(error)),
+    };
+    match unwrap_key(wrapped, &wrapper) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: bytes.to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Derives the password-rooted LocalAuth Ed25519 keypair from an account-key
+/// handle and returns the public key only.
+///
+/// The L2 account key bytes are used as the deterministic 32-byte Ed25519
+/// auth signing seed. The auth secret is constructed inside this call,
+/// consumed to derive the public key, and dropped (wiped) before returning.
+#[must_use]
+pub fn derive_auth_keypair_from_account_handle(handle: u64) -> AuthKeypairResult {
+    match auth_signing_secret_from_account_handle(handle) {
+        Ok(secret) => AuthKeypairResult::ok(secret.public_key().as_bytes().to_vec()),
+        Err(error) => AuthKeypairResult::error(error.code),
+    }
+}
+
+/// Signs a caller-built LocalAuth challenge transcript with the auth keypair
+/// derived from the supplied account-key handle.
+///
+/// Returns a 64-byte detached Ed25519 signature on success.
+#[must_use]
+pub fn sign_auth_challenge_with_account_handle(
+    handle: u64,
+    transcript_bytes: &[u8],
+) -> BytesResult {
+    match auth_signing_secret_from_account_handle(handle) {
+        Ok(secret) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: sign_auth_challenge(transcript_bytes, &secret)
+                .as_bytes()
+                .to_vec(),
+        },
+        Err(error) => bytes_error(error),
+    }
+}
+
+/// Returns the 32-byte Ed25519 auth public key for an account-key handle.
+#[must_use]
+pub fn get_auth_public_key_from_account_handle(handle: u64) -> BytesResult {
+    match auth_signing_secret_from_account_handle(handle) {
+        Ok(secret) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: secret.public_key().as_bytes().to_vec(),
+        },
+        Err(error) => bytes_error(error),
+    }
+}
+
+/// Generates a fresh 32-byte share-link secret using the OS CSPRNG.
+#[must_use]
+pub fn generate_link_secret() -> BytesResult {
+    match crypto_generate_link_secret() {
+        Ok(secret) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: secret.as_slice().to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Derives the `(link_id, wrapping_key)` pair from a 32-byte share-link
+/// secret.
+///
+/// `link_id` is server-visible; `wrapping_key` MUST stay client-side.
+#[must_use]
+pub fn derive_link_keys(link_secret: &[u8]) -> LinkKeysResult {
+    match crypto_derive_link_keys(link_secret) {
+        Ok(LinkKeys {
+            link_id,
+            wrapping_key,
+        }) => LinkKeysResult::ok(link_id.to_vec(), wrapping_key.as_bytes().to_vec()),
+        Err(error) => LinkKeysResult::error(map_crypto_error(error)),
+    }
+}
+
+/// Wraps the tier key for a given epoch handle so it can be stored on a
+/// share-link record.
+///
+/// Internally clones the tier key from the registry, wraps it with the
+/// caller-supplied 32-byte wrapping key, and returns the canonical
+/// `(tier, nonce, encrypted_key)` triple. The cloned tier key is wiped on
+/// drop before this function returns.
+#[must_use]
+pub fn wrap_tier_key_for_link_with_epoch_handle(
+    epoch_handle: u64,
+    tier_byte: u8,
+    wrapping_key_bytes: &[u8],
+) -> WrappedTierKeyResult {
+    let tier = match ShardTier::try_from(tier_byte) {
+        Ok(value) => value,
+        Err(error) => return WrappedTierKeyResult::error(map_domain_error(error)),
+    };
+    let (_, tier_key_bytes) = match clone_tier_key_for_handle(epoch_handle, tier) {
+        Ok(value) => value,
+        Err(error) => return WrappedTierKeyResult::error(error.code),
+    };
+
+    let mut wrapping_buf = Zeroizing::new(wrapping_key_bytes.to_vec());
+    let wrapping_key = match SecretKey::from_bytes(wrapping_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return WrappedTierKeyResult::error(map_crypto_error(error)),
+    };
+
+    match crypto_wrap_tier_key_for_link(tier_key_bytes.as_slice(), tier, &wrapping_key) {
+        Ok(WrappedTierKey {
+            tier,
+            nonce,
+            encrypted_key,
+        }) => WrappedTierKeyResult::ok(tier.to_byte(), nonce.to_vec(), encrypted_key),
+        Err(error) => WrappedTierKeyResult::error(map_crypto_error(error)),
+    }
+}
+
+/// Unwraps a tier key previously produced by `wrap_tier_key_for_link`.
+///
+/// Returns the 32-byte tier key bytes; callers MUST memzero the buffer
+/// after use.
+#[must_use]
+pub fn unwrap_tier_key_from_link_bytes(
+    nonce: &[u8],
+    encrypted_key: &[u8],
+    tier_byte: u8,
+    wrapping_key_bytes: &[u8],
+) -> BytesResult {
+    let tier = match ShardTier::try_from(tier_byte) {
+        Ok(value) => value,
+        Err(error) => return bytes_error_code(map_domain_error(error)),
+    };
+    if nonce.len() != 24 {
+        return bytes_error_code(ClientErrorCode::InvalidInputLength);
+    }
+    let mut nonce_array = [0_u8; 24];
+    nonce_array.copy_from_slice(nonce);
+
+    let mut wrapping_buf = Zeroizing::new(wrapping_key_bytes.to_vec());
+    let wrapping_key = match SecretKey::from_bytes(wrapping_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return bytes_error_code(map_crypto_error(error)),
+    };
+
+    let wrapped = WrappedTierKey {
+        tier,
+        nonce: nonce_array,
+        encrypted_key: encrypted_key.to_vec(),
+    };
+
+    match crypto_unwrap_tier_key_from_link(&wrapped, tier, &wrapping_key) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: bytes.to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Seals an `EpochKeyBundle` for `recipient_pubkey` and signs the sealed
+/// ciphertext with the identity behind `identity_handle`.
+///
+/// The bundle is built from the supplied epoch metadata and the caller's
+/// per-epoch signing seed/public key. The signing seed is consumed and
+/// wiped before this call returns.
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn seal_and_sign_bundle_with_identity_handle(
+    identity_handle: u64,
+    recipient_pubkey: &[u8],
+    album_id: String,
+    epoch_id: u32,
+    epoch_seed_bytes: &[u8],
+    sign_secret_seed: &[u8],
+    sign_public_key_bytes: &[u8],
+) -> SealedBundleResult {
+    if recipient_pubkey.len() != 32 {
+        return SealedBundleResult::error(ClientErrorCode::InvalidKeyLength);
+    }
+    let mut recipient_array = [0_u8; 32];
+    recipient_array.copy_from_slice(recipient_pubkey);
+
+    let mut epoch_seed_buf = Zeroizing::new(epoch_seed_bytes.to_vec());
+    let epoch_seed = match SecretKey::from_bytes(epoch_seed_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return SealedBundleResult::error(map_crypto_error(error)),
+    };
+
+    let mut sign_seed_buf = Zeroizing::new(sign_secret_seed.to_vec());
+    let sign_secret_key = match ManifestSigningSecretKey::from_seed(sign_seed_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return SealedBundleResult::error(map_crypto_error(error)),
+    };
+
+    let sign_public_key =
+        match mosaic_crypto::ManifestSigningPublicKey::from_bytes(sign_public_key_bytes) {
+            Ok(value) => value,
+            Err(error) => return SealedBundleResult::error(map_crypto_error(error)),
+        };
+
+    let bundle = EpochKeyBundle {
+        version: 1,
+        album_id,
+        epoch_id,
+        recipient_pubkey: recipient_array,
+        epoch_seed,
+        sign_secret_key,
+        sign_public_key,
+    };
+
+    let outcome = with_identity(identity_handle, |record| {
+        crypto_seal_and_sign_bundle(&bundle, &recipient_array, &record.keypair)
+    });
+
+    match outcome {
+        Ok(Ok(SealedBundle {
+            sealed,
+            signature,
+            sharer_pubkey,
+        })) => SealedBundleResult::ok(sealed, signature.to_vec(), sharer_pubkey.to_vec()),
+        Ok(Err(error)) => SealedBundleResult::error(map_crypto_error(error)),
+        Err(error) => SealedBundleResult::error(error.code),
+    }
+}
+
+/// Verifies a sealed bundle's signature, opens it for the recipient bound to
+/// `identity_handle`, and validates album/epoch fields.
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn verify_and_open_bundle_with_identity_handle(
+    identity_handle: u64,
+    sealed: &[u8],
+    signature: &[u8],
+    sharer_pubkey: &[u8],
+    expected_album_id: String,
+    expected_min_epoch_id: u32,
+    allow_legacy_empty_album_id: bool,
+) -> OpenedBundleResult {
+    if signature.len() != 64 {
+        return OpenedBundleResult::error(ClientErrorCode::InvalidSignatureLength);
+    }
+    if sharer_pubkey.len() != 32 {
+        return OpenedBundleResult::error(ClientErrorCode::InvalidKeyLength);
+    }
+
+    let mut signature_array = [0_u8; 64];
+    signature_array.copy_from_slice(signature);
+    let mut sharer_array = [0_u8; 32];
+    sharer_array.copy_from_slice(sharer_pubkey);
+
+    let sealed_bundle = SealedBundle {
+        sealed: sealed.to_vec(),
+        signature: signature_array,
+        sharer_pubkey: sharer_array,
+    };
+
+    let context = BundleValidationContext {
+        album_id: expected_album_id,
+        min_epoch_id: expected_min_epoch_id,
+        allow_legacy_empty_album_id,
+        expected_owner_ed25519_pub: sharer_array,
+    };
+
+    let outcome = with_identity(identity_handle, |record| {
+        crypto_verify_and_open_bundle(&sealed_bundle, &record.keypair, &context)
+    });
+
+    match outcome {
+        Ok(Ok(EpochKeyBundle {
+            version,
+            album_id,
+            epoch_id,
+            recipient_pubkey,
+            epoch_seed,
+            sign_secret_key,
+            sign_public_key,
+        })) => OpenedBundleResult::ok(
+            version,
+            album_id,
+            epoch_id,
+            recipient_pubkey.to_vec(),
+            epoch_seed.as_bytes().to_vec(),
+            sign_secret_key.expose_seed_bytes().to_vec(),
+            sign_public_key.as_bytes().to_vec(),
+        ),
+        Ok(Err(error)) => OpenedBundleResult::error(map_crypto_error(error)),
+        Err(error) => OpenedBundleResult::error(error.code),
+    }
+}
+
+/// Encrypts album content with the content key derived from an epoch handle.
+///
+/// Output: `(nonce, ciphertext+tag)`. Authenticated AAD binds the ciphertext
+/// to `epoch_id` so cross-epoch replay is rejected on decrypt.
+#[must_use]
+pub fn encrypt_album_content_with_epoch_handle(
+    epoch_handle: u64,
+    plaintext: &[u8],
+) -> EncryptedContentResult {
+    let mut seed_bytes = match clone_epoch_seed_for_handle(epoch_handle) {
+        Ok(value) => value,
+        Err(error) => return EncryptedContentResult::error(error.code),
+    };
+    let epoch_id = seed_bytes.0;
+    let epoch_seed = match SecretKey::from_bytes(seed_bytes.1.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return EncryptedContentResult::error(map_crypto_error(error)),
+    };
+    let content_key = match derive_content_key(&epoch_seed) {
+        Ok(value) => value,
+        Err(error) => return EncryptedContentResult::error(map_crypto_error(error)),
+    };
+
+    match encrypt_content(plaintext, &content_key, epoch_id) {
+        Ok(EncryptedContent { nonce, ciphertext }) => {
+            EncryptedContentResult::ok(nonce.to_vec(), ciphertext)
+        }
+        Err(error) => EncryptedContentResult::error(map_crypto_error(error)),
+    }
+}
+
+/// Decrypts album content produced by `encrypt_album_content_with_epoch_handle`.
+#[must_use]
+pub fn decrypt_album_content_with_epoch_handle(
+    epoch_handle: u64,
+    nonce: &[u8],
+    ciphertext: &[u8],
+) -> DecryptedContentResult {
+    if nonce.len() != 24 {
+        return DecryptedContentResult::error(ClientErrorCode::InvalidInputLength);
+    }
+    let mut nonce_array = [0_u8; 24];
+    nonce_array.copy_from_slice(nonce);
+
+    let mut seed_bytes = match clone_epoch_seed_for_handle(epoch_handle) {
+        Ok(value) => value,
+        Err(error) => return DecryptedContentResult::error(error.code),
+    };
+    let epoch_id = seed_bytes.0;
+    let epoch_seed = match SecretKey::from_bytes(seed_bytes.1.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return DecryptedContentResult::error(map_crypto_error(error)),
+    };
+    let content_key = match derive_content_key(&epoch_seed) {
+        Ok(value) => value,
+        Err(error) => return DecryptedContentResult::error(map_crypto_error(error)),
+    };
+
+    match decrypt_content(ciphertext, &nonce_array, &content_key, epoch_id) {
+        Ok(plaintext) => DecryptedContentResult::ok(plaintext.to_vec()),
+        Err(error) => DecryptedContentResult::error(map_crypto_error(error)),
+    }
+}
+
 fn create_identity_handle_result(
     account_key_handle: u64,
 ) -> Result<IdentityHandleResult, ClientError> {
@@ -996,8 +1658,7 @@ fn decrypt_shard_with_epoch_handle_result(
     };
     let tier_key =
         SecretKey::from_bytes(key_bytes.as_mut_slice()).map_err(client_error_from_crypto)?;
-    let plaintext =
-        decrypt_shard(envelope_bytes, &tier_key).map_err(client_error_from_crypto)?;
+    let plaintext = decrypt_shard(envelope_bytes, &tier_key).map_err(client_error_from_crypto)?;
     Ok(DecryptedShardResult::ok(plaintext.to_vec()))
 }
 
@@ -1080,6 +1741,48 @@ fn clone_epoch_keys_for_handle(handle: u64) -> Result<EpochKeyClone, ClientError
         preview_key: preview_bytes,
         full_key: full_bytes,
     })
+}
+
+/// Briefly takes the epoch registry lock to copy the underlying 32-byte
+/// epoch seed bytes, returning the epoch id and a `Zeroizing` clone of the
+/// seed for downstream HKDF derivations (content key, link wrapping, etc.).
+fn clone_epoch_seed_for_handle(handle: u64) -> Result<(u32, Zeroizing<Vec<u8>>), ClientError> {
+    let registry = epoch_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "epoch registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::EpochHandleNotFound,
+                "epoch handle is not open",
+            )
+        })?;
+
+    let seed = record.key_material.epoch_seed();
+    let mut bytes = Zeroizing::new(vec![0_u8; seed.as_bytes().len()]);
+    bytes.copy_from_slice(seed.as_bytes());
+    Ok((record.epoch_id, bytes))
+}
+
+/// Resolves an account-key handle and constructs the deterministic LocalAuth
+/// signing secret rooted in the L2 account key.
+///
+/// The L2 bytes are used directly as the 32-byte Ed25519 auth signing seed.
+/// The returned `AuthSigningSecretKey` zeroizes itself on drop, so callers
+/// should drop it as soon as they are done signing or extracting the public
+/// key.
+fn auth_signing_secret_from_account_handle(
+    handle: u64,
+) -> Result<AuthSigningSecretKey, ClientError> {
+    let account_key = account_secret_key_from_handle(handle)?;
+    let mut seed = Zeroizing::new(account_key.as_bytes().to_vec());
+    AuthSigningSecretKey::from_seed(seed.as_mut_slice()).map_err(client_error_from_crypto)
 }
 
 fn account_secret_key_from_handle(handle: u64) -> Result<SecretKey, ClientError> {
@@ -1170,6 +1873,13 @@ fn with_identity<T>(
 fn bytes_error(error: ClientError) -> BytesResult {
     BytesResult {
         code: error.code,
+        bytes: Vec::new(),
+    }
+}
+
+fn bytes_error_code(code: ClientErrorCode) -> BytesResult {
+    BytesResult {
+        code,
         bytes: Vec::new(),
     }
 }

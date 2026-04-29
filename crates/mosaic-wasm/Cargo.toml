@@ -17,5 +17,8 @@ mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
 wasm-bindgen = "=0.2.118"
 zeroize = "=1.8.2"
 
+[dev-dependencies]
+mosaic-vectors = { path = "../mosaic-vectors", version = "0.1.0" }
+
 [lints]
 workspace = true

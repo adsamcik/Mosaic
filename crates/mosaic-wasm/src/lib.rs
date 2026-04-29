@@ -286,6 +286,76 @@ pub struct ClientCoreAlbumSyncTransitionResult {
     pub transition: ClientCoreAlbumSyncTransition,
 }
 
+/// Rust-side WASM facade auth keypair derivation result.
+///
+/// The auth signing secret stays inside Rust; only the 32-byte Ed25519
+/// public key is exposed across the FFI boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthKeypairResult {
+    pub code: u16,
+    pub auth_public_key: Vec<u8>,
+}
+
+/// Rust-side WASM facade share-link key derivation result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkKeysResult {
+    pub code: u16,
+    pub link_id: Vec<u8>,
+    pub wrapping_key: Vec<u8>,
+}
+
+/// Rust-side WASM facade wrapped tier key result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrappedTierKeyResult {
+    pub code: u16,
+    pub tier: u8,
+    pub nonce: Vec<u8>,
+    pub encrypted_key: Vec<u8>,
+}
+
+/// Rust-side WASM facade sealed bundle result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SealedBundleResult {
+    pub code: u16,
+    pub sealed: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub sharer_pubkey: Vec<u8>,
+}
+
+/// Rust-side WASM facade opened-bundle result.
+///
+/// Carries client-local secret bytes (`epoch_seed`, `sign_secret_seed`) so
+/// it intentionally does not implement `Debug`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OpenedBundleResult {
+    pub code: u16,
+    pub version: u32,
+    pub album_id: String,
+    pub epoch_id: u32,
+    pub recipient_pubkey: Vec<u8>,
+    pub epoch_seed: Vec<u8>,
+    pub sign_secret_seed: Vec<u8>,
+    pub sign_public_key: Vec<u8>,
+}
+
+/// Rust-side WASM facade encrypted album content result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncryptedContentResult {
+    pub code: u16,
+    pub nonce: Vec<u8>,
+    pub ciphertext: Vec<u8>,
+}
+
+/// Rust-side WASM facade decrypted album content result.
+///
+/// Carries client-local plaintext bytes on success and intentionally does
+/// not implement `Debug`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DecryptedContentResult {
+    pub code: u16,
+    pub plaintext: Vec<u8>,
+}
+
 /// WASM-bindgen class for header parse results.
 #[wasm_bindgen(js_name = HeaderResult)]
 pub struct JsHeaderResult {
@@ -718,6 +788,270 @@ impl JsCryptoDomainGoldenVectorSnapshot {
     }
 }
 
+/// WASM-bindgen class for auth keypair derivation results.
+#[wasm_bindgen(js_name = AuthKeypairResult)]
+pub struct JsAuthKeypairResult {
+    code: u16,
+    auth_public_key: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = AuthKeypairResult)]
+impl JsAuthKeypairResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// 32-byte Ed25519 LocalAuth public key. Non-secret.
+    #[wasm_bindgen(getter, js_name = authPublicKey)]
+    #[must_use]
+    pub fn auth_public_key(&self) -> Vec<u8> {
+        self.auth_public_key.clone()
+    }
+}
+
+/// WASM-bindgen class for share-link key derivation results.
+#[wasm_bindgen(js_name = LinkKeysResult)]
+pub struct JsLinkKeysResult {
+    code: u16,
+    link_id: Vec<u8>,
+    wrapping_key: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = LinkKeysResult)]
+impl JsLinkKeysResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// 16-byte server-visible share-link lookup ID.
+    #[wasm_bindgen(getter, js_name = linkId)]
+    #[must_use]
+    pub fn link_id(&self) -> Vec<u8> {
+        self.link_id.clone()
+    }
+
+    /// 32-byte client-side wrapping key. Callers MUST memzero after use.
+    #[wasm_bindgen(getter, js_name = wrappingKey)]
+    #[must_use]
+    pub fn wrapping_key(&self) -> Vec<u8> {
+        self.wrapping_key.clone()
+    }
+}
+
+/// WASM-bindgen class for wrapped tier key results.
+#[wasm_bindgen(js_name = WrappedTierKeyResult)]
+pub struct JsWrappedTierKeyResult {
+    code: u16,
+    tier: u8,
+    nonce: Vec<u8>,
+    encrypted_key: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = WrappedTierKeyResult)]
+impl JsWrappedTierKeyResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Shard tier byte the wrapped key grants access to.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn tier(&self) -> u8 {
+        self.tier
+    }
+
+    /// 24-byte XChaCha20 nonce used by the wrapping AEAD.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn nonce(&self) -> Vec<u8> {
+        self.nonce.clone()
+    }
+
+    /// Wrapped tier-key ciphertext including the 16-byte Poly1305 tag.
+    #[wasm_bindgen(getter, js_name = encryptedKey)]
+    #[must_use]
+    pub fn encrypted_key(&self) -> Vec<u8> {
+        self.encrypted_key.clone()
+    }
+}
+
+/// WASM-bindgen class for sealed bundle results.
+#[wasm_bindgen(js_name = SealedBundleResult)]
+pub struct JsSealedBundleResult {
+    code: u16,
+    sealed: Vec<u8>,
+    signature: Vec<u8>,
+    sharer_pubkey: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = SealedBundleResult)]
+impl JsSealedBundleResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Sealed-box ciphertext bytes.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn sealed(&self) -> Vec<u8> {
+        self.sealed.clone()
+    }
+
+    /// 64-byte detached Ed25519 signature over `BUNDLE_SIGN_CONTEXT || sealed`.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn signature(&self) -> Vec<u8> {
+        self.signature.clone()
+    }
+
+    /// 32-byte sharer Ed25519 identity public key.
+    #[wasm_bindgen(getter, js_name = sharerPubkey)]
+    #[must_use]
+    pub fn sharer_pubkey(&self) -> Vec<u8> {
+        self.sharer_pubkey.clone()
+    }
+}
+
+/// WASM-bindgen class for opened-bundle results.
+#[wasm_bindgen(js_name = OpenedBundleResult)]
+pub struct JsOpenedBundleResult {
+    code: u16,
+    version: u32,
+    album_id: String,
+    epoch_id: u32,
+    recipient_pubkey: Vec<u8>,
+    epoch_seed: Vec<u8>,
+    sign_secret_seed: Vec<u8>,
+    sign_public_key: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = OpenedBundleResult)]
+impl JsOpenedBundleResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Bundle format version recovered from the payload.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// Album identifier the bundle was issued for.
+    #[wasm_bindgen(getter, js_name = albumId)]
+    #[must_use]
+    pub fn album_id(&self) -> String {
+        self.album_id.clone()
+    }
+
+    /// Epoch identifier inside the bundle payload.
+    #[wasm_bindgen(getter, js_name = epochId)]
+    #[must_use]
+    pub fn epoch_id(&self) -> u32 {
+        self.epoch_id
+    }
+
+    /// 32-byte recipient Ed25519 public key from the payload.
+    #[wasm_bindgen(getter, js_name = recipientPubkey)]
+    #[must_use]
+    pub fn recipient_pubkey(&self) -> Vec<u8> {
+        self.recipient_pubkey.clone()
+    }
+
+    /// 32-byte epoch seed. Callers MUST memzero after deriving tier/content keys.
+    #[wasm_bindgen(getter, js_name = epochSeed)]
+    #[must_use]
+    pub fn epoch_seed(&self) -> Vec<u8> {
+        self.epoch_seed.clone()
+    }
+
+    /// 32-byte per-epoch Ed25519 manifest signing seed. Callers MUST memzero.
+    #[wasm_bindgen(getter, js_name = signSecretSeed)]
+    #[must_use]
+    pub fn sign_secret_seed(&self) -> Vec<u8> {
+        self.sign_secret_seed.clone()
+    }
+
+    /// 32-byte per-epoch Ed25519 manifest signing public key.
+    #[wasm_bindgen(getter, js_name = signPublicKey)]
+    #[must_use]
+    pub fn sign_public_key(&self) -> Vec<u8> {
+        self.sign_public_key.clone()
+    }
+}
+
+/// WASM-bindgen class for encrypted album content results.
+#[wasm_bindgen(js_name = EncryptedContentResult)]
+pub struct JsEncryptedContentResult {
+    code: u16,
+    nonce: Vec<u8>,
+    ciphertext: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = EncryptedContentResult)]
+impl JsEncryptedContentResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// 24-byte XChaCha20 nonce.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn nonce(&self) -> Vec<u8> {
+        self.nonce.clone()
+    }
+
+    /// Ciphertext including the trailing 16-byte Poly1305 tag.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn ciphertext(&self) -> Vec<u8> {
+        self.ciphertext.clone()
+    }
+}
+
+/// WASM-bindgen class for decrypted album content results.
+#[wasm_bindgen(js_name = DecryptedContentResult)]
+pub struct JsDecryptedContentResult {
+    code: u16,
+    plaintext: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = DecryptedContentResult)]
+impl JsDecryptedContentResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Client-local plaintext album content on successful decryption.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn plaintext(&self) -> Vec<u8> {
+        self.plaintext.clone()
+    }
+}
+
 /// Returns the crate name for smoke tests and generated wrapper diagnostics.
 #[must_use]
 pub const fn crate_name() -> &'static str {
@@ -1095,6 +1429,211 @@ pub fn close_identity_handle(handle: u64) -> u16 {
         Ok(()) => mosaic_client::ClientErrorCode::Ok.as_u16(),
         Err(error) => error.code.as_u16(),
     }
+}
+
+/// Returns the per-tier 32-byte key bytes for an open epoch-key handle.
+///
+/// Callers MUST memzero `BytesResult.bytes` after use; the returned vector
+/// is the raw HKDF tier key for the requested shard tier.
+#[must_use]
+pub fn get_tier_key_from_epoch(epoch_handle: u64, tier_byte: u8) -> BytesResult {
+    bytes_result_from_client(mosaic_client::get_tier_key_from_epoch_handle(
+        epoch_handle,
+        tier_byte,
+    ))
+}
+
+/// Derives the album content encryption key from an epoch-key handle.
+///
+/// Callers MUST memzero `BytesResult.bytes` after use.
+#[must_use]
+pub fn derive_content_key_from_epoch(epoch_handle: u64) -> BytesResult {
+    bytes_result_from_client(mosaic_client::derive_content_key_from_epoch_handle(
+        epoch_handle,
+    ))
+}
+
+/// Wraps `key_bytes` with the supplied 32-byte wrapper key.
+#[must_use]
+pub fn wrap_key(mut key_bytes: Vec<u8>, mut wrapper_key: Vec<u8>) -> BytesResult {
+    let result = bytes_result_from_client(mosaic_client::wrap_key_with_wrapper_bytes(
+        &key_bytes,
+        &wrapper_key,
+    ));
+    key_bytes.zeroize();
+    wrapper_key.zeroize();
+    result
+}
+
+/// Unwraps a previously wrapped key with the supplied 32-byte wrapper key.
+#[must_use]
+pub fn unwrap_key(wrapped: Vec<u8>, mut wrapper_key: Vec<u8>) -> BytesResult {
+    let result = bytes_result_from_client(mosaic_client::unwrap_key_with_wrapper_bytes(
+        &wrapped,
+        &wrapper_key,
+    ));
+    wrapper_key.zeroize();
+    result
+}
+
+/// Derives the deterministic LocalAuth Ed25519 keypair from an account-key
+/// handle and returns the public key. The signing secret stays in Rust.
+#[must_use]
+pub fn derive_auth_keypair_from_account(account_handle: u64) -> AuthKeypairResult {
+    auth_keypair_result_from_client(mosaic_client::derive_auth_keypair_from_account_handle(
+        account_handle,
+    ))
+}
+
+/// Signs caller-built LocalAuth challenge transcript bytes with the auth
+/// keypair derived from the supplied account-key handle.
+#[must_use]
+pub fn sign_auth_challenge_with_account(
+    account_handle: u64,
+    challenge_bytes: Vec<u8>,
+) -> BytesResult {
+    bytes_result_from_client(mosaic_client::sign_auth_challenge_with_account_handle(
+        account_handle,
+        &challenge_bytes,
+    ))
+}
+
+/// Returns the 32-byte Ed25519 LocalAuth public key for the supplied
+/// account-key handle.
+#[must_use]
+pub fn get_auth_public_key_from_account(account_handle: u64) -> BytesResult {
+    bytes_result_from_client(mosaic_client::get_auth_public_key_from_account_handle(
+        account_handle,
+    ))
+}
+
+/// Generates a fresh 32-byte share-link secret using the OS CSPRNG.
+#[must_use]
+pub fn generate_link_secret() -> BytesResult {
+    bytes_result_from_client(mosaic_client::generate_link_secret())
+}
+
+/// Derives the `(link_id, wrapping_key)` pair from a 32-byte share-link secret.
+#[must_use]
+pub fn derive_link_keys(mut link_secret: Vec<u8>) -> LinkKeysResult {
+    let result = link_keys_result_from_client(mosaic_client::derive_link_keys(&link_secret));
+    link_secret.zeroize();
+    result
+}
+
+/// Wraps the tier key for `epoch_handle` so it can be stored on a
+/// share-link record.
+#[must_use]
+pub fn wrap_tier_key_for_link(
+    epoch_handle: u64,
+    tier_byte: u8,
+    mut wrapping_key: Vec<u8>,
+) -> WrappedTierKeyResult {
+    let result = wrapped_tier_key_result_from_client(
+        mosaic_client::wrap_tier_key_for_link_with_epoch_handle(
+            epoch_handle,
+            tier_byte,
+            &wrapping_key,
+        ),
+    );
+    wrapping_key.zeroize();
+    result
+}
+
+/// Unwraps a previously wrapped tier key from a share-link record.
+///
+/// Callers MUST memzero `BytesResult.bytes` after use.
+#[must_use]
+pub fn unwrap_tier_key_from_link(
+    nonce: Vec<u8>,
+    encrypted_key: Vec<u8>,
+    tier_byte: u8,
+    mut wrapping_key: Vec<u8>,
+) -> BytesResult {
+    let result = bytes_result_from_client(mosaic_client::unwrap_tier_key_from_link_bytes(
+        &nonce,
+        &encrypted_key,
+        tier_byte,
+        &wrapping_key,
+    ));
+    wrapping_key.zeroize();
+    result
+}
+
+/// Seals an epoch key bundle for `recipient_pubkey` and signs it with the
+/// supplied identity handle.
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn seal_and_sign_bundle(
+    identity_handle: u64,
+    recipient_pubkey: Vec<u8>,
+    album_id: String,
+    epoch_id: u32,
+    mut epoch_seed: Vec<u8>,
+    mut sign_secret: Vec<u8>,
+    sign_public: Vec<u8>,
+) -> SealedBundleResult {
+    let result =
+        sealed_bundle_result_from_client(mosaic_client::seal_and_sign_bundle_with_identity_handle(
+            identity_handle,
+            &recipient_pubkey,
+            album_id,
+            epoch_id,
+            &epoch_seed,
+            &sign_secret,
+            &sign_public,
+        ));
+    epoch_seed.zeroize();
+    sign_secret.zeroize();
+    result
+}
+
+/// Verifies a sealed bundle's signature and opens it for the recipient
+/// bound to `identity_handle`.
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn verify_and_open_bundle(
+    identity_handle: u64,
+    sealed: Vec<u8>,
+    signature: Vec<u8>,
+    sharer_pubkey: Vec<u8>,
+    expected_album_id: String,
+    expected_min_epoch: u32,
+    allow_legacy_empty: bool,
+) -> OpenedBundleResult {
+    opened_bundle_result_from_client(mosaic_client::verify_and_open_bundle_with_identity_handle(
+        identity_handle,
+        &sealed,
+        &signature,
+        &sharer_pubkey,
+        expected_album_id,
+        expected_min_epoch,
+        allow_legacy_empty,
+    ))
+}
+
+/// Encrypts album content with the content key derived from `epoch_handle`.
+#[must_use]
+pub fn encrypt_album_content(epoch_handle: u64, mut plaintext: Vec<u8>) -> EncryptedContentResult {
+    let result = encrypted_content_result_from_client(
+        mosaic_client::encrypt_album_content_with_epoch_handle(epoch_handle, &plaintext),
+    );
+    plaintext.zeroize();
+    result
+}
+
+/// Decrypts album content with the content key derived from `epoch_handle`.
+#[must_use]
+pub fn decrypt_album_content(
+    epoch_handle: u64,
+    nonce: Vec<u8>,
+    ciphertext: Vec<u8>,
+) -> DecryptedContentResult {
+    decrypted_content_result_from_client(mosaic_client::decrypt_album_content_with_epoch_handle(
+        epoch_handle,
+        &nonce,
+        &ciphertext,
+    ))
 }
 
 /// Parses a shard envelope header through the generated WASM binding surface.
@@ -1516,6 +2055,173 @@ pub fn close_identity_handle_js(handle: u64) -> u16 {
     close_identity_handle(handle)
 }
 
+/// Returns a tier key for an epoch handle through WASM.
+#[wasm_bindgen(js_name = getTierKeyFromEpoch)]
+#[must_use]
+pub fn get_tier_key_from_epoch_js(epoch_handle: u64, tier_byte: u8) -> JsBytesResult {
+    js_bytes_result_from_rust(get_tier_key_from_epoch(epoch_handle, tier_byte))
+}
+
+/// Derives the content key from an epoch handle through WASM.
+#[wasm_bindgen(js_name = deriveContentKeyFromEpoch)]
+#[must_use]
+pub fn derive_content_key_from_epoch_js(epoch_handle: u64) -> JsBytesResult {
+    js_bytes_result_from_rust(derive_content_key_from_epoch(epoch_handle))
+}
+
+/// Wraps a key with a 32-byte wrapper key through WASM.
+#[wasm_bindgen(js_name = wrapKey)]
+#[must_use]
+pub fn wrap_key_js(key_bytes: Vec<u8>, wrapper_key: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(wrap_key(key_bytes, wrapper_key))
+}
+
+/// Unwraps a wrapped key with a 32-byte wrapper key through WASM.
+#[wasm_bindgen(js_name = unwrapKey)]
+#[must_use]
+pub fn unwrap_key_js(wrapped: Vec<u8>, wrapper_key: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(unwrap_key(wrapped, wrapper_key))
+}
+
+/// Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
+#[wasm_bindgen(js_name = deriveAuthKeypairFromAccount)]
+#[must_use]
+pub fn derive_auth_keypair_from_account_js(account_handle: u64) -> JsAuthKeypairResult {
+    js_auth_keypair_result_from_rust(derive_auth_keypair_from_account(account_handle))
+}
+
+/// Signs a LocalAuth challenge transcript with an account-key handle through WASM.
+#[wasm_bindgen(js_name = signAuthChallengeWithAccount)]
+#[must_use]
+pub fn sign_auth_challenge_with_account_js(
+    account_handle: u64,
+    challenge_bytes: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(sign_auth_challenge_with_account(
+        account_handle,
+        challenge_bytes,
+    ))
+}
+
+/// Returns the LocalAuth Ed25519 public key for an account-key handle through WASM.
+#[wasm_bindgen(js_name = getAuthPublicKeyFromAccount)]
+#[must_use]
+pub fn get_auth_public_key_from_account_js(account_handle: u64) -> JsBytesResult {
+    js_bytes_result_from_rust(get_auth_public_key_from_account(account_handle))
+}
+
+/// Generates a fresh share-link secret through WASM.
+#[wasm_bindgen(js_name = generateLinkSecret)]
+#[must_use]
+pub fn generate_link_secret_js() -> JsBytesResult {
+    js_bytes_result_from_rust(generate_link_secret())
+}
+
+/// Derives the (link_id, wrapping_key) pair from a share-link secret through WASM.
+#[wasm_bindgen(js_name = deriveLinkKeys)]
+#[must_use]
+pub fn derive_link_keys_js(link_secret: Vec<u8>) -> JsLinkKeysResult {
+    js_link_keys_result_from_rust(derive_link_keys(link_secret))
+}
+
+/// Wraps a tier key for share-link distribution through WASM.
+#[wasm_bindgen(js_name = wrapTierKeyForLink)]
+#[must_use]
+pub fn wrap_tier_key_for_link_js(
+    epoch_handle: u64,
+    tier_byte: u8,
+    wrapping_key: Vec<u8>,
+) -> JsWrappedTierKeyResult {
+    js_wrapped_tier_key_result_from_rust(wrap_tier_key_for_link(
+        epoch_handle,
+        tier_byte,
+        wrapping_key,
+    ))
+}
+
+/// Unwraps a tier key from a share-link record through WASM.
+#[wasm_bindgen(js_name = unwrapTierKeyFromLink)]
+#[must_use]
+pub fn unwrap_tier_key_from_link_js(
+    nonce: Vec<u8>,
+    encrypted_key: Vec<u8>,
+    tier_byte: u8,
+    wrapping_key: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(unwrap_tier_key_from_link(
+        nonce,
+        encrypted_key,
+        tier_byte,
+        wrapping_key,
+    ))
+}
+
+/// Seals and signs an epoch key bundle through WASM.
+#[allow(clippy::too_many_arguments)]
+#[wasm_bindgen(js_name = sealAndSignBundle)]
+#[must_use]
+pub fn seal_and_sign_bundle_js(
+    identity_handle: u64,
+    recipient_pubkey: Vec<u8>,
+    album_id: String,
+    epoch_id: u32,
+    epoch_seed: Vec<u8>,
+    sign_secret: Vec<u8>,
+    sign_public: Vec<u8>,
+) -> JsSealedBundleResult {
+    js_sealed_bundle_result_from_rust(seal_and_sign_bundle(
+        identity_handle,
+        recipient_pubkey,
+        album_id,
+        epoch_id,
+        epoch_seed,
+        sign_secret,
+        sign_public,
+    ))
+}
+
+/// Verifies and opens a sealed epoch key bundle through WASM.
+#[allow(clippy::too_many_arguments)]
+#[wasm_bindgen(js_name = verifyAndOpenBundle)]
+#[must_use]
+pub fn verify_and_open_bundle_js(
+    identity_handle: u64,
+    sealed: Vec<u8>,
+    signature: Vec<u8>,
+    sharer_pubkey: Vec<u8>,
+    expected_album_id: String,
+    expected_min_epoch: u32,
+    allow_legacy_empty: bool,
+) -> JsOpenedBundleResult {
+    js_opened_bundle_result_from_rust(verify_and_open_bundle(
+        identity_handle,
+        sealed,
+        signature,
+        sharer_pubkey,
+        expected_album_id,
+        expected_min_epoch,
+        allow_legacy_empty,
+    ))
+}
+
+/// Encrypts album content with an epoch handle through WASM.
+#[wasm_bindgen(js_name = encryptAlbumContent)]
+#[must_use]
+pub fn encrypt_album_content_js(epoch_handle: u64, plaintext: Vec<u8>) -> JsEncryptedContentResult {
+    js_encrypted_content_result_from_rust(encrypt_album_content(epoch_handle, plaintext))
+}
+
+/// Decrypts album content with an epoch handle through WASM.
+#[wasm_bindgen(js_name = decryptAlbumContent)]
+#[must_use]
+pub fn decrypt_album_content_js(
+    epoch_handle: u64,
+    nonce: Vec<u8>,
+    ciphertext: Vec<u8>,
+) -> JsDecryptedContentResult {
+    js_decrypted_content_result_from_rust(decrypt_album_content(epoch_handle, nonce, ciphertext))
+}
+
 fn header_result_from_client(result: mosaic_client::HeaderResult) -> HeaderResult {
     HeaderResult {
         code: result.code.as_u16(),
@@ -1606,6 +2312,77 @@ fn decrypted_shard_result_from_client(
     result: mosaic_client::DecryptedShardResult,
 ) -> DecryptedShardResult {
     DecryptedShardResult {
+        code: result.code.as_u16(),
+        plaintext: result.plaintext,
+    }
+}
+
+fn auth_keypair_result_from_client(result: mosaic_client::AuthKeypairResult) -> AuthKeypairResult {
+    AuthKeypairResult {
+        code: result.code.as_u16(),
+        auth_public_key: result.auth_public_key,
+    }
+}
+
+fn link_keys_result_from_client(result: mosaic_client::LinkKeysResult) -> LinkKeysResult {
+    LinkKeysResult {
+        code: result.code.as_u16(),
+        link_id: result.link_id,
+        wrapping_key: result.wrapping_key,
+    }
+}
+
+fn wrapped_tier_key_result_from_client(
+    result: mosaic_client::WrappedTierKeyResult,
+) -> WrappedTierKeyResult {
+    WrappedTierKeyResult {
+        code: result.code.as_u16(),
+        tier: result.tier,
+        nonce: result.nonce,
+        encrypted_key: result.encrypted_key,
+    }
+}
+
+fn sealed_bundle_result_from_client(
+    result: mosaic_client::SealedBundleResult,
+) -> SealedBundleResult {
+    SealedBundleResult {
+        code: result.code.as_u16(),
+        sealed: result.sealed,
+        signature: result.signature,
+        sharer_pubkey: result.sharer_pubkey,
+    }
+}
+
+fn opened_bundle_result_from_client(
+    result: mosaic_client::OpenedBundleResult,
+) -> OpenedBundleResult {
+    OpenedBundleResult {
+        code: result.code.as_u16(),
+        version: result.version,
+        album_id: result.album_id,
+        epoch_id: result.epoch_id,
+        recipient_pubkey: result.recipient_pubkey,
+        epoch_seed: result.epoch_seed,
+        sign_secret_seed: result.sign_secret_seed,
+        sign_public_key: result.sign_public_key,
+    }
+}
+
+fn encrypted_content_result_from_client(
+    result: mosaic_client::EncryptedContentResult,
+) -> EncryptedContentResult {
+    EncryptedContentResult {
+        code: result.code.as_u16(),
+        nonce: result.nonce,
+        ciphertext: result.ciphertext,
+    }
+}
+
+fn decrypted_content_result_from_client(
+    result: mosaic_client::DecryptedContentResult,
+) -> DecryptedContentResult {
+    DecryptedContentResult {
         code: result.code.as_u16(),
         plaintext: result.plaintext,
     }
@@ -2499,6 +3276,71 @@ fn js_encrypted_shard_result_from_rust(result: EncryptedShardResult) -> JsEncryp
 
 fn js_decrypted_shard_result_from_rust(result: DecryptedShardResult) -> JsDecryptedShardResult {
     JsDecryptedShardResult {
+        code: result.code,
+        plaintext: result.plaintext,
+    }
+}
+
+fn js_auth_keypair_result_from_rust(result: AuthKeypairResult) -> JsAuthKeypairResult {
+    JsAuthKeypairResult {
+        code: result.code,
+        auth_public_key: result.auth_public_key,
+    }
+}
+
+fn js_link_keys_result_from_rust(result: LinkKeysResult) -> JsLinkKeysResult {
+    JsLinkKeysResult {
+        code: result.code,
+        link_id: result.link_id,
+        wrapping_key: result.wrapping_key,
+    }
+}
+
+fn js_wrapped_tier_key_result_from_rust(result: WrappedTierKeyResult) -> JsWrappedTierKeyResult {
+    JsWrappedTierKeyResult {
+        code: result.code,
+        tier: result.tier,
+        nonce: result.nonce,
+        encrypted_key: result.encrypted_key,
+    }
+}
+
+fn js_sealed_bundle_result_from_rust(result: SealedBundleResult) -> JsSealedBundleResult {
+    JsSealedBundleResult {
+        code: result.code,
+        sealed: result.sealed,
+        signature: result.signature,
+        sharer_pubkey: result.sharer_pubkey,
+    }
+}
+
+fn js_opened_bundle_result_from_rust(result: OpenedBundleResult) -> JsOpenedBundleResult {
+    JsOpenedBundleResult {
+        code: result.code,
+        version: result.version,
+        album_id: result.album_id,
+        epoch_id: result.epoch_id,
+        recipient_pubkey: result.recipient_pubkey,
+        epoch_seed: result.epoch_seed,
+        sign_secret_seed: result.sign_secret_seed,
+        sign_public_key: result.sign_public_key,
+    }
+}
+
+fn js_encrypted_content_result_from_rust(
+    result: EncryptedContentResult,
+) -> JsEncryptedContentResult {
+    JsEncryptedContentResult {
+        code: result.code,
+        nonce: result.nonce,
+        ciphertext: result.ciphertext,
+    }
+}
+
+fn js_decrypted_content_result_from_rust(
+    result: DecryptedContentResult,
+) -> JsDecryptedContentResult {
+    JsDecryptedContentResult {
         code: result.code,
         plaintext: result.plaintext,
     }
