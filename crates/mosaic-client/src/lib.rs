@@ -950,36 +950,127 @@ fn encrypt_shard_with_epoch_handle_result(
     tier_byte: u8,
 ) -> Result<EncryptedShardResult, ClientError> {
     let tier = ShardTier::try_from(tier_byte).map_err(client_error_from_domain)?;
-    with_epoch(handle, |record| {
-        let tier_key = get_tier_key(&record.key_material, tier);
-        let encrypted = encrypt_shard(plaintext, tier_key, record.epoch_id, shard_index, tier)
-            .map_err(client_error_from_crypto)?;
-        Ok(EncryptedShardResult::ok(encrypted.bytes, encrypted.sha256))
-    })
+    let (epoch_id, key_bytes) = clone_tier_key_for_handle(handle, tier)?;
+    let mut key_bytes = key_bytes;
+    let tier_key =
+        SecretKey::from_bytes(key_bytes.as_mut_slice()).map_err(client_error_from_crypto)?;
+    let encrypted = encrypt_shard(plaintext, &tier_key, epoch_id, shard_index, tier)
+        .map_err(client_error_from_crypto)?;
+    Ok(EncryptedShardResult::ok(encrypted.bytes, encrypted.sha256))
 }
 
 fn decrypt_shard_with_epoch_handle_result(
     handle: u64,
     envelope_bytes: &[u8],
 ) -> Result<DecryptedShardResult, ClientError> {
-    with_epoch(handle, |record| {
-        let header_bytes = if envelope_bytes.len() >= mosaic_domain::SHARD_ENVELOPE_HEADER_LEN {
-            &envelope_bytes[..mosaic_domain::SHARD_ENVELOPE_HEADER_LEN]
-        } else {
-            envelope_bytes
-        };
-        let header = ShardEnvelopeHeader::parse(header_bytes).map_err(client_error_from_domain)?;
-        if header.epoch_id() != record.epoch_id {
-            return Err(ClientError::new(
-                ClientErrorCode::AuthenticationFailed,
-                "envelope epoch does not match epoch handle",
-            ));
-        }
+    // Handle lookup happens before envelope parsing so a missing or closed
+    // handle still returns `EpochHandleNotFound` regardless of malformed
+    // envelope bytes. The registry mutex is released before the AEAD step.
+    let key_clone = clone_epoch_keys_for_handle(handle)?;
 
-        let tier_key = get_tier_key(&record.key_material, header.tier());
-        let plaintext =
-            decrypt_shard(envelope_bytes, tier_key).map_err(client_error_from_crypto)?;
-        Ok(DecryptedShardResult::ok(plaintext.to_vec()))
+    let header_bytes = if envelope_bytes.len() >= mosaic_domain::SHARD_ENVELOPE_HEADER_LEN {
+        &envelope_bytes[..mosaic_domain::SHARD_ENVELOPE_HEADER_LEN]
+    } else {
+        envelope_bytes
+    };
+    let header = ShardEnvelopeHeader::parse(header_bytes).map_err(client_error_from_domain)?;
+    if header.epoch_id() != key_clone.epoch_id {
+        return Err(ClientError::new(
+            ClientErrorCode::AuthenticationFailed,
+            "envelope epoch does not match epoch handle",
+        ));
+    }
+
+    let mut key_bytes = match header.tier() {
+        ShardTier::Thumbnail => key_clone.thumb_key,
+        ShardTier::Preview => key_clone.preview_key,
+        ShardTier::Original => key_clone.full_key,
+    };
+    let tier_key =
+        SecretKey::from_bytes(key_bytes.as_mut_slice()).map_err(client_error_from_crypto)?;
+    let plaintext =
+        decrypt_shard(envelope_bytes, &tier_key).map_err(client_error_from_crypto)?;
+    Ok(DecryptedShardResult::ok(plaintext.to_vec()))
+}
+
+/// Briefly takes the epoch registry lock to copy the requested tier key bytes
+/// into a `Zeroizing<Vec<u8>>` and returns the epoch id, then drops the guard
+/// before the caller-visible AEAD work runs. The returned key bytes are wiped
+/// on drop, and the caller is expected to reconstruct a fresh `SecretKey` via
+/// `SecretKey::from_bytes`.
+///
+/// Used by encrypt, where the tier is known up-front.
+fn clone_tier_key_for_handle(
+    handle: u64,
+    tier: ShardTier,
+) -> Result<(u32, Zeroizing<Vec<u8>>), ClientError> {
+    let registry = epoch_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "epoch registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::EpochHandleNotFound,
+                "epoch handle is not open",
+            )
+        })?;
+
+    let tier_key = get_tier_key(&record.key_material, tier);
+    let mut bytes = Zeroizing::new(vec![0_u8; tier_key.as_bytes().len()]);
+    bytes.copy_from_slice(tier_key.as_bytes());
+    Ok((record.epoch_id, bytes))
+}
+
+/// Lock-released clone of all shard-tier keys for an epoch handle, used by
+/// decrypt where the tier is determined by parsing the envelope after the
+/// registry lookup. Wiping happens on drop via `Zeroizing`.
+struct EpochKeyClone {
+    epoch_id: u32,
+    thumb_key: Zeroizing<Vec<u8>>,
+    preview_key: Zeroizing<Vec<u8>>,
+    full_key: Zeroizing<Vec<u8>>,
+}
+
+fn clone_epoch_keys_for_handle(handle: u64) -> Result<EpochKeyClone, ClientError> {
+    let registry = epoch_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "epoch registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::EpochHandleNotFound,
+                "epoch handle is not open",
+            )
+        })?;
+
+    let thumb = get_tier_key(&record.key_material, ShardTier::Thumbnail);
+    let preview = get_tier_key(&record.key_material, ShardTier::Preview);
+    let full = get_tier_key(&record.key_material, ShardTier::Original);
+
+    let mut thumb_bytes = Zeroizing::new(vec![0_u8; thumb.as_bytes().len()]);
+    thumb_bytes.copy_from_slice(thumb.as_bytes());
+    let mut preview_bytes = Zeroizing::new(vec![0_u8; preview.as_bytes().len()]);
+    preview_bytes.copy_from_slice(preview.as_bytes());
+    let mut full_bytes = Zeroizing::new(vec![0_u8; full.as_bytes().len()]);
+    full_bytes.copy_from_slice(full.as_bytes());
+
+    Ok(EpochKeyClone {
+        epoch_id: record.epoch_id,
+        thumb_key: thumb_bytes,
+        preview_key: preview_bytes,
+        full_key: full_bytes,
     })
 }
 
@@ -1042,30 +1133,6 @@ fn close_child_handles_for_account(account_handle: u64) -> Result<(), ClientErro
         }
     });
     Ok(())
-}
-
-fn with_epoch<T>(
-    handle: u64,
-    action: impl FnOnce(&EpochRecord) -> Result<T, ClientError>,
-) -> Result<T, ClientError> {
-    let registry = epoch_registry();
-    let guard = registry.lock().map_err(|_| {
-        ClientError::new(
-            ClientErrorCode::InternalStatePoisoned,
-            "epoch registry lock was poisoned",
-        )
-    })?;
-    let record = guard
-        .get(&handle)
-        .filter(|record| record.open)
-        .ok_or_else(|| {
-            ClientError::new(
-                ClientErrorCode::EpochHandleNotFound,
-                "epoch handle is not open",
-            )
-        })?;
-
-    action(record)
 }
 
 fn with_identity<T>(

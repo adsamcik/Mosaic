@@ -4,6 +4,14 @@ use crate::{ClientError, ClientErrorCode};
 
 pub const CLIENT_CORE_SNAPSHOT_SCHEMA_VERSION: u16 = 1;
 
+/// Hard upper bound on `max_retry_count` accepted by request and snapshot
+/// validators.
+///
+/// A platform bug or replayed snapshot could otherwise supply `u32::MAX`,
+/// allowing the state machine to retry indefinitely. 64 is well above any
+/// reasonable upload/sync retry budget; tests in this crate use values up to 3.
+pub const MAX_RETRY_COUNT_LIMIT: u32 = 64;
+
 const MAX_SAFE_TEXT_LEN: usize = 256;
 const MAX_PLANNED_SHARDS: usize = 10_000;
 const DEFAULT_RETRY_AFTER_MS: u64 = 1_000;
@@ -1073,6 +1081,7 @@ fn validate_upload_request(request: &UploadJobRequest) -> Result<(), ClientError
     validate_safe_text(&request.upload_id)?;
     validate_safe_text(&request.album_id)?;
     validate_safe_text(&request.asset_id)?;
+    validate_request_max_retry_count(request.max_retry_count)?;
     Ok(())
 }
 
@@ -1087,6 +1096,7 @@ fn validate_upload_snapshot(snapshot: &UploadJobSnapshot) -> Result<(), ClientEr
     validate_safe_text(&snapshot.upload_id)?;
     validate_safe_text(&snapshot.album_id)?;
     validate_safe_text(&snapshot.asset_id)?;
+    validate_snapshot_retry_bounds(snapshot.retry.attempt_count, snapshot.retry.max_attempts)?;
     validate_prepared_shards(&snapshot.planned_shards)?;
     if usize::try_from(snapshot.planned_shard_count)
         .map_err(|_| invalid_snapshot_error("snapshot validation failed"))?
@@ -1182,7 +1192,8 @@ fn validate_upload_sync_confirmation(
 fn validate_album_sync_request(request: &AlbumSyncRequest) -> Result<(), ClientError> {
     validate_safe_text(&request.sync_id)?;
     validate_safe_text(&request.album_id)?;
-    validate_optional_safe_text(&request.initial_page_token)
+    validate_optional_safe_text(&request.initial_page_token)?;
+    validate_request_max_retry_count(request.max_retry_count)
 }
 
 fn validate_album_sync_snapshot(snapshot: &AlbumSyncSnapshot) -> Result<(), ClientError> {
@@ -1196,6 +1207,7 @@ fn validate_album_sync_snapshot(snapshot: &AlbumSyncSnapshot) -> Result<(), Clie
     validate_safe_text(&snapshot.album_id)?;
     validate_optional_safe_text(&snapshot.initial_page_token)?;
     validate_optional_safe_text(&snapshot.next_page_token)?;
+    validate_snapshot_retry_bounds(snapshot.retry.attempt_count, snapshot.retry.max_attempts)?;
     if let Some(page) = &snapshot.current_page {
         validate_sync_page_summary(page)?;
     }
@@ -1255,6 +1267,29 @@ fn invalid_transition_error(message: &'static str) -> ClientError {
 
 fn invalid_snapshot_error(message: &'static str) -> ClientError {
     ClientError::new(ClientErrorCode::ClientCoreInvalidSnapshot, message)
+}
+
+fn validate_request_max_retry_count(max_retry_count: u32) -> Result<(), ClientError> {
+    if max_retry_count > MAX_RETRY_COUNT_LIMIT {
+        return Err(ClientError::new(
+            ClientErrorCode::InvalidInputLength,
+            "max_retry_count exceeds MAX_RETRY_COUNT_LIMIT",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_snapshot_retry_bounds(
+    attempt_count: u32,
+    max_attempts: u32,
+) -> Result<(), ClientError> {
+    if max_attempts > MAX_RETRY_COUNT_LIMIT {
+        return Err(invalid_snapshot_error("snapshot validation failed"));
+    }
+    if attempt_count > max_attempts {
+        return Err(invalid_snapshot_error("snapshot validation failed"));
+    }
+    Ok(())
 }
 
 fn sync_page_did_not_advance_error() -> ClientError {

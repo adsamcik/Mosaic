@@ -11,10 +11,11 @@
 
 use mosaic_client::{
     AlbumSyncEffect, AlbumSyncEvent, AlbumSyncPhase, AlbumSyncRequest, AlbumSyncRetryMetadata,
-    AlbumSyncSnapshot, ClientErrorCode, CompletedShardRef, EncryptedShardRef, ManifestReceipt,
-    PendingShardRef, SyncPageSummary, UploadJobEffect, UploadJobEvent, UploadJobPhase,
-    UploadJobSnapshot, UploadRetryMetadata, UploadShardSlot, UploadSyncConfirmation,
-    advance_album_sync, advance_upload_job, album_sync_snapshot_schema_version,
+    AlbumSyncSnapshot, ClientErrorCode, CompletedShardRef, EncryptedShardRef, MAX_RETRY_COUNT_LIMIT,
+    ManifestReceipt, PendingShardRef, SyncPageSummary, UploadJobEffect, UploadJobEvent,
+    UploadJobPhase, UploadJobRequest, UploadJobSnapshot, UploadRetryMetadata, UploadShardSlot,
+    UploadSyncConfirmation, advance_album_sync, advance_upload_job,
+    album_sync_snapshot_schema_version, new_album_sync, new_upload_job,
     upload_snapshot_schema_version,
 };
 
@@ -823,4 +824,162 @@ fn upload_failed_transition_via_event_in_active_phase() {
         transition.snapshot.failure_code,
         Some(ClientErrorCode::InvalidPublicKey)
     );
+}
+
+// --- L3: max_retry_count cap validation ---------------------------------
+
+fn upload_request_with_cap(cap: u32) -> UploadJobRequest {
+    UploadJobRequest {
+        local_job_id: safe_id("job"),
+        upload_id: safe_id("upload"),
+        album_id: safe_id("album"),
+        asset_id: safe_id("asset"),
+        max_retry_count: cap,
+    }
+}
+
+fn album_sync_request_with_cap(cap: u32) -> AlbumSyncRequest {
+    AlbumSyncRequest {
+        sync_id: safe_id("sync"),
+        album_id: safe_id("album"),
+        initial_page_token: None,
+        max_retry_count: cap,
+    }
+}
+
+#[test]
+fn upload_request_rejects_max_retry_count_above_limit() {
+    let error = match new_upload_job(upload_request_with_cap(MAX_RETRY_COUNT_LIMIT + 1)) {
+        Ok(snapshot) => panic!("oversized max_retry_count should fail: {snapshot:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::InvalidInputLength);
+}
+
+#[test]
+fn upload_request_rejects_u32_max_retry_count() {
+    let error = match new_upload_job(upload_request_with_cap(u32::MAX)) {
+        Ok(snapshot) => panic!("u32::MAX max_retry_count should fail: {snapshot:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::InvalidInputLength);
+}
+
+#[test]
+fn upload_request_accepts_max_retry_count_at_limit() {
+    let snapshot = match new_upload_job(upload_request_with_cap(MAX_RETRY_COUNT_LIMIT)) {
+        Ok(snapshot) => snapshot,
+        Err(error) => panic!("cap at limit should succeed: {error:?}"),
+    };
+    assert_eq!(snapshot.retry.max_attempts, MAX_RETRY_COUNT_LIMIT);
+}
+
+#[test]
+fn album_sync_request_rejects_max_retry_count_above_limit() {
+    let error = match new_album_sync(album_sync_request_with_cap(MAX_RETRY_COUNT_LIMIT + 1)) {
+        Ok(snapshot) => panic!("oversized max_retry_count should fail: {snapshot:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::InvalidInputLength);
+}
+
+#[test]
+fn album_sync_request_rejects_u32_max_retry_count() {
+    let error = match new_album_sync(album_sync_request_with_cap(u32::MAX)) {
+        Ok(snapshot) => panic!("u32::MAX max_retry_count should fail: {snapshot:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::InvalidInputLength);
+}
+
+#[test]
+fn upload_snapshot_rejects_oversized_max_attempts() {
+    // Tampered snapshot: cap above MAX_RETRY_COUNT_LIMIT must be rejected
+    // when the snapshot is replayed into advance_upload_job.
+    let mut snapshot = upload_snapshot(UploadJobPhase::Queued, Vec::new());
+    snapshot.retry.max_attempts = MAX_RETRY_COUNT_LIMIT + 1;
+    let error = match advance_upload_job(&snapshot, UploadJobEvent::StartRequested) {
+        Ok(transition) => panic!("oversized max_attempts should be rejected: {transition:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::ClientCoreInvalidSnapshot);
+}
+
+#[test]
+fn upload_snapshot_rejects_u32_max_max_attempts() {
+    let mut snapshot = upload_snapshot(UploadJobPhase::Queued, Vec::new());
+    snapshot.retry.max_attempts = u32::MAX;
+    let error = match advance_upload_job(&snapshot, UploadJobEvent::StartRequested) {
+        Ok(transition) => panic!("u32::MAX max_attempts should be rejected: {transition:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::ClientCoreInvalidSnapshot);
+}
+
+#[test]
+fn upload_snapshot_rejects_attempt_count_above_max_attempts() {
+    let mut snapshot = upload_snapshot(UploadJobPhase::Queued, Vec::new());
+    snapshot.retry.max_attempts = 4;
+    snapshot.retry.attempt_count = 5;
+    let error = match advance_upload_job(&snapshot, UploadJobEvent::StartRequested) {
+        Ok(transition) => {
+            panic!("attempt_count above max_attempts should be rejected: {transition:?}")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::ClientCoreInvalidSnapshot);
+}
+
+#[test]
+fn album_sync_snapshot_rejects_oversized_max_attempts() {
+    let mut snapshot = sync_snapshot(AlbumSyncPhase::Idle);
+    snapshot.retry.max_attempts = MAX_RETRY_COUNT_LIMIT + 1;
+    let error = match advance_album_sync(
+        &snapshot,
+        AlbumSyncEvent::SyncRequested {
+            request: Some(album_sync_request_with_cap(1)),
+        },
+    ) {
+        Ok(transition) => panic!("oversized max_attempts should be rejected: {transition:?}"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::ClientCoreInvalidSnapshot);
+}
+
+#[test]
+fn album_sync_snapshot_rejects_attempt_count_above_max_attempts() {
+    let mut snapshot = sync_snapshot(AlbumSyncPhase::Idle);
+    snapshot.retry.max_attempts = 4;
+    snapshot.retry.attempt_count = 5;
+    let error = match advance_album_sync(
+        &snapshot,
+        AlbumSyncEvent::SyncRequested {
+            request: Some(album_sync_request_with_cap(1)),
+        },
+    ) {
+        Ok(transition) => {
+            panic!("attempt_count above max_attempts should be rejected: {transition:?}")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::ClientCoreInvalidSnapshot);
+}
+
+#[test]
+fn sync_requested_event_with_oversized_request_cap_is_rejected() {
+    // Replay path: an in-progress AlbumSync receives a SyncRequested event
+    // with a tampered request whose max_retry_count exceeds the cap.
+    let snapshot = sync_snapshot(AlbumSyncPhase::Idle);
+    let error = match advance_album_sync(
+        &snapshot,
+        AlbumSyncEvent::SyncRequested {
+            request: Some(album_sync_request_with_cap(MAX_RETRY_COUNT_LIMIT + 1)),
+        },
+    ) {
+        Ok(transition) => {
+            panic!("oversized request cap on SyncRequested should be rejected: {transition:?}")
+        }
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::InvalidInputLength);
 }
