@@ -2,6 +2,7 @@ import { getCryptoClient } from '../crypto-client';
 import { createLogger } from '../logger';
 import { getMimeType, isSupportedVideoType } from '../mime-type-detection';
 import { isSupportedImageType } from '../thumbnail-generator';
+import { fileIdentity, taskIdentity } from '../upload-errors';
 import { UploadPersistence } from './upload-persistence';
 import { tusUpload as tusUploadFn } from './tus-upload';
 import { processTieredUpload } from './tiered-upload-handler';
@@ -61,16 +62,18 @@ class UploadQueue {
     epochId: number,
     readKey: Uint8Array,
   ): Promise<string> {
-    log.info(
-      `UploadQueue.add called: file=${file.name}, albumId=${albumId}, epochId=${epochId}`,
-    );
+    log.info('UploadQueue.add called', {
+      ...fileIdentity(file),
+      albumId,
+      epochId,
+    });
     if (!this.persistence.isInitialized) {
       log.error('Upload queue not initialized - db is null');
       throw new Error('Upload queue not initialized');
     }
 
     const taskId = crypto.randomUUID();
-    log.info(`Created task ID: ${taskId}`);
+    log.info('Created task ID', { taskId });
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
     // Persist task state for resume support
@@ -104,9 +107,10 @@ class UploadQueue {
     };
 
     this.queue.push(task);
-    log.info(
-      `Task ${taskId} pushed to queue, queue length: ${this.queue.length}, starting processQueue`,
-    );
+    log.info('Task pushed to queue', {
+      taskId,
+      queueLength: this.queue.length,
+    });
     void this.processQueue();
 
     return taskId;
@@ -195,9 +199,7 @@ class UploadQueue {
   }
 
   private async processTask(task: UploadTask): Promise<void> {
-    log.info(
-      `Processing task ${task.id}: ${task.file.name} (${task.file.type}, ${task.file.size} bytes)`,
-    );
+    log.info('Processing task', taskIdentity(task));
     const cryptoClient = await getCryptoClient();
     const ctx = this.getHandlerContext();
 
@@ -210,22 +212,23 @@ class UploadQueue {
       // This is more reliable than file.type for formats like HEIC
       const detectedMimeType = await getMimeType(task.file);
       task.detectedMimeType = detectedMimeType;
-      log.info(
-        `Detected MIME type: ${detectedMimeType} (browser reported: ${task.file.type})`,
-      );
+      log.info('Detected MIME type', {
+        ...taskIdentity(task),
+        detectedMimeType,
+      });
 
       // Route to the appropriate upload path based on detected file type
       if (isSupportedVideoType(detectedMimeType)) {
         // Video upload: extract frame thumbnail + chunked original
-        log.info(`Using video upload for: ${task.file.name}`);
+        log.info('Using video upload path', taskIdentity(task));
         await processVideoUpload(task, ctx);
       } else if (isSupportedImageType(detectedMimeType)) {
         // Tiered image upload: thumb, preview, and original shards
-        log.info(`Using tiered upload for image: ${task.file.name}`);
+        log.info('Using tiered upload path for image', taskIdentity(task));
         await processTieredUpload(task, ctx);
       } else {
         // Legacy flow for unsupported formats - chunked original only
-        log.info(`Using legacy upload for non-image: ${task.file.name}`);
+        log.info('Using legacy upload path for non-image', taskIdentity(task));
         await processLegacyUpload(task, cryptoClient, ctx);
       }
     } catch (error) {

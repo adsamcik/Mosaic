@@ -10,6 +10,7 @@ import {
   generateTieredImages,
   encryptTieredImages,
 } from '../thumbnail-generator';
+import { taskIdentity } from '../upload-errors';
 import type { TieredShardIds } from '../../workers/types';
 import type {
   UploadTask,
@@ -28,15 +29,15 @@ export async function processTieredUpload(
   task: UploadTask,
   ctx: UploadHandlerContext,
 ): Promise<void> {
-  log.info(`processTieredUpload started for ${task.file.name}`);
+  log.info('processTieredUpload started', taskIdentity(task));
   try {
     // Import deriveTierKeys to construct full EpochKey
     const { deriveTierKeys } = await import('@mosaic/crypto');
-    log.info(`deriveTierKeys imported successfully`);
+    log.info('deriveTierKeys imported successfully', taskIdentity(task));
 
     // Derive tier keys from epochSeed (stored as readKey)
     const tierKeys = deriveTierKeys(task.readKey);
-    log.info(`Tier keys derived successfully`);
+    log.info('Tier keys derived successfully', taskIdentity(task));
 
     // Construct full EpochKey for encryption
     const epochKey = {
@@ -56,11 +57,17 @@ export async function processTieredUpload(
     task.currentAction = 'converting';
     ctx.onProgress?.(task);
 
-    log.info(`Starting image conversion for ${task.file.name}`);
+    log.info('Starting image conversion', taskIdentity(task));
     const tieredImages = await generateTieredImages(task.file);
-    log.info(
-      `Images converted: thumb=${tieredImages.thumbnail.width}x${tieredImages.thumbnail.height}, preview=${tieredImages.preview.width}x${tieredImages.preview.height}, original=${tieredImages.originalWidth}x${tieredImages.originalHeight}`,
-    );
+    log.info('Images converted', {
+      ...taskIdentity(task),
+      thumbWidth: tieredImages.thumbnail.width,
+      thumbHeight: tieredImages.thumbnail.height,
+      previewWidth: tieredImages.preview.width,
+      previewHeight: tieredImages.preview.height,
+      originalWidth: tieredImages.originalWidth,
+      originalHeight: tieredImages.originalHeight,
+    });
 
     // H5: Strip EXIF / IPTC metadata from the original-tier bytes before
     // encryption. The thumbnail and preview tiers are always re-encoded
@@ -102,12 +109,12 @@ export async function processTieredUpload(
     task.currentAction = 'encrypting';
     ctx.onProgress?.(task);
 
-    log.info(`Starting encryption for ${task.file.name}`);
+    log.info('Starting encryption', taskIdentity(task));
     const tieredResult = await encryptTieredImages(tieredImages, epochKey, 0);
-    log.info(`Tiered shards encrypted successfully`);
+    log.info('Tiered shards encrypted successfully', taskIdentity(task));
 
     // Extract dimensions and thumbnail for manifest
-    log.info(`Extracting dimensions for manifest`);
+    log.info('Extracting dimensions for manifest', taskIdentity(task));
     task.originalWidth = tieredResult.originalWidth;
     task.originalHeight = tieredResult.originalHeight;
     task.thumbWidth = tieredResult.thumbnail.width;
@@ -115,31 +122,38 @@ export async function processTieredUpload(
 
     // Generate base64 thumbnail for embedded manifest preview
     // Use the thumbnail data before encryption for fast gallery loading
-    log.info(`Generating base64 thumbnail for manifest`);
+    log.info('Generating base64 thumbnail for manifest', taskIdentity(task));
     try {
       const quality = getThumbnailQualityValue();
       const thumbResult = await generateThumbnail(task.file, { quality });
       task.thumbnailBase64 = uint8ArrayToBase64(thumbResult.data);
       task.thumbhash = thumbResult.thumbhash;
-      log.info(`Base64 thumbnail generated successfully`);
+      log.info('Base64 thumbnail generated successfully', taskIdentity(task));
     } catch (thumbError) {
-      log.error('Thumbnail generation for manifest failed', thumbError);
+      log.error(
+        'Thumbnail generation for manifest failed',
+        thumbError,
+        taskIdentity(task),
+      );
     }
 
     // Step 3: Upload all three tiers
-    log.info(`Setting task action to uploading`);
+    log.info('Setting task action to uploading', taskIdentity(task));
     task.currentAction = 'uploading';
     ctx.onProgress?.(task);
 
     // Upload thumbnail shard (tier 1)
-    log.info(`Starting TUS upload for ${task.file.name}`);
+    log.info('Starting TUS upload', taskIdentity(task));
     const thumbShardId = await ctx.tusUpload(
       task.albumId,
       tieredResult.thumbnail.encrypted.ciphertext,
       tieredResult.thumbnail.encrypted.sha256,
       0,
     );
-    log.info(`Thumbnail shard uploaded: ${thumbShardId}`);
+    log.info('Thumbnail shard uploaded', {
+      ...taskIdentity(task),
+      shardId: thumbShardId,
+    });
     task.completedShards.push({
       index: 0,
       shardId: thumbShardId,
@@ -150,7 +164,7 @@ export async function processTieredUpload(
     ctx.onProgress?.(task);
 
     // Upload preview shard (tier 2)
-    log.debug(`Uploading preview shard for ${task.file.name}`);
+    log.debug('Uploading preview shard', taskIdentity(task));
     const previewShardId = await ctx.tusUpload(
       task.albumId,
       tieredResult.preview.encrypted.ciphertext,
@@ -167,7 +181,7 @@ export async function processTieredUpload(
     ctx.onProgress?.(task);
 
     // Upload original shard (tier 3)
-    log.debug(`Uploading original shard for ${task.file.name}`);
+    log.debug('Uploading original shard', taskIdentity(task));
     const originalShardId = await ctx.tusUpload(
       task.albumId,
       tieredResult.original.encrypted.ciphertext,
@@ -225,12 +239,13 @@ export async function processTieredUpload(
 
     // Legacy shardIds for backward compatibility
     const shardIds = [thumbShardId, previewShardId, originalShardId];
-    log.info(
-      `Tiered upload complete for ${task.file.name}: ${shardIds.join(', ')}`,
-    );
+    log.info('Tiered upload complete', {
+      ...taskIdentity(task),
+      shardIds,
+    });
     await ctx.onComplete?.(task, shardIds, tieredShards);
   } catch (error) {
-    log.error(`processTieredUpload failed for ${task.file.name}:`, error);
+    log.error('processTieredUpload failed', error, taskIdentity(task));
     throw error;
   }
 }

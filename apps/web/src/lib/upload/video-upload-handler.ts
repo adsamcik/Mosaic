@@ -1,6 +1,7 @@
 import { createLogger } from '../logger';
 import { getCryptoClient } from '../crypto-client';
 import { extractVideoFrame } from '../video-frame-extractor';
+import { taskIdentity } from '../upload-errors';
 import type { TieredShardIds } from '../../workers/types';
 import type {
   UploadTask,
@@ -28,7 +29,7 @@ export async function processVideoUpload(
   task: UploadTask,
   ctx: UploadHandlerContext,
 ): Promise<void> {
-  log.info(`processVideoUpload started for ${task.file.name}`);
+  log.info('processVideoUpload started', taskIdentity(task));
 
   // Step 1: Extract video frame + metadata (0-10% progress)
   task.currentAction = 'converting';
@@ -38,16 +39,20 @@ export async function processVideoUpload(
   let frameResult: Awaited<ReturnType<typeof extractVideoFrame>>;
   try {
     frameResult = await extractVideoFrame(task.file);
-    log.info(
-      `Video frame extracted: ${frameResult.metadata.width}x${frameResult.metadata.height}, ` +
-      `duration=${frameResult.metadata.duration}s, codec=${frameResult.metadata.codec ?? 'unknown'}`,
-    );
+    log.info('Video frame extracted', {
+      ...taskIdentity(task),
+      width: frameResult.metadata.width,
+      height: frameResult.metadata.height,
+      duration: frameResult.metadata.duration,
+      codec: frameResult.metadata.codec ?? 'unknown',
+    });
   } catch (frameError: unknown) {
     // Frame extraction failed — fall back to legacy chunked upload without thumbnail
     const errMsg = frameError instanceof Error ? frameError.message : String(frameError);
-    log.warn(
-      `Video frame extraction failed for ${task.file.name}, falling back to legacy upload: ${errMsg}`,
-    );
+    log.warn('Video frame extraction failed; falling back to legacy upload', {
+      ...taskIdentity(task),
+      error: errMsg,
+    });
     task.videoMetadata = {
       isVideo: true,
       duration: 0,
@@ -105,7 +110,10 @@ export async function processVideoUpload(
     const thumbBuffer = await frameResult.thumbnailBlob.arrayBuffer();
     const thumbData = new Uint8Array(thumbBuffer);
 
-    log.info(`Encrypting video thumbnail (${thumbData.byteLength} bytes)`);
+    log.info('Encrypting video thumbnail', {
+      ...taskIdentity(task),
+      thumbBytes: thumbData.byteLength,
+    });
     const thumbEncrypted = await encryptShard(
       thumbData,
       tierKeys.thumbKey,
@@ -124,7 +132,10 @@ export async function processVideoUpload(
       thumbEncrypted.sha256,
       0,
     );
-    log.info(`Video thumbnail shard uploaded: ${thumbShardId}`);
+    log.info('Video thumbnail shard uploaded', {
+      ...taskIdentity(task),
+      shardId: thumbShardId,
+    });
 
     task.completedShards.push({
       index: 0,
@@ -187,9 +198,12 @@ export async function processVideoUpload(
       task.progress = 0.2 + ((i + 1) / totalChunks) * 0.75;
       ctx.onProgress?.(task);
 
-      log.debug(
-        `Video chunk ${i + 1}/${totalChunks} uploaded for ${task.file.name}: ${chunkShardId}`,
-      );
+      log.debug('Video chunk uploaded', {
+        ...taskIdentity(task),
+        chunkIndex: i + 1,
+        totalChunks,
+        shardId: chunkShardId,
+      });
     }
 
     // Step 4: Build tiered shard references for manifest (95-100%)
@@ -235,13 +249,15 @@ export async function processVideoUpload(
 
     // Legacy shardIds: thumbnail + all original chunks
     const allShardIds = [thumbShardId, ...originalShards.map((s) => s.shardId)];
-    log.info(
-      `Video upload complete for ${task.file.name}: ${allShardIds.length} shards ` +
-      `(1 thumbnail + ${originalShards.length} original chunks)`,
-    );
+    log.info('Video upload complete', {
+      ...taskIdentity(task),
+      shardCount: allShardIds.length,
+      thumbnailShards: 1,
+      originalChunks: originalShards.length,
+    });
     await ctx.onComplete?.(task, allShardIds, tieredShards);
   } catch (error) {
-    log.error(`processVideoUpload failed for ${task.file.name}:`, error);
+    log.error('processVideoUpload failed', error, taskIdentity(task));
     throw error;
   }
 }
