@@ -3,7 +3,16 @@
  *
  * Real implementation of MosaicApi for production use.
  * Communicates with the .NET backend via fetch.
+ *
+ * Every typed response is runtime-validated against a Zod schema declared
+ * in `./api-schemas` before it leaves `apiRequest`. This is M2: a hardening
+ * step against a compromised backend, MITM, or reverse-proxy bug that
+ * could otherwise inject extra fields (e.g. `isAdmin: true`), drop
+ * required ones, or shift types. See `./api-schemas.ts` for the rationale
+ * behind permissive (non-strict) object parsing.
  */
+
+import { z } from 'zod';
 
 import type {
   MosaicApi,
@@ -52,6 +61,41 @@ import type {
   AdminStatsResponse,
   NearLimitsResponse,
 } from './api-types';
+import {
+  AdminAlbumLimitsSchema,
+  AdminAlbumListEnvelopeSchema,
+  AdminStatsResponseSchema,
+  AdminUserListEnvelopeSchema,
+  AdminUserQuotaSchema,
+  AddShareLinkEpochKeysResponseSchema,
+  AlbumContentResponseSchema,
+  AlbumListSchema,
+  AlbumMemberListSchema,
+  AlbumMemberSchema,
+  AlbumSchema,
+  EpochKeyRecordListSchema,
+  EpochKeyRecordSchema,
+  HealthResponseSchema,
+  LinkAccessResponseSchema,
+  LinkEpochKeyResponseListSchema,
+  ManifestCreatedSchema,
+  ManifestMetadataUpdatedSchema,
+  ManifestRecordSchema,
+  NearLimitsResponseSchema,
+  QuotaDefaultsSchema,
+  RenameAlbumResponseSchema,
+  ShareLinkPhotoResponseListSchema,
+  ShareLinkResponseListSchema,
+  ShareLinkResponseSchema,
+  ShareLinkWithSecretResponseListSchema,
+  SyncResponseSchema,
+  UpdateDescriptionResponseSchema,
+  UserPublicSchema,
+  UserSchema,
+} from './api-schemas';
+import { createLogger } from './logger';
+
+const log = createLogger('ApiClient');
 
 // =============================================================================
 // API Configuration
@@ -83,13 +127,27 @@ interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  /**
+   * Optional Zod schema. When provided, the parsed JSON response is
+   * validated against the schema and rejected (via {@link ApiError}) on
+   * mismatch. See `./api-schemas.ts` for available schemas.
+   *
+   * Typed as `z.ZodTypeAny` rather than `z.ZodType<T>` to keep the
+   * inferred-output side of Zod loosely coupled to the caller-chosen
+   * generic `T`. The schema is the runtime contract; `T` is the
+   * compile-time contract. They describe the same JSON shape, but Zod's
+   * `.optional()` widens inferred types to `T | undefined`, which would
+   * conflict with `exactOptionalPropertyTypes: true` if we tried to bind
+   * them directly.
+   */
+  schema?: z.ZodTypeAny;
 }
 
 async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { method = 'GET', body, headers = {}, signal } = options;
+  const { method = 'GET', body, headers = {}, signal, schema } = options;
 
   const requestHeaders: Record<string, string> = {
     ...headers,
@@ -127,7 +185,28 @@ async function apiRequest<T>(
     return undefined as T;
   }
 
-  return response.json();
+  const json: unknown = await response.json();
+
+  if (schema !== undefined) {
+    const parsed = schema.safeParse(json);
+    if (!parsed.success) {
+      // Never log the raw response body — it may contain ciphertext or
+      // tokens. The Zod issues array contains paths and expected types
+      // only, no values, so it's safe to log.
+      log.error('API response validation failed', {
+        path,
+        issues: parsed.error.issues,
+      });
+      throw new ApiError(
+        500,
+        'Invalid response shape',
+        JSON.stringify(parsed.error.issues),
+      );
+    }
+    return parsed.data as T;
+  }
+
+  return json as T;
 }
 
 /**
@@ -184,48 +263,54 @@ export function createApiClient(): MosaicApi {
     // Health
     // =========================================================================
     async getHealth(): Promise<HealthResponse> {
-      return apiRequest('/health');
+      return apiRequest('/health', { schema: HealthResponseSchema });
     },
 
     // =========================================================================
     // Users
     // =========================================================================
     async getCurrentUser(): Promise<User> {
-      return apiRequest('/users/me');
+      return apiRequest('/users/me', { schema: UserSchema });
     },
 
     async updateCurrentUser(request: UpdateUserRequest): Promise<User> {
       return apiRequest('/users/me', {
         method: 'PUT',
         body: request,
+        schema: UserSchema,
       });
     },
 
     async getUser(userId: string): Promise<UserPublic> {
-      return apiRequest(`/users/${userId}`);
+      return apiRequest(`/users/${userId}`, { schema: UserPublicSchema });
     },
 
     async getUserByPubkey(pubkey: string): Promise<UserPublic> {
       // URL-encode the base64 pubkey
-      return apiRequest(`/users/by-pubkey/${encodeURIComponent(pubkey)}`);
+      return apiRequest(`/users/by-pubkey/${encodeURIComponent(pubkey)}`, {
+        schema: UserPublicSchema,
+      });
     },
 
     // =========================================================================
     // Albums
     // =========================================================================
     async listAlbums(skip?: number, take?: number): Promise<Album[]> {
-      return apiRequest(`/albums${paginationQuery(skip, take)}`);
+      return apiRequest(`/albums${paginationQuery(skip, take)}`, {
+        schema: AlbumListSchema,
+      });
     },
 
     async createAlbum(request: CreateAlbumRequest): Promise<Album> {
       return apiRequest('/albums', {
         method: 'POST',
         body: request,
+        schema: AlbumSchema,
       });
     },
 
     async getAlbum(albumId: string): Promise<Album> {
-      return apiRequest(`/albums/${albumId}`);
+      return apiRequest(`/albums/${albumId}`, { schema: AlbumSchema });
     },
 
     async deleteAlbum(albumId: string): Promise<void> {
@@ -241,6 +326,7 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/name`, {
         method: 'PATCH',
         body: request,
+        schema: RenameAlbumResponseSchema,
       });
     },
 
@@ -251,6 +337,7 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/description`, {
         method: 'PATCH',
         body: request,
+        schema: UpdateDescriptionResponseSchema,
       });
     },
 
@@ -261,6 +348,7 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/expiration`, {
         method: 'PATCH',
         body: request,
+        schema: AlbumSchema,
       });
     },
 
@@ -276,7 +364,7 @@ export function createApiClient(): MosaicApi {
       if (limit !== undefined) {
         params.set('limit', String(limit));
       }
-      const requestOptions: RequestOptions = {};
+      const requestOptions: RequestOptions = { schema: SyncResponseSchema };
       if (signal !== undefined) {
         requestOptions.signal = signal;
       }
@@ -288,7 +376,9 @@ export function createApiClient(): MosaicApi {
     // Album Content
     // =========================================================================
     async getAlbumContent(albumId: string): Promise<AlbumContentResponse> {
-      return apiRequest(`/albums/${albumId}/content`);
+      return apiRequest(`/albums/${albumId}/content`, {
+        schema: AlbumContentResponseSchema,
+      });
     },
 
     async updateAlbumContent(
@@ -298,6 +388,7 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/content`, {
         method: 'PUT',
         body: request,
+        schema: AlbumContentResponseSchema,
       });
     },
 
@@ -311,6 +402,7 @@ export function createApiClient(): MosaicApi {
     ): Promise<AlbumMember[]> {
       return apiRequest(
         `/albums/${albumId}/members${paginationQuery(skip, take)}`,
+        { schema: AlbumMemberListSchema },
       );
     },
 
@@ -321,6 +413,7 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/members`, {
         method: 'POST',
         body: request,
+        schema: AlbumMemberSchema,
       });
     },
 
@@ -334,7 +427,9 @@ export function createApiClient(): MosaicApi {
     // Epoch Keys
     // =========================================================================
     async getEpochKeys(albumId: string): Promise<EpochKeyRecord[]> {
-      return apiRequest(`/albums/${albumId}/epoch-keys`);
+      return apiRequest(`/albums/${albumId}/epoch-keys`, {
+        schema: EpochKeyRecordListSchema,
+      });
     },
 
     async createEpochKey(
@@ -344,6 +439,7 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/epoch-keys`, {
         method: 'POST',
         body: request,
+        schema: EpochKeyRecordSchema,
       });
     },
 
@@ -367,11 +463,14 @@ export function createApiClient(): MosaicApi {
       return apiRequest('/manifests', {
         method: 'POST',
         body: request,
+        schema: ManifestCreatedSchema,
       });
     },
 
     async getManifest(manifestId: string): Promise<ManifestRecord> {
-      return apiRequest(`/manifests/${manifestId}`);
+      return apiRequest(`/manifests/${manifestId}`, {
+        schema: ManifestRecordSchema,
+      });
     },
 
     async updateManifestMetadata(
@@ -381,6 +480,7 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/manifests/${manifestId}/metadata`, {
         method: 'PATCH',
         body: request,
+        schema: ManifestMetadataUpdatedSchema,
       });
     },
 
@@ -427,6 +527,7 @@ export function createApiClient(): MosaicApi {
     ): Promise<ShareLinkResponse[]> {
       return apiRequest(
         `/albums/${albumId}/share-links${paginationQuery(skip, take)}`,
+        { schema: ShareLinkResponseListSchema },
       );
     },
 
@@ -437,6 +538,7 @@ export function createApiClient(): MosaicApi {
     ): Promise<ShareLinkWithSecretResponse[]> {
       return apiRequest(
         `/albums/${albumId}/share-links/with-secrets${paginationQuery(skip, take)}`,
+        { schema: ShareLinkWithSecretResponseListSchema },
       );
     },
 
@@ -447,6 +549,7 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/share-links`, {
         method: 'POST',
         body: request,
+        schema: ShareLinkResponseSchema,
       });
     },
 
@@ -463,6 +566,7 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/share-links/${linkId}/keys`, {
         method: 'POST',
         body: request,
+        schema: AddShareLinkEpochKeysResponseSchema,
       });
     },
 
@@ -474,6 +578,7 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/share-links/${linkId}/expiration`, {
         method: 'PUT',
         body: request,
+        schema: ShareLinkResponseSchema,
       });
     },
 
@@ -481,13 +586,17 @@ export function createApiClient(): MosaicApi {
     // Anonymous Share Link Access (no auth required)
     // =========================================================================
     async getShareLinkInfo(linkIdBase64: string): Promise<LinkAccessResponse> {
-      return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}`);
+      return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}`, {
+        schema: LinkAccessResponseSchema,
+      });
     },
 
     async getShareLinkKeys(
       linkIdBase64: string,
     ): Promise<LinkEpochKeyResponse[]> {
-      return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}/keys`);
+      return apiRequest(`/s/${encodeURIComponent(linkIdBase64)}/keys`, {
+        schema: LinkEpochKeyResponseListSchema,
+      });
     },
 
     async getShareLinkPhotos(
@@ -497,6 +606,7 @@ export function createApiClient(): MosaicApi {
     ): Promise<ShareLinkPhotoResponse[]> {
       return apiRequest(
         `/s/${encodeURIComponent(linkIdBase64)}/photos${paginationQuery(skip, take)}`,
+        { schema: ShareLinkPhotoResponseListSchema },
       );
     },
 
@@ -518,13 +628,16 @@ export function createApiClient(): MosaicApi {
     // Admin - Settings
     // =========================================================================
     async getQuotaDefaults(): Promise<QuotaDefaults> {
-      return apiRequest('/admin/settings/quota');
+      return apiRequest('/admin/settings/quota', {
+        schema: QuotaDefaultsSchema,
+      });
     },
 
     async updateQuotaDefaults(request: QuotaDefaults): Promise<QuotaDefaults> {
       return apiRequest('/admin/settings/quota', {
         method: 'PUT',
         body: request,
+        schema: QuotaDefaultsSchema,
       });
     },
 
@@ -534,12 +647,15 @@ export function createApiClient(): MosaicApi {
     async listUsers(skip?: number, take?: number): Promise<AdminUserResponse[]> {
       const wrapped = await apiRequest<{ users: AdminUserResponse[] }>(
         `/admin/users${paginationQuery(skip, take)}`,
+        { schema: AdminUserListEnvelopeSchema },
       );
       return wrapped.users;
     },
 
     async getUserQuota(userId: string): Promise<AdminUserQuota> {
-      return apiRequest(`/admin/users/${userId}/quota`);
+      return apiRequest(`/admin/users/${userId}/quota`, {
+        schema: AdminUserQuotaSchema,
+      });
     },
 
     async updateUserQuota(
@@ -549,12 +665,14 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/admin/users/${userId}/quota`, {
         method: 'PUT',
         body: request,
+        schema: AdminUserQuotaSchema,
       });
     },
 
     async resetUserQuota(userId: string): Promise<AdminUserQuota> {
       return apiRequest(`/admin/users/${userId}/quota`, {
         method: 'DELETE',
+        schema: AdminUserQuotaSchema,
       });
     },
 
@@ -579,12 +697,15 @@ export function createApiClient(): MosaicApi {
     ): Promise<AdminAlbumResponse[]> {
       const wrapped = await apiRequest<{ albums: AdminAlbumResponse[] }>(
         `/admin/albums${paginationQuery(skip, take)}`,
+        { schema: AdminAlbumListEnvelopeSchema },
       );
       return wrapped.albums;
     },
 
     async getAlbumLimits(albumId: string): Promise<AdminAlbumLimits> {
-      return apiRequest(`/admin/albums/${albumId}/limits`);
+      return apiRequest(`/admin/albums/${albumId}/limits`, {
+        schema: AdminAlbumLimitsSchema,
+      });
     },
 
     async updateAlbumLimits(
@@ -594,12 +715,14 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/admin/albums/${albumId}/limits`, {
         method: 'PUT',
         body: request,
+        schema: AdminAlbumLimitsSchema,
       });
     },
 
     async resetAlbumLimits(albumId: string): Promise<AdminAlbumLimits> {
       return apiRequest(`/admin/albums/${albumId}/limits`, {
         method: 'DELETE',
+        schema: AdminAlbumLimitsSchema,
       });
     },
 
@@ -607,11 +730,13 @@ export function createApiClient(): MosaicApi {
     // Admin - Stats
     // =========================================================================
     async getStats(): Promise<AdminStatsResponse> {
-      return apiRequest('/admin/stats');
+      return apiRequest('/admin/stats', { schema: AdminStatsResponseSchema });
     },
 
     async getNearLimits(): Promise<NearLimitsResponse> {
-      return apiRequest('/admin/stats/near-limits');
+      return apiRequest('/admin/stats/near-limits', {
+        schema: NearLimitsResponseSchema,
+      });
     },
   };
 }

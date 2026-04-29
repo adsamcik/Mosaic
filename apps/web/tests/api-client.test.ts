@@ -95,8 +95,8 @@ describe('base64 utilities', () => {
 
 describe('updateAlbumExpiration', () => {
   const mockAlbumResponse = {
-    id: 'album-123',
-    ownerId: 'user-456',
+    id: '0190a0d4-cffe-7a55-9b8a-94e4ad9c4e51',
+    ownerId: '0190a0d5-1234-7a55-9b8a-94e4ad9c4e52',
     currentVersion: 1,
     currentEpochId: 1,
     createdAt: new Date().toISOString(),
@@ -121,7 +121,7 @@ describe('updateAlbumExpiration', () => {
 
   it('uses PATCH method, not PUT', async () => {
     const api = getApi();
-    await api.updateAlbumExpiration('album-123', {
+    await api.updateAlbumExpiration('0190a0d4-cffe-7a55-9b8a-94e4ad9c4e51', {
       expiresAt: '2024-12-25T23:59:59Z',
       expirationWarningDays: 7,
     });
@@ -136,7 +136,7 @@ describe('updateAlbumExpiration', () => {
 
   it('calls the correct URL pattern', async () => {
     const api = getApi();
-    await api.updateAlbumExpiration('album-123', {
+    await api.updateAlbumExpiration('0190a0d4-cffe-7a55-9b8a-94e4ad9c4e51', {
       expiresAt: '2024-12-25T23:59:59Z',
       expirationWarningDays: 7,
     });
@@ -145,6 +145,136 @@ describe('updateAlbumExpiration', () => {
       string,
       RequestInit,
     ];
-    expect(url).toBe('/api/albums/album-123/expiration');
+    expect(url).toBe(
+      '/api/albums/0190a0d4-cffe-7a55-9b8a-94e4ad9c4e51/expiration',
+    );
+  });
+});
+
+// ===========================================================================
+// M2: runtime response validation
+// ---------------------------------------------------------------------------
+// Verifies that apiRequest rejects malformed responses (compromised
+// backend / MITM / proxy bug) with ApiError(500, 'Invalid response shape')
+// and accepts well-formed ones, stripping unknown fields.
+// ===========================================================================
+
+const VALID_USER = {
+  id: '0190a0d4-cffe-7a55-9b8a-94e4ad9c4e51',
+  authSub: 'oidc:42',
+  identityPubkey: 'YWJjZGVmZ2hpamtsbW5vcA==',
+  createdAt: '2024-12-25T23:59:59Z',
+  isAdmin: false,
+} as const;
+
+describe('apiRequest response validation (M2)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects a malformed User response with ApiError(500, "Invalid response shape")', async () => {
+    const malformed = {
+      id: 42, // wrong type — should be UUID string
+      authSub: 'oidc:42',
+      // createdAt missing entirely
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(malformed),
+      }),
+    );
+
+    const api = getApi();
+    let thrown: unknown;
+    try {
+      await api.getCurrentUser();
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ApiError);
+    const apiErr = thrown as ApiError;
+    expect(apiErr.status).toBe(500);
+    expect(apiErr.statusText).toBe('Invalid response shape');
+    // The body should contain Zod validation issue paths so callers can
+    // diagnose without re-running the request.
+    expect(typeof apiErr.body).toBe('string');
+    expect(apiErr.body).toContain('id');
+  });
+
+  it('rejects when the backend tries to inject isAdmin as a non-boolean', async () => {
+    const tampered = {
+      ...VALID_USER,
+      isAdmin: 'true', // string, not boolean — silent privilege escalation attempt
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(tampered),
+      }),
+    );
+
+    const api = getApi();
+    await expect(api.getCurrentUser()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('returns a parsed value for a well-formed User and strips unknown fields', async () => {
+    const withInjectedField = {
+      ...VALID_USER,
+      bypassAuth: true, // attacker-supplied — must be stripped
+      anotherExtra: 'leak',
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(withInjectedField),
+      }),
+    );
+
+    const api = getApi();
+    const user = await api.getCurrentUser();
+
+    expect(user.id).toBe(VALID_USER.id);
+    expect(user.authSub).toBe(VALID_USER.authSub);
+    expect(user.isAdmin).toBe(false);
+    // Cast to Record to assert injected fields didn't survive the schema.
+    const userRecord = user as unknown as Record<string, unknown>;
+    expect(userRecord['bypassAuth']).toBeUndefined();
+    expect(userRecord['anotherExtra']).toBeUndefined();
+  });
+
+  it('preserves non-OK responses as the original ApiError (not the schema 500)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: () => Promise.resolve('not allowed'),
+      }),
+    );
+
+    const api = getApi();
+    let thrown: unknown;
+    try {
+      await api.getCurrentUser();
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ApiError);
+    const apiErr = thrown as ApiError;
+    expect(apiErr.status).toBe(403);
+    expect(apiErr.statusText).toBe('Forbidden');
   });
 });
