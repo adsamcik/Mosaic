@@ -13,9 +13,11 @@ class AndroidRustHeaderApiRoundTripTest {
   fun parseEnvelopeHeaderRejectsTooShortBytes() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustHeaderApi()
-    val result = api.parseEnvelopeHeader(ByteArray(8))
-    // Stable code 100 = INVALID_HEADER_LENGTH
-    assertEquals(100, result.code)
+    // The bridge enforces a 64-byte input pre-FFI to fail fast on obviously
+    // malformed envelopes; assert the Kotlin-side rejection rather than a
+    // Rust stable code.
+    val ex = runCatching { api.parseEnvelopeHeader(ByteArray(8)) }.exceptionOrNull()
+    assertNotEquals("expected pre-FFI rejection of short header", null, ex)
   }
 
   @Test
@@ -24,14 +26,9 @@ class AndroidRustHeaderApiRoundTripTest {
     val api = AndroidRustHeaderApi()
     // Build a 64-byte buffer with wrong magic but otherwise plausible structure.
     val bytes = ByteArray(64)
-    // Magic should be "SGzk" (0x53 0x47 0x7a 0x6b); use bogus bytes.
-    bytes[0] = 0x00
-    bytes[1] = 0x00
-    bytes[2] = 0x00
-    bytes[3] = 0x00
     val result = api.parseEnvelopeHeader(bytes)
-    // 101 = INVALID_MAGIC; 102 = UNSUPPORTED_VERSION (also possible if magic check
-    // happens after version). Either is a non-OK rejection.
+    // 101 = INVALID_MAGIC; 102 = UNSUPPORTED_VERSION (also possible if magic
+    // check happens after version). Either is a non-OK rejection.
     assertNotEquals(0, result.code)
   }
 
@@ -39,8 +36,8 @@ class AndroidRustHeaderApiRoundTripTest {
   fun parseEnvelopeHeaderRejectsEmptyBytes() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustHeaderApi()
-    val result = api.parseEnvelopeHeader(ByteArray(0))
-    assertEquals(100, result.code)
+    val ex = runCatching { api.parseEnvelopeHeader(ByteArray(0)) }.exceptionOrNull()
+    assertNotEquals("expected pre-FFI rejection of empty header", null, ex)
   }
 
   @Test
