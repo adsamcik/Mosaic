@@ -38,10 +38,35 @@ class AndroidRustAlbumSyncApi : GeneratedRustAlbumSyncApi {
       maxRetryCount = request.maxRetryCount.toUInt(),
     )
     val uniResult = rustInitAlbumSync(uniRequest)
-    return RustClientCoreAlbumSyncFfiResult(
-      code = uniResult.code.toInt(),
-      snapshot = uniResult.snapshot.toShellSnapshot(),
-    )
+    val rustCode = uniResult.code.toInt()
+    // When the Rust core rejects the init (non-zero code), the returned
+    // snapshot may carry default/empty strings the shell DTO would reject.
+    // Build a stub shell snapshot from the request fields so the result has
+    // a valid shape and callers can route on `code` alone.
+    return if (rustCode == 0) {
+      RustClientCoreAlbumSyncFfiResult(
+        code = rustCode,
+        snapshot = uniResult.snapshot.toShellSnapshot(),
+      )
+    } else {
+      RustClientCoreAlbumSyncFfiResult(
+        code = rustCode,
+        snapshot = RustClientCoreAlbumSyncFfiSnapshot(
+          schemaVersion = 1,
+          albumId = request.albumId,
+          phase = "Rejected",
+          activeCursor = request.startCursor,
+          pendingCursor = "",
+          rerunRequested = false,
+          retryCount = 0,
+          maxRetryCount = request.maxRetryCount,
+          nextRetryUnixMs = 0,
+          lastErrorCode = rustCode,
+          lastErrorStage = "init",
+          updatedAtUnixMs = request.nowUnixMs,
+        ),
+      )
+    }
   }
 
   override fun advanceAlbumSync(

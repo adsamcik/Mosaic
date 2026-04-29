@@ -50,10 +50,22 @@ class AndroidRustIdentityApi : GeneratedRustIdentityApi {
   }
 
   override fun signManifestWithIdentity(handle: Long, transcriptBytes: ByteArray): RustBytesFfiResult {
+    require(transcriptBytes.isNotEmpty()) { "manifest transcript must not be empty" }
+    require(transcriptBytes.size <= MAX_TRANSCRIPT_BYTES) {
+      "manifest transcript must be at most $MAX_TRANSCRIPT_BYTES bytes"
+    }
     val result = rustSignManifestWithIdentity(handle.toULong(), transcriptBytes)
     return RustBytesFfiResult(code = result.code.toInt(), bytes = result.bytes)
   }
 
   override fun closeIdentityHandle(handle: Long): Int =
     rustCloseIdentityHandle(handle.toULong()).toInt()
+
+  companion object {
+    // 64 KiB is generous: real manifest transcripts for a single album are
+    // ~hundreds of bytes per shard, with a hard cap on the manifest entries
+    // count enforced server-side. This bound is defense-in-depth before
+    // crossing the FFI; the Rust side independently rejects oversize input.
+    private const val MAX_TRANSCRIPT_BYTES: Int = 64 * 1024
+  }
 }

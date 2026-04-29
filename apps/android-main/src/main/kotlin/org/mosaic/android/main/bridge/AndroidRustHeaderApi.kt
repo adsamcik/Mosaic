@@ -12,6 +12,9 @@ class AndroidRustHeaderApi : GeneratedRustHeaderApi {
   }
 
   override fun parseEnvelopeHeader(bytes: ByteArray): RustHeaderParseFfiResult {
+    require(bytes.size == HEADER_LENGTH_BYTES) {
+      "shard envelope header must be exactly $HEADER_LENGTH_BYTES bytes"
+    }
     val result = rustParseEnvelopeHeader(bytes)
     return RustHeaderParseFfiResult(
       code = result.code.toInt(),
@@ -20,5 +23,9 @@ class AndroidRustHeaderApi : GeneratedRustHeaderApi {
       tier = result.tier.toInt(),
       nonce = result.nonce,
     )
+  }
+
+  companion object {
+    private const val HEADER_LENGTH_BYTES: Int = 64
   }
 }

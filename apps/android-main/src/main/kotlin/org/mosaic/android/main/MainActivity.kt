@@ -13,7 +13,7 @@ import org.mosaic.android.foundation.AccountUnlockCode
 import org.mosaic.android.foundation.AccountUnlockRequest
 import org.mosaic.android.foundation.GeneratedRustAccountBridge
 import org.mosaic.android.foundation.KdfProfile
-import org.mosaic.android.foundation.unlockAccountAndWipePassword
+import org.mosaic.android.foundation.unlockAccountWipingAll
 import org.mosaic.android.main.bridge.AndroidRustAccountApi
 import org.mosaic.android.main.bridge.AndroidRustDiagnosticsApi
 
@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
       wrappedAccountKey = ByteArray(64),
       kdfProfile = KdfProfile(memoryKiB = 8, iterations = 1, parallelism = 1),
     )
-    val result = bridge.unlockAccountAndWipePassword(password, request)
+    val result = bridge.unlockAccountWipingAll(password, request)
     when (result.code) {
       AccountUnlockCode.KDF_PROFILE_TOO_WEAK -> "ffi: ok (rejected weak kdf)"
       AccountUnlockCode.SUCCESS -> {

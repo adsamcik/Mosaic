@@ -44,10 +44,38 @@ class AndroidRustUploadApi : GeneratedRustUploadApi {
       maxRetryCount = request.maxRetryCount.toUInt(),
     )
     val uniResult = rustInitUploadJob(uniRequest)
-    return RustClientCoreUploadJobFfiResult(
-      code = uniResult.code.toInt(),
-      snapshot = uniResult.snapshot.toShellSnapshot(),
-    )
+    val rustCode = uniResult.code.toInt()
+    return if (rustCode == 0) {
+      RustClientCoreUploadJobFfiResult(
+        code = rustCode,
+        snapshot = uniResult.snapshot.toShellSnapshot(),
+      )
+    } else {
+      // Synthesize a stub snapshot from the request so the shell DTO
+      // construction does not throw on empty/default Rust output.
+      RustClientCoreUploadJobFfiResult(
+        code = rustCode,
+        snapshot = RustClientCoreUploadJobFfiSnapshot(
+          schemaVersion = 1,
+          jobId = request.jobId,
+          albumId = request.albumId,
+          assetId = request.assetId,
+          epochId = request.epochId,
+          phase = "Rejected",
+          activeTier = 0,
+          activeShardIndex = 0,
+          completedShards = emptyList(),
+          hasManifestReceipt = false,
+          manifestReceipt = RustClientCoreManifestReceipt(manifestId = "", manifestVersion = 0),
+          retryCount = 0,
+          nextRetryUnixMs = 0,
+          lastErrorCode = rustCode,
+          lastErrorStage = "init",
+          syncConfirmed = false,
+          updatedAtUnixMs = request.nowUnixMs,
+        ),
+      )
+    }
   }
 
   override fun advanceUploadJob(
