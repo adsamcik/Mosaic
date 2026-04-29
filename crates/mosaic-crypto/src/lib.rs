@@ -29,6 +29,13 @@ pub use link_sharing::{
     wrap_tier_key_for_link,
 };
 
+pub mod ts_canonical;
+pub use ts_canonical::{
+    SECRETBOX_NONCE_BYTES, SECRETBOX_TAG_BYTES, blake2b_keyed_16,
+    derive_auth_signing_seed_blake2b, derive_root_key_blake2b, unwrap_account_key_v1,
+    unwrap_key_secretbox, wrap_key_secretbox,
+};
+
 /// Maximum allowed plaintext size for shard encryption (100 MiB).
 const MAX_SHARD_BYTES: usize = 100 * 1024 * 1024;
 
@@ -104,7 +111,7 @@ const SIGNING_PUBLIC_KEY_BYTES: usize = 32;
 const SIGNATURE_BYTES: usize = 64;
 
 /// Required length for user and account salts.
-const SALT_BYTES: usize = 16;
+pub(crate) const SALT_BYTES: usize = 16;
 
 /// HKDF-SHA256 domain separation label for deriving L1 root keys from L0.
 const ROOT_KEY_INFO: &[u8] = b"mosaic:root-key:v1";

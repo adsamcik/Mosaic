@@ -18,6 +18,7 @@ argon2 = { version = "=0.5.3", default-features = false, features = ["zeroize"] 
 hkdf = { version = "=0.12.4", default-features = false }
 blake2 = { version = "=0.10.6", default-features = false }
 crypto_box = { version = "=0.9.1", default-features = false, features = ["alloc", "rand_core", "salsa20", "seal"] }
+crypto_secretbox = { version = "=0.1.1", default-features = false, features = ["alloc", "salsa20"] }
 rand_core = { version = "=0.6.4", default-features = false }
 serde = { version = "=1.0.228", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "=1.0.149", default-features = false, features = ["alloc"] }
