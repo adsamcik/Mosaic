@@ -16,6 +16,18 @@ use zeroize::{Zeroize, Zeroizing};
 mod content;
 pub use content::{EncryptedContent, decrypt_content, encrypt_content};
 
+mod sharing;
+pub use sharing::{
+    BundleValidationContext, EpochKeyBundle, SealedBundle, seal_and_sign_bundle,
+    verify_and_open_bundle,
+};
+
+mod link_sharing;
+pub use link_sharing::{
+    LinkKeys, WrappedTierKey, derive_link_keys, generate_link_secret, unwrap_tier_key_from_link,
+    wrap_tier_key_for_link,
+};
+
 /// Maximum allowed plaintext size for shard encryption (100 MiB).
 const MAX_SHARD_BYTES: usize = 100 * 1024 * 1024;
 
@@ -43,6 +55,14 @@ pub const MAX_KDF_PARALLELISM: u32 = 4;
 /// Fixed output length for Mosaic L0/L1/L2 keys.
 const KEY_BYTES: usize = 32;
 
+/// Length of a share-link secret in bytes (256-bit security, matches the
+/// TypeScript `LINK_SECRET_SIZE`).
+pub const LINK_SECRET_BYTES: usize = 32;
+
+/// Length of a server-visible share-link ID in bytes (128-bit lookup
+/// identifier, matches the TypeScript `LINK_ID_SIZE`).
+pub const LINK_ID_BYTES: usize = 16;
+
 /// Ed25519 signing seed length.
 const SIGNING_SEED_BYTES: usize = 32;
 
@@ -60,6 +80,12 @@ const ROOT_KEY_INFO: &[u8] = b"mosaic:root-key:v1";
 
 /// LocalAuth challenge transcript context. Must match the backend verifier.
 pub const AUTH_CHALLENGE_CONTEXT: &[u8] = b"Mosaic_Auth_Challenge_v1";
+
+/// Domain separation context for sealed epoch key bundle signatures.
+///
+/// Must match the TypeScript `BUNDLE_SIGN_CONTEXT` literal so that bundles
+/// produced by either side verify cross-implementation.
+pub const BUNDLE_SIGN_CONTEXT: &[u8] = b"Mosaic_EpochBundle_v1";
 
 /// LocalAuth server challenge length.
 pub const AUTH_CHALLENGE_BYTES: usize = 32;
@@ -112,6 +138,25 @@ pub enum MosaicCryptoError {
     InvalidPublicKey,
     /// Auth username was empty or otherwise invalid for transcript construction.
     InvalidUsername,
+    /// Bundle albumId was empty and the legacy fallback was not enabled.
+    BundleAlbumIdEmpty,
+    /// Bundle albumId did not match the validation context.
+    BundleAlbumIdMismatch,
+    /// Bundle epoch identifier was older than the configured minimum.
+    BundleEpochTooOld,
+    /// Bundle recipient pubkey did not match the opener's identity.
+    BundleRecipientMismatch,
+    /// Bundle JSON payload could not be parsed or contained malformed fields.
+    BundleJsonParse,
+    /// Bundle Ed25519 signature did not verify against the expected sharer key.
+    BundleSignatureInvalid,
+    /// Bundle sealed-box decryption failed (wrong recipient or tampered bytes).
+    BundleSealOpenFailed,
+    /// A share-link wrapped tier key was unwrapped against the wrong tier.
+    ///
+    /// Carries the protocol byte for the expected and the actual `ShardTier`
+    /// so callers can surface a stable diagnostic without exposing key bytes.
+    LinkTierMismatch { expected: u8, actual: u8 },
 }
 
 /// Opaque 32-byte secret key that zeroizes its contents on drop.
@@ -184,6 +229,15 @@ impl ManifestSigningSecretKey {
     pub fn public_key(&self) -> ManifestSigningPublicKey {
         let signing_key = SigningKey::from_bytes(&self.0);
         ManifestSigningPublicKey(signing_key.verifying_key().to_bytes())
+    }
+
+    /// Borrows the 32-byte Ed25519 seed for in-crate serialization.
+    ///
+    /// Restricted to the crate so the bundle sealing module can package the
+    /// seed for distribution. External callers must continue to use signing
+    /// helpers that take a borrowed secret.
+    pub(crate) fn seed_bytes(&self) -> &[u8] {
+        &self.0[..]
     }
 }
 
@@ -439,6 +493,18 @@ impl IdentitySigningSecretKey {
     pub fn encryption_public_key(&self) -> IdentityEncryptionPublicKey {
         let signing_key = SigningKey::from_bytes(&self.0);
         IdentityEncryptionPublicKey(*signing_key.verifying_key().to_montgomery().as_bytes())
+    }
+
+    /// Derives the X25519 recipient secret key bytes paired with the Ed25519 seed.
+    ///
+    /// Returns the 32-byte clamped Curve25519 scalar that pairs with
+    /// [`encryption_public_key`](Self::encryption_public_key). Compatible
+    /// byte-for-byte with libsodium's `crypto_sign_ed25519_sk_to_curve25519`.
+    /// The returned buffer is wrapped in [`Zeroizing`] so it is wiped when
+    /// dropped.
+    pub(crate) fn x25519_secret_bytes(&self) -> Zeroizing<[u8; SIGNING_SEED_BYTES]> {
+        let signing_key = SigningKey::from_bytes(&self.0);
+        Zeroizing::new(signing_key.to_scalar_bytes())
     }
 
     /// Wipes the Rust-owned signing seed in place.
@@ -1369,7 +1435,7 @@ pub fn sha256_bytes(bytes: &[u8]) -> String {
 }
 
 /// Encodes `bytes` as base64url with no padding characters (RFC 4648 §5, no `=`).
-fn base64url_no_pad(bytes: &[u8]) -> String {
+pub(crate) fn base64url_no_pad(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let cap = (bytes.len() * 4).div_ceil(3);
     let mut output = String::with_capacity(cap);
