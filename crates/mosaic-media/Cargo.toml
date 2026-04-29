@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
+zeroize = "=1.8.2"
 
 [lints]
 workspace = true

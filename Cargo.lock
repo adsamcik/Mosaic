@@ -434,6 +434,7 @@ name = "mosaic-media"
 version = "0.1.0"
 dependencies = [
  "mosaic-domain",
+ "zeroize",
 ]
 
 [[package]]
