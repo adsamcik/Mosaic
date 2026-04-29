@@ -281,6 +281,20 @@ export function createApiClient(): MosaicApi {
       });
     },
 
+    async updateCurrentUserWrappedKey(
+      wrappedAccountKey: Uint8Array,
+    ): Promise<void> {
+      // PUT /users/me/wrapped-key returns 204 No Content on success, so no
+      // schema is supplied — apiRequest's 204 short-circuit returns
+      // undefined as T. Failures surface as ApiError with the server's
+      // status/body, letting session.ts react (e.g. retry M4's TOCTOU
+      // recovery) instead of the raw fetch silently failing.
+      return apiRequest('/users/me/wrapped-key', {
+        method: 'PUT',
+        body: { wrappedAccountKey: toBase64(wrappedAccountKey) },
+      });
+    },
+
     async getUser(userId: string): Promise<UserPublic> {
       return apiRequest(`/users/${userId}`, { schema: UserPublicSchema });
     },

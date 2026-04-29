@@ -152,6 +152,51 @@ describe('updateAlbumExpiration', () => {
 });
 
 // ===========================================================================
+// M9: updateCurrentUserWrappedKey
+// ---------------------------------------------------------------------------
+// Verifies the wrapped-key PUT goes to the centralised API client (not a
+// raw fetch in session.ts) so failures surface as ApiError and feed the
+// M4 first-login conflict-recovery path.
+// ===========================================================================
+
+describe('updateCurrentUserWrappedKey (M9)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 204,
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('PUTs to /users/me/wrapped-key with a base64 wrappedAccountKey body', async () => {
+    const api = getApi();
+    const wrapped = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+
+    await api.updateCurrentUserWrappedKey(wrapped);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe('/api/users/me/wrapped-key');
+    expect(init.method).toBe('PUT');
+
+    const body = JSON.parse(init.body as string) as {
+      wrappedAccountKey: string;
+    };
+    // base64 of 0xde 0xad 0xbe 0xef
+    expect(body.wrappedAccountKey).toBe('3q2+7w==');
+  });
+});
+
+// ===========================================================================
 // M2: runtime response validation
 // ---------------------------------------------------------------------------
 // Verifies that apiRequest rejects malformed responses (compromised

@@ -485,6 +485,18 @@ export interface MosaicApi {
   // Users
   getCurrentUser(): Promise<User>;
   updateCurrentUser(request: UpdateUserRequest): Promise<User>;
+  /**
+   * Upload the wrapped account key for the current user (PUT /users/me/wrapped-key).
+   * Used during first login to persist the L2 account key wrapped under the
+   * password-derived key, so subsequent logins on any device unwrap to the
+   * same identity. Returns void; the server responds 204 on success.
+   *
+   * Going through the centralised API client (instead of a raw fetch in
+   * session.ts) ensures the request is subject to the same error envelope
+   * as other endpoints, so failures propagate to the login caller and
+   * trigger M4's re-fetch guard.
+   */
+  updateCurrentUserWrappedKey(wrappedAccountKey: Uint8Array): Promise<void>;
   getUser(userId: string): Promise<UserPublic>;
   getUserByPubkey(pubkey: string): Promise<UserPublic>;
 

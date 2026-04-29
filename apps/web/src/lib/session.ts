@@ -26,13 +26,28 @@ import { syncCoordinator } from './sync-coordinator';
 
 const log = createLogger('session');
 
-/** Events that reset the idle timer */
+/** Events that reset the idle timer.
+ *
+ * Includes pointer/wheel input (covers trackpad-only users and mouse
+ * wheels who never fire mousedown) and `visibilitychange` (re-focusing
+ * the tab from another window/app should keep the session alive — a
+ * more reliable signal than `focus` because `focus` doesn't fire when
+ * a tab is restored from a background browser window). `pointermove`
+ * and `mousemove` are deliberately omitted — they would fire dozens
+ * of times per second and defeat the idle timeout entirely.
+ */
 const ACTIVITY_EVENTS = [
   'mousedown',
   'keydown',
   'touchstart',
   'scroll',
+  'pointerdown',
+  'wheel',
+  'visibilitychange',
 ] as const;
+
+/** BroadcastChannel name used to propagate logout across browser tabs. */
+const SESSION_BROADCAST_CHANNEL = 'mosaic-session';
 
 /** Salt storage key in localStorage */
 const USER_SALT_KEY = 'mosaic:userSalt';
@@ -97,6 +112,33 @@ export class SaltDecryptionError extends Error {
   constructor(message: string = 'Failed to decrypt salt - incorrect password') {
     super(message);
     this.name = 'SaltDecryptionError';
+  }
+}
+
+/**
+ * Error thrown when a first-login wrapped-key upload would clobber a
+ * concurrently-uploaded wrapped key from another device (M4).
+ *
+ * Threat model: two devices belonging to the same user perform their
+ * "first" login at roughly the same time. Each device fetches the user
+ * record (no `wrappedAccountKey` yet), generates its own L2 account
+ * key, and races to PUT it. Without a guard the loser silently
+ * overwrites the winner's wrapped key — the next time the winning
+ * device tries to unwrap, it will fail with an authentication error
+ * because the wrap key on the server is for a different L2.
+ *
+ * Mitigation: re-fetch /users/me immediately before the PUT. If the
+ * server now reports a wrappedAccountKey the other device beat us;
+ * abort with this error. The caller (UI / login flow) should prompt
+ * the user to retry login, which falls into the "wrapped key present"
+ * branch and successfully unwraps with the same password.
+ */
+export class WrappedKeyConflictError extends Error {
+  constructor(
+    message: string = 'Another device uploaded a wrapped account key first - please retry login',
+  ) {
+    super(message);
+    this.name = 'WrappedKeyConflictError';
   }
 }
 
@@ -330,8 +372,82 @@ class SessionManager {
   private boundResetIdleTimer: () => void;
   private settingsUnsubscribe: (() => void) | null = null;
 
+  /**
+   * Concurrency guard for login-style entry points (M3).
+   *
+   * `login`, `localLogin`, `localRegister`, `restoreSession`, and
+   * `restoreFromCache` all initialise the crypto/db workers and call
+   * `cacheSessionKeys`. If two of them run in parallel — e.g. a stale
+   * `restoreFromCache` triggered by a navigation event interleaving with
+   * the user re-entering their password — they race each other and the
+   * second one to call `cacheKeys` wins, possibly with stale data.
+   *
+   * All of the entry points share this single in-flight promise. The
+   * second concurrent call rejects with "Login already in progress"
+   * instead of corrupting the cached-keys store.
+   */
+  private loginInFlight: Promise<void> | null = null;
+
+  /**
+   * BroadcastChannel for cross-tab logout propagation (L2).
+   *
+   * `logout()` posts `{ type: 'logout' }` so other tabs (which still
+   * hold decrypted state in their crypto/db workers) can clear their
+   * own state immediately rather than waiting for the next API call to
+   * fail. `null` on browsers that don't support BroadcastChannel and in
+   * test environments where it isn't polyfilled.
+   */
+  private broadcast: BroadcastChannel | null = null;
+
   constructor() {
     this.boundResetIdleTimer = this.resetIdleTimer.bind(this);
+    this.initBroadcastChannel();
+  }
+
+  /**
+   * Wire up the cross-tab logout BroadcastChannel (L2). Safe to call in
+   * environments without BroadcastChannel — the method short-circuits
+   * and `this.broadcast` stays `null`.
+   */
+  private initBroadcastChannel(): void {
+    if (typeof BroadcastChannel === 'undefined') {
+      return;
+    }
+    try {
+      this.broadcast = new BroadcastChannel(SESSION_BROADCAST_CHANNEL);
+      this.broadcast.addEventListener('message', (event: MessageEvent) => {
+        const data = event.data as { type?: string } | null | undefined;
+        if (data?.type === 'logout' && this._isLoggedIn) {
+          // Another tab logged out — drop our state too. Pass
+          // skipBroadcast to avoid a re-broadcast loop. Any error
+          // tearing down our state is logged but swallowed: it is
+          // never useful to surface an error from a peer-tab's
+          // logout to a global unhandled-rejection handler.
+          this.logout({ skipBroadcast: true }).catch((error: unknown) => {
+            log.warn('Cross-tab logout teardown failed', { error });
+          });
+        }
+      });
+    } catch (error) {
+      log.warn('Failed to initialise session BroadcastChannel', { error });
+      this.broadcast = null;
+    }
+  }
+
+  /**
+   * Run a login-style entry point under the M3 re-entrancy guard.
+   * Concurrent callers reject immediately with "Login already in progress".
+   */
+  private async runExclusive(operation: () => Promise<void>): Promise<void> {
+    if (this.loginInFlight) {
+      throw new Error('Login already in progress');
+    }
+    this.loginInFlight = operation();
+    try {
+      await this.loginInFlight;
+    } finally {
+      this.loginInFlight = null;
+    }
   }
 
   /** Whether user is currently logged in */
@@ -460,72 +576,80 @@ class SessionManager {
   /**
    * Restore session from cached keys (no password required).
    * Returns true if successful, false if cache is unavailable or expired.
+   *
+   * Serialised against the other login-style entry points via the M3
+   * re-entrancy guard. Concurrent callers reject with
+   * "Login already in progress".
    */
   async restoreFromCache(): Promise<boolean> {
-    const cachedKeys = await getCachedKeys();
-    if (!cachedKeys) {
-      log.debug('No cached keys available for restore');
-      return false;
-    }
-
-    try {
-      // Request persistent storage for OPFS
-      if (navigator.storage?.persist) {
-        const granted = await navigator.storage.persist();
-        if (!granted) {
-          log.warn('Persistent storage not granted - data may be evicted');
-        }
+    let outcome = false;
+    await this.runExclusive(async () => {
+      const cachedKeys = await getCachedKeys();
+      if (!cachedKeys) {
+        log.debug('No cached keys available for restore');
+        return;
       }
 
-      // Get current user from backend (authenticated via session cookie)
-      const api = getApi();
-      this._currentUser = await api.getCurrentUser();
-
-      // Import cached keys into crypto worker
-      const cryptoClient = await getCryptoClient();
-      await cryptoClient.importKeys({
-        accountKey: cachedKeys.accountKey,
-        sessionKey: cachedKeys.sessionKey,
-        identitySecretKey: cachedKeys.identitySecretKey,
-        identityPublicKey: cachedKeys.identityPublicKey,
-        identityX25519SecretKey: cachedKeys.identityX25519SecretKey,
-        identityX25519PublicKey: cachedKeys.identityX25519PublicKey,
-      });
-
-      // Initialize database worker with session key
-      const db = await getDbClient();
-      const sessionKey = await cryptoClient.getSessionKey();
-      await db.init(sessionKey);
-
-      this._isLoggedIn = true;
-      this.markSessionActive();
-      this.notify();
-
-      // Re-cache keys to extend expiration
-      const userSalt = fromBase64(cachedKeys.userSalt);
-      const accountSalt = fromBase64(cachedKeys.accountSalt);
-      await this.cacheSessionKeys(userSalt, accountSalt);
-
-      // Subscribe to settings changes to update idle timeout
-      this.settingsUnsubscribe = subscribeToSettings(() => {
-        if (this._isLoggedIn) {
-          this.resetIdleTimer();
+      try {
+        // Request persistent storage for OPFS
+        if (navigator.storage?.persist) {
+          const granted = await navigator.storage.persist();
+          if (!granted) {
+            log.warn('Persistent storage not granted - data may be evicted');
+          }
         }
-      });
 
-      // Start idle timeout tracking
-      this.resetIdleTimer();
-      this.attachIdleListeners();
+        // Get current user from backend (authenticated via session cookie)
+        const api = getApi();
+        this._currentUser = await api.getCurrentUser();
 
-      log.info('Session restored from cache (no password required)');
-      return true;
-    } catch (error) {
-      log.error('Failed to restore session from cache:', error);
-      // Clear invalid cache
-      clearCacheEncryptionKey();
-      clearLinkKeyEncryption();
-      return false;
-    }
+        // Import cached keys into crypto worker
+        const cryptoClient = await getCryptoClient();
+        await cryptoClient.importKeys({
+          accountKey: cachedKeys.accountKey,
+          sessionKey: cachedKeys.sessionKey,
+          identitySecretKey: cachedKeys.identitySecretKey,
+          identityPublicKey: cachedKeys.identityPublicKey,
+          identityX25519SecretKey: cachedKeys.identityX25519SecretKey,
+          identityX25519PublicKey: cachedKeys.identityX25519PublicKey,
+        });
+
+        // Initialize database worker with session key
+        const db = await getDbClient();
+        const sessionKey = await cryptoClient.getSessionKey();
+        await db.init(sessionKey);
+
+        this._isLoggedIn = true;
+        this.markSessionActive();
+        this.notify();
+
+        // Re-cache keys to extend expiration
+        const userSalt = fromBase64(cachedKeys.userSalt);
+        const accountSalt = fromBase64(cachedKeys.accountSalt);
+        await this.cacheSessionKeys(userSalt, accountSalt);
+
+        // Subscribe to settings changes to update idle timeout
+        this.settingsUnsubscribe = subscribeToSettings(() => {
+          if (this._isLoggedIn) {
+            this.resetIdleTimer();
+          }
+        });
+
+        // Start idle timeout tracking
+        this.resetIdleTimer();
+        this.attachIdleListeners();
+
+        log.info('Session restored from cache (no password required)');
+        outcome = true;
+      } catch (error) {
+        log.error('Failed to restore session from cache:', error);
+        // Clear invalid cache
+        clearCacheEncryptionKey();
+        clearLinkKeyEncryption();
+        outcome = false;
+      }
+    });
+    return outcome;
   }
 
   /**
@@ -574,87 +698,89 @@ class SessionManager {
    * @throws SaltDecryptionError if password is wrong
    */
   async restoreSession(password: string, user?: User): Promise<void> {
-    // Request persistent storage for OPFS
-    if (navigator.storage?.persist) {
-      const granted = await navigator.storage.persist();
-      if (!granted) {
-        log.warn('Persistent storage not granted - data may be evicted');
+    await this.runExclusive(async () => {
+      // Request persistent storage for OPFS
+      if (navigator.storage?.persist) {
+        const granted = await navigator.storage.persist();
+        if (!granted) {
+          log.warn('Persistent storage not granted - data may be evicted');
+        }
       }
-    }
 
-    // Get current user from backend (authenticated via session cookie)
-    const api = getApi();
-    this._currentUser = user ?? (await api.getCurrentUser());
+      // Get current user from backend (authenticated via session cookie)
+      const api = getApi();
+      this._currentUser = user ?? (await api.getCurrentUser());
 
-    // Get user salt - server should have it if user logged in before
-    let userSalt: Uint8Array;
-    const username = this._currentUser.authSub;
+      // Get user salt - server should have it if user logged in before
+      let userSalt: Uint8Array;
+      const username = this._currentUser.authSub;
 
-    if (this._currentUser.encryptedSalt && this._currentUser.saltNonce) {
-      // Server has salt - decrypt it with password
-      // If decryption fails, password is wrong - throw error
-      userSalt = await decryptSalt(
-        this._currentUser.encryptedSalt,
-        this._currentUser.saltNonce,
-        password,
-        username,
-      );
-      // Store locally for faster subsequent operations
-      localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
-    } else {
-      // Server has no salt - use local storage
-      const storedSalt = localStorage.getItem(USER_SALT_KEY);
-      if (!storedSalt) {
-        throw new Error('No salt available - please log in again');
+      if (this._currentUser.encryptedSalt && this._currentUser.saltNonce) {
+        // Server has salt - decrypt it with password
+        // If decryption fails, password is wrong - throw error
+        userSalt = await decryptSalt(
+          this._currentUser.encryptedSalt,
+          this._currentUser.saltNonce,
+          password,
+          username,
+        );
+        // Store locally for faster subsequent operations
+        localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+      } else {
+        // Server has no salt - use local storage
+        const storedSalt = localStorage.getItem(USER_SALT_KEY);
+        if (!storedSalt) {
+          throw new Error('No salt available - please log in again');
+        }
+        userSalt = fromBase64(storedSalt);
       }
-      userSalt = fromBase64(storedSalt);
-    }
 
-    const accountSalt = resolveAccountSalt(this._currentUser);
+      const accountSalt = resolveAccountSalt(this._currentUser);
 
-    // Initialize crypto worker with password and salts
-    // Use wrapped account key if available to preserve identity
-    const cryptoClient = await getCryptoClient();
-    if (this._currentUser.wrappedAccountKey) {
-      const wrappedKey = fromBase64(this._currentUser.wrappedAccountKey);
-      await cryptoClient.initWithWrappedKey(
-        password,
-        userSalt,
-        accountSalt,
-        wrappedKey,
-      );
-    } else {
-      log.warn(
-        'Session restore without wrapped account key - identity may differ!',
-      );
-      await cryptoClient.init(password, userSalt, accountSalt);
-    }
-
-    // Derive identity keypair for epoch key operations
-    await cryptoClient.deriveIdentity();
-
-    // Initialize database worker with session key
-    const db = await getDbClient();
-    const sessionKey = await cryptoClient.getSessionKey();
-    await db.init(sessionKey);
-
-    this._isLoggedIn = true;
-    this.markSessionActive();
-    this.notify();
-
-    // Cache keys for automatic restore on next reload
-    await this.cacheSessionKeys(userSalt, accountSalt);
-
-    // Subscribe to settings changes to update idle timeout
-    this.settingsUnsubscribe = subscribeToSettings(() => {
-      if (this._isLoggedIn) {
-        this.resetIdleTimer();
+      // Initialize crypto worker with password and salts
+      // Use wrapped account key if available to preserve identity
+      const cryptoClient = await getCryptoClient();
+      if (this._currentUser.wrappedAccountKey) {
+        const wrappedKey = fromBase64(this._currentUser.wrappedAccountKey);
+        await cryptoClient.initWithWrappedKey(
+          password,
+          userSalt,
+          accountSalt,
+          wrappedKey,
+        );
+      } else {
+        log.warn(
+          'Session restore without wrapped account key - identity may differ!',
+        );
+        await cryptoClient.init(password, userSalt, accountSalt);
       }
+
+      // Derive identity keypair for epoch key operations
+      await cryptoClient.deriveIdentity();
+
+      // Initialize database worker with session key
+      const db = await getDbClient();
+      const sessionKey = await cryptoClient.getSessionKey();
+      await db.init(sessionKey);
+
+      this._isLoggedIn = true;
+      this.markSessionActive();
+      this.notify();
+
+      // Cache keys for automatic restore on next reload
+      await this.cacheSessionKeys(userSalt, accountSalt);
+
+      // Subscribe to settings changes to update idle timeout
+      this.settingsUnsubscribe = subscribeToSettings(() => {
+        if (this._isLoggedIn) {
+          this.resetIdleTimer();
+        }
+      });
+
+      // Start idle timeout tracking
+      this.resetIdleTimer();
+      this.attachIdleListeners();
     });
-
-    // Start idle timeout tracking
-    this.resetIdleTimer();
-    this.attachIdleListeners();
   }
 
   /**
@@ -662,126 +788,143 @@ class SessionManager {
    * Initializes crypto and database workers.
    * Syncs user salt with server for multi-device support.
    * @throws SaltDecryptionError if server has salt but decryption fails (wrong password)
+   * @throws WrappedKeyConflictError if another device wins the first-login race (M4)
    */
   async login(password: string): Promise<void> {
-    // Request persistent storage for OPFS
-    if (navigator.storage?.persist) {
-      const granted = await navigator.storage.persist();
-      if (!granted) {
-        log.warn('Persistent storage not granted - data may be evicted');
+    await this.runExclusive(async () => {
+      // Request persistent storage for OPFS
+      if (navigator.storage?.persist) {
+        const granted = await navigator.storage.persist();
+        if (!granted) {
+          log.warn('Persistent storage not granted - data may be evicted');
+        }
       }
-    }
 
-    // Get current user from backend (authenticated via reverse proxy)
-    const api = getApi();
-    this._currentUser = await api.getCurrentUser();
+      // Get current user from backend (authenticated via reverse proxy)
+      const api = getApi();
+      this._currentUser = await api.getCurrentUser();
 
-    // Multi-device salt synchronization:
-    // 1. Check if server has encrypted salt
-    // 2. If yes: decrypt with password+username key, use for main key derivation
-    // 3. If no: use local salt or generate new, encrypt and upload to server
-    let userSalt: Uint8Array;
-    const username = this._currentUser.authSub;
+      // Multi-device salt synchronization:
+      // 1. Check if server has encrypted salt
+      // 2. If yes: decrypt with password+username key, use for main key derivation
+      // 3. If no: use local salt or generate new, encrypt and upload to server
+      let userSalt: Uint8Array;
+      const username = this._currentUser.authSub;
 
-    if (this._currentUser.encryptedSalt && this._currentUser.saltNonce) {
-      // Server has salt - decrypt it (new device or returning user)
-      // If decryption fails, password is wrong - throw error
-      userSalt = await decryptSalt(
-        this._currentUser.encryptedSalt,
-        this._currentUser.saltNonce,
-        password,
-        username,
-      );
-      // Store locally for faster subsequent logins
-      localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
-    } else {
-      // Server has no salt - use local or generate new
-      const storedSalt = localStorage.getItem(USER_SALT_KEY);
-
-      if (storedSalt) {
-        userSalt = fromBase64(storedSalt);
-      } else {
-        // First login ever - generate a new salt
-        userSalt = crypto.getRandomValues(new Uint8Array(16));
+      if (this._currentUser.encryptedSalt && this._currentUser.saltNonce) {
+        // Server has salt - decrypt it (new device or returning user)
+        // If decryption fails, password is wrong - throw error
+        userSalt = await decryptSalt(
+          this._currentUser.encryptedSalt,
+          this._currentUser.saltNonce,
+          password,
+          username,
+        );
+        // Store locally for faster subsequent logins
         localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+      } else {
+        // Server has no salt - use local or generate new
+        const storedSalt = localStorage.getItem(USER_SALT_KEY);
+
+        if (storedSalt) {
+          userSalt = fromBase64(storedSalt);
+        } else {
+          // First login ever - generate a new salt
+          userSalt = crypto.getRandomValues(new Uint8Array(16));
+          localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+        }
+
+        // Encrypt and upload salt to server for multi-device sync
+        const { encryptedSalt, saltNonce } = await encryptSalt(
+          userSalt,
+          password,
+          username,
+        );
+        await api.updateCurrentUser({ encryptedSalt, saltNonce });
       }
 
-      // Encrypt and upload salt to server for multi-device sync
-      const { encryptedSalt, saltNonce } = await encryptSalt(
-        userSalt,
-        password,
-        username,
-      );
-      await api.updateCurrentUser({ encryptedSalt, saltNonce });
-    }
+      const accountSalt = resolveAccountSalt(this._currentUser);
 
-    const accountSalt = resolveAccountSalt(this._currentUser);
+      // Initialize crypto worker with password and salts
+      // Use wrapped account key if available to preserve identity
+      const cryptoClient = await getCryptoClient();
+      if (this._currentUser.wrappedAccountKey) {
+        const wrappedKey = fromBase64(this._currentUser.wrappedAccountKey);
+        await cryptoClient.initWithWrappedKey(
+          password,
+          userSalt,
+          accountSalt,
+          wrappedKey,
+        );
+      } else {
+        // First login - generate new key and store it
+        await cryptoClient.init(password, userSalt, accountSalt);
 
-    // Initialize crypto worker with password and salts
-    // Use wrapped account key if available to preserve identity
-    const cryptoClient = await getCryptoClient();
-    if (this._currentUser.wrappedAccountKey) {
-      const wrappedKey = fromBase64(this._currentUser.wrappedAccountKey);
-      await cryptoClient.initWithWrappedKey(
-        password,
-        userSalt,
-        accountSalt,
-        wrappedKey,
-      );
-    } else {
-      // First login - generate new key and store it
-      await cryptoClient.init(password, userSalt, accountSalt);
+        // Derive identity to get public key
+        await cryptoClient.deriveIdentity();
 
-      // Derive identity to get public key
+        // Save wrapped key and identity pubkey to server for future logins.
+        const wrappedAccountKey = await cryptoClient.getWrappedAccountKey();
+        const identityPubkey = await cryptoClient.getIdentityPublicKey();
+        if (wrappedAccountKey && identityPubkey) {
+          // M4: re-fetch /users/me before the wrapped-key PUT to detect a
+          // concurrent first-login from another device. Threat model: if
+          // two devices belonging to the same user arrive at this branch
+          // simultaneously, each will generate its own L2 account key and
+          // attempt to PUT it. Without this guard, the loser silently
+          // clobbers the winner's wrapped key, breaking the winner on
+          // their next login. With it, we observe the winning upload via
+          // the latest user record and surface a recoverable
+          // WrappedKeyConflictError so the caller re-runs login() — that
+          // second pass takes the "wrapped key present" branch above and
+          // unwraps successfully with the shared password.
+          const latestUser = await api.getCurrentUser();
+          if (latestUser.wrappedAccountKey) {
+            log.warn(
+              'Concurrent first-login detected (M4) - aborting wrapped-key upload',
+            );
+            throw new WrappedKeyConflictError();
+          }
+
+          await api.updateCurrentUser({
+            identityPubkey: toBase64(identityPubkey),
+          });
+
+          // M9: route the wrapped-key PUT through the centralised API
+          // client so failures surface as ApiError (instead of a silently
+          // swallowed raw fetch). A failure here propagates out of login()
+          // — the caller can prompt for retry.
+          await api.updateCurrentUserWrappedKey(wrappedAccountKey);
+        }
+      }
+
+      // Derive identity keypair for epoch key operations
+      // This is needed to open sealed epoch key bundles
       await cryptoClient.deriveIdentity();
 
-      // Save wrapped key and identity pubkey to server for future logins
-      const wrappedAccountKey = await cryptoClient.getWrappedAccountKey();
-      const identityPubkey = await cryptoClient.getIdentityPublicKey();
-      if (wrappedAccountKey && identityPubkey) {
-        const api = getApi();
-        await api.updateCurrentUser({
-          identityPubkey: toBase64(identityPubkey),
-        });
-        // Store wrapped key via a new API call or extend updateCurrentUser
-        // For now, we'll update the user record with the wrapped key
-        await fetch('/api/users/me/wrapped-key', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({
-            wrappedAccountKey: toBase64(wrappedAccountKey),
-          }),
-        });
-      }
-    }
+      // Initialize database worker with session key
+      const db = await getDbClient();
+      const sessionKey = await cryptoClient.getSessionKey();
+      await db.init(sessionKey);
 
-    // Derive identity keypair for epoch key operations
-    // This is needed to open sealed epoch key bundles
-    await cryptoClient.deriveIdentity();
+      this._isLoggedIn = true;
+      this.markSessionActive();
+      this.notify();
 
-    // Initialize database worker with session key
-    const db = await getDbClient();
-    const sessionKey = await cryptoClient.getSessionKey();
-    await db.init(sessionKey);
+      // Cache keys for automatic restore on next reload
+      await this.cacheSessionKeys(userSalt, accountSalt);
 
-    this._isLoggedIn = true;
-    this.markSessionActive();
-    this.notify();
+      // Subscribe to settings changes to update idle timeout
+      this.settingsUnsubscribe = subscribeToSettings(() => {
+        if (this._isLoggedIn) {
+          this.resetIdleTimer();
+        }
+      });
 
-    // Cache keys for automatic restore on next reload
-    await this.cacheSessionKeys(userSalt, accountSalt);
-
-    // Subscribe to settings changes to update idle timeout
-    this.settingsUnsubscribe = subscribeToSettings(() => {
-      if (this._isLoggedIn) {
-        this.resetIdleTimer();
-      }
+      // Start idle timeout tracking
+      this.resetIdleTimer();
+      this.attachIdleListeners();
     });
-
-    // Start idle timeout tracking
-    this.resetIdleTimer();
-    this.attachIdleListeners();
   }
 
   /**
@@ -793,74 +936,76 @@ class SessionManager {
    * @param password - User's password for key derivation and authentication
    */
   async localLogin(username: string, password: string): Promise<void> {
-    // Request persistent storage for OPFS
-    if (navigator.storage?.persist) {
-      const granted = await navigator.storage.persist();
-      if (!granted) {
-        log.warn('Persistent storage not granted - data may be evicted');
+    await this.runExclusive(async () => {
+      // Request persistent storage for OPFS
+      if (navigator.storage?.persist) {
+        const granted = await navigator.storage.persist();
+        if (!granted) {
+          log.warn('Persistent storage not granted - data may be evicted');
+        }
       }
-    }
 
-    // Perform LocalAuth login (registers if user doesn't exist)
-    const { userId, userSalt, accountSalt, isNewUser, wrappedAccountKey } =
-      await localAuthLogin(username, password);
+      // Perform LocalAuth login (registers if user doesn't exist)
+      const { userId, userSalt, accountSalt, isNewUser, wrappedAccountKey } =
+        await localAuthLogin(username, password);
 
-    // Now fetch the current user (we have a session cookie)
-    const api = getApi();
-    this._currentUser = await api.getCurrentUser();
+      // Now fetch the current user (we have a session cookie)
+      const api = getApi();
+      this._currentUser = await api.getCurrentUser();
 
-    // Store salt locally
-    localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+      // Store salt locally
+      localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
 
-    // Re-init crypto with the correct keys
-    // For returning users, we MUST use the wrapped account key to get the same identity
-    // that was used when the epoch keys were sealed
-    const cryptoClient = await getCryptoClient();
-    if (wrappedAccountKey) {
-      // Returning user: unwrap their existing account key
-      await cryptoClient.initWithWrappedKey(
-        password,
-        userSalt,
-        accountSalt,
-        wrappedAccountKey,
-      );
-    } else if (!isNewUser) {
-      // Returning user but no wrapped key on server - this is a problem!
-      // Fall back to generating new key (will break epoch key decryption)
-      log.warn(
-        'Returning user without wrapped account key - identity will differ!',
-      );
-      await cryptoClient.init(password, userSalt, accountSalt);
-    }
-    // For new users, localAuthLogin already called init() with correct key
-    await cryptoClient.deriveIdentity();
-
-    // Initialize database worker with session key
-    const db = await getDbClient();
-    const sessionKey = await cryptoClient.getSessionKey();
-    await db.init(sessionKey);
-
-    this._isLoggedIn = true;
-    this.markSessionActive();
-    this.notify();
-
-    // Cache keys for automatic restore on next reload
-    await this.cacheSessionKeys(userSalt, accountSalt);
-
-    // Subscribe to settings changes
-    this.settingsUnsubscribe = subscribeToSettings(() => {
-      if (this._isLoggedIn) {
-        this.resetIdleTimer();
+      // Re-init crypto with the correct keys
+      // For returning users, we MUST use the wrapped account key to get the same identity
+      // that was used when the epoch keys were sealed
+      const cryptoClient = await getCryptoClient();
+      if (wrappedAccountKey) {
+        // Returning user: unwrap their existing account key
+        await cryptoClient.initWithWrappedKey(
+          password,
+          userSalt,
+          accountSalt,
+          wrappedAccountKey,
+        );
+      } else if (!isNewUser) {
+        // Returning user but no wrapped key on server - this is a problem!
+        // Fall back to generating new key (will break epoch key decryption)
+        log.warn(
+          'Returning user without wrapped account key - identity will differ!',
+        );
+        await cryptoClient.init(password, userSalt, accountSalt);
       }
+      // For new users, localAuthLogin already called init() with correct key
+      await cryptoClient.deriveIdentity();
+
+      // Initialize database worker with session key
+      const db = await getDbClient();
+      const sessionKey = await cryptoClient.getSessionKey();
+      await db.init(sessionKey);
+
+      this._isLoggedIn = true;
+      this.markSessionActive();
+      this.notify();
+
+      // Cache keys for automatic restore on next reload
+      await this.cacheSessionKeys(userSalt, accountSalt);
+
+      // Subscribe to settings changes
+      this.settingsUnsubscribe = subscribeToSettings(() => {
+        if (this._isLoggedIn) {
+          this.resetIdleTimer();
+        }
+      });
+
+      // Start idle timeout tracking
+      this.resetIdleTimer();
+      this.attachIdleListeners();
+
+      log.info(
+        `LocalAuth login successful: ${username} (${userId})${isNewUser ? ' [new user]' : ''}`,
+      );
     });
-
-    // Start idle timeout tracking
-    this.resetIdleTimer();
-    this.attachIdleListeners();
-
-    log.info(
-      `LocalAuth login successful: ${username} (${userId})${isNewUser ? ' [new user]' : ''}`,
-    );
   }
 
   /**
@@ -873,70 +1018,103 @@ class SessionManager {
    * @throws Error if username already exists
    */
   async localRegister(username: string, password: string): Promise<void> {
-    // Request persistent storage for OPFS
-    if (navigator.storage?.persist) {
-      const granted = await navigator.storage.persist();
-      if (!granted) {
-        log.warn('Persistent storage not granted - data may be evicted');
+    await this.runExclusive(async () => {
+      // Request persistent storage for OPFS
+      if (navigator.storage?.persist) {
+        const granted = await navigator.storage.persist();
+        if (!granted) {
+          log.warn('Persistent storage not granted - data may be evicted');
+        }
       }
-    }
 
-    // Perform LocalAuth registration (will fail if user exists)
-    const { userId, userSalt, accountSalt, wrappedAccountKey } =
-      await localAuthRegister(username, password);
+      // Perform LocalAuth registration (will fail if user exists)
+      const { userId, userSalt, accountSalt, wrappedAccountKey } =
+        await localAuthRegister(username, password);
 
-    // Now fetch the current user (we have a session cookie)
-    const api = getApi();
-    this._currentUser = await api.getCurrentUser();
+      // Now fetch the current user (we have a session cookie)
+      const api = getApi();
+      this._currentUser = await api.getCurrentUser();
 
-    // Store salt locally
-    localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
+      // Store salt locally
+      localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
 
-    // For new users, localAuthRegister already called init() with correct key
-    // Just need to derive identity for epoch key operations
-    const cryptoClient = await getCryptoClient();
+      // For new users, localAuthRegister already called init() with correct key
+      // Just need to derive identity for epoch key operations
+      const cryptoClient = await getCryptoClient();
 
-    // Re-init if wrapped key provided (shouldn't happen for new users, but handle it)
-    if (wrappedAccountKey) {
-      await cryptoClient.initWithWrappedKey(
-        password,
-        userSalt,
-        accountSalt,
-        wrappedAccountKey,
-      );
-    }
-    await cryptoClient.deriveIdentity();
-
-    // Initialize database worker with session key
-    const db = await getDbClient();
-    const sessionKey = await cryptoClient.getSessionKey();
-    await db.init(sessionKey);
-
-    this._isLoggedIn = true;
-    this.markSessionActive();
-    this.notify();
-
-    // Cache keys for automatic restore on next reload
-    await this.cacheSessionKeys(userSalt, accountSalt);
-
-    // Subscribe to settings changes
-    this.settingsUnsubscribe = subscribeToSettings(() => {
-      if (this._isLoggedIn) {
-        this.resetIdleTimer();
+      // Re-init if wrapped key provided (shouldn't happen for new users, but handle it)
+      if (wrappedAccountKey) {
+        await cryptoClient.initWithWrappedKey(
+          password,
+          userSalt,
+          accountSalt,
+          wrappedAccountKey,
+        );
       }
+      await cryptoClient.deriveIdentity();
+
+      // Initialize database worker with session key
+      const db = await getDbClient();
+      const sessionKey = await cryptoClient.getSessionKey();
+      await db.init(sessionKey);
+
+      this._isLoggedIn = true;
+      this.markSessionActive();
+      this.notify();
+
+      // Cache keys for automatic restore on next reload
+      await this.cacheSessionKeys(userSalt, accountSalt);
+
+      // Subscribe to settings changes
+      this.settingsUnsubscribe = subscribeToSettings(() => {
+        if (this._isLoggedIn) {
+          this.resetIdleTimer();
+        }
+      });
+
+      // Start idle timeout tracking
+      this.resetIdleTimer();
+      this.attachIdleListeners();
+
+      log.info(`LocalAuth registration successful: ${username} (${userId})`);
     });
-
-    // Start idle timeout tracking
-    this.resetIdleTimer();
-    this.attachIdleListeners();
-
-    log.info(`LocalAuth registration successful: ${username} (${userId})`);
   }
 
   /**
-   * Log out and clear all session data
+   * Log out and clear all session data.
+   *
+   * `localStorage` survives logout intentionally (L1).
+   * - `mosaic:userSalt` (16-byte random salt for Argon2id) and the i18n
+   *   language preference are the only entries we keep.
+   * - The user salt is **non-secret**: without the password it produces
+   *   no usable key material. Persisting it across logouts means the
+   *   next login on this device skips a server round-trip for salt
+   *   retrieval, which is only a performance optimisation but matters
+   *   on slow connections.
+   * - `sessionStorage` *is* cleared (the active-session marker and any
+   *   tab-scoped cached keys live there), and the workers are closed,
+   *   so all decrypted material is dropped.
+   * - Kiosk-style deployments that need full local amnesia should add
+   *   a separate `clearAllLocalState()` method later — explicitly opt-in
+   *   so the multi-device-friendly default is preserved.
+   *
+   * Cross-tab logout propagation (L2): when called locally we post a
+   * `{ type: 'logout' }` message on the `mosaic-session` BroadcastChannel
+   * so peer tabs clear their own decrypted state. When invoked in
+   * response to an inbound message we pass `skipBroadcast: true` to
+   * avoid a re-broadcast loop.
    */
-  async logout(): Promise<void> {
+  async logout(options: { skipBroadcast?: boolean } = {}): Promise<void> {
+    // Broadcast first so peer tabs start their own teardown in parallel
+    // with our backend logout call. We don't wait for them.
+    if (!options.skipBroadcast && this.broadcast) {
+      try {
+        this.broadcast.postMessage({ type: 'logout' });
+      } catch (error) {
+        log.warn('Failed to broadcast logout', { error });
+      }
+    }
+
     // Call backend logout to revoke session and clear cookie
     try {
       await fetch('/api/auth/logout', {
@@ -989,7 +1167,9 @@ class SessionManager {
     await closeCryptoClient();
     closeGeoClient();
 
-    // Clear session state
+    // Clear session state. NOTE: localStorage is intentionally NOT
+    // cleared — see the doc comment above. Only sessionStorage and the
+    // in-memory user object are dropped.
     this._currentUser = null;
     sessionStorage.clear();
 
@@ -999,6 +1179,21 @@ class SessionManager {
     }
 
     this._isLoggedIn = false;
+
+    // Tear down the BroadcastChannel after the broadcast has been posted
+    // so this manager stops responding to peer logouts (it has nothing
+    // useful left to do). A fresh SessionManager (next page load) will
+    // recreate it. Done after `_isLoggedIn = false` so any late-arriving
+    // self-broadcast is a no-op.
+    if (this.broadcast) {
+      try {
+        this.broadcast.close();
+      } catch (error) {
+        log.warn('Failed to close session BroadcastChannel', { error });
+      }
+      this.broadcast = null;
+    }
+
     this.notify();
   }
 

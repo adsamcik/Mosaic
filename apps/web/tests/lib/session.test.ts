@@ -221,6 +221,7 @@ describe('session', () => {
   const mockApi = {
     getCurrentUser: vi.fn(),
     updateCurrentUser: vi.fn(),
+    updateCurrentUserWrappedKey: vi.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(() => {

@@ -99,6 +99,7 @@ describe('Session Restore', () => {
   const mockApi = {
     getCurrentUser: vi.fn(),
     updateCurrentUser: vi.fn(),
+    updateCurrentUserWrappedKey: vi.fn().mockResolvedValue(undefined),
   };
 
   // Mock global fetch for the wrapped-key endpoint
@@ -401,6 +402,7 @@ describe('Session Restore Integration', () => {
     const mockApi = {
       getCurrentUser: vi.fn().mockResolvedValue(mockUser),
       updateCurrentUser: vi.fn().mockResolvedValue(mockUser),
+      updateCurrentUserWrappedKey: vi.fn().mockResolvedValue(undefined),
     };
 
     const mockCryptoClient = {
