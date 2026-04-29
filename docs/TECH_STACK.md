@@ -107,7 +107,65 @@ L3 (Epoch)   = ReadKey + SignKey per album  # Distributed to members
 | **mosaic-wasm** | Web Worker/WASM facade |
 | **mosaic-uniffi** | Android UniFFI/JNI facade |
 
-Rust is pinned with `rust-toolchain.toml`. The workspace is not used by production web/backend paths until the later WASM and Android integration phases.
+Rust is pinned with `rust-toolchain.toml`. The Rust client core powers the
+web frontend via `mosaic-wasm` and the Android app via `mosaic-uniffi` (see
+the Android section below).
+
+---
+
+## Android (`apps/android-main`)
+
+The first real Android Gradle application module, consuming the Rust UniFFI
+core directly via JNA-based generated Kotlin bindings.
+
+### Build chain
+| Component | Version | Purpose |
+|-----------|---------|---------|
+| **Gradle** | 8.10.2 | Build tool (wrapper distribution SHA256 pinned in `gradle/wrapper/gradle-wrapper.properties`) |
+| **Android Gradle Plugin** | 8.7.3 | Android application plugin |
+| **Kotlin** | 2.0.21 | JVM target 17 |
+| **JDK** | 17 | Compile + runtime target |
+| **compileSdk / targetSdk** | 35 | Android 15 |
+| **minSdk** | 26 | Android 8.0 floor |
+
+### FFI runtime
+| Component | Version | Purpose |
+|-----------|---------|---------|
+| **JNA (Android `aar`)** | 5.14.0 | Required by generated `uniffi.mosaic_uniffi.*` bindings (uses `com.sun.jna.*`). Packages `libjnidispatch.so` per ABI inside the APK. |
+| **cargo-ndk** | 4.1.2 | Rust cross-compile orchestrator producing `target/android/{abi}/libmosaic_uniffi.so` |
+| **uniffi-bindgen** | 0.31.1 | Generates `target/android/kotlin/uniffi/mosaic_uniffi/mosaic_uniffi.kt` from the host-built `mosaic_uniffi` library |
+| **Android NDK** | 29.0.14206865 | Native cross-compile toolchain (also accepts 27/28 if `ANDROID_NDK_HOME` is set explicitly) |
+
+### ABI filters
+Native libraries are shipped only for `arm64-v8a` and `x86_64`. No 32-bit
+builds. APK size ≈ 5 MB (debug, unminified).
+
+### Bridge architecture
+```
+apps/android-shell                                      apps/android-main
+(JVM-only Kotlin scaffold,                              (Real Gradle module,
+ source of truth for                                     consumes the contracts)
+ Generated*Api interfaces)
+                                                        AndroidRust*Api adapters
+  Generated*Api  ──── implemented by ─────────────►     delegate to
+                                                        uniffi.mosaic_uniffi.*
+                                                                │
+                                                                │ JNA Native.register
+                                                                ▼
+                                                        libmosaic_uniffi.so
+                                                        ↓
+                                                        crates/mosaic-uniffi
+                                                        ↓
+                                                        crates/{mosaic-client,
+                                                                mosaic-crypto,
+                                                                mosaic-domain,
+                                                                mosaic-media}
+```
+
+### Permissions (manifest invariants)
+- `android:allowBackup="false"`.
+- No `INTERNET`, no `READ_MEDIA_*`, no `READ_EXTERNAL_STORAGE`,
+  no `MANAGE_EXTERNAL_STORAGE`.
 
 ---
 

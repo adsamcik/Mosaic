@@ -32,6 +32,9 @@ apps/web/
     ├── hooks/.instructions.md       # 🪝 HOOKS: Custom hook patterns
     └── workers/.instructions.md     # ⚙️ WORKERS: Web Worker patterns
 
+apps/android-main/
+└── .instructions.md           # 📱 ANDROID APP: Gradle module + Rust UniFFI adapter rules
+
 libs/crypto/
 └── .instructions.md           # 🔐 CRYPTO: Cryptography implementation rules
 

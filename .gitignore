@@ -135,3 +135,7 @@ captures/
 apps/android/.idea/
 apps/android/build/
 apps/android/**/build/
+apps/android-main/.idea/
+apps/android-main/build/
+apps/android-main/**/build/
+gradle-wrapper-bootstrap-output.txt

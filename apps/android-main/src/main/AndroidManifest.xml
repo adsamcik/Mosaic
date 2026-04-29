@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  apps/android-main AndroidManifest.
+
+  Privacy / security invariants enforced here:
+    - android:allowBackup="false" (no auto-backup of app-private storage).
+    - android:hasFragileUserData="true" (caution-on-uninstall confirms encrypted data loss intent).
+    - No INTERNET permission. This module does not contact a server.
+    - No READ_EXTERNAL_STORAGE / MANAGE_EXTERNAL_STORAGE / READ_MEDIA_IMAGES.
+      The Photo Picker integration is handled by future android-shell pieces; this v1
+      slice is offline-only and only proves that the Rust core is wired.
+    - Only one component is exported (the launcher activity, required by Android 12+).
+    - android:requestLegacyExternalStorage is not declared (we never use it).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <application
+      android:name=".MosaicApplication"
+      android:allowBackup="false"
+      android:hasFragileUserData="true"
+      android:label="@string/app_name"
+      android:icon="@mipmap/ic_launcher"
+      android:roundIcon="@mipmap/ic_launcher_round"
+      android:theme="@style/Theme.MosaicMain"
+      android:supportsRtl="true">
+
+    <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.MosaicMain">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+
+  </application>
+
+</manifest>

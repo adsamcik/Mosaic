@@ -219,6 +219,93 @@ jobs:
           npm ci
           npm run build
 
+  android-shell:
+    name: Android Shell (JVM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build-check
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Kotlin compiler
+        run: |
+          curl -fsSL -o kotlin.zip https://github.com/JetBrains/kotlin/releases/download/v2.0.21/kotlin-compiler-2.0.21.zip
+          unzip -q kotlin.zip -d "$HOME/kotlin"
+          echo "$HOME/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+
+      - name: Run Android shell foundation tests
+        run: bash ./scripts/test-android-shell.sh
+
+  android-main:
+    name: Android Main (Gradle)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build-check
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            tools
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+            ndk;29.0.14206865
+
+      - name: Setup Rust
+        run: |
+          rustup toolchain install 1.93.1 --profile minimal --component clippy,rustfmt --target aarch64-linux-android,x86_64-linux-android
+          rustup default 1.93.1
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+
+      - name: Install uniffi-bindgen
+        run: cargo install uniffi --version 0.31.1 --bin uniffi-bindgen --locked
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+
+      - name: Build Rust UniFFI artifacts
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+        run: bash ./scripts/build-rust-android.sh
+
+      - name: Build Android APK (debug)
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+        run: ./gradlew :apps:android-main:assembleDebug --no-daemon --console=plain
+
+      - name: Run Android JVM unit tests
+        run: ./gradlew :apps:android-main:testDebugUnitTest --no-daemon --console=plain
+
+      - name: Upload APK artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-main-debug-apk
+          path: apps/android-main/build/outputs/apk/debug/android-main-debug.apk
+          if-no-files-found: warn
+          retention-days: 7
+
   rust-supply-chain:
     name: Rust Supply Chain
     runs-on: ubuntu-latest
