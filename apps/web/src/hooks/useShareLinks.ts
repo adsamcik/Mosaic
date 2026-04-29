@@ -18,6 +18,7 @@ import { getApi, paginateAll, toBase64 } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
 import { getCachedEpochIds, getEpochKey } from '../lib/epoch-key-store';
+import { encodeLinkId, encodeLinkSecret } from '../lib/link-encoding';
 
 /** Error thrown by share link operations */
 export class ShareLinkError extends Error {
@@ -216,17 +217,6 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
         setIsCreating(true);
         setCreateError(null);
 
-        // Import crypto functions dynamically
-        const {
-          generateLinkSecret,
-          deriveLinkKeys,
-          encodeLinkSecret,
-          encodeLinkId,
-          deriveTierKeys,
-          wrapTierKeyForLink,
-          AccessTier: AccessTierEnum,
-        } = await import('@mosaic/crypto');
-
         const api = getApi();
         const crypto = await getCryptoClient();
 
@@ -241,29 +231,32 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           );
         }
 
-        // Step 2: Generate link secret and derive keys
-        const linkSecret = generateLinkSecret();
-        const { linkId, wrappingKey } = deriveLinkKeys(linkSecret);
+        // Step 2: Generate link secret and derive keys via the crypto worker.
+        const linkSecret = await crypto.generateLinkSecret();
+        const { linkId, wrappingKey } = await crypto.deriveLinkKeys(linkSecret);
 
         // Step 3: Wrap the account key around the link secret for owner recovery
         const ownerEncryptedSecret =
           await crypto.wrapWithAccountKey(linkSecret);
 
-        // Step 4: Wrap tier keys for each epoch
+        // Step 4: Wrap tier keys for each epoch using the Rust epoch handle.
+        // The tier key never crosses the Comlink boundary — the worker derives
+        // it from the epoch handle and wraps it under the per-link wrapping
+        // key in one shot. The Rust core numbers tiers 0/1/2 (thumb/preview/
+        // full); the API protocol still uses 1/2/3.
         const wrappedKeys: WrappedKeyRequest[] = [];
 
         for (const epochId of epochIds) {
           const epochBundle = getEpochKey(albumId, epochId);
-          if (!epochBundle) continue;
+          if (!epochBundle?.epochHandleId) continue;
 
-          // Derive tier keys from epoch seed
-          const tierKeys = deriveTierKeys(epochBundle.epochSeed);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const epochHandleId = epochBundle.epochHandleId as any;
 
-          // Wrap keys based on access tier
-          // Always wrap thumb key
-          const wrappedThumb = wrapTierKeyForLink(
-            tierKeys.thumbKey,
-            AccessTierEnum.THUMB,
+          // Always wrap thumb key (tier byte 0).
+          const wrappedThumb = await crypto.wrapTierKeyForLink(
+            epochHandleId,
+            0,
             wrappingKey,
           );
           wrappedKeys.push({
@@ -273,11 +266,10 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
             encryptedKey: toBase64(wrappedThumb.encryptedKey),
           });
 
-          // Wrap preview key if tier >= 2
           if (options.accessTier >= 2) {
-            const wrappedPreview = wrapTierKeyForLink(
-              tierKeys.previewKey,
-              AccessTierEnum.PREVIEW,
+            const wrappedPreview = await crypto.wrapTierKeyForLink(
+              epochHandleId,
+              1,
               wrappingKey,
             );
             wrappedKeys.push({
@@ -288,11 +280,10 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
             });
           }
 
-          // Wrap full key if tier >= 3
           if (options.accessTier >= 3) {
-            const wrappedFull = wrapTierKeyForLink(
-              tierKeys.fullKey,
-              AccessTierEnum.FULL,
+            const wrappedFull = await crypto.wrapTierKeyForLink(
+              epochHandleId,
+              2,
               wrappingKey,
             );
             wrappedKeys.push({

@@ -21,18 +21,18 @@ import {
 // auth keypair derivation, and key export/import are now Rust-handled, so
 // `deriveKeys`, `deriveAuthKeypair`, `deriveIdentityKeypair`,
 // `unwrapAccountKey`, and `IdentityKeypair` are no longer imported here.
-// The remaining symbols belong to slices 3-7's territory and stay until
+// Slice 4 drops `signManifest`: manifest signing now routes through the
+// Rust epoch handle (`signManifestWithEpoch`). Slice 6 narrows it again:
+// share-link helpers (`deriveLinkKeys`, `generateLinkSecret`,
+// `wrapTierKeyForLink`, `unwrapTierKeyFromLink`) all route through the
+// Rust handle facade; the `AccessTier` runtime enum was a libsodium-typed
+// shim used only by those legacy share-link methods, so it's gone too.
+// The remaining symbols belong to slices 5/7's territory and stay until
 // their callers are migrated.
 import {
-  AccessTier,
   decryptShard as cryptoDecryptShard,
-  deriveLinkKeys as cryptoDeriveLinkKeys,
   encryptShard as cryptoEncryptShard,
-  generateLinkSecret as cryptoGenerateLinkSecret,
-  signManifest as cryptoSignManifest,
-  unwrapTierKeyFromLink as cryptoUnwrapTierKeyFromLink,
   verifyShard as cryptoVerifyShard,
-  wrapTierKeyForLink as cryptoWrapTierKeyForLink,
   deriveTierKeys,
   deriveContentKey,
   encryptContent as cryptoEncryptContent,
@@ -1050,58 +1050,6 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   /**
-   * Decrypt manifest metadata.
-   *
-   * Manifest metadata is encrypted as a shard (with thumbKey tier),
-   * containing JSON-encoded PhotoMeta.
-   *
-   * The readKey (epochSeed) is used to derive the thumbKey for decryption,
-   * since manifests are encrypted with thumbKey to allow share link recipients
-   * with thumbnail access to read photo metadata.
-   *
-   * For backwards compatibility with manifests encrypted before tier key
-   * derivation was implemented, falls back to trying readKey directly.
-   *
-   * @param encryptedMeta - Encrypted manifest bytes (envelope format)
-   * @param readKey - Epoch seed (32 bytes) for deriving thumbKey
-   * @returns Decrypted and parsed PhotoMeta
-   */
-  async decryptManifest(
-    encryptedMeta: Uint8Array,
-    readKey: Uint8Array,
-  ): Promise<PhotoMeta> {
-    await this.ensureSodiumReady();
-
-    // Manifest metadata uses the envelope format and is encrypted with thumbKey
-    // Derive thumbKey from epochSeed for decryption
-    const { thumbKey } = deriveTierKeys(readKey);
-
-    let plaintext: Uint8Array;
-    try {
-      plaintext = await cryptoDecryptShard(encryptedMeta, thumbKey);
-    } catch (err) {
-      // Fall back to readKey directly for backwards compatibility
-      // (manifests encrypted before tier key derivation was implemented)
-      const errorType = err instanceof Error ? err.constructor.name : 'Unknown';
-      log.debug('ThumbKey decrypt failed, falling back to readKey', { errorType });
-      plaintext = await cryptoDecryptShard(encryptedMeta, readKey);
-    } finally {
-      // Zero out derived key after use
-      memzero(thumbKey);
-    }
-
-    // Parse JSON from decrypted bytes
-    const decoder = new TextDecoder();
-    const json = decoder.decode(plaintext);
-
-    try {
-      return JSON.parse(json) as PhotoMeta;
-    } catch {
-      throw new Error('Failed to parse manifest metadata: invalid JSON');
-    }
-  }
-
-  /**
    * Verify manifest signature using Ed25519.
    *
    * Uses domain separation (Mosaic_Manifest_v1 context prefix)
@@ -1303,50 +1251,53 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   /**
-   * Encrypt manifest metadata for upload.
-   * Uses the same envelope format as shards with epoch and shard index 0.
+   * Encrypt manifest metadata for upload using the epoch handle's
+   * thumb-tier key (Slice 4 — Rust handle contract).
    *
-   * IMPORTANT: The readKey parameter is the epochSeed. We derive the thumbKey
-   * from it so that share link recipients (who only have tier keys, not the
-   * epochSeed) can decrypt the manifest with their thumbKey (tier 1).
+   * Routes through `encryptShardWithEpoch` with `shardIndex=0` and
+   * `tier=THUMB` (byte value `1`) — the manifest envelope convention. The
+   * thumb-tier key is derived inside Rust from the epoch handle and never
+   * crosses Comlink. The caller is expected to JSON-encode the
+   * {@link PhotoMeta} before invoking this method.
    */
-  async encryptManifest(
-    meta: PhotoMeta,
-    readKey: Uint8Array,
-    epochId: number,
-  ): Promise<{ ciphertext: Uint8Array; sha256: string }> {
-    await this.ensureSodiumReady();
-
-    // Derive the thumbKey from epochSeed for manifest encryption.
-    // This ensures share link recipients with tier keys can decrypt manifests.
-    const { thumbKey } = deriveTierKeys(readKey);
-
-    // Serialize metadata to JSON bytes
-    const encoder = new TextEncoder();
-    const plaintext = encoder.encode(JSON.stringify(meta));
-
-    // Encrypt using shard envelope format (epoch 0 and shard 0 are manifest convention)
-    // Note: We use the actual epochId but shardIndex 0 for manifest metadata
-    const encrypted = await cryptoEncryptShard(plaintext, thumbKey, epochId, 0);
-
-    // Zero out the derived key after use
-    memzero(thumbKey);
-
-    return {
-      ciphertext: encrypted.ciphertext,
-      sha256: encrypted.sha256,
-    };
+  async encryptManifestWithEpoch(
+    epochHandleId: EpochHandleId,
+    plaintext: Uint8Array,
+  ): Promise<{ envelopeBytes: Uint8Array; sha256: string }> {
+    return this.encryptShardWithEpoch(epochHandleId, plaintext, 0, 1);
   }
 
   /**
-   * Sign manifest data for upload.
+   * Sign manifest transcript bytes with the per-epoch manifest signing
+   * key attached to the epoch handle (Slice 4 — Rust handle contract).
+   *
+   * Routes through Rust `signManifestWithEpochHandle`; the per-epoch sign
+   * secret never crosses Comlink.
    */
-  async signManifest(
-    manifestData: Uint8Array,
-    signSecretKey: Uint8Array,
+  async signManifestWithEpoch(
+    epochHandleId: EpochHandleId,
+    manifestBytes: Uint8Array,
   ): Promise<Uint8Array> {
-    await this.ensureSodiumReady();
-    return cryptoSignManifest(manifestData, signSecretKey);
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      epochHandleId,
+      'epoch',
+      (rustEpoch) => facade.signManifestWithEpochHandle(rustEpoch, manifestBytes),
+    );
+  }
+
+  /**
+   * Decrypt a manifest envelope using the epoch handle's thumb-tier key
+   * (Slice 4 — Rust handle contract).
+   *
+   * Returns the raw plaintext bytes (typically UTF-8 JSON for the
+   * encoded {@link PhotoMeta}); callers decode/parse outside the worker.
+   */
+  async decryptManifestWithEpoch(
+    epochHandleId: EpochHandleId,
+    envelopeBytes: Uint8Array,
+  ): Promise<Uint8Array> {
+    return this.decryptShardWithEpoch(epochHandleId, envelopeBytes);
   }
 
   /**
@@ -1376,71 +1327,6 @@ class CryptoWorker implements CryptoWorkerApi {
     return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
       facade.unwrapWithAccountHandle(rustAccount, wrapped),
     );
-  }
-
-  // =========================================================================
-  // Link Sharing Operations
-  // =========================================================================
-
-  /**
-   * Derive link ID and wrapping key from a link secret.
-   */
-  async deriveLinkKeys(
-    linkSecret: Uint8Array,
-  ): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }> {
-    await this.ensureSodiumReady();
-    return cryptoDeriveLinkKeys(linkSecret);
-  }
-
-  /**
-   * Wrap a tier key for share link storage.
-   */
-  async wrapTierKeyForLink(
-    tierKey: Uint8Array,
-    tier: number,
-    wrappingKey: Uint8Array,
-  ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }> {
-    await this.ensureSodiumReady();
-    const wrapped = cryptoWrapTierKeyForLink(
-      tierKey,
-      tier as AccessTier,
-      wrappingKey,
-    );
-    return {
-      tier: wrapped.tier,
-      nonce: wrapped.nonce,
-      encryptedKey: wrapped.encryptedKey,
-    };
-  }
-
-  /**
-   * Unwrap a tier key from share link storage.
-   */
-  async unwrapTierKeyFromLink(
-    nonce: Uint8Array,
-    encryptedKey: Uint8Array,
-    tier: number,
-    wrappingKey: Uint8Array,
-  ): Promise<Uint8Array> {
-    await this.ensureSodiumReady();
-    const wrapped = {
-      tier: tier as AccessTier,
-      nonce,
-      encryptedKey,
-    };
-    return cryptoUnwrapTierKeyFromLink(
-      wrapped,
-      tier as AccessTier,
-      wrappingKey,
-    );
-  }
-
-  /**
-   * Generate a new random link secret (32 bytes).
-   */
-  async generateLinkSecret(): Promise<Uint8Array> {
-    await this.ensureSodiumReady();
-    return cryptoGenerateLinkSecret();
   }
 
   // =========================================================================
@@ -1887,19 +1773,23 @@ class CryptoWorker implements CryptoWorkerApi {
     );
   }
 
-  async generateLinkSecretRust(): Promise<Uint8Array> {
+  // =========================================================================
+  // Link Sharing Operations (Slice 6 — Rust handle contract)
+  // =========================================================================
+
+  async generateLinkSecret(): Promise<Uint8Array> {
     const facade = await getRustFacade();
     return facade.generateLinkSecret();
   }
 
-  async deriveLinkKeysRust(
+  async deriveLinkKeys(
     linkSecret: Uint8Array,
   ): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }> {
     const facade = await getRustFacade();
     return facade.deriveLinkKeys(linkSecret);
   }
 
-  async wrapTierKeyForLinkRust(
+  async wrapTierKeyForLink(
     epochHandleId: EpochHandleId,
     tier: 0 | 1 | 2,
     wrappingKey: Uint8Array,
@@ -1912,7 +1802,7 @@ class CryptoWorker implements CryptoWorkerApi {
     );
   }
 
-  async unwrapTierKeyFromLinkRust(
+  async unwrapTierKeyFromLink(
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     tier: 0 | 1 | 2,

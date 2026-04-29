@@ -47,20 +47,9 @@ vi.mock('../src/lib/epoch-key-service', () => ({
   fetchAndUnwrapEpochKeys: vi.fn().mockResolvedValue([]),
 }));
 
-// Mock @mosaic/crypto — Slice 3 reduces this surface to `deriveLinkKeys`
-// (still consumed by `wrapKeysForShareLinks` for per-link wrapping keys)
-// and `memzero`. Tier-key derivation moved to the Rust crypto core via the
-// worker, so `deriveTierKeys` / `wrapTierKeyForLink` are no longer needed.
-vi.mock('@mosaic/crypto', () => ({
-  deriveLinkKeys: vi.fn(() => ({
-    linkId: new Uint8Array(16).fill(1),
-    wrappingKey: new Uint8Array(32).fill(20),
-  })),
-  AccessTier: { THUMB: 1, PREVIEW: 2, FULL: 3 },
-  memzero: vi.fn((buf: Uint8Array) => {
-    buf.fill(0);
-  }),
-}));
+// Slice 6 — share-link rewrap moved entirely to the worker. The
+// `@mosaic/crypto` import is gone; `deriveLinkKeys` and `memzero` are no
+// longer needed at the test level (the worker mock satisfies them).
 
 import { getApi } from '../src/lib/api';
 import { getCryptoClient } from '../src/lib/crypto-client';
@@ -122,7 +111,8 @@ describe('epoch-rotation-service', () => {
     deriveIdentity: ReturnType<typeof vi.fn>;
     createEpochKeyBundle: ReturnType<typeof vi.fn>;
     unwrapWithAccountKey: ReturnType<typeof vi.fn>;
-    wrapTierKeyForLinkRust: ReturnType<typeof vi.fn>;
+    deriveLinkKeys: ReturnType<typeof vi.fn>;
+    wrapTierKeyForLink: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -143,8 +133,14 @@ describe('epoch-rotation-service', () => {
       unwrapWithAccountKey: vi
         .fn()
         .mockResolvedValue(new Uint8Array(32).fill(50)),
-      // Slice 3 — share-link tier-key wrapping moved to a Rust-handle path.
-      wrapTierKeyForLinkRust: vi.fn(async (_handle: string, tier: number) => ({
+      // Slice 6 — share-link wrapping flow is fully worker-driven. The
+      // wrapping key is derived in the worker; the test mock just returns
+      // sentinel non-zero bytes so the per-link wipe assertions pass.
+      deriveLinkKeys: vi.fn(async () => ({
+        linkId: new Uint8Array(16).fill(0xb1),
+        wrappingKey: new Uint8Array(32).fill(0xb2),
+      })),
+      wrapTierKeyForLink: vi.fn(async (_handle: string, tier: number) => ({
         tier,
         nonce: new Uint8Array(24).fill(tier),
         encryptedKey: new Uint8Array(48).fill(tier),

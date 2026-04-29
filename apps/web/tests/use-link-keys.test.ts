@@ -10,13 +10,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Use vi.hoisted to create mocks before vi.mock hoisting
 const mocks = vi.hoisted(() => ({
-  crypto: {
-    decodeLinkSecret: vi.fn(),
-    decodeLinkId: vi.fn(),
+  // Slice 6 — share-link unwrapping routes through the crypto worker via
+  // Comlink, not via direct `@mosaic/crypto` imports. The hook also reaches
+  // for `fromBase64` from `lib/api` and the URL encoders from
+  // `lib/link-encoding`, all of which we mock below.
+  worker: {
     deriveLinkKeys: vi.fn(),
     unwrapTierKeyFromLink: vi.fn(),
+  },
+  api: {
     fromBase64: vi.fn(),
-    toBase64: vi.fn(),
+  },
+  linkEncoding: {
+    decodeLinkSecret: vi.fn(),
+    decodeLinkId: vi.fn(),
     constantTimeEqual: vi.fn(),
   },
   fetch: vi.fn(),
@@ -56,23 +63,36 @@ let mockIDBOpenRequest: {
   onupgradeneeded: ((event: IDBVersionChangeEvent) => void) | null;
 };
 
-// Mock @mosaic/crypto
-vi.mock('@mosaic/crypto', () => ({
+// Slice 6 — the hook now talks to the crypto worker for derivation and
+// unwrapping; expose a Comlink-style remote with the methods we need.
+vi.mock('../src/lib/crypto-client', () => ({
+  getCryptoClient: () => Promise.resolve(mocks.worker),
+}));
+
+// `lib/api` exposes the base64 helpers the hook uses to decode wire-format
+// nonces / encrypted keys.
+vi.mock('../src/lib/api', () => ({
+  fromBase64: (s: string) => mocks.api.fromBase64(s),
+  toBase64: (arr: Uint8Array) => btoa(String.fromCharCode(...arr)),
+}));
+
+// `lib/link-encoding` is the new home of the base64url URL helpers and
+// `constantTimeEqual` (Slice 6 split). Tests stub them out so the hook
+// can be exercised with sentinel string inputs.
+vi.mock('../src/lib/link-encoding', () => ({
   decodeLinkSecret: (...args: unknown[]) =>
-    mocks.crypto.decodeLinkSecret(...args),
-  decodeLinkId: (...args: unknown[]) => mocks.crypto.decodeLinkId(...args),
-  deriveLinkKeys: (...args: unknown[]) => mocks.crypto.deriveLinkKeys(...args),
-  unwrapTierKeyFromLink: (...args: unknown[]) =>
-    mocks.crypto.unwrapTierKeyFromLink(...args),
-  fromBase64: (...args: unknown[]) => mocks.crypto.fromBase64(...args),
-  toBase64: (...args: unknown[]) => mocks.crypto.toBase64(...args),
+    mocks.linkEncoding.decodeLinkSecret(...(args as [string])),
+  decodeLinkId: (...args: unknown[]) =>
+    mocks.linkEncoding.decodeLinkId(...(args as [string])),
   constantTimeEqual: (...args: unknown[]) =>
-    mocks.crypto.constantTimeEqual(...args),
-  AccessTier: {
-    THUMB: 1,
-    PREVIEW: 2,
-    FULL: 3,
-  },
+    mocks.linkEncoding.constantTimeEqual(
+      ...(args as [Uint8Array, Uint8Array]),
+    ),
+  // Re-export the size constants so any consumer that imports them keeps
+  // working — they are not used by the hook directly but live in the same
+  // module.
+  LINK_SECRET_SIZE: 32,
+  LINK_ID_SIZE: 16,
 }));
 
 // Mock fetch globally
@@ -241,24 +261,23 @@ describe('useLinkKeys', () => {
     setupIndexedDB();
     document.body.innerHTML = '';
 
-    // Default crypto mocks
-    mocks.crypto.decodeLinkSecret.mockReturnValue(new Uint8Array(32).fill(1));
-    mocks.crypto.decodeLinkId.mockReturnValue(new Uint8Array(16).fill(2));
-    mocks.crypto.deriveLinkKeys.mockReturnValue({
+    // Default mocks for the share-link decoders, the worker, and api helpers.
+    mocks.linkEncoding.decodeLinkSecret.mockReturnValue(
+      new Uint8Array(32).fill(1),
+    );
+    mocks.linkEncoding.decodeLinkId.mockReturnValue(new Uint8Array(16).fill(2));
+    mocks.linkEncoding.constantTimeEqual.mockReturnValue(true);
+    mocks.worker.deriveLinkKeys.mockResolvedValue({
       linkId: new Uint8Array(16).fill(2),
       wrappingKey: new Uint8Array(32).fill(3),
     });
-    mocks.crypto.constantTimeEqual.mockReturnValue(true);
-    mocks.crypto.fromBase64.mockImplementation((s: string) => {
+    mocks.api.fromBase64.mockImplementation((s: string) => {
       if (s === 'test-nonce') return new Uint8Array(24).fill(4);
       if (s === 'test-encrypted') return new Uint8Array(48).fill(5);
       if (s === 'test-signpubkey') return new Uint8Array(32).fill(6);
       return new Uint8Array(32);
     });
-    mocks.crypto.toBase64.mockImplementation((arr: Uint8Array) =>
-      btoa(String.fromCharCode(...arr)),
-    );
-    mocks.crypto.unwrapTierKeyFromLink.mockReturnValue(
+    mocks.worker.unwrapTierKeyFromLink.mockResolvedValue(
       new Uint8Array(32).fill(7),
     );
   });

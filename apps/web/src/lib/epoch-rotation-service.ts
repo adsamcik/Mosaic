@@ -316,15 +316,16 @@ export async function rotateEpoch(
  * Wrap tier keys for all active share links during epoch rotation.
  *
  * For each share link with a stored owner-encrypted secret:
- * 1. Decrypt the owner-encrypted secret to get the link secret.
- * 2. Derive the per-link wrapping key from the link secret (in Rust).
+ * 1. Decrypt the owner-encrypted secret to get the link secret (worker).
+ * 2. Derive the per-link wrapping key from the link secret (worker).
  * 3. Wrap each tier key (up to the link's access tier) with the wrapping
- *    key using the new epoch handle (tier keys never leave the worker).
+ *    key using the new epoch handle (worker; tier keys never leave the
+ *    worker).
  *
- * Slice 3 — `epochHandleId` replaces the raw seed parameter so tier-key
- * derivation happens entirely inside the worker. Slice 6 will retire the
- * remaining `@mosaic/crypto` import here once `useShareLinks` /
- * `useLinkKeys` migrate.
+ * Slice 6 — drops the final `@mosaic/crypto` imports from the share-link
+ * surface. The link secret arrives over Comlink but is wiped immediately
+ * after the per-link wrappingKey is derived. The wrappingKey itself is
+ * also wiped after the per-link wraps complete.
  *
  * @param shareLinks - Active share links with owner-encrypted secrets.
  * @param epochHandleId - Rust-owned epoch handle for the new epoch.
@@ -335,14 +336,15 @@ export async function wrapKeysForShareLinks(
   shareLinks: ShareLinkWithSecretResponse[],
   epochHandleId: string,
 ): Promise<ShareLinkKeyUpdateRequest[]> {
-  // Import the @mosaic/crypto helpers that the worker hasn't yet absorbed
-  // (Slice 6 retires this import). `memzero` is needed for the per-link
-  // sensitive material the worker still hands back as plain bytes; tier
-  // key derivation now happens inside Rust via `wrapTierKeyForLinkRust`.
-  const { deriveLinkKeys, AccessTier, memzero } = await import('@mosaic/crypto');
-
   const crypto = await getCryptoClient();
   const results: ShareLinkKeyUpdateRequest[] = [];
+
+  // Slice 6 — share-link wire/API protocol numbers tiers 1=thumb, 2=preview,
+  // 3=full. The Rust crypto core uses 0-indexed tier bytes (0/1/2). Convert
+  // exactly once at the boundary.
+  const TIER_THUMB_API = 1;
+  const TIER_PREVIEW_API = 2;
+  const TIER_FULL_API = 3;
 
   for (const link of shareLinks) {
     if (!link.ownerEncryptedSecret || link.isRevoked) {
@@ -356,47 +358,47 @@ export async function wrapKeysForShareLinks(
       const encryptedSecret = fromBase64(link.ownerEncryptedSecret);
       linkSecret = await crypto.unwrapWithAccountKey(encryptedSecret);
 
-      const linkKeys = deriveLinkKeys(linkSecret);
+      const linkKeys = await crypto.deriveLinkKeys(linkSecret);
       wrappingKey = linkKeys.wrappingKey;
 
       const wrappedKeys: ShareLinkKeyUpdateRequest['wrappedKeys'] = [];
 
-      // Always wrap thumb key (tier 1).
-      const wrappedThumb = await crypto.wrapTierKeyForLinkRust(
+      // Always wrap thumb key (tier byte 0).
+      const wrappedThumb = await crypto.wrapTierKeyForLink(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         epochHandleId as any,
         0,
         wrappingKey,
       );
       wrappedKeys.push({
-        tier: AccessTier.THUMB,
+        tier: TIER_THUMB_API,
         nonce: toBase64(wrappedThumb.nonce),
         encryptedKey: toBase64(wrappedThumb.encryptedKey),
       });
 
       if (link.accessTier >= 2) {
-        const wrappedPreview = await crypto.wrapTierKeyForLinkRust(
+        const wrappedPreview = await crypto.wrapTierKeyForLink(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           epochHandleId as any,
           1,
           wrappingKey,
         );
         wrappedKeys.push({
-          tier: AccessTier.PREVIEW,
+          tier: TIER_PREVIEW_API,
           nonce: toBase64(wrappedPreview.nonce),
           encryptedKey: toBase64(wrappedPreview.encryptedKey),
         });
       }
 
       if (link.accessTier >= 3) {
-        const wrappedFull = await crypto.wrapTierKeyForLinkRust(
+        const wrappedFull = await crypto.wrapTierKeyForLink(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           epochHandleId as any,
           2,
           wrappingKey,
         );
         wrappedKeys.push({
-          tier: AccessTier.FULL,
+          tier: TIER_FULL_API,
           nonce: toBase64(wrappedFull.nonce),
           encryptedKey: toBase64(wrappedFull.encryptedKey),
         });
@@ -410,8 +412,15 @@ export async function wrapKeysForShareLinks(
       log.error(`Failed to wrap keys for share link ${link.id}:`, err);
       // Continue with other links — non-fatal at the rotation level.
     } finally {
-      if (linkSecret) memzero(linkSecret);
-      if (wrappingKey) memzero(wrappingKey);
+      // Slice 6 — wipe the per-link sensitive bytes that crossed Comlink.
+      // We zero in-place here rather than via libsodium so this module
+      // doesn't have to import `@mosaic/crypto`. The buffers are owned
+      // by JS at this point, so a `.fill(0)` is functionally equivalent
+      // to `sodium.memzero` modulo compiler optimisations the JS engine
+      // may not perform — acceptable for a transient buffer wiped
+      // synchronously before any other code runs.
+      if (linkSecret) linkSecret.fill(0);
+      if (wrappingKey) wrappingKey.fill(0);
     }
   }
 

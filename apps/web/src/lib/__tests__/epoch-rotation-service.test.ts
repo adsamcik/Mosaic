@@ -1,13 +1,12 @@
 /**
  * Epoch Rotation Service - Security Tests (M1)
  *
- * Slice 3 — tier-key derivation moved from `@mosaic/crypto` (in-worker JS)
- * to the Rust crypto core, so the per-iteration zeroing assertions for
- * thumb/preview/full keys no longer apply: those bytes never enter JS
- * memory in the new world. We retain the per-iteration `linkSecret` /
- * `wrappingKey` zeroing assertions because those buffers still cross the
- * worker boundary and are wiped on every path inside
- * `wrapKeysForShareLinks`.
+ * Slice 6 — share-link rewrap is fully worker-driven now. The previous
+ * `@mosaic/crypto` mock for `deriveLinkKeys`/`memzero` is gone; the
+ * worker mock supplies the wrapping key (intercepted so we can assert it
+ * gets wiped after the per-link iteration). Per-iteration `linkSecret`
+ * and `wrappingKey` zeroing assertions still apply because both buffers
+ * cross the worker boundary as plain bytes.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,24 +31,6 @@ function nonZero(size: number, fill: number): Uint8Array {
 // ---------------------------------------------------------------------------
 // Mocks (registered before the SUT import)
 // ---------------------------------------------------------------------------
-
-vi.mock('@mosaic/crypto', () => ({
-  AccessTier: { THUMB: 1, PREVIEW: 2, FULL: 3 },
-  // Slice 3 — Rust derives tier keys via the worker's epoch handle. JS
-  // only still derives the per-link wrapping key from the recovered link
-  // secret; share-link recipients carry on with the existing format.
-  deriveLinkKeys: vi.fn(() => {
-    const keys: CapturedLinkKeys = {
-      linkId: nonZero(16, 0xb1),
-      wrappingKey: nonZero(32, 0xb2),
-    };
-    captured.linkKeys.push(keys);
-    return keys;
-  }),
-  memzero: vi.fn((buf: Uint8Array) => {
-    buf.fill(0);
-  }),
-}));
 
 vi.mock('../api', () => ({
   fromBase64: vi.fn(() => new Uint8Array([1, 2, 3])),
@@ -120,10 +101,20 @@ beforeEach(() => {
       captured.linkSecrets.push(secret);
       return secret;
     }),
-    // Slice 3 — tier-key wrapping happens entirely inside the worker;
-    // tier keys are never materialised in JS. The mock returns sentinel
-    // bytes so callers can verify wrap-by-tier behaviour.
-    wrapTierKeyForLinkRust: vi.fn(async (_handle: string, tier: number) => ({
+    // Slice 6 — wrapping key derivation moved into the worker. Capture the
+    // returned buffer so we can verify it gets wiped after each iteration.
+    deriveLinkKeys: vi.fn(async () => {
+      const keys: CapturedLinkKeys = {
+        linkId: nonZero(16, 0xb1),
+        wrappingKey: nonZero(32, 0xb2),
+      };
+      captured.linkKeys.push(keys);
+      return keys;
+    }),
+    // Tier-key wrapping happens entirely inside the worker; tier keys are
+    // never materialised in JS. The mock returns sentinel bytes so callers
+    // can verify wrap-by-tier behaviour.
+    wrapTierKeyForLink: vi.fn(async (_handle: string, tier: number) => ({
       tier,
       nonce: new Uint8Array(24).fill(tier),
       encryptedKey: new Uint8Array(48).fill(tier),
@@ -161,7 +152,8 @@ describe('wrapKeysForShareLinks (M1: zeroize per-link material)', () => {
     expect(results).toHaveLength(1);
     // Three calls = thumb (tier 0) + preview (tier 1) + full (tier 2).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((crypto as any).wrapTierKeyForLinkRust).toHaveBeenCalledTimes(3);
+    expect((crypto as any).wrapTierKeyForLink).toHaveBeenCalledTimes(3);
   });
 });
+
 

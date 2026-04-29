@@ -14,8 +14,12 @@ const mockApi = {
 };
 
 // Mock crypto client implementation
+// Slice 6 — share-link key wrapping flows entirely through the worker.
 const mockCryptoClient = {
   wrapWithAccountKey: vi.fn(),
+  generateLinkSecret: vi.fn(),
+  deriveLinkKeys: vi.fn(),
+  wrapTierKeyForLink: vi.fn(),
 };
 
 // Mock epoch key store
@@ -25,13 +29,9 @@ const mockGetCachedEpochIds = vi.fn();
 // Mock epoch key service
 const mockFetchAndUnwrapEpochKeys = vi.fn();
 
-// Mock @mosaic/crypto functions
-const mockGenerateLinkSecret = vi.fn();
-const mockDeriveLinkKeys = vi.fn();
+// Mock link encoding helpers (pure URL encoders).
 const mockEncodeLinkSecret = vi.fn();
 const mockEncodeLinkId = vi.fn();
-const mockDeriveTierKeys = vi.fn();
-const mockWrapTierKeyForLink = vi.fn();
 
 // Mock the API client
 vi.mock('../src/lib/api', () => ({
@@ -69,19 +69,12 @@ vi.mock('../src/lib/epoch-key-service', () => ({
     mockFetchAndUnwrapEpochKeys(...args),
 }));
 
-// Mock @mosaic/crypto
-vi.mock('@mosaic/crypto', () => ({
-  generateLinkSecret: () => mockGenerateLinkSecret(),
-  deriveLinkKeys: (...args: unknown[]) => mockDeriveLinkKeys(...args),
+// Mock link-encoding URL helpers — pure base64url, no crypto.
+vi.mock('../src/lib/link-encoding', () => ({
   encodeLinkSecret: (...args: unknown[]) => mockEncodeLinkSecret(...args),
   encodeLinkId: (...args: unknown[]) => mockEncodeLinkId(...args),
-  deriveTierKeys: (...args: unknown[]) => mockDeriveTierKeys(...args),
-  wrapTierKeyForLink: (...args: unknown[]) => mockWrapTierKeyForLink(...args),
-  AccessTier: {
-    THUMB: 1,
-    PREVIEW: 2,
-    FULL: 3,
-  },
+  LINK_SECRET_SIZE: 32,
+  LINK_ID_SIZE: 16,
 }));
 
 // Helper to create mock share link response
@@ -116,36 +109,35 @@ describe('useShareLinks', () => {
     mockApi.revokeShareLink.mockResolvedValue(undefined);
 
     mockCryptoClient.wrapWithAccountKey.mockResolvedValue(new Uint8Array(48));
+    mockCryptoClient.generateLinkSecret.mockResolvedValue(
+      new Uint8Array(32).fill(4),
+    );
+    mockCryptoClient.deriveLinkKeys.mockResolvedValue({
+      linkId: new Uint8Array(16).fill(5),
+      wrappingKey: new Uint8Array(32).fill(6),
+    });
+    mockCryptoClient.wrapTierKeyForLink.mockResolvedValue({
+      tier: 0,
+      nonce: new Uint8Array(24),
+      encryptedKey: new Uint8Array(48),
+    });
 
     mockGetCachedEpochIds.mockReturnValue([1]);
     mockGetEpochKey.mockReturnValue({
       epochId: 1,
-      epochSeed: new Uint8Array(32).fill(1),
+      epochHandleId: 'epch_test-handle-id',
+      signPublicKey: new Uint8Array(32).fill(2),
+      epochSeed: new Uint8Array(0),
       signKeypair: {
         publicKey: new Uint8Array(32).fill(2),
-        secretKey: new Uint8Array(64).fill(3),
+        secretKey: new Uint8Array(0),
       },
     });
 
     mockFetchAndUnwrapEpochKeys.mockResolvedValue([]);
 
-    mockGenerateLinkSecret.mockReturnValue(new Uint8Array(32).fill(4));
-    mockDeriveLinkKeys.mockReturnValue({
-      linkId: new Uint8Array(16).fill(5),
-      wrappingKey: new Uint8Array(32).fill(6),
-    });
     mockEncodeLinkSecret.mockReturnValue('encoded-secret');
     mockEncodeLinkId.mockReturnValue('encoded-link-id');
-    mockDeriveTierKeys.mockReturnValue({
-      thumbKey: new Uint8Array(32).fill(7),
-      previewKey: new Uint8Array(32).fill(8),
-      fullKey: new Uint8Array(32).fill(9),
-    });
-    mockWrapTierKeyForLink.mockReturnValue({
-      tier: 1,
-      nonce: new Uint8Array(24),
-      encryptedKey: new Uint8Array(48),
-    });
   });
 
   afterEach(() => {
@@ -291,36 +283,31 @@ describe('useShareLinks', () => {
     });
   });
 
-  describe('crypto operations', () => {
-    it('generates link secret', () => {
-      const secret = mockGenerateLinkSecret();
+  describe('crypto operations (worker contract)', () => {
+    it('generates link secret via worker', async () => {
+      const secret = await mockCryptoClient.generateLinkSecret();
       expect(secret).toBeInstanceOf(Uint8Array);
       expect(secret.length).toBe(32);
     });
 
-    it('derives link keys from secret', () => {
+    it('derives link keys from secret via worker', async () => {
       const secret = new Uint8Array(32).fill(1);
-      const keys = mockDeriveLinkKeys(secret);
+      const keys = await mockCryptoClient.deriveLinkKeys(secret);
 
       expect(keys.linkId).toBeDefined();
       expect(keys.wrappingKey).toBeDefined();
     });
 
-    it('derives tier keys from read key', () => {
-      const readKey = new Uint8Array(32).fill(1);
-      const tierKeys = mockDeriveTierKeys(readKey);
-
-      expect(tierKeys.thumbKey).toBeDefined();
-      expect(tierKeys.previewKey).toBeDefined();
-      expect(tierKeys.fullKey).toBeDefined();
-    });
-
-    it('wraps tier key for link', () => {
-      const tierKey = new Uint8Array(32).fill(1);
+    it('wraps tier key for link via worker, scoped to an epoch handle', async () => {
+      const epochHandleId = 'epch_test-handle-id';
       const wrappingKey = new Uint8Array(32).fill(2);
-      const wrapped = mockWrapTierKeyForLink(tierKey, 1, wrappingKey);
+      const wrapped = await mockCryptoClient.wrapTierKeyForLink(
+        epochHandleId,
+        0,
+        wrappingKey,
+      );
 
-      expect(wrapped.tier).toBe(1);
+      expect(wrapped.tier).toBeDefined();
       expect(wrapped.nonce).toBeDefined();
       expect(wrapped.encryptedKey).toBeDefined();
     });
@@ -344,7 +331,7 @@ describe('useShareLinks', () => {
 
       expect(key).toBeDefined();
       expect(key.epochId).toBe(1);
-      expect(key.epochSeed).toBeDefined();
+      expect(key.epochHandleId).toBeDefined();
     });
   });
 
@@ -431,35 +418,55 @@ describe('useShareLinks', () => {
 
   describe('tier key wrapping based on access tier', () => {
     it('wraps only thumb key for tier 1', async () => {
-      // For tier 1, only thumb key should be wrapped
-      mockWrapTierKeyForLink.mockClear();
+      mockCryptoClient.wrapTierKeyForLink.mockClear();
 
-      // Simulate wrapping for tier 1
-      const tierKeys = mockDeriveTierKeys(new Uint8Array(32));
-      mockWrapTierKeyForLink(tierKeys.thumbKey, 1, new Uint8Array(32));
+      // Simulate wrapping for tier 1 — only the thumb byte (0).
+      await mockCryptoClient.wrapTierKeyForLink(
+        'epch_test',
+        0,
+        new Uint8Array(32),
+      );
 
-      expect(mockWrapTierKeyForLink).toHaveBeenCalledTimes(1);
+      expect(mockCryptoClient.wrapTierKeyForLink).toHaveBeenCalledTimes(1);
     });
 
     it('wraps thumb and preview keys for tier 2', async () => {
-      mockWrapTierKeyForLink.mockClear();
+      mockCryptoClient.wrapTierKeyForLink.mockClear();
 
-      const tierKeys = mockDeriveTierKeys(new Uint8Array(32));
-      mockWrapTierKeyForLink(tierKeys.thumbKey, 1, new Uint8Array(32));
-      mockWrapTierKeyForLink(tierKeys.previewKey, 2, new Uint8Array(32));
+      await mockCryptoClient.wrapTierKeyForLink(
+        'epch_test',
+        0,
+        new Uint8Array(32),
+      );
+      await mockCryptoClient.wrapTierKeyForLink(
+        'epch_test',
+        1,
+        new Uint8Array(32),
+      );
 
-      expect(mockWrapTierKeyForLink).toHaveBeenCalledTimes(2);
+      expect(mockCryptoClient.wrapTierKeyForLink).toHaveBeenCalledTimes(2);
     });
 
     it('wraps all three keys for tier 3', async () => {
-      mockWrapTierKeyForLink.mockClear();
+      mockCryptoClient.wrapTierKeyForLink.mockClear();
 
-      const tierKeys = mockDeriveTierKeys(new Uint8Array(32));
-      mockWrapTierKeyForLink(tierKeys.thumbKey, 1, new Uint8Array(32));
-      mockWrapTierKeyForLink(tierKeys.previewKey, 2, new Uint8Array(32));
-      mockWrapTierKeyForLink(tierKeys.fullKey, 3, new Uint8Array(32));
+      await mockCryptoClient.wrapTierKeyForLink(
+        'epch_test',
+        0,
+        new Uint8Array(32),
+      );
+      await mockCryptoClient.wrapTierKeyForLink(
+        'epch_test',
+        1,
+        new Uint8Array(32),
+      );
+      await mockCryptoClient.wrapTierKeyForLink(
+        'epch_test',
+        2,
+        new Uint8Array(32),
+      );
 
-      expect(mockWrapTierKeyForLink).toHaveBeenCalledTimes(3);
+      expect(mockCryptoClient.wrapTierKeyForLink).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -467,12 +474,14 @@ describe('useShareLinks', () => {
     it('wraps keys for all cached epochs', async () => {
       mockGetCachedEpochIds.mockReturnValue([1, 2, 3]);
       mockGetEpochKey.mockImplementation(
-        (albumId: string, epochId: number) => ({
+        (_albumId: string, epochId: number) => ({
           epochId,
-          epochSeed: new Uint8Array(32).fill(epochId),
+          epochHandleId: `epch_${epochId}`,
+          signPublicKey: new Uint8Array(32),
+          epochSeed: new Uint8Array(0),
           signKeypair: {
             publicKey: new Uint8Array(32),
-            secretKey: new Uint8Array(64),
+            secretKey: new Uint8Array(0),
           },
         }),
       );

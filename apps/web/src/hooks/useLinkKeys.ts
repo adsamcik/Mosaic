@@ -10,6 +10,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../lib/api-types';
+import { fromBase64 } from '../lib/api';
+import { getCryptoClient } from '../lib/crypto-client';
+import {
+  constantTimeEqual,
+  decodeLinkId,
+  decodeLinkSecret,
+} from '../lib/link-encoding';
 import {
   getTierKeys,
   saveTierKeys,
@@ -118,16 +125,7 @@ export function useLinkKeys(
     try {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-      // Import crypto functions
-      const {
-        decodeLinkSecret,
-        decodeLinkId,
-        deriveLinkKeys,
-        unwrapTierKeyFromLink,
-        fromBase64,
-        constantTimeEqual,
-        AccessTier: AccessTierEnum,
-      } = await import('@mosaic/crypto');
+      const crypto = await getCryptoClient();
 
       // Decode and verify link secret/ID
       let secret: Uint8Array;
@@ -139,8 +137,9 @@ export function useLinkKeys(
         throw new Error('Invalid link format');
       }
 
-      // Derive keys and verify linkId matches
-      const { linkId: derivedLinkId, wrappingKey } = deriveLinkKeys(secret);
+      // Derive keys via the crypto worker (Rust core) and verify linkId matches.
+      const { linkId: derivedLinkId, wrappingKey } =
+        await crypto.deriveLinkKeys(secret);
       if (!constantTimeEqual(urlLinkId, derivedLinkId)) {
         throw new Error('Link has been tampered with');
       }
@@ -203,13 +202,13 @@ export function useLinkKeys(
       const tierKeys = new Map<number, Map<AccessTierType, TierKey>>();
       for (const wrapped of wrappedKeys) {
         try {
-          const unwrapped = unwrapTierKeyFromLink(
-            {
-              tier: wrapped.tier as unknown as typeof AccessTierEnum.THUMB,
-              nonce: fromBase64(wrapped.nonce),
-              encryptedKey: fromBase64(wrapped.encryptedKey),
-            },
-            wrapped.tier as unknown as typeof AccessTierEnum.THUMB,
+          // The Rust crypto core uses 0-indexed tier bytes (0=thumb, 1=preview,
+          // 2=full); the share-link wire/API protocol still numbers tiers 1/2/3.
+          const tierByte = (wrapped.tier - 1) as 0 | 1 | 2;
+          const unwrapped = await crypto.unwrapTierKeyFromLink(
+            fromBase64(wrapped.nonce),
+            fromBase64(wrapped.encryptedKey),
+            tierByte,
             wrappingKey,
           );
 

@@ -551,15 +551,11 @@ export interface CryptoWorkerApi {
   verifyShard(envelope: Uint8Array, expectedSha256: string): Promise<boolean>;
 
   /**
-   * Decrypt manifest metadata
-   */
-  decryptManifest(
-    encryptedMeta: Uint8Array,
-    readKey: Uint8Array,
-  ): Promise<PhotoMeta>;
-
-  /**
-   * Verify manifest signature
+   * Verify manifest signature using the per-epoch manifest signing key.
+   *
+   * Slice 4 — routes through Rust `verifyManifestWithEpoch`. The signing
+   * public key crosses Comlink (it's safe to expose); the manifest
+   * transcript bytes and signature do too.
    */
   verifyManifest(
     manifest: Uint8Array,
@@ -649,27 +645,56 @@ export interface CryptoWorkerApi {
   }>;
 
   /**
-   * Encrypt manifest metadata for upload
-   * @param meta - Photo metadata to encrypt
-   * @param readKey - Epoch read key (32 bytes)
-   * @param epochId - Epoch ID for the manifest
-   * @returns Encrypted manifest metadata (envelope format)
+   * Encrypt manifest metadata for upload using a Rust-owned epoch handle.
+   *
+   * Slice 4 — replaces the legacy `encryptManifest(meta, readKey, epochId)`
+   * which derived the thumb-tier key in TypeScript. The handle resolves
+   * the tier key inside Rust; the seed never crosses Comlink. The implicit
+   * `(shardIndex=0, tier=THUMB)` convention matches the manifest envelope
+   * layout.
+   *
+   * @param epochHandleId - Opaque epoch handle id from the worker.
+   * @param plaintext - Manifest JSON-encoded plaintext bytes.
+   * @returns Shard envelope (header + ciphertext) and base64url SHA-256.
    */
-  encryptManifest(
-    meta: PhotoMeta,
-    readKey: Uint8Array,
-    epochId: number,
-  ): Promise<{ ciphertext: Uint8Array; sha256: string }>;
+  encryptManifestWithEpoch(
+    epochHandleId: EpochHandleId,
+    plaintext: Uint8Array,
+  ): Promise<{ envelopeBytes: Uint8Array; sha256: string }>;
 
   /**
-   * Sign manifest data for upload
-   * @param manifestData - Manifest bytes to sign
-   * @param signSecretKey - Epoch sign secret key (64 bytes)
-   * @returns Ed25519 signature (64 bytes)
+   * Sign manifest transcript bytes with the per-epoch Ed25519 manifest
+   * signing key attached to a Rust-owned epoch handle.
+   *
+   * Slice 4 — replaces the legacy `signManifest(payloadBytes, signSecret)`
+   * which took the per-epoch sign secret as raw bytes. The sign secret
+   * never crosses Comlink; the worker resolves it from the epoch handle
+   * inside Rust and signs in one shot.
+   *
+   * @param epochHandleId - Opaque epoch handle id from the worker.
+   * @param manifestBytes - Manifest transcript bytes to sign.
+   * @returns 64-byte Ed25519 detached signature.
    */
-  signManifest(
-    manifestData: Uint8Array,
-    signSecretKey: Uint8Array,
+  signManifestWithEpoch(
+    epochHandleId: EpochHandleId,
+    manifestBytes: Uint8Array,
+  ): Promise<Uint8Array>;
+
+  /**
+   * Decrypt a manifest envelope using a Rust-owned epoch handle's
+   * thumb-tier key.
+   *
+   * Slice 4 — replaces the legacy `decryptManifest(encryptedMeta, readKey)`
+   * which derived tier keys in TypeScript. Returns the JSON-encoded
+   * `PhotoMeta` plaintext bytes (the caller decodes/parses).
+   *
+   * @param epochHandleId - Opaque epoch handle id from the worker.
+   * @param envelopeBytes - Complete shard envelope (header + ciphertext).
+   * @returns Decoded UTF-8 JSON bytes of the {@link PhotoMeta}.
+   */
+  decryptManifestWithEpoch(
+    epochHandleId: EpochHandleId,
+    envelopeBytes: Uint8Array,
   ): Promise<Uint8Array>;
 
   /**
@@ -686,53 +711,6 @@ export interface CryptoWorkerApi {
    * @returns Unwrapped data
    */
   unwrapWithAccountKey(wrapped: Uint8Array): Promise<Uint8Array>;
-
-  // =========================================================================
-  // Link Sharing Operations
-  // =========================================================================
-
-  /**
-   * Derive link ID and wrapping key from a link secret
-   * @param linkSecret - 32-byte secret from URL fragment
-   * @returns Object with linkId (16 bytes) and wrappingKey (32 bytes)
-   */
-  deriveLinkKeys(
-    linkSecret: Uint8Array,
-  ): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }>;
-
-  /**
-   * Wrap a tier key for share link storage
-   * @param tierKey - 32-byte tier key to wrap
-   * @param tier - Access tier (1=thumb, 2=preview, 3=full)
-   * @param wrappingKey - 32-byte key derived from link secret
-   * @returns Wrapped key with nonce and encryptedKey
-   */
-  wrapTierKeyForLink(
-    tierKey: Uint8Array,
-    tier: number,
-    wrappingKey: Uint8Array,
-  ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
-
-  /**
-   * Unwrap a tier key from share link storage
-   * @param nonce - 24-byte nonce
-   * @param encryptedKey - Encrypted tier key
-   * @param tier - Access tier of the key
-   * @param wrappingKey - 32-byte key derived from link secret
-   * @returns Unwrapped 32-byte tier key
-   */
-  unwrapTierKeyFromLink(
-    nonce: Uint8Array,
-    encryptedKey: Uint8Array,
-    tier: number,
-    wrappingKey: Uint8Array,
-  ): Promise<Uint8Array>;
-
-  /**
-   * Generate a new random link secret (32 bytes)
-   * @returns Random link secret
-   */
-  generateLinkSecret(): Promise<Uint8Array>;
 
   // =========================================================================
   // LocalAuth Authentication Methods
@@ -998,27 +976,52 @@ export interface CryptoWorkerApi {
     shardIndex: number,
   ): Promise<{ envelopeBytes: Uint8Array; sha256: string }>;
 
-  // ---- Link sharing (Slice 6 will route hooks through these) ----
+  // ---- Link sharing (Slice 6) ----
 
-  /** Generate a fresh 32-byte link secret. */
-  generateLinkSecretRust(): Promise<Uint8Array>;
+  /**
+   * Generate a fresh 32-byte link secret. Random bytes are produced inside
+   * the Rust crypto core; the worker only forwards the resulting buffer
+   * across Comlink.
+   */
+  generateLinkSecret(): Promise<Uint8Array>;
 
-  /** Derive `(linkId, wrappingKey)` from a link secret. */
-  deriveLinkKeysRust(
+  /**
+   * Derive `(linkId, wrappingKey)` from a link secret.
+   *
+   * @param linkSecret - 32-byte secret from URL fragment.
+   * @returns 16-byte link ID + 32-byte wrapping key.
+   */
+  deriveLinkKeys(
     linkSecret: Uint8Array,
   ): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }>;
 
   /**
-   * Wrap a tier key for share-link distribution. The tier key never crosses
-   * Comlink — it's derived inside the worker from the epoch handle.
+   * Wrap a tier key for share-link distribution.
+   *
+   * The tier key never crosses Comlink — it is derived inside the worker
+   * from the epoch handle and wrapped under the per-link wrapping key in
+   * one shot.
+   *
+   * @param epochHandleId - Opaque epoch handle id.
+   * @param tier - 0-indexed tier byte (0=thumb, 1=preview, 2=full).
+   * @param wrappingKey - 32-byte per-link wrapping key.
    */
-  wrapTierKeyForLinkRust(
+  wrapTierKeyForLink(
     epochHandleId: EpochHandleId,
     tier: 0 | 1 | 2,
     wrappingKey: Uint8Array,
   ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
 
-  unwrapTierKeyFromLinkRust(
+  /**
+   * Unwrap a tier key wrapped via `wrapTierKeyForLink`.
+   *
+   * @param nonce - 24-byte nonce stored alongside the encrypted key.
+   * @param encryptedKey - Encrypted tier key.
+   * @param tier - 0-indexed tier byte (0=thumb, 1=preview, 2=full).
+   * @param wrappingKey - 32-byte per-link wrapping key.
+   * @returns Unwrapped 32-byte tier key (caller is responsible for wiping).
+   */
+  unwrapTierKeyFromLink(
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     tier: 0 | 1 | 2,
