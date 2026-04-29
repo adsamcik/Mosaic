@@ -1,0 +1,130 @@
+{
+  "contractVersion": 1,
+  "proofName": "android-rust-bridges-cross-client",
+  "comment": "Deterministic Rust↔Android bridge contract surfaces. Both sides MUST agree on these strings, byte lengths, and stable code values. When the Rust core changes any of them, regenerate this fixture and bump the v1 protocol version with care.",
+  "protocolVersion": "mosaic-v1",
+  "ffiSpikeSurface": "mosaic-uniffi ffi-spike:v8 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)",
+  "clientCoreStateMachineDescriptorPrefix": "client-core-state-machines:v1",
+  "shardEnvelope": {
+    "headerLength": 64,
+    "magic": "SGzk",
+    "magicBytes": [83, 71, 122, 107],
+    "version": 3,
+    "nonceLength": 24,
+    "tiers": {
+      "thumbnail": 1,
+      "preview": 2,
+      "original": 3
+    }
+  },
+  "identityCryptoSurface": {
+    "ed25519SigningPubkeyLength": 32,
+    "x25519EncryptionPubkeyLength": 32,
+    "ed25519SignatureLength": 64
+  },
+  "kdfProfileBounds": {
+    "maxMemoryKib": 262144,
+    "maxIterations": 10,
+    "maxParallelism": 4,
+    "comment": "Mirrors crates/mosaic-crypto MAX_KDF_MEMORY_KIB / MAX_KDF_ITERATIONS / MAX_KDF_PARALLELISM. Kotlin shell rejects values exceeding these bounds at construction time."
+  },
+  "stableCodes": {
+    "OK": 0,
+    "header": {
+      "INVALID_HEADER_LENGTH": 100,
+      "INVALID_MAGIC": 101,
+      "UNSUPPORTED_VERSION": 102,
+      "INVALID_TIER": 103,
+      "NON_ZERO_RESERVED_BYTE": 104
+    },
+    "crypto": {
+      "EMPTY_CONTEXT": 200,
+      "INVALID_KEY_LENGTH": 201,
+      "INVALID_INPUT_LENGTH": 202,
+      "INVALID_ENVELOPE": 203,
+      "MISSING_CIPHERTEXT": 204,
+      "AUTHENTICATION_FAILED": 205,
+      "RNG_FAILURE": 206,
+      "WRAPPED_KEY_TOO_SHORT": 207,
+      "KDF_PROFILE_TOO_WEAK": 208,
+      "INVALID_SALT_LENGTH": 209,
+      "KDF_FAILURE": 210,
+      "INVALID_SIGNATURE_LENGTH": 211,
+      "INVALID_PUBLIC_KEY": 212,
+      "INVALID_USERNAME": 213,
+      "KDF_PROFILE_TOO_COSTLY": 214
+    },
+    "operationControl": {
+      "OPERATION_CANCELLED": 300
+    },
+    "handles": {
+      "SECRET_HANDLE_NOT_FOUND": 400,
+      "IDENTITY_HANDLE_NOT_FOUND": 401,
+      "HANDLE_SPACE_EXHAUSTED": 402,
+      "EPOCH_HANDLE_NOT_FOUND": 403
+    },
+    "internal": {
+      "INTERNAL_STATE_POISONED": 500
+    },
+    "media": {
+      "DEFERRED": 450,
+      "UNSUPPORTED": 451,
+      "UNSUPPORTED_MEDIA_FORMAT": 600,
+      "INVALID_MEDIA_CONTAINER": 601,
+      "INVALID_MEDIA_DIMENSIONS": 602,
+      "MEDIA_OUTPUT_TOO_LARGE": 603,
+      "MEDIA_METADATA_MISMATCH": 604,
+      "INVALID_MEDIA_SIDECAR": 605,
+      "MEDIA_ADAPTER_OUTPUT_MISMATCH": 606
+    },
+    "clientCore": {
+      "INVALID_TRANSITION": 700,
+      "MISSING_EVENT_PAYLOAD": 701,
+      "RETRY_BUDGET_EXHAUSTED": 702,
+      "SYNC_PAGE_DID_NOT_ADVANCE": 703,
+      "MANIFEST_OUTCOME_UNKNOWN": 704,
+      "UNSUPPORTED_SNAPSHOT_VERSION": 705,
+      "INVALID_SNAPSHOT": 706
+    }
+  },
+  "manifestInvariants": {
+    "comment": "Static AndroidManifest.xml invariants verified by apps/android-main/src/test/.../MergedManifestInvariantsTest.kt against the merged debug manifest produced by AGP.",
+    "applicationAttributes": {
+      "allowBackup": "false",
+      "hasFragileUserData": "true",
+      "requestLegacyExternalStorageMustNotBeTrue": true
+    },
+    "minSdk": 26,
+    "targetSdk": 35,
+    "abiFilters": ["arm64-v8a", "x86_64"],
+    "forbiddenPermissions": [
+      "android.permission.INTERNET",
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+      "android.permission.MANAGE_EXTERNAL_STORAGE",
+      "android.permission.READ_MEDIA_IMAGES",
+      "android.permission.READ_MEDIA_VIDEO",
+      "android.permission.READ_MEDIA_AUDIO",
+      "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+      "android.permission.ACCESS_FINE_LOCATION",
+      "android.permission.ACCESS_COARSE_LOCATION",
+      "android.permission.ACCESS_BACKGROUND_LOCATION",
+      "android.permission.CAMERA",
+      "android.permission.RECORD_AUDIO"
+    ]
+  },
+  "forbiddenPlaintextTerms": [
+    "IMG_0001.jpg",
+    "content://",
+    "file://",
+    "gps",
+    "latitude",
+    "longitude",
+    "EXIF",
+    "caption",
+    "rawKey",
+    "decryptedMetadata",
+    "PLAINTEXT",
+    "RAW_MEDIA"
+  ]
+}

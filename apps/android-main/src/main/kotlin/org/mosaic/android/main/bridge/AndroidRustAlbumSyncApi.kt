@@ -51,13 +51,28 @@ class AndroidRustAlbumSyncApi : GeneratedRustAlbumSyncApi {
     val uniSnapshot = snapshot.toUniFfiSnapshot()
     val uniEvent = event.toUniFfiEvent()
     val uniResult = rustAdvanceAlbumSync(uniSnapshot, uniEvent)
-    return RustClientCoreAlbumSyncTransitionFfiResult(
-      code = uniResult.code.toInt(),
-      transition = RustClientCoreAlbumSyncFfiTransition(
-        snapshot = uniResult.transition.snapshot.toShellSnapshot(),
-        effects = uniResult.transition.effects.map { it.toShellEffect() },
-      ),
-    )
+    val rustCode = uniResult.code.toInt()
+    // When the Rust core rejects the transition (non-zero code), the returned
+    // snapshot may carry default/empty strings that the shell DTO's `init`
+    // block would reject. Pass the *input* snapshot through unchanged in that
+    // case so callers receive a valid shape and can route on `code` alone.
+    return if (rustCode == 0) {
+      RustClientCoreAlbumSyncTransitionFfiResult(
+        code = rustCode,
+        transition = RustClientCoreAlbumSyncFfiTransition(
+          snapshot = uniResult.transition.snapshot.toShellSnapshot(),
+          effects = uniResult.transition.effects.map { it.toShellEffect() },
+        ),
+      )
+    } else {
+      RustClientCoreAlbumSyncTransitionFfiResult(
+        code = rustCode,
+        transition = RustClientCoreAlbumSyncFfiTransition(
+          snapshot = snapshot,
+          effects = emptyList(),
+        ),
+      )
+    }
   }
 
   private fun RustClientCoreAlbumSyncSnapshotUniFfi.toShellSnapshot(): RustClientCoreAlbumSyncFfiSnapshot =

@@ -24,8 +24,27 @@ plugins {
 
 val repoRoot: File = rootDir
 val rustAndroidArtifactsDir: File = repoRoot.resolve("target/android")
+val rustHostReleaseDir: File = repoRoot.resolve("target/release")
 val generatedKotlinDir: File = layout.buildDirectory.dir("generated/source/uniffi/main/kotlin").get().asFile
 val generatedJniLibsDir: File = layout.buildDirectory.dir("generated/jniLibs").get().asFile
+
+/**
+ * Resolves the host-built `mosaic_uniffi` shared library path for JVM unit
+ * tests. JNA's `Native.register(...)` (called by the generated UniFFI Kotlin
+ * bindings) accepts either a bare library name or an absolute path. We pass
+ * an absolute path via the `uniffi.component.mosaic_uniffi.libraryOverride`
+ * system property so unit tests can exercise the real Rust core without
+ * needing the library on the JVM `java.library.path`.
+ */
+fun hostUniffiLibraryPath(): File {
+  val osName = System.getProperty("os.name", "").lowercase(Locale.ROOT)
+  val name = when {
+    osName.contains("windows") -> "mosaic_uniffi.dll"
+    osName.contains("mac") || osName.contains("darwin") -> "libmosaic_uniffi.dylib"
+    else -> "libmosaic_uniffi.so"
+  }
+  return rustHostReleaseDir.resolve(name)
+}
 
 android {
   namespace = "org.mosaic.android.main"
@@ -101,6 +120,12 @@ dependencies {
   // packaging `libjnidispatch.so` per ABI rather than the desktop JAR.
   implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
 
+  // For JVM unit tests we need the *desktop* JNA JAR, which packages
+  // `jnidispatch.dll` / `libjnidispatch.so` / `libjnidispatch.dylib` for
+  // host operating systems. The `@aar` artifact only contains Android
+  // jniLibs, so JVM tests would fail with `Native library
+  // (com/sun/jna/<os>/jnidispatch.<ext>) not found in resource path`.
+  testImplementation("net.java.dev.jna:jna:${libs.versions.jna.get()}")
   testImplementation(libs.junit4)
 
   androidTestImplementation(libs.androidx.test.junit)
@@ -140,6 +165,11 @@ val buildRustUniffiArtifacts by tasks.registering(Exec::class) {
   outputs.file(rustAndroidArtifactsDir.resolve("kotlin/uniffi/mosaic_uniffi/mosaic_uniffi.kt"))
   outputs.file(rustAndroidArtifactsDir.resolve("arm64-v8a/libmosaic_uniffi.so"))
   outputs.file(rustAndroidArtifactsDir.resolve("x86_64/libmosaic_uniffi.so"))
+  // The same script also produces the host library used by JVM tests via
+  // `uniffi.component.mosaic_uniffi.libraryOverride`. Declaring it as an
+  // explicit output makes Gradle re-run the task when the host artifact
+  // is missing, even when Android `.so` outputs are still present.
+  outputs.file(hostUniffiLibraryPath())
 }
 
 /** Copy the generated UniFFI Kotlin binding into a Gradle-owned generated source dir. */
@@ -174,4 +204,34 @@ afterEvaluate {
   tasks.named("preBuild") {
     dependsOn(syncRustUniffiKotlin, syncRustUniffiJniLibs)
   }
+}
+
+// ---------------------------------------------------------------------------------------
+// JVM test wiring: load the host-built `mosaic_uniffi` shared library via the
+// generated `uniffi.component.mosaic_uniffi.libraryOverride` system property so
+// adapter unit tests round-trip through real Rust without needing an emulator.
+// ---------------------------------------------------------------------------------------
+
+tasks.withType<Test>().configureEach {
+  // The host library is produced by the same `scripts/build-rust-android.{ps1,sh}`
+  // invocation that `buildRustUniffiArtifacts` runs (it does both cargo-ndk
+  // cross-compile AND a host `cargo build` for binding generation). Declaring
+  // `dependsOn` here makes the dependency explicit for `:testDebugUnitTest`
+  // even when running tests directly without first running `assembleDebug`.
+  dependsOn(buildRustUniffiArtifacts)
+
+  // The MergedManifestInvariantsTest reads the AGP-merged debug manifest at
+  // `build/intermediates/merged_manifests/debug/processDebugManifest/`. AGP
+  // does not produce that file as a transitive dep of `testDebugUnitTest`,
+  // so we wire it explicitly. The `processDebugManifest` task name is a
+  // stable AGP convention.
+  if (name == "testDebugUnitTest") {
+    dependsOn("processDebugManifest")
+  }
+
+  // Compute the host UniFFI library path at configuration time so the
+  // configuration cache can serialize the value (closures referencing
+  // script-level functions are NOT serializable).
+  val libraryPath: String = hostUniffiLibraryPath().absolutePath
+  systemProperty("uniffi.component.mosaic_uniffi.libraryOverride", libraryPath)
 }

@@ -1096,13 +1096,47 @@ private class FakeGeneratedRustAccountApi : GeneratedRustAccountApi {
 
 private class FakeGeneratedRustMediaApi(
   private val results: ArrayDeque<RustMediaPlanFfiResult>,
+  private val inspectionResults: ArrayDeque<RustMediaMetadataFfiResult> = ArrayDeque(),
+  private val layoutResults: ArrayDeque<RustMediaTierLayoutFfiResult> = ArrayDeque(),
 ) : GeneratedRustMediaApi {
   var lastRequest: RustMediaPlanFfiRequest? = null
+    private set
+  var lastInspectionBytesSize: Int? = null
+    private set
+  var lastLayoutInput: Pair<Int, Int>? = null
     private set
 
   override fun planMediaTiers(request: RustMediaPlanFfiRequest): RustMediaPlanFfiResult {
     lastRequest = request
     return results.removeFirst()
+  }
+
+  override fun inspectMediaImage(bytes: ByteArray): RustMediaMetadataFfiResult {
+    lastInspectionBytesSize = bytes.size
+    if (inspectionResults.isEmpty()) {
+      return RustMediaMetadataFfiResult(
+        code = RustMediaInspectionStableCode.INTERNAL_STATE_POISONED,
+        format = "",
+        mimeType = "",
+        width = 0,
+        height = 0,
+        orientation = 0,
+      )
+    }
+    return inspectionResults.removeFirst()
+  }
+
+  override fun planMediaTierLayout(width: Int, height: Int): RustMediaTierLayoutFfiResult {
+    lastLayoutInput = width to height
+    if (layoutResults.isEmpty()) {
+      return RustMediaTierLayoutFfiResult(
+        code = RustMediaInspectionStableCode.INTERNAL_STATE_POISONED,
+        thumbnail = RustMediaTierDimensionsFfi(0, 0, 0),
+        preview = RustMediaTierDimensionsFfi(0, 0, 0),
+        original = RustMediaTierDimensionsFfi(0, 0, 0),
+      )
+    }
+    return layoutResults.removeFirst()
   }
 }
 

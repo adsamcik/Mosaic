@@ -9,6 +9,20 @@ data class KdfProfile(
     require(memoryKiB > 0) { "KDF memory must be positive" }
     require(iterations > 0) { "KDF iterations must be positive" }
     require(parallelism > 0) { "KDF parallelism must be positive" }
+    require(memoryKiB <= MAX_MEMORY_KIB) { "KDF memory must not exceed $MAX_MEMORY_KIB" }
+    require(iterations <= MAX_ITERATIONS) { "KDF iterations must not exceed $MAX_ITERATIONS" }
+    require(parallelism <= MAX_PARALLELISM) { "KDF parallelism must not exceed $MAX_PARALLELISM" }
+  }
+
+  companion object {
+    /** Mosaic resource-exhaustion guardrail: 256 MiB. Mirrors Rust `MAX_KDF_MEMORY_KIB`. */
+    const val MAX_MEMORY_KIB: Int = 262_144
+
+    /** Mosaic resource-exhaustion guardrail: 10. Mirrors Rust `MAX_KDF_ITERATIONS`. */
+    const val MAX_ITERATIONS: Int = 10
+
+    /** Mosaic resource-exhaustion guardrail: 4. Mirrors Rust `MAX_KDF_PARALLELISM`. */
+    const val MAX_PARALLELISM: Int = 4
   }
 }
 
@@ -18,11 +32,36 @@ class AccountUnlockRequest(
   wrappedAccountKey: ByteArray,
   val kdfProfile: KdfProfile,
 ) {
-  val userSalt: ByteArray = userSalt.copyOf()
-  val accountSalt: ByteArray = accountSalt.copyOf()
-  val wrappedAccountKey: ByteArray = wrappedAccountKey.copyOf()
+  private val userSaltBytes: ByteArray = userSalt.copyOf()
+  private val accountSaltBytes: ByteArray = accountSalt.copyOf()
+  private val wrappedAccountKeyBytes: ByteArray = wrappedAccountKey.copyOf()
 
-  fun hasValidSaltLengths(): Boolean = userSalt.size == SALT_LENGTH && accountSalt.size == SALT_LENGTH
+  val userSalt: ByteArray
+    get() = userSaltBytes.copyOf()
+
+  val accountSalt: ByteArray
+    get() = accountSaltBytes.copyOf()
+
+  val wrappedAccountKey: ByteArray
+    get() = wrappedAccountKeyBytes.copyOf()
+
+  fun hasValidSaltLengths(): Boolean = userSaltBytes.size == SALT_LENGTH && accountSaltBytes.size == SALT_LENGTH
+
+  /**
+   * Zeroes out internal salt and wrapped-key buffers in place. After calling
+   * this, accessor properties still return ByteArrays of the original length
+   * but filled with zero bytes. Idempotent. Safe to call after the request
+   * has been forwarded to the Rust core.
+   */
+  fun wipe() {
+    userSaltBytes.fill(0)
+    accountSaltBytes.fill(0)
+    wrappedAccountKeyBytes.fill(0)
+  }
+
+  override fun toString(): String =
+    "AccountUnlockRequest(userSalt=<redacted>, accountSalt=<redacted>, " +
+      "wrappedAccountKey=<redacted>, kdfProfile=$kdfProfile)"
 
   companion object {
     const val SALT_LENGTH: Int = 16
@@ -81,4 +120,21 @@ fun RustAccountBridge.unlockAccountAndWipePassword(
     unlockAccount(password, request)
   } finally {
     password.fill(0)
+  }
+
+/**
+ * Convenience wrapper that wipes BOTH the caller-owned password buffer AND the
+ * [AccountUnlockRequest]'s internal salt/wrapped-key buffers after the unlock
+ * call returns (success or failure). Use this when the request will be
+ * discarded after the call.
+ */
+fun RustAccountBridge.unlockAccountWipingAll(
+  password: ByteArray,
+  request: AccountUnlockRequest,
+): AccountUnlockResult =
+  try {
+    unlockAccount(password, request)
+  } finally {
+    password.fill(0)
+    request.wipe()
   }

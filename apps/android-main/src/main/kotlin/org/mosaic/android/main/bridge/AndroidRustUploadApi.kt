@@ -57,13 +57,28 @@ class AndroidRustUploadApi : GeneratedRustUploadApi {
     val uniSnapshot = snapshot.toUniFfiSnapshot()
     val uniEvent = event.toUniFfiEvent()
     val uniResult = rustAdvanceUploadJob(uniSnapshot, uniEvent)
-    return RustClientCoreUploadJobTransitionFfiResult(
-      code = uniResult.code.toInt(),
-      transition = RustClientCoreUploadJobFfiTransition(
-        snapshot = uniResult.transition.snapshot.toShellSnapshot(),
-        effects = uniResult.transition.effects.map { it.toShellEffect() },
-      ),
-    )
+    val rustCode = uniResult.code.toInt()
+    // When the Rust core rejects the transition (non-zero code), the returned
+    // snapshot may carry default/empty strings that the shell DTO's `init`
+    // block would reject. Pass the *input* snapshot through unchanged in that
+    // case so callers receive a valid shape and can route on `code` alone.
+    return if (rustCode == 0) {
+      RustClientCoreUploadJobTransitionFfiResult(
+        code = rustCode,
+        transition = RustClientCoreUploadJobFfiTransition(
+          snapshot = uniResult.transition.snapshot.toShellSnapshot(),
+          effects = uniResult.transition.effects.map { it.toShellEffect() },
+        ),
+      )
+    } else {
+      RustClientCoreUploadJobTransitionFfiResult(
+        code = rustCode,
+        transition = RustClientCoreUploadJobFfiTransition(
+          snapshot = snapshot,
+          effects = emptyList(),
+        ),
+      )
+    }
   }
 
   // -------- shell <-> UniFFI conversions --------
