@@ -57,12 +57,35 @@ type SyncEventType =
   | 'sync-start'
   | 'sync-progress'
   | 'sync-complete'
-  | 'sync-error';
+  | 'sync-error'
+  | 'content-conflict';
 
 interface SyncEventDetail {
   albumId: string;
   count?: number;
   error?: Error;
+}
+
+/**
+ * Event detail for `content-conflict` events. Dispatched whenever an
+ * album-content save (story blocks document) hits a 409 from the server
+ * and the resolver picked a winner per
+ * `docs/specs/SPEC-SyncConflictResolution.md`. The payload is plaintext
+ * but only carries opaque block ids and resolution categories — never
+ * keys, never raw block content — so listening UI can show a generic
+ * "conflict resolved" toast without breaking zero-knowledge invariants.
+ */
+export interface ContentConflictEventDetail {
+  /** Album whose content document collided with a server update. */
+  albumId: string;
+  /** How the merge was resolved (LWW vs three-way block merge). */
+  strategy: 'lww-server-wins' | 'three-way-block-merge';
+  /** Number of blocks where merge surfaced a manual conflict. */
+  manualConflictCount: number;
+  /** Total number of merge decisions reported. */
+  totalDecisionCount: number;
+  /** Block ids of manually-resolved conflicts (opaque, server-known ids). */
+  manualConflictBlockIds: readonly string[];
 }
 
 /** Queued sync request with deferred promise */
@@ -390,6 +413,25 @@ class SyncEngine extends EventTarget {
     detail: SyncEventDetail,
   ): void {
     this.dispatchEvent(new CustomEvent(type, { detail }));
+  }
+
+  /**
+   * Notify subscribers that an album-content save observed a server-side
+   * collision and the local conflict resolver had to merge. The detail
+   * payload is intentionally minimal and contains no key material or
+   * plaintext block bodies — see `ContentConflictEventDetail` for the
+   * exact shape. This is the central seam used by the React
+   * `AlbumContentContext` after a 409, so the `SyncCoordinator` can
+   * surface a single normalized event to the UI rather than every
+   * caller having to discover its own listener path.
+   */
+  notifyContentConflict(detail: ContentConflictEventDetail): void {
+    log.warn(
+      `Content conflict resolved for album ${detail.albumId}` +
+        ` (strategy=${detail.strategy}, manual=${detail.manualConflictCount},` +
+        ` total=${detail.totalDecisionCount})`,
+    );
+    this.dispatchEvent(new CustomEvent('content-conflict', { detail }));
   }
 }
 

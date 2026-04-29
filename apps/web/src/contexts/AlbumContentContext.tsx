@@ -21,9 +21,14 @@ import {
 } from 'react';
 import { getApi, ApiError } from '../lib/api';
 import { toBase64, fromBase64 } from '../lib/api';
+import {
+  hasManualConflicts,
+  mergeAlbumContent,
+} from '../lib/conflict-resolution';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getCurrentEpochKey } from '../lib/epoch-key-store';
 import { createLogger } from '../lib/logger';
+import { syncEngine } from '../lib/sync-engine';
 import {
   type AlbumContentDocument,
   type ContentBlock,
@@ -115,6 +120,23 @@ export function AlbumContentProvider({
   const [serverVersion, setServerVersion] = useState(0);
   const [isDirty, setIsDirty] = useState(false);
 
+  /**
+   * Last document we successfully loaded from or saved to the server.
+   * Used as the "base" snapshot for three-way merge per
+   * `docs/specs/SPEC-SyncConflictResolution.md` §6.2.
+   *
+   * Stored as a structured snapshot rather than a reference so block
+   * mutations to `document` cannot retroactively corrupt the base. We
+   * deep-clone via JSON because content blocks are JSON-safe by schema.
+   */
+  const baseDocumentRef = useRef<AlbumContentDocument | null>(null);
+
+  function snapshotDocument(
+    doc: AlbumContentDocument,
+  ): AlbumContentDocument {
+    return JSON.parse(JSON.stringify(doc)) as AlbumContentDocument;
+  }
+
   // Track if we have epoch key access
   const epochKey = getCurrentEpochKey(albumId);
   const canEdit = epochKey !== null;
@@ -168,6 +190,7 @@ export function AlbumContentProvider({
 
       setDocument(validated);
       setServerVersion(response.version);
+      baseDocumentRef.current = snapshotDocument(validated);
       setIsDirty(false);
       setLoadState('loaded');
       log.debug(`Loaded content: ${validated.blocks.length} blocks, version ${response.version}`);
@@ -198,6 +221,9 @@ export function AlbumContentProvider({
     }
     setDocument(doc);
     setServerVersion(0);
+    // No server-confirmed base yet for a brand-new document; the first
+    // successful save will populate baseDocumentRef.
+    baseDocumentRef.current = null;
     setIsDirty(true);
     setLoadState('loaded');
   }, []);
@@ -284,29 +310,39 @@ export function AlbumContentProvider({
     setSaveState('saving');
     setErrorMessage(null);
 
-    try {
-      // Serialize to JSON
+    /**
+     * Encrypt + push the given document. Wrapped so the conflict
+     * recovery path (below) can reuse the same write logic without
+     * duplicating crypto plumbing.
+     */
+    async function pushDocument(
+      docToSave: AlbumContentDocument,
+      expectedVersion: number,
+    ): Promise<{ version: number; updatedAt: string }> {
       const encoder = new TextEncoder();
-      const plaintext = encoder.encode(JSON.stringify(document));
+      const plaintext = encoder.encode(JSON.stringify(docToSave));
 
-      // Encrypt
       const crypto = await getCryptoClient();
       const { ciphertext, nonce } = await crypto.encryptAlbumContent(
         plaintext,
-        epochKey.epochSeed,
+        epochKey!.epochSeed,
         epochId,
       );
 
-      // Save to server
       const api = getApi();
-      const response = await api.updateAlbumContent(albumId, {
+      return api.updateAlbumContent(albumId, {
         encryptedContent: toBase64(ciphertext),
         nonce: toBase64(nonce),
         epochId,
-        expectedVersion: serverVersion,
+        expectedVersion,
       });
+    }
+
+    try {
+      const response = await pushDocument(document, serverVersion);
 
       setServerVersion(response.version);
+      baseDocumentRef.current = snapshotDocument(document);
       setIsDirty(false);
       setSaveState('saved');
       log.debug(`Saved content: version ${response.version}`);
@@ -316,10 +352,45 @@ export function AlbumContentProvider({
       return true;
     } catch (err) {
       log.error('Failed to save content:', err);
-      
+
       if (err instanceof ApiError && err.status === 409) {
+        // Optimistic-concurrency conflict. Run the resolver per
+        // `docs/specs/SPEC-SyncConflictResolution.md`: refetch the
+        // server's current document, three-way merge against the local
+        // base snapshot, and retry the save with the merged result.
+        const recovered = await resolveAndRetrySave(
+          document,
+          baseDocumentRef.current,
+          albumId,
+          epochKey,
+          epochId,
+          pushDocument,
+        );
+
+        if (recovered) {
+          // Merge produced a new document we successfully pushed.
+          setDocument(recovered.merged);
+          setServerVersion(recovered.newVersion);
+          baseDocumentRef.current = snapshotDocument(recovered.merged);
+          setIsDirty(false);
+
+          if (recovered.hadManualConflicts) {
+            // Surface a soft conflict state — UI can show a "your edits
+            // were merged with someone else's" notice.
+            setSaveState('conflict');
+            setErrorMessage(
+              'Your changes were merged with edits from another user.',
+            );
+          } else {
+            setSaveState('saved');
+            setTimeout(() => setSaveState('idle'), 2000);
+          }
+          return true;
+        }
+
         setSaveState('conflict');
         setErrorMessage('Content was modified by another user');
+        return false;
       } else {
         setSaveState('error');
         setErrorMessage(
@@ -386,6 +457,113 @@ export function AlbumContentProvider({
       {children}
     </AlbumContentContext.Provider>
   );
+}
+
+// =============================================================================
+// Conflict Recovery Helper
+// =============================================================================
+
+/**
+ * Internal recovery flow for `saveContent` when the server returns 409.
+ *
+ * Flow per `docs/specs/SPEC-SyncConflictResolution.md` §6.2:
+ * 1. Refetch the server's current document and decrypt it.
+ * 2. Three-way merge against the last-known-base snapshot.
+ * 3. Push the merged document with the server's new expected version.
+ * 4. Notify the central sync engine so the SyncCoordinator can forward
+ *    a sanitised event to UI listeners.
+ *
+ * Returns the merged document plus the new server version on success,
+ * or `null` when recovery fails (network error, decrypt failure, or
+ * back-to-back conflicts on the merged result).
+ *
+ * Zero-knowledge invariants:
+ * - The function never returns key material; only opaque ids and merge
+ *   counts cross the trust boundary via `notifyContentConflict`.
+ * - Decryption uses the same epoch key the caller already validated, so
+ *   no new key derivation happens here.
+ */
+async function resolveAndRetrySave(
+  localDocument: AlbumContentDocument,
+  baseDocument: AlbumContentDocument | null,
+  albumId: string,
+  epochKey: { epochSeed: Uint8Array },
+  _epochId: number,
+  pushDocument: (
+    docToSave: AlbumContentDocument,
+    expectedVersion: number,
+  ) => Promise<{ version: number; updatedAt: string }>,
+): Promise<
+  | {
+      merged: AlbumContentDocument;
+      newVersion: number;
+      hadManualConflicts: boolean;
+    }
+  | null
+> {
+  try {
+    const api = getApi();
+    const conflictResponse = await api.getAlbumContent(albumId);
+
+    const crypto = await getCryptoClient();
+    const ciphertext = fromBase64(conflictResponse.encryptedContent);
+    const nonce = fromBase64(conflictResponse.nonce);
+    const plaintext = await crypto.decryptAlbumContent(
+      ciphertext,
+      nonce,
+      epochKey.epochSeed,
+      conflictResponse.epochId,
+    );
+
+    const decoder = new TextDecoder();
+    const jsonStr = decoder.decode(plaintext);
+    const parsed = JSON.parse(jsonStr);
+    const serverDocument = AlbumContentDocumentSchema.parse(parsed);
+
+    const mergeResult = mergeAlbumContent(
+      localDocument,
+      serverDocument,
+      baseDocument,
+    );
+
+    // Notify the sync engine so SyncCoordinator can forward to UI.
+    syncEngine.notifyContentConflict({
+      albumId,
+      strategy: mergeResult.strategy,
+      manualConflictCount: mergeResult.manualConflicts.length,
+      totalDecisionCount: mergeResult.decisions.length,
+      manualConflictBlockIds: mergeResult.manualConflicts.map(
+        (decision) => decision.blockId,
+      ),
+    });
+
+    // If the merge produced an output identical to the server, there is
+    // nothing new to push. Treat as a successful recovery without an
+    // additional write.
+    if (
+      JSON.stringify(mergeResult.merged) === JSON.stringify(serverDocument)
+    ) {
+      return {
+        merged: mergeResult.merged,
+        newVersion: conflictResponse.version,
+        hadManualConflicts: hasManualConflicts(mergeResult),
+      };
+    }
+
+    const retryResponse = await pushDocument(
+      mergeResult.merged,
+      conflictResponse.version,
+    );
+
+    return {
+      merged: mergeResult.merged,
+      newVersion: retryResponse.version,
+      hadManualConflicts: hasManualConflicts(mergeResult),
+    };
+  } catch (err) {
+    log.error('Conflict recovery failed:', err);
+    return null;
+  }
 }
 
 // =============================================================================

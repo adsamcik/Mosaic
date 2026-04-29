@@ -11,13 +11,19 @@
  * 4. Compute delta between current and new data
  * 5. Match pending items by assetId to promote them
  * 6. Update PhotoStore with incremental changes
+ * 7. Forward album-content sync conflicts to subscribed UI listeners
+ *    (per `docs/specs/SPEC-SyncConflictResolution.md`).
  */
 
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { getDbClient } from './db-client';
 import { createLogger } from './logger';
 import { loadAllAlbumPhotos } from './photo-query-pagination';
-import { syncEngine, type SyncEventDetail } from './sync-engine';
+import {
+  syncEngine,
+  type ContentConflictEventDetail,
+  type SyncEventDetail,
+} from './sync-engine';
 import { usePhotoStore, type PhotoItem } from '../stores/photo-store';
 import type { PhotoMeta } from '../workers/types';
 
@@ -50,6 +56,14 @@ interface PhotoDelta {
 }
 
 /**
+ * Listener invoked once per album-content `content-conflict` event from
+ * the sync engine. Listeners receive a sanitized payload (no plaintext
+ * block content, no key material) and may freely subscribe/unsubscribe
+ * via the returned disposer.
+ */
+type ContentConflictListener = (detail: ContentConflictEventDetail) => void;
+
+/**
  * SyncCoordinator singleton class
  */
 class SyncCoordinator {
@@ -61,6 +75,9 @@ class SyncCoordinator {
 
   /** Pending items awaiting sync confirmation */
   private pendingSyncs = new Map<string, PendingSync>();
+
+  /** Subscribers for content-conflict events */
+  private contentConflictListeners = new Set<ContentConflictListener>();
 
   /**
    * Initialize the coordinator.
@@ -77,13 +94,25 @@ class SyncCoordinator {
       this.debouncedHandleSyncComplete(detail.albumId);
     };
 
+    const handleContentConflict = (event: Event) => {
+      const detail = (event as CustomEvent<ContentConflictEventDetail>).detail;
+      this.dispatchContentConflict(detail);
+    };
+
     syncEngine.addEventListener('sync-complete', handleSyncComplete);
+    syncEngine.addEventListener('content-conflict', handleContentConflict);
     this.cleanupFn = () => {
       syncEngine.removeEventListener('sync-complete', handleSyncComplete);
+      syncEngine.removeEventListener(
+        'content-conflict',
+        handleContentConflict,
+      );
     };
 
     this.initialized = true;
-    log.info('SyncCoordinator initialized (single sync-complete listener)');
+    log.info(
+      'SyncCoordinator initialized (single sync-complete + content-conflict listener)',
+    );
   }
 
   /**
@@ -420,6 +449,37 @@ class SyncCoordinator {
   isInitialized(): boolean {
     return this.initialized;
   }
+
+  /**
+   * Subscribe to album-content conflict events. The returned disposer
+   * removes the listener; callers MUST invoke it on cleanup to avoid
+   * leaking subscriptions across navigation.
+   *
+   * Listener payloads contain only opaque ids and resolution categories,
+   * never plaintext block bodies or key material — see
+   * `ContentConflictEventDetail` for the exact shape.
+   */
+  onContentConflict(listener: ContentConflictListener): () => void {
+    this.contentConflictListeners.add(listener);
+    return () => {
+      this.contentConflictListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Internal: forward a `content-conflict` event from the sync engine
+   * to all registered listeners. Listener errors are caught so a single
+   * misbehaving subscriber cannot block the rest.
+   */
+  private dispatchContentConflict(detail: ContentConflictEventDetail): void {
+    for (const listener of this.contentConflictListeners) {
+      try {
+        listener(detail);
+      } catch (err) {
+        log.error('Content conflict listener threw:', err);
+      }
+    }
+  }
 }
 
 /** Global sync coordinator singleton instance */
@@ -432,6 +492,13 @@ export const syncCoordinator = new SyncCoordinator();
 interface SyncCoordinatorContextValue {
   registerPendingSync: (albumId: string, assetId: string) => void;
   cancelPendingSync: (albumId: string, assetId: string) => void;
+  /**
+   * Subscribe to album-content conflict events. Returns a disposer that
+   * removes the listener. Listener payloads are sanitised (no plaintext
+   * blocks, no keys) — see `ContentConflictEventDetail` in
+   * `sync-engine.ts`.
+   */
+  onContentConflict: (listener: ContentConflictListener) => () => void;
 }
 
 const SyncCoordinatorContext =
@@ -464,6 +531,8 @@ export function SyncCoordinatorProvider({
       syncCoordinator.registerPendingSync(albumId, assetId),
     cancelPendingSync: (albumId, assetId) =>
       syncCoordinator.cancelPendingSync(albumId, assetId),
+    onContentConflict: (listener) =>
+      syncCoordinator.onContentConflict(listener),
   };
 
   return (
