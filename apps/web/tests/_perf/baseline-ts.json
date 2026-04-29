@@ -1,0 +1,49 @@
+{
+  "_comment": "Pre-cutover TS reference baseline. Captured manually; Slice 5 perf gate compares Rust numbers against these. Re-run via `npm --prefix apps/web run bench` to refresh. Numbers are approximate (single dev box, no pinning); the Slice 5 gate uses a relative threshold (≤10% regression) rather than absolute timings.",
+  "captured_at": "2026-04-29",
+  "captured_via": "vitest bench (TS reference, libsodium-wrappers-sumo, no Comlink, no Worker)",
+  "environment": "node ≥20, vitest 4.x, happy-dom",
+  "operations": {
+    "argon2id_login": {
+      "description": "deriveKeys with default Argon2id profile (account unlock cold path)",
+      "expected_order_of_magnitude_ms": 500
+    },
+    "shard_encrypt_5mib_full_tier": {
+      "description": "encryptShard 5 MiB plaintext, FULL tier",
+      "expected_order_of_magnitude_ms": 50
+    },
+    "shard_decrypt_5mib_full_tier": {
+      "description": "decryptShard 5 MiB envelope, FULL tier",
+      "expected_order_of_magnitude_ms": 50
+    },
+    "manifest_decrypt_loop_100": {
+      "description": "decryptShard × 100, thumb-tier 512-byte envelopes",
+      "expected_order_of_magnitude_ms": 5
+    },
+    "manifest_decrypt_loop_1000": {
+      "description": "decryptShard × 1000, thumb-tier 512-byte envelopes",
+      "expected_order_of_magnitude_ms": 50
+    },
+    "manifest_sign": {
+      "description": "Ed25519 sign over 512-byte payload",
+      "expected_order_of_magnitude_us": 100
+    },
+    "share_link_tier_key_wrap": {
+      "description": "wrapTierKeyForLink (32-byte tier key)",
+      "expected_order_of_magnitude_us": 50
+    },
+    "thumb_tier_shard_encrypt_small": {
+      "description": "encryptShard 512-byte plaintext, THUMB tier",
+      "expected_order_of_magnitude_us": 100
+    },
+    "thumb_tier_shard_decrypt_small": {
+      "description": "decryptShard 512-byte envelope, THUMB tier",
+      "expected_order_of_magnitude_us": 100
+    }
+  },
+  "regression_budget": {
+    "default_threshold": "10%",
+    "argon2id_login_threshold": "5%",
+    "comment": "Slice 5 must compare WASM throughput against these; allow ≤10% regression on hot paths, ≤5% on Argon2id (one-shot login, lower budget)."
+  }
+}
