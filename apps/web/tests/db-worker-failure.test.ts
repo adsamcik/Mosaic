@@ -4,13 +4,13 @@ vi.mock('comlink', () => ({
   expose: vi.fn(),
 }));
 
-import {
-  DbWorker,
-  DbWorkerError,
-  DbWorkerErrorCode,
-} from '../src/workers/db.worker';
-
-const sqlBootstrap = `
+// The DbWorker now verifies the SHA-384 of the fetched /sql-wasm.js script
+// against the pinned digest in src/generated/sql-wasm-integrity.ts before
+// evaluating it via new Function() (security finding H4). For unit tests we
+// mock the pinned constant to be the digest of our hand-rolled bootstrap so
+// the integrity check passes without us having to ship the real 3 MB sql.js.
+const { sqlBootstrap } = vi.hoisted(() => ({
+  sqlBootstrap: `
 function initSqlJs() {
   return Promise.resolve({
     Database: class Database {
@@ -24,7 +24,23 @@ function initSqlJs() {
     }
   });
 }
-`;
+`,
+}));
+
+vi.mock('../src/generated/sql-wasm-integrity', async () => {
+  const data = new TextEncoder().encode(sqlBootstrap);
+  const hashBuffer = await crypto.subtle.digest('SHA-384', data);
+  const bytes = new Uint8Array(hashBuffer);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return { SQL_WASM_SHA384: 'sha384-' + btoa(binary) };
+});
+
+import {
+  DbWorker,
+  DbWorkerError,
+  DbWorkerErrorCode,
+} from '../src/workers/db.worker';
 
 describe('DbWorker failure handling', () => {
   const originalFetch = global.fetch;
