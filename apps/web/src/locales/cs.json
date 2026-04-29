@@ -42,6 +42,7 @@
     "tagline": "Fotogalerie s šifrováním bez znalosti obsahu",
     "sessionRestore": "Obnovení relace",
     "clearSession": "Vymazat relaci a začít znovu",
+    "clearSessionConfirm": "Tímto se vymažou pouze lokální data relace. Vaše šifrované fotografie a alba na serveru zůstanou nedotčeny; budete se muset znovu přihlásit pomocí hesla. Pokračovat?",
     "createAccount": "Vytvořit účet",
     "localAuthentication": "Lokální ověření",
     "proxyAuthentication": "Ověření přes proxy",

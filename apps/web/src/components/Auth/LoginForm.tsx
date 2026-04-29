@@ -206,6 +206,12 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           <button
             type="button"
             onClick={async () => {
+              // Destructive action: require explicit confirmation. The copy
+              // must reassure users that server-side photos are unaffected
+              // (L4 — see docs/security audit).
+              if (!window.confirm(t('auth.clearSessionConfirm'))) {
+                return;
+              }
               await session.clearCorruptedSession();
               // Force a page reload to reset everything cleanly
               window.location.reload();
@@ -320,6 +326,9 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
                   }
                   disabled={loading}
                   className="form-input"
+                  autoComplete={
+                    isRegisterMode ? 'new-password' : 'current-password'
+                  }
                   autoFocus
                 />
               </div>
@@ -337,6 +346,7 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
                     placeholder={t('auth.confirmPasswordPlaceholder')}
                     disabled={loading}
                     className="form-input"
+                    autoComplete="new-password"
                   />
                 </div>
               )}

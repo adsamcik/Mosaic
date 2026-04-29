@@ -42,6 +42,7 @@
     "tagline": "Zero-knowledge encrypted photo gallery",
     "sessionRestore": "Session Restore",
     "clearSession": "Clear Session & Start Fresh",
+    "clearSessionConfirm": "This will clear local session data only. Your encrypted photos and albums on the server are unaffected; you'll need to log in with your password again. Continue?",
     "createAccount": "Create Account",
     "localAuthentication": "Local Authentication",
     "proxyAuthentication": "Proxy Authentication",
