@@ -7,11 +7,13 @@
 //! exercising the validation/effect-emission helpers through their public
 //! entry points (`advance_upload_job` and `advance_album_sync`).
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use mosaic_client::{
     AlbumSyncEffect, AlbumSyncEvent, AlbumSyncPhase, AlbumSyncRequest, AlbumSyncRetryMetadata,
     AlbumSyncSnapshot, ClientErrorCode, CompletedShardRef, EncryptedShardRef, ManifestReceipt,
-    PendingShardRef, SyncPageSummary, UploadJobEffect, UploadJobEvent,
-    UploadJobPhase, UploadJobSnapshot, UploadRetryMetadata, UploadShardSlot, UploadSyncConfirmation,
+    PendingShardRef, SyncPageSummary, UploadJobEffect, UploadJobEvent, UploadJobPhase,
+    UploadJobSnapshot, UploadRetryMetadata, UploadShardSlot, UploadSyncConfirmation,
     advance_album_sync, advance_upload_job, album_sync_snapshot_schema_version,
     upload_snapshot_schema_version,
 };
@@ -44,7 +46,10 @@ fn sync_retry_default(max_attempts: u32) -> AlbumSyncRetryMetadata {
     }
 }
 
-fn upload_snapshot(phase: UploadJobPhase, planned_shards: Vec<UploadShardSlot>) -> UploadJobSnapshot {
+fn upload_snapshot(
+    phase: UploadJobPhase,
+    planned_shards: Vec<UploadShardSlot>,
+) -> UploadJobSnapshot {
     let planned_shard_count =
         u32::try_from(planned_shards.len()).expect("planned shard count fits in u32");
     UploadJobSnapshot {
@@ -532,8 +537,10 @@ fn sync_retryable_failure_rejected_in_non_retry_eligible_phase() {
 
 #[test]
 fn upload_snapshot_validation_rejects_planned_shard_count_mismatch() {
-    let mut snapshot =
-        upload_snapshot(UploadJobPhase::Queued, vec![UploadShardSlot { tier: 3, index: 0 }]);
+    let mut snapshot = upload_snapshot(
+        UploadJobPhase::Queued,
+        vec![UploadShardSlot { tier: 3, index: 0 }],
+    );
     snapshot.planned_shard_count = 5; // does not match planned_shards.len()
 
     let error = match advance_upload_job(&snapshot, UploadJobEvent::StartRequested) {

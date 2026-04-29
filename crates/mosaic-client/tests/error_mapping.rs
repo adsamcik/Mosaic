@@ -1,6 +1,8 @@
 //! Drive `mosaic-client` error mapping arms that wrapper bindings see when
 //! the underlying `mosaic_crypto` operations return non-default error codes.
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use mosaic_client::{
     ClientErrorCode, close_account_key_handle, close_epoch_key_handle, create_epoch_key_handle,
     decrypt_shard_with_epoch_handle, open_secret_handle,

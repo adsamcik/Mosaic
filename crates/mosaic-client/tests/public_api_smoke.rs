@@ -2,6 +2,8 @@
 //! arms that wrapper bindings rely on but that the existing FFI/state-machine
 //! suites do not exercise directly.
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use mosaic_client::{
     AlbumSyncEffect, AlbumSyncEvent, AlbumSyncPhase, AlbumSyncRequest, AlbumSyncSnapshot,
     AlbumSyncTransition, ClientError, ClientErrorCode, CompletedShardRef, CreatedShardUpload,
@@ -45,7 +47,7 @@ fn crypto_domain_golden_vector_snapshot_returns_canonical_public_fields() {
     assert_eq!(snapshot.code, ClientErrorCode::Ok);
     assert_eq!(snapshot.envelope_header.len(), 64);
     assert_eq!(snapshot.envelope_nonce.len(), 24);
-    assert!(matches!(snapshot.envelope_tier, 1 | 2 | 3));
+    assert!(matches!(snapshot.envelope_tier, 1..=3));
     assert_eq!(snapshot.identity_signing_pubkey.len(), 32);
     assert_eq!(snapshot.identity_encryption_pubkey.len(), 32);
     assert_eq!(snapshot.identity_signature.len(), 64);
@@ -89,15 +91,11 @@ fn verify_manifest_with_identity_rejects_invalid_signature_and_pubkey_lengths() 
     let invalid_pubkey_code = verify_manifest_with_identity(b"transcript", &[0_u8; 64], &[0_u8; 7]);
     assert_eq!(invalid_pubkey_code, ClientErrorCode::InvalidKeyLength);
 
-    let weak_pubkey_code =
-        verify_manifest_with_identity(b"transcript", &[0_u8; 64], &[0_u8; 32]);
+    let weak_pubkey_code = verify_manifest_with_identity(b"transcript", &[0_u8; 64], &[0_u8; 32]);
     assert_eq!(weak_pubkey_code, ClientErrorCode::InvalidPublicKey);
 
-    let bogus_signature_code = verify_manifest_with_identity(
-        b"transcript",
-        &[1_u8; 64],
-        signing_pubkey.as_bytes(),
-    );
+    let bogus_signature_code =
+        verify_manifest_with_identity(b"transcript", &[1_u8; 64], signing_pubkey.as_bytes());
     assert_eq!(bogus_signature_code, ClientErrorCode::AuthenticationFailed);
 }
 
@@ -460,8 +458,7 @@ fn album_sync_handles_retry_and_cancel_and_failure_events_explicitly() {
         },
     )
     .snapshot;
-    let cancelled =
-        advance_sync_or_panic(&started_again, AlbumSyncEvent::CancelRequested).snapshot;
+    let cancelled = advance_sync_or_panic(&started_again, AlbumSyncEvent::CancelRequested).snapshot;
     assert_eq!(cancelled.phase, AlbumSyncPhase::Cancelled);
 
     // NonRetryableFailure from an active phase moves directly to Failed.
@@ -551,16 +548,18 @@ fn upload_job_request_and_snapshot_validation_rejects_unsafe_text() {
     // Empty and over-long values are also rejected.
     let mut request_empty = upload_request();
     request_empty.upload_id = String::new();
-    let error = new_upload_job(request_empty)
-        .err()
-        .expect("empty upload_id should fail validation");
+    let error = match new_upload_job(request_empty) {
+        Ok(snapshot) => panic!("empty upload_id should fail validation: {snapshot:?}"),
+        Err(error) => error,
+    };
     assert_eq!(error.code, ClientErrorCode::ClientCoreInvalidSnapshot);
 
     let mut request_long = upload_request();
     request_long.album_id = "a".repeat(257);
-    let error = new_upload_job(request_long)
-        .err()
-        .expect("over-long album_id should fail validation");
+    let error = match new_upload_job(request_long) {
+        Ok(snapshot) => panic!("over-long album_id should fail validation: {snapshot:?}"),
+        Err(error) => error,
+    };
     assert_eq!(error.code, ClientErrorCode::ClientCoreInvalidSnapshot);
 }
 
@@ -776,11 +775,13 @@ fn upload_shard_upload_created_rejects_mismatch_and_missing_payload() {
     )
     .snapshot;
 
-    let err =
-        match advance_upload_job(&encrypted, UploadJobEvent::ShardUploadCreated { upload: None }) {
-            Ok(transition) => panic!("missing upload payload should fail: {transition:?}"),
-            Err(error) => error,
-        };
+    let err = match advance_upload_job(
+        &encrypted,
+        UploadJobEvent::ShardUploadCreated { upload: None },
+    ) {
+        Ok(transition) => panic!("missing upload payload should fail: {transition:?}"),
+        Err(error) => error,
+    };
     assert_eq!(err.code, ClientErrorCode::ClientCoreMissingEventPayload);
 
     // Mismatched sha256 between pending shard and ShardUploadCreated.
@@ -862,11 +863,10 @@ fn upload_shard_uploaded_rejects_payload_and_id_mismatch() {
     .snapshot;
     assert_eq!(uploading.phase, UploadJobPhase::UploadingShard);
 
-    let err =
-        match advance_upload_job(&uploading, UploadJobEvent::ShardUploaded { shard: None }) {
-            Ok(transition) => panic!("missing shard payload should fail: {transition:?}"),
-            Err(error) => error,
-        };
+    let err = match advance_upload_job(&uploading, UploadJobEvent::ShardUploaded { shard: None }) {
+        Ok(transition) => panic!("missing shard payload should fail: {transition:?}"),
+        Err(error) => error,
+    };
     assert_eq!(err.code, ClientErrorCode::ClientCoreMissingEventPayload);
 
     // Mismatched shard_id between pending and uploaded.
@@ -908,11 +908,11 @@ fn upload_shard_uploaded_rejects_payload_and_id_mismatch() {
 fn upload_manifest_created_rejects_invalid_manifest_id_and_missing_payload() {
     let snapshot = upload_at_creating_manifest();
 
-    let err =
-        match advance_upload_job(&snapshot, UploadJobEvent::ManifestCreated { receipt: None }) {
-            Ok(transition) => panic!("missing manifest payload should fail: {transition:?}"),
-            Err(error) => error,
-        };
+    let err = match advance_upload_job(&snapshot, UploadJobEvent::ManifestCreated { receipt: None })
+    {
+        Ok(transition) => panic!("missing manifest payload should fail: {transition:?}"),
+        Err(error) => error,
+    };
     assert_eq!(err.code, ClientErrorCode::ClientCoreMissingEventPayload);
 
     let err = match advance_upload_job(
@@ -960,11 +960,13 @@ fn upload_sync_confirmed_rejects_when_not_pending_confirmation() {
 
     // From AwaitingSyncConfirmation, missing confirmation payload also fails.
     let awaiting = upload_at_awaiting_sync_confirmation();
-    let err =
-        match advance_upload_job(&awaiting, UploadJobEvent::SyncConfirmed { confirmation: None }) {
-            Ok(transition) => panic!("missing confirmation payload should fail: {transition:?}"),
-            Err(error) => error,
-        };
+    let err = match advance_upload_job(
+        &awaiting,
+        UploadJobEvent::SyncConfirmed { confirmation: None },
+    ) {
+        Ok(transition) => panic!("missing confirmation payload should fail: {transition:?}"),
+        Err(error) => error,
+    };
     assert_eq!(err.code, ClientErrorCode::ClientCoreMissingEventPayload);
 }
 
@@ -1039,7 +1041,10 @@ fn upload_effects_for_phase_emit_correct_effects_when_resumed_via_retry() {
     );
     assert_eq!(retry.snapshot.phase, UploadJobPhase::RetryWaiting);
     let resumed = advance_upload_or_panic(&retry.snapshot, UploadJobEvent::RetryTimerElapsed);
-    assert_eq!(resumed.snapshot.phase, UploadJobPhase::AwaitingPreparedMedia);
+    assert_eq!(
+        resumed.snapshot.phase,
+        UploadJobPhase::AwaitingPreparedMedia
+    );
     assert_eq!(resumed.effects, vec![UploadJobEffect::PrepareMedia]);
 
     let prepared = advance_upload_or_panic(
@@ -1140,7 +1145,10 @@ fn upload_effects_for_phase_emit_correct_effects_when_resumed_via_retry() {
         },
     );
     let resumed = advance_upload_or_panic(&retry.snapshot, UploadJobEvent::RetryTimerElapsed);
-    assert_eq!(resumed.snapshot.phase, UploadJobPhase::AwaitingSyncConfirmation);
+    assert_eq!(
+        resumed.snapshot.phase,
+        UploadJobPhase::AwaitingSyncConfirmation
+    );
     assert_eq!(
         resumed.effects,
         vec![UploadJobEffect::AwaitSyncConfirmation]
@@ -1160,7 +1168,10 @@ fn upload_effects_for_phase_emit_correct_effects_when_resumed_via_retry() {
         },
     );
     let resumed = advance_upload_or_panic(&retry.snapshot, UploadJobEvent::RetryTimerElapsed);
-    assert_eq!(resumed.snapshot.phase, UploadJobPhase::ManifestCommitUnknown);
+    assert_eq!(
+        resumed.snapshot.phase,
+        UploadJobPhase::ManifestCommitUnknown
+    );
     assert_eq!(
         resumed.effects,
         vec![UploadJobEffect::RecoverManifestThroughSync]
@@ -1386,9 +1397,13 @@ fn sync_page_with_short_circuit_rerun_resets_to_initial_token_on_completion() {
     let mut request = sync_request();
     request.initial_page_token = Some(format!("{SAFE_ID}-cursor"));
     let snapshot = new_album_sync(request.clone()).expect("album sync should initialize");
-    let started =
-        advance_sync_or_panic(&snapshot, AlbumSyncEvent::SyncRequested { request: Some(request) })
-            .snapshot;
+    let started = advance_sync_or_panic(
+        &snapshot,
+        AlbumSyncEvent::SyncRequested {
+            request: Some(request),
+        },
+    )
+    .snapshot;
     let started = advance_sync_or_panic(
         &started,
         AlbumSyncEvent::SyncRequested {
