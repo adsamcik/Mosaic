@@ -29,6 +29,7 @@ expected = [
     "mosaic-media",
     "mosaic-wasm",
     "mosaic-uniffi",
+    "mosaic-vectors",
 ]
 
 missing = [name for name in expected if name not in packages]
@@ -40,8 +41,9 @@ allowed = {
     "mosaic-crypto": {"mosaic-domain"},
     "mosaic-client": {"mosaic-domain", "mosaic-crypto"},
     "mosaic-media": {"mosaic-domain"},
-    "mosaic-wasm": {"mosaic-domain", "mosaic-crypto", "mosaic-client"},
-    "mosaic-uniffi": {"mosaic-domain", "mosaic-crypto", "mosaic-client", "mosaic-media"},
+    "mosaic-wasm": {"mosaic-domain", "mosaic-crypto", "mosaic-client", "mosaic-vectors"},
+    "mosaic-uniffi": {"mosaic-domain", "mosaic-crypto", "mosaic-client", "mosaic-media", "mosaic-vectors"},
+    "mosaic-vectors": {"mosaic-domain", "mosaic-crypto"},
 }
 
 for package_name in expected:
