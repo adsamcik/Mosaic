@@ -44,6 +44,7 @@ pub enum ClientErrorCode {
     InvalidPublicKey = 212,
     InvalidUsername = 213,
     KdfProfileTooCostly = 214,
+    LinkTierMismatch = 215,
     OperationCancelled = 300,
     SecretHandleNotFound = 400,
     IdentityHandleNotFound = 401,
@@ -1256,6 +1257,13 @@ fn map_crypto_error(error: MosaicCryptoError) -> ClientErrorCode {
         MosaicCryptoError::InvalidSignatureLength { .. } => ClientErrorCode::InvalidSignatureLength,
         MosaicCryptoError::InvalidPublicKey => ClientErrorCode::InvalidPublicKey,
         MosaicCryptoError::InvalidUsername => ClientErrorCode::InvalidUsername,
+        MosaicCryptoError::LinkTierMismatch { .. } => ClientErrorCode::LinkTierMismatch,
+        // Default for crypto error variants that have not been wired to a
+        // dedicated `ClientErrorCode` yet (currently the bundle-* variants
+        // landed by Slice 0A.2). `AuthenticationFailed` is a safe sentinel
+        // because every variant currently in this group represents an
+        // authentication or integrity failure on a sealed bundle.
+        _ => ClientErrorCode::AuthenticationFailed,
     }
 }
 
