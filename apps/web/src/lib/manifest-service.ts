@@ -7,7 +7,7 @@ import { getApi, toBase64 } from './api';
 import { getCryptoClient } from './crypto-client';
 import type { EpochKeyBundle } from './epoch-key-store';
 import type { UploadTask } from './upload-queue';
-import type { PhotoMeta, TieredShardIds } from '../workers/types';
+import type { EpochHandleId, PhotoMeta, TieredShardIds } from '../workers/types';
 
 /**
  * Create a manifest after all shards are uploaded.
@@ -83,21 +83,21 @@ export async function createManifestForUpload(
     }),
   };
 
-  // Encrypt the manifest metadata
-  const encrypted = await crypto.encryptManifest(
-    photoMeta,
-    epochKey.epochSeed,
-    task.epochId,
+  // Slice 4 — encrypt + sign the manifest through the Rust epoch handle.
+  // The thumb-tier key and per-epoch sign secret never cross Comlink.
+  const epochHandleId = epochKey.epochHandleId as EpochHandleId;
+  const plaintextJson = new TextEncoder().encode(JSON.stringify(photoMeta));
+  const encrypted = await crypto.encryptManifestWithEpoch(
+    epochHandleId,
+    plaintextJson,
   );
 
-  // Sign the encrypted manifest with the epoch signing key
-  const signature = await crypto.signManifest(
-    encrypted.ciphertext,
-    epochKey.signKeypair.secretKey,
+  const signature = await crypto.signManifestWithEpoch(
+    epochHandleId,
+    encrypted.envelopeBytes,
   );
 
-  // Get signer public key
-  const signerPubkey = epochKey.signKeypair.publicKey;
+  const signerPubkey = epochKey.signPublicKey;
 
   // Build tiered shard info for backend if available
   const tieredShardInfo = tieredShards
@@ -111,7 +111,7 @@ export async function createManifestForUpload(
   // Create manifest via API
   await api.createManifest({
     albumId: task.albumId,
-    encryptedMeta: toBase64(encrypted.ciphertext),
+    encryptedMeta: toBase64(encrypted.envelopeBytes),
     signature: toBase64(signature),
     signerPubkey: toBase64(signerPubkey),
     shardIds: shardIds,

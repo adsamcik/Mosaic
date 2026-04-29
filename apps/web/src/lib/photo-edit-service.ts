@@ -3,7 +3,7 @@ import { getCryptoClient } from './crypto-client';
 import { getDbClient } from './db-client';
 import { getOrFetchEpochKey } from './epoch-key-service';
 import { createLogger } from './logger';
-import type { PhotoMeta } from '../workers/types';
+import type { EpochHandleId, PhotoMeta } from '../workers/types';
 
 const log = createLogger('PhotoEditService');
 
@@ -32,20 +32,21 @@ export async function rotatePhoto(
   try {
     const bundle = await getOrFetchEpochKey(photo.albumId, photo.epochId);
     const crypto = await getCryptoClient();
-    const encrypted = await crypto.encryptManifest(
-      newMeta,
-      bundle.epochSeed,
-      photo.epochId,
+    const epochHandleId = bundle.epochHandleId as EpochHandleId;
+    const plaintextJson = new TextEncoder().encode(JSON.stringify(newMeta));
+    const encrypted = await crypto.encryptManifestWithEpoch(
+      epochHandleId,
+      plaintextJson,
     );
-    const signature = await crypto.signManifest(
-      encrypted.ciphertext,
-      bundle.signKeypair.secretKey,
+    const signature = await crypto.signManifestWithEpoch(
+      epochHandleId,
+      encrypted.envelopeBytes,
     );
-    const signerPubkey = bundle.signKeypair.publicKey;
+    const signerPubkey = bundle.signPublicKey;
 
     const api = getApi();
     const result = await api.updateManifestMetadata(photo.id, {
-      encryptedMeta: toBase64(encrypted.ciphertext),
+      encryptedMeta: toBase64(encrypted.envelopeBytes),
       signature: toBase64(signature),
       signerPubkey: toBase64(signerPubkey),
     });
@@ -114,20 +115,21 @@ export async function updatePhotoDescription(
   try {
     const bundle = await getOrFetchEpochKey(photo.albumId, photo.epochId);
     const crypto = await getCryptoClient();
-    const encrypted = await crypto.encryptManifest(
-      newMeta,
-      bundle.epochSeed,
-      photo.epochId,
+    const epochHandleId = bundle.epochHandleId as EpochHandleId;
+    const plaintextJson = new TextEncoder().encode(JSON.stringify(newMeta));
+    const encrypted = await crypto.encryptManifestWithEpoch(
+      epochHandleId,
+      plaintextJson,
     );
-    const signature = await crypto.signManifest(
-      encrypted.ciphertext,
-      bundle.signKeypair.secretKey,
+    const signature = await crypto.signManifestWithEpoch(
+      epochHandleId,
+      encrypted.envelopeBytes,
     );
-    const signerPubkey = bundle.signKeypair.publicKey;
+    const signerPubkey = bundle.signPublicKey;
 
     const api = getApi();
     const result = await api.updateManifestMetadata(photo.id, {
-      encryptedMeta: toBase64(encrypted.ciphertext),
+      encryptedMeta: toBase64(encrypted.envelopeBytes),
       signature: toBase64(signature),
       signerPubkey: toBase64(signerPubkey),
     });

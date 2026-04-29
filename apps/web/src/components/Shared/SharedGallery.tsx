@@ -115,13 +115,18 @@ export function SharedGallery({
           if (page.length < pageSize) break;
         }
 
-        // Import crypto for decryption
-        const { fromBase64 } = await import('@mosaic/crypto');
+        // Slice 4 — manifest decryption no longer needs the legacy
+        // `@mosaic/crypto` `fromBase64` helper. Browser `atob` plus
+        // `Uint8Array.from` is sufficient and keeps SharedGallery off
+        // the TypeScript-crypto compatibility allowlist.
         const { getCryptoClient } = await import('../../lib/crypto-client');
         const crypto = await getCryptoClient();
+        const decodeBase64 = (value: string): Uint8Array =>
+          Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 
         // Decrypt manifests and extract photo metadata
         const decryptedPhotos: PhotoMeta[] = [];
+        const textDecoder = new TextDecoder();
 
         for (const photoResp of photoResponses) {
           if (photoResp.isDeleted) continue;
@@ -138,14 +143,25 @@ export function SharedGallery({
               if (!tierKey) continue;
 
               try {
-                const encryptedMeta = fromBase64(photoResp.encryptedMeta);
-                decrypted = await crypto.decryptManifest(
+                const encryptedMeta = decodeBase64(photoResp.encryptedMeta);
+                // Slice 4 — share-link viewers don't hold an epoch handle;
+                // they decrypt the manifest envelope with the unwrapped
+                // tier key directly. The worker returns plaintext bytes
+                // and we JSON-parse them here (the legacy
+                // `decryptManifest` did the parse inside the worker).
+                const plaintextBytes = await crypto.decryptShardWithTierKey(
                   encryptedMeta,
                   tierKey.key,
                 );
-                // If successful, add epoch info
-                decrypted.epochId = epochId;
-                decrypted.shardIds = photoResp.shardIds;
+                const meta = JSON.parse(
+                  textDecoder.decode(plaintextBytes),
+                ) as PhotoMeta;
+                decrypted = {
+                  ...meta,
+                  // If successful, add epoch info
+                  epochId,
+                  shardIds: photoResp.shardIds,
+                };
                 break;
               } catch {
                 // Try next tier/epoch

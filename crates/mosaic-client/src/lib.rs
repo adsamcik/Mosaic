@@ -10,19 +10,22 @@ use std::sync::{Mutex, OnceLock};
 use mosaic_crypto::{
     AuthSigningSecretKey, BundleValidationContext, EncryptedContent, EpochKeyBundle,
     EpochKeyMaterial, IdentityKeypair, IdentitySignature, IdentitySigningPublicKey, KdfProfile,
-    LinkKeys, ManifestSigningKeypair, ManifestSigningPublicKey, ManifestSigningSecretKey,
-    MosaicCryptoError, SealedBundle, SecretKey, WrappedTierKey, build_auth_challenge_transcript,
-    decrypt_content, decrypt_shard, derive_account_key, derive_auth_signing_keypair,
-    derive_content_key, derive_db_session_key, derive_epoch_key_material, derive_identity_keypair,
+    LinkKeys, ManifestSignature, ManifestSigningKeypair, ManifestSigningPublicKey,
+    ManifestSigningSecretKey, MosaicCryptoError, SealedBundle, SecretKey, WrappedTierKey,
+    build_auth_challenge_transcript, decrypt_content, decrypt_shard, derive_account_key,
+    derive_auth_signing_keypair, derive_content_key, derive_db_session_key,
+    derive_epoch_key_material, derive_identity_keypair,
     derive_link_keys as crypto_derive_link_keys, encrypt_content, encrypt_shard,
     generate_epoch_key_material, generate_identity_seed,
     generate_link_secret as crypto_generate_link_secret,
     generate_manifest_signing_keypair as crypto_generate_manifest_signing_keypair, get_tier_key,
     seal_and_sign_bundle as crypto_seal_and_sign_bundle, sign_auth_challenge,
+    sign_manifest_transcript as crypto_sign_manifest_transcript,
     sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_account_key,
     unwrap_key, unwrap_tier_key_from_link as crypto_unwrap_tier_key_from_link,
     verify_and_open_bundle as crypto_verify_and_open_bundle, verify_manifest_identity_signature,
-    wrap_key, wrap_tier_key_for_link as crypto_wrap_tier_key_for_link,
+    verify_manifest_transcript as crypto_verify_manifest_transcript, wrap_key,
+    wrap_tier_key_for_link as crypto_wrap_tier_key_for_link,
 };
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
 use zeroize::{Zeroize, Zeroizing};
@@ -1307,6 +1310,66 @@ pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: &[u8]) -> Byte
         }
     })
     .unwrap_or_else(bytes_error)
+}
+
+/// Signs manifest transcript bytes with the per-epoch Ed25519 manifest signing
+/// secret key attached to a Rust-owned epoch handle.
+///
+/// Slice 4 — the per-epoch sign-secret never crosses Comlink. The registry
+/// lock is briefly taken to clone the secret seed into a `Zeroizing` buffer,
+/// then released before the AEAD-free Ed25519 signing step runs.
+///
+/// Errors:
+/// - `EpochHandleNotFound` if the epoch handle is closed or has no
+///   per-epoch sign keypair (e.g. created via the legacy
+///   `open_epoch_key_handle` path that did not bootstrap a manifest signing
+///   keypair from a bundle).
+#[must_use]
+pub fn sign_manifest_with_epoch_handle(handle: u64, transcript_bytes: &[u8]) -> BytesResult {
+    let payload = match clone_epoch_bundle_payload(handle) {
+        Ok(value) => value,
+        Err(error) => return bytes_error(error),
+    };
+
+    let mut sign_seed = Zeroizing::new(payload.sign_secret_seed.to_vec());
+    let secret_key = match ManifestSigningSecretKey::from_seed(sign_seed.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return bytes_error(client_error_from_crypto(error)),
+    };
+
+    let signature = crypto_sign_manifest_transcript(transcript_bytes, &secret_key);
+    BytesResult {
+        code: ClientErrorCode::Ok,
+        bytes: signature.as_bytes().to_vec(),
+    }
+}
+
+/// Verifies manifest transcript bytes with a per-epoch manifest signing
+/// public key.
+///
+/// Slice 4 — replaces the legacy `verifyManifest` path that called the
+/// identity verifier under the hood; the manifest protocol uses the
+/// per-epoch `ManifestSigningPublicKey` for signature verification.
+#[must_use]
+pub fn verify_manifest_with_epoch(
+    transcript_bytes: &[u8],
+    signature_bytes: &[u8],
+    public_key_bytes: &[u8],
+) -> ClientErrorCode {
+    let signature = match ManifestSignature::from_bytes(signature_bytes) {
+        Ok(value) => value,
+        Err(error) => return map_crypto_error(error),
+    };
+    let public_key = match ManifestSigningPublicKey::from_bytes(public_key_bytes) {
+        Ok(value) => value,
+        Err(error) => return map_crypto_error(error),
+    };
+
+    if crypto_verify_manifest_transcript(transcript_bytes, &signature, &public_key) {
+        ClientErrorCode::Ok
+    } else {
+        ClientErrorCode::AuthenticationFailed
+    }
 }
 
 /// Verifies manifest transcript bytes with a public identity signing key.

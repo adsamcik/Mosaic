@@ -6,21 +6,37 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PhotoMeta } from '../src/workers/types';
 import type { UploadTask } from '../src/lib/upload-queue';
 
-// Capture the PhotoMeta passed to encryptManifest
+// Capture the PhotoMeta passed to encryptManifestWithEpoch (decoded from JSON
+// bytes) and the epochHandleId argument so tests can assert the Slice 4
+// handle-based contract.
 let capturedPhotoMeta: PhotoMeta | null = null;
+let capturedEncryptHandleId: string | null = null;
+let capturedSignHandleId: string | null = null;
+let capturedSignedBytes: Uint8Array | null = null;
 
-const mockEncryptManifest = vi.fn(async (meta: PhotoMeta) => {
-  capturedPhotoMeta = meta;
-  return { ciphertext: new Uint8Array([1, 2, 3]), sha256: 'abc' };
-});
-const mockSignManifest = vi.fn(async () => new Uint8Array([4, 5, 6]));
+const ENVELOPE_BYTES = new Uint8Array([1, 2, 3]);
+
+const mockEncryptManifestWithEpoch = vi.fn(
+  async (epochHandleId: string, plaintext: Uint8Array) => {
+    capturedEncryptHandleId = epochHandleId;
+    capturedPhotoMeta = JSON.parse(new TextDecoder().decode(plaintext)) as PhotoMeta;
+    return { envelopeBytes: ENVELOPE_BYTES, sha256: 'abc' };
+  },
+);
+const mockSignManifestWithEpoch = vi.fn(
+  async (epochHandleId: string, manifestBytes: Uint8Array) => {
+    capturedSignHandleId = epochHandleId;
+    capturedSignedBytes = manifestBytes;
+    return new Uint8Array([4, 5, 6]);
+  },
+);
 const mockCreateManifest = vi.fn(async () => {});
 
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
-      encryptManifest: mockEncryptManifest,
-      signManifest: mockSignManifest,
+      encryptManifestWithEpoch: mockEncryptManifestWithEpoch,
+      signManifestWithEpoch: mockSignManifestWithEpoch,
     }),
   ),
 }));
@@ -60,22 +76,58 @@ function makeBaseTask(overrides: Partial<UploadTask> = {}): UploadTask {
   } as UploadTask;
 }
 
+const SIGN_PUBLIC_KEY = new Uint8Array(32).fill(7);
 const epochKey = {
   epochId: 1,
-  epochSeed: new Uint8Array(32),
-  thumbKey: new Uint8Array(32),
-  previewKey: new Uint8Array(32),
-  fullKey: new Uint8Array(32),
+  epochHandleId: 'epoch-handle-test-1',
+  signPublicKey: SIGN_PUBLIC_KEY,
+  // Slice 3 zero-filled placeholders kept until Slice 4-7 retire all callers.
+  epochSeed: new Uint8Array(0),
   signKeypair: {
-    publicKey: new Uint8Array(32),
-    secretKey: new Uint8Array(64),
+    publicKey: SIGN_PUBLIC_KEY,
+    secretKey: new Uint8Array(0),
   },
 };
 
 describe('manifest-service', () => {
   beforeEach(() => {
     capturedPhotoMeta = null;
+    capturedEncryptHandleId = null;
+    capturedSignHandleId = null;
+    capturedSignedBytes = null;
     vi.clearAllMocks();
+  });
+
+  describe('Slice 4 handle-based contract', () => {
+    it('passes the epoch handle id (not raw seed) to encryptManifestWithEpoch', async () => {
+      const task = makeBaseTask();
+      await createManifestForUpload(task, ['shard-0', 'shard-1'], epochKey);
+
+      expect(mockEncryptManifestWithEpoch).toHaveBeenCalledTimes(1);
+      expect(capturedEncryptHandleId).toBe('epoch-handle-test-1');
+      expect(capturedSignHandleId).toBe('epoch-handle-test-1');
+    });
+
+    it('signs the encrypted envelope bytes (not the plaintext)', async () => {
+      const task = makeBaseTask();
+      await createManifestForUpload(task, ['shard-0'], epochKey);
+
+      expect(mockSignManifestWithEpoch).toHaveBeenCalledTimes(1);
+      expect(capturedSignedBytes).toEqual(ENVELOPE_BYTES);
+    });
+
+    it('publishes the per-epoch sign public key (not a placeholder secret)', async () => {
+      const task = makeBaseTask();
+      await createManifestForUpload(task, ['shard-0'], epochKey);
+
+      expect(mockCreateManifest).toHaveBeenCalledTimes(1);
+      const request = mockCreateManifest.mock.calls[0]?.[0] as {
+        signerPubkey: string;
+      };
+      expect(Buffer.from(request.signerPubkey, 'base64')).toEqual(
+        Buffer.from(SIGN_PUBLIC_KEY),
+      );
+    });
   });
 
   describe('photo uploads (no videoMetadata)', () => {

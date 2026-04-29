@@ -1404,6 +1404,29 @@ pub fn verify_manifest_with_identity(
         .as_u16()
 }
 
+/// Signs manifest transcript bytes with the per-epoch manifest signing key
+/// attached to a Rust-owned epoch handle.
+///
+/// Slice 4 — the per-epoch signing secret never crosses the FFI boundary.
+#[must_use]
+pub fn sign_manifest_with_epoch_handle(handle: u64, transcript_bytes: Vec<u8>) -> BytesResult {
+    bytes_result_from_client(mosaic_client::sign_manifest_with_epoch_handle(
+        handle,
+        &transcript_bytes,
+    ))
+}
+
+/// Verifies manifest transcript bytes with a per-epoch manifest signing
+/// public key.
+#[must_use]
+pub fn verify_manifest_with_epoch(
+    transcript_bytes: Vec<u8>,
+    signature: Vec<u8>,
+    public_key: Vec<u8>,
+) -> u16 {
+    mosaic_client::verify_manifest_with_epoch(&transcript_bytes, &signature, &public_key).as_u16()
+}
+
 /// Builds canonical plaintext metadata sidecar bytes from a compact encoded field list.
 ///
 /// `encoded_fields` is a repeated sequence of `tag:u16le | value_len:u32le | value`.
@@ -2145,6 +2168,26 @@ pub fn verify_manifest_with_identity_js(
     public_key: Vec<u8>,
 ) -> u16 {
     verify_manifest_with_identity(transcript_bytes, signature, public_key)
+}
+
+/// Signs manifest transcript bytes with the per-epoch manifest signing key
+/// attached to an epoch handle through WASM.
+#[wasm_bindgen(js_name = signManifestWithEpochHandle)]
+#[must_use]
+pub fn sign_manifest_with_epoch_handle_js(handle: u64, transcript_bytes: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(sign_manifest_with_epoch_handle(handle, transcript_bytes))
+}
+
+/// Verifies manifest transcript bytes with a per-epoch manifest signing
+/// public key through WASM.
+#[wasm_bindgen(js_name = verifyManifestWithEpoch)]
+#[must_use]
+pub fn verify_manifest_with_epoch_js(
+    transcript_bytes: Vec<u8>,
+    signature: Vec<u8>,
+    public_key: Vec<u8>,
+) -> u16 {
+    verify_manifest_with_epoch(transcript_bytes, signature, public_key)
 }
 
 /// Builds canonical metadata sidecar bytes through WASM.

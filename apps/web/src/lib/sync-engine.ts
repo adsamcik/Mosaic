@@ -1,5 +1,4 @@
-import { deriveTierKeys, memzero } from '@mosaic/crypto';
-import type { DecryptedManifest } from '../workers/types';
+import type { DecryptedManifest, EpochHandleId, PhotoMeta } from '../workers/types';
 import { fromBase64, getApi } from './api';
 import { getCryptoClient } from './crypto-client';
 import { getDbClient } from './db-client';
@@ -225,7 +224,7 @@ class SyncEngine extends EventTarget {
         );
         throwIfAborted(signal);
 
-        if (!hasValidSigningKey(epochBundle.signKeypair.publicKey)) {
+        if (!hasValidSigningKey(epochBundle.signPublicKey)) {
           throw new Error(
             `Missing valid epoch signing key for album ${albumId} epoch ${response.currentEpochId}`,
           );
@@ -245,15 +244,7 @@ class SyncEngine extends EventTarget {
             continue;
           }
 
-          let thumbKey: Uint8Array | null = null;
-          let previewKey: Uint8Array | null = null;
-          let fullKey: Uint8Array | null = null;
-
           try {
-            ({ thumbKey, previewKey, fullKey } = readKey
-              ? deriveTierKeys(readKey)
-              : deriveTierKeys(epochBundle.epochSeed));
-
             const encryptedMeta = fromBase64(manifest.encryptedMeta);
             const signature = fromBase64(manifest.signature);
             const serverSignerPubkey = fromBase64(manifest.signerPubkey);
@@ -263,9 +254,7 @@ class SyncEngine extends EventTarget {
               continue;
             }
 
-            if (
-              !keysMatch(serverSignerPubkey, epochBundle.signKeypair.publicKey)
-            ) {
+            if (!keysMatch(serverSignerPubkey, epochBundle.signPublicKey)) {
               log.warn(
                 `Manifest ${manifest.id} signer pubkey mismatch for album ${albumId}`,
               );
@@ -276,7 +265,7 @@ class SyncEngine extends EventTarget {
             const isValid = await crypto.verifyManifest(
               encryptedMeta,
               signature,
-              epochBundle.signKeypair.publicKey,
+              epochBundle.signPublicKey,
             );
 
             if (!isValid) {
@@ -285,8 +274,25 @@ class SyncEngine extends EventTarget {
             }
 
             throwIfAborted(signal);
-            const meta = await crypto.decryptManifest(encryptedMeta, thumbKey);
+            // Slice 4 — manifest decryption now routes through the Rust
+            // epoch handle. The thumb-tier key is derived inside Rust;
+            // the seed and the per-epoch sign-secret never cross Comlink.
+            const epochHandleId = epochBundle.epochHandleId as EpochHandleId;
+            const plaintextBytes = await crypto.decryptManifestWithEpoch(
+              epochHandleId,
+              encryptedMeta,
+            );
             throwIfAborted(signal);
+
+            let meta: PhotoMeta;
+            try {
+              meta = JSON.parse(new TextDecoder().decode(plaintextBytes)) as PhotoMeta;
+            } catch (parseErr) {
+              log.warn(`Manifest ${manifest.id} JSON parse failed`, {
+                error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+              });
+              continue;
+            }
 
             decrypted.push({
               id: manifest.id,
@@ -296,16 +302,10 @@ class SyncEngine extends EventTarget {
               meta,
               shardIds: manifest.shardIds,
             });
-          } finally {
-            if (thumbKey) {
-              memzero(thumbKey);
-            }
-            if (previewKey) {
-              memzero(previewKey);
-            }
-            if (fullKey) {
-              memzero(fullKey);
-            }
+          } catch (decryptErr) {
+            log.warn(`Failed to process manifest ${manifest.id}`, {
+              error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
+            });
           }
         }
 

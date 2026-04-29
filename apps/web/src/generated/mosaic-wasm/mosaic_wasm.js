@@ -2085,6 +2085,20 @@ export function signAuthChallengeWithPassword(password, user_salt, kdf_memory_ki
 }
 
 /**
+ * Signs manifest transcript bytes with the per-epoch manifest signing key
+ * attached to an epoch handle through WASM.
+ * @param {bigint} handle
+ * @param {Uint8Array} transcript_bytes
+ * @returns {BytesResult}
+ */
+export function signManifestWithEpochHandle(handle, transcript_bytes) {
+    const ptr0 = passArray8ToWasm0(transcript_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.signManifestWithEpochHandle(handle, ptr0, len0);
+    return BytesResult.__wrap(ret);
+}
+
+/**
  * Signs manifest transcript bytes through WASM.
  * @param {bigint} handle
  * @param {Uint8Array} transcript_bytes
@@ -2191,6 +2205,25 @@ export function verifyAndOpenBundle(identity_handle, sealed, signature, sharer_p
     const len3 = WASM_VECTOR_LEN;
     const ret = wasm.verifyAndOpenBundle(identity_handle, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, expected_min_epoch, allow_legacy_empty);
     return OpenedBundleResult.__wrap(ret);
+}
+
+/**
+ * Verifies manifest transcript bytes with a per-epoch manifest signing
+ * public key through WASM.
+ * @param {Uint8Array} transcript_bytes
+ * @param {Uint8Array} signature
+ * @param {Uint8Array} public_key
+ * @returns {number}
+ */
+export function verifyManifestWithEpoch(transcript_bytes, signature, public_key) {
+    const ptr0 = passArray8ToWasm0(transcript_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(signature, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(public_key, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.verifyManifestWithEpoch(ptr0, len0, ptr1, len1, ptr2, len2);
+    return ret;
 }
 
 /**

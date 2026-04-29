@@ -6,23 +6,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PhotoMeta } from '../src/workers/types';
 
 const mocks = vi.hoisted(() => {
-  const encryptedMeta = new Uint8Array([1, 2, 3, 4]);
+  const envelopeBytes = new Uint8Array([1, 2, 3, 4]);
   const signature = new Uint8Array([5, 6, 7, 8]);
   const signerPubkey = new Uint8Array([9, 10, 11, 12]);
-  const secretKey = new Uint8Array(64).fill(222);
-  const epochSeed = new Uint8Array(32).fill(111);
+  const epochHandleId = 'epoch-handle-photo-edit';
 
   return {
-    encryptedMeta,
+    envelopeBytes,
     signature,
     signerPubkey,
-    secretKey,
-    epochSeed,
-    encryptManifest: vi.fn(async () => ({
-      ciphertext: encryptedMeta,
+    epochHandleId,
+    encryptManifestWithEpoch: vi.fn(async () => ({
+      envelopeBytes,
       sha256: 'manifest-hash',
     })),
-    signManifest: vi.fn(async () => signature),
+    signManifestWithEpoch: vi.fn(async () => signature),
     updateManifestMetadata: vi.fn(async () => ({
       id: 'photo-1',
       versionCreated: 42,
@@ -46,8 +44,8 @@ vi.mock('../src/lib/api', () => ({
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
-      encryptManifest: mocks.encryptManifest,
-      signManifest: mocks.signManifest,
+      encryptManifestWithEpoch: mocks.encryptManifestWithEpoch,
+      signManifestWithEpoch: mocks.signManifestWithEpoch,
     }),
   ),
 }));
@@ -56,10 +54,13 @@ vi.mock('../src/lib/epoch-key-service', () => ({
   getOrFetchEpochKey: vi.fn(() =>
     Promise.resolve({
       epochId: 7,
-      epochSeed: mocks.epochSeed,
+      epochHandleId: mocks.epochHandleId,
+      signPublicKey: mocks.signerPubkey,
+      // Slice 3 placeholder fields kept until Slice 4-7 retire all callers.
+      epochSeed: new Uint8Array(0),
       signKeypair: {
         publicKey: mocks.signerPubkey,
-        secretKey: mocks.secretKey,
+        secretKey: new Uint8Array(0),
       },
     }),
   ),
@@ -125,15 +126,22 @@ function fromBase64(value: string): Uint8Array {
   return new Uint8Array(Buffer.from(value, 'base64'));
 }
 
-function containsSecretKey(value: unknown): boolean {
-  if (value instanceof Uint8Array) {
-    return value.length === mocks.secretKey.length && value.every((b, i) => b === mocks.secretKey[i]);
+function decodePhotoMetaFromCall(
+  call: readonly unknown[],
+): PhotoMeta {
+  const plaintext = call[1] as Uint8Array;
+  return JSON.parse(new TextDecoder().decode(plaintext)) as PhotoMeta;
+}
+
+function containsHandleId(value: unknown): boolean {
+  if (typeof value === 'string') {
+    return value.includes(mocks.epochHandleId);
   }
   if (Array.isArray(value)) {
-    return value.some(containsSecretKey);
+    return value.some(containsHandleId);
   }
   if (value && typeof value === 'object') {
-    return Object.values(value).some(containsSecretKey);
+    return Object.values(value).some(containsHandleId);
   }
   return false;
 }
@@ -175,13 +183,31 @@ describe('photo-edit-service', () => {
       );
     });
 
+    it('routes rotation through the epoch handle (Slice 4 contract)', async () => {
+      const photo = makePhoto({ rotation: 0 });
+
+      await rotatePhoto(photo, 90);
+
+      expect(mocks.encryptManifestWithEpoch).toHaveBeenCalledTimes(1);
+      const [encryptHandle] = mocks.encryptManifestWithEpoch.mock.calls[0]!;
+      expect(encryptHandle).toBe(mocks.epochHandleId);
+
+      expect(mocks.signManifestWithEpoch).toHaveBeenCalledTimes(1);
+      const [signHandle, signedBytes] =
+        mocks.signManifestWithEpoch.mock.calls[0]!;
+      expect(signHandle).toBe(mocks.epochHandleId);
+      expect(signedBytes).toEqual(mocks.envelopeBytes);
+    });
+
     it('preserves photo identity fields and only changes rotation and updatedAt in encrypted metadata', async () => {
       const photo = makePhoto({ rotation: 90 });
 
       await rotatePhoto(photo, 180);
 
-      expect(mocks.encryptManifest).toHaveBeenCalledTimes(1);
-      const encryptedMeta = mocks.encryptManifest.mock.calls[0]?.[0] as PhotoMeta;
+      expect(mocks.encryptManifestWithEpoch).toHaveBeenCalledTimes(1);
+      const encryptedMeta = decodePhotoMetaFromCall(
+        mocks.encryptManifestWithEpoch.mock.calls[0]!,
+      );
       expect(encryptedMeta).toMatchObject({
         id: photo.id,
         assetId: photo.assetId,
@@ -193,9 +219,9 @@ describe('photo-edit-service', () => {
         takenAt: photo.takenAt,
         epochId: photo.epochId,
       });
-      expect(encryptedMeta.shardIds).toBe(photo.shardIds);
-      expect(encryptedMeta.shardHashes).toBe(photo.shardHashes);
-      expect(encryptedMeta.originalShardIds).toBe(photo.originalShardIds);
+      expect(encryptedMeta.shardIds).toEqual(photo.shardIds);
+      expect(encryptedMeta.shardHashes).toEqual(photo.shardHashes);
+      expect(encryptedMeta.originalShardIds).toEqual(photo.originalShardIds);
 
       const { rotation: _inputRotation, updatedAt: _inputUpdatedAt, ...inputRest } = photo;
       const { rotation: outputRotation, updatedAt: outputUpdatedAt, ...outputRest } = encryptedMeta;
@@ -213,7 +239,7 @@ describe('photo-edit-service', () => {
       expect(mocks.updateManifestMetadata).toHaveBeenCalledTimes(1);
       const [manifestId, request] = mocks.updateManifestMetadata.mock.calls[0]!;
       expect(manifestId).toBe(photo.id);
-      expect(fromBase64(request.encryptedMeta)).toEqual(mocks.encryptedMeta);
+      expect(fromBase64(request.encryptedMeta)).toEqual(mocks.envelopeBytes);
       expect(fromBase64(request.signature)).toEqual(mocks.signature);
       expect(fromBase64(request.signerPubkey)).toEqual(mocks.signerPubkey);
     });
@@ -241,7 +267,9 @@ describe('photo-edit-service', () => {
       const photo = makePhoto({ rotation: 90 });
 
       const result = await rotatePhoto(photo, 90);
-      const encryptedMeta = mocks.encryptManifest.mock.calls[0]?.[0] as PhotoMeta;
+      const encryptedMeta = decodePhotoMetaFromCall(
+        mocks.encryptManifestWithEpoch.mock.calls[0]!,
+      );
 
       expect(result).toEqual({
         ...photo,
@@ -251,7 +279,7 @@ describe('photo-edit-service', () => {
       expect(result.updatedAt).not.toBe(photo.updatedAt);
     });
 
-    it('does not log key material or encrypted metadata fields', async () => {
+    it('does not log key material, encrypted metadata, or epoch handle ids', async () => {
       const photo = makePhoto({ rotation: 90 });
 
       await rotatePhoto(photo, 90);
@@ -268,7 +296,7 @@ describe('photo-edit-service', () => {
       expect(serializedCalls).not.toContain('encryptedMeta');
       expect(serializedCalls).not.toContain('signerPubkey');
       expect(serializedCalls).not.toContain('signature');
-      expect(loggerCalls.some(containsSecretKey)).toBe(false);
+      expect(loggerCalls.some(containsHandleId)).toBe(false);
     });
   });
 
@@ -321,7 +349,7 @@ describe('photo-edit-service', () => {
         'Description too long (max 2000 characters)',
       );
 
-      expect(mocks.encryptManifest).not.toHaveBeenCalled();
+      expect(mocks.encryptManifestWithEpoch).not.toHaveBeenCalled();
       expect(mocks.updateManifestMetadata).not.toHaveBeenCalled();
       expect(mocks.updatePhotoDescription).not.toHaveBeenCalled();
     });
@@ -357,8 +385,10 @@ describe('photo-edit-service', () => {
 
       await updatePhotoDescription(photo, 'After');
 
-      expect(mocks.encryptManifest).toHaveBeenCalledTimes(1);
-      const encryptedMeta = mocks.encryptManifest.mock.calls[0]?.[0] as PhotoMeta;
+      expect(mocks.encryptManifestWithEpoch).toHaveBeenCalledTimes(1);
+      const encryptedMeta = decodePhotoMetaFromCall(
+        mocks.encryptManifestWithEpoch.mock.calls[0]!,
+      );
       expect(encryptedMeta).toMatchObject({
         id: photo.id,
         shardIds: photo.shardIds,

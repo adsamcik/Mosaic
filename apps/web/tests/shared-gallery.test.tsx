@@ -13,7 +13,7 @@ import type { AccessTier } from '../src/lib/api-types';
 // Use vi.hoisted for mocks
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
-  decryptManifest: vi.fn(),
+  decryptShardWithTierKey: vi.fn(),
   startDownload: vi.fn(),
   cancelDownload: vi.fn(),
   createShareLinkOriginalResolver: vi.fn(),
@@ -36,7 +36,7 @@ global.fetch = mocks.fetch as unknown as typeof fetch;
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
-      decryptManifest: mocks.decryptManifest,
+      decryptShardWithTierKey: mocks.decryptShardWithTierKey,
     }),
   ),
 }));
@@ -215,21 +215,26 @@ describe('SharedGallery', () => {
       ],
     });
 
-    // Default successful decryption
-    mocks.decryptManifest.mockResolvedValue({
-      id: 'photo-1',
-      assetId: 'asset-1',
-      albumId: 'album-123',
-      filename: 'test.jpg',
-      mimeType: 'image/jpeg',
-      width: 1920,
-      height: 1080,
-      tags: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      shardIds: ['shard-1'],
-      epochId: 1,
-    });
+    // Default successful decryption — shared viewers decrypt the manifest
+    // envelope via the tier-key path and JSON-parse the plaintext bytes.
+    mocks.decryptShardWithTierKey.mockResolvedValue(
+      new TextEncoder().encode(
+        JSON.stringify({
+          id: 'photo-1',
+          assetId: 'asset-1',
+          albumId: 'album-123',
+          filename: 'test.jpg',
+          mimeType: 'image/jpeg',
+          width: 1920,
+          height: 1080,
+          tags: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          shardIds: ['shard-1'],
+          epochId: 1,
+        }),
+      ),
+    );
   });
 
   afterEach(() => {
@@ -462,9 +467,9 @@ describe('SharedGallery', () => {
         isLoadingKeys: false,
       });
 
-      await waitFor(() => mocks.decryptManifest.mock.calls.length > 0);
+      await waitFor(() => mocks.decryptShardWithTierKey.mock.calls.length > 0);
 
-      expect(mocks.decryptManifest).toHaveBeenCalled();
+      expect(mocks.decryptShardWithTierKey).toHaveBeenCalled();
 
       cleanup();
     });
@@ -696,23 +701,25 @@ describe('SharedGallery', () => {
         .mockResolvedValueOnce({ ok: true, json: async () => fullPage })
         .mockResolvedValueOnce({ ok: true, json: async () => tailPage });
       mocks.createShareLinkOriginalResolver.mockReturnValue(resolver);
-      mocks.decryptManifest.mockImplementation(async () => {
+      mocks.decryptShardWithTierKey.mockImplementation(async () => {
         const id = `photo-${decryptIndex++}`;
-        return {
-          id,
-          assetId: `asset-${id}`,
-          albumId: 'album-123',
-          filename: `${id}.jpg`,
-          mimeType: 'image/jpeg',
-          width: 1920,
-          height: 1080,
-          tags: [],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          shardIds: [`shard-${id}`],
-          originalShardIds: [`original-${id}`],
-          epochId: 1,
-        };
+        return new TextEncoder().encode(
+          JSON.stringify({
+            id,
+            assetId: `asset-${id}`,
+            albumId: 'album-123',
+            filename: `${id}.jpg`,
+            mimeType: 'image/jpeg',
+            width: 1920,
+            height: 1080,
+            tags: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            shardIds: [`shard-${id}`],
+            originalShardIds: [`original-${id}`],
+            epochId: 1,
+          }),
+        );
       });
 
       const { getByTestId, cleanup } = renderComponent({

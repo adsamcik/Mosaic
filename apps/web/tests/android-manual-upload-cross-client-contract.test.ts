@@ -52,8 +52,8 @@ interface ContractFixture {
 
 const mocks = vi.hoisted(() => ({
   createManifest: vi.fn(),
-  encryptManifest: vi.fn(),
-  signManifest: vi.fn(),
+  encryptManifestWithEpoch: vi.fn(),
+  signManifestWithEpoch: vi.fn(),
 }));
 
 vi.mock('../src/lib/api', () => {
@@ -81,8 +81,8 @@ vi.mock('../src/lib/api', () => {
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
-      encryptManifest: mocks.encryptManifest,
-      signManifest: mocks.signManifest,
+      encryptManifestWithEpoch: mocks.encryptManifestWithEpoch,
+      signManifestWithEpoch: mocks.signManifestWithEpoch,
     }),
   ),
 }));
@@ -179,12 +179,15 @@ function fixtureTieredShards(fixture: ContractFixture): TieredShardIds {
 }
 
 function fixtureEpochKey(fixture: ContractFixture): EpochKeyBundle {
+  const publicKey = fromBase64(fixture.backendManifestRequest.signerPubkey);
   return {
     epochId: fixture.clientCore.epochId,
-    epochSeed: new Uint8Array(32),
+    epochHandleId: `test-epoch-handle-${fixture.clientCore.epochId}`,
+    signPublicKey: publicKey,
+    epochSeed: new Uint8Array(0),
     signKeypair: {
-      publicKey: fromBase64(fixture.backendManifestRequest.signerPubkey),
-      secretKey: new Uint8Array(64),
+      publicKey,
+      secretKey: new Uint8Array(0),
     },
   };
 }
@@ -205,11 +208,11 @@ describe('Android manual upload cross-client contract', () => {
       fixture.backendManifestRequest.encryptedMetaBase64,
     );
     const signature = fromBase64(fixture.backendManifestRequest.signature);
-    mocks.encryptManifest.mockResolvedValue({
-      ciphertext: encryptedMeta,
+    mocks.encryptManifestWithEpoch.mockResolvedValue({
+      envelopeBytes: encryptedMeta,
       sha256: 'encrypted-manifest-digest-is-client-local',
     });
-    mocks.signManifest.mockResolvedValue(signature);
+    mocks.signManifestWithEpoch.mockResolvedValue(signature);
     mocks.createManifest.mockResolvedValue({
       id: fixture.clientCore.manifestReceipt.manifestId,
       version: fixture.clientCore.manifestReceipt.version,
@@ -222,7 +225,24 @@ describe('Android manual upload cross-client contract', () => {
       fixtureTieredShards(fixture),
     );
 
-    expect(mocks.encryptManifest).toHaveBeenCalledWith(
+    // Slice 4 — manifest sign/verify routes through the Rust epoch handle.
+    // The mock only sees the opaque epoch handle id (string) and the
+    // JSON-encoded plaintext; the per-epoch sign secret never crosses
+    // Comlink. The handle id and JSON byte payload are what we anchor on.
+    expect(mocks.encryptManifestWithEpoch).toHaveBeenCalledTimes(1);
+    const [encryptHandleArg, encryptPlaintextArg] =
+      mocks.encryptManifestWithEpoch.mock.calls[0];
+    expect(encryptHandleArg).toBe(
+      `test-epoch-handle-${fixture.clientCore.epochId}`,
+    );
+    expect(encryptPlaintextArg).toBeInstanceOf(Uint8Array);
+
+    // Decode the JSON payload and assert the manifest fields the
+    // backend cross-client contract pins.
+    const decodedManifest = JSON.parse(
+      new TextDecoder().decode(encryptPlaintextArg as Uint8Array),
+    );
+    expect(decodedManifest).toEqual(
       expect.objectContaining({
         assetId: fixture.androidHandoff.assetId,
         albumId: fixture.androidHandoff.albumId,
@@ -232,12 +252,11 @@ describe('Android manual upload cross-client contract', () => {
         previewShardId: fixture.backendManifestRequest.tieredShards[1].shardId,
         originalShardIds: [fixture.backendManifestRequest.tieredShards[2].shardId],
       }),
-      expect.any(Uint8Array),
-      fixture.clientCore.epochId,
     );
-    expect(mocks.signManifest).toHaveBeenCalledWith(
+
+    expect(mocks.signManifestWithEpoch).toHaveBeenCalledWith(
+      `test-epoch-handle-${fixture.clientCore.epochId}`,
       encryptedMeta,
-      expect.any(Uint8Array),
     );
     expect(mocks.createManifest).toHaveBeenCalledWith({
       albumId: fixture.backendManifestRequest.albumId,

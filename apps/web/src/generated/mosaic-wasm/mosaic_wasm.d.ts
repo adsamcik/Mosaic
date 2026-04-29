@@ -693,6 +693,12 @@ export function signAuthChallengeWithAccount(account_handle: bigint, challenge_b
 export function signAuthChallengeWithPassword(password: Uint8Array, user_salt: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number, transcript_bytes: Uint8Array): BytesResult;
 
 /**
+ * Signs manifest transcript bytes with the per-epoch manifest signing key
+ * attached to an epoch handle through WASM.
+ */
+export function signManifestWithEpochHandle(handle: bigint, transcript_bytes: Uint8Array): BytesResult;
+
+/**
  * Signs manifest transcript bytes through WASM.
  */
 export function signManifestWithIdentity(handle: bigint, transcript_bytes: Uint8Array): BytesResult;
@@ -722,6 +728,12 @@ export function unwrapWithAccountHandle(account_handle: bigint, wrapped: Uint8Ar
  * Verifies and opens a sealed epoch key bundle through WASM.
  */
 export function verifyAndOpenBundle(identity_handle: bigint, sealed: Uint8Array, signature: Uint8Array, sharer_pubkey: Uint8Array, expected_album_id: string, expected_min_epoch: number, allow_legacy_empty: boolean): OpenedBundleResult;
+
+/**
+ * Verifies manifest transcript bytes with a per-epoch manifest signing
+ * public key through WASM.
+ */
+export function verifyManifestWithEpoch(transcript_bytes: Uint8Array, signature: Uint8Array, public_key: Uint8Array): number;
 
 /**
  * Verifies manifest transcript bytes through WASM.
@@ -860,12 +872,14 @@ export interface InitOutput {
     readonly sealedbundleresult_signature: (a: number, b: number) => void;
     readonly signAuthChallengeWithAccount: (a: bigint, b: number, c: number) => number;
     readonly signAuthChallengeWithPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
+    readonly signManifestWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly signManifestWithIdentity: (a: bigint, b: number, c: number) => number;
     readonly unlockAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly unwrapKey: (a: number, b: number, c: number, d: number) => number;
     readonly unwrapTierKeyFromLink: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly unwrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly verifyAndOpenBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
+    readonly verifyManifestWithEpoch: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly verifyManifestWithIdentity: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly wrapKey: (a: number, b: number, c: number, d: number) => number;
     readonly wrapTierKeyForLink: (a: bigint, b: number, c: number, d: number) => number;

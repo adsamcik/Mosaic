@@ -384,6 +384,46 @@ export class RustHandleFacade {
     );
   }
 
+  /**
+   * Sign manifest transcript bytes with the per-epoch Ed25519 sign secret
+   * attached to a Rust-owned epoch handle. The sign secret never crosses
+   * the FFI boundary.
+   *
+   * Slice 4 — replaces the legacy TS `signManifest(transcript, secretKey)`.
+   */
+  signManifestWithEpochHandle(
+    handle: bigint,
+    transcriptBytes: Uint8Array,
+  ): Uint8Array {
+    const result = rustWasm.signManifestWithEpochHandle(handle, transcriptBytes);
+    return consumeResult(result, 'signManifestWithEpochHandle', (r) =>
+      copyBytes(r.bytes),
+    );
+  }
+
+  /**
+   * Verify a detached Ed25519 manifest signature against a per-epoch
+   * manifest signing public key. Returns true on `Ok`, false on
+   * `AuthenticationFailed`. Other error codes throw.
+   *
+   * Slice 4 — replaces the legacy TS `verifyManifest`.
+   */
+  verifyManifestWithEpoch(
+    transcriptBytes: Uint8Array,
+    signature: Uint8Array,
+    publicKey: Uint8Array,
+  ): boolean {
+    const code = rustWasm.verifyManifestWithEpoch(
+      transcriptBytes,
+      signature,
+      publicKey,
+    );
+    if (code === RUST_OK) return true;
+    if (code === WorkerCryptoErrorCode.AuthenticationFailed) return false;
+    throwIfErrorCode(code, 'verifyManifestWithEpoch');
+    return false;
+  }
+
   encryptMetadataSidecarWithEpochHandle(
     handle: bigint,
     albumId: Uint8Array,

@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   },
   crypto: {
     verifyManifest: vi.fn(),
-    decryptManifest: vi.fn(),
+    decryptManifestWithEpoch: vi.fn(),
   },
   epochService: {
     fetchAndUnwrapEpochKeys: vi.fn(),
@@ -22,8 +22,6 @@ const mocks = vi.hoisted(() => ({
     getEpochKey: vi.fn(),
     setEpochKey: vi.fn(),
   },
-  deriveTierKeys: vi.fn(),
-  memzero: vi.fn((buffer: Uint8Array) => buffer.fill(0)),
   localPurge: {
     purgeLocalPhoto: vi.fn(),
   },
@@ -54,12 +52,6 @@ vi.mock('../src/lib/epoch-key-store', () => ({
   setEpochKey: mocks.epochStore.setEpochKey,
 }));
 
-vi.mock('@mosaic/crypto', () => ({
-  deriveTierKeys: mocks.deriveTierKeys,
-  memzero: mocks.memzero,
-}));
-
-
 vi.mock('../src/lib/local-purge', () => ({
   purgeLocalPhoto: mocks.localPurge.purgeLocalPhoto,
 }));
@@ -84,6 +76,24 @@ async function importSyncEngine() {
   return mod.syncEngine;
 }
 
+const SAMPLE_PHOTO_META = {
+  assetId: 'asset-1',
+  albumId: 'album-1',
+  filename: 'image.jpg',
+  mimeType: 'image/jpeg',
+  width: 1,
+  height: 1,
+  tags: [],
+  createdAt: '2024-01-01T00:00:00Z',
+  updatedAt: '2024-01-01T00:00:00Z',
+  shardIds: ['shard-1'],
+  epochId: 1,
+};
+
+const SAMPLE_PHOTO_META_BYTES = new TextEncoder().encode(
+  JSON.stringify(SAMPLE_PHOTO_META),
+);
+
 describe('syncEngine', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -99,32 +109,20 @@ describe('syncEngine', () => {
       blockers: [],
     });
     mocks.crypto.verifyManifest.mockResolvedValue(true);
-    mocks.crypto.decryptManifest.mockResolvedValue({
-      assetId: 'asset-1',
-      albumId: 'album-1',
-      filename: 'image.jpg',
-      mimeType: 'image/jpeg',
-      width: 1,
-      height: 1,
-      tags: [],
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-      shardIds: ['shard-1'],
-      epochId: 1,
-    });
+    mocks.crypto.decryptManifestWithEpoch.mockResolvedValue(
+      SAMPLE_PHOTO_META_BYTES,
+    );
     mocks.epochService.getOrFetchEpochKey.mockResolvedValue({
       epochId: 7,
-      epochSeed: new Uint8Array(32).fill(7),
+      epochHandleId: 'epoch-handle-7',
+      signPublicKey: new Uint8Array(32).fill(9),
+      // Slice 3 zero-filled placeholders kept until Slice 4-7 retire callers.
+      epochSeed: new Uint8Array(0),
       signKeypair: {
         publicKey: new Uint8Array(32).fill(9),
-        secretKey: new Uint8Array(64).fill(4),
+        secretKey: new Uint8Array(0),
       },
     });
-    mocks.deriveTierKeys.mockImplementation((epochSeed: Uint8Array) => ({
-      thumbKey: new Uint8Array(epochSeed),
-      previewKey: new Uint8Array(epochSeed.length).fill(2),
-      fullKey: new Uint8Array(epochSeed.length).fill(3),
-    }));
   });
 
   afterEach(() => {
@@ -314,7 +312,7 @@ describe('syncEngine', () => {
       reason: 'sync-deleted',
     });
     expect(mocks.crypto.verifyManifest).not.toHaveBeenCalled();
-    expect(mocks.crypto.decryptManifest).not.toHaveBeenCalled();
+    expect(mocks.crypto.decryptManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.db.insertManifests).toHaveBeenCalledWith([
       expect.objectContaining({
         id: 'manifest-deleted',
@@ -350,7 +348,7 @@ describe('syncEngine', () => {
     await syncEngine.sync('album-1');
 
     expect(mocks.crypto.verifyManifest).not.toHaveBeenCalled();
-    expect(mocks.crypto.decryptManifest).not.toHaveBeenCalled();
+    expect(mocks.crypto.decryptManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.db.insertManifests).not.toHaveBeenCalled();
     expect(mocks.db.setAlbumVersion).toHaveBeenCalledWith('album-1', 1);
   });
@@ -382,13 +380,7 @@ describe('syncEngine', () => {
     expect(mocks.db.insertManifests).not.toHaveBeenCalled();
   });
 
-  it('zeroes all derived tier keys after manifest processing', async () => {
-    const derivedKeys = {
-      thumbKey: new Uint8Array([1]),
-      previewKey: new Uint8Array([2]),
-      fullKey: new Uint8Array([3]),
-    };
-    mocks.deriveTierKeys.mockReturnValueOnce(derivedKeys);
+  it('routes manifest decryption through the epoch handle (Slice 4)', async () => {
     mocks.api.syncAlbum.mockResolvedValue({
       manifests: [
         {
@@ -411,8 +403,11 @@ describe('syncEngine', () => {
 
     await syncEngine.sync('album-1');
 
-    expect(mocks.memzero).toHaveBeenCalledWith(derivedKeys.thumbKey);
-    expect(mocks.memzero).toHaveBeenCalledWith(derivedKeys.previewKey);
-    expect(mocks.memzero).toHaveBeenCalledWith(derivedKeys.fullKey);
+    expect(mocks.crypto.decryptManifestWithEpoch).toHaveBeenCalledTimes(1);
+    const [handleId, envelopeBytes] =
+      mocks.crypto.decryptManifestWithEpoch.mock.calls[0]!;
+    expect(handleId).toBe('epoch-handle-7');
+    expect(envelopeBytes).toEqual(new Uint8Array([1, 2, 3]));
+    expect(mocks.db.insertManifests).toHaveBeenCalledTimes(1);
   });
 });
