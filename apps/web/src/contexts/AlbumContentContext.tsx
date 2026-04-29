@@ -37,6 +37,7 @@ import {
   createHeadingBlock,
   createTextBlock,
 } from '../lib/content-blocks';
+import type { EpochHandleId } from '../workers/types';
 
 const log = createLogger('AlbumContentContext');
 
@@ -159,10 +160,12 @@ export function AlbumContentProvider({
       // Check if we're still on the same album
       if (albumIdRef.current !== albumId) return;
 
-      // Get epoch key for decryption
+      // Get epoch handle for decryption. Slice 7 — the worker derives
+      // the content sub-key from the handle; raw seed bytes never cross
+      // Comlink.
       const epochKey = getCurrentEpochKey(albumId);
-      if (!epochKey) {
-        log.warn('No epoch key available for content decryption');
+      if (!epochKey || !epochKey.epochHandleId) {
+        log.warn('No epoch handle available for content decryption');
         setLoadState('error');
         setErrorMessage('No encryption key available');
         return;
@@ -174,10 +177,9 @@ export function AlbumContentProvider({
       const nonce = fromBase64(response.nonce);
 
       const plaintext = await crypto.decryptAlbumContent(
-        ciphertext,
+        epochKey.epochHandleId as EpochHandleId,
         nonce,
-        epochKey.epochSeed,
-        response.epochId,
+        ciphertext,
       );
 
       // Parse JSON
@@ -301,7 +303,7 @@ export function AlbumContentProvider({
     if (!document || !albumId) return false;
 
     const epochKey = getCurrentEpochKey(albumId);
-    if (!epochKey) {
+    if (!epochKey || !epochKey.epochHandleId) {
       setErrorMessage('No encryption key available');
       setSaveState('error');
       return false;
@@ -309,6 +311,12 @@ export function AlbumContentProvider({
 
     setSaveState('saving');
     setErrorMessage(null);
+
+    // Capture the narrowed handle id once. The nested `pushDocument`
+    // closes over this constant rather than re-narrowing `epochKey`
+    // inside its body — TypeScript does not propagate the outer
+    // null-check through the nested function boundary.
+    const epochHandleId = epochKey.epochHandleId as EpochHandleId;
 
     /**
      * Encrypt + push the given document. Wrapped so the conflict
@@ -322,11 +330,13 @@ export function AlbumContentProvider({
       const encoder = new TextEncoder();
       const plaintext = encoder.encode(JSON.stringify(docToSave));
 
+      // Encrypt — Slice 7 routes through the epoch handle. The Rust facade
+      // derives a content sub-key internally and binds the epoch id as
+      // AAD, so callers do not pass seed bytes or epoch ids explicitly.
       const crypto = await getCryptoClient();
       const { ciphertext, nonce } = await crypto.encryptAlbumContent(
+        epochHandleId,
         plaintext,
-        epochKey!.epochSeed,
-        epochId,
       );
 
       const api = getApi();
@@ -362,8 +372,7 @@ export function AlbumContentProvider({
           document,
           baseDocumentRef.current,
           albumId,
-          epochKey,
-          epochId,
+          { epochHandleId },
           pushDocument,
         );
 
@@ -487,8 +496,7 @@ async function resolveAndRetrySave(
   localDocument: AlbumContentDocument,
   baseDocument: AlbumContentDocument | null,
   albumId: string,
-  epochKey: { epochSeed: Uint8Array },
-  _epochId: number,
+  epochKey: { epochHandleId: EpochHandleId },
   pushDocument: (
     docToSave: AlbumContentDocument,
     expectedVersion: number,
@@ -508,11 +516,13 @@ async function resolveAndRetrySave(
     const crypto = await getCryptoClient();
     const ciphertext = fromBase64(conflictResponse.encryptedContent);
     const nonce = fromBase64(conflictResponse.nonce);
+    // Slice 7 — decryption routes through the epoch handle. The Rust facade
+    // derives the content sub-key internally and binds the epoch id as AAD;
+    // raw seed bytes never cross Comlink.
     const plaintext = await crypto.decryptAlbumContent(
-      ciphertext,
+      epochKey.epochHandleId,
       nonce,
-      epochKey.epochSeed,
-      conflictResponse.epochId,
+      ciphertext,
     );
 
     const decoder = new TextDecoder();

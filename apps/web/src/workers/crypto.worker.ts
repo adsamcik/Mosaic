@@ -34,9 +34,6 @@ import {
   encryptShard as cryptoEncryptShard,
   verifyShard as cryptoVerifyShard,
   deriveTierKeys,
-  deriveContentKey,
-  encryptContent as cryptoEncryptContent,
-  decryptContent as cryptoDecryptContent,
   getArgon2Params,
   memzero,
 } from '@mosaic/crypto';
@@ -1447,63 +1444,78 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   // =========================================================================
-  // Album Content Encryption (Story Blocks)
+  // Album Content Encryption (Story Blocks) — Slice 7 handle-based
   // =========================================================================
 
   /**
-   * Encrypt album content (story blocks document).
-   * Uses epoch key to derive a content-specific key via HKDF.
-   * Binds epochId as AAD to prevent cross-epoch replay.
+   * Encrypt album content (story blocks document) using the album's
+   * epoch handle.
+   *
+   * Slice 7 — replaces the legacy seed-bearing method body. The Rust
+   * facade derives a content-specific sub-key from the epoch handle and
+   * binds the epoch id as AAD; the seed never crosses Comlink.
    */
   async encryptAlbumContent(
-    content: Uint8Array,
-    epochSeed: Uint8Array,
-    epochId: number,
+    epochHandleId: EpochHandleId,
+    plaintext: Uint8Array,
   ): Promise<{ nonce: Uint8Array; ciphertext: Uint8Array }> {
-    await this.ensureSodiumReady();
-
-    // Derive content key from epoch seed
-    const contentKey = deriveContentKey(epochSeed);
-
-    try {
-      // Encrypt content with the derived key
-      const result = cryptoEncryptContent(content, contentKey, epochId);
-      return {
-        nonce: result.nonce,
-        ciphertext: result.ciphertext,
-      };
-    } finally {
-      // Always zero the derived key
-      memzero(contentKey);
-    }
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      epochHandleId,
+      'epoch',
+      (rustEpoch) => facade.encryptAlbumContent(rustEpoch, plaintext),
+    );
   }
 
   /**
-   * Decrypt album content.
+   * Decrypt album content. Slice 7 — handle-based.
    */
   async decryptAlbumContent(
-    ciphertext: Uint8Array,
+    epochHandleId: EpochHandleId,
     nonce: Uint8Array,
-    epochSeed: Uint8Array,
-    epochId: number,
+    ciphertext: Uint8Array,
   ): Promise<Uint8Array> {
-    await this.ensureSodiumReady();
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      epochHandleId,
+      'epoch',
+      (rustEpoch) => facade.decryptAlbumContent(rustEpoch, nonce, ciphertext),
+    );
+  }
 
-    // Derive content key from epoch seed
-    const contentKey = deriveContentKey(epochSeed);
+  /**
+   * Encrypt an album name using the epoch handle's thumb-tier key.
+   *
+   * Slice 7 — thin wrapper over {@link encryptShardWithEpoch} that pins
+   * `shardIndex=0` and `tier=ShardTier::Thumbnail` (byte value `1`,
+   * matching `mosaic_domain::ShardTier::Thumbnail.to_byte()`). The
+   * worker is the single source of truth for the (shardIndex, tier)
+   * convention so callers do not duplicate magic numbers.
+   */
+  async encryptAlbumName(
+    epochHandleId: EpochHandleId,
+    nameBytes: Uint8Array,
+  ): Promise<Uint8Array> {
+    // tier=1 == ShardTier::Thumbnail.to_byte() in mosaic-domain.
+    const { envelopeBytes } = await this.encryptShardWithEpoch(
+      epochHandleId,
+      nameBytes,
+      0,
+      1,
+    );
+    return envelopeBytes;
+  }
 
-    try {
-      // Decrypt content
-      return cryptoDecryptContent(
-        ciphertext,
-        nonce,
-        contentKey,
-        epochId,
-      );
-    } finally {
-      // Always zero the derived key
-      memzero(contentKey);
-    }
+  /**
+   * Decrypt an album-name envelope. Slice 7 — thin wrapper over
+   * {@link decryptShardWithEpoch}; the envelope header carries the tier
+   * byte so callers do not specify it.
+   */
+  async decryptAlbumName(
+    epochHandleId: EpochHandleId,
+    envelopeBytes: Uint8Array,
+  ): Promise<Uint8Array> {
+    return this.decryptShardWithEpoch(epochHandleId, envelopeBytes);
   }
 
   // ===========================================================================
@@ -1812,30 +1824,10 @@ class CryptoWorker implements CryptoWorkerApi {
     return facade.unwrapTierKeyFromLink(nonce, encryptedKey, tier, wrappingKey);
   }
 
-  async encryptAlbumContentWithEpoch(
-    epochHandleId: EpochHandleId,
-    plaintext: Uint8Array,
-  ): Promise<{ nonce: Uint8Array; ciphertext: Uint8Array }> {
-    const facade = await getRustFacade();
-    return this.handleRegistry.withLease(
-      epochHandleId,
-      'epoch',
-      (rustEpoch) => facade.encryptAlbumContent(rustEpoch, plaintext),
-    );
-  }
-
-  async decryptAlbumContentWithEpoch(
-    epochHandleId: EpochHandleId,
-    nonce: Uint8Array,
-    ciphertext: Uint8Array,
-  ): Promise<Uint8Array> {
-    const facade = await getRustFacade();
-    return this.handleRegistry.withLease(
-      epochHandleId,
-      'epoch',
-      (rustEpoch) => facade.decryptAlbumContent(rustEpoch, nonce, ciphertext),
-    );
-  }
+  // Slice 7 — `encryptAlbumContent` / `decryptAlbumContent` (handle-based)
+  // are declared in the Album Content Encryption block above. The Slice 1
+  // `*WithEpoch` aliases were retired now that the legacy seed-bearing
+  // methods have been deleted.
 
   async sealAndSignBundle(
     identityHandleId: IdentityHandleId,

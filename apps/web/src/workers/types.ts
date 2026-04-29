@@ -779,38 +779,82 @@ export interface CryptoWorkerApi {
   getAuthPublicKey(): Promise<Uint8Array | null>;
 
   // =========================================================================
-  // Album Content Encryption (Story Blocks)
+  // Album Content Encryption (Story Blocks) — Slice 7 handle-based contract
   // =========================================================================
 
   /**
-   * Encrypt album content (story blocks document).
-   * Uses epoch key to derive a content-specific key via HKDF.
-   * Binds epochId as AAD to prevent cross-epoch replay.
+   * Encrypt album content (story blocks document) using the album's epoch
+   * handle. Routes through the Rust facade's `encryptAlbumContent` which
+   * derives a content-specific sub-key from the handle and binds the epoch
+   * id as AAD. The epoch seed never crosses Comlink.
    *
-   * @param content - Plaintext content (JSON-encoded document)
-   * @param epochSeed - Epoch seed for key derivation (32 bytes)
-   * @param epochId - Epoch ID for AAD binding
-   * @returns Encrypted content with nonce
+   * Slice 7 — replaces the legacy seed-bearing signature with a
+   * handle-based one.
+   *
+   * @param epochHandleId - Opaque epoch handle id from the worker.
+   * @param plaintext - Plaintext content (JSON-encoded document).
+   * @returns Encrypted content with nonce + ciphertext.
    */
   encryptAlbumContent(
-    content: Uint8Array,
-    epochSeed: Uint8Array,
-    epochId: number,
+    epochHandleId: EpochHandleId,
+    plaintext: Uint8Array,
   ): Promise<{ nonce: Uint8Array; ciphertext: Uint8Array }>;
 
   /**
-   * Decrypt album content.
-   * @param ciphertext - Encrypted content
-   * @param nonce - 24-byte nonce from encryption
-   * @param epochSeed - Epoch seed for key derivation (32 bytes)
-   * @param epochId - Epoch ID for AAD verification
-   * @returns Decrypted plaintext content
+   * Decrypt album content previously produced by {@link encryptAlbumContent}.
+   *
+   * Slice 7 — replaces the legacy seed-bearing signature with a
+   * handle-based one.
+   *
+   * @param epochHandleId - Opaque epoch handle id from the worker.
+   * @param nonce - 24-byte nonce from encryption.
+   * @param ciphertext - Encrypted content (with embedded auth tag).
+   * @returns Decrypted plaintext content.
    */
   decryptAlbumContent(
-    ciphertext: Uint8Array,
+    epochHandleId: EpochHandleId,
     nonce: Uint8Array,
-    epochSeed: Uint8Array,
-    epochId: number,
+    ciphertext: Uint8Array,
+  ): Promise<Uint8Array>;
+
+  // =========================================================================
+  // Album Name Encryption — Slice 7 thin wrappers over shard contract
+  // =========================================================================
+
+  /**
+   * Encrypt an album name using the epoch handle's thumb-tier key.
+   *
+   * Convenience wrapper over {@link encryptShardWithEpoch} that pins
+   * `shardIndex=0` and `tier=ShardTier::Thumbnail` (byte value `1`,
+   * matching `mosaic_domain::ShardTier::Thumbnail.to_byte()`). The
+   * worker is the single source of truth for the (shardIndex, tier)
+   * convention so callers do not duplicate magic numbers.
+   *
+   * Slice 7 — replaces the inline encrypt-shard call from `useAlbums.ts`.
+   *
+   * @param epochHandleId - Opaque epoch handle id from the worker.
+   * @param nameBytes - UTF-8 encoded album name.
+   * @returns Shard envelope bytes (header + ciphertext) suitable for
+   *   base64-encoding into `encryptedName` API fields.
+   */
+  encryptAlbumName(
+    epochHandleId: EpochHandleId,
+    nameBytes: Uint8Array,
+  ): Promise<Uint8Array>;
+
+  /**
+   * Decrypt an album-name envelope previously produced by
+   * {@link encryptAlbumName}. Thin wrapper over
+   * {@link decryptShardWithEpoch} — the envelope header carries the tier
+   * byte so callers do not specify it.
+   *
+   * @param epochHandleId - Opaque epoch handle id from the worker.
+   * @param envelopeBytes - Complete shard envelope (header + ciphertext).
+   * @returns UTF-8 plaintext bytes of the album name.
+   */
+  decryptAlbumName(
+    epochHandleId: EpochHandleId,
+    envelopeBytes: Uint8Array,
   ): Promise<Uint8Array>;
 
   // ===========================================================================
@@ -1029,17 +1073,12 @@ export interface CryptoWorkerApi {
   ): Promise<Uint8Array>;
 
   // ---- Album content (Slice 7) ----
-
-  encryptAlbumContentWithEpoch(
-    epochHandleId: EpochHandleId,
-    plaintext: Uint8Array,
-  ): Promise<{ nonce: Uint8Array; ciphertext: Uint8Array }>;
-
-  decryptAlbumContentWithEpoch(
-    epochHandleId: EpochHandleId,
-    nonce: Uint8Array,
-    ciphertext: Uint8Array,
-  ): Promise<Uint8Array>;
+  //
+  // The handle-based `encryptAlbumContent` / `decryptAlbumContent` and
+  // the album-name helpers are declared in the dedicated "Album Content
+  // Encryption" / "Album Name Encryption" blocks above. The Slice 1
+  // `*WithEpoch` aliases were retired now that the legacy seed-bearing
+  // methods have been deleted.
 
   // ---- Bundle sealing (Slice 6) ----
 

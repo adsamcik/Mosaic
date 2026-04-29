@@ -4,7 +4,7 @@ import {
   getStoredEncryptedName,
   setStoredEncryptedName,
 } from '../lib/album-metadata-service';
-import { getApi, paginateAll, toBase64 } from '../lib/api';
+import { fromBase64, getApi, paginateAll, toBase64 } from '../lib/api';
 import type { Album as ApiAlbum } from '../lib/api-types';
 import { getCryptoClient } from '../lib/crypto-client';
 import { getDbClient } from '../lib/db-client';
@@ -13,20 +13,21 @@ import { getCurrentEpochKey, setEpochKey } from '../lib/epoch-key-store';
 import { createLogger } from '../lib/logger';
 import { purgeLocalAlbum } from '../lib/local-purge';
 import { syncEngine } from '../lib/sync-engine';
+import type { EpochHandleId } from '../workers/types';
 
 const log = createLogger('useAlbums');
 
 /**
- * Encrypt album name using the worker's handle-based shard encryption.
+ * Encrypt an album name through the worker's handle-based album-name
+ * helper. The worker pins `(shardIndex=0, tier=ShardTier::Thumbnail)` so
+ * callers do not duplicate the convention.
  *
- * Slice 3 — the epoch seed never crosses Comlink. The worker derives the
- * thumb tier key from the epoch handle and writes a tier-0 shard envelope
- * (same on-the-wire format that share-link recipients can decrypt with the
- * shared thumb tier key).
+ * Slice 7 — replaces the inline `encryptShardWithEpoch` call from Slice 3
+ * with the dedicated `encryptAlbumName` worker method.
  *
  * @param name - Album name to encrypt.
  * @param epochHandleId - Opaque epoch handle id from the worker.
- * @returns Base64-encoded encrypted name.
+ * @returns Base64-encoded encrypted name (shard envelope bytes).
  */
 async function encryptAlbumName(
   name: string,
@@ -34,21 +35,18 @@ async function encryptAlbumName(
 ): Promise<string> {
   const crypto = await getCryptoClient();
   const nameBytes = new TextEncoder().encode(name);
-
-  // tier=0 (thumb), shardIndex=0 — convention reserved for album metadata.
-  const encrypted = await crypto.encryptShardWithEpoch(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    epochHandleId as any,
+  const envelopeBytes = await crypto.encryptAlbumName(
+    epochHandleId as EpochHandleId,
     nameBytes,
-    0,
-    0,
   );
-
-  return toBase64(encrypted.envelopeBytes);
+  return toBase64(envelopeBytes);
 }
 
 /**
- * Decrypt an album name using the handle-based decrypt path.
+ * Decrypt an album name produced by {@link encryptAlbumName}.
+ *
+ * Slice 7 — replaces the inline `decryptShardWithEpoch` call from Slice 3
+ * with the dedicated `decryptAlbumName` worker method.
  *
  * @param encryptedName - Base64 envelope from server / localStorage.
  * @param epochHandleId - Opaque epoch handle id from the worker.
@@ -58,11 +56,9 @@ async function decryptAlbumNameWithHandle(
   epochHandleId: string,
 ): Promise<string> {
   const crypto = await getCryptoClient();
-  const { fromBase64 } = await import('../lib/api');
   const envelope = fromBase64(encryptedName);
-  const plaintext = await crypto.decryptShardWithEpoch(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    epochHandleId as any,
+  const plaintext = await crypto.decryptAlbumName(
+    epochHandleId as EpochHandleId,
     envelope,
   );
   return new TextDecoder('utf-8', { fatal: true }).decode(plaintext);
@@ -293,7 +289,10 @@ export function useAlbums() {
       // Remove from local state
       setAlbums((prev) => prev.filter((a) => a.id !== albumId));
 
-      // Wipe local metadata, cached thumbnails, upload references, and epoch keys.
+      // Wipe local metadata, cached thumbnails, upload references, and epoch
+      // keys. Slice 3+ — the underlying Rust epoch handles are closed
+      // asynchronously inside `purgeLocalAlbum` via `clearAlbumKeys`; raw key
+      // bytes never lived in the renderer to begin with.
       try {
         const result = await purgeLocalAlbum({
           albumId,

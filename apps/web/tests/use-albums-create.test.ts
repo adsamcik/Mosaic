@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
     encryptShard: vi.fn(),
     encryptShardWithEpoch: vi.fn(),
     decryptShardWithEpoch: vi.fn(),
+    encryptAlbumName: vi.fn(),
+    decryptAlbumName: vi.fn(),
   },
   db: {
     getPhotoCount: vi.fn(),
@@ -161,6 +163,10 @@ describe('useAlbums createAlbum', () => {
       envelopeBytes: new Uint8Array([1, 2, 3]),
       sha256: 'hash',
     });
+    // Slice 7 — useAlbums now routes album-name encryption through the
+    // dedicated encryptAlbumName worker method (a thin wrapper over
+    // encryptShardWithEpoch).
+    mocks.crypto.encryptAlbumName.mockResolvedValue(new Uint8Array([1, 2, 3]));
     mocks.db.getPhotoCount.mockResolvedValue(0);
   });
 

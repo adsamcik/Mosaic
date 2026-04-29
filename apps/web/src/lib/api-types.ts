@@ -6,11 +6,28 @@
  */
 
 // =============================================================================
-// Access Tier for Share Links (re-exported from @mosaic/crypto)
+// Access Tier for Share Links
 // =============================================================================
 
-import { AccessTier } from '@mosaic/crypto';
-export { AccessTier };
+/**
+ * Access tier for share links — determines which tier keys are included.
+ *
+ * Slice 7 — defined inline rather than re-exported from `@mosaic/crypto`.
+ * The integer values mirror the Rust `mosaic_domain::ShardTier`
+ * discriminants (`Thumbnail=1`, `Preview=2`, `Original=3`) so this enum
+ * can be passed straight through to the Rust crypto facade as a tier
+ * byte. AccessTier semantics (THUMB / PREVIEW / FULL access) map 1:1
+ * onto the tier byte that gates which keys a share link unlocks.
+ */
+export const AccessTier = {
+  /** Thumbnail-only access. */
+  THUMB: 1,
+  /** Thumbnail + preview access. */
+  PREVIEW: 2,
+  /** Full access including originals. */
+  FULL: 3,
+} as const;
+export type AccessTier = (typeof AccessTier)[keyof typeof AccessTier];
 export type AccessTierValue = AccessTier;
 
 // =============================================================================
@@ -235,7 +252,9 @@ export interface SyncAlbumOptions {
 // Share Link Types
 // =============================================================================
 
-// AccessTier type is imported from @mosaic/crypto and re-exported at the top of this file
+// AccessTier is defined inline at the top of this file — its byte values
+// mirror the Rust mosaic_domain::ShardTier discriminants for direct use
+// by the crypto worker.
 
 /** Wrapped tier key for a share link */
 export interface WrappedKeyRequest {
