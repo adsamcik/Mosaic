@@ -129,6 +129,10 @@ data class RustEncryptedShardFfiResult(
     require(code >= 0) { "shard code must not be negative" }
   }
 
+  fun wipe() {
+    envelopeBytes.fill(0)
+  }
+
   override fun toString(): String =
     "RustEncryptedShardFfiResult(code=$code, envelopeBytes=<redacted>, sha256=<redacted>)"
 
@@ -193,12 +197,16 @@ class GeneratedRustShardBridge(
     require(shardIndex >= 0) { "shard index must not be negative" }
     require(tier in TIER_THUMB..TIER_ORIGINAL) { "tier must be within [$TIER_THUMB, $TIER_ORIGINAL]" }
     val result = api.encryptShardWithEpochHandle(epochKeyHandle.value, plaintext, shardIndex, tier)
-    val code = encryptCodeFor(result.code)
-    val envelope = if (code == ShardEncryptCode.SUCCESS) {
-      runCatching { EncryptedShardEnvelope(result.envelopeBytes, result.sha256) }.getOrNull()
-    } else null
-    val safeCode = if (code == ShardEncryptCode.SUCCESS && envelope == null) ShardEncryptCode.INTERNAL_ERROR else code
-    return ShardEncryptResult(safeCode, if (safeCode == ShardEncryptCode.SUCCESS) envelope else null)
+    return try {
+      val code = encryptCodeFor(result.code)
+      val envelope = if (code == ShardEncryptCode.SUCCESS) {
+        runCatching { EncryptedShardEnvelope(result.envelopeBytes, result.sha256) }.getOrNull()
+      } else null
+      val safeCode = if (code == ShardEncryptCode.SUCCESS && envelope == null) ShardEncryptCode.INTERNAL_ERROR else code
+      ShardEncryptResult(safeCode, if (safeCode == ShardEncryptCode.SUCCESS) envelope else null)
+    } finally {
+      result.wipe()
+    }
   }
 
   override fun decryptShard(epochKeyHandle: EpochKeyHandle, envelopeBytes: ByteArray): ShardDecryptResult {
@@ -262,4 +270,22 @@ fun RustShardBridge.encryptShardWipingPlaintext(
     encryptShard(epochKeyHandle, plaintext, shardIndex, tier)
   } finally {
     plaintext.fill(0)
+  }
+
+/**
+ * Decrypts an envelope and zeroes the caller-owned `envelopeBytes` after the
+ * bridge returns. Use when the caller will not need the encrypted envelope
+ * bytes after decryption (e.g., one-shot decrypt-and-discard flows).
+ *
+ * The decrypted plaintext is wrapped in a [DecryptedShard] which has its own
+ * `wipe()`; this extension only wipes the caller's encrypted-side buffer.
+ */
+fun RustShardBridge.decryptShardWipingEnvelope(
+  epochKeyHandle: EpochKeyHandle,
+  envelopeBytes: ByteArray,
+): ShardDecryptResult =
+  try {
+    decryptShard(epochKeyHandle, envelopeBytes)
+  } finally {
+    envelopeBytes.fill(0)
   }

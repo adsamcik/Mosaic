@@ -109,6 +109,10 @@ data class RustEpochHandleFfiResult(
     require(epochId >= 0) { "epoch id must not be negative" }
   }
 
+  fun wipe() {
+    wrappedEpochSeed.fill(0)
+  }
+
   override fun toString(): String =
     "RustEpochHandleFfiResult(code=$code, handle=<redacted>, epochId=$epochId, wrappedEpochSeed=<redacted>)"
 
@@ -155,20 +159,24 @@ class GeneratedRustEpochBridge(
   override fun createEpoch(accountKeyHandle: AccountKeyHandle, epochId: Int): EpochCreateResult {
     require(epochId >= 0) { "epoch id must not be negative" }
     val result = api.createEpochKeyHandle(accountKeyHandle.value, epochId)
-    val code = when (result.code) {
-      RustEpochStableCode.OK -> EpochCreateCode.SUCCESS
-      RustEpochStableCode.SECRET_HANDLE_NOT_FOUND -> EpochCreateCode.ACCOUNT_HANDLE_NOT_FOUND
-      RustEpochStableCode.HANDLE_SPACE_EXHAUSTED -> EpochCreateCode.HANDLE_SPACE_EXHAUSTED
-      else -> EpochCreateCode.INTERNAL_ERROR
+    return try {
+      val code = when (result.code) {
+        RustEpochStableCode.OK -> EpochCreateCode.SUCCESS
+        RustEpochStableCode.SECRET_HANDLE_NOT_FOUND -> EpochCreateCode.ACCOUNT_HANDLE_NOT_FOUND
+        RustEpochStableCode.HANDLE_SPACE_EXHAUSTED -> EpochCreateCode.HANDLE_SPACE_EXHAUSTED
+        else -> EpochCreateCode.INTERNAL_ERROR
+      }
+      val handle = if (code == EpochCreateCode.SUCCESS && result.handle > 0) EpochKeyHandle(result.handle) else null
+      val safeCode = if (code == EpochCreateCode.SUCCESS && handle == null) EpochCreateCode.INTERNAL_ERROR else code
+      EpochCreateResult(
+        code = safeCode,
+        handle = if (safeCode == EpochCreateCode.SUCCESS) handle else null,
+        epochId = result.epochId,
+        wrappedEpochSeed = if (safeCode == EpochCreateCode.SUCCESS) result.wrappedEpochSeed else EMPTY_BYTES,
+      )
+    } finally {
+      result.wipe()
     }
-    val handle = if (code == EpochCreateCode.SUCCESS && result.handle > 0) EpochKeyHandle(result.handle) else null
-    val safeCode = if (code == EpochCreateCode.SUCCESS && handle == null) EpochCreateCode.INTERNAL_ERROR else code
-    return EpochCreateResult(
-      code = safeCode,
-      handle = if (safeCode == EpochCreateCode.SUCCESS) handle else null,
-      epochId = result.epochId,
-      wrappedEpochSeed = if (safeCode == EpochCreateCode.SUCCESS) result.wrappedEpochSeed else EMPTY_BYTES,
-    )
   }
 
   override fun openEpoch(
@@ -178,24 +186,28 @@ class GeneratedRustEpochBridge(
   ): EpochOpenResult {
     require(epochId >= 0) { "epoch id must not be negative" }
     val result = api.openEpochKeyHandle(wrappedEpochSeed, accountKeyHandle.value, epochId)
-    val code = when (result.code) {
-      RustEpochStableCode.OK -> EpochOpenCode.SUCCESS
-      RustEpochStableCode.SECRET_HANDLE_NOT_FOUND -> EpochOpenCode.ACCOUNT_HANDLE_NOT_FOUND
-      RustEpochStableCode.AUTHENTICATION_FAILED -> EpochOpenCode.AUTHENTICATION_FAILED
-      RustEpochStableCode.WRAPPED_KEY_TOO_SHORT -> EpochOpenCode.WRAPPED_KEY_TOO_SHORT
-      RustEpochStableCode.INVALID_INPUT_LENGTH,
-      RustEpochStableCode.INVALID_KEY_LENGTH,
-      -> EpochOpenCode.INVALID_INPUT_LENGTH
-      RustEpochStableCode.HANDLE_SPACE_EXHAUSTED -> EpochOpenCode.HANDLE_SPACE_EXHAUSTED
-      else -> EpochOpenCode.INTERNAL_ERROR
+    return try {
+      val code = when (result.code) {
+        RustEpochStableCode.OK -> EpochOpenCode.SUCCESS
+        RustEpochStableCode.SECRET_HANDLE_NOT_FOUND -> EpochOpenCode.ACCOUNT_HANDLE_NOT_FOUND
+        RustEpochStableCode.AUTHENTICATION_FAILED -> EpochOpenCode.AUTHENTICATION_FAILED
+        RustEpochStableCode.WRAPPED_KEY_TOO_SHORT -> EpochOpenCode.WRAPPED_KEY_TOO_SHORT
+        RustEpochStableCode.INVALID_INPUT_LENGTH,
+        RustEpochStableCode.INVALID_KEY_LENGTH,
+        -> EpochOpenCode.INVALID_INPUT_LENGTH
+        RustEpochStableCode.HANDLE_SPACE_EXHAUSTED -> EpochOpenCode.HANDLE_SPACE_EXHAUSTED
+        else -> EpochOpenCode.INTERNAL_ERROR
+      }
+      val handle = if (code == EpochOpenCode.SUCCESS && result.handle > 0) EpochKeyHandle(result.handle) else null
+      val safeCode = if (code == EpochOpenCode.SUCCESS && handle == null) EpochOpenCode.INTERNAL_ERROR else code
+      EpochOpenResult(
+        code = safeCode,
+        handle = if (safeCode == EpochOpenCode.SUCCESS) handle else null,
+        epochId = result.epochId,
+      )
+    } finally {
+      result.wipe()
     }
-    val handle = if (code == EpochOpenCode.SUCCESS && result.handle > 0) EpochKeyHandle(result.handle) else null
-    val safeCode = if (code == EpochOpenCode.SUCCESS && handle == null) EpochOpenCode.INTERNAL_ERROR else code
-    return EpochOpenResult(
-      code = safeCode,
-      handle = if (safeCode == EpochOpenCode.SUCCESS) handle else null,
-      epochId = result.epochId,
-    )
   }
 
   override fun isEpochOpen(handle: EpochKeyHandle): Boolean {
@@ -215,3 +227,23 @@ class GeneratedRustEpochBridge(
     private val EMPTY_BYTES: ByteArray = ByteArray(0)
   }
 }
+
+/**
+ * Opens an epoch key handle and wipes the caller-owned `wrappedEpochSeed` after
+ * the bridge returns, regardless of success or failure. Use this in any flow
+ * where the caller will not need the wrapped seed bytes after the call.
+ *
+ * The wrapped seed is also zeroed inside the bridge's FFI request after Rust
+ * marshalling completes; this extension wipes the caller's buffer too so the
+ * combined wipe-chain leaves no clear-on-disk references in heap memory.
+ */
+fun RustEpochBridge.openEpochWipingWrappedSeed(
+  wrappedEpochSeed: ByteArray,
+  accountKeyHandle: AccountKeyHandle,
+  epochId: Int,
+): EpochOpenResult =
+  try {
+    openEpoch(wrappedEpochSeed, accountKeyHandle, epochId)
+  } finally {
+    wrappedEpochSeed.fill(0)
+  }

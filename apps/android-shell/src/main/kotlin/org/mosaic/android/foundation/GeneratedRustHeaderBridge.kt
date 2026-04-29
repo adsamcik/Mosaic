@@ -76,6 +76,10 @@ data class RustHeaderParseFfiResult(
     require(tier >= 0) { "tier must not be negative" }
   }
 
+  fun wipe() {
+    nonce.fill(0)
+  }
+
   override fun toString(): String =
     "RustHeaderParseFfiResult(code=$code, epochId=$epochId, shardIndex=$shardIndex, tier=$tier, nonce=<redacted>)"
 
@@ -108,28 +112,32 @@ class GeneratedRustHeaderBridge(
 ) : RustHeaderBridge {
   override fun parseEnvelopeHeader(bytes: ByteArray): HeaderParseResult {
     val result = api.parseEnvelopeHeader(bytes)
-    return when (result.code) {
-      RustHeaderStableCode.OK -> {
-        val parsed = runCatching {
-          ParsedShardEnvelopeHeader(
-            epochId = result.epochId,
-            shardIndex = result.shardIndex,
-            tier = result.tier,
-            nonce = result.nonce,
-          )
-        }.getOrNull()
-        if (parsed != null) {
-          HeaderParseResult(HeaderParseCode.SUCCESS, parsed)
-        } else {
-          HeaderParseResult(HeaderParseCode.INTERNAL_ERROR, null)
+    return try {
+      when (result.code) {
+        RustHeaderStableCode.OK -> {
+          val parsed = runCatching {
+            ParsedShardEnvelopeHeader(
+              epochId = result.epochId,
+              shardIndex = result.shardIndex,
+              tier = result.tier,
+              nonce = result.nonce,
+            )
+          }.getOrNull()
+          if (parsed != null) {
+            HeaderParseResult(HeaderParseCode.SUCCESS, parsed)
+          } else {
+            HeaderParseResult(HeaderParseCode.INTERNAL_ERROR, null)
+          }
         }
+        RustHeaderStableCode.INVALID_HEADER_LENGTH -> HeaderParseResult(HeaderParseCode.INVALID_HEADER_LENGTH, null)
+        RustHeaderStableCode.INVALID_MAGIC -> HeaderParseResult(HeaderParseCode.INVALID_MAGIC, null)
+        RustHeaderStableCode.UNSUPPORTED_VERSION -> HeaderParseResult(HeaderParseCode.UNSUPPORTED_VERSION, null)
+        RustHeaderStableCode.INVALID_TIER -> HeaderParseResult(HeaderParseCode.INVALID_TIER, null)
+        RustHeaderStableCode.NON_ZERO_RESERVED_BYTE -> HeaderParseResult(HeaderParseCode.NON_ZERO_RESERVED_BYTE, null)
+        else -> HeaderParseResult(HeaderParseCode.INTERNAL_ERROR, null)
       }
-      RustHeaderStableCode.INVALID_HEADER_LENGTH -> HeaderParseResult(HeaderParseCode.INVALID_HEADER_LENGTH, null)
-      RustHeaderStableCode.INVALID_MAGIC -> HeaderParseResult(HeaderParseCode.INVALID_MAGIC, null)
-      RustHeaderStableCode.UNSUPPORTED_VERSION -> HeaderParseResult(HeaderParseCode.UNSUPPORTED_VERSION, null)
-      RustHeaderStableCode.INVALID_TIER -> HeaderParseResult(HeaderParseCode.INVALID_TIER, null)
-      RustHeaderStableCode.NON_ZERO_RESERVED_BYTE -> HeaderParseResult(HeaderParseCode.NON_ZERO_RESERVED_BYTE, null)
-      else -> HeaderParseResult(HeaderParseCode.INTERNAL_ERROR, null)
+    } finally {
+      result.wipe()
     }
   }
 }

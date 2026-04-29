@@ -92,6 +92,16 @@ data class RustDiagnosticsGoldenVectorFfi(
     require(code >= 0) { "diagnostics code must not be negative" }
   }
 
+  fun wipe() {
+    envelopeHeader.fill(0)
+    envelopeNonce.fill(0)
+    manifestTranscript.fill(0)
+    identityMessage.fill(0)
+    identitySigningPubkey.fill(0)
+    identityEncryptionPubkey.fill(0)
+    identitySignature.fill(0)
+  }
+
   override fun toString(): String =
     "RustDiagnosticsGoldenVectorFfi(code=$code, envelopeEpochId=$envelopeEpochId, " +
       "envelopeShardIndex=$envelopeShardIndex, envelopeTier=$envelopeTier, ...=<opaque>)"
@@ -147,19 +157,23 @@ class GeneratedRustDiagnosticsBridge(
 
   override fun cryptoDomainGoldenVector(): CryptoDomainGoldenVectorSnapshot {
     val ffi = api.cryptoDomainGoldenVectorSnapshot()
-    return CryptoDomainGoldenVectorSnapshot(
-      code = ffi.code,
-      envelopeHeader = ffi.envelopeHeader,
-      envelopeEpochId = ffi.envelopeEpochId,
-      envelopeShardIndex = ffi.envelopeShardIndex,
-      envelopeTier = ffi.envelopeTier,
-      envelopeNonce = ffi.envelopeNonce,
-      manifestTranscript = ffi.manifestTranscript,
-      identityMessage = ffi.identityMessage,
-      identitySigningPubkey = ffi.identitySigningPubkey,
-      identityEncryptionPubkey = ffi.identityEncryptionPubkey,
-      identitySignature = ffi.identitySignature,
-    )
+    return try {
+      CryptoDomainGoldenVectorSnapshot(
+        code = ffi.code,
+        envelopeHeader = ffi.envelopeHeader,
+        envelopeEpochId = ffi.envelopeEpochId,
+        envelopeShardIndex = ffi.envelopeShardIndex,
+        envelopeTier = ffi.envelopeTier,
+        envelopeNonce = ffi.envelopeNonce,
+        manifestTranscript = ffi.manifestTranscript,
+        identityMessage = ffi.identityMessage,
+        identitySigningPubkey = ffi.identitySigningPubkey,
+        identityEncryptionPubkey = ffi.identityEncryptionPubkey,
+        identitySignature = ffi.identitySignature,
+      )
+    } finally {
+      ffi.wipe()
+    }
   }
 
   override fun clientCoreStateMachineSnapshot(): String {

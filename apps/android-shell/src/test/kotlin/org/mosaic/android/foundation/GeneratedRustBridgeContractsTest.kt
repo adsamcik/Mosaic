@@ -64,6 +64,14 @@ fun main() {
     BridgeTestCase("encryptShardWipingPlaintext wipes caller plaintext", ::encryptShardWipingPlaintextWipesCallerPlaintext),
     BridgeTestCase("metadata sidecar request types wipe their byte arrays", ::metadataSidecarRequestsWipeAllBytes),
     BridgeTestCase("canonical metadata sidecar wipes its bytes", ::canonicalMetadataSidecarWipes),
+    BridgeTestCase("epoch bridge openEpoch wipes FFI seed buffer", ::epochBridgeOpenWipesFfiSeed),
+    BridgeTestCase("identity bridge openIdentity wipes FFI buffers", ::identityBridgeOpenWipesFfi),
+    BridgeTestCase("identity bridge signManifest wipes FFI bytes", ::identityBridgeSignManifestWipesFfi),
+    BridgeTestCase("identity bridge signingPubkey/encryptionPubkey wipe FFI bytes", ::identityBridgePubkeyOpsWipeFfi),
+    BridgeTestCase("metadata sidecar encrypt ops wipe FFI envelopes", ::metadataSidecarEncryptOpsWipeFfi),
+    BridgeTestCase("metadata sidecar canonicalMedia wipes FFI bytes", ::metadataSidecarCanonicalMediaWipesFfi),
+    BridgeTestCase("diagnostics bridge cryptoDomainGoldenVector wipes FFI vector", ::diagnosticsBridgeWipesFfiGoldenVector),
+    BridgeTestCase("diagnostics golden vector FFI wipe zeros all 7 byte arrays", ::diagnosticsFfiGoldenVectorWipeZerosAll),
   )
 
   var failed = 0
@@ -88,6 +96,7 @@ fun main() {
 
 private fun headerBridgeMapsOkResult() {
   val nonce = ByteArray(ParsedShardEnvelopeHeader.NONCE_LENGTH) { it.toByte() }
+  val expectedNonce = nonce.copyOf()
   val api = FakeGeneratedRustHeaderApi(
     canned = RustHeaderParseFfiResult(
       code = RustHeaderStableCode.OK,
@@ -105,7 +114,9 @@ private fun headerBridgeMapsOkResult() {
   bridgeAssertTrue(parsed.epochId == 7)
   bridgeAssertTrue(parsed.shardIndex == 3)
   bridgeAssertTrue(parsed.tier == 2)
-  bridgeAssertTrue(parsed.nonce.contentEquals(nonce))
+  bridgeAssertTrue(parsed.nonce.contentEquals(expectedNonce))
+  // The bridge wiped the FFI buffer; the test's local nonce reference is now zeroed.
+  bridgeAssertTrue(nonce.all { it == 0.toByte() })
 }
 
 private fun headerBridgeMapsInvalidCodes() {
@@ -216,6 +227,9 @@ private fun identityBridgeCreateMapsOkAndMissingHandle() {
   val signing = ByteArray(32) { 0x11 }
   val encryption = ByteArray(32) { 0x22 }
   val seed = ByteArray(64) { 0x33 }
+  val expectedSigning = signing.copyOf()
+  val expectedEncryption = encryption.copyOf()
+  val expectedSeed = seed.copyOf()
 
   val okApi = FakeGeneratedRustIdentityApi(
     create = RustIdentityHandleFfiResult(
@@ -229,9 +243,13 @@ private fun identityBridgeCreateMapsOkAndMissingHandle() {
   val ok = GeneratedRustIdentityBridge(okApi).createIdentity(AccountKeyHandle(7))
   bridgeAssertTrue(ok.code == IdentityCreateCode.SUCCESS)
   bridgeAssertTrue(ok.handle != null && ok.handle!!.value == 42L)
-  bridgeAssertTrue(ok.signingPubkey.contentEquals(signing))
-  bridgeAssertTrue(ok.encryptionPubkey.contentEquals(encryption))
-  bridgeAssertTrue(ok.wrappedSeed.contentEquals(seed))
+  bridgeAssertTrue(ok.signingPubkey.contentEquals(expectedSigning))
+  bridgeAssertTrue(ok.encryptionPubkey.contentEquals(expectedEncryption))
+  bridgeAssertTrue(ok.wrappedSeed.contentEquals(expectedSeed))
+  // The bridge wiped the FFI buffers; the test's local arrays are now zeroed.
+  bridgeAssertTrue(signing.all { it == 0.toByte() })
+  bridgeAssertTrue(encryption.all { it == 0.toByte() })
+  bridgeAssertTrue(seed.all { it == 0.toByte() })
 
   val missingApi = FakeGeneratedRustIdentityApi(
     create = RustIdentityHandleFfiResult(
@@ -317,6 +335,7 @@ private fun identityDtosRedactKeyMaterial() {
 
 private fun epochBridgeCreateMapsOkAndMissingAccountHandle() {
   val seed = ByteArray(48) { 0x44 }
+  val expectedSeed = seed.copyOf()
   val okApi = FakeGeneratedRustEpochApi(
     create = RustEpochHandleFfiResult(
       code = RustEpochStableCode.OK,
@@ -329,7 +348,8 @@ private fun epochBridgeCreateMapsOkAndMissingAccountHandle() {
   bridgeAssertTrue(ok.code == EpochCreateCode.SUCCESS)
   bridgeAssertTrue(ok.handle?.value == 88L)
   bridgeAssertTrue(ok.epochId == 5)
-  bridgeAssertTrue(ok.wrappedEpochSeed.contentEquals(seed))
+  bridgeAssertTrue(ok.wrappedEpochSeed.contentEquals(expectedSeed))
+  bridgeAssertTrue(seed.all { it == 0.toByte() })
 
   val missingApi = FakeGeneratedRustEpochApi(
     create = RustEpochHandleFfiResult(
@@ -402,6 +422,7 @@ private fun epochDtosRedactWrappedSeed() {
 
 private fun shardEncryptMapsOkAndRejectsEmpty() {
   val envelope = ByteArray(128) { it.toByte() }
+  val expectedEnvelope = envelope.copyOf()
   val sha = "a".repeat(64)
   val api = FakeGeneratedRustShardApi(
     encrypt = RustEncryptedShardFfiResult(
@@ -414,8 +435,9 @@ private fun shardEncryptMapsOkAndRejectsEmpty() {
   val result = bridge.encryptShard(EpochKeyHandle(99), ByteArray(32) { it.toByte() }, shardIndex = 0, tier = 1)
   bridgeAssertTrue(result.code == ShardEncryptCode.SUCCESS)
   val env = result.envelope ?: error("expected envelope")
-  bridgeAssertTrue(env.envelopeBytes.contentEquals(envelope))
+  bridgeAssertTrue(env.envelopeBytes.contentEquals(expectedEnvelope))
   bridgeAssertTrue(env.sha256 == sha)
+  bridgeAssertTrue(envelope.all { it == 0.toByte() })
 
   bridgeExpectThrows("empty plaintext") {
     bridge.encryptShard(EpochKeyHandle(99), ByteArray(0), shardIndex = 0, tier = 1)
@@ -486,6 +508,7 @@ private fun shardDtosRedactCiphertextAndPlaintext() {
 
 private fun metadataSidecarCanonicalMapsOk() {
   val canonical = ByteArray(64) { it.toByte() }
+  val expectedCanonical = canonical.copyOf()
   val api = FakeGeneratedRustMetadataSidecarApi(
     canonical = RustBytesFfiResult(code = RustMetadataSidecarStableCode.OK, bytes = canonical),
   )
@@ -497,7 +520,8 @@ private fun metadataSidecarCanonicalMapsOk() {
   )
   val result = GeneratedRustMetadataSidecarBridge(api).canonicalMetadataSidecar(request)
   bridgeAssertTrue(result.code == MetadataSidecarBuildCode.SUCCESS)
-  bridgeAssertTrue(result.sidecar?.bytes?.contentEquals(canonical) == true)
+  bridgeAssertTrue(result.sidecar?.bytes?.contentEquals(expectedCanonical) == true)
+  bridgeAssertTrue(canonical.all { it == 0.toByte() })
 }
 
 private fun metadataSidecarEncryptMapsInvalidFormat() {
@@ -1123,6 +1147,197 @@ private class SharedFfiResultShardApi(
     epochKeyHandle: Long,
     envelopeBytes: ByteArray,
   ): RustDecryptedShardFfiResult = decryptResult
+}
+
+private fun epochBridgeOpenWipesFfiSeed() {
+  val seed = ByteArray(48) { 0x55 }
+  val expectedSeed = seed.copyOf()
+  val api = FakeGeneratedRustEpochApi(
+    open = RustEpochHandleFfiResult(
+      code = RustEpochStableCode.OK,
+      handle = 17,
+      epochId = 9,
+      wrappedEpochSeed = seed,
+    ),
+  )
+  val result = GeneratedRustEpochBridge(api).openEpoch(ByteArray(64), AccountKeyHandle(7), epochId = 9)
+  bridgeAssertTrue(result.code == EpochOpenCode.SUCCESS)
+  bridgeAssertTrue(result.handle?.value == 17L)
+  // FFI buffer was zeroed by bridge finally; downstream EpochOpenResult does not carry the seed.
+  bridgeAssertTrue(seed.all { it == 0.toByte() })
+  // Seed values were captured before wipe.
+  bridgeAssertTrue(expectedSeed.any { it != 0.toByte() })
+}
+
+private fun identityBridgeOpenWipesFfi() {
+  val signing = ByteArray(32) { 0x66 }
+  val encryption = ByteArray(32) { 0x77 }
+  val ignored = ByteArray(64) { 0x88.toByte() }
+  val api = FakeGeneratedRustIdentityApi(
+    open = RustIdentityHandleFfiResult(
+      code = RustIdentityStableCode.OK,
+      handle = 5,
+      signingPubkey = signing,
+      encryptionPubkey = encryption,
+      wrappedSeed = ignored,
+    ),
+  )
+  val result = GeneratedRustIdentityBridge(api).openIdentity(ByteArray(64), AccountKeyHandle(7))
+  bridgeAssertTrue(result.code == IdentityOpenCode.SUCCESS)
+  bridgeAssertTrue(signing.all { it == 0.toByte() })
+  bridgeAssertTrue(encryption.all { it == 0.toByte() })
+  bridgeAssertTrue(ignored.all { it == 0.toByte() })
+}
+
+private fun identityBridgeSignManifestWipesFfi() {
+  val sig = ByteArray(64) { 0x99.toByte() }
+  val expectedSig = sig.copyOf()
+  val api = FakeGeneratedRustIdentityApi(
+    signature = RustBytesFfiResult(code = RustIdentityStableCode.OK, bytes = sig),
+  )
+  val result = GeneratedRustIdentityBridge(api).signManifest(IdentityHandle(7), ByteArray(32))
+  bridgeAssertTrue(result.code == IdentitySignCode.SUCCESS)
+  bridgeAssertTrue(result.signature.contentEquals(expectedSig))
+  // FFI signature buffer is now zeroed; downstream ManifestSignatureResult kept its own copy.
+  bridgeAssertTrue(sig.all { it == 0.toByte() })
+}
+
+private fun identityBridgePubkeyOpsWipeFfi() {
+  val signingBytes = ByteArray(32) { 0xAA.toByte() }
+  val encryptionBytes = ByteArray(32) { 0xBB.toByte() }
+  val signApi = FakeGeneratedRustIdentityApi(
+    signingPubkey = RustBytesFfiResult(code = RustIdentityStableCode.OK, bytes = signingBytes),
+    encryptionPubkey = RustBytesFfiResult(code = RustIdentityStableCode.OK, bytes = encryptionBytes),
+  )
+  val bridge = GeneratedRustIdentityBridge(signApi)
+  val signResult = bridge.signingPubkey(IdentityHandle(1))
+  bridgeAssertTrue(signResult.code == IdentityPubkeyCode.SUCCESS)
+  bridgeAssertTrue(signingBytes.all { it == 0.toByte() })
+  val encResult = bridge.encryptionPubkey(IdentityHandle(1))
+  bridgeAssertTrue(encResult.code == IdentityPubkeyCode.SUCCESS)
+  bridgeAssertTrue(encryptionBytes.all { it == 0.toByte() })
+}
+
+private fun metadataSidecarEncryptOpsWipeFfi() {
+  val envelope1 = ByteArray(96) { 0xCC.toByte() }
+  val envelope2 = ByteArray(96) { 0xDD.toByte() }
+  val api = FakeGeneratedRustMetadataSidecarApi(
+    encrypt = RustEncryptedShardFfiResult(
+      code = RustMetadataSidecarStableCode.OK,
+      envelopeBytes = envelope1,
+      sha256 = "0".repeat(64),
+    ),
+    encryptMedia = RustEncryptedShardFfiResult(
+      code = RustMetadataSidecarStableCode.OK,
+      envelopeBytes = envelope2,
+      sha256 = "1".repeat(64),
+    ),
+  )
+  val bridge = GeneratedRustMetadataSidecarBridge(api)
+
+  val res1 = bridge.encryptMetadataSidecar(
+    EncryptMetadataSidecarRequest(
+      epochKeyHandle = EpochKeyHandle(1),
+      albumId = ByteArray(16) { 1 },
+      photoId = ByteArray(16) { 2 },
+      epochId = 0,
+      encodedFields = ByteArray(8) { 3 },
+      shardIndex = 0,
+    ),
+  )
+  bridgeAssertTrue(res1.code == MetadataSidecarEncryptCode.SUCCESS)
+  bridgeAssertTrue(envelope1.all { it == 0.toByte() })
+
+  val res2 = bridge.encryptMediaMetadataSidecar(
+    EncryptMediaMetadataSidecarRequest(
+      epochKeyHandle = EpochKeyHandle(1),
+      albumId = ByteArray(16) { 1 },
+      photoId = ByteArray(16) { 2 },
+      epochId = 0,
+      mediaBytes = ByteArray(64) { 4 },
+      shardIndex = 0,
+    ),
+  )
+  bridgeAssertTrue(res2.code == MetadataSidecarEncryptCode.SUCCESS)
+  bridgeAssertTrue(envelope2.all { it == 0.toByte() })
+}
+
+private fun metadataSidecarCanonicalMediaWipesFfi() {
+  val canonical = ByteArray(96) { 0xEE.toByte() }
+  val expectedCanonical = canonical.copyOf()
+  val api = FakeGeneratedRustMetadataSidecarApi(
+    canonicalMedia = RustBytesFfiResult(code = RustMetadataSidecarStableCode.OK, bytes = canonical),
+  )
+  val req = CanonicalMediaMetadataSidecarRequest(
+    albumId = ByteArray(16) { 1 },
+    photoId = ByteArray(16) { 2 },
+    epochId = 0,
+    mediaBytes = ByteArray(64) { 4 },
+  )
+  val result = GeneratedRustMetadataSidecarBridge(api).canonicalMediaMetadataSidecar(req)
+  bridgeAssertTrue(result.code == MetadataSidecarBuildCode.SUCCESS)
+  bridgeAssertTrue(result.sidecar?.bytes?.contentEquals(expectedCanonical) == true)
+  bridgeAssertTrue(canonical.all { it == 0.toByte() })
+}
+
+private fun diagnosticsBridgeWipesFfiGoldenVector() {
+  val header = ByteArray(64) { 0x01 }
+  val nonce = ByteArray(24) { 0x02 }
+  val transcript = ByteArray(96) { 0x03 }
+  val message = ByteArray(64) { 0x04 }
+  val signingKey = ByteArray(32) { 0x05 }
+  val encryptionKey = ByteArray(32) { 0x06 }
+  val signature = ByteArray(64) { 0x07 }
+  val expectedHeader = header.copyOf()
+  val ffi = RustDiagnosticsGoldenVectorFfi(
+    code = 0,
+    envelopeHeader = header,
+    envelopeEpochId = 1,
+    envelopeShardIndex = 0,
+    envelopeTier = 1,
+    envelopeNonce = nonce,
+    manifestTranscript = transcript,
+    identityMessage = message,
+    identitySigningPubkey = signingKey,
+    identityEncryptionPubkey = encryptionKey,
+    identitySignature = signature,
+  )
+  val api = FakeGeneratedRustDiagnosticsApi(golden = ffi)
+  val snapshot = GeneratedRustDiagnosticsBridge(api).cryptoDomainGoldenVector()
+  // Domain-model snapshot has an independent copy.
+  bridgeAssertTrue(snapshot.envelopeHeader.contentEquals(expectedHeader))
+  // FFI's 7 byte arrays are all zeroed by bridge finally.
+  bridgeAssertTrue(header.all { it == 0.toByte() })
+  bridgeAssertTrue(nonce.all { it == 0.toByte() })
+  bridgeAssertTrue(transcript.all { it == 0.toByte() })
+  bridgeAssertTrue(message.all { it == 0.toByte() })
+  bridgeAssertTrue(signingKey.all { it == 0.toByte() })
+  bridgeAssertTrue(encryptionKey.all { it == 0.toByte() })
+  bridgeAssertTrue(signature.all { it == 0.toByte() })
+}
+
+private fun diagnosticsFfiGoldenVectorWipeZerosAll() {
+  val ffi = RustDiagnosticsGoldenVectorFfi(
+    code = 0,
+    envelopeHeader = ByteArray(64) { 1 },
+    envelopeEpochId = 0,
+    envelopeShardIndex = 0,
+    envelopeTier = 1,
+    envelopeNonce = ByteArray(24) { 2 },
+    manifestTranscript = ByteArray(96) { 3 },
+    identityMessage = ByteArray(64) { 4 },
+    identitySigningPubkey = ByteArray(32) { 5 },
+    identityEncryptionPubkey = ByteArray(32) { 6 },
+    identitySignature = ByteArray(64) { 7 },
+  )
+  ffi.wipe()
+  bridgeAssertTrue(ffi.envelopeHeader.all { it == 0.toByte() })
+  bridgeAssertTrue(ffi.envelopeNonce.all { it == 0.toByte() })
+  bridgeAssertTrue(ffi.manifestTranscript.all { it == 0.toByte() })
+  bridgeAssertTrue(ffi.identityMessage.all { it == 0.toByte() })
+  bridgeAssertTrue(ffi.identitySigningPubkey.all { it == 0.toByte() })
+  bridgeAssertTrue(ffi.identityEncryptionPubkey.all { it == 0.toByte() })
+  bridgeAssertTrue(ffi.identitySignature.all { it == 0.toByte() })
 }
 
 // endregion

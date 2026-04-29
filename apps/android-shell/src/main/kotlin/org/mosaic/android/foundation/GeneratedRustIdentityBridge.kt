@@ -194,6 +194,12 @@ data class RustIdentityHandleFfiResult(
     require(handle >= 0) { "identity handle must not be negative" }
   }
 
+  fun wipe() {
+    signingPubkey.fill(0)
+    encryptionPubkey.fill(0)
+    wrappedSeed.fill(0)
+  }
+
   override fun toString(): String =
     "RustIdentityHandleFfiResult(code=$code, handle=<redacted>, signingPubkey=<redacted>, " +
       "encryptionPubkey=<redacted>, wrappedSeed=<redacted>)"
@@ -226,6 +232,10 @@ data class RustBytesFfiResult(
     require(code >= 0) { "bytes result code must not be negative" }
   }
 
+  fun wipe() {
+    bytes.fill(0)
+  }
+
   override fun toString(): String = "RustBytesFfiResult(code=$code, bytes=<redacted>)"
 
   override fun equals(other: Any?): Boolean {
@@ -256,64 +266,84 @@ class GeneratedRustIdentityBridge(
 ) : RustIdentityBridge {
   override fun createIdentity(accountKeyHandle: AccountKeyHandle): IdentityCreateResult {
     val result = api.createIdentityHandle(accountKeyHandle.value)
-    val code = createCodeFor(result.code)
-    val handle = if (code == IdentityCreateCode.SUCCESS && result.handle > 0) {
-      IdentityHandle(result.handle)
-    } else null
-    val safeCode = if (code == IdentityCreateCode.SUCCESS && handle == null) {
-      IdentityCreateCode.INTERNAL_ERROR
-    } else code
-    return IdentityCreateResult(
-      code = safeCode,
-      handle = if (safeCode == IdentityCreateCode.SUCCESS) handle else null,
-      signingPubkey = if (safeCode == IdentityCreateCode.SUCCESS) result.signingPubkey else EMPTY_BYTES,
-      encryptionPubkey = if (safeCode == IdentityCreateCode.SUCCESS) result.encryptionPubkey else EMPTY_BYTES,
-      wrappedSeed = if (safeCode == IdentityCreateCode.SUCCESS) result.wrappedSeed else EMPTY_BYTES,
-    )
+    return try {
+      val code = createCodeFor(result.code)
+      val handle = if (code == IdentityCreateCode.SUCCESS && result.handle > 0) {
+        IdentityHandle(result.handle)
+      } else null
+      val safeCode = if (code == IdentityCreateCode.SUCCESS && handle == null) {
+        IdentityCreateCode.INTERNAL_ERROR
+      } else code
+      IdentityCreateResult(
+        code = safeCode,
+        handle = if (safeCode == IdentityCreateCode.SUCCESS) handle else null,
+        signingPubkey = if (safeCode == IdentityCreateCode.SUCCESS) result.signingPubkey else EMPTY_BYTES,
+        encryptionPubkey = if (safeCode == IdentityCreateCode.SUCCESS) result.encryptionPubkey else EMPTY_BYTES,
+        wrappedSeed = if (safeCode == IdentityCreateCode.SUCCESS) result.wrappedSeed else EMPTY_BYTES,
+      )
+    } finally {
+      result.wipe()
+    }
   }
 
   override fun openIdentity(wrappedSeed: ByteArray, accountKeyHandle: AccountKeyHandle): IdentityOpenResult {
     val result = api.openIdentityHandle(wrappedSeed, accountKeyHandle.value)
-    val code = openCodeFor(result.code)
-    val handle = if (code == IdentityOpenCode.SUCCESS && result.handle > 0) {
-      IdentityHandle(result.handle)
-    } else null
-    val safeCode = if (code == IdentityOpenCode.SUCCESS && handle == null) {
-      IdentityOpenCode.INTERNAL_ERROR
-    } else code
-    return IdentityOpenResult(
-      code = safeCode,
-      handle = if (safeCode == IdentityOpenCode.SUCCESS) handle else null,
-      signingPubkey = if (safeCode == IdentityOpenCode.SUCCESS) result.signingPubkey else EMPTY_BYTES,
-      encryptionPubkey = if (safeCode == IdentityOpenCode.SUCCESS) result.encryptionPubkey else EMPTY_BYTES,
-    )
+    return try {
+      val code = openCodeFor(result.code)
+      val handle = if (code == IdentityOpenCode.SUCCESS && result.handle > 0) {
+        IdentityHandle(result.handle)
+      } else null
+      val safeCode = if (code == IdentityOpenCode.SUCCESS && handle == null) {
+        IdentityOpenCode.INTERNAL_ERROR
+      } else code
+      IdentityOpenResult(
+        code = safeCode,
+        handle = if (safeCode == IdentityOpenCode.SUCCESS) handle else null,
+        signingPubkey = if (safeCode == IdentityOpenCode.SUCCESS) result.signingPubkey else EMPTY_BYTES,
+        encryptionPubkey = if (safeCode == IdentityOpenCode.SUCCESS) result.encryptionPubkey else EMPTY_BYTES,
+      )
+    } finally {
+      result.wipe()
+    }
   }
 
   override fun signingPubkey(handle: IdentityHandle): IdentityPubkeyResult {
     val result = api.identitySigningPubkey(handle.value)
-    return mapPubkeyResult(result)
+    return try {
+      mapPubkeyResult(result)
+    } finally {
+      result.wipe()
+    }
   }
 
   override fun encryptionPubkey(handle: IdentityHandle): IdentityPubkeyResult {
     val result = api.identityEncryptionPubkey(handle.value)
-    return mapPubkeyResult(result)
+    return try {
+      mapPubkeyResult(result)
+    } finally {
+      result.wipe()
+    }
   }
 
   override fun signManifest(handle: IdentityHandle, transcriptBytes: ByteArray): ManifestSignatureResult {
     val result = api.signManifestWithIdentity(handle.value, transcriptBytes)
-    val code = when (result.code) {
-      RustIdentityStableCode.OK -> IdentitySignCode.SUCCESS
-      RustIdentityStableCode.IDENTITY_HANDLE_NOT_FOUND -> IdentitySignCode.IDENTITY_HANDLE_NOT_FOUND
-      RustIdentityStableCode.INVALID_INPUT_LENGTH,
-      RustIdentityStableCode.INVALID_KEY_LENGTH,
-      -> IdentitySignCode.INVALID_INPUT_LENGTH
-      else -> IdentitySignCode.INTERNAL_ERROR
+    return try {
+      val code = when (result.code) {
+        RustIdentityStableCode.OK -> IdentitySignCode.SUCCESS
+        RustIdentityStableCode.IDENTITY_HANDLE_NOT_FOUND -> IdentitySignCode.IDENTITY_HANDLE_NOT_FOUND
+        RustIdentityStableCode.INVALID_INPUT_LENGTH,
+        RustIdentityStableCode.INVALID_KEY_LENGTH,
+        -> IdentitySignCode.INVALID_INPUT_LENGTH
+        else -> IdentitySignCode.INTERNAL_ERROR
+      }
+      val signature = if (code == IdentitySignCode.SUCCESS) result.bytes else EMPTY_BYTES
+      val safeCode = if (code == IdentitySignCode.SUCCESS && signature.isEmpty()) {
+        IdentitySignCode.INTERNAL_ERROR
+      } else code
+      ManifestSignatureResult(safeCode, if (safeCode == IdentitySignCode.SUCCESS) signature else EMPTY_BYTES)
+    } finally {
+      result.wipe()
     }
-    val signature = if (code == IdentitySignCode.SUCCESS) result.bytes else EMPTY_BYTES
-    val safeCode = if (code == IdentitySignCode.SUCCESS && signature.isEmpty()) {
-      IdentitySignCode.INTERNAL_ERROR
-    } else code
-    return ManifestSignatureResult(safeCode, if (safeCode == IdentitySignCode.SUCCESS) signature else EMPTY_BYTES)
   }
 
   override fun closeIdentity(handle: IdentityHandle): IdentityCloseCode = when (api.closeIdentityHandle(handle.value)) {
@@ -359,3 +389,34 @@ class GeneratedRustIdentityBridge(
     private val EMPTY_BYTES: ByteArray = ByteArray(0)
   }
 }
+
+/**
+ * Opens an identity handle and wipes the caller-owned `wrappedSeed` (a wrapped
+ * Ed25519+X25519 seed) after the bridge returns. Use this in any flow where
+ * the caller will not need the wrapped seed bytes after the call.
+ */
+fun RustIdentityBridge.openIdentityWipingWrappedSeed(
+  wrappedSeed: ByteArray,
+  accountKeyHandle: AccountKeyHandle,
+): IdentityOpenResult =
+  try {
+    openIdentity(wrappedSeed, accountKeyHandle)
+  } finally {
+    wrappedSeed.fill(0)
+  }
+
+/**
+ * Signs a manifest transcript and wipes the caller-owned `transcriptBytes`
+ * after the bridge returns. The transcript is a deterministic byte sequence
+ * derived from the manifest contents; once signed, the caller usually only
+ * needs the resulting signature, not the transcript.
+ */
+fun RustIdentityBridge.signManifestWipingTranscript(
+  handle: IdentityHandle,
+  transcriptBytes: ByteArray,
+): ManifestSignatureResult =
+  try {
+    signManifest(handle, transcriptBytes)
+  } finally {
+    transcriptBytes.fill(0)
+  }

@@ -284,7 +284,11 @@ class GeneratedRustMetadataSidecarBridge(
       epochId = request.epochId,
       encodedFields = request.encodedFields,
     )
-    return mapBuild(result)
+    return try {
+      mapBuild(result)
+    } finally {
+      result.wipe()
+    }
   }
 
   override fun encryptMetadataSidecar(request: EncryptMetadataSidecarRequest): MetadataSidecarEncryptResult {
@@ -296,7 +300,11 @@ class GeneratedRustMetadataSidecarBridge(
       encodedFields = request.encodedFields,
       shardIndex = request.shardIndex,
     )
-    return mapEncrypt(result)
+    return try {
+      mapEncrypt(result)
+    } finally {
+      result.wipe()
+    }
   }
 
   override fun canonicalMediaMetadataSidecar(request: CanonicalMediaMetadataSidecarRequest): MetadataSidecarBuildResult {
@@ -306,7 +314,11 @@ class GeneratedRustMetadataSidecarBridge(
       epochId = request.epochId,
       mediaBytes = request.mediaBytes,
     )
-    return mapBuild(result)
+    return try {
+      mapBuild(result)
+    } finally {
+      result.wipe()
+    }
   }
 
   override fun encryptMediaMetadataSidecar(request: EncryptMediaMetadataSidecarRequest): MetadataSidecarEncryptResult {
@@ -318,7 +330,11 @@ class GeneratedRustMetadataSidecarBridge(
       mediaBytes = request.mediaBytes,
       shardIndex = request.shardIndex,
     )
-    return mapEncrypt(result)
+    return try {
+      mapEncrypt(result)
+    } finally {
+      result.wipe()
+    }
   }
 
   private fun mapBuild(result: RustBytesFfiResult): MetadataSidecarBuildResult {
