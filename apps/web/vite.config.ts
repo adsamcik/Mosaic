@@ -25,6 +25,25 @@ export default defineConfig(({ mode }) => {
       headers: {
         'Cross-Origin-Opener-Policy': 'same-origin',
         'Cross-Origin-Embedder-Policy': 'credentialless',
+        // Mirror production CSP (see apps/web/nginx.conf) so dev catches violations early.
+        // Dev-only relaxations vs. production:
+        //   - script-src adds 'unsafe-inline': Vite injects an inline bootstrap snippet
+        //     for the HMR client. Production builds have no inline scripts.
+        //   - upgrade-insecure-requests is omitted: dev runs over plain http://localhost
+        //     and the directive would break module/HMR fetches.
+        'Content-Security-Policy': [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' blob: data: https://*.tile.openstreetmap.org",
+          "connect-src 'self' ws: wss:",
+          "worker-src 'self' blob:",
+          "font-src 'self'",
+          "frame-ancestors 'none'",
+          "object-src 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+        ].join('; '),
       },
       // Proxy API requests to backend during development
       proxy: {
