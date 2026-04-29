@@ -5,8 +5,8 @@ use mosaic_client::{
 };
 use mosaic_crypto::{
     IdentitySignature, IdentitySigningPublicKey, KdfProfile, MAX_KDF_ITERATIONS,
-    MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM, derive_account_key,
-    verify_manifest_identity_signature,
+    MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB,
+    derive_account_key, verify_manifest_identity_signature,
 };
 use zeroize::Zeroizing;
 
@@ -175,8 +175,8 @@ fn account_unlock_rejects_weak_kdf_profile_without_opening_handle() {
         user_salt: &USER_SALT,
         account_salt: &ACCOUNT_SALT,
         wrapped_account_key: &wrapped_account_key,
-        kdf_memory_kib: 64 * 1024 - 1,
-        kdf_iterations: 3,
+        kdf_memory_kib: MIN_KDF_MEMORY_KIB - 1,
+        kdf_iterations: MIN_KDF_ITERATIONS,
         kdf_parallelism: 1,
     });
 
@@ -196,7 +196,7 @@ fn account_unlock_rejects_resource_exhaustion_kdf_profile_without_opening_handle
         account_salt: &ACCOUNT_SALT,
         wrapped_account_key: &wrapped_account_key,
         kdf_memory_kib: u32::MAX,
-        kdf_iterations: 3,
+        kdf_iterations: MIN_KDF_ITERATIONS,
         kdf_parallelism: 1,
     });
 
@@ -209,9 +209,9 @@ fn account_unlock_rejects_resource_exhaustion_kdf_profile_without_opening_handle
 fn account_unlock_rejects_each_costly_kdf_limit_and_zeroizes_password() {
     let wrapped_account_key = wrapped_account_key();
     let cases = [
-        (MAX_KDF_MEMORY_KIB + 1, 3, 1),
-        (64 * 1024, MAX_KDF_ITERATIONS + 1, 1),
-        (64 * 1024, 3, MAX_KDF_PARALLELISM + 1),
+        (MAX_KDF_MEMORY_KIB + 1, MIN_KDF_ITERATIONS, 1),
+        (MIN_KDF_MEMORY_KIB, MAX_KDF_ITERATIONS + 1, 1),
+        (MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, MAX_KDF_PARALLELISM + 1),
     ];
 
     for (memory_kib, iterations, parallelism) in cases {
@@ -263,8 +263,8 @@ fn account_unlock_rejects_wrapped_key_shorter_than_minimum() {
         user_salt: &USER_SALT,
         account_salt: &ACCOUNT_SALT,
         wrapped_account_key: &short_wrapped_key,
-        kdf_memory_kib: 64 * 1024,
-        kdf_iterations: 3,
+        kdf_memory_kib: MIN_KDF_MEMORY_KIB,
+        kdf_iterations: MIN_KDF_ITERATIONS,
         kdf_parallelism: 1,
     });
 
@@ -283,8 +283,8 @@ fn account_unlock_rejects_invalid_user_or_account_salt_lengths() {
         user_salt: &[0_u8; 15],
         account_salt: &ACCOUNT_SALT,
         wrapped_account_key: &wrapped_account_key,
-        kdf_memory_kib: 64 * 1024,
-        kdf_iterations: 3,
+        kdf_memory_kib: MIN_KDF_MEMORY_KIB,
+        kdf_iterations: MIN_KDF_ITERATIONS,
         kdf_parallelism: 1,
     });
 
@@ -301,8 +301,8 @@ fn account_unlock_rejects_invalid_user_or_account_salt_lengths() {
         user_salt: &USER_SALT,
         account_salt: &[0_u8; 15],
         wrapped_account_key: &wrapped_account_key,
-        kdf_memory_kib: 64 * 1024,
-        kdf_iterations: 3,
+        kdf_memory_kib: MIN_KDF_MEMORY_KIB,
+        kdf_iterations: MIN_KDF_ITERATIONS,
         kdf_parallelism: 1,
     });
 
@@ -344,8 +344,8 @@ fn unlock_request<'a>(
         user_salt: &USER_SALT,
         account_salt: &ACCOUNT_SALT,
         wrapped_account_key,
-        kdf_memory_kib: 64 * 1024,
-        kdf_iterations: 3,
+        kdf_memory_kib: MIN_KDF_MEMORY_KIB,
+        kdf_iterations: MIN_KDF_ITERATIONS,
         kdf_parallelism: 1,
     }
 }
@@ -365,7 +365,7 @@ fn wrapped_account_key() -> Vec<u8> {
 }
 
 fn minimum_profile() -> KdfProfile {
-    match KdfProfile::new(64 * 1024, 3, 1) {
+    match KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, 1) {
         Ok(value) => value,
         Err(error) => panic!("minimum Mosaic profile should be valid: {error:?}"),
     }

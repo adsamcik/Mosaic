@@ -1,6 +1,7 @@
 use mosaic_crypto::{
-    KdfProfile, MAX_KDF_ITERATIONS, MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM, MosaicCryptoError,
-    derive_account_key, derive_root_key, unwrap_account_key, wrap_key,
+    KdfProfile, MAX_KDF_ITERATIONS, MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM, MIN_KDF_ITERATIONS,
+    MIN_KDF_MEMORY_KIB, MosaicCryptoError, derive_account_key, derive_root_key,
+    unwrap_account_key, wrap_key,
 };
 use zeroize::Zeroizing;
 
@@ -18,26 +19,26 @@ const OTHER_ACCOUNT_SALT: [u8; 16] = [
 
 #[test]
 fn kdf_profile_enforces_mosaic_minimums() {
-    let profile = match KdfProfile::new(64 * 1024, 3, 1) {
+    let profile = match KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, 1) {
         Ok(value) => value,
         Err(error) => panic!("minimum Mosaic profile should be valid: {error:?}"),
     };
 
-    assert_eq!(profile.memory_kib(), 64 * 1024);
-    assert_eq!(profile.iterations(), 3);
+    assert_eq!(profile.memory_kib(), MIN_KDF_MEMORY_KIB);
+    assert_eq!(profile.iterations(), MIN_KDF_ITERATIONS);
     assert_eq!(profile.parallelism(), 1);
     assert_eq!(profile.output_len(), 32);
 
     assert_eq!(
-        KdfProfile::new(64 * 1024 - 1, 3, 1),
+        KdfProfile::new(MIN_KDF_MEMORY_KIB - 1, MIN_KDF_ITERATIONS, 1),
         Err(MosaicCryptoError::KdfProfileTooWeak)
     );
     assert_eq!(
-        KdfProfile::new(64 * 1024, 2, 1),
+        KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS - 1, 1),
         Err(MosaicCryptoError::KdfProfileTooWeak)
     );
     assert_eq!(
-        KdfProfile::new(64 * 1024, 3, 0),
+        KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, 0),
         Err(MosaicCryptoError::KdfProfileTooWeak)
     );
 }
@@ -55,15 +56,15 @@ fn kdf_profile_rejects_resource_exhaustion_parameters() {
     assert_eq!(max_profile.parallelism(), MAX_KDF_PARALLELISM);
 
     assert_eq!(
-        KdfProfile::new(MAX_KDF_MEMORY_KIB + 1, 3, 1),
+        KdfProfile::new(MAX_KDF_MEMORY_KIB + 1, MIN_KDF_ITERATIONS, 1),
         Err(MosaicCryptoError::KdfProfileTooCostly)
     );
     assert_eq!(
-        KdfProfile::new(64 * 1024, MAX_KDF_ITERATIONS + 1, 1),
+        KdfProfile::new(MIN_KDF_MEMORY_KIB, MAX_KDF_ITERATIONS + 1, 1),
         Err(MosaicCryptoError::KdfProfileTooCostly)
     );
     assert_eq!(
-        KdfProfile::new(64 * 1024, 3, MAX_KDF_PARALLELISM + 1),
+        KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, MAX_KDF_PARALLELISM + 1),
         Err(MosaicCryptoError::KdfProfileTooCostly)
     );
 }
@@ -75,7 +76,11 @@ fn kdf_profile_reports_weak_profiles_before_costly_profiles() {
         Err(MosaicCryptoError::KdfProfileTooWeak)
     );
     assert_eq!(
-        KdfProfile::new(MAX_KDF_MEMORY_KIB + 1, 1, MAX_KDF_PARALLELISM + 1),
+        KdfProfile::new(
+            MAX_KDF_MEMORY_KIB + 1,
+            MIN_KDF_ITERATIONS - 1,
+            MAX_KDF_PARALLELISM + 1
+        ),
         Err(MosaicCryptoError::KdfProfileTooWeak)
     );
     assert_eq!(
@@ -232,7 +237,7 @@ fn account_key_unwrap_rejects_authenticated_payloads_with_wrong_account_key_leng
 }
 
 fn minimum_profile() -> KdfProfile {
-    match KdfProfile::new(64 * 1024, 3, 1) {
+    match KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, 1) {
         Ok(value) => value,
         Err(error) => panic!("minimum Mosaic profile should be valid: {error:?}"),
     }

@@ -17,6 +17,12 @@ mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
 wasm-bindgen = "=0.2.118"
 zeroize = "=1.8.2"
 
+[features]
+default = []
+# SECURITY: Propagates `mosaic-crypto/weak-kdf`. Test-only. Never enable in
+# production builds. See `mosaic-crypto/Cargo.toml`.
+weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-client/weak-kdf"]
+
 [dev-dependencies]
 mosaic-vectors = { path = "../mosaic-vectors", version = "0.1.0" }
 

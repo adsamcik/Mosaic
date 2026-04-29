@@ -18,5 +18,11 @@ mosaic-media = { path = "../mosaic-media", version = "0.1.0" }
 uniffi = { version = "=0.31.1", default-features = false, features = ["scaffolding-ffi-buffer-fns"] }
 zeroize = "=1.8.2"
 
+[features]
+default = []
+# SECURITY: Propagates `mosaic-crypto/weak-kdf`. Test-only. Never enable in
+# production builds. See `mosaic-crypto/Cargo.toml`.
+weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-client/weak-kdf"]
+
 [lints]
 workspace = true

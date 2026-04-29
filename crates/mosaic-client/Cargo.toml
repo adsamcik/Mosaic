@@ -12,5 +12,11 @@ mosaic-crypto = { path = "../mosaic-crypto", version = "0.1.0" }
 mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
 zeroize = "=1.8.2"
 
+[features]
+default = []
+# SECURITY: Propagates `mosaic-crypto/weak-kdf`. Test-only. Never enable in
+# production builds. See `mosaic-crypto/Cargo.toml`.
+weak-kdf = ["mosaic-crypto/weak-kdf"]
+
 [lints]
 workspace = true

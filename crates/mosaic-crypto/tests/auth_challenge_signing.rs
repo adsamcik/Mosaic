@@ -1,7 +1,7 @@
 use mosaic_crypto::{
     AUTH_CHALLENGE_CONTEXT, AuthSignature, AuthSigningPublicKey, AuthSigningSecretKey, KdfProfile,
-    MosaicCryptoError, build_auth_challenge_transcript, derive_auth_signing_keypair,
-    sign_auth_challenge, verify_auth_challenge,
+    MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, MosaicCryptoError, build_auth_challenge_transcript,
+    derive_auth_signing_keypair, sign_auth_challenge, verify_auth_challenge,
 };
 use zeroize::Zeroizing;
 
@@ -21,7 +21,7 @@ const CHALLENGE: [u8; 32] = [
 ];
 
 fn minimum_profile() -> KdfProfile {
-    match KdfProfile::new(64 * 1024, 3, 1) {
+    match KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, 1) {
         Ok(value) => value,
         Err(error) => panic!("minimum Mosaic profile should be valid: {error:?}"),
     }
@@ -38,6 +38,7 @@ fn fixed_auth_keypair() -> mosaic_crypto::AuthSigningKeypair {
     }
 }
 
+#[cfg(not(feature = "weak-kdf"))]
 fn hex(bytes: &[u8]) -> String {
     let mut output = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -47,6 +48,7 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 #[test]
+#[cfg(not(feature = "weak-kdf"))]
 fn fixed_password_auth_signing_matches_python_vector() {
     let keypair = fixed_auth_keypair();
     let transcript = match build_auth_challenge_transcript(USERNAME, Some(TIMESTAMP_MS), &CHALLENGE)
@@ -77,6 +79,7 @@ fn fixed_password_auth_signing_matches_python_vector() {
 }
 
 #[test]
+#[cfg(not(feature = "weak-kdf"))]
 fn auth_transcript_without_timestamp_matches_backend_format() {
     let keypair = fixed_auth_keypair();
     let transcript = match build_auth_challenge_transcript(USERNAME, None, &CHALLENGE) {

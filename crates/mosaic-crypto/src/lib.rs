@@ -39,10 +39,40 @@ const MIN_WRAPPED_KEY_BYTES: usize = 24 + 16 + 1;
 const MAX_AUTH_USERNAME_BYTES: usize = 256;
 
 /// Minimum Mosaic Argon2id memory cost in KiB (64 MiB).
-const MIN_KDF_MEMORY_KIB: u32 = 64 * 1024;
+///
+/// Exposed as `pub` so test helpers and FFI consumers reference the canonical
+/// policy parameter rather than duplicating the literal. The value is gated on
+/// the `weak-kdf` Cargo feature: with the feature off (production), the
+/// minimum is 64 MiB; with the feature on, it relaxes to 8 MiB to mirror the
+/// TypeScript `VITE_E2E_WEAK_KEYS=true` mode and keep KDF-bound test runs
+/// (mutation testing, E2E fixtures) tractable. NEVER enable `weak-kdf` in
+/// production builds.
+#[cfg(not(feature = "weak-kdf"))]
+pub const MIN_KDF_MEMORY_KIB: u32 = 64 * 1024;
+
+/// Minimum Mosaic Argon2id memory cost in KiB under the `weak-kdf` test
+/// feature (8 MiB).
+///
+/// SECURITY: This profile is intentionally insecure and is only valid for
+/// mutation testing, KDF-bound unit tests, and E2E fixtures. Production
+/// builds must compile with the feature off, which restores the 64 MiB floor.
+#[cfg(feature = "weak-kdf")]
+pub const MIN_KDF_MEMORY_KIB: u32 = 8 * 1024;
 
 /// Minimum Mosaic Argon2id iteration count.
-const MIN_KDF_ITERATIONS: u32 = 3;
+///
+/// Like [`MIN_KDF_MEMORY_KIB`], the value is gated on the `weak-kdf` Cargo
+/// feature. Production: 3 iterations. `weak-kdf`: 1 iteration. NEVER enable
+/// `weak-kdf` in production builds.
+#[cfg(not(feature = "weak-kdf"))]
+pub const MIN_KDF_ITERATIONS: u32 = 3;
+
+/// Minimum Mosaic Argon2id iteration count under the `weak-kdf` test feature
+/// (1 iteration).
+///
+/// SECURITY: This profile is intentionally insecure. See [`MIN_KDF_MEMORY_KIB`].
+#[cfg(feature = "weak-kdf")]
+pub const MIN_KDF_ITERATIONS: u32 = 1;
 
 /// Maximum Mosaic Argon2id memory cost in KiB (256 MiB).
 pub const MAX_KDF_MEMORY_KIB: u32 = 256 * 1024;

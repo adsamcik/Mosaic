@@ -6,7 +6,7 @@
 //! handles or malformed inputs.
 
 use mosaic_client::ClientErrorCode;
-use mosaic_crypto::{KdfProfile, derive_account_key};
+use mosaic_crypto::{KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, derive_account_key};
 use mosaic_wasm::{
     AccountUnlockRequest, close_account_key_handle, close_epoch_key_handle,
     create_epoch_key_handle, derive_content_key_from_epoch, get_tier_key_from_epoch,
@@ -26,14 +26,14 @@ fn unlock_request(wrapped_account_key: Vec<u8>) -> AccountUnlockRequest {
         user_salt: USER_SALT.to_vec(),
         account_salt: ACCOUNT_SALT.to_vec(),
         wrapped_account_key,
-        kdf_memory_kib: 64 * 1024,
-        kdf_iterations: 3,
+        kdf_memory_kib: MIN_KDF_MEMORY_KIB,
+        kdf_iterations: MIN_KDF_ITERATIONS,
         kdf_parallelism: 1,
     }
 }
 
 fn wrapped_account_key() -> Vec<u8> {
-    let profile = match KdfProfile::new(64 * 1024, 3, 1) {
+    let profile = match KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, 1) {
         Ok(value) => value,
         Err(error) => panic!("minimum Mosaic profile should be valid: {error:?}"),
     };
