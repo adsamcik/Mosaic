@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "operation": "envelope.shard.encrypt-decrypt.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": false,
+  "description": "XChaCha20-Poly1305 shard envelope: 64-byte header (magic, version, epoch, shard, nonce, tier, reserved=0) || ciphertext+tag, with the header bytes as AEAD AAD.",
+  "algorithms": {
+    "cipher": "XChaCha20-Poly1305-IETF",
+    "header": "magic=\"SGzk\" || version=0x03 || epoch_id LE u32 || shard_index LE u32 || nonce(24) || tier(1) || reserved(26)=0"
+  },
+  "domainLabels": [
+    "mosaic.v1.envelope.shard"
+  ],
+  "inputs": {
+    "epochId": 151587081,
+    "tiers": [
+      {
+        "tier": 1,
+        "shardIndex": 7,
+        "tierKeyHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        "nonceHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7",
+        "plaintextHex": "7468756d622d7469657220736861726420706c61696e7465787420e2809420666978656420746573742062797465732028736d616c6c292e"
+      },
+      {
+        "tier": 2,
+        "shardIndex": 8,
+        "tierKeyHex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "nonceHex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7",
+        "plaintextHex": "707265766965772d7469657220736861726420706c61696e7465787420e28094206669786564207465737420627974657320286d656469756d292e"
+      },
+      {
+        "tier": 3,
+        "shardIndex": 9,
+        "tierKeyHex": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+        "nonceHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7",
+        "plaintextHex": "66756c6c2d7469657220736861726420706c61696e7465787420e28094206669786564207465737420627974657320286c617267657374292e"
+      }
+    ]
+  },
+  "expected": {
+    "tiers": [
+      {
+        "tier": 1,
+        "envelopeHex": "53477a6b030909090907000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7010000000000000000000000000000000000000000000000000000a0d256dbe12f80962f63adcccef85ef73f938a3a056cc35bd13abbe3b56e47e62f19dc638ad084eae573f5c54c00f639d7e25830cfa46ec293899d9d741dc3886cdc014abfe9700c",
+        "sha256": "m2w0X-ChwYEIhhk4nAYRBYAArLqP87nr2a7ZauAtCN8"
+      },
+      {
+        "tier": 2,
+        "envelopeHex": "53477a6b030909090908000000c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d70200000000000000000000000000000000000000000000000000002a23b79c9b93a8a826e34200be5b710c8be6455067b96739abf2cc3a700a8a39e68fd2c8f4c47c102b842b6a21aa782deeb4cdf3b15f8ac3975e410012760c93be11e60e53e69c5d600be3",
+        "sha256": "t7PxmE_qEP_cbpwyoF0YtISQtkNYkTKlkhy4tJcaBNI"
+      },
+      {
+        "tier": 3,
+        "envelopeHex": "53477a6b030909090909000000a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b70300000000000000000000000000000000000000000000000000001bdc0fce68f08cd5d2faf28216439b553cb6d196cb2d412a2c1bb5f928eebc919683e5b7c43ca21a463c0e6835633f68f4f21d0d86032873e8b3dad9fdcdd9a180d09a92bc7fa60d09",
+        "sha256": "vcjPtFpCs4gL5Pd49PeDMCp2jNfT-mI-ypcNkEYCcM0"
+      }
+    ]
+  },
+  "negativeCases": [
+    {
+      "name": "wrong-tier-key",
+      "mutations": [
+        "decrypt thumb envelope using tier_key_full"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED"
+    },
+    {
+      "name": "tampered-header-tier",
+      "mutations": [
+        "flip header byte at offset 37 (tier byte) of envelope"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED"
+    },
+    {
+      "name": "reserved-not-zero",
+      "mutations": [
+        "set envelope[40] = 0xff (reserved must be zero)"
+      ],
+      "errorCode": "INVALID_ENVELOPE"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "envelopeBytes",
+      "classification": "encrypted",
+      "reason": "Shard envelope is uploaded to object storage; only ciphertext is server-visible."
+    },
+    {
+      "name": "sha256",
+      "classification": "public-cryptographic",
+      "reason": "Manifest binds the SHA-256 of the encrypted shard for integrity proof."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "plaintext",
+      "reason": "Shard plaintext (raw photo bytes) must never reach the server.",
+      "errorCode": "PLAINTEXT_MEDIA_FORBIDDEN"
+    },
+    {
+      "name": "tierKey",
+      "reason": "Tier keys are derived client-side from the epoch seed and never uploaded.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

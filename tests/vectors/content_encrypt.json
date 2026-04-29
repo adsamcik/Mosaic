@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "operation": "content.encrypt.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": false,
+  "description": "XChaCha20-Poly1305 album content encryption with 8-byte AAD (\"MC\" || version || reserved || epoch_id_LE).",
+  "algorithms": {
+    "cipher": "XChaCha20-Poly1305-IETF",
+    "aad": "\"MC\"(2) || 0x01(version) || 0x00(reserved) || epoch_id LE u32"
+  },
+  "domainLabels": [
+    "mosaic.v1.content"
+  ],
+  "inputs": {
+    "contentKeyHex": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+    "epochId": 16909060,
+    "nonceHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7",
+    "plaintextHex": "4d6f7361696320636f6e74656e74207061796c6f616420763120e2809420666978656420746573742062797465732e"
+  },
+  "expected": {
+    "ciphertextHex": "b3f1c243b3ce7585c46aca7c87db7dae8ec73cd3a957df45a5e2ee3f249da34c91e9ddc6e0023975fc446acbbfb3b62ddf2b4ebb3de2e153e61774eeb5eff5",
+    "decryptedHex": "4d6f7361696320636f6e74656e74207061796c6f616420763120e2809420666978656420746573742062797465732e"
+  },
+  "negativeCases": [
+    {
+      "name": "wrong-epoch-id",
+      "mutations": [
+        "replace inputs.epochId with epoch_id + 1"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED"
+    },
+    {
+      "name": "tampered-ciphertext",
+      "mutations": [
+        "flip first byte of expected.ciphertextHex"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "ciphertext",
+      "classification": "encrypted",
+      "reason": "Album content ciphertext is uploaded to the server as opaque bytes."
+    },
+    {
+      "name": "nonce",
+      "classification": "random",
+      "reason": "24-byte XChaCha20 nonce is server-visible alongside ciphertext."
+    },
+    {
+      "name": "epochId",
+      "classification": "operational-metadata",
+      "reason": "Epoch identifier is needed to look up the correct content key."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "plaintext",
+      "reason": "Plaintext album content must never be uploaded.",
+      "errorCode": "PLAINTEXT_CONTENT_FORBIDDEN"
+    },
+    {
+      "name": "contentKey",
+      "reason": "Content key is derived from the epoch seed and never leaves the client.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

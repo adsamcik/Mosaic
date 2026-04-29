@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "operation": "epoch.derive-tier-keys.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": false,
+  "description": "Derive (thumbKey, previewKey, fullKey, contentKey) from a 32-byte epoch seed. Locks the TS-shipped BLAKE2b-keyed derivation; Rust diverges (HKDF-SHA256). Discriminators are SHA-256 over the derived key bytes so the secret keys themselves do not appear in the corpus.",
+  "algorithms": {
+    "derivation": "BLAKE2b-256(key=epoch_seed, msg=context_label)",
+    "contexts": "mosaic:tier:thumb:v1 | mosaic:tier:preview:v1 | mosaic:tier:full:v1 | mosaic:tier:content:v1"
+  },
+  "domainLabels": [
+    "mosaic.v1.tier.thumb",
+    "mosaic.v1.tier.preview",
+    "mosaic.v1.tier.full",
+    "mosaic.v1.tier.content"
+  ],
+  "inputs": {
+    "epochSeedHex": "7e7d7c7b7a797877767574737271706f6e6d6c6b6a696867666564636261605f"
+  },
+  "expected": {
+    "thumbKeySha256": "d5a588853473912721334113b06487d76e8d061ef5bf85ab5df1dfdc60ac6f2c",
+    "previewKeySha256": "4d3a9758aa7239a954065e2d1e4e7a6ab6b5513972d2b372c8f83c624ceaf495",
+    "fullKeySha256": "3083c3be267a2e2249c41baeae97cd945409aee92a523845924f4d42712dadfb",
+    "contentKeySha256": "2b0b5f7b0f94991cccac6a033de70fe0e19a0465288c8760e43e1196545c5347"
+  },
+  "negativeCases": [
+    {
+      "name": "short-seed",
+      "mutations": [
+        "truncate inputs.epochSeedHex to 31 bytes"
+      ],
+      "errorCode": "INVALID_KEY_LENGTH"
+    }
+  ],
+  "serverBoundOutputs": [],
+  "forbiddenServerOutputs": [
+    {
+      "name": "epochSeed",
+      "reason": "Epoch seed must never leave the client (delivered via sealed bundle only).",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "thumbKey",
+      "reason": "Tier keys are derived client-side and never uploaded.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "previewKey",
+      "reason": "Tier keys are derived client-side and never uploaded.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "fullKey",
+      "reason": "Tier keys are derived client-side and never uploaded.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "contentKey",
+      "reason": "Album content key is derived client-side and never uploaded.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

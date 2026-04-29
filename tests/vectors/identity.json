@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "operation": "identity.derive-from-seed.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": false,
+  "description": "Derive identity Ed25519 signing keypair and X25519 encryption public key from a 32-byte identity seed.",
+  "algorithms": {
+    "signing": "Ed25519 (RFC 8032 deterministic)",
+    "encryption": "X25519 derived via libsodium ed25519_pk_to_curve25519 / ed25519_sk_to_curve25519"
+  },
+  "domainLabels": [
+    "mosaic.v1.identity"
+  ],
+  "inputs": {
+    "identitySeedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+    "identityMessageHex": ""
+  },
+  "expected": {
+    "signingPubkeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+    "encryptionPubkeyHex": "d85e07ec22b0ad881537c2f44d662d1a143cf830c57aca4305d85c7a90f6b62e",
+    "signatureHex": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+  },
+  "negativeCases": [
+    {
+      "name": "short-seed",
+      "mutations": [
+        "truncate inputs.identitySeedHex to 31 bytes"
+      ],
+      "errorCode": "INVALID_KEY_LENGTH"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "signingPubkey",
+      "classification": "public-cryptographic",
+      "reason": "Identity public key is published for manifest signature verification."
+    },
+    {
+      "name": "encryptionPubkey",
+      "classification": "public-cryptographic",
+      "reason": "X25519 public key is used as a sealed-box recipient pin."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "identitySeed",
+      "reason": "Identity seed is wrapped under L2 and must never reach the server.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

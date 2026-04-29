@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "operation": "auth.challenge.sign-verify.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": false,
+  "description": "Sign and verify a LocalAuth challenge transcript. The transcript layout is fixed; Ed25519 signing is deterministic (RFC 8032), so given the same auth signing seed the signature bytes are byte-exact across clients.",
+  "algorithms": {
+    "signing": "Ed25519 (RFC 8032 deterministic, libsodium crypto_sign_detached)",
+    "transcript": "\"Mosaic_Auth_Challenge_v1\" || u32be(usernameLen) || username_utf8 || [u64be(timestamp_ms)?] || challenge(32)"
+  },
+  "domainLabels": [
+    "mosaic.v1.auth.challenge"
+  ],
+  "inputs": {
+    "authSigningSeedHex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+    "authPublicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+    "username": "test_user@mosaic.local",
+    "challengeHex": "b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0",
+    "timestampMs": 1655735157121
+  },
+  "expected": {
+    "transcriptNoTimestampHex": "4d6f736169635f417574685f4368616c6c656e67655f763100000016746573745f75736572406d6f736169632e6c6f63616cb1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0",
+    "transcriptWithTimestampHex": "4d6f736169635f417574685f4368616c6c656e67655f763100000016746573745f75736572406d6f736169632e6c6f63616c0000018181818181b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0",
+    "signatureNoTimestampHex": "b2c05b06c42ab1674252951788e1c671b9bd7350926b7bbc11166aac231ca2311d9f6433b2fcca9bc546516ed5eaf0c1e6858df9b2c86ed772a498cc76cf3802",
+    "signatureWithTimestampHex": "d1d8db20570a5f8a2d309f9b8bb280d2386d18e3423aa8889f94e2c2e4adca9a02458d899d0a239ec590e968e75a0853eb43974c879720711c316ae575ae470a"
+  },
+  "negativeCases": [
+    {
+      "name": "wrong-public-key",
+      "mutations": [
+        "flip first byte of inputs.authPublicKeyHex before verifying"
+      ],
+      "errorCode": "AUTH_VERIFICATION_FAILED"
+    },
+    {
+      "name": "tampered-challenge",
+      "mutations": [
+        "flip first byte of inputs.challengeHex before verifying"
+      ],
+      "errorCode": "AUTH_VERIFICATION_FAILED"
+    },
+    {
+      "name": "timestamp-mismatch",
+      "mutations": [
+        "verify signatureWithTimestampHex without supplying timestamp_ms"
+      ],
+      "errorCode": "AUTH_VERIFICATION_FAILED"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "signature",
+      "classification": "public-cryptographic",
+      "reason": "Auth challenge signature is sent to the server for verification."
+    },
+    {
+      "name": "authPublicKey",
+      "classification": "public-cryptographic",
+      "reason": "Auth verifying key is registered with the server."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "authSigningSeed",
+      "reason": "Auth signing seed is derived client-side and must never reach the server.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "password",
+      "reason": "The user password must never be transmitted in any form.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

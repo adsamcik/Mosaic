@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "operation": "account.unlock.unwrap.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": false,
+  "description": "Unwrap a previously wrapped L2 account key with the TS-derived L1 root key. Locks the TS-shipped BLAKE2b L1 derivation + XSalsa20-Poly1305 wrap. Rust diverges (HKDF-SHA256 + XChaCha20-Poly1305); see deviations.md.",
+  "algorithms": {
+    "l1KeyDerivation": "BLAKE2b(BLAKE2b(\"Mosaic_AccountKey_v1\", accountSalt), BLAKE2b(\"Mosaic_RootKey_v1\", L0))",
+    "wrap": "XSalsa20-Poly1305 (libsodium crypto_secretbox)"
+  },
+  "domainLabels": [
+    "mosaic.v1.account.unlock",
+    "mosaic.v1.account.wrap"
+  ],
+  "inputs": {
+    "userSaltHex": "00112233445566778899aabbccddeeff",
+    "accountSaltHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+    "l0MasterKeyHex": "11223344556677889900aabbccddeeff0011223344556677889900aabbccddee",
+    "wrappedAccountKeyHex": "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff8962072bb381c574cafdba9c3fedcdf86f45201309a031bf0ff6285967da0b68683c64dabd9355b44439a0efdbf0c9e5"
+  },
+  "expected": {
+    "l1RootKeyHex": "ec5c870d829d2d00ddb37889e72cc6f29bb7ad877b8764fb3799ae5010e3d039",
+    "accountKeyHex": "deadbeefcafebabe0102030405060708090a0b0c0d0e0f101112131415161718",
+    "unwrapSucceeds": true
+  },
+  "negativeCases": [
+    {
+      "name": "wrong-account-salt",
+      "mutations": [
+        "flip first byte of inputs.accountSaltHex before deriving L1"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED"
+    },
+    {
+      "name": "tampered-wrapped-key",
+      "mutations": [
+        "flip first ciphertext byte of inputs.wrappedAccountKeyHex (offset 24)"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "wrappedAccountKey",
+      "classification": "encrypted",
+      "reason": "Wrapped L2 account key is stored on the server, opaque under L1."
+    },
+    {
+      "name": "userSalt",
+      "classification": "random",
+      "reason": "Per-user Argon2 salt is server-visible."
+    },
+    {
+      "name": "accountSalt",
+      "classification": "random",
+      "reason": "Per-account HKDF salt is server-visible."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "password",
+      "reason": "Password never reaches the server in any form.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "l0MasterKey",
+      "reason": "L0 master key is short-lived client memory only.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "l1RootKey",
+      "reason": "L1 root key wraps L2 and never leaves the client.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "accountKey",
+      "reason": "L2 plaintext is the account-wide secret; only the wrapped form is uploaded.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

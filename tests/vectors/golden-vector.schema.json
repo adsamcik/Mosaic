@@ -22,6 +22,10 @@
       "type": "integer",
       "const": 1
     },
+    "rust_canonical": {
+      "type": "boolean",
+      "description": "True when the Rust core is the byte-canonical reference for this vector and any deviating client (TS / WASM / Android) is on the bug side. False (default) means TS is the canonical reference."
+    },
     "operation": {
       "type": "string",
       "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$"

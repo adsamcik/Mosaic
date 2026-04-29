@@ -1,0 +1,3 @@
+# Capture tooling is not committed; only the produced JSON corpus is checked in.
+*
+!.gitignore

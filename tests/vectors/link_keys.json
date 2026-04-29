@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "operation": "link.derive-keys.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": false,
+  "description": "BLAKE2b-keyed derivation of (link_id, wrapping_key) from a 32-byte link secret.",
+  "algorithms": {
+    "linkId": "BLAKE2b-128(key=link_secret, msg=\"mosaic:link:id:v1\")",
+    "wrappingKey": "BLAKE2b-256(key=link_secret, msg=\"mosaic:link:wrap:v1\")"
+  },
+  "domainLabels": [
+    "mosaic.v1.link.id",
+    "mosaic.v1.link.wrap"
+  ],
+  "inputs": {
+    "linkSecretHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+  },
+  "expected": {
+    "linkIdHex": "0bf33461e2803351e36ef8f8b3e57ac0",
+    "wrappingKeyHex": "ea4c5769be4d28e39e81de1403afedeaa32d6b85916709b45f598c6d48c38e45"
+  },
+  "negativeCases": [
+    {
+      "name": "short-link-secret",
+      "mutations": [
+        "truncate inputs.linkSecretHex to 31 bytes"
+      ],
+      "errorCode": "INVALID_KEY_LENGTH"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "linkId",
+      "classification": "opaque-id",
+      "reason": "Server-visible lookup token; derived from secret never sent to server."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "linkSecret",
+      "reason": "Link secret lives in the URL fragment and must never reach the server.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "wrappingKey",
+      "reason": "Derived wrapping key must stay client-side; equivalent to the link secret.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

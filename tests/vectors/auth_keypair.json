@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "operation": "auth.keypair.derive.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": false,
+  "description": "Derive the auth signing keypair from L0 master key bytes. Captured TS bytes; Rust currently diverges (uses HKDF-SHA256 instead of unkeyed BLAKE2b on context||L0). See deviations.md.",
+  "algorithms": {
+    "kdf": "BLAKE2b-256(msg = \"Mosaic_AuthKey_v1\" || L0_master_key)",
+    "signing": "Ed25519 (RFC 8032 deterministic)"
+  },
+  "domainLabels": [
+    "mosaic.v1.auth.keypair"
+  ],
+  "inputs": {
+    "l0MasterKeyHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+  },
+  "expected": {
+    "authSigningSeedHex": "ff7a15bea29b406647454c0eec9288f0935103a51e7b444106415eee10ee4f14",
+    "authPublicKeyHex": "919f3405c2e9bb25523ba95e8a9da8fceb5c6c0edbaee8f8c7a45d77a73cce31"
+  },
+  "negativeCases": [
+    {
+      "name": "short-l0",
+      "mutations": [
+        "truncate inputs.l0MasterKeyHex to 31 bytes"
+      ],
+      "errorCode": "INVALID_KEY_LENGTH"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "authPublicKey",
+      "classification": "public-cryptographic",
+      "reason": "Auth public key is registered with the server."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "l0MasterKey",
+      "reason": "L0 master key must never reach the server.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "authSigningSeed",
+      "reason": "Auth signing seed is the secret half of the auth keypair.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

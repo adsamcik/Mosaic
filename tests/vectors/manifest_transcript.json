@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "operation": "manifest.transcript.canonical-bytes.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": true,
+  "description": "Canonical manifest transcript bytes. Rust-canonical: TS does not yet ship build_manifest_transcript; the TS runner skips this vector with a TODO referencing Slice 0C.",
+  "algorithms": {
+    "transcript": "\"Mosaic_Manifest_v1\" || version=1 || album_id(16) || epoch_id LE u32 || encrypted_meta_len LE u32 || encrypted_meta || shard_count LE u32 || (chunk_index LE u32 || tier(1) || shard_id(16) || sha256(32))*"
+  },
+  "domainLabels": [
+    "mosaic.v1.manifest.transcript"
+  ],
+  "inputs": {
+    "albumIdHex": "000102030405060708090a0b0c0d0e0f",
+    "epochId": 1111638594,
+    "encryptedMetaHex": "aabbccddeeff00112233",
+    "shards": [
+      {
+        "chunkIndex": 0,
+        "tier": 1,
+        "shardIdHex": "1010101010101010101010101010101a",
+        "sha256Hex": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      {
+        "chunkIndex": 1,
+        "tier": 2,
+        "shardIdHex": "2020202020202020202020202020202b",
+        "sha256Hex": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+        "chunkIndex": 2,
+        "tier": 3,
+        "shardIdHex": "3030303030303030303030303030303c",
+        "sha256Hex": "3333333333333333333333333333333333333333333333333333333333333333"
+      }
+    ]
+  },
+  "expected": {
+    "transcriptHex": "4d6f736169635f4d616e69666573745f763101000102030405060708090a0b0c0d0e0f424242420a000000aabbccddeeff001122330300000000000000011010101010101010101010101010101a111111111111111111111111111111111111111111111111111111111111111101000000022020202020202020202020202020202b222222222222222222222222222222222222222222222222222222222222222202000000033030303030303030303030303030303c3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "negativeCases": [
+    {
+      "name": "empty-shard-list",
+      "mutations": [
+        "remove all entries from inputs.shards"
+      ],
+      "errorCode": "EMPTY_SHARD_LIST"
+    },
+    {
+      "name": "non-sequential-chunk-index",
+      "mutations": [
+        "change shards[1].chunkIndex from 1 to 5"
+      ],
+      "errorCode": "NON_SEQUENTIAL_SHARD_INDEX"
+    },
+    {
+      "name": "empty-encrypted-meta",
+      "mutations": [
+        "set inputs.encryptedMetaHex to \"\""
+      ],
+      "errorCode": "EMPTY_ENCRYPTED_META"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "transcriptBytes",
+      "classification": "public-cryptographic",
+      "reason": "Manifest transcript is the message bytes signed by the album epoch."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "plaintextMetadata",
+      "reason": "Plaintext metadata is replaced by the encrypted_meta envelope inside the transcript.",
+      "errorCode": "PLAINTEXT_METADATA_FORBIDDEN"
+    }
+  ]
+}

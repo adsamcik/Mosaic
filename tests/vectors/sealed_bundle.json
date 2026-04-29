@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "operation": "sharing.bundle.open.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": false,
+  "description": "Verify-and-open of a sealed epoch key bundle. Sealing is non-deterministic; the open direction is byte-exact across clients (libsodium crypto_box_seal_open + Ed25519 verify).",
+  "algorithms": {
+    "seal": "crypto_box_seal (X25519 + XSalsa20-Poly1305 over ephemeral key)",
+    "sign": "Ed25519 detached over (\"Mosaic_EpochBundle_v1\" || sealed)",
+    "payload": "JSON: {version,albumId,epochId,recipientPubkey,epochSeed,signKeypair{pk,sk}} with base64url-no-pad fields"
+  },
+  "domainLabels": [
+    "mosaic.v1.bundle.sign"
+  ],
+  "inputs": {
+    "sealedHex": "97a1b32ba90e22f8bd0370026f6db4a3c12be559b0dcbea20aec5cd55a04412c6a6ce3f98a1492763fe7b0cd2c9a47ded30addf9a35233f37c6a4105e72c0449f0cf970bd8973460830b710b89fd48a178586ab94008e70f82908d0105b6fe188d622ba31e99dd253a73df4d122dd74135bf761563f37ab67ec59d1987df762950e0fea55eb16b9ca6bbcbc5b0a67690a22c85501881a2d267d702ffd0fc3b9da79132c934719519fb77f738d5382613e8847392bf59dc15ff94f22e20aa7445d414b5793eaf876a65a6d0438e06fe95661467521fb66008ae05e36f94bc7d1f40f3cc393a50d07d8211ef3c76fd7f51cbe2e26f94f79ec208170eed9e1c4100f5aac909fc41005207cf9b5684d4997498177580b10b3157d005dd95b5328562a605aab8b37c8483b8185f89bd3c747e945462b8422487e3b55b5a22be4d8348f8e24c60366ad8d8e02a9e7fce013ebbe3f098b4d9d76d2b2661bd5220d0ec7bb3649da3e5ca526309252c83601cf74f7c7522ba35745a0176b727dcb1fb2a59d1e0b08f6c94b49e65e526e20e7a445d4154f4459ab6ad585e379f56f51b491e326fe033",
+    "signatureHex": "cb0bc1d1b9113d5f2726a965f3a255722cb1e4a4f96e51a750a903f96209b8000240f8ddde61cf394ed5665bc7d54f8a577832012a77b6af315a70655f735004",
+    "sharerPubkeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+    "recipientIdentitySeedHex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+    "expectedOwnerEd25519PubHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+    "validation": {
+      "albumId": "00000000-0000-7000-8000-000000000abc",
+      "minEpochId": 0,
+      "allowLegacyEmptyAlbumId": false
+    }
+  },
+  "expected": {
+    "bundleVersion": 1,
+    "bundleAlbumId": "00000000-0000-7000-8000-000000000abc",
+    "bundleEpochId": 66,
+    "bundleRecipientPubkeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+    "bundleEpochSeedHex": "cafe0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+    "bundleSignPublicKeyHex": "fbcf900e65453f91e000e13e2bd9cf156381273e90f0c4b7ad70b97482f66534"
+  },
+  "negativeCases": [
+    {
+      "name": "wrong-owner-pubkey",
+      "mutations": [
+        "flip first byte of inputs.expectedOwnerEd25519PubHex"
+      ],
+      "errorCode": "BUNDLE_SIGNATURE_INVALID"
+    },
+    {
+      "name": "tampered-signature",
+      "mutations": [
+        "flip first byte of inputs.signatureHex"
+      ],
+      "errorCode": "BUNDLE_SIGNATURE_INVALID"
+    },
+    {
+      "name": "tampered-sealed",
+      "mutations": [
+        "flip first byte of inputs.sealedHex"
+      ],
+      "errorCode": "BUNDLE_SIGNATURE_INVALID"
+    },
+    {
+      "name": "album-id-mismatch",
+      "mutations": [
+        "change inputs.validation.albumId to a different UUID"
+      ],
+      "errorCode": "BUNDLE_ALBUM_ID_MISMATCH"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "sealed",
+      "classification": "encrypted",
+      "reason": "Sealed bundle bytes are routed through the server to the recipient."
+    },
+    {
+      "name": "signature",
+      "classification": "public-cryptographic",
+      "reason": "Detached Ed25519 signature is server-visible authenticity proof."
+    },
+    {
+      "name": "sharerPubkey",
+      "classification": "public-cryptographic",
+      "reason": "Sharer identity public key is published as part of the bundle envelope."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "epochSeed",
+      "reason": "Plaintext epoch seed grants tier-key derivation; only the sealed form is shared.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "signKeypairSecret",
+      "reason": "Per-epoch manifest signing secret is bundled secretly; never plaintext server-side.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

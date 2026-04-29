@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "operation": "link.wrap-tier-key.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": false,
+  "description": "Wrap a 32-byte tier key for share-link storage; canonical bytes are TS-shipped XSalsa20-Poly1305 (libsodium crypto_secretbox). Unwrap is byte-exact; wrap is non-deterministic in production.",
+  "algorithms": {
+    "cipher": "XSalsa20-Poly1305 (libsodium crypto_secretbox)",
+    "keyDerivation": "wrappingKey = BLAKE2b-256(key=link_secret, \"mosaic:link:wrap:v1\")"
+  },
+  "domainLabels": [
+    "mosaic.v1.link.wrap"
+  ],
+  "inputs": {
+    "linkSecretHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "tierKeyHex": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+    "tierByte": 3,
+    "nonceHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7"
+  },
+  "expected": {
+    "tier": 3,
+    "nonceHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7",
+    "encryptedKeyHex": "f0357ae9db54c1dd07360df358e616711ac0e5f45ba29ef3b0d690df22e42a2e21c071b55ab135ea8cf98c6098911934",
+    "unwrappedKeyHex": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+  },
+  "negativeCases": [
+    {
+      "name": "tier-mismatch",
+      "mutations": [
+        "unwrap with expected tier=PREVIEW(2) instead of FULL(3)"
+      ],
+      "errorCode": "LINK_TIER_MISMATCH"
+    },
+    {
+      "name": "tampered-ciphertext",
+      "mutations": [
+        "flip first byte of expected.encryptedKeyHex"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED"
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "wrappedTierKey",
+      "classification": "encrypted",
+      "reason": "Wrapped tier key is stored on the server alongside the link record."
+    },
+    {
+      "name": "tier",
+      "classification": "operational-metadata",
+      "reason": "Access tier byte is part of the link manifest record."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "tierKey",
+      "reason": "Plaintext tier keys must never appear server-side.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}
