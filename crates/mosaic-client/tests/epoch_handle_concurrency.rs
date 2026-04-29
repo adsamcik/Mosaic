@@ -72,8 +72,7 @@ fn parallel_encrypts_on_same_epoch_handle_do_not_deadlock_and_all_succeed() {
                     ClientErrorCode::Ok,
                     "thread {thread_index} iter {iteration} encrypt failed"
                 );
-                let decrypted =
-                    decrypt_shard_with_epoch_handle(handle, &encrypted.envelope_bytes);
+                let decrypted = decrypt_shard_with_epoch_handle(handle, &encrypted.envelope_bytes);
                 assert_eq!(
                     decrypted.code,
                     ClientErrorCode::Ok,
@@ -114,15 +113,10 @@ fn registry_observer_is_not_blocked_while_aead_threads_run() {
         workers.push(thread::spawn(move || {
             let mut shard_index = 0u32;
             while !stop.load(Ordering::Relaxed) {
-                let encrypted = encrypt_shard_with_epoch_handle(
-                    handle,
-                    plaintext.as_slice(),
-                    shard_index,
-                    1,
-                );
+                let encrypted =
+                    encrypt_shard_with_epoch_handle(handle, plaintext.as_slice(), shard_index, 1);
                 assert_eq!(encrypted.code, ClientErrorCode::Ok);
-                let decrypted =
-                    decrypt_shard_with_epoch_handle(handle, &encrypted.envelope_bytes);
+                let decrypted = decrypt_shard_with_epoch_handle(handle, &encrypted.envelope_bytes);
                 assert_eq!(decrypted.code, ClientErrorCode::Ok);
                 shard_index = shard_index.wrapping_add(1);
             }

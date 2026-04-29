@@ -13,10 +13,10 @@ use mosaic_wasm::{
     close_identity_handle, create_epoch_key_handle, create_identity_handle,
     crypto_domain_golden_vector_snapshot, decrypt_shard_with_epoch_handle,
     encrypt_metadata_sidecar_with_epoch_handle, encrypt_shard_with_epoch_handle,
-    epoch_key_handle_is_open, identity_encryption_pubkey, identity_signing_pubkey,
-    init_album_sync, init_upload_job, open_epoch_key_handle, open_identity_handle,
-    parse_envelope_header, sign_manifest_with_identity, unlock_account_key,
-    verify_manifest_with_identity, wasm_api_snapshot, wasm_progress_probe,
+    epoch_key_handle_is_open, identity_encryption_pubkey, identity_signing_pubkey, init_album_sync,
+    init_upload_job, open_epoch_key_handle, open_identity_handle, parse_envelope_header,
+    sign_manifest_with_identity, unlock_account_key, verify_manifest_with_identity,
+    wasm_api_snapshot, wasm_progress_probe,
 };
 
 const PASSWORD: &[u8] = b"correct horse battery staple";
@@ -392,12 +392,8 @@ fn wasm_metadata_sidecar_rejects_oversized_field_value_length() {
     encoded.extend_from_slice(&1_u16.to_le_bytes());
     encoded.extend_from_slice(&oversized_len.to_le_bytes());
 
-    let result = canonical_metadata_sidecar_bytes(
-        [0x11; 16].to_vec(),
-        [0x22; 16].to_vec(),
-        7,
-        encoded,
-    );
+    let result =
+        canonical_metadata_sidecar_bytes([0x11; 16].to_vec(), [0x22; 16].to_vec(), 7, encoded);
 
     assert_eq!(result.code, ClientErrorCode::InvalidInputLength.as_u16());
     assert!(result.bytes.is_empty());
@@ -415,12 +411,8 @@ fn wasm_metadata_sidecar_accepts_field_value_at_cap() {
     encoded.extend_from_slice(&cap_u32.to_le_bytes());
     encoded.extend(std::iter::repeat_n(0_u8, cap));
 
-    let result = canonical_metadata_sidecar_bytes(
-        [0x11; 16].to_vec(),
-        [0x22; 16].to_vec(),
-        7,
-        encoded,
-    );
+    let result =
+        canonical_metadata_sidecar_bytes([0x11; 16].to_vec(), [0x22; 16].to_vec(), 7, encoded);
 
     assert_eq!(result.code, 0);
     assert!(result.bytes.starts_with(b"Mosaic_Metadata_v1"));

@@ -395,12 +395,8 @@ fn uniffi_metadata_sidecar_rejects_oversized_field_value_length() {
     encoded.extend_from_slice(&1_u16.to_le_bytes());
     encoded.extend_from_slice(&oversized_len.to_le_bytes());
 
-    let result = canonical_metadata_sidecar_bytes(
-        [0x11; 16].to_vec(),
-        [0x22; 16].to_vec(),
-        7,
-        encoded,
-    );
+    let result =
+        canonical_metadata_sidecar_bytes([0x11; 16].to_vec(), [0x22; 16].to_vec(), 7, encoded);
 
     assert_eq!(result.code, ClientErrorCode::InvalidInputLength.as_u16());
     assert!(result.bytes.is_empty());
@@ -418,12 +414,8 @@ fn uniffi_metadata_sidecar_accepts_field_value_at_cap() {
     encoded.extend_from_slice(&cap_u32.to_le_bytes());
     encoded.extend(std::iter::repeat_n(0_u8, cap));
 
-    let result = canonical_metadata_sidecar_bytes(
-        [0x11; 16].to_vec(),
-        [0x22; 16].to_vec(),
-        7,
-        encoded,
-    );
+    let result =
+        canonical_metadata_sidecar_bytes([0x11; 16].to_vec(), [0x22; 16].to_vec(), 7, encoded);
 
     assert_eq!(result.code, 0);
     assert!(result.bytes.starts_with(b"Mosaic_Metadata_v1"));

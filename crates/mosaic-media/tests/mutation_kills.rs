@@ -424,8 +424,8 @@ fn stripped_webp_clears_all_three_metadata_presence_bits_with_literal_masks() {
     ];
     let bytes = webp_with_chunks(&chunks);
 
-    let stripped = strip_known_metadata(MediaFormat::WebP, &bytes)
-        .expect("VP8X-flagged WebP should strip");
+    let stripped =
+        strip_known_metadata(MediaFormat::WebP, &bytes).expect("VP8X-flagged WebP should strip");
 
     let stripped_flags = read_vp8x_flag_byte(&stripped.bytes);
     assert_eq!(stripped_flags & 0x20, 0, "ICC bit must be cleared");
@@ -621,8 +621,8 @@ fn generate_tiers_with_sidecar_emits_inspected_orientation_in_sidecar() {
         generate_tiers_with_sidecar(&bytes, ids, &encoder).expect("JPEG should generate sidecar");
 
     let inspected = inspect_image(&bytes).expect("source JPEG should inspect");
-    let expected_sidecar = canonical_media_metadata_sidecar_bytes(ids, inspected)
-        .expect("sidecar should serialize");
+    let expected_sidecar =
+        canonical_media_metadata_sidecar_bytes(ids, inspected).expect("sidecar should serialize");
     assert_eq!(generated.metadata_sidecar(), expected_sidecar);
     assert_eq!(inspected.orientation, 8);
 }

@@ -11,8 +11,8 @@ use mosaic_uniffi::{
     ClientCoreAlbumSyncSnapshot, ClientCoreManifestReceipt, ClientCoreUploadJobEvent,
     ClientCoreUploadJobRequest, ClientCoreUploadJobSnapshot, ClientCoreUploadShardRef,
     advance_album_sync, advance_upload_job, canonical_media_metadata_sidecar_bytes,
-    canonical_metadata_sidecar_bytes, close_account_key_handle, close_epoch_key_handle,
-    crate_name, create_epoch_key_handle, init_album_sync, init_upload_job, inspect_media_image,
+    canonical_metadata_sidecar_bytes, close_account_key_handle, close_epoch_key_handle, crate_name,
+    create_epoch_key_handle, init_album_sync, init_upload_job, inspect_media_image,
     parse_envelope_header, plan_media_tier_layout, unlock_account_key,
 };
 use zeroize::Zeroizing;
@@ -608,7 +608,9 @@ fn uniffi_advance_upload_job_emits_recover_manifest_through_sync_effect() {
         .map(|effect| effect.kind.as_str())
         .collect();
     assert!(
-        kinds.iter().any(|kind| kind == &"RecoverManifestThroughSync"),
+        kinds
+            .iter()
+            .any(|kind| kind == &"RecoverManifestThroughSync"),
         "expected RecoverManifestThroughSync effect, observed = {kinds:?}"
     );
 }
@@ -737,10 +739,7 @@ fn uniffi_inspect_media_image_returns_invalid_png_on_truncated_signature() {
     let mut bytes = PNG_SIGNATURE.to_vec();
     bytes.extend_from_slice(&[0_u8; 2]);
     let result = inspect_media_image(bytes);
-    assert_eq!(
-        result.code,
-        ClientErrorCode::InvalidMediaContainer.as_u16()
-    );
+    assert_eq!(result.code, ClientErrorCode::InvalidMediaContainer.as_u16());
     assert_eq!(result.format, "");
 }
 
@@ -748,10 +747,7 @@ fn uniffi_inspect_media_image_returns_invalid_png_on_truncated_signature() {
 fn uniffi_inspect_media_image_returns_invalid_jpeg_on_truncated_jpeg() {
     let bytes = vec![0xff, 0xd8];
     let result = inspect_media_image(bytes);
-    assert_eq!(
-        result.code,
-        ClientErrorCode::InvalidMediaContainer.as_u16()
-    );
+    assert_eq!(result.code, ClientErrorCode::InvalidMediaContainer.as_u16());
 }
 
 #[test]
@@ -760,10 +756,7 @@ fn uniffi_inspect_media_image_returns_invalid_webp_on_truncated_riff() {
     bytes.extend_from_slice(&[0, 0, 0, 0]);
     bytes.extend_from_slice(b"WEBP");
     let result = inspect_media_image(bytes);
-    assert_eq!(
-        result.code,
-        ClientErrorCode::InvalidMediaContainer.as_u16()
-    );
+    assert_eq!(result.code, ClientErrorCode::InvalidMediaContainer.as_u16());
 }
 
 #[test]

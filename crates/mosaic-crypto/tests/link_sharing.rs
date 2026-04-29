@@ -154,9 +154,9 @@ fn derive_link_keys_rejects_wrong_length() {
                 assert_eq!(actual, invalid_len);
             }
             Err(other) => panic!("expected InvalidKeyLength for len={invalid_len}, got {other:?}"),
-            Ok(_) => panic!(
-                "expected derive_link_keys to reject len={invalid_len} but it returned Ok"
-            ),
+            Ok(_) => {
+                panic!("expected derive_link_keys to reject len={invalid_len} but it returned Ok")
+            }
         }
     }
 }

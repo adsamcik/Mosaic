@@ -23,7 +23,7 @@
 use mosaic_domain::{
     EncryptedMetadataEnvelope, MANIFEST_SIGN_CONTEXT, MANIFEST_TRANSCRIPT_VERSION,
     METADATA_SIDECAR_CONTEXT, METADATA_SIDECAR_VERSION, ManifestShardRef, ManifestTranscript,
-    ManifestTranscriptError, MetadataSidecar, MetadataSidecarField, MetadataSidecarError,
+    ManifestTranscriptError, MetadataSidecar, MetadataSidecarError, MetadataSidecarField,
     MosaicDomainError, PROTOCOL_VERSION, SHARD_ENVELOPE_HEADER_LEN, SHARD_ENVELOPE_MAGIC,
     SHARD_ENVELOPE_VERSION, ShardEnvelopeHeader, ShardTier, canonical_manifest_transcript_bytes,
     canonical_metadata_sidecar_bytes, crate_name, golden_vectors, metadata_field_tags,
@@ -112,7 +112,10 @@ fn shard_tier_to_byte_round_trips_each_protocol_value() {
 
     assert_ne!(ShardTier::Thumbnail.to_byte(), ShardTier::Preview.to_byte());
     assert_ne!(ShardTier::Preview.to_byte(), ShardTier::Original.to_byte());
-    assert_ne!(ShardTier::Thumbnail.to_byte(), ShardTier::Original.to_byte());
+    assert_ne!(
+        ShardTier::Thumbnail.to_byte(),
+        ShardTier::Original.to_byte()
+    );
 }
 
 #[test]
@@ -523,7 +526,10 @@ fn golden_manifest_transcript_bytes_have_fixed_canonical_layout() {
         "golden transcript should not collapse to a sentinel value"
     );
     assert_eq!(&bytes[..MANIFEST_SIGN_CONTEXT.len()], MANIFEST_SIGN_CONTEXT);
-    assert_eq!(bytes[MANIFEST_SIGN_CONTEXT.len()], MANIFEST_TRANSCRIPT_VERSION);
+    assert_eq!(
+        bytes[MANIFEST_SIGN_CONTEXT.len()],
+        MANIFEST_TRANSCRIPT_VERSION
+    );
 }
 
 #[test]
