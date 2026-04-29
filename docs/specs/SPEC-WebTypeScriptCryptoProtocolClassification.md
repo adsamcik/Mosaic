@@ -68,6 +68,45 @@ Band 4 / Phase D classification for the `ts-crypto-classification` lane. This is
 
 `apps/web/tests/rust-cutover-boundary.test.ts` is the focused guard for this classification. New production imports of generated Rust WASM, `rust-crypto-core`, `@mosaic/crypto`, or `libsodium-wrappers-sumo` must either fail this test or be added to an explicit allowlist with a blocker note. This keeps web thin-shell cleanup dependency-safe while Bands 2 and 3 are still unmerged.
 
+### Lane B (Band 5) hardening
+
+The Lane B work expanded the boundary guard from a file-level fence to a
+**per-symbol fence**. Every entry in `tsCryptoCompatibility` now declares
+the exact set of `@mosaic/crypto` identifiers the file is allowed to
+import. Adding a new identifier — even to an already-classified file —
+fails the test until the SPEC is updated.
+
+The guard also enforces:
+
+- A `PROTOCOL_CLASS_SYMBOLS` set listing every symbol that touches
+  encryption, signing, key derivation, or envelope construction. Any
+  allowlist entry that exposes a protocol-class symbol must justify it
+  with rationale containing `facade`, `compatibility`, or
+  `pending Rust`.
+- Wildcard imports (`import * as crypto from '@mosaic/crypto'`) are
+  rejected because they bypass per-symbol classification.
+- The new `apps/web/src/lib/conflict-resolution.ts` module is verified
+  to be shell-class — it must never import `@mosaic/crypto`,
+  libsodium, or `rust-crypto-core`.
+- The new `notifyContentConflict` seam in `apps/web/src/lib/sync-engine.ts`
+  is statically checked against accidentally referencing `epochSeed`,
+  `signSecretKey`, `identitySecret`, or `accountKey` — i.e. the
+  conflict-event payload cannot leak key material.
+
+### Sync conflict resolution (Lane B addition)
+
+`apps/web/src/lib/conflict-resolution.ts` is the deterministic
+three-way merge implementation described in
+`docs/specs/SPEC-SyncConflictResolution.md` Phase 1+2:
+
+- Pure functions, no I/O, no crypto, no logging.
+- Falls back to LWW (server wins) when no base snapshot is available.
+- Performs three-way block-level merge with LWW fallback for same-block
+  conflicts when a base is available.
+- Surfaces conflicts via the new `content-conflict` event on
+  `syncEngine`, which `SyncCoordinator.onContentConflict` forwards to UI
+  listeners with a sanitised payload (opaque ids and counts only).
+
 ## Deletion sequencing blockers
 
 1. Do not remove web upload, manifest, sync, epoch/share-link, or crypto-worker TypeScript until Band 2/3 Rust WASM APIs are merged and wired in this worktree.

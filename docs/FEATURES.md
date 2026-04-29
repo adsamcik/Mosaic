@@ -548,6 +548,31 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 
 ---
 
+### Sync Conflict Resolution
+
+**Purpose:** Resolve concurrent edits to album content (block-based story documents) deterministically when two clients save against the same epoch, per `docs/specs/SPEC-SyncConflictResolution.md`.
+
+**Implementation:**
+| Layer            | Location                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| Pure resolver    | [lib/conflict-resolution.ts](../apps/web/src/lib/conflict-resolution.ts)                       |
+| Sync event seam  | [lib/sync-engine.ts](../apps/web/src/lib/sync-engine.ts) (`notifyContentConflict`)             |
+| Coordinator API  | [lib/sync-coordinator.tsx](../apps/web/src/lib/sync-coordinator.tsx) (`onContentConflict`)     |
+| Save integration | [contexts/AlbumContentContext.tsx](../apps/web/src/contexts/AlbumContentContext.tsx)           |
+
+**Features:**
+- Three-way block-level merge with LWW fallback for same-block conflicts (Phase 2).
+- Pure LWW (server-wins) when no shared base snapshot is available (Phase 1).
+- Deterministic merge: blocks sorted by fractional position with id tiebreak so the merged document is identical across runs and platforms.
+- Auto-resolved decisions and manual conflicts are reported separately so UI only nags the user when the merge could not pick a clear winner.
+- Conflict-event payloads carry only opaque block ids and resolution counts — never plaintext blocks, never key material — preserving zero-knowledge invariants.
+
+**Tests:**
+- Frontend: `apps/web/tests/conflict-resolution.test.ts` (17 unit tests covering the SPEC §7 scenarios — simultaneous adds, simultaneous edits, edit-vs-delete, mutual delete, deterministic ordering, no-base fallback)
+- Frontend: `apps/web/tests/sync-coordinator.test.ts` (6 tests for the listener-forwarding seam, including listener-throws isolation and key-material redaction)
+
+---
+
 ## UI/UX Features
 
 ### Theme Support
@@ -836,6 +861,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-04-29 | Sync Conflict Resolution     | Added    | Lane B: deterministic three-way block merge with LWW fallback for album content; expanded rust-cutover boundary guard to per-symbol classification |
 | 2026-04-29 | Android Main Module (Rust UniFFI APK) | Added | First real Android Gradle module wiring `mosaic-uniffi` cdylib + JNA Kotlin bindings into a debug APK; closes 11-bridge FFI drift between `apps/android-shell` and `crates/mosaic-uniffi` |
 | 2026-04-28 | Timed Album/Photo Expiration | Modified | Backend adds server-clock album/photo expiry, deterministic sweeps, access enforcement, and focused tests |
 | 2026-04-28 | Photo Description Editing   | Added    | Owners/editors can edit encrypted photo descriptions from the lightbox without exposing plaintext to the server |
