@@ -39,12 +39,13 @@ describe('Salt Encryption/Decryption', () => {
       expect(nonce.length).toBe(12);
     });
 
-    it('produces encrypted salt with auth tag (16 bytes + plaintext size)', async () => {
+    it('produces encrypted salt with v2 version byte + auth tag (1 + plaintext + 16)', async () => {
       const result = await encryptSalt(testSalt, testPassword, testUsername);
       const encrypted = fromBase64(result.encryptedSalt);
 
-      // AES-GCM adds 16-byte auth tag
-      expect(encrypted.length).toBe(testSalt.length + 16);
+      // v2 envelope = 1 byte version (0x02) + plaintext + 16-byte AES-GCM auth tag
+      expect(encrypted.length).toBe(1 + testSalt.length + 16);
+      expect(encrypted[0]).toBe(0x02);
     });
 
     it('produces different ciphertext each time due to random nonce', async () => {

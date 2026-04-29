@@ -1,3 +1,5 @@
+import sodium from 'libsodium-wrappers-sumo';
+import { getArgon2Params } from '@mosaic/crypto';
 import { toArrayBufferView } from './buffer-utils';
 import { clearAllCovers } from './album-cover-service';
 import { clearAllCachedMetadata } from './album-metadata-service';
@@ -38,8 +40,33 @@ const USER_SALT_KEY = 'mosaic:userSalt';
 /** Session state stored in sessionStorage for page reload detection */
 const SESSION_STATE_KEY = 'mosaic:sessionState';
 
-/** PBKDF2 iterations for salt encryption key derivation */
-const SALT_ENCRYPTION_ITERATIONS = 100000;
+/**
+ * Salt-encryption envelope format.
+ *
+ * On-wire layout for the `User.encryptedSalt` blob (after base64 decode):
+ *
+ *   v2: [0x02][AES-GCM ciphertext+tag]   (current; KDF = Argon2id)
+ *   v1: [AES-GCM ciphertext+tag]         (legacy; KDF = PBKDF2-100k(username))
+ *
+ * The 12-byte AES-GCM nonce stays in `User.saltNonce` for both versions.
+ *
+ * Legacy v1 payloads are still decryptable so existing users can log in,
+ * but every successful v1 decryption transparently re-encrypts the salt
+ * as v2 and pushes it to the server. Migration is best-effort: if the
+ * upload fails we log a warning and continue — the user is still logged
+ * in, and the next login simply retries the upgrade.
+ *
+ * Argon2id's per-user salt is NOT stored on the server. Instead, it is
+ * deterministically derived from a domain-separated BLAKE2b hash of the
+ * username, so v2 introduces no new server-side fields.
+ */
+const SALT_ENCRYPTION_VERSION_V2 = 0x02;
+
+/** Domain-separation prefix for the Argon2id salt to prevent cross-protocol reuse. */
+const SALT_ENCRYPTION_DOMAIN_V2 = 'mosaic-salt-encryption-v2|';
+
+/** Legacy PBKDF2 iteration count - retained for backward-compatible v1 decryption only. */
+const LEGACY_SALT_ENCRYPTION_PBKDF2_ITERATIONS = 100000;
 
 type SessionListener = () => void;
 
@@ -74,15 +101,76 @@ export class SaltDecryptionError extends Error {
 }
 
 /**
- * Derive a key for encrypting/decrypting the user salt.
- * Uses PBKDF2 with username as salt (since we don't have the user salt yet).
- * This solves the chicken-egg problem: we need a key before we have the salt.
+ * Derive a 16-byte Argon2id salt from the username.
+ *
+ * Argon2id's memory cost makes targeted attacks on per-user salts uneconomic,
+ * so deriving the salt deterministically from the username is acceptable.
+ * The fixed Mosaic-specific domain-separation prefix prevents cross-protocol
+ * reuse against any other system that might also use this username.
+ *
+ * Hash output is 16 bytes which matches `crypto_pwhash_SALTBYTES`.
  */
-async function deriveSaltEncryptionKey(
+async function deriveArgon2SaltForUser(username: string): Promise<Uint8Array> {
+  await sodium.ready;
+  const input = new TextEncoder().encode(SALT_ENCRYPTION_DOMAIN_V2 + username);
+  return sodium.crypto_generichash(16, input);
+}
+
+/**
+ * Derive the v2 AES-GCM key from the password using Argon2id (libsodium).
+ *
+ * The 32-byte raw key from Argon2id is imported into Web Crypto as a
+ * non-extractable AES-GCM key, then the raw buffer (and the password
+ * buffer) are zeroed before this function returns.
+ */
+async function deriveSaltEncryptionKeyV2(
   password: string,
   username: string,
 ): Promise<CryptoKey> {
-  // Import password as a key
+  await sodium.ready;
+  const argon2Params = getArgon2Params();
+  const argonSalt = await deriveArgon2SaltForUser(username);
+  const passwordBytes = new TextEncoder().encode(password);
+
+  let derived: Uint8Array | null = null;
+  try {
+    derived = sodium.crypto_pwhash(
+      32,
+      passwordBytes,
+      argonSalt,
+      argon2Params.iterations,
+      argon2Params.memory * 1024, // KiB → bytes
+      sodium.crypto_pwhash_ALG_ARGON2ID13,
+    );
+
+    // importKey copies the bytes internally; we can safely zero `derived` after.
+    return await crypto.subtle.importKey(
+      'raw',
+      toArrayBufferView(derived),
+      'AES-GCM',
+      false,
+      ['encrypt', 'decrypt'],
+    );
+  } finally {
+    sodium.memzero(passwordBytes);
+    if (derived) {
+      sodium.memzero(derived);
+    }
+    sodium.memzero(argonSalt);
+  }
+}
+
+/**
+ * Derive the legacy v1 AES-GCM key (PBKDF2-100k with username as salt).
+ *
+ * Retained ONLY so existing users with v1 payloads can still log in. Any
+ * successful v1 decryption immediately triggers a re-encryption with v2
+ * via {@link migrateLegacySaltToV2}.
+ */
+async function deriveSaltEncryptionKeyV1Legacy(
+  password: string,
+  username: string,
+): Promise<CryptoKey> {
   const passwordKey = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(password),
@@ -91,54 +179,97 @@ async function deriveSaltEncryptionKey(
     ['deriveKey'],
   );
 
-  // Use username as the salt for PBKDF2
   const usernameSalt = new TextEncoder().encode(username);
 
-  // Derive AES-GCM key
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt: usernameSalt,
-      iterations: SALT_ENCRYPTION_ITERATIONS,
+      iterations: LEGACY_SALT_ENCRYPTION_PBKDF2_ITERATIONS,
       hash: 'SHA-256',
     },
     passwordKey,
     { name: 'AES-GCM', length: 256 },
     false,
-    ['encrypt', 'decrypt'],
+    ['decrypt'],
   );
+}
+
+/** Build a v2 envelope (`0x02 || ciphertext+tag`) from a raw AES-GCM ciphertext. */
+function encodeV2Envelope(ciphertext: Uint8Array): Uint8Array {
+  const envelope = new Uint8Array(1 + ciphertext.length);
+  envelope[0] = SALT_ENCRYPTION_VERSION_V2;
+  envelope.set(ciphertext, 1);
+  return envelope;
+}
+
+/**
+ * Best-effort migration of a legacy v1 payload to v2.
+ *
+ * Called from {@link decryptSalt} after a successful v1 decryption. A failed
+ * upload MUST NOT block login — we simply log a warning and let the next
+ * login retry the upgrade.
+ */
+async function migrateLegacySaltToV2(
+  salt: Uint8Array,
+  password: string,
+  username: string,
+): Promise<void> {
+  try {
+    const { encryptedSalt, saltNonce } = await encryptSalt(
+      salt,
+      password,
+      username,
+    );
+    await getApi().updateCurrentUser({ encryptedSalt, saltNonce });
+    log.info('Migrated salt encryption from PBKDF2 v1 to Argon2id v2');
+  } catch (error) {
+    log.warn(
+      'Failed to migrate salt encryption to v2 - will retry on next login',
+      { error },
+    );
+  }
 }
 
 /**
  * Encrypt the user salt with a password-derived key.
- * Returns the encrypted salt and nonce as base64 strings.
+ *
+ * Always emits the v2 envelope (Argon2id KDF, version-byte prefix).
  */
 export async function encryptSalt(
   salt: Uint8Array,
   password: string,
   username: string,
 ): Promise<{ encryptedSalt: string; saltNonce: string }> {
-  const key = await deriveSaltEncryptionKey(password, username);
+  const key = await deriveSaltEncryptionKeyV2(password, username);
 
-  // Generate random nonce (12 bytes for AES-GCM)
   const nonce = crypto.getRandomValues(new Uint8Array(12));
 
-  // Encrypt the salt
-  const encrypted = await crypto.subtle.encrypt(
+  const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
     key,
     toArrayBufferView(salt),
   );
 
+  const envelope = encodeV2Envelope(new Uint8Array(ciphertext));
+
   return {
-    encryptedSalt: toBase64(new Uint8Array(encrypted)),
+    encryptedSalt: toBase64(envelope),
     saltNonce: toBase64(nonce),
   };
 }
 
 /**
  * Decrypt the user salt with a password-derived key.
- * Throws SaltDecryptionError if decryption fails (wrong password).
+ *
+ * Tries v2 first (Argon2id, version byte `0x02`). On version-byte mismatch
+ * or AES-GCM auth failure, falls back to the legacy v1 path (PBKDF2-100k).
+ * A successful v1 decryption transparently re-encrypts the salt with v2
+ * and uploads it to the server (best-effort; failures are logged but do
+ * not block login).
+ *
+ * Throws {@link SaltDecryptionError} if both paths fail (wrong password,
+ * tampered ciphertext, or unrecognised envelope).
  */
 export async function decryptSalt(
   encryptedSaltBase64: string,
@@ -146,20 +277,45 @@ export async function decryptSalt(
   password: string,
   username: string,
 ): Promise<Uint8Array> {
-  const key = await deriveSaltEncryptionKey(password, username);
-  const encryptedSalt = fromBase64(encryptedSaltBase64);
+  const envelope = fromBase64(encryptedSaltBase64);
   const nonce = fromBase64(saltNonceBase64);
 
+  // --- Try v2 first ---
+  if (envelope.length > 1 && envelope[0] === SALT_ENCRYPTION_VERSION_V2) {
+    try {
+      const key = await deriveSaltEncryptionKeyV2(password, username);
+      const ciphertext = envelope.subarray(1);
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
+        key,
+        toArrayBufferView(ciphertext),
+      );
+      return new Uint8Array(decrypted);
+    } catch {
+      // Fall through to v1 in case the version byte happens to coincide
+      // with a legacy ciphertext's first byte (1-in-256 chance).
+    }
+  }
+
+  // --- Try legacy v1 (PBKDF2-100k(username)) ---
+  let salt: Uint8Array;
   try {
+    const key = await deriveSaltEncryptionKeyV1Legacy(password, username);
     const decrypted = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
       key,
-      toArrayBufferView(encryptedSalt),
+      toArrayBufferView(envelope),
     );
-    return new Uint8Array(decrypted);
+    salt = new Uint8Array(decrypted);
   } catch {
     throw new SaltDecryptionError();
   }
+
+  // v1 succeeded — transparently upgrade the server-stored payload to v2.
+  // This MUST NOT throw: a failed migration upload still allows login.
+  await migrateLegacySaltToV2(salt, password, username);
+
+  return salt;
 }
 
 /**
