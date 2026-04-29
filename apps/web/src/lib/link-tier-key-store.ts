@@ -2,12 +2,17 @@
  * Link Tier Key Store
  *
  * Secure storage for share link tier keys in IndexedDB.
- * Keys are encrypted with AES-256-GCM using a session-bound encryption key
- * stored in sessionStorage (cleared when tab closes).
+ * Keys are encrypted with AES-256-GCM using a session-bound, non-extractable
+ * encryption key held only in memory for the lifetime of the page.
  *
  * Security properties:
  * - Tier keys are encrypted before IndexedDB storage
- * - Encryption key exists only in memory + sessionStorage (cleared on tab close)
+ * - The encryption key is non-extractable: its raw bytes are never reachable
+ *   from JavaScript (no exportKey, no sessionStorage persistence). Same-origin
+ *   scripts therefore cannot read it via sessionStorage even with XSS.
+ * - On full page reload (or new tab) the in-memory key is gone; existing
+ *   IndexedDB entries become undecryptable and are treated as a cache miss
+ *   so the link tier keys get refetched from the server.
  * - Automatic migration from legacy unencrypted format
  * - Defense-in-depth against IndexedDB access
  */
@@ -18,7 +23,7 @@ import type { AccessTier as AccessTierType } from './api-types';
 
 const log = createLogger('LinkTierKeyStore');
 
-/** Storage key for the link encryption key (persisted in sessionStorage) */
+/** Storage key for legacy persisted link encryption key (cleared on logout). */
 const LINK_KEY_STORAGE_KEY = 'mosaic:linkKeyEncryption';
 
 /** In-memory encryption key for link tier keys */
@@ -98,63 +103,38 @@ function fromBase64(base64: string): Uint8Array {
 }
 
 /**
- * Get or create the encryption key for link tier keys.
- * The key is persisted in sessionStorage so it survives page reloads
- * but is cleared when the tab closes.
+ * Get or create the in-memory encryption key for link tier keys.
+ *
+ * The key is non-extractable and is intentionally NOT persisted to
+ * sessionStorage: persisting the raw bytes would let any same-origin script
+ * (XSS, malicious extension) decrypt the IndexedDB-stored wrapped link tier
+ * keys. As a tradeoff, the key is lost on full page reload — existing
+ * IndexedDB entries become undecryptable and `getTierKeys()` falls back to
+ * "cache miss, refetch from server."
  */
 async function getLinkEncryptionKey(): Promise<CryptoKey> {
   if (linkEncryptionKey) {
     return linkEncryptionKey;
   }
 
-  // Try to restore from sessionStorage first
-  const storedKey = sessionStorage.getItem(LINK_KEY_STORAGE_KEY);
-  if (storedKey) {
-    try {
-      const keyBytes = fromBase64(storedKey);
-      linkEncryptionKey = await crypto.subtle.importKey(
-        'raw',
-        toArrayBufferView(keyBytes),
-        { name: 'AES-GCM', length: 256 },
-        true, // Extractable so we can persist it
-        ['encrypt', 'decrypt'],
-      );
-      log.debug('Restored link encryption key from sessionStorage');
-      return linkEncryptionKey;
-    } catch (error) {
-      log.error(
-        'Failed to restore link encryption key, generating new one',
-        error,
-      );
-      sessionStorage.removeItem(LINK_KEY_STORAGE_KEY);
-    }
-  }
-
-  // Generate a random AES-256 key
   linkEncryptionKey = await crypto.subtle.generateKey(
     { name: 'AES-GCM', length: 256 },
-    true, // Extractable so we can persist it
+    false,
     ['encrypt', 'decrypt'],
   );
 
-  // Persist to sessionStorage for page reloads
-  try {
-    const keyBytes = await crypto.subtle.exportKey('raw', linkEncryptionKey);
-    sessionStorage.setItem(
-      LINK_KEY_STORAGE_KEY,
-      toBase64(new Uint8Array(keyBytes)),
-    );
-    log.debug('Generated and persisted new link encryption key');
-  } catch (error) {
-    log.error('Failed to persist link encryption key', error);
-  }
+  log.debug('Generated new non-extractable link encryption key');
 
   return linkEncryptionKey;
 }
 
 /**
- * Clear the in-memory encryption key and sessionStorage.
+ * Clear the in-memory encryption key.
  * Called on logout to ensure keys cannot be recovered.
+ *
+ * Also clears the legacy `LINK_KEY_STORAGE_KEY` sessionStorage entry so that
+ * sessions upgraded from older builds do not leave the (now-unused) raw key
+ * sitting in storage.
  */
 export function clearLinkKeyEncryption(): void {
   linkEncryptionKey = null;
