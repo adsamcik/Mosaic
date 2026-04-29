@@ -184,7 +184,7 @@ export async function createCryptoWorkerHarness(options?: {
   const api = Comlink.wrap<CryptoWorkerApi>(worker);
 
   // Confirm initialization. The current contract has no `ensureReady` method,
-  // so we issue a cheap no-op that exercises the Comlink boundary: getSessionKey
+  // so we issue a cheap no-op that exercises the Comlink boundary: getDbSessionKey
   // returns null (or throws "not initialized") — both confirm the worker is
   // alive and responsive.
   try {
@@ -311,10 +311,10 @@ const SECRET_BEARING_METHODS: ReadonlyArray<{
   { name: 'getWrappedAccountKey', classification: 'wrapped' },
   { name: 'getIdentityPublicKey', classification: 'public' },
   { name: 'getAuthPublicKey', classification: 'public' },
-  // Slice 1 will redesign these to never return raw bytes. The harness
-  // currently tolerates the legacy raw-bytes shape and only sanity-checks
-  // length + entropy.
-  { name: 'getSessionKey', classification: 'random' },
+  // Slice 2 renamed `getSessionKey` → `getDbSessionKey`. The bytes are
+  // still random and only emitted while the worker is initialised; the
+  // harness keeps treating them as opaque.
+  { name: 'getDbSessionKey', classification: 'random' },
 ];
 
 async function assertNoRawSecrets(
@@ -438,7 +438,7 @@ function inspectObjectForRawSecrets(
 export interface LifecycleHarness {
   /**
    * Initialize a session with weak Argon2 params (E2E mode). Returns true
-   * once `getSessionKey()` produces non-null bytes.
+   * once `getDbSessionKey()` produces non-null bytes.
    */
   readonly bringToInitialized: (
     password?: string,
@@ -464,7 +464,7 @@ function buildLifecycleHarness(
       const us = userSalt ?? makeFixedSalt(0x11);
       const as = accountSalt ?? makeFixedSalt(0x22);
       await api.init(password, us, as);
-      const key = await api.getSessionKey();
+      const key = await api.getDbSessionKey();
       return key instanceof Uint8Array && key.length === 32;
     },
     async closeIdempotent(rounds: number) {
@@ -482,10 +482,10 @@ function buildLifecycleHarness(
     },
     async observeUseAfterClose() {
       try {
-        // After clear(), getSessionKey should reject with a "not initialized"
+        // After clear(), getDbSessionKey should reject with a "not initialized"
         // -shaped error. We treat both reject and a "null" result as
         // observable, but reject is the contract Slice 1 will enforce.
-        const result = await api.getSessionKey();
+        const result = await api.getDbSessionKey();
         if (result === null || result === undefined) {
           // current legacy behaviour returns null; surface it as an Error
           // so the test can assert on either branch.

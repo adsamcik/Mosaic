@@ -80,6 +80,18 @@ pub struct AccountUnlockResult {
     pub handle: u64,
 }
 
+/// Rust-side WASM facade new-account creation result.
+///
+/// Returned by [`create_new_account`]. Carries the freshly minted account
+/// handle plus the wrapped account key the caller must persist on the
+/// server. The L2 account key never crosses the WASM boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateAccountResult {
+    pub code: u16,
+    pub handle: u64,
+    pub wrapped_account_key: Vec<u8>,
+}
+
 /// Rust-side WASM facade account-key handle status result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccountKeyHandleStatusResult {
@@ -596,6 +608,39 @@ impl JsAccountUnlockResult {
     #[must_use]
     pub fn handle(&self) -> u64 {
         self.handle
+    }
+}
+
+/// WASM-bindgen class for new-account creation results.
+#[wasm_bindgen(js_name = CreateAccountResult)]
+pub struct JsCreateAccountResult {
+    code: u16,
+    handle: u64,
+    wrapped_account_key: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = CreateAccountResult)]
+impl JsCreateAccountResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Opaque Rust-owned account-key handle for the newly minted L2.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn handle(&self) -> u64 {
+        self.handle
+    }
+
+    /// Server-storable wrapped account key. Caller persists this; it is
+    /// re-supplied at the next login as the input to `unlockAccountKey`.
+    #[wasm_bindgen(getter, js_name = wrappedAccountKey)]
+    #[must_use]
+    pub fn wrapped_account_key(&self) -> Vec<u8> {
+        self.wrapped_account_key.clone()
     }
 }
 
@@ -1208,6 +1253,80 @@ pub fn unlock_account_key(
     account_unlock_result_from_client(result)
 }
 
+/// Creates a fresh account-key handle in a single Argon2id pass.
+///
+/// Generates a random L2, wraps it under L1 (`Argon2id(password,
+/// user_salt) → HKDF(account_salt)`), and opens an opaque secret handle.
+/// The caller-owned `password` buffer is zeroized on every path before
+/// this function returns.
+#[must_use]
+pub fn create_new_account(
+    mut password: Vec<u8>,
+    user_salt: Vec<u8>,
+    account_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> CreateAccountResult {
+    let result = mosaic_client::create_new_account_handle(
+        password.as_mut_slice(),
+        &user_salt,
+        &account_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    );
+    password.zeroize();
+    create_account_result_from_client(result)
+}
+
+/// Wraps `plaintext` with the L2 account key referenced by `account_handle`.
+#[must_use]
+pub fn wrap_with_account_handle(account_handle: u64, plaintext: Vec<u8>) -> BytesResult {
+    let result = mosaic_client::wrap_with_account_handle(account_handle, &plaintext);
+    bytes_result_from_client(result)
+}
+
+/// Unwraps a previously wrapped blob with the L2 account key referenced by
+/// `account_handle`.
+#[must_use]
+pub fn unwrap_with_account_handle(account_handle: u64, wrapped: Vec<u8>) -> BytesResult {
+    let result = mosaic_client::unwrap_with_account_handle(account_handle, &wrapped);
+    bytes_result_from_client(result)
+}
+
+/// Derives the OPFS-snapshot DB session key from the L2 account key
+/// referenced by `account_handle`.
+#[must_use]
+pub fn derive_db_session_key_from_account(account_handle: u64) -> BytesResult {
+    bytes_result_from_client(mosaic_client::derive_db_session_key_from_account_handle(
+        account_handle,
+    ))
+}
+
+/// Builds the canonical LocalAuth challenge transcript byte string.
+///
+/// `timestamp_ms_present == false` omits the timestamp segment to match
+/// the optional shape the backend accepts. Returns
+/// `ClientErrorCode::InvalidUsername` for empty/invalid usernames or
+/// `InvalidInputLength` for non-32-byte challenges.
+#[must_use]
+pub fn build_auth_challenge_transcript(
+    username: String,
+    timestamp_ms: u64,
+    timestamp_ms_present: bool,
+    challenge: Vec<u8>,
+) -> BytesResult {
+    let timestamp = if timestamp_ms_present {
+        Some(timestamp_ms)
+    } else {
+        None
+    };
+    bytes_result_from_client(mosaic_client::build_auth_challenge_transcript_for_ffi(
+        &username, timestamp, &challenge,
+    ))
+}
+
 /// Returns whether an account-key handle is currently open.
 #[must_use]
 pub fn account_key_handle_is_open(handle: u64) -> AccountKeyHandleStatusResult {
@@ -1606,6 +1725,85 @@ pub fn get_auth_public_key_from_account(account_handle: u64) -> BytesResult {
     ))
 }
 
+/// Derives the password-rooted LocalAuth Ed25519 keypair from `password` +
+/// `user_salt` (Argon2id+HKDF) and returns the public key.
+///
+/// Used by LocalAuth login/register **before** an account handle is open.
+/// The auth signing secret stays Rust-side; only the 32-byte public key
+/// crosses the WASM boundary. The caller-owned `password` buffer is
+/// zeroized on every path before this function returns.
+#[must_use]
+pub fn derive_auth_keypair_from_password(
+    mut password: Vec<u8>,
+    user_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> AuthKeypairResult {
+    let result = mosaic_client::derive_auth_keypair_from_password(
+        password.as_mut_slice(),
+        &user_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    );
+    password.zeroize();
+    auth_keypair_result_from_client(result)
+}
+
+/// Signs a caller-built LocalAuth challenge transcript with the
+/// password-rooted auth keypair.
+///
+/// Re-runs Argon2id+HKDF on every call. Used by the worker's pre-auth
+/// signing path during LocalAuth login/register. The caller-owned
+/// `password` buffer is zeroized on every path before this function
+/// returns.
+#[must_use]
+pub fn sign_auth_challenge_with_password(
+    mut password: Vec<u8>,
+    user_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+    transcript_bytes: Vec<u8>,
+) -> BytesResult {
+    let result = mosaic_client::sign_auth_challenge_with_password(
+        password.as_mut_slice(),
+        &user_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+        &transcript_bytes,
+    );
+    password.zeroize();
+    bytes_result_from_client(result)
+}
+
+/// Returns the 32-byte Ed25519 LocalAuth public key derived from
+/// `password` + `user_salt`.
+///
+/// Convenience wrapper. Re-runs Argon2id+HKDF on every call; callers who
+/// also need to sign should prefer `sign_auth_challenge_with_password` to
+/// amortise the KDF cost.
+#[must_use]
+pub fn get_auth_public_key_from_password(
+    mut password: Vec<u8>,
+    user_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> BytesResult {
+    let result = mosaic_client::get_auth_public_key_from_password(
+        password.as_mut_slice(),
+        &user_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    );
+    password.zeroize();
+    bytes_result_from_client(result)
+}
+
 /// Generates a fresh 32-byte share-link secret using the OS CSPRNG.
 #[must_use]
 pub fn generate_link_secret() -> BytesResult {
@@ -1802,6 +2000,29 @@ pub fn unlock_account_key_js(
             kdf_iterations,
             kdf_parallelism,
         },
+    ))
+}
+
+/// Creates a fresh account-key handle through the generated WASM binding
+/// surface. Returns the opaque handle plus the wrapped account key the
+/// caller must persist on the server for future logins.
+#[wasm_bindgen(js_name = createAccount)]
+#[must_use]
+pub fn create_account_js(
+    password: Vec<u8>,
+    user_salt: Vec<u8>,
+    account_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> JsCreateAccountResult {
+    js_create_account_result_from_rust(create_new_account(
+        password,
+        user_salt,
+        account_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
     ))
 }
 
@@ -2182,6 +2403,50 @@ pub fn unwrap_key_js(wrapped: Vec<u8>, wrapper_key: Vec<u8>) -> JsBytesResult {
     js_bytes_result_from_rust(unwrap_key(wrapped, wrapper_key))
 }
 
+/// Wraps `plaintext` with the L2 account key referenced by `account_handle`
+/// through WASM. The L2 bytes never cross the JS boundary.
+#[wasm_bindgen(js_name = wrapWithAccountHandle)]
+#[must_use]
+pub fn wrap_with_account_handle_js(account_handle: u64, plaintext: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(wrap_with_account_handle(account_handle, plaintext))
+}
+
+/// Unwraps `wrapped` with the L2 account key referenced by `account_handle`
+/// through WASM.
+#[wasm_bindgen(js_name = unwrapWithAccountHandle)]
+#[must_use]
+pub fn unwrap_with_account_handle_js(account_handle: u64, wrapped: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(unwrap_with_account_handle(account_handle, wrapped))
+}
+
+/// Derives the OPFS-snapshot DB session key from the L2 account key
+/// referenced by `account_handle` through WASM. Caller MUST memzero the
+/// returned bytes after use.
+#[wasm_bindgen(js_name = deriveDbSessionKeyFromAccount)]
+#[must_use]
+pub fn derive_db_session_key_from_account_js(account_handle: u64) -> JsBytesResult {
+    js_bytes_result_from_rust(derive_db_session_key_from_account(account_handle))
+}
+
+/// Builds the canonical LocalAuth challenge transcript through WASM.
+///
+/// `timestamp_ms_present == false` omits the timestamp segment.
+#[wasm_bindgen(js_name = buildAuthChallengeTranscript)]
+#[must_use]
+pub fn build_auth_challenge_transcript_js(
+    username: String,
+    timestamp_ms: u64,
+    timestamp_ms_present: bool,
+    challenge: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(build_auth_challenge_transcript(
+        username,
+        timestamp_ms,
+        timestamp_ms_present,
+        challenge,
+    ))
+}
+
 /// Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
 #[wasm_bindgen(js_name = deriveAuthKeypairFromAccount)]
 #[must_use]
@@ -2207,6 +2472,71 @@ pub fn sign_auth_challenge_with_account_js(
 #[must_use]
 pub fn get_auth_public_key_from_account_js(account_handle: u64) -> JsBytesResult {
     js_bytes_result_from_rust(get_auth_public_key_from_account(account_handle))
+}
+
+/// Derives the password-rooted LocalAuth Ed25519 keypair through WASM.
+///
+/// Used by the worker's `deriveAuthKey()` pre-auth slot to mint an auth
+/// keypair before the account handle is opened. Only the 32-byte public
+/// key crosses the WASM boundary.
+#[wasm_bindgen(js_name = deriveAuthKeypairFromPassword)]
+#[must_use]
+pub fn derive_auth_keypair_from_password_js(
+    password: Vec<u8>,
+    user_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> JsAuthKeypairResult {
+    js_auth_keypair_result_from_rust(derive_auth_keypair_from_password(
+        password,
+        user_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    ))
+}
+
+/// Signs a LocalAuth challenge transcript with the password-rooted auth
+/// keypair through WASM.
+#[wasm_bindgen(js_name = signAuthChallengeWithPassword)]
+#[must_use]
+pub fn sign_auth_challenge_with_password_js(
+    password: Vec<u8>,
+    user_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+    transcript_bytes: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(sign_auth_challenge_with_password(
+        password,
+        user_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+        transcript_bytes,
+    ))
+}
+
+/// Returns the LocalAuth Ed25519 public key derived from `password` +
+/// `user_salt` through WASM.
+#[wasm_bindgen(js_name = getAuthPublicKeyFromPassword)]
+#[must_use]
+pub fn get_auth_public_key_from_password_js(
+    password: Vec<u8>,
+    user_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(get_auth_public_key_from_password(
+        password,
+        user_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    ))
 }
 
 /// Generates a fresh share-link secret through WASM.
@@ -2351,6 +2681,16 @@ fn account_unlock_result_from_client(
     AccountUnlockResult {
         code: result.code.as_u16(),
         handle: result.handle,
+    }
+}
+
+fn create_account_result_from_client(
+    result: mosaic_client::CreateAccountResult,
+) -> CreateAccountResult {
+    CreateAccountResult {
+        code: result.code.as_u16(),
+        handle: result.handle,
+        wrapped_account_key: result.wrapped_account_key,
     }
 }
 
@@ -3318,6 +3658,14 @@ fn js_account_unlock_result_from_rust(result: AccountUnlockResult) -> JsAccountU
     JsAccountUnlockResult {
         code: result.code,
         handle: result.handle,
+    }
+}
+
+fn js_create_account_result_from_rust(result: CreateAccountResult) -> JsCreateAccountResult {
+    JsCreateAccountResult {
+        code: result.code,
+        handle: result.handle,
+        wrapped_account_key: result.wrapped_account_key,
     }
 }
 

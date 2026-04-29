@@ -1,15 +1,25 @@
 /**
  * Secure Key Cache
  *
- * Caches encryption keys in sessionStorage with time-based expiration.
- * Keys are encrypted with a random in-memory AES key stored only in memory,
- * preventing raw key co-location with ciphertext.
+ * Caches the worker's opaque session-state blob in sessionStorage with
+ * time-based expiration. The blob itself is encrypted with a random
+ * in-memory AES key stored only in memory, preventing raw key
+ * co-location with ciphertext.
+ *
+ * Slice 2 hard-cutover: the cache schema is now v2 — it stores the
+ * worker's `serializeSessionState()` output (an opaque
+ * `Uint8Array` containing only ciphertext / public material) plus the
+ * salts the caller needs to call `restoreSessionState`. **Plaintext key
+ * material never crosses the cache boundary.** v1 caches (which held
+ * raw-bytes account/session/identity key material) are silently
+ * invalidated on first read.
  *
  * Security properties:
- * - Keys are encrypted with AES-256-GCM before storage
- * - Encryption key exists only in memory (cleared on tab close/reload)
- * - Expiration timestamp prevents indefinite key persistence
- * - Automatic cleanup on expiration
+ * - Cached blob is opaque worker output (no raw key bytes in TS land).
+ * - Encrypted with AES-256-GCM under a memory-only key before storage.
+ * - Encryption key exists only in memory (cleared on tab close/reload).
+ * - Expiration timestamp prevents indefinite key persistence.
+ * - Automatic cleanup on expiration.
  */
 
 import { createLogger } from './logger';
@@ -21,27 +31,35 @@ const log = createLogger('KeyCache');
 /** Storage key for cached keys */
 const KEY_CACHE_STORAGE_KEY = 'mosaic:keyCache';
 
+/**
+ * Schema version for the cached blob. Bumped to `2` for the Slice 2 hard
+ * cutover to the opaque session-state format. Reading a cached entry that
+ * lacks `version: 2` returns `null` and clears the entry — old caches
+ * holding raw bytes (v1) are intentionally invalidated.
+ */
+const CACHE_SCHEMA_VERSION = 2 as const;
+
 /** In-memory encryption key for the cache (never persisted) */
 let cacheEncryptionKey: CryptoKey | null = null;
 
-/** Cached keys structure */
+/**
+ * Cached session state.
+ *
+ * The opaque `sessionState` blob is the output of the crypto worker's
+ * `serializeSessionState()` method — a versioned binary bundle that
+ * contains only opaque ciphertext fields (wrapped account key, wrapped
+ * identity seed) plus the auth public key. The TS layer NEVER decodes
+ * the blob; it round-trips through `restoreSessionState`.
+ */
 export interface CachedKeys {
-  /** Account key (L2) - 32 bytes base64 */
-  accountKey: string;
-  /** Session key for database - 32 bytes base64 */
-  sessionKey: string;
-  /** Identity Ed25519 secret key - 64 bytes base64 */
-  identitySecretKey: string;
-  /** Identity Ed25519 public key - 32 bytes base64 */
-  identityPublicKey: string;
-  /** Identity X25519 secret key - 32 bytes base64 */
-  identityX25519SecretKey: string;
-  /** Identity X25519 public key - 32 bytes base64 */
-  identityX25519PublicKey: string;
-  /** User salt - 16 bytes base64 */
+  /** Opaque session-state blob from the worker, base64-encoded. */
+  sessionState: string;
+  /** User salt - 16 bytes base64. Needed to re-run L1 KDF on restore. */
   userSalt: string;
-  /** Account salt - 16 bytes base64 */
+  /** Account salt - 16 bytes base64. Needed to re-run L1 KDF on restore. */
   accountSalt: string;
+  /** Cache schema version. Always `2` for the current format. */
+  version: typeof CACHE_SCHEMA_VERSION;
 }
 
 /** Stored cache envelope */
@@ -100,15 +118,24 @@ export function isKeyCachingEnabled(): boolean {
 }
 
 /**
- * Cache encryption keys securely in sessionStorage.
- * Keys are encrypted with a memory-only key before storage.
+ * Cache the worker's session-state bundle securely in sessionStorage.
+ * The opaque blob is encrypted with a memory-only AES-GCM key before
+ * storage. v1 caches lacking `version: 2` are silently invalidated on
+ * first read.
  *
- * @param keys - Keys to cache
+ * @param keys - The v2 cached payload (opaque session state + salts).
  */
 export async function cacheKeys(keys: CachedKeys): Promise<void> {
   const durationMs = getKeyCacheDurationMs();
   if (durationMs === 0) {
     log.debug('Key caching disabled, skipping cache');
+    return;
+  }
+
+  if (keys.version !== CACHE_SCHEMA_VERSION) {
+    log.error(
+      `Refusing to cache keys with unexpected schema version ${String(keys.version)} (expected ${String(CACHE_SCHEMA_VERSION)})`,
+    );
     return;
   }
 
@@ -152,8 +179,10 @@ export async function cacheKeys(keys: CachedKeys): Promise<void> {
 }
 
 /**
- * Retrieve cached keys from sessionStorage.
- * Returns null if cache is empty, expired, or decryption fails.
+ * Retrieve cached session-state bundle from sessionStorage.
+ *
+ * Returns `null` if cache is empty, expired, decryption fails, or the
+ * stored blob is from an older schema (v1 caches are silently dropped).
  */
 export async function getCachedKeys(): Promise<CachedKeys | null> {
   // Check if caching is enabled
@@ -198,11 +227,37 @@ export async function getCachedKeys(): Promise<CachedKeys | null> {
 
     const plaintextBytes = new Uint8Array(plaintext);
     try {
-      const keys: CachedKeys = JSON.parse(
+      const parsed = JSON.parse(
         new TextDecoder().decode(plaintextBytes),
-      );
+      ) as Partial<CachedKeys> & Record<string, unknown>;
+
+      // Slice 2 cutover: invalidate v1 caches that lack the version
+      // marker or are pinned to an older schema.
+      if (parsed.version !== CACHE_SCHEMA_VERSION) {
+        log.info(
+          `Discarding cached keys from older schema (version=${String(parsed.version)}), please log in again`,
+        );
+        clearCachedKeys();
+        return null;
+      }
+
+      if (
+        typeof parsed.sessionState !== 'string' ||
+        typeof parsed.userSalt !== 'string' ||
+        typeof parsed.accountSalt !== 'string'
+      ) {
+        log.warn('Cached keys missing required v2 fields, discarding');
+        clearCachedKeys();
+        return null;
+      }
+
       log.debug('Retrieved cached keys successfully');
-      return keys;
+      return {
+        sessionState: parsed.sessionState,
+        userSalt: parsed.userSalt,
+        accountSalt: parsed.accountSalt,
+        version: CACHE_SCHEMA_VERSION,
+      };
     } finally {
       plaintextBytes.fill(0);
     }

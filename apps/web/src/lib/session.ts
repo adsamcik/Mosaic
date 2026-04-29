@@ -574,8 +574,19 @@ class SessionManager {
   }
 
   /**
-   * Restore session from cached keys (no password required).
-   * Returns true if successful, false if cache is unavailable or expired.
+   * Restore session from cached state (no password required).
+   *
+   * Slice 2 cutover: this previously rebuilt the worker by re-importing
+   * raw key bytes via `importKeys`. The new contract requires the
+   * password to re-derive L1 → unwrap L2 (zero-knowledge invariant), so
+   * `restoreFromCache` now no-ops when only the cache is available — it
+   * returns `false` and lets the regular login flow prompt the user.
+   *
+   * The cache *is* still useful: a follow-up `restoreSession(password)`
+   * call can read the cached salts (without decrypting the opaque
+   * session-state blob) to skip the salt-decryption round-trip. That
+   * optimisation is intentionally deferred; for now we treat the cache
+   * as opaque and bail out.
    *
    * Serialised against the other login-style entry points via the M3
    * re-entrancy guard. Concurrent callers reject with
@@ -590,64 +601,15 @@ class SessionManager {
         return;
       }
 
-      try {
-        // Request persistent storage for OPFS
-        if (navigator.storage?.persist) {
-          const granted = await navigator.storage.persist();
-          if (!granted) {
-            log.warn('Persistent storage not granted - data may be evicted');
-          }
-        }
-
-        // Get current user from backend (authenticated via session cookie)
-        const api = getApi();
-        this._currentUser = await api.getCurrentUser();
-
-        // Import cached keys into crypto worker
-        const cryptoClient = await getCryptoClient();
-        await cryptoClient.importKeys({
-          accountKey: cachedKeys.accountKey,
-          sessionKey: cachedKeys.sessionKey,
-          identitySecretKey: cachedKeys.identitySecretKey,
-          identityPublicKey: cachedKeys.identityPublicKey,
-          identityX25519SecretKey: cachedKeys.identityX25519SecretKey,
-          identityX25519PublicKey: cachedKeys.identityX25519PublicKey,
-        });
-
-        // Initialize database worker with session key
-        const db = await getDbClient();
-        const sessionKey = await cryptoClient.getSessionKey();
-        await db.init(sessionKey);
-
-        this._isLoggedIn = true;
-        this.markSessionActive();
-        this.notify();
-
-        // Re-cache keys to extend expiration
-        const userSalt = fromBase64(cachedKeys.userSalt);
-        const accountSalt = fromBase64(cachedKeys.accountSalt);
-        await this.cacheSessionKeys(userSalt, accountSalt);
-
-        // Subscribe to settings changes to update idle timeout
-        this.settingsUnsubscribe = subscribeToSettings(() => {
-          if (this._isLoggedIn) {
-            this.resetIdleTimer();
-          }
-        });
-
-        // Start idle timeout tracking
-        this.resetIdleTimer();
-        this.attachIdleListeners();
-
-        log.info('Session restored from cache (no password required)');
-        outcome = true;
-      } catch (error) {
-        log.error('Failed to restore session from cache:', error);
-        // Clear invalid cache
-        clearCacheEncryptionKey();
-        clearLinkKeyEncryption();
-        outcome = false;
-      }
+      // Slice 2 hard cutover: the cached blob is now opaque
+      // (`serializeSessionState` output) and cannot be re-imported
+      // without the user's password to re-derive L1. Keep the cache for
+      // future restoreSession()-via-password flows but report failure
+      // here so the caller falls back to the normal login screen.
+      log.info(
+        'restoreFromCache: cached session state cannot be opened without password (Slice 2). Falling back to login.',
+      );
+      outcome = false;
     });
     return outcome;
   }
@@ -660,8 +622,14 @@ class SessionManager {
   }
 
   /**
-   * Cache keys for session restoration after page reload.
+   * Cache session-state for restoration after page reload.
    * Only caches if key caching is enabled in settings.
+   *
+   * Slice 2: the cached payload is now an OPAQUE
+   * `serializeSessionState()` blob (versioned binary bundle of wrapped
+   * account key + wrapped identity seed + auth public key). The user's
+   * password is still required on the next reload to re-open the
+   * handles via `restoreSessionState`.
    */
   private async cacheSessionKeys(
     userSalt: Uint8Array,
@@ -669,16 +637,19 @@ class SessionManager {
   ): Promise<void> {
     try {
       const cryptoClient = await getCryptoClient();
-      const exportedKeys = await cryptoClient.exportKeys();
-      if (!exportedKeys) {
-        log.warn('Failed to export keys for caching - worker not initialized');
+      const sessionState = await cryptoClient.serializeSessionState();
+      if (!sessionState) {
+        log.warn(
+          'Failed to serialize session state for caching - worker not initialized',
+        );
         return;
       }
 
       const cachedKeys: CachedKeys = {
-        ...exportedKeys,
+        sessionState: toBase64(sessionState),
         userSalt: toBase64(userSalt),
         accountSalt: toBase64(accountSalt),
+        version: 2,
       };
 
       await cacheKeys(cachedKeys);
@@ -760,7 +731,7 @@ class SessionManager {
 
       // Initialize database worker with session key
       const db = await getDbClient();
-      const sessionKey = await cryptoClient.getSessionKey();
+      const sessionKey = await cryptoClient.getDbSessionKey();
       await db.init(sessionKey);
 
       this._isLoggedIn = true;
@@ -904,7 +875,7 @@ class SessionManager {
 
       // Initialize database worker with session key
       const db = await getDbClient();
-      const sessionKey = await cryptoClient.getSessionKey();
+      const sessionKey = await cryptoClient.getDbSessionKey();
       await db.init(sessionKey);
 
       this._isLoggedIn = true;
@@ -981,7 +952,7 @@ class SessionManager {
 
       // Initialize database worker with session key
       const db = await getDbClient();
-      const sessionKey = await cryptoClient.getSessionKey();
+      const sessionKey = await cryptoClient.getDbSessionKey();
       await db.init(sessionKey);
 
       this._isLoggedIn = true;
@@ -1055,7 +1026,7 @@ class SessionManager {
 
       // Initialize database worker with session key
       const db = await getDbClient();
-      const sessionKey = await cryptoClient.getSessionKey();
+      const sessionKey = await cryptoClient.getDbSessionKey();
       await db.init(sessionKey);
 
       this._isLoggedIn = true;

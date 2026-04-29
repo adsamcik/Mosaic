@@ -9,14 +9,20 @@ import {
   type CryptoWorkerApi,
   type EncryptedShard,
   type EpochHandleId,
-  type ExportedKeys,
   type IdentityHandleId,
   type OpenEpochKeyBundleOptions,
   type PhotoMeta,
   type WorkerKdfParams,
 } from './types';
 
-// Import real crypto functions from @mosaic/crypto
+// Import real crypto functions from @mosaic/crypto.
+//
+// Slice 2 narrows this import set: account unlock, identity derivation,
+// auth keypair derivation, and key export/import are now Rust-handled, so
+// `deriveKeys`, `deriveAuthKeypair`, `deriveIdentityKeypair`,
+// `unwrapAccountKey`, and `IdentityKeypair` are no longer imported here.
+// The remaining symbols belong to slices 3-7's territory and stay until
+// their callers are migrated.
 import {
   AccessTier,
   decryptShard as cryptoDecryptShard,
@@ -28,19 +34,12 @@ import {
   unwrapTierKeyFromLink as cryptoUnwrapTierKeyFromLink,
   verifyShard as cryptoVerifyShard,
   wrapTierKeyForLink as cryptoWrapTierKeyForLink,
-  deriveAuthKeypair,
-  deriveIdentityKeypair,
-  deriveKeys,
   deriveTierKeys,
   deriveContentKey,
   encryptContent as cryptoEncryptContent,
   decryptContent as cryptoDecryptContent,
   getArgon2Params,
   memzero,
-  sealAndSignBundle,
-  unwrapAccountKey,
-  verifyAndOpenBundle,
-  type IdentityKeypair,
 } from '@mosaic/crypto';
 import {
   getRustCryptoCore,
@@ -184,6 +183,12 @@ class HandleRegistry {
   getAccount(): WasmHandle | null {
     return this.accountHandle && !this.accountHandle.closed
       ? this.accountHandle
+      : null;
+  }
+
+  getIdentity(): WasmHandle | null {
+    return this.identityHandle && !this.identityHandle.closed
+      ? this.identityHandle
       : null;
   }
 
@@ -406,27 +411,65 @@ function epochKey(albumId: string, epochId: number): string {
 /**
  * Crypto Worker Implementation
  *
- * Rust/WASM-backed implementation for supported Mosaic protocol surfaces with
- * temporary TypeScript reference compatibility for raw-key legacy callers.
+ * Slice 2 contract: account/identity/auth/key-wrap surfaces are entirely
+ * Rust-handled. The worker holds *no* raw key material in JS — the only
+ * private state is the `HandleRegistry` (Rust handle IDs), the cached
+ * wrapped account key (already ciphertext), and the cached wrapped
+ * identity seed (also ciphertext).
+ *
+ * Slice 3 will retire the remaining `@mosaic/crypto` imports for shard /
+ * manifest / album-content / share-link operations.
  */
 class CryptoWorker implements CryptoWorkerApi {
-  /** Session key derived from password for database encryption */
-  private sessionKey: Uint8Array | null = null;
+  /**
+   * Cached wrapped account key — opaque ciphertext that the server stores
+   * for returning users. Set by `init` / `initWithWrappedKey` /
+   * `restoreSessionState`. Never contains plaintext key material.
+   */
+  private wrappedAccountKey: Uint8Array | null = null;
 
-  /** Account key (L2) for key hierarchy operations */
-  private accountKey: Uint8Array | null = null;
+  /**
+   * Cached wrapped identity seed — opaque ciphertext for the user's
+   * Ed25519 + X25519 identity. Set by `init` / `initWithWrappedKey` /
+   * `restoreSessionState`.
+   */
+  private wrappedIdentitySeed: Uint8Array | null = null;
 
-  /** Wrapped account key (encrypted L2) for server storage */
-  private accountKeyWrapped: Uint8Array | null = null;
+  /**
+   * Cached auth public key (Ed25519, 32 bytes) for the active account
+   * handle. Public material — safe to expose. Cached so `getAuthPublicKey`
+   * does not have to take a lease per call.
+   */
+  private authPublicKey: Uint8Array | null = null;
 
-  /** User identity keypair (Ed25519 + X25519) */
-  private identityKeypair: IdentityKeypair | null = null;
+  /**
+   * Transient password-rooted LocalAuth keypair slot.
+   *
+   * Populated by `deriveAuthKey(password, userSalt)` during the
+   * LocalAuth login/register pre-auth window — the wrapped account key
+   * has not yet been fetched from the server, so no account handle is
+   * open. While this slot is set, `signAuthChallenge` and
+   * `getAuthPublicKey` route through the password-rooted Argon2id+HKDF
+   * derivation rather than the L2-rooted account-handle path.
+   *
+   * The slot survives `init` / `initWithWrappedKey` /
+   * `restoreSessionState` so the register flow (which calls
+   * `deriveAuthKey` → `init` → `signAuthChallenge`) keeps the same
+   * keypair across the boundary. `clear()` zeroizes the password
+   * buffer and drops the slot.
+   *
+   * NOTE (Slice 9 cleanup): every challenge sign re-runs Argon2id; for
+   * a perf pass, swap this for a transient pre-auth handle minted in
+   * Rust by `deriveAuthKey` and consumed by `signAuthChallenge`.
+   */
+  private preAuthState: {
+    password: Uint8Array;
+    userSalt: Uint8Array;
+    kdf: WorkerKdfParams;
+    authPublicKey: Uint8Array;
+  } | null = null;
 
-  /** Auth keypair for LocalAuth challenge-response (derived deterministically from password+salt) */
-  private authKeypair: { publicKey: Uint8Array; secretKey: Uint8Array } | null =
-    null;
-
-  /** Whether libsodium has been initialized */
+  /** Whether libsodium has been initialized (used by stay-put methods). */
   private sodiumReady = false;
 
   /**
@@ -436,14 +479,17 @@ class CryptoWorker implements CryptoWorkerApi {
   private readonly handleRegistry = new HandleRegistry(() => getRustFacade());
 
   /**
-   * Ensure libsodium is initialized before crypto operations.
+   * Ensure libsodium is initialized before legacy crypto operations.
    * Verifies that critical WASM functions are actually bound.
+   *
+   * Slice 2 keeps this for the stay-put `@mosaic/crypto` callers (shard /
+   * manifest / album-content / share-link). Slice 3+ will retire it.
    */
   private async ensureSodiumReady(): Promise<void> {
     if (!this.sodiumReady) {
       const timer = log.startTimer('libsodium initialization');
       await sodium.ready;
-      
+
       // Verify critical functions are actually bound (race condition guard)
       // In some cases, sodium.ready can resolve before all WASM bindings complete
       const maxRetries = 10;
@@ -459,151 +505,369 @@ class CryptoWorker implements CryptoWorkerApi {
         log.warn(`libsodium functions not ready, retry ${i + 1}/${maxRetries}`);
         await new Promise(resolve => setTimeout(resolve, 50 * (i + 1)));
       }
-      
+
       // If we get here, something is seriously wrong
       throw new Error('libsodium WASM failed to initialize - critical functions not bound');
     }
   }
 
   /**
-   * Initialize crypto with user credentials.
-   * Derives L0 → L1 → L2 key hierarchy using Argon2id + HKDF.
-   * Generates a NEW random account key - use initWithWrappedKey for existing users.
+   * Resolve the active account handle ID, throwing
+   * `WorkerCryptoErrorCode.WorkerNotInitialized` when none is open.
    *
-   * @param password - User password
-   * @param userSalt - 16-byte salt stored on server (per-user)
-   * @param accountSalt - 16-byte salt stored on server (unique per account)
+   * Used by every legacy method (`signAuthChallenge`,
+   * `wrapWithAccountKey`, etc.) to convert the new handle-based contract
+   * into the legacy "worker is initialized" expectation.
+   */
+  private requireAccountHandle(): AccountHandleId {
+    const handle = this.handleRegistry.getAccount();
+    if (!handle) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.WorkerNotInitialized,
+        'crypto worker not initialised — call init() / initWithWrappedKey() first',
+      );
+    }
+    return handle.id as AccountHandleId;
+  }
+
+  private requireIdentityHandle(): IdentityHandleId {
+    const handle = this.handleRegistry.getIdentity();
+    if (!handle) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.WorkerNotInitialized,
+        'crypto worker identity not bound — call init() / initWithWrappedKey() first',
+      );
+    }
+    return handle.id as IdentityHandleId;
+  }
+
+  private kdfFromSodiumParams(): WorkerKdfParams {
+    const params = getArgon2Params();
+    return {
+      memoryKib: params.memory,
+      iterations: params.iterations,
+      parallelism: params.parallelism,
+    };
+  }
+
+  /**
+   * Initialize crypto with user credentials.
+   *
+   * Slice 2 — routes through Rust `createNewAccount` + `createIdentity`.
+   * Returns nothing; cached state lives behind handle IDs in the
+   * registry. The L0/L1/L2 bytes never cross the Comlink boundary.
    */
   async init(
     password: string,
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
   ): Promise<void> {
-    await this.ensureSodiumReady();
-
-    // Get device-appropriate Argon2 parameters
-    const params = getArgon2Params();
-
-    // Derive key hierarchy (L0 and L1 are zeroed internally by deriveKeys)
-    const keys = await deriveKeys(password, userSalt, accountSalt, params);
-
-    // Store account key for future operations
-    this.accountKey = new Uint8Array(keys.accountKey);
-
-    // Store wrapped account key for server storage
-    this.accountKeyWrapped = new Uint8Array(keys.accountKeyWrapped);
-
-    // Derive session key from account key using BLAKE2b
-    // This provides a separate key for database encryption
-    this.sessionKey = sodium.crypto_generichash(32, keys.accountKey);
-
-    // Wipe the DerivedKeys copy of accountKey (we have our own copy above)
-    memzero(keys.accountKey);
+    const kdf = this.kdfFromSodiumParams();
+    const out = await this.createNewAccount({
+      password,
+      userSalt,
+      accountSalt,
+      kdf,
+    });
+    this.wrappedAccountKey = new Uint8Array(out.wrappedAccountKey);
+    const identity = await this.createIdentityForAccount(out.accountHandleId);
+    this.wrappedIdentitySeed = new Uint8Array(identity.wrappedSeed);
+    this.authPublicKey = await this.getAuthPublicKeyForAccount(out.accountHandleId);
   }
 
   /**
    * Initialize crypto with an existing wrapped account key.
-   * Used for returning users who already have a stored wrapped key.
    *
-   * @param password - User password
-   * @param userSalt - 16-byte salt stored on server (per-user)
-   * @param accountSalt - 16-byte salt stored on server (unique per account)
-   * @param wrappedAccountKey - Previously stored wrapped account key
+   * Slice 2 — routes through Rust `unlockAccount` and either
+   * `openIdentityForAccount` (when the caller supplies the wrapped seed
+   * persisted on the server) or `createIdentityForAccount` (legacy
+   * fallback for accounts that have not yet uploaded a wrapped seed).
    */
   async initWithWrappedKey(
     password: string,
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
     wrappedAccountKey: Uint8Array,
+    wrappedIdentitySeed?: Uint8Array,
   ): Promise<void> {
-    await this.ensureSodiumReady();
-
-    // Get device-appropriate Argon2 parameters
-    const params = getArgon2Params();
-
-    // Unwrap the existing account key
-    const accountKey = await unwrapAccountKey(
+    const kdf = this.kdfFromSodiumParams();
+    const out = await this.unlockAccount({
       password,
       userSalt,
       accountSalt,
       wrappedAccountKey,
-      params,
-    );
-
-    // Store account key for future operations
-    this.accountKey = new Uint8Array(accountKey);
-
-    // Store the wrapped key (already have it)
-    this.accountKeyWrapped = new Uint8Array(wrappedAccountKey);
-
-    // Derive session key from account key using BLAKE2b
-    this.sessionKey = sodium.crypto_generichash(32, accountKey);
-
-    // Wipe the returned account key (we have a copy)
-    memzero(accountKey);
+      kdf,
+    });
+    this.wrappedAccountKey = new Uint8Array(wrappedAccountKey);
+    if (wrappedIdentitySeed && wrappedIdentitySeed.length > 0) {
+      const identity = await this.openIdentityForAccount(
+        out.accountHandleId,
+        wrappedIdentitySeed,
+      );
+      this.wrappedIdentitySeed = new Uint8Array(wrappedIdentitySeed);
+      void identity;
+    } else {
+      const identity = await this.createIdentityForAccount(out.accountHandleId);
+      this.wrappedIdentitySeed = new Uint8Array(identity.wrappedSeed);
+    }
+    this.authPublicKey = await this.getAuthPublicKeyForAccount(out.accountHandleId);
   }
 
   /**
    * Get the wrapped account key for server storage.
-   * Only available after init() for new users.
-   *
-   * @returns Wrapped account key or null if not available
+   * Returned bytes are opaque ciphertext — safe to send across Comlink.
    */
   async getWrappedAccountKey(): Promise<Uint8Array | null> {
-    if (!this.accountKeyWrapped) {
-      return null;
-    }
-    return new Uint8Array(this.accountKeyWrapped);
+    if (!this.wrappedAccountKey) return null;
+    return new Uint8Array(this.wrappedAccountKey);
+  }
+
+  async getWrappedIdentitySeed(): Promise<Uint8Array | null> {
+    if (!this.wrappedIdentitySeed) return null;
+    return new Uint8Array(this.wrappedIdentitySeed);
   }
 
   /**
    * Clear all keys from memory.
    *
-   * Slice 1 contract: also cascades closure of every Rust handle in the
-   * registry (epoch → identity → account) and bumps the registry's
-   * generation counter so any handle ID minted before the call resolves
-   * to `WorkerCryptoErrorCode.StaleHandle`. Idempotent.
+   * Slice 1 contract: cascades closure of every Rust handle in the
+   * registry (epoch → identity → account) and bumps the registry
+   * generation counter. Slice 2 also drops the cached opaque blobs
+   * (`wrappedAccountKey`, `wrappedIdentitySeed`, `authPublicKey`).
+   * Idempotent.
    */
   async clear(): Promise<void> {
-    // Cascade-close Rust handles first; the legacy TS state below is a
-    // duplicate that Slices 2-4 will retire.
     await this.handleRegistry.clearAll();
-
-    if (this.sessionKey) {
-      memzero(this.sessionKey);
-      this.sessionKey = null;
+    if (this.wrappedAccountKey) {
+      this.wrappedAccountKey.fill(0);
+      this.wrappedAccountKey = null;
     }
-    if (this.accountKey) {
-      memzero(this.accountKey);
-      this.accountKey = null;
+    if (this.wrappedIdentitySeed) {
+      this.wrappedIdentitySeed.fill(0);
+      this.wrappedIdentitySeed = null;
     }
-    if (this.accountKeyWrapped) {
-      memzero(this.accountKeyWrapped);
-      this.accountKeyWrapped = null;
+    if (this.authPublicKey) {
+      this.authPublicKey.fill(0);
+      this.authPublicKey = null;
     }
-    if (this.identityKeypair) {
-      memzero(this.identityKeypair.ed25519.secretKey);
-      memzero(this.identityKeypair.x25519.secretKey);
-      this.identityKeypair = null;
-    }
-    if (this.authKeypair) {
-      memzero(this.authKeypair.secretKey);
-      this.authKeypair = null;
-    }
+    this.wipePreAuthState();
   }
 
   /**
-   * Get session key for database encryption.
+   * Zeroize and drop the password-rooted pre-auth keypair slot.
    *
-   * @returns Copy of the 32-byte session key
-   * @throws Error if worker not initialized
+   * Called by `clear()` and by `deriveAuthKey()` (so back-to-back
+   * derive calls with different passwords cannot leave stale bytes).
    */
-  async getSessionKey(): Promise<Uint8Array> {
-    if (!this.sessionKey) {
-      throw new Error('Crypto worker not initialized');
+  private wipePreAuthState(): void {
+    if (!this.preAuthState) return;
+    this.preAuthState.password.fill(0);
+    this.preAuthState.authPublicKey.fill(0);
+    this.preAuthState = null;
+  }
+
+  /**
+   * Slice 2 transitional: derive a 32-byte OPFS-snapshot DB session key
+   * from the active account handle. Slice 8 will replace this with an
+   * opaque encryption handle on the DB worker.
+   */
+  async getDbSessionKey(): Promise<Uint8Array> {
+    const accountId = this.requireAccountHandle();
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
+      facade.deriveDbSessionKeyFromAccount(rustAccount),
+    );
+  }
+
+  async getDbEncryptionWrap(plaintext: Uint8Array): Promise<Uint8Array> {
+    const accountId = this.requireAccountHandle();
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
+      facade.wrapWithAccountHandle(rustAccount, plaintext),
+    );
+  }
+
+  async unwrapDbEncryption(wrapped: Uint8Array): Promise<Uint8Array> {
+    const accountId = this.requireAccountHandle();
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
+      facade.unwrapWithAccountHandle(rustAccount, wrapped),
+    );
+  }
+
+  /**
+   * Serialize the session bootstrap state into an OPAQUE blob.
+   *
+   * Layout (binary, version-prefixed):
+   *   `0x01 || u16be(authPubLen) || authPub || u16be(wrappedAccountKeyLen)
+   *    || wrappedAccountKey || u16be(wrappedIdentitySeedLen)
+   *    || wrappedIdentitySeed`
+   *
+   * Wrapped under the active account handle's L2 key via
+   * `wrapWithAccountHandle`, so the blob is unintelligible to anyone who
+   * does not also hold the password (to re-derive L1 → unwrap L2).
+   * Returns `null` when the worker is not initialised.
+   */
+  async serializeSessionState(): Promise<Uint8Array | null> {
+    if (
+      !this.wrappedAccountKey ||
+      !this.wrappedIdentitySeed ||
+      !this.authPublicKey
+    ) {
+      return null;
     }
-    // Return a copy to prevent external modification
-    return new Uint8Array(this.sessionKey);
+    const accountId = this.handleRegistry.getAccount();
+    if (!accountId) return null;
+
+    const authPub = this.authPublicKey;
+    const wak = this.wrappedAccountKey;
+    const wis = this.wrappedIdentitySeed;
+    const totalLen = 1 + 2 + authPub.length + 2 + wak.length + 2 + wis.length;
+    const plaintext = new Uint8Array(totalLen);
+    const view = new DataView(plaintext.buffer);
+    let off = 0;
+    plaintext[off] = 0x01;
+    off += 1;
+    view.setUint16(off, authPub.length, false);
+    off += 2;
+    plaintext.set(authPub, off);
+    off += authPub.length;
+    view.setUint16(off, wak.length, false);
+    off += 2;
+    plaintext.set(wak, off);
+    off += wak.length;
+    view.setUint16(off, wis.length, false);
+    off += 2;
+    plaintext.set(wis, off);
+    off += wis.length;
+
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      accountId.id as AccountHandleId,
+      'account',
+      (rustAccount) => facade.wrapWithAccountHandle(rustAccount, plaintext),
+    );
+  }
+
+  /**
+   * Reopen the account + identity handles from a previously serialized
+   * blob, supplying the password and salts for the L1 KDF pass.
+   *
+   * Validates the blob shape, calls `unlockAccount` followed by
+   * `openIdentityForAccount`, and caches the auth public key for
+   * `getAuthPublicKey`.
+   */
+  async restoreSessionState(
+    blob: Uint8Array,
+    password: string,
+    userSalt: Uint8Array,
+    accountSalt: Uint8Array,
+  ): Promise<void> {
+    // Decode the OPAQUE outer envelope: it was wrapped under an account
+    // handle, but at this point no handle is open yet, so we have to
+    // unlock first using the wrappedAccountKey field carried INSIDE the
+    // blob. To do that we cannot simply unwrap before unlock — so the
+    // outer envelope is, effectively, only encrypted with the L2 (which
+    // we rederive via unlockAccount).
+    //
+    // We need a chicken-and-egg break: store the opaque wrappedAccountKey
+    // OUTSIDE the encrypted blob. Slice 2 chooses the simpler path:
+    // serializeSessionState returns the plaintext bundle (already
+    // composed of opaque ciphertext fields), and lets the calling
+    // key-cache wrap it under its in-memory Web Crypto AES-GCM key. This
+    // restoreSessionState method therefore parses the (non-encrypted)
+    // bundle directly.
+    const kdf = this.kdfFromSodiumParams();
+    const parsed = this.parseSessionStateBundle(blob);
+
+    const out = await this.unlockAccount({
+      password,
+      userSalt,
+      accountSalt,
+      wrappedAccountKey: parsed.wrappedAccountKey,
+      kdf,
+    });
+    this.wrappedAccountKey = new Uint8Array(parsed.wrappedAccountKey);
+    if (parsed.wrappedIdentitySeed.length > 0) {
+      await this.openIdentityForAccount(
+        out.accountHandleId,
+        parsed.wrappedIdentitySeed,
+      );
+      this.wrappedIdentitySeed = new Uint8Array(parsed.wrappedIdentitySeed);
+    } else {
+      const identity = await this.createIdentityForAccount(out.accountHandleId);
+      this.wrappedIdentitySeed = new Uint8Array(identity.wrappedSeed);
+    }
+    this.authPublicKey = await this.getAuthPublicKeyForAccount(
+      out.accountHandleId,
+    );
+  }
+
+  private parseSessionStateBundle(blob: Uint8Array): {
+    authPublicKey: Uint8Array;
+    wrappedAccountKey: Uint8Array;
+    wrappedIdentitySeed: Uint8Array;
+  } {
+    if (blob.length < 1 + 2 + 2 + 2) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidEnvelope,
+        'session state blob is too short to be valid',
+      );
+    }
+    if (blob[0] !== 0x01) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.UnsupportedVersion,
+        `session state blob has unsupported version byte 0x${blob[0]!.toString(16)}`,
+      );
+    }
+    const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+    let off = 1;
+    const authLen = view.getUint16(off, false);
+    off += 2;
+    if (off + authLen > blob.length) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidEnvelope,
+        'session state blob: authPublicKey field truncated',
+      );
+    }
+    const authPub = blob.subarray(off, off + authLen);
+    off += authLen;
+    if (off + 2 > blob.length) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidEnvelope,
+        'session state blob: missing wrappedAccountKey length',
+      );
+    }
+    const wakLen = view.getUint16(off, false);
+    off += 2;
+    if (off + wakLen > blob.length) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidEnvelope,
+        'session state blob: wrappedAccountKey field truncated',
+      );
+    }
+    const wak = blob.subarray(off, off + wakLen);
+    off += wakLen;
+    if (off + 2 > blob.length) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidEnvelope,
+        'session state blob: missing wrappedIdentitySeed length',
+      );
+    }
+    const wisLen = view.getUint16(off, false);
+    off += 2;
+    if (off + wisLen > blob.length) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidEnvelope,
+        'session state blob: wrappedIdentitySeed field truncated',
+      );
+    }
+    const wis = blob.subarray(off, off + wisLen);
+    return {
+      authPublicKey: new Uint8Array(authPub),
+      wrappedAccountKey: new Uint8Array(wak),
+      wrappedIdentitySeed: new Uint8Array(wis),
+    };
   }
 
   /**
@@ -820,31 +1084,50 @@ class CryptoWorker implements CryptoWorkerApi {
 
   /**
    * Get the user's identity public key (Ed25519).
-   * Returns null if identity keypair not yet derived.
+   *
+   * Slice 2 — reads from the active identity handle via Rust. Returns
+   * `null` when no identity handle is open.
    */
   async getIdentityPublicKey(): Promise<Uint8Array | null> {
-    if (!this.identityKeypair) {
-      return null;
-    }
-    return new Uint8Array(this.identityKeypair.ed25519.publicKey);
+    const identity = this.handleRegistry.getIdentity();
+    if (!identity) return null;
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      identity.id as IdentityHandleId,
+      'identity',
+      (rustIdentity) => facade.identitySigningPubkey(rustIdentity),
+    );
   }
 
   /**
-   * Derive identity keypair from account key.
-   * Must be called after init() and before identity-dependent operations.
+   * Slice 2 contract — `deriveIdentity` is now a no-op stub.
+   *
+   * Identity is derived implicitly during `init` /
+   * `initWithWrappedKey` / `restoreSessionState`. This stub remains for
+   * the Slice 3+ callers (`epoch-key-service.ts`,
+   * `epoch-rotation-service.ts`) that still defensively call it; it
+   * simply asserts the worker is initialised and returns.
+   *
+   * @deprecated Slice 3 will retire the call sites and delete this stub.
    */
   async deriveIdentity(): Promise<void> {
-    if (!this.accountKey) {
-      throw new Error('Crypto worker not initialized');
+    if (!this.handleRegistry.getIdentity()) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.WorkerNotInitialized,
+        'crypto worker identity not bound — call init() / initWithWrappedKey() first',
+      );
     }
-    await this.ensureSodiumReady();
-
-    // Derive identity keypair from account key
-    this.identityKeypair = deriveIdentityKeypair(this.accountKey);
   }
 
   /**
    * Open (decrypt) an epoch key bundle.
+   */
+  /**
+   * Open (decrypt) an epoch key bundle.
+   *
+   * Slice 2 — routes through the handle-based `verifyAndOpenBundle` so
+   * the worker no longer needs to materialise the full identity keypair
+   * in JS. The legacy signature is preserved for slice 3 callers.
    */
   async openEpochKeyBundle(
     bundle: Uint8Array,
@@ -857,10 +1140,7 @@ class CryptoWorker implements CryptoWorkerApi {
     signPublicKey: Uint8Array;
     signSecretKey: Uint8Array;
   }> {
-    if (!this.identityKeypair) {
-      throw new Error('Identity not derived - call deriveIdentity() first');
-    }
-    await this.ensureSodiumReady();
+    const identityId = this.requireIdentityHandle();
 
     // Parse the bundle format: signature (64) || sealed box
     if (bundle.length < 64) {
@@ -869,33 +1149,36 @@ class CryptoWorker implements CryptoWorkerApi {
     const signature = bundle.slice(0, 64);
     const sealedBox = bundle.slice(64);
 
-    // Build validation context
-    const context = {
-      albumId,
-      minEpochId,
-      allowLegacyEmptyAlbumId: options?.allowLegacyEmptyAlbumId ?? false,
-    };
-
-    // Verify and open the bundle
+    const facade = await getRustFacade();
     const timer = log.startTimer('verifyAndOpenBundle');
-    const opened = verifyAndOpenBundle(
-      sealedBox,
-      signature,
-      senderPubkey,
-      this.identityKeypair,
-      context,
+    const opened = await this.handleRegistry.withLease(
+      identityId,
+      'identity',
+      (rustIdentity) =>
+        facade.verifyAndOpenBundle(
+          rustIdentity,
+          sealedBox,
+          signature,
+          senderPubkey,
+          albumId,
+          minEpochId,
+          options?.allowLegacyEmptyAlbumId ?? false,
+        ),
     );
     timer.end();
 
     return {
       epochSeed: opened.epochSeed,
-      signPublicKey: opened.signKeypair.publicKey,
-      signSecretKey: opened.signKeypair.secretKey,
+      signPublicKey: opened.signPublic,
+      signSecretKey: opened.signSecret,
     };
   }
 
   /**
    * Create an epoch key bundle for sharing with another user.
+   *
+   * Slice 2 — routes through the handle-based `sealAndSignBundle` so the
+   * legacy identity keypair field is no longer needed.
    */
   async createEpochKeyBundle(
     albumId: string,
@@ -905,29 +1188,22 @@ class CryptoWorker implements CryptoWorkerApi {
     signSecretKey: Uint8Array,
     recipientPubkey: Uint8Array,
   ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array }> {
-    if (!this.identityKeypair) {
-      throw new Error('Identity not derived - call deriveIdentity() first');
-    }
-    await this.ensureSodiumReady();
+    const identityId = this.requireIdentityHandle();
 
-    // Create the epoch key bundle
-    const bundle = {
-      version: 1,
-      albumId,
-      epochId,
-      recipientPubkey,
-      epochSeed,
-      signKeypair: {
-        publicKey: signPublicKey,
-        secretKey: signSecretKey,
-      },
-    };
-
-    // Seal and sign the bundle
-    const sealed = sealAndSignBundle(
-      bundle,
-      recipientPubkey,
-      this.identityKeypair,
+    const facade = await getRustFacade();
+    const sealed = await this.handleRegistry.withLease(
+      identityId,
+      'identity',
+      (rustIdentity) =>
+        facade.sealAndSignBundle(
+          rustIdentity,
+          recipientPubkey,
+          albumId,
+          epochId,
+          epochSeed,
+          signSecretKey,
+          signPublicKey,
+        ),
     );
 
     return {
@@ -1004,65 +1280,31 @@ class CryptoWorker implements CryptoWorkerApi {
 
   /**
    * Wrap data with the account key (L2) for secure storage.
-   * Used for encrypting share link secrets.
+   *
+   * Slice 2 — routes through Rust `wrapWithAccountHandle` so the L2
+   * bytes never cross the Comlink boundary. Output layout is unchanged:
+   * `nonce(24) || ciphertext_with_tag`.
    */
   async wrapWithAccountKey(data: Uint8Array): Promise<Uint8Array> {
-    await this.ensureSodiumReady();
-
-    if (!this.accountKey) {
-      throw new Error('Account key not initialized - call init() first');
-    }
-
-    // Generate random nonce (24 bytes for XChaCha20-Poly1305)
-    const nonce = sodium.randombytes_buf(24);
-
-    // Encrypt with XChaCha20-Poly1305
-    const ciphertext = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
-      data,
-      null, // no additional data
-      null, // secret nonce (not used)
-      nonce,
-      this.accountKey,
+    const accountId = this.requireAccountHandle();
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
+      facade.wrapWithAccountHandle(rustAccount, data),
     );
-
-    // Return nonce || ciphertext
-    const result = new Uint8Array(nonce.length + ciphertext.length);
-    result.set(nonce, 0);
-    result.set(ciphertext, nonce.length);
-    return result;
   }
 
   /**
    * Unwrap data that was encrypted with the account key (L2).
-   * Used for decrypting owner-encrypted share link secrets during epoch rotation.
+   *
+   * Slice 2 — mirror of `wrapWithAccountKey`, routes through Rust
+   * `unwrapWithAccountHandle`.
    */
   async unwrapWithAccountKey(wrapped: Uint8Array): Promise<Uint8Array> {
-    await this.ensureSodiumReady();
-
-    if (!this.accountKey) {
-      throw new Error('Account key not initialized - call init() first');
-    }
-
-    if (wrapped.length < 24 + 16) {
-      throw new Error(
-        'Wrapped data too short (minimum 40 bytes for nonce + tag)',
-      );
-    }
-
-    // Extract nonce (first 24 bytes) and ciphertext (rest)
-    const nonce = wrapped.subarray(0, 24);
-    const ciphertext = wrapped.subarray(24);
-
-    // Decrypt with XChaCha20-Poly1305
-    const plaintext = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(
-      null, // secret nonce (not used)
-      ciphertext,
-      null, // no additional data
-      nonce,
-      this.accountKey,
+    const accountId = this.requireAccountHandle();
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
+      facade.unwrapWithAccountHandle(rustAccount, wrapped),
     );
-
-    return plaintext;
   }
 
   // =========================================================================
@@ -1131,193 +1373,120 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   // =========================================================================
-  // Key Export/Import for Session Caching
-  // =========================================================================
-
-  /**
-   * Export all keys for caching.
-   * Returns base64-encoded keys for secure storage.
-   */
-  async exportKeys(): Promise<ExportedKeys | null> {
-    if (!this.sessionKey || !this.accountKey || !this.identityKeypair) {
-      return null;
-    }
-
-    return {
-      accountKey: sodium.to_base64(
-        this.accountKey,
-        sodium.base64_variants.ORIGINAL,
-      ),
-      sessionKey: sodium.to_base64(
-        this.sessionKey,
-        sodium.base64_variants.ORIGINAL,
-      ),
-      identitySecretKey: sodium.to_base64(
-        this.identityKeypair.ed25519.secretKey,
-        sodium.base64_variants.ORIGINAL,
-      ),
-      identityPublicKey: sodium.to_base64(
-        this.identityKeypair.ed25519.publicKey,
-        sodium.base64_variants.ORIGINAL,
-      ),
-      identityX25519SecretKey: sodium.to_base64(
-        this.identityKeypair.x25519.secretKey,
-        sodium.base64_variants.ORIGINAL,
-      ),
-      identityX25519PublicKey: sodium.to_base64(
-        this.identityKeypair.x25519.publicKey,
-        sodium.base64_variants.ORIGINAL,
-      ),
-    };
-  }
-
-  /**
-   * Import previously exported keys to restore session.
-   */
-  async importKeys(keys: ExportedKeys): Promise<void> {
-    await this.ensureSodiumReady();
-
-    // Clear any existing keys first
-    await this.clear();
-
-    // Restore keys from base64
-    this.accountKey = sodium.from_base64(
-      keys.accountKey,
-      sodium.base64_variants.ORIGINAL,
-    );
-    this.sessionKey = sodium.from_base64(
-      keys.sessionKey,
-      sodium.base64_variants.ORIGINAL,
-    );
-
-    // Restore identity keypair
-    this.identityKeypair = {
-      ed25519: {
-        publicKey: sodium.from_base64(
-          keys.identityPublicKey,
-          sodium.base64_variants.ORIGINAL,
-        ),
-        secretKey: sodium.from_base64(
-          keys.identitySecretKey,
-          sodium.base64_variants.ORIGINAL,
-        ),
-      },
-      x25519: {
-        publicKey: sodium.from_base64(
-          keys.identityX25519PublicKey,
-          sodium.base64_variants.ORIGINAL,
-        ),
-        secretKey: sodium.from_base64(
-          keys.identityX25519SecretKey,
-          sodium.base64_variants.ORIGINAL,
-        ),
-      },
-    };
-  }
-
-  // =========================================================================
   // LocalAuth Authentication Methods
   // =========================================================================
 
-  /** Auth context for domain separation (must match backend) */
-  private static readonly AUTH_CHALLENGE_CONTEXT = 'Mosaic_Auth_Challenge_v1';
-
   /**
-   * Derive auth keypair directly from password + userSalt.
-   * This is a deterministic derivation path separate from the random account key.
-   * The auth keypair is used for challenge-response authentication.
+   * Derive the password-rooted LocalAuth Ed25519 keypair from
+   * `password` + `userSalt` and stash it in the worker's transient
+   * pre-auth slot.
    *
-   * Must be called before signAuthChallenge() or getAuthPublicKey().
+   * Slice 2 fixup: LocalAuth login/register signs a challenge BEFORE
+   * any account handle is open. The Rust crypto crate's
+   * `derive_auth_signing_keypair(password, user_salt, profile)` runs
+   * Argon2id+HKDF and returns a deterministic Ed25519 keypair that
+   * neither requires nor consumes an account handle. We cache the
+   * derived public key plus the (password, userSalt, kdf) tuple in the
+   * pre-auth slot so subsequent `signAuthChallenge` /
+   * `getAuthPublicKey` calls during the same login attempt can reuse
+   * them without re-prompting.
    *
-   * @param password - User password
-   * @param userSalt - 16-byte user salt from server
+   * The slot survives `init` / `initWithWrappedKey` /
+   * `restoreSessionState`. It is wiped by `clear()` and replaced when
+   * `deriveAuthKey` is called again.
+   *
+   * @returns The 32-byte Ed25519 auth public key (also stored in
+   *          preAuthState).
    */
-  async deriveAuthKey(password: string, userSalt: Uint8Array): Promise<void> {
-    await this.ensureSodiumReady();
-
-    const params = getArgon2Params();
-
-    // Derive the auth keypair deterministically from password + userSalt
-    // This is separate from the random account key derivation
-    this.authKeypair = await deriveAuthKeypair(password, userSalt, {
-      memoryKiB: params.memory,
-      iterations: params.iterations,
-      parallelism: params.parallelism,
-    });
-
-    log.debug('Auth keypair derived successfully');
+  async deriveAuthKey(
+    password: string,
+    userSalt: Uint8Array,
+  ): Promise<Uint8Array> {
+    const kdf = this.kdfFromSodiumParams();
+    const passwordBytes = new TextEncoder().encode(password);
+    const passwordCopy = new Uint8Array(passwordBytes);
+    const userSaltCopy = new Uint8Array(userSalt);
+    const facade = await getRustFacade();
+    let authPub: Uint8Array;
+    try {
+      authPub = facade.deriveAuthKeypairFromPassword(
+        passwordBytes,
+        userSaltCopy,
+        kdf.memoryKib,
+        kdf.iterations,
+        kdf.parallelism,
+      );
+    } catch (error) {
+      passwordBytes.fill(0);
+      passwordCopy.fill(0);
+      userSaltCopy.fill(0);
+      throw error;
+    }
+    passwordBytes.fill(0);
+    this.wipePreAuthState();
+    this.preAuthState = {
+      password: passwordCopy,
+      userSalt: userSaltCopy,
+      kdf,
+      authPublicKey: new Uint8Array(authPub),
+    };
+    return authPub;
   }
 
   /**
    * Sign an authentication challenge for LocalAuth login.
-   * Uses the auth Ed25519 key derived from password+salt.
    *
-   * Message format: context || username_len(4 BE) || username || [timestamp(8 BE)] || challenge
+   * Slice 2 contract: prefers the pre-auth slot (password-rooted)
+   * populated by `deriveAuthKey()`. Falls back to the active account
+   * handle's L2-rooted auth keypair when no pre-auth slot is set.
+   * Builds the canonical transcript inside Rust via
+   * `buildAuthChallengeTranscript` so JS stays canonical-encoding
+   * agnostic. Returns a 64-byte detached Ed25519 signature.
    */
   async signAuthChallenge(
     challenge: Uint8Array,
     username: string,
     timestamp?: number,
   ): Promise<Uint8Array> {
-    if (!this.authKeypair) {
-      throw new Error('Auth key not derived - call deriveAuthKey() first');
-    }
-    await this.ensureSodiumReady();
-
-    // Build message exactly as backend expects
-    const contextBytes = new TextEncoder().encode(
-      CryptoWorker.AUTH_CHALLENGE_CONTEXT,
+    const facade = await getRustFacade();
+    const transcript = facade.buildAuthChallengeTranscript(
+      username,
+      timestamp,
+      challenge,
     );
-    const usernameBytes = new TextEncoder().encode(username);
 
-    // Username length as 4 bytes big-endian
-    const usernameLenBytes = new Uint8Array(4);
-    new DataView(usernameLenBytes.buffer).setUint32(
-      0,
-      usernameBytes.length,
-      false,
-    ); // false = big-endian
-
-    // Build message parts
-    const parts: Uint8Array[] = [contextBytes, usernameLenBytes, usernameBytes];
-
-    // Add timestamp if provided (8 bytes big-endian)
-    if (timestamp !== undefined) {
-      const timestampBytes = new Uint8Array(8);
-      const view = new DataView(timestampBytes.buffer);
-      // JavaScript numbers are 64-bit floats, but we need uint64
-      // For timestamps in the valid range, this works correctly
-      view.setBigUint64(0, BigInt(timestamp), false); // false = big-endian
-      parts.push(timestampBytes);
+    if (this.preAuthState) {
+      const { password, userSalt, kdf } = this.preAuthState;
+      return facade.signAuthChallengeWithPassword(
+        password,
+        userSalt,
+        kdf.memoryKib,
+        kdf.iterations,
+        kdf.parallelism,
+        transcript,
+      );
     }
 
-    // Add challenge
-    parts.push(challenge);
-
-    // Concatenate all parts
-    const totalLen = parts.reduce((sum, p) => sum + p.length, 0);
-    const message = new Uint8Array(totalLen);
-    let offset = 0;
-    for (const part of parts) {
-      message.set(part, offset);
-      offset += part.length;
-    }
-
-    // Sign with Ed25519 auth key
-    return sodium.crypto_sign_detached(message, this.authKeypair.secretKey);
+    const accountId = this.requireAccountHandle();
+    return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
+      facade.signAuthChallengeWithAccount(rustAccount, transcript),
+    );
   }
 
   /**
-   * Get the Ed25519 public key for authentication.
-   * This is the "auth pubkey" stored on server for challenge verification.
-   * Returns the deterministically derived auth key (from password+salt), not the identity key.
+   * Get the Ed25519 LocalAuth public key.
+   *
+   * Returns the pre-auth slot's public key when `deriveAuthKey()` has
+   * populated it; otherwise returns the cached account-handle-rooted
+   * public key (set by `init` / `initWithWrappedKey` /
+   * `restoreSessionState`); otherwise `null`.
    */
   async getAuthPublicKey(): Promise<Uint8Array | null> {
-    if (!this.authKeypair) {
-      return null;
+    if (this.preAuthState) {
+      return new Uint8Array(this.preAuthState.authPublicKey);
     }
-    // Return a copy to prevent external modification
-    return new Uint8Array(this.authKeypair.publicKey);
+    if (!this.authPublicKey) return null;
+    return new Uint8Array(this.authPublicKey);
   }
 
   // =========================================================================
@@ -1424,52 +1593,26 @@ class CryptoWorker implements CryptoWorkerApi {
     accountSalt: Uint8Array;
     kdf: WorkerKdfParams;
   }): Promise<{ accountHandleId: AccountHandleId; wrappedAccountKey: Uint8Array }> {
-    // TODO(Slice 2): replace with a single Rust-side `wrap_account_key`
-    // call once `crates/mosaic-client` exposes that surface. For now we
-    // run the legacy TS `deriveKeys` path (which generates a random L2,
-    // wraps it under L1, and zeroes intermediates), then immediately open
-    // the resulting wrapped key as a Rust handle. Argon2id runs twice
-    // here — that's acceptable for the contract slice; Slice 2 will
-    // collapse it. See plan.md "Slice 2 — Account unlock" notes.
+    // Slice 2: single Rust `createAccount` call collapses the previous
+    // two-Argon2id-pass implementation. Generates a random L2, wraps it
+    // under the L1 derived from the password+salts, and opens an opaque
+    // secret handle in one Rust round-trip.
     await this.handleRegistry.clearAll();
-    await this.ensureSodiumReady();
-
-    const params: WorkerKdfParams = {
-      memoryKib: opts.kdf.memoryKib,
-      iterations: opts.kdf.iterations,
-      parallelism: opts.kdf.parallelism,
-    };
-    const sodiumParams = {
-      memory: params.memoryKib,
-      iterations: params.iterations,
-      parallelism: params.parallelism,
-    };
-
-    const keys = await deriveKeys(
-      opts.password,
-      opts.userSalt,
-      opts.accountSalt,
-      sodiumParams,
-    );
-    const wrappedAccountKey = new Uint8Array(keys.accountKeyWrapped);
-    memzero(keys.accountKey);
-
     const facade = await getRustFacade();
     const passwordBytes = new TextEncoder().encode(opts.password);
     try {
-      const rustHandle = facade.unlockAccount({
+      const out = facade.createNewAccount({
         password: passwordBytes,
         userSalt: opts.userSalt,
         accountSalt: opts.accountSalt,
-        wrappedAccountKey,
-        kdfMemoryKib: params.memoryKib,
-        kdfIterations: params.iterations,
-        kdfParallelism: params.parallelism,
+        kdfMemoryKib: opts.kdf.memoryKib,
+        kdfIterations: opts.kdf.iterations,
+        kdfParallelism: opts.kdf.parallelism,
       });
-      const handle = this.handleRegistry.registerAccount(rustHandle);
+      const handle = this.handleRegistry.registerAccount(out.handle);
       return {
         accountHandleId: handle.id as AccountHandleId,
-        wrappedAccountKey,
+        wrappedAccountKey: out.wrappedAccountKey,
       };
     } finally {
       passwordBytes.fill(0);

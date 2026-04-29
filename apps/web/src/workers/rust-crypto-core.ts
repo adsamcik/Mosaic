@@ -128,6 +128,35 @@ export class RustHandleFacade {
     return consumeResult(result, 'unlockAccountKey', (r) => r.handle);
   }
 
+  /**
+   * Mint a brand-new account-key handle in a single Argon2id pass.
+   *
+   * Returns the opaque Rust handle plus the wrapped account key bytes
+   * the caller must persist on the server. The L2 account key never
+   * crosses the WASM boundary.
+   */
+  createNewAccount(opts: {
+    password: Uint8Array;
+    userSalt: Uint8Array;
+    accountSalt: Uint8Array;
+    kdfMemoryKib: number;
+    kdfIterations: number;
+    kdfParallelism: number;
+  }): { handle: bigint; wrappedAccountKey: Uint8Array } {
+    const result = rustWasm.createAccount(
+      opts.password,
+      opts.userSalt,
+      opts.accountSalt,
+      opts.kdfMemoryKib,
+      opts.kdfIterations,
+      opts.kdfParallelism,
+    );
+    return consumeResult(result, 'createAccount', (r) => ({
+      handle: r.handle,
+      wrappedAccountKey: copyBytes(r.wrappedAccountKey),
+    }));
+  }
+
   closeAccountHandle(handle: bigint): void {
     const code = rustWasm.closeAccountKeyHandle(handle);
     throwIfErrorCode(code, 'closeAccountKeyHandle');
@@ -344,6 +373,82 @@ export class RustHandleFacade {
     );
   }
 
+  // ---- Password-rooted auth (pre-auth slot, used before account handle is open) ----
+
+  /**
+   * Derive the password-rooted LocalAuth Ed25519 keypair (Argon2id+HKDF
+   * over `password`+`userSalt`) and return the 32-byte public key.
+   * Used by the worker's `deriveAuthKey()` pre-auth slot.
+   */
+  deriveAuthKeypairFromPassword(
+    password: Uint8Array,
+    userSalt: Uint8Array,
+    kdfMemoryKib: number,
+    kdfIterations: number,
+    kdfParallelism: number,
+  ): Uint8Array {
+    const result = rustWasm.deriveAuthKeypairFromPassword(
+      password,
+      userSalt,
+      kdfMemoryKib,
+      kdfIterations,
+      kdfParallelism,
+    );
+    return consumeResult(result, 'deriveAuthKeypairFromPassword', (r) =>
+      copyBytes(r.authPublicKey),
+    );
+  }
+
+  /**
+   * Sign an auth challenge transcript with the password-rooted auth
+   * keypair. Re-runs Argon2id+HKDF on every call.
+   */
+  signAuthChallengeWithPassword(
+    password: Uint8Array,
+    userSalt: Uint8Array,
+    kdfMemoryKib: number,
+    kdfIterations: number,
+    kdfParallelism: number,
+    transcriptBytes: Uint8Array,
+  ): Uint8Array {
+    const result = rustWasm.signAuthChallengeWithPassword(
+      password,
+      userSalt,
+      kdfMemoryKib,
+      kdfIterations,
+      kdfParallelism,
+      transcriptBytes,
+    );
+    return consumeResult(result, 'signAuthChallengeWithPassword', (r) =>
+      copyBytes(r.bytes),
+    );
+  }
+
+  /**
+   * Return only the password-rooted LocalAuth Ed25519 public key.
+   * Re-runs Argon2id+HKDF on every call; prefer
+   * `signAuthChallengeWithPassword` when both signing and the public
+   * key are needed.
+   */
+  getAuthPublicKeyFromPassword(
+    password: Uint8Array,
+    userSalt: Uint8Array,
+    kdfMemoryKib: number,
+    kdfIterations: number,
+    kdfParallelism: number,
+  ): Uint8Array {
+    const result = rustWasm.getAuthPublicKeyFromPassword(
+      password,
+      userSalt,
+      kdfMemoryKib,
+      kdfIterations,
+      kdfParallelism,
+    );
+    return consumeResult(result, 'getAuthPublicKeyFromPassword', (r) =>
+      copyBytes(r.bytes),
+    );
+  }
+
   // ---- Link sharing ----
 
   generateLinkSecret(): Uint8Array {
@@ -492,6 +597,67 @@ export class RustHandleFacade {
   unwrapKey(wrapped: Uint8Array, wrapperKey: Uint8Array): Uint8Array {
     const result = rustWasm.unwrapKey(wrapped, wrapperKey);
     return consumeResult(result, 'unwrapKey', (r) => copyBytes(r.bytes));
+  }
+
+  // ---- Account-handle-keyed wrap/unwrap (Slice 2 + Slice 6) ----
+
+  /**
+   * Wrap `plaintext` with the L2 account key referenced by `accountHandle`.
+   *
+   * The L2 bytes never cross the JS boundary; this resolves the handle
+   * inside Rust and uses the secret directly. Output layout matches
+   * `wrap_key`: `nonce(24) || ciphertext_with_tag`.
+   */
+  wrapWithAccountHandle(accountHandle: bigint, plaintext: Uint8Array): Uint8Array {
+    const result = rustWasm.wrapWithAccountHandle(accountHandle, plaintext);
+    return consumeResult(result, 'wrapWithAccountHandle', (r) => copyBytes(r.bytes));
+  }
+
+  unwrapWithAccountHandle(accountHandle: bigint, wrapped: Uint8Array): Uint8Array {
+    const result = rustWasm.unwrapWithAccountHandle(accountHandle, wrapped);
+    return consumeResult(result, 'unwrapWithAccountHandle', (r) => copyBytes(r.bytes));
+  }
+
+  /**
+   * Derive the 32-byte OPFS-snapshot DB session key from the L2 account
+   * key referenced by `accountHandle`. Bootstrap material for the legacy
+   * DB worker — Slice 8 will replace it with an opaque handle.
+   *
+   * Callers MUST memzero the returned bytes after use.
+   */
+  deriveDbSessionKeyFromAccount(accountHandle: bigint): Uint8Array {
+    const result = rustWasm.deriveDbSessionKeyFromAccount(accountHandle);
+    return consumeResult(result, 'deriveDbSessionKeyFromAccount', (r) =>
+      copyBytes(r.bytes),
+    );
+  }
+
+  // ---- LocalAuth challenge transcript ----
+
+  /**
+   * Build the canonical LocalAuth challenge transcript bytes the backend
+   * verifies. Routes through the Rust canonical encoder so the worker
+   * does not need to maintain a JS-side reimplementation.
+   *
+   * `timestampMs === undefined` omits the timestamp segment to match the
+   * optional shape the backend accepts.
+   */
+  buildAuthChallengeTranscript(
+    username: string,
+    timestampMs: number | undefined,
+    challenge: Uint8Array,
+  ): Uint8Array {
+    const present = timestampMs !== undefined;
+    const tsAsBigInt = present ? BigInt(timestampMs) : 0n;
+    const result = rustWasm.buildAuthChallengeTranscript(
+      username,
+      tsAsBigInt,
+      present,
+      challenge,
+    );
+    return consumeResult(result, 'buildAuthChallengeTranscript', (r) =>
+      copyBytes(r.bytes),
+    );
   }
 
   // ---- Header parsing (legacy peek path uses this) ----

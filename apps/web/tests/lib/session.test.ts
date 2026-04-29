@@ -207,9 +207,10 @@ describe('session', () => {
     init: vi.fn(),
     initWithWrappedKey: vi.fn(),
     deriveIdentity: vi.fn(),
-    getSessionKey: vi.fn(() => new Uint8Array(32)),
+    getDbSessionKey: vi.fn(() => new Uint8Array(32)),
     getWrappedAccountKey: vi.fn(() => new Uint8Array(72)),
     getIdentityPublicKey: vi.fn(() => new Uint8Array(32)),
+    serializeSessionState: vi.fn(() => new Uint8Array(120)),
     clear: vi.fn(),
   };
 

@@ -148,7 +148,7 @@ describe('Worker API interface completeness', () => {
     const requiredMethods: (keyof CryptoWorkerApi)[] = [
       'init',
       'clear',
-      'getSessionKey',
+      'getDbSessionKey',
       'encryptShard',
       'decryptShard',
       'decryptManifest',
@@ -159,11 +159,12 @@ describe('Worker API interface completeness', () => {
       'createEpochKeyBundle',
       'generateEpochKey',
       'signManifest',
+      'deriveAuthKey',
     ];
 
     // This is a compile-time check - if CryptoWorkerApi is missing any method,
     // TypeScript will fail to compile
-    expect(requiredMethods).toHaveLength(13);
+    expect(requiredMethods).toHaveLength(14);
   });
 
   it('DbWorkerApi has required methods', () => {

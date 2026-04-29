@@ -199,10 +199,10 @@ function makeCryptoClientMock() {
     init: vi.fn(),
     initWithWrappedKey: vi.fn(),
     deriveIdentity: vi.fn(),
-    getSessionKey: vi.fn(() => new Uint8Array(32)),
+    getDbSessionKey: vi.fn(() => new Uint8Array(32)),
     getWrappedAccountKey: vi.fn(() => new Uint8Array([0xAA, 0xBB, 0xCC])),
     getIdentityPublicKey: vi.fn(() => new Uint8Array(32)),
-    exportKeys: vi.fn(() => null),
+    serializeSessionState: vi.fn(() => null),
     clear: vi.fn(),
   };
 }

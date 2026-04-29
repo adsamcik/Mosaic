@@ -179,6 +179,64 @@ export class BytesResult {
 if (Symbol.dispose) BytesResult.prototype[Symbol.dispose] = BytesResult.prototype.free;
 
 /**
+ * WASM-bindgen class for new-account creation results.
+ */
+export class CreateAccountResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(CreateAccountResult.prototype);
+        obj.__wbg_ptr = ptr;
+        CreateAccountResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        CreateAccountResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_createaccountresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.createaccountresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Opaque Rust-owned account-key handle for the newly minted L2.
+     * @returns {bigint}
+     */
+    get handle() {
+        const ret = wasm.createaccountresult_handle(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Server-storable wrapped account key. Caller persists this; it is
+     * re-supplied at the next login as the input to `unlockAccountKey`.
+     * @returns {Uint8Array}
+     */
+    get wrappedAccountKey() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.createaccountresult_wrappedAccountKey(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) CreateAccountResult.prototype[Symbol.dispose] = CreateAccountResult.prototype.free;
+
+/**
  * WASM-bindgen class for public crypto/domain golden-vector snapshots.
  */
 export class CryptoDomainGoldenVectorSnapshot {
@@ -1427,6 +1485,25 @@ export function advanceUploadJob(job_id, album_id, asset_id, epoch_id, phase, ac
 }
 
 /**
+ * Builds the canonical LocalAuth challenge transcript through WASM.
+ *
+ * `timestamp_ms_present == false` omits the timestamp segment.
+ * @param {string} username
+ * @param {bigint} timestamp_ms
+ * @param {boolean} timestamp_ms_present
+ * @param {Uint8Array} challenge
+ * @returns {BytesResult}
+ */
+export function buildAuthChallengeTranscript(username, timestamp_ms, timestamp_ms_present, challenge) {
+    const ptr0 = passStringToWasm0(username, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(challenge, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.buildAuthChallengeTranscript(ptr0, len0, timestamp_ms, timestamp_ms_present, ptr1, len1);
+    return BytesResult.__wrap(ret);
+}
+
+/**
  * Builds canonical metadata sidecar bytes through WASM.
  * @param {Uint8Array} album_id
  * @param {Uint8Array} photo_id
@@ -1494,6 +1571,29 @@ export function closeEpochKeyHandle(handle) {
 export function closeIdentityHandle(handle) {
     const ret = wasm.closeIdentityHandle(handle);
     return ret;
+}
+
+/**
+ * Creates a fresh account-key handle through the generated WASM binding
+ * surface. Returns the opaque handle plus the wrapped account key the
+ * caller must persist on the server for future logins.
+ * @param {Uint8Array} password
+ * @param {Uint8Array} user_salt
+ * @param {Uint8Array} account_salt
+ * @param {number} kdf_memory_kib
+ * @param {number} kdf_iterations
+ * @param {number} kdf_parallelism
+ * @returns {CreateAccountResult}
+ */
+export function createAccount(password, user_salt, account_salt, kdf_memory_kib, kdf_iterations, kdf_parallelism) {
+    const ptr0 = passArray8ToWasm0(password, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(user_salt, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(account_salt, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.createAccount(ptr0, len0, ptr1, len1, ptr2, len2, kdf_memory_kib, kdf_iterations, kdf_parallelism);
+    return CreateAccountResult.__wrap(ret);
 }
 
 /**
@@ -1566,12 +1666,46 @@ export function deriveAuthKeypairFromAccount(account_handle) {
 }
 
 /**
+ * Derives the password-rooted LocalAuth Ed25519 keypair through WASM.
+ *
+ * Used by the worker's `deriveAuthKey()` pre-auth slot to mint an auth
+ * keypair before the account handle is opened. Only the 32-byte public
+ * key crosses the WASM boundary.
+ * @param {Uint8Array} password
+ * @param {Uint8Array} user_salt
+ * @param {number} kdf_memory_kib
+ * @param {number} kdf_iterations
+ * @param {number} kdf_parallelism
+ * @returns {AuthKeypairResult}
+ */
+export function deriveAuthKeypairFromPassword(password, user_salt, kdf_memory_kib, kdf_iterations, kdf_parallelism) {
+    const ptr0 = passArray8ToWasm0(password, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(user_salt, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.deriveAuthKeypairFromPassword(ptr0, len0, ptr1, len1, kdf_memory_kib, kdf_iterations, kdf_parallelism);
+    return AuthKeypairResult.__wrap(ret);
+}
+
+/**
  * Derives the content key from an epoch handle through WASM.
  * @param {bigint} epoch_handle
  * @returns {BytesResult}
  */
 export function deriveContentKeyFromEpoch(epoch_handle) {
     const ret = wasm.deriveContentKeyFromEpoch(epoch_handle);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Derives the OPFS-snapshot DB session key from the L2 account key
+ * referenced by `account_handle` through WASM. Caller MUST memzero the
+ * returned bytes after use.
+ * @param {bigint} account_handle
+ * @returns {BytesResult}
+ */
+export function deriveDbSessionKeyFromAccount(account_handle) {
+    const ret = wasm.deriveDbSessionKeyFromAccount(account_handle);
     return BytesResult.__wrap(ret);
 }
 
@@ -1662,6 +1796,25 @@ export function generateLinkSecret() {
  */
 export function getAuthPublicKeyFromAccount(account_handle) {
     const ret = wasm.getAuthPublicKeyFromAccount(account_handle);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Returns the LocalAuth Ed25519 public key derived from `password` +
+ * `user_salt` through WASM.
+ * @param {Uint8Array} password
+ * @param {Uint8Array} user_salt
+ * @param {number} kdf_memory_kib
+ * @param {number} kdf_iterations
+ * @param {number} kdf_parallelism
+ * @returns {BytesResult}
+ */
+export function getAuthPublicKeyFromPassword(password, user_salt, kdf_memory_kib, kdf_iterations, kdf_parallelism) {
+    const ptr0 = passArray8ToWasm0(password, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(user_salt, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.getAuthPublicKeyFromPassword(ptr0, len0, ptr1, len1, kdf_memory_kib, kdf_iterations, kdf_parallelism);
     return BytesResult.__wrap(ret);
 }
 
@@ -1851,6 +2004,28 @@ export function signAuthChallengeWithAccount(account_handle, challenge_bytes) {
 }
 
 /**
+ * Signs a LocalAuth challenge transcript with the password-rooted auth
+ * keypair through WASM.
+ * @param {Uint8Array} password
+ * @param {Uint8Array} user_salt
+ * @param {number} kdf_memory_kib
+ * @param {number} kdf_iterations
+ * @param {number} kdf_parallelism
+ * @param {Uint8Array} transcript_bytes
+ * @returns {BytesResult}
+ */
+export function signAuthChallengeWithPassword(password, user_salt, kdf_memory_kib, kdf_iterations, kdf_parallelism, transcript_bytes) {
+    const ptr0 = passArray8ToWasm0(password, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(user_salt, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(transcript_bytes, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.signAuthChallengeWithPassword(ptr0, len0, ptr1, len1, kdf_memory_kib, kdf_iterations, kdf_parallelism, ptr2, len2);
+    return BytesResult.__wrap(ret);
+}
+
+/**
  * Signs manifest transcript bytes through WASM.
  * @param {bigint} handle
  * @param {Uint8Array} transcript_bytes
@@ -1918,6 +2093,20 @@ export function unwrapTierKeyFromLink(nonce, encrypted_key, tier_byte, wrapping_
     const ptr2 = passArray8ToWasm0(wrapping_key, wasm.__wbindgen_export2);
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.unwrapTierKeyFromLink(ptr0, len0, ptr1, len1, tier_byte, ptr2, len2);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Unwraps `wrapped` with the L2 account key referenced by `account_handle`
+ * through WASM.
+ * @param {bigint} account_handle
+ * @param {Uint8Array} wrapped
+ * @returns {BytesResult}
+ */
+export function unwrapWithAccountHandle(account_handle, wrapped) {
+    const ptr0 = passArray8ToWasm0(wrapped, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.unwrapWithAccountHandle(account_handle, ptr0, len0);
     return BytesResult.__wrap(ret);
 }
 
@@ -1991,6 +2180,20 @@ export function wrapTierKeyForLink(epoch_handle, tier_byte, wrapping_key) {
     const ret = wasm.wrapTierKeyForLink(epoch_handle, tier_byte, ptr0, len0);
     return WrappedTierKeyResult.__wrap(ret);
 }
+
+/**
+ * Wraps `plaintext` with the L2 account key referenced by `account_handle`
+ * through WASM. The L2 bytes never cross the JS boundary.
+ * @param {bigint} account_handle
+ * @param {Uint8Array} plaintext
+ * @returns {BytesResult}
+ */
+export function wrapWithAccountHandle(account_handle, plaintext) {
+    const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.wrapWithAccountHandle(account_handle, ptr0, len0);
+    return BytesResult.__wrap(ret);
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -2022,6 +2225,9 @@ const AuthKeypairResultFinalization = (typeof FinalizationRegistry === 'undefine
 const BytesResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_bytesresult_free(ptr >>> 0, 1));
+const CreateAccountResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_createaccountresult_free(ptr >>> 0, 1));
 const CryptoDomainGoldenVectorSnapshotFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_cryptodomaingoldenvectorsnapshot_free(ptr >>> 0, 1));

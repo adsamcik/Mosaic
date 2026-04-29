@@ -143,6 +143,15 @@ const FULL_KEY_INFO: &[u8] = b"mosaic:tier:full:v1";
 /// BLAKE2b-keyed domain separation label for album content keys.
 const CONTENT_KEY_INFO: &[u8] = b"mosaic:tier:content:v1";
 
+/// HKDF-SHA256 domain separation label for the OPFS-snapshot encryption key
+/// the worker derives from the L2 account key.
+///
+/// This key is the bootstrap material the legacy DB worker still expects
+/// (Slice 8 will replace it with an opaque handle). Deriving it via HKDF on a
+/// dedicated label prevents cross-protocol reuse with the album content key
+/// or any tier sub-key.
+const DB_SESSION_KEY_INFO: &[u8] = b"mosaic:db-session-key:v1";
+
 /// Crypto crate errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MosaicCryptoError {
@@ -1314,6 +1323,42 @@ pub fn derive_epoch_key_material(
 /// Returns `KdfFailure` if BLAKE2b-keyed derivation reports an error.
 pub fn derive_content_key(epoch_seed: &SecretKey) -> Result<SecretKey, MosaicCryptoError> {
     derive_labeled_key(epoch_seed.as_bytes(), CONTENT_KEY_INFO)
+}
+
+/// Derives the 32-byte OPFS-snapshot DB session key from an L2 account key.
+///
+/// HKDF-SHA256 with a dedicated `mosaic:db-session-key:v1` label so this
+/// material is domain-separated from every other epoch/tier/content key. The
+/// returned `SecretKey` zeroizes on drop.
+///
+/// # Errors
+/// Returns `KdfFailure` if HKDF expansion reports an error.
+pub fn derive_db_session_key(account_key: &SecretKey) -> Result<SecretKey, MosaicCryptoError> {
+    derive_labeled_key(account_key.as_bytes(), DB_SESSION_KEY_INFO)
+}
+
+/// Wraps a caller-supplied L2 account key under the password-derived L1.
+///
+/// Use when the L2 bytes already exist (e.g., a freshly minted handle that
+/// must persist its wrapped form on the server) and a second Argon2id pass
+/// to recompute L1 is unacceptable. The returned `Vec<u8>` is the same
+/// `nonce(24) || ciphertext+tag` envelope produced by [`derive_account_key`].
+///
+/// # Errors
+/// - `InvalidKeyLength` if `account_key` is not exactly 32 bytes.
+/// - `InvalidSaltLength` if either salt is not exactly 16 bytes.
+/// - `KdfProfileTooWeak` / `KdfProfileTooCostly` for out-of-policy profiles.
+/// - `KdfFailure` for Argon2id/HKDF errors.
+/// - `AuthenticationFailed` / `RngFailure` from the AEAD wrap.
+pub fn wrap_account_key(
+    password: Zeroizing<Vec<u8>>,
+    user_salt: &[u8],
+    account_salt: &[u8],
+    account_key: &SecretKey,
+    profile: KdfProfile,
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    let root_key = derive_root_key(password, user_salt, account_salt, profile)?;
+    wrap_key(account_key.as_bytes(), &root_key)
 }
 
 /// Returns the key for the requested shard tier.

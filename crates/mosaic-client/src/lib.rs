@@ -11,9 +11,11 @@ use mosaic_crypto::{
     AuthSigningSecretKey, BundleValidationContext, EncryptedContent, EpochKeyBundle,
     EpochKeyMaterial, IdentityKeypair, IdentitySignature, IdentitySigningPublicKey, KdfProfile,
     LinkKeys, ManifestSigningSecretKey, MosaicCryptoError, SealedBundle, SecretKey, WrappedTierKey,
-    decrypt_content, decrypt_shard, derive_content_key, derive_epoch_key_material,
-    derive_identity_keypair, derive_link_keys as crypto_derive_link_keys, encrypt_content,
-    encrypt_shard, generate_epoch_key_material, generate_identity_seed,
+    build_auth_challenge_transcript, decrypt_content, decrypt_shard, derive_account_key,
+    derive_auth_signing_keypair, derive_content_key, derive_db_session_key,
+    derive_epoch_key_material, derive_identity_keypair,
+    derive_link_keys as crypto_derive_link_keys, encrypt_content, encrypt_shard,
+    generate_epoch_key_material, generate_identity_seed,
     generate_link_secret as crypto_generate_link_secret, get_tier_key,
     seal_and_sign_bundle as crypto_seal_and_sign_bundle, sign_auth_challenge,
     sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_account_key,
@@ -187,6 +189,36 @@ impl AccountUnlockResult {
 
     const fn error(code: ClientErrorCode) -> Self {
         Self { code, handle: 0 }
+    }
+}
+
+/// FFI-safe new-account creation result.
+///
+/// Mirrors the `(handle, wrapped_account_key)` shape produced by
+/// [`create_new_account`]: the L2 account key never crosses the FFI boundary
+/// — only the opaque handle plus its server-storable wrapped form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateAccountResult {
+    pub code: ClientErrorCode,
+    pub handle: u64,
+    pub wrapped_account_key: Vec<u8>,
+}
+
+impl CreateAccountResult {
+    fn ok(handle: u64, wrapped_account_key: Vec<u8>) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            handle,
+            wrapped_account_key,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            handle: 0,
+            wrapped_account_key: Vec::new(),
+        }
     }
 }
 
@@ -974,6 +1006,124 @@ fn unlock_account_key_result(request: AccountUnlockRequest<'_>) -> Result<u64, C
     open_secret_handle(account_key.as_bytes())
 }
 
+/// Creates a brand-new account-key handle in a single Argon2id pass.
+///
+/// Generates a random 32-byte L2 account key, wraps it under the L1 derived
+/// from `password + user_salt + account_salt`, and opens an opaque secret
+/// handle pointing at L2. Returns the handle ID and the server-storable
+/// wrapped account key. The `password` buffer is zeroized on every path
+/// before this function returns.
+///
+/// Slice 2 collapses what was previously two Argon2id passes (TS
+/// `deriveKeys` followed by Rust `unlockAccount`) into one — see the
+/// migration plan for details.
+#[must_use]
+pub fn create_new_account_handle(
+    password: &mut [u8],
+    user_salt: &[u8],
+    account_salt: &[u8],
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> CreateAccountResult {
+    let password_copy = Zeroizing::new(password.to_vec());
+    password.zeroize();
+
+    let profile = match KdfProfile::new(kdf_memory_kib, kdf_iterations, kdf_parallelism) {
+        Ok(value) => value,
+        Err(error) => return CreateAccountResult::error(map_crypto_error(error)),
+    };
+
+    let material = match derive_account_key(password_copy, user_salt, account_salt, profile) {
+        Ok(value) => value,
+        Err(error) => return CreateAccountResult::error(map_crypto_error(error)),
+    };
+
+    match open_secret_handle(material.account_key.as_bytes()) {
+        Ok(handle) => CreateAccountResult::ok(handle, material.wrapped_account_key),
+        Err(error) => CreateAccountResult::error(error.code),
+    }
+}
+
+/// Wraps `plaintext` with the L2 account key referenced by `handle`.
+///
+/// Output layout: `nonce(24) || ciphertext_with_tag`. The L2 bytes never
+/// leave the Rust registry; this clones the key into a short-lived
+/// `SecretKey`, performs the wrap, and zeroizes the clone before returning.
+#[must_use]
+pub fn wrap_with_account_handle(handle: u64, plaintext: &[u8]) -> BytesResult {
+    let account_key = match account_secret_key_from_handle(handle) {
+        Ok(value) => value,
+        Err(error) => return bytes_error(error),
+    };
+    match wrap_key(plaintext, &account_key) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes,
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Unwraps `wrapped` with the L2 account key referenced by `handle`.
+#[must_use]
+pub fn unwrap_with_account_handle(handle: u64, wrapped: &[u8]) -> BytesResult {
+    let account_key = match account_secret_key_from_handle(handle) {
+        Ok(value) => value,
+        Err(error) => return bytes_error(error),
+    };
+    match unwrap_key(wrapped, &account_key) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: bytes.to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Derives the 32-byte OPFS-snapshot DB session key from the L2 account key
+/// referenced by `handle`.
+///
+/// Bootstrap material for the legacy DB worker (Slice 8 will replace it
+/// with an opaque encryption handle). Callers MUST memzero the returned
+/// bytes after use.
+#[must_use]
+pub fn derive_db_session_key_from_account_handle(handle: u64) -> BytesResult {
+    let account_key = match account_secret_key_from_handle(handle) {
+        Ok(value) => value,
+        Err(error) => return bytes_error(error),
+    };
+    match derive_db_session_key(&account_key) {
+        Ok(key) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: key.as_bytes().to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Builds the canonical LocalAuth challenge transcript byte string the
+/// backend verifies.
+///
+/// Wraps [`build_auth_challenge_transcript`] so the worker can use the
+/// Rust-canonical encoding instead of re-implementing it in JavaScript.
+/// `timestamp_ms` is `None` to omit the timestamp segment, matching the
+/// optional shape the backend accepts.
+#[must_use]
+pub fn build_auth_challenge_transcript_for_ffi(
+    username: &str,
+    timestamp_ms: Option<u64>,
+    challenge: &[u8],
+) -> BytesResult {
+    match build_auth_challenge_transcript(username, timestamp_ms, challenge) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes,
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
 /// Creates a new Rust-owned identity handle and returns the wrapped identity seed.
 #[must_use]
 pub fn create_identity_handle(account_key_handle: u64) -> IdentityHandleResult {
@@ -1303,6 +1453,101 @@ pub fn get_auth_public_key_from_account_handle(handle: u64) -> BytesResult {
         Ok(secret) => BytesResult {
             code: ClientErrorCode::Ok,
             bytes: secret.public_key().as_bytes().to_vec(),
+        },
+        Err(error) => bytes_error(error),
+    }
+}
+
+/// Derives the password-rooted LocalAuth Ed25519 keypair from `password` +
+/// `user_salt` via Argon2id+HKDF and returns the public key only.
+///
+/// Used by LocalAuth login/register **before** an account handle is open
+/// (the wrapped account key has not yet been fetched from the server).
+/// The password buffer is zeroized on every path before this function
+/// returns. Callers should still memzero the public key bytes when they
+/// are no longer needed (the value is not secret on its own, but
+/// hygienic wiping keeps the worker memory profile consistent).
+#[must_use]
+pub fn derive_auth_keypair_from_password(
+    password: &mut [u8],
+    user_salt: &[u8],
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> AuthKeypairResult {
+    match derive_auth_signing_keypair_from_password(
+        password,
+        user_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    ) {
+        Ok(keypair) => AuthKeypairResult::ok(keypair.public_key().as_bytes().to_vec()),
+        Err(error) => AuthKeypairResult::error(error.code),
+    }
+}
+
+/// Signs a caller-built LocalAuth challenge transcript with the
+/// password-rooted auth keypair.
+///
+/// This re-runs Argon2id+HKDF on every call. The current LocalAuth flow
+/// only signs at most twice per login session (once during register, once
+/// during login challenge-response), so the simple re-derive path is
+/// chosen over caching to keep the worker state minimal. A later perf
+/// pass (Slice 9 cleanup) may swap this for a transient pre-auth handle.
+///
+/// Returns a 64-byte detached Ed25519 signature on success.
+#[must_use]
+pub fn sign_auth_challenge_with_password(
+    password: &mut [u8],
+    user_salt: &[u8],
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+    transcript_bytes: &[u8],
+) -> BytesResult {
+    match derive_auth_signing_keypair_from_password(
+        password,
+        user_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    ) {
+        Ok(keypair) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: sign_auth_challenge(transcript_bytes, keypair.secret_key())
+                .as_bytes()
+                .to_vec(),
+        },
+        Err(error) => bytes_error(error),
+    }
+}
+
+/// Returns the 32-byte Ed25519 LocalAuth public key derived from
+/// `password` + `user_salt`.
+///
+/// Convenience wrapper that exposes only the public key. Re-runs
+/// Argon2id+HKDF on every call; callers who also need to sign should
+/// prefer `sign_auth_challenge_with_password` to amortise the KDF cost
+/// against a sign rather than calling both.
+#[must_use]
+pub fn get_auth_public_key_from_password(
+    password: &mut [u8],
+    user_salt: &[u8],
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> BytesResult {
+    match derive_auth_signing_keypair_from_password(
+        password,
+        user_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    ) {
+        Ok(keypair) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: keypair.public_key().as_bytes().to_vec(),
         },
         Err(error) => bytes_error(error),
     }
@@ -1899,6 +2144,23 @@ fn auth_signing_secret_from_account_handle(
     let account_key = account_secret_key_from_handle(handle)?;
     let mut seed = Zeroizing::new(account_key.as_bytes().to_vec());
     AuthSigningSecretKey::from_seed(seed.as_mut_slice()).map_err(client_error_from_crypto)
+}
+
+/// Internal helper: validate the KDF profile, run the password-rooted auth
+/// derivation, and zeroize the caller-owned password buffer on every path.
+fn derive_auth_signing_keypair_from_password(
+    password: &mut [u8],
+    user_salt: &[u8],
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> Result<mosaic_crypto::AuthSigningKeypair, ClientError> {
+    let password_copy = Zeroizing::new(password.to_vec());
+    password.zeroize();
+
+    let profile = KdfProfile::new(kdf_memory_kib, kdf_iterations, kdf_parallelism)
+        .map_err(client_error_from_crypto)?;
+    derive_auth_signing_keypair(password_copy, user_salt, profile).map_err(client_error_from_crypto)
 }
 
 fn account_secret_key_from_handle(handle: u64) -> Result<SecretKey, ClientError> {

@@ -352,9 +352,13 @@ export interface DbWorkerApi {
  */
 export interface CryptoWorkerApi {
   /**
-   * Initialize crypto with user credentials
-   * Derives L0 → L1 → L2 key hierarchy and generates NEW random account key.
-   * Use initWithWrappedKey() for existing users who have a stored wrapped key.
+   * Initialize crypto with user credentials.
+   *
+   * Slice 2 contract: this method routes through the Rust handle-based
+   * `createNewAccount` + `createIdentityForAccount` flow internally; it
+   * mints fresh account and identity handles and caches the wrapped
+   * account key for `getWrappedAccountKey`. The L0/L1/L2 bytes never
+   * cross the Comlink boundary.
    */
   init(
     password: string,
@@ -364,30 +368,86 @@ export interface CryptoWorkerApi {
 
   /**
    * Initialize crypto with an existing wrapped account key.
-   * Used for returning users who already have a stored wrapped key.
+   *
+   * Slice 2 contract: routes through `unlockAccount` +
+   * `openIdentityForAccount` if a wrapped identity seed is supplied,
+   * otherwise re-derives the identity from the account key.
    */
   initWithWrappedKey(
     password: string,
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
     wrappedAccountKey: Uint8Array,
+    wrappedIdentitySeed?: Uint8Array,
   ): Promise<void>;
 
   /**
    * Get the wrapped account key for server storage.
-   * Only available after init() for new users.
+   *
+   * Cached during `init` / `initWithWrappedKey`; never re-derived.
    */
   getWrappedAccountKey(): Promise<Uint8Array | null>;
 
   /**
-   * Clear all keys from memory
+   * Get the wrapped identity seed produced by `init` (or supplied to
+   * `initWithWrappedKey` when registering a returning user that has a
+   * persisted wrapped identity seed). `null` until identity is bound.
+   */
+  getWrappedIdentitySeed(): Promise<Uint8Array | null>;
+
+  /**
+   * Clear all keys from memory.
+   *
+   * Cascades closure of every Rust handle (epoch → identity → account)
+   * via the registry and bumps the registry's generation counter so any
+   * handle ID minted before this call resolves to `StaleHandle`.
    */
   clear(): Promise<void>;
 
   /**
-   * Get session key for database encryption
+   * Derive the 32-byte OPFS-snapshot DB session key from the active
+   * account handle.
+   *
+   * Slice 2 transitional API — replaces the legacy `getSessionKey()`
+   * that exposed L2-derived bytes to the DB worker. Slice 8 will replace
+   * the call site with an opaque encryption handle on the DB worker.
+   *
+   * @throws WorkerCryptoError(WorkerNotInitialized) if no account handle is open.
    */
-  getSessionKey(): Promise<Uint8Array>;
+  getDbSessionKey(): Promise<Uint8Array>;
+
+  /**
+   * Wrap `plaintext` with a key derived from the active account handle.
+   *
+   * Slice 2 replacement for the per-tab AES-GCM key in `key-cache.ts`:
+   * the wrap key never crosses Comlink. Output is opaque ciphertext
+   * (`nonce(24) || ciphertext_with_tag`).
+   */
+  getDbEncryptionWrap(plaintext: Uint8Array): Promise<Uint8Array>;
+
+  unwrapDbEncryption(wrapped: Uint8Array): Promise<Uint8Array>;
+
+  /**
+   * Serialize the session bootstrap state into an OPAQUE blob suitable
+   * for sessionStorage / IndexedDB caching across page reloads.
+   *
+   * The blob carries only opaque payload: the wrapped account key, the
+   * wrapped identity seed, and the auth public key. Raw secret keys
+   * NEVER appear in the blob — the caller must still supply the
+   * password to reopen the handles via `restoreSessionState`.
+   */
+  serializeSessionState(): Promise<Uint8Array | null>;
+
+  /**
+   * Reopen the account + identity handles from a previously serialized
+   * blob, supplying the password and salts for the L1 KDF pass.
+   */
+  restoreSessionState(
+    blob: Uint8Array,
+    password: string,
+    userSalt: Uint8Array,
+    accountSalt: Uint8Array,
+  ): Promise<void>;
 
   /**
    * Encrypt a photo shard
@@ -467,8 +527,14 @@ export interface CryptoWorkerApi {
   getIdentityPublicKey(): Promise<Uint8Array | null>;
 
   /**
-   * Derive identity keypair from account key
-   * Must be called after init() and before identity-dependent operations
+   * Slice 2 contract: identity is now derived during `init` /
+   * `initWithWrappedKey`. This method remains as a no-op stub for the
+   * Slice 3+ callers (`epoch-key-service.ts`, `epoch-rotation-service.ts`)
+   * that still defensively call it; it returns immediately when an
+   * identity handle is already open and is otherwise a no-op.
+   *
+   * @deprecated Slice 3 will retire the call sites; this stub will be
+   * deleted along with them.
    */
   deriveIdentity(): Promise<void>;
 
@@ -612,22 +678,43 @@ export interface CryptoWorkerApi {
   // =========================================================================
 
   /**
-   * Derive auth keypair from password + userSalt.
-   * This is a deterministic derivation separate from the random account key.
-   * The auth keypair is used for challenge-response authentication.
+   * Derive the password-rooted LocalAuth Ed25519 keypair from
+   * `password` + `userSalt` and stash it in the worker's transient
+   * pre-auth slot.
    *
-   * Must be called before signAuthChallenge() or getAuthPublicKey().
+   * Slice 2 fixup: this method exists because LocalAuth login/register
+   * must sign an auth challenge BEFORE an account handle is open (the
+   * server only releases the wrapped account key after a successful
+   * auth). The derived auth keypair is rooted in Argon2id+HKDF over
+   * `password`+`userSalt` — the same pre-auth derivation the legacy
+   * worker exposed — and is independent from the account-handle-rooted
+   * auth keypair used by future Slice 8+ flows.
    *
-   * @param password - User password
-   * @param userSalt - 16-byte user salt from server
+   * After this call, `signAuthChallenge` and `getAuthPublicKey` route
+   * through the pre-auth slot. The slot survives `init` /
+   * `initWithWrappedKey` so the register flow (which calls
+   * `deriveAuthKey` → `init` → `signAuthChallenge`) keeps the same
+   * keypair across the boundary. The slot is wiped on `clear()`.
+   *
+   * @param password - User's password (UTF-8)
+   * @param userSalt - 16-byte per-user salt
+   * @returns The 32-byte Ed25519 auth public key
    */
-  deriveAuthKey(password: string, userSalt: Uint8Array): Promise<void>;
+  deriveAuthKey(password: string, userSalt: Uint8Array): Promise<Uint8Array>;
 
   /**
    * Sign an authentication challenge for LocalAuth login.
-   * Uses the auth Ed25519 key derived from password+salt.
    *
-   * Message format: context || username_len(4 BE) || username || [timestamp(8 BE)] || challenge
+   * Slice 2 contract: prefers the pre-auth keypair installed by
+   * `deriveAuthKey()` (password-rooted). Falls back to the active
+   * account handle's L2-rooted auth keypair when no pre-auth slot is
+   * populated. Builds the canonical transcript
+   * (`Mosaic_Auth_Challenge_v1 || username_len_be_u32 || username ||
+   * timestamp_be_u64? || challenge`) inside Rust and returns a 64-byte
+   * detached signature.
+   *
+   * Throws `WorkerCryptoError(WorkerNotInitialized)` when neither a
+   * pre-auth keypair nor an open account handle is available.
    *
    * @param challenge - 32-byte challenge from server
    * @param username - Username for binding
@@ -641,29 +728,16 @@ export interface CryptoWorkerApi {
   ): Promise<Uint8Array>;
 
   /**
-   * Get the Ed25519 public key for authentication.
-   * This is the "auth pubkey" stored on server for challenge verification.
-   * Returns the deterministically derived auth key (from password+salt), not the identity key.
-   * @returns Ed25519 public key (32 bytes) or null if not initialized
+   * Get the Ed25519 LocalAuth public key.
+   *
+   * Returns the pre-auth keypair's public key when `deriveAuthKey()`
+   * has populated the transient slot; otherwise returns the cached
+   * account-handle-rooted public key (set by `init` /
+   * `initWithWrappedKey` / `restoreSessionState`); otherwise `null`.
+   *
+   * @returns Ed25519 public key (32 bytes) or null if no key is bound
    */
   getAuthPublicKey(): Promise<Uint8Array | null>;
-
-  // =========================================================================
-  // Key Export/Import for Session Caching
-  // =========================================================================
-
-  /**
-   * Export all keys for caching (base64 encoded).
-   * Used to persist keys across page reloads.
-   * @returns Exported keys or null if not initialized
-   */
-  exportKeys(): Promise<ExportedKeys | null>;
-
-  /**
-   * Import previously exported keys to restore session.
-   * @param keys - Keys previously exported via exportKeys()
-   */
-  importKeys(keys: ExportedKeys): Promise<void>;
 
   // =========================================================================
   // Album Content Encryption (Story Blocks)
@@ -956,16 +1030,6 @@ export interface CryptoWorkerApi {
   wrapKey(keyBytes: Uint8Array, wrapperKey: Uint8Array): Promise<Uint8Array>;
 
   unwrapKey(wrapped: Uint8Array, wrapperKey: Uint8Array): Promise<Uint8Array>;
-}
-
-/** Exported keys structure for session caching */
-export interface ExportedKeys {
-  accountKey: string; // base64
-  sessionKey: string; // base64
-  identitySecretKey: string; // base64 (Ed25519 64-byte secret)
-  identityPublicKey: string; // base64 (Ed25519 32-byte public)
-  identityX25519SecretKey: string; // base64
-  identityX25519PublicKey: string; // base64
 }
 
 /** GeoJSON Feature for map clustering */

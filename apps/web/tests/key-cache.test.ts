@@ -22,18 +22,12 @@ vi.mock('../src/lib/settings-service', () => ({
   getKeyCacheDurationMs: vi.fn(),
 }));
 
-// Sample test keys (base64 encoded)
+// Sample test keys (v2 schema: opaque session-state blob + salts)
 const mockKeys: CachedKeys = {
-  accountKey: btoa('account-key-32-bytes-test-data!'),
-  sessionKey: btoa('session-key-32-bytes-test-data!'),
-  identitySecretKey: btoa(
-    'identity-secret-key-64-bytes-data-for-ed25519-signing-test!!!!',
-  ),
-  identityPublicKey: btoa('identity-public-key-32-bytes!'),
-  identityX25519SecretKey: btoa('x25519-secret-key-32-bytes!!'),
-  identityX25519PublicKey: btoa('x25519-public-key-32-bytes!!'),
+  sessionState: btoa('opaque-session-state-blob-bytes-test-data!!!!!!'),
   userSalt: btoa('user-salt-16-byt'),
   accountSalt: btoa('acct-salt-16-byt'),
+  version: 2,
 };
 
 describe('key-cache', () => {
@@ -68,6 +62,61 @@ describe('key-cache', () => {
         Infinity,
       );
       expect(isKeyCachingEnabled()).toBe(true);
+    });
+  });
+
+  describe('schema versioning (v1 → v2 cutover)', () => {
+    it('refuses to cache payloads with non-v2 version', async () => {
+      const v1Like = {
+        sessionState: 'unused',
+        userSalt: 'unused',
+        accountSalt: 'unused',
+        version: 1,
+      } as unknown as CachedKeys;
+
+      await cacheKeys(v1Like);
+
+      // Nothing was written.
+      expect(sessionStorage.getItem('mosaic:keyCache')).toBeNull();
+    });
+
+    it('discards a stored v1 cache (legacy raw-bytes shape) on read', async () => {
+      // First, prime the in-memory encryption key and an envelope by
+      // writing a valid v2 cache.
+      await cacheKeys(mockKeys);
+      const validEnvelope = sessionStorage.getItem('mosaic:keyCache');
+      expect(validEnvelope).not.toBeNull();
+
+      // Replace the stored ciphertext with one whose plaintext is a v1
+      // payload. We simulate this by mutating the envelope's ciphertext
+      // through a separate path: encrypt a v1 plaintext under the same
+      // in-memory key by going via `crypto.subtle.encrypt` directly.
+      // For simplicity we just stub `crypto.subtle.decrypt` to return a
+      // v1 plaintext.
+      const v1Plaintext = new TextEncoder().encode(
+        JSON.stringify({
+          accountKey: 'aGVsbG8=',
+          sessionKey: 'aGVsbG8=',
+          identitySecretKey: 'aGVsbG8=',
+          identityPublicKey: 'aGVsbG8=',
+          identityX25519SecretKey: 'aGVsbG8=',
+          identityX25519PublicKey: 'aGVsbG8=',
+          userSalt: 'aGVsbG8=',
+          accountSalt: 'aGVsbG8=',
+        }),
+      );
+      const decryptSpy = vi
+        .spyOn(crypto.subtle, 'decrypt')
+        .mockResolvedValueOnce(v1Plaintext.buffer);
+      try {
+        const result = await getCachedKeys();
+        expect(result).toBeNull();
+      } finally {
+        decryptSpy.mockRestore();
+      }
+
+      // The v1 entry was cleared.
+      expect(sessionStorage.getItem('mosaic:keyCache')).toBeNull();
     });
   });
 
@@ -131,10 +180,10 @@ describe('key-cache', () => {
       const retrieved = await getCachedKeys();
 
       expect(retrieved).not.toBeNull();
-      expect(retrieved!.accountKey).toBe(mockKeys.accountKey);
-      expect(retrieved!.sessionKey).toBe(mockKeys.sessionKey);
-      expect(retrieved!.identitySecretKey).toBe(mockKeys.identitySecretKey);
+      expect(retrieved!.sessionState).toBe(mockKeys.sessionState);
       expect(retrieved!.userSalt).toBe(mockKeys.userSalt);
+      expect(retrieved!.accountSalt).toBe(mockKeys.accountSalt);
+      expect(retrieved!.version).toBe(2);
     });
 
     it('returns null when cache is empty', async () => {
@@ -188,7 +237,7 @@ describe('key-cache', () => {
 
       const result = await getCachedKeys();
       expect(result).not.toBeNull();
-      expect(result!.accountKey).toBe(mockKeys.accountKey);
+      expect(result!.sessionState).toBe(mockKeys.sessionState);
 
       Date.now = originalNow;
     });
@@ -205,7 +254,7 @@ describe('key-cache', () => {
         const result = await getCachedKeys();
 
         expect(result).not.toBeNull();
-        expect(result!.accountKey).toBe(mockKeys.accountKey);
+        expect(result!.sessionState).toBe(mockKeys.sessionState);
         expect(Array.from(plaintextBytes).every((byte) => byte === 0)).toBe(
           true,
         );
@@ -284,10 +333,10 @@ describe('key-cache', () => {
       const stored = sessionStorage.getItem('mosaic:keyCache');
       const envelope = JSON.parse(stored!);
 
-      // The ciphertext should not contain the plain keys
+      // The ciphertext should not contain the plain session-state bytes
       const ciphertextDecoded = atob(envelope.ciphertext);
-      expect(ciphertextDecoded).not.toContain('account-key');
-      expect(ciphertextDecoded).not.toContain('session-key');
+      expect(ciphertextDecoded).not.toContain('opaque-session-state-blob');
+      expect(ciphertextDecoded).not.toContain('user-salt-16-byt');
     });
 
     it('each cache operation generates a unique nonce', async () => {
