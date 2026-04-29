@@ -419,6 +419,8 @@
       "lastLogin": "Poslední přihlášení",
       "lastLoginValue": "Nyní (tato relace)",
       "thisSession": "Nyní (tato relace)",
+      "stripExif": "Odstranit metadata z originálů",
+      "stripExifDescription": "Před šifrováním odstranit data EXIF a IPTC (GPS souřadnice, sériové číslo zařízení, časové značky) z originálů ve formátu JPEG. Doporučeno pro sdílená alba. Ostatní formáty (HEIC, PNG, WebP, AVIF) jsou ponechány beze změny.",
       "clearLocalData": "Vymazat lokální data",
       "clearLocalDataDescription": "Smazat uložené fotky, klíče a databázi. Budete odhlášeni.",
       "clearDataButton": "Vymazat data",

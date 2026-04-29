@@ -50,6 +50,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 30,
         originalStorageFormat: 'avif',
+        stripExifFromOriginals: true,
       });
     });
 
@@ -61,6 +62,7 @@ describe('settings-service', () => {
         autoSync: false,
         keyCacheDuration: 60,
         originalStorageFormat: 'preserve',
+        stripExifFromOriginals: true,
       });
 
       const settings = getSettings();
@@ -72,6 +74,7 @@ describe('settings-service', () => {
         autoSync: false,
         keyCacheDuration: 60,
         originalStorageFormat: 'preserve',
+        stripExifFromOriginals: true,
       });
     });
 
@@ -83,6 +86,7 @@ describe('settings-service', () => {
         autoSync: 'yes', // Invalid (not boolean)
         keyCacheDuration: 999, // Invalid
         originalStorageFormat: 'invalid', // Invalid
+        stripExifFromOriginals: 'yes', // Invalid (not boolean)
       });
 
       const settings = getSettings();
@@ -94,6 +98,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 30,
         originalStorageFormat: 'avif',
+        stripExifFromOriginals: true,
       });
     });
 
@@ -109,6 +114,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 30,
         originalStorageFormat: 'avif',
+        stripExifFromOriginals: true,
       });
     });
 
@@ -146,6 +152,7 @@ describe('settings-service', () => {
         autoSync: false,
         keyCacheDuration: 60,
         originalStorageFormat: 'preserve',
+        stripExifFromOriginals: true,
       };
 
       saveSettings(settings);
@@ -163,6 +170,7 @@ describe('settings-service', () => {
         autoSync: 'yes',
         keyCacheDuration: 999,
         originalStorageFormat: 'invalid',
+        stripExifFromOriginals: 'yes',
       } as unknown as UserSettings;
 
       saveSettings(invalidSettings);
@@ -174,6 +182,7 @@ describe('settings-service', () => {
       expect(saved.autoSync).toBe(true);
       expect(saved.keyCacheDuration).toBe(30);
       expect(saved.originalStorageFormat).toBe('avif');
+      expect(saved.stripExifFromOriginals).toBe(true);
     });
 
     it('notifies subscribers when settings are saved', () => {
@@ -187,6 +196,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 240,
         originalStorageFormat: 'preserve',
+        stripExifFromOriginals: true,
       });
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -197,6 +207,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 240,
         originalStorageFormat: 'preserve',
+        stripExifFromOriginals: true,
       });
 
       unsubscribe();
@@ -212,6 +223,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 30,
         originalStorageFormat: 'avif',
+        stripExifFromOriginals: true,
       });
 
       updateSettings({ idleTimeout: 60 });
@@ -245,6 +257,7 @@ describe('settings-service', () => {
         autoSync: false,
         keyCacheDuration: -1,
         originalStorageFormat: 'preserve',
+        stripExifFromOriginals: true,
       });
 
       expect(getSetting('idleTimeout')).toBe(60);
@@ -275,6 +288,7 @@ describe('settings-service', () => {
         autoSync: false,
         keyCacheDuration: 60,
         originalStorageFormat: 'preserve',
+        stripExifFromOriginals: true,
       });
 
       resetSettings();
@@ -305,6 +319,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 30,
         originalStorageFormat: 'avif',
+        stripExifFromOriginals: true,
       });
     });
 
@@ -326,6 +341,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 30,
         originalStorageFormat: 'avif',
+        stripExifFromOriginals: true,
       });
 
       expect(getIdleTimeoutMs()).toBe(15 * 60 * 1000);
@@ -348,6 +364,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 30,
         originalStorageFormat: 'avif',
+        stripExifFromOriginals: true,
       });
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -368,6 +385,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 30,
         originalStorageFormat: 'avif',
+        stripExifFromOriginals: true,
       });
 
       expect(callback).not.toHaveBeenCalled();
@@ -386,6 +404,7 @@ describe('settings-service', () => {
         autoSync: true,
         keyCacheDuration: 30,
         originalStorageFormat: 'avif',
+        stripExifFromOriginals: true,
       });
 
       expect(callback1).toHaveBeenCalledTimes(1);

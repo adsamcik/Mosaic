@@ -551,6 +551,30 @@ export function SettingsPage() {
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">
+                  {t('settings.security.stripExif')}
+                </span>
+                <span className="setting-description">
+                  {t('settings.security.stripExifDescription')}
+                </span>
+              </div>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={settings.stripExifFromOriginals}
+                  onChange={(e) =>
+                    handleSettingsChange(
+                      'stripExifFromOriginals',
+                      e.target.checked,
+                    )
+                  }
+                  data-testid="strip-exif-toggle"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">
                   {t('settings.security.clearLocalData')}
                 </span>
                 <span className="setting-description">

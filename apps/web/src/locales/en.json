@@ -411,6 +411,8 @@
       "lastLogin": "Last Login",
       "lastLoginValue": "Now (this session)",
       "thisSession": "Now (this session)",
+      "stripExif": "Strip metadata from originals",
+      "stripExifDescription": "Remove EXIF and IPTC data (GPS coordinates, device serial, timestamps) from JPEG originals before encryption. Recommended for shared albums. Other formats (HEIC, PNG, WebP, AVIF) are passed through unchanged.",
       "clearLocalData": "Clear Local Data",
       "clearLocalDataDescription": "Delete cached photos, keys, and database. You will be logged out.",
       "clearDataButton": "Clear Data",

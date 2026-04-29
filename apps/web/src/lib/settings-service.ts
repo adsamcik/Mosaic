@@ -38,6 +38,12 @@ export interface UserSettings {
   keyCacheDuration: KeyCacheDuration;
   /** Store original images as AVIF for better compression (default: true) */
   originalStorageFormat: OriginalStorageFormat;
+  /**
+   * Strip EXIF / IPTC metadata (GPS, device serial, timestamps) from JPEG
+   * originals before they are encrypted and uploaded. Default: true. Only
+   * applies to JPEG; HEIC/PNG/WebP/AVIF are passed through unchanged for v1.
+   */
+  stripExifFromOriginals: boolean;
 }
 
 // =============================================================================
@@ -55,6 +61,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   autoSync: true,
   keyCacheDuration: 30, // 30 minutes by default
   originalStorageFormat: 'avif', // Convert originals to AVIF for better compression
+  stripExifFromOriginals: true, // Privacy default: strip EXIF from JPEG originals
 };
 
 /** Valid idle timeout values */
@@ -137,6 +144,10 @@ function validateSettings(settings: unknown): UserSettings {
     )
       ? (s.originalStorageFormat as OriginalStorageFormat)
       : DEFAULT_SETTINGS.originalStorageFormat,
+    stripExifFromOriginals:
+      typeof s.stripExifFromOriginals === 'boolean'
+        ? s.stripExifFromOriginals
+        : DEFAULT_SETTINGS.stripExifFromOriginals,
   };
 }
 
@@ -257,4 +268,13 @@ export function getThumbnailQualityValue(): number {
  */
 export function shouldStoreOriginalsAsAvif(): boolean {
   return getSettings().originalStorageFormat === 'avif';
+}
+
+/**
+ * Check if EXIF / IPTC metadata should be stripped from JPEG originals
+ * before encryption. Default: true. Only JPEG is currently stripped; other
+ * formats pass through unchanged regardless of this setting.
+ */
+export function shouldStripExifFromOriginals(): boolean {
+  return getSettings().stripExifFromOriginals;
 }

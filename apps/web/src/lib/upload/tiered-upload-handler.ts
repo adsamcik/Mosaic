@@ -1,5 +1,10 @@
 import { createLogger } from '../logger';
-import { getThumbnailQualityValue } from '../settings-service';
+import { stripExifFromBlob } from '../exif-stripper';
+import {
+  getThumbnailQualityValue,
+  shouldStoreOriginalsAsAvif,
+  shouldStripExifFromOriginals,
+} from '../settings-service';
 import {
   generateThumbnail,
   generateTieredImages,
@@ -56,6 +61,42 @@ export async function processTieredUpload(
     log.info(
       `Images converted: thumb=${tieredImages.thumbnail.width}x${tieredImages.thumbnail.height}, preview=${tieredImages.preview.width}x${tieredImages.preview.height}, original=${tieredImages.originalWidth}x${tieredImages.originalHeight}`,
     );
+
+    // H5: Strip EXIF / IPTC metadata from the original-tier bytes before
+    // encryption. The thumbnail and preview tiers are always re-encoded
+    // through canvas (AVIF), which sheds EXIF naturally. The original tier
+    // can be JPEG passthrough (when the user prefers `preserve` format),
+    // which would otherwise leak GPS, device serial, and timestamps to
+    // anyone with a share link. Stripping is opt-out via settings.
+    //
+    // Format-coverage gap: only JPEG is stripped today. HEIC, PNG, WebP,
+    // and AVIF originals are passed through unchanged (the stripper marks
+    // them with skippedReason='unsupported-mime'). See exif-stripper.ts
+    // for the full rationale and follow-up plan.
+    if (shouldStripExifFromOriginals()) {
+      const originalMimeType = shouldStoreOriginalsAsAvif()
+        ? 'image/avif'
+        : task.file.type || 'application/octet-stream';
+      const sizeBefore = tieredImages.original.data.byteLength;
+      const stripResult = await stripExifFromBlob(
+        new Blob([new Uint8Array(tieredImages.original.data)]),
+        originalMimeType,
+      );
+      if (stripResult.stripped) {
+        tieredImages.original.data = stripResult.bytes;
+        log.info('Stripped EXIF from original tier', {
+          mimeType: originalMimeType,
+          sizeBefore,
+          sizeAfter: stripResult.bytes.byteLength,
+        });
+      } else {
+        log.info('EXIF stripping skipped for original tier', {
+          mimeType: originalMimeType,
+          sizeBefore,
+          reason: stripResult.skippedReason ?? 'no-metadata-found',
+        });
+      }
+    }
 
     // Step 2: Encrypt the converted images
     task.currentAction = 'encrypting';
