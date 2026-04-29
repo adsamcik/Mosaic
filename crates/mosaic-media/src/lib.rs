@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+use zeroize::Zeroizing;
+
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 const WEBP_VP8X_ICC_FLAG: u8 = 0b0010_0000;
 const WEBP_VP8X_EXIF_FLAG: u8 = 0b0000_0100;
@@ -13,6 +15,12 @@ pub const MAX_IMAGE_PIXELS: u32 = 32 * 1024 * 1024;
 pub const THUMBNAIL_MAX_DIMENSION: u32 = 256;
 /// Maximum canonical preview tier edge length in pixels.
 pub const PREVIEW_MAX_DIMENSION: u32 = 1024;
+/// Defense-in-depth cap on the number of TIFF IFD entries scanned while
+/// looking for the EXIF orientation tag. Real-world cameras rarely exceed
+/// a few dozen IFD entries; the TIFF on-wire ceiling is `u16::MAX` (65 535)
+/// which would let adversarial EXIF push the parser through 65 535 fixed
+/// iterations of constant work. Bounded but unnecessary work — clamp it.
+const MAX_TIFF_IFD_ENTRIES: u16 = 256;
 
 /// Supported image container formats for dependency-free media boundary checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -290,15 +298,20 @@ fn generate_tiers_with_verified_metadata<E: MediaTierEncoder + ?Sized>(
     encoder: &E,
 ) -> Result<GeneratedTiers, MosaicMediaError> {
     let stripped = strip_known_metadata(metadata.format, bytes)?;
+    // Re-wrap the stripped plaintext so any encoder/layout failure between
+    // here and the original-tier construction wipes the buffer on drop. The
+    // public `StrippedMedia` type still exposes a plain `Vec<u8>`; this is
+    // internal hygiene only.
+    let mut stripped_bytes: Zeroizing<Vec<u8>> = Zeroizing::new(stripped.bytes);
     let layout = plan_tier_layout(metadata.width, metadata.height)?;
 
-    let thumbnail = encode_and_validate_tier(encoder, &stripped.bytes, metadata, layout.thumbnail)?;
-    let preview = encode_and_validate_tier(encoder, &stripped.bytes, metadata, layout.preview)?;
+    let thumbnail = encode_and_validate_tier(encoder, &stripped_bytes, metadata, layout.thumbnail)?;
+    let preview = encode_and_validate_tier(encoder, &stripped_bytes, metadata, layout.preview)?;
     let original = TierOutput {
         tier: layout.original.tier,
         width: layout.original.width,
         height: layout.original.height,
-        bytes: stripped.bytes,
+        bytes: std::mem::take(&mut *stripped_bytes),
     };
 
     Ok(GeneratedTiers {
@@ -408,11 +421,19 @@ fn encode_and_validate_tier<E: MediaTierEncoder + ?Sized>(
     metadata: ImageMetadata,
     dimensions: TierDimensions,
 ) -> Result<TierOutput, MosaicMediaError> {
-    let output = encoder.encode_tier(source, metadata, dimensions)?;
+    let TierOutput {
+        tier,
+        width,
+        height,
+        bytes,
+    } = encoder.encode_tier(source, metadata, dimensions)?;
+    // Re-wrap the encoded plaintext so an encoded-tier-mismatch error wipes
+    // the buffer on drop instead of leaving it for the allocator to recycle.
+    let mut bytes: Zeroizing<Vec<u8>> = Zeroizing::new(bytes);
     let actual = TierDimensions {
-        tier: output.tier,
-        width: output.width,
-        height: output.height,
+        tier,
+        width,
+        height,
     };
     if actual != dimensions {
         return Err(MosaicMediaError::EncodedTierMismatch {
@@ -421,7 +442,12 @@ fn encode_and_validate_tier<E: MediaTierEncoder + ?Sized>(
         });
     }
 
-    Ok(output)
+    Ok(TierOutput {
+        tier,
+        width,
+        height,
+        bytes: std::mem::take(&mut *bytes),
+    })
 }
 
 /// Extracts the canonical EXIF orientation value used for display normalization.
@@ -606,6 +632,13 @@ fn parse_tiff_orientation(tiff: &[u8]) -> u8 {
         Some(value) => value,
         None => return NORMAL_EXIF_ORIENTATION,
     };
+    // Defense-in-depth: an adversarial EXIF payload may declare up to
+    // `u16::MAX` IFD entries. Treat anything beyond `MAX_TIFF_IFD_ENTRIES`
+    // as malformed and fall back to normal orientation, matching the
+    // existing fallback policy for other unparseable TIFF metadata.
+    if entry_count > MAX_TIFF_IFD_ENTRIES {
+        return NORMAL_EXIF_ORIENTATION;
+    }
     let entries_start = match ifd_offset.checked_add(2) {
         Some(value) => value,
         None => return NORMAL_EXIF_ORIENTATION,
@@ -886,12 +919,12 @@ fn inspect_vp8x_dimensions(payload: &[u8]) -> Result<(u32, u32), MosaicMediaErro
         return Err(MosaicMediaError::InvalidWebP);
     }
 
-    let width = read_u24_le(&payload[4..7]) + 1;
-    let height = read_u24_le(&payload[7..10]) + 1;
+    let width = read_u24_le(&[payload[4], payload[5], payload[6]]) + 1;
+    let height = read_u24_le(&[payload[7], payload[8], payload[9]]) + 1;
     validate_dimensions(width, height)
 }
 
-fn read_u24_le(bytes: &[u8]) -> u32 {
+fn read_u24_le(bytes: &[u8; 3]) -> u32 {
     u32::from(bytes[0]) | (u32::from(bytes[1]) << 8) | (u32::from(bytes[2]) << 16)
 }
 
@@ -900,7 +933,10 @@ fn strip_jpeg_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> 
         return Err(MosaicMediaError::InvalidJpeg);
     }
 
-    let mut output = Vec::with_capacity(bytes.len());
+    // Pre-allocated to the input size so `extend_from_slice` never reallocates
+    // and orphans a partially-written plaintext buffer outside the wrapper.
+    // On any error path the wrapper's `Drop` zeroes the accumulated bytes.
+    let mut output: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(bytes.len()));
     let mut removed = Vec::new();
     output.extend_from_slice(&bytes[..2]);
 
@@ -925,7 +961,7 @@ fn strip_jpeg_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> 
         if marker == 0xda {
             output.extend_from_slice(&bytes[marker_start..]);
             return Ok(StrippedMedia {
-                bytes: output,
+                bytes: std::mem::take(&mut *output),
                 removed,
             });
         }
@@ -967,7 +1003,7 @@ fn strip_jpeg_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> 
     }
 
     Ok(StrippedMedia {
-        bytes: output,
+        bytes: std::mem::take(&mut *output),
         removed,
     })
 }
@@ -994,7 +1030,10 @@ fn strip_png_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
         return Err(MosaicMediaError::InvalidPng);
     }
 
-    let mut output = Vec::with_capacity(bytes.len());
+    // Pre-allocated to the input size so `extend_from_slice` never reallocates
+    // and orphans a partially-written plaintext buffer outside the wrapper.
+    // On any error path the wrapper's `Drop` zeroes the accumulated bytes.
+    let mut output: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(bytes.len()));
     let mut removed = Vec::new();
     output.extend_from_slice(PNG_SIGNATURE);
 
@@ -1052,7 +1091,7 @@ fn strip_png_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
     }
 
     Ok(StrippedMedia {
-        bytes: output,
+        bytes: std::mem::take(&mut *output),
         removed,
     })
 }
@@ -1075,7 +1114,11 @@ fn strip_webp_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> 
         return Err(MosaicMediaError::InvalidWebP);
     }
 
-    let mut output = b"RIFF\0\0\0\0WEBP".to_vec();
+    // Pre-allocated to the input size so `extend_from_slice` never reallocates
+    // and orphans a partially-written plaintext buffer outside the wrapper.
+    // On any error path the wrapper's `Drop` zeroes the accumulated bytes.
+    let mut output: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(bytes.len()));
+    output.extend_from_slice(b"RIFF\0\0\0\0WEBP");
     let mut removed = Vec::new();
     let mut offset = 12;
 
@@ -1141,7 +1184,7 @@ fn strip_webp_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> 
     output[4..8].copy_from_slice(&riff_size.to_le_bytes());
 
     Ok(StrippedMedia {
-        bytes: output,
+        bytes: std::mem::take(&mut *output),
         removed,
     })
 }
@@ -1157,6 +1200,7 @@ fn classify_webp_metadata(chunk_type: &[u8]) -> Option<MetadataKind> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
     use std::cell::RefCell;
 
     use super::{
@@ -2207,6 +2251,675 @@ mod tests {
             strip_known_metadata(MediaFormat::WebP, &malformed_webp),
             Err(MosaicMediaError::InvalidWebP)
         );
+    }
+
+    /// Documents the M2 zeroize-on-error contract for `strip_jpeg_metadata`:
+    /// after a passed-through DQT segment has already been copied into the
+    /// internal output accumulator, a malformed marker that fails the
+    /// `bytes.get(offset) != Some(&0xff)` invariant must return
+    /// `InvalidJpeg` without panicking. The internal `Zeroizing<Vec<u8>>`
+    /// drops at the early-return site and wipes the partial plaintext.
+    #[test]
+    fn strip_jpeg_returns_error_after_partial_output_without_panic() {
+        // SOI: 0xff 0xd8
+        // DQT (0xdb) segment with length 5 and 3 bytes of payload — preserved.
+        // Then a non-0xff byte where the next marker prefix is required.
+        let mut input = vec![0xff, 0xd8];
+        input.extend_from_slice(&[0xff, 0xdb, 0x00, 0x05, 0x01, 0x02, 0x03]);
+        input.push(0x00);
+
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Jpeg, &input),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    /// Documents the M3 cap on adversarial TIFF IFD entry counts: an EXIF
+    /// payload that declares `u16::MAX` IFD entries must short-circuit to
+    /// `NORMAL_EXIF_ORIENTATION` immediately rather than walking the full
+    /// `MAX_TIFF_IFD_ENTRIES`-bounded loop on every call. The well-under-a-
+    /// second budget catches any future regression that re-introduces the
+    /// pre-cap iteration count.
+    #[test]
+    fn excessive_tiff_ifd_entry_count_short_circuits_to_normal_orientation() {
+        let mut tiff_payload = Vec::new();
+        tiff_payload.extend_from_slice(b"MM");
+        tiff_payload.extend_from_slice(&42_u16.to_be_bytes());
+        tiff_payload.extend_from_slice(&8_u32.to_be_bytes());
+        tiff_payload.extend_from_slice(&u16::MAX.to_be_bytes());
+        let input = jpeg_with_segments(&[
+            jpeg_exif_segment(&tiff_payload),
+            jpeg_sof_segment(0xc0, 1200, 800),
+        ]);
+
+        let started = std::time::Instant::now();
+        let orientation = extract_exif_orientation(MediaFormat::Jpeg, &input);
+        let elapsed = started.elapsed();
+
+        assert_eq!(orientation, Ok(NORMAL_EXIF_ORIENTATION));
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "excessive IFD entry count should bail out fast: {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn extract_jpeg_orientation_rejects_inputs_without_soi_prefix() {
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, b"hello"),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn extract_jpeg_orientation_rejects_marker_byte_not_preceded_by_0xff() {
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff, 0xd8, 0x00]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff, 0xd8, 0x42, 0xe0]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn extract_jpeg_orientation_rejects_truncated_marker_byte() {
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff, 0xff]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn extract_jpeg_orientation_skips_rst_and_tem_markers_before_returning_default() {
+        let bytes = [
+            0xff, 0xd8, // SOI
+            0xff, 0xd0, // RST0
+            0xff, 0xd7, // RST7
+            0xff, 0x01, // TEM
+            0xff, 0xda, // SOS -> returns Ok(NORMAL)
+        ];
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &bytes),
+            Ok(NORMAL_EXIF_ORIENTATION)
+        );
+
+        let eoi_terminated = [0xff, 0xd8, 0xff, 0xd0, 0xff, 0xd9];
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &eoi_terminated),
+            Ok(NORMAL_EXIF_ORIENTATION)
+        );
+    }
+
+    #[test]
+    fn extract_jpeg_orientation_rejects_truncated_segment_length_field() {
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff, 0xe0]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff, 0xe0, 0x00]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn extract_jpeg_orientation_rejects_segment_length_below_minimum() {
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x00]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x01]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn extract_jpeg_orientation_rejects_truncated_segment_payload() {
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn extract_jpeg_orientation_returns_normal_when_input_consumed_without_scan() {
+        // FF D8 FF E0 + segment length 2 (no payload) -> loop completes naturally.
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x02]),
+            Ok(NORMAL_EXIF_ORIENTATION)
+        );
+    }
+
+    #[test]
+    fn parse_tiff_orientation_skips_non_orientation_tags_then_finds_orientation() {
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"MM");
+        tiff.extend_from_slice(&42_u16.to_be_bytes());
+        tiff.extend_from_slice(&8_u32.to_be_bytes()); // ifd_offset = 8
+        tiff.extend_from_slice(&2_u16.to_be_bytes()); // 2 entries
+        // entry 0: ImageWidth (0x0100), not orientation -> continue
+        tiff.extend_from_slice(&0x0100_u16.to_be_bytes());
+        tiff.extend_from_slice(&3_u16.to_be_bytes());
+        tiff.extend_from_slice(&1_u32.to_be_bytes());
+        tiff.extend_from_slice(&[0, 0, 0, 0]);
+        // entry 1: orientation = 6
+        tiff.extend_from_slice(&0x0112_u16.to_be_bytes());
+        tiff.extend_from_slice(&3_u16.to_be_bytes());
+        tiff.extend_from_slice(&1_u32.to_be_bytes());
+        tiff.extend_from_slice(&6_u16.to_be_bytes());
+        tiff.extend_from_slice(&[0, 0]);
+
+        let input =
+            jpeg_with_segments(&[jpeg_exif_segment(&tiff), jpeg_sof_segment(0xc0, 800, 1200)]);
+        assert_eq!(extract_exif_orientation(MediaFormat::Jpeg, &input), Ok(6));
+    }
+
+    #[test]
+    fn parse_tiff_orientation_returns_normal_when_no_orientation_tag_present() {
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II");
+        tiff.extend_from_slice(&42_u16.to_le_bytes());
+        tiff.extend_from_slice(&8_u32.to_le_bytes());
+        tiff.extend_from_slice(&1_u16.to_le_bytes());
+        // single non-orientation entry
+        tiff.extend_from_slice(&0x0100_u16.to_le_bytes());
+        tiff.extend_from_slice(&3_u16.to_le_bytes());
+        tiff.extend_from_slice(&1_u32.to_le_bytes());
+        tiff.extend_from_slice(&[0, 0, 0, 0]);
+
+        let input =
+            jpeg_with_segments(&[jpeg_exif_segment(&tiff), jpeg_sof_segment(0xc0, 800, 1200)]);
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &input),
+            Ok(NORMAL_EXIF_ORIENTATION)
+        );
+    }
+
+    #[test]
+    fn parse_tiff_orientation_returns_normal_for_unexpected_value_type_or_count() {
+        let make_input = |value_type: u16, value_count: u32| {
+            let mut tiff = Vec::new();
+            tiff.extend_from_slice(b"MM");
+            tiff.extend_from_slice(&42_u16.to_be_bytes());
+            tiff.extend_from_slice(&8_u32.to_be_bytes());
+            tiff.extend_from_slice(&1_u16.to_be_bytes());
+            tiff.extend_from_slice(&0x0112_u16.to_be_bytes());
+            tiff.extend_from_slice(&value_type.to_be_bytes());
+            tiff.extend_from_slice(&value_count.to_be_bytes());
+            tiff.extend_from_slice(&[0, 0, 0, 0]);
+            jpeg_with_segments(&[jpeg_exif_segment(&tiff), jpeg_sof_segment(0xc0, 800, 1200)])
+        };
+
+        // Wrong value_type (LONG instead of SHORT)
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &make_input(4, 1)),
+            Ok(NORMAL_EXIF_ORIENTATION)
+        );
+        // Wrong value_count
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &make_input(3, 2)),
+            Ok(NORMAL_EXIF_ORIENTATION)
+        );
+    }
+
+    #[test]
+    fn parse_tiff_orientation_returns_normal_when_ifd_offset_is_out_of_range() {
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"MM");
+        tiff.extend_from_slice(&42_u16.to_be_bytes());
+        tiff.extend_from_slice(&100_u32.to_be_bytes()); // way past tiff payload
+
+        let input =
+            jpeg_with_segments(&[jpeg_exif_segment(&tiff), jpeg_sof_segment(0xc0, 800, 1200)]);
+        assert_eq!(
+            extract_exif_orientation(MediaFormat::Jpeg, &input),
+            Ok(NORMAL_EXIF_ORIENTATION)
+        );
+    }
+
+    #[test]
+    fn inspect_image_rejects_jpeg_with_marker_not_preceded_by_0xff() {
+        assert_eq!(
+            inspect_image(&[0xff, 0xd8, 0x00]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn inspect_image_rejects_jpeg_with_truncated_marker_byte() {
+        assert_eq!(
+            inspect_image(&[0xff, 0xd8, 0xff]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn inspect_image_rejects_jpeg_with_eoi_or_sos_before_sof() {
+        assert_eq!(
+            inspect_image(&[0xff, 0xd8, 0xff, 0xd9]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+        assert_eq!(
+            inspect_image(&[0xff, 0xd8, 0xff, 0xda]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn inspect_image_skips_rst_markers_before_sof() {
+        // FF D8 + RST3 + RST7 + TEM + valid SOF should still inspect OK.
+        let mut bytes = vec![0xff, 0xd8, 0xff, 0xd3, 0xff, 0xd7, 0xff, 0x01];
+        bytes.extend_from_slice(&jpeg_sof_segment(0xc0, 480, 640));
+        let metadata = inspect_image(&bytes).expect("RST-skipping JPEG should inspect");
+        assert_eq!((metadata.width, metadata.height), (640, 480));
+    }
+
+    #[test]
+    fn inspect_image_rejects_jpeg_with_truncated_segment_length() {
+        assert_eq!(
+            inspect_image(&[0xff, 0xd8, 0xff, 0xe0]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+        assert_eq!(
+            inspect_image(&[0xff, 0xd8, 0xff, 0xe0, 0x00]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn inspect_image_rejects_jpeg_with_segment_length_below_minimum() {
+        assert_eq!(
+            inspect_image(&[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x01]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn inspect_image_rejects_jpeg_with_truncated_segment_payload() {
+        assert_eq!(
+            inspect_image(&[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn inspect_image_rejects_jpeg_sof_segment_with_payload_below_five_bytes() {
+        // FF C0 SOF with segment_len = 6, payload = 4 bytes (< 5)
+        let bytes = vec![0xff, 0xd8, 0xff, 0xc0, 0x00, 0x06, 0, 0, 0, 0];
+        assert_eq!(inspect_image(&bytes), Err(MosaicMediaError::InvalidJpeg));
+    }
+
+    #[test]
+    fn inspect_image_rejects_jpeg_that_consumes_input_without_sof() {
+        // Valid empty APP0 segment then EOF, no SOF reached.
+        let bytes = vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x02];
+        assert_eq!(inspect_image(&bytes), Err(MosaicMediaError::InvalidJpeg));
+    }
+
+    #[test]
+    fn inspect_image_rejects_png_with_truncated_chunk_length_field() {
+        let bytes = b"\x89PNG\r\n\x1a\n\x00\x00".to_vec();
+        assert_eq!(inspect_image(&bytes), Err(MosaicMediaError::InvalidPng));
+    }
+
+    #[test]
+    fn inspect_image_rejects_png_with_first_chunk_length_not_thirteen() {
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&12_u32.to_be_bytes());
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&[0; 12]);
+        assert_eq!(inspect_image(&bytes), Err(MosaicMediaError::InvalidPng));
+    }
+
+    #[test]
+    fn inspect_image_rejects_png_first_chunk_with_non_ihdr_type() {
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&13_u32.to_be_bytes());
+        bytes.extend_from_slice(b"NOPE");
+        bytes.extend_from_slice(&[0; 13]);
+        assert_eq!(inspect_image(&bytes), Err(MosaicMediaError::InvalidPng));
+    }
+
+    #[test]
+    fn inspect_image_rejects_png_ihdr_with_truncated_payload() {
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&13_u32.to_be_bytes());
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&[0; 5]);
+        assert_eq!(inspect_image(&bytes), Err(MosaicMediaError::InvalidPng));
+    }
+
+    #[test]
+    fn inspect_image_rejects_webp_with_truncated_chunk_type() {
+        let mut bytes = b"RIFF".to_vec();
+        bytes.extend_from_slice(&12_u32.to_le_bytes());
+        bytes.extend_from_slice(b"WEBP");
+        bytes.extend_from_slice(b"VP"); // truncated chunk type
+        assert_eq!(inspect_image(&bytes), Err(MosaicMediaError::InvalidWebP));
+    }
+
+    #[test]
+    fn inspect_image_rejects_webp_with_truncated_chunk_size_field() {
+        let mut bytes = b"RIFF".to_vec();
+        bytes.extend_from_slice(&20_u32.to_le_bytes());
+        bytes.extend_from_slice(b"WEBP");
+        bytes.extend_from_slice(b"VP8 ");
+        bytes.extend_from_slice(&[0, 0]); // truncated size field
+        assert_eq!(inspect_image(&bytes), Err(MosaicMediaError::InvalidWebP));
+    }
+
+    #[test]
+    fn inspect_image_rejects_webp_with_truncated_chunk_payload() {
+        let mut bytes = b"RIFF".to_vec();
+        bytes.extend_from_slice(&20_u32.to_le_bytes());
+        bytes.extend_from_slice(b"WEBP");
+        bytes.extend_from_slice(b"VP8 ");
+        bytes.extend_from_slice(&100_u32.to_le_bytes()); // declared size > available
+        bytes.extend_from_slice(&[0; 5]);
+        assert_eq!(inspect_image(&bytes), Err(MosaicMediaError::InvalidWebP));
+    }
+
+    #[test]
+    fn inspect_image_rejects_webp_with_odd_payload_missing_padding_byte() {
+        let mut bytes = b"RIFF".to_vec();
+        bytes.extend_from_slice(&13_u32.to_le_bytes());
+        bytes.extend_from_slice(b"WEBP");
+        bytes.extend_from_slice(b"ALPH");
+        bytes.extend_from_slice(&1_u32.to_le_bytes()); // odd payload requires pad
+        bytes.push(0); // exactly one byte payload, no padding
+        assert_eq!(inspect_image(&bytes), Err(MosaicMediaError::InvalidWebP));
+    }
+
+    #[test]
+    fn inspect_image_skips_non_dimension_webp_chunks_before_dimension_chunk() {
+        let input = webp_with_chunks(&[
+            webp_chunk(*b"ALPH", b"alpha bytes"),
+            webp_chunk(*b"ICCP", b"profile"),
+            webp_vp8_chunk(640, 480),
+        ]);
+        let metadata = inspect_image(&input).expect("ALPH-prefixed WebP should inspect");
+        assert_eq!((metadata.width, metadata.height), (640, 480));
+    }
+
+    #[test]
+    fn inspect_image_rejects_webp_with_only_non_dimension_chunks() {
+        let input = webp_with_chunks(&[
+            webp_chunk(*b"ALPH", b"alpha"),
+            webp_chunk(*b"ICCP", b"profile"),
+        ]);
+        assert_eq!(inspect_image(&input), Err(MosaicMediaError::InvalidWebP));
+    }
+
+    #[test]
+    fn inspect_image_rejects_webp_vp8_with_short_payload_or_wrong_magic() {
+        let too_short = webp_with_chunks(&[webp_chunk(*b"VP8 ", b"\x30\x01\x00")]);
+        assert_eq!(
+            inspect_image(&too_short),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+
+        let wrong_magic = webp_with_chunks(&[webp_chunk(*b"VP8 ", &[0; 12])]);
+        assert_eq!(
+            inspect_image(&wrong_magic),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+    }
+
+    #[test]
+    fn inspect_image_rejects_webp_vp8l_with_short_payload_or_wrong_signature() {
+        let too_short = webp_with_chunks(&[webp_chunk(*b"VP8L", b"\x2f\x00\x00\x00")]);
+        assert_eq!(
+            inspect_image(&too_short),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+
+        let wrong_sig = webp_with_chunks(&[webp_chunk(*b"VP8L", b"\x00\x00\x00\x00\x00")]);
+        assert_eq!(
+            inspect_image(&wrong_sig),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+    }
+
+    #[test]
+    fn inspect_image_rejects_webp_vp8x_with_short_payload() {
+        let too_short = webp_with_chunks(&[webp_chunk(*b"VP8X", &[0; 9])]);
+        assert_eq!(
+            inspect_image(&too_short),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+    }
+
+    #[test]
+    fn strip_jpeg_rejects_inputs_without_soi_prefix() {
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Jpeg, b"hello"),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Jpeg, &[]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn strip_jpeg_rejects_marker_byte_not_preceded_by_0xff() {
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Jpeg, &[0xff, 0xd8, 0x00]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn strip_jpeg_rejects_truncated_marker_byte() {
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn strip_jpeg_preserves_eoi_rst_and_tem_markers_in_output() {
+        let mut bytes = vec![
+            0xff, 0xd8, // SOI
+            0xff, 0xd0, // RST0
+            0xff, 0xd7, // RST7
+            0xff, 0x01, // TEM
+            0xff, 0xd9, // EOI (mid-stream, before SOS)
+        ];
+        // append the canonical SOS+scan+EOI tail
+        bytes.extend_from_slice(&[0xff, 0xda, 0x00, 0x08, 1, 2, 3, 4, 5, 6]);
+        bytes.extend_from_slice(b"scan tail");
+        bytes.extend_from_slice(&[0xff, 0xd9]);
+
+        let stripped = strip_known_metadata(MediaFormat::Jpeg, &bytes)
+            .expect("RST/TEM/EOI markers should be preserved");
+
+        assert!(stripped.removed.is_empty());
+        assert!(stripped.bytes.windows(2).any(|w| w == [0xff, 0xd0]));
+        assert!(stripped.bytes.windows(2).any(|w| w == [0xff, 0xd7]));
+        assert!(stripped.bytes.windows(2).any(|w| w == [0xff, 0x01]));
+        assert!(stripped.bytes.windows(2).any(|w| w == [0xff, 0xd9]));
+        assert!(contains_ascii(&stripped.bytes, b"scan tail"));
+    }
+
+    #[test]
+    fn strip_jpeg_rejects_truncated_segment_length_field() {
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff, 0xe0, 0x00]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn strip_jpeg_rejects_segment_length_below_minimum() {
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x01]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn strip_jpeg_rejects_truncated_segment_payload() {
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Jpeg, &[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]),
+            Err(MosaicMediaError::InvalidJpeg)
+        );
+    }
+
+    #[test]
+    fn strip_jpeg_returns_ok_when_input_consumed_without_scan_marker() {
+        // FF D8 + FF E0 + segment length 2 (no payload) -> no SOS reached, loop exits.
+        let bytes = vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x02];
+        let stripped =
+            strip_known_metadata(MediaFormat::Jpeg, &bytes).expect("input should strip cleanly");
+        // Empty APP0 was classified as a RenderingHint and removed; only SOI remains.
+        assert_eq!(stripped.bytes, vec![0xff, 0xd8]);
+        assert_eq!(stripped.removed, vec![MetadataKind::RenderingHint]);
+    }
+
+    #[test]
+    fn strip_png_rejects_inputs_without_signature() {
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Png, b"hello"),
+            Err(MosaicMediaError::InvalidPng)
+        );
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Png, &[]),
+            Err(MosaicMediaError::InvalidPng)
+        );
+    }
+
+    #[test]
+    fn strip_png_rejects_truncated_chunk_length_field() {
+        let bytes = b"\x89PNG\r\n\x1a\n\x00\x00".to_vec();
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Png, &bytes),
+            Err(MosaicMediaError::InvalidPng)
+        );
+    }
+
+    #[test]
+    fn strip_png_rejects_truncated_chunk_type_field() {
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&0_u32.to_be_bytes());
+        bytes.extend_from_slice(b"IH"); // truncated chunk type
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Png, &bytes),
+            Err(MosaicMediaError::InvalidPng)
+        );
+    }
+
+    #[test]
+    fn strip_png_rejects_truncated_chunk_payload_or_crc() {
+        // Truncated payload
+        let mut payload_short = b"\x89PNG\r\n\x1a\n".to_vec();
+        payload_short.extend_from_slice(&100_u32.to_be_bytes());
+        payload_short.extend_from_slice(b"IDAT");
+        payload_short.extend_from_slice(&[0; 5]); // far short of 100 declared bytes
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Png, &payload_short),
+            Err(MosaicMediaError::InvalidPng)
+        );
+
+        // Truncated CRC (payload exact, but CRC bytes missing)
+        let mut crc_short = b"\x89PNG\r\n\x1a\n".to_vec();
+        crc_short.extend_from_slice(&5_u32.to_be_bytes());
+        crc_short.extend_from_slice(b"IDAT");
+        crc_short.extend_from_slice(&[0; 5]);
+        crc_short.extend_from_slice(&[0, 0]); // only 2 of 4 CRC bytes
+        assert_eq!(
+            strip_known_metadata(MediaFormat::Png, &crc_short),
+            Err(MosaicMediaError::InvalidPng)
+        );
+    }
+
+    #[test]
+    fn strip_webp_rejects_inputs_without_riff_webp_signature() {
+        assert_eq!(
+            strip_known_metadata(MediaFormat::WebP, b"hello"),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+        assert_eq!(
+            strip_known_metadata(MediaFormat::WebP, b"RIFF\0\0\0\0WEBX"),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+        assert_eq!(
+            strip_known_metadata(MediaFormat::WebP, &[]),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+    }
+
+    #[test]
+    fn strip_webp_rejects_truncated_chunk_type_field() {
+        let mut bytes = b"RIFF\0\0\0\0WEBP".to_vec();
+        bytes.extend_from_slice(b"VP"); // truncated chunk type
+        assert_eq!(
+            strip_known_metadata(MediaFormat::WebP, &bytes),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+    }
+
+    #[test]
+    fn strip_webp_rejects_truncated_chunk_size_field() {
+        let mut bytes = b"RIFF\0\0\0\0WEBP".to_vec();
+        bytes.extend_from_slice(b"VP8 ");
+        bytes.extend_from_slice(&[0, 0]); // truncated size
+        assert_eq!(
+            strip_known_metadata(MediaFormat::WebP, &bytes),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+    }
+
+    #[test]
+    fn strip_webp_rejects_truncated_chunk_payload_or_padding() {
+        // Truncated payload
+        let mut payload_short = b"RIFF\0\0\0\0WEBP".to_vec();
+        payload_short.extend_from_slice(b"VP8 ");
+        payload_short.extend_from_slice(&100_u32.to_le_bytes());
+        payload_short.extend_from_slice(&[0; 5]);
+        assert_eq!(
+            strip_known_metadata(MediaFormat::WebP, &payload_short),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+
+        // Odd-length payload missing the padding byte
+        let mut padding_missing = b"RIFF\0\0\0\0WEBP".to_vec();
+        padding_missing.extend_from_slice(b"VP8 ");
+        padding_missing.extend_from_slice(&1_u32.to_le_bytes());
+        padding_missing.push(0); // payload exactly one byte; no pad byte
+        assert_eq!(
+            strip_known_metadata(MediaFormat::WebP, &padding_missing),
+            Err(MosaicMediaError::InvalidWebP)
+        );
+    }
+
+    #[test]
+    fn strip_webp_passes_vp8x_chunk_with_zero_length_payload_through_without_clearing_flags() {
+        // VP8X with payload_len = 0 makes `output.get_mut(out_start + 8)` return
+        // None; the chunk is still preserved verbatim and no flag-mask write occurs.
+        let mut bytes = b"RIFF\0\0\0\0WEBP".to_vec();
+        bytes.extend_from_slice(b"VP8X");
+        bytes.extend_from_slice(&0_u32.to_le_bytes()); // payload_len = 0
+        let stripped = strip_known_metadata(MediaFormat::WebP, &bytes)
+            .expect("zero-payload VP8X should round-trip");
+        assert!(stripped.removed.is_empty());
+        // VP8X chunk still present in output
+        assert!(stripped.bytes.windows(4).any(|w| w == b"VP8X"));
     }
 
     fn expect_tier_layout(width: u32, height: u32) -> super::TierLayout {
