@@ -174,12 +174,61 @@ class MergedManifestInvariantsTest {
     assertEquals("minSdk must be 26 (Android 8.0 floor)", "26", sdk.getAttributeNS(ANDROID_NAMESPACE, "minSdkVersion"))
   }
 
+  // -- Band 6 auto-import worker invariants ---------------------------------
+
+  @Test
+  fun foregroundServicePermissionDeclared() {
+    requirePermission("android.permission.FOREGROUND_SERVICE")
+  }
+
+  @Test
+  fun foregroundServiceDataSyncPermissionDeclared() {
+    // Required by Android 14+ to promote a worker to a `dataSync` foreground
+    // service. Without this the WorkManager `setForeground` call from
+    // AutoImportWorker would throw on API 34+.
+    requirePermission("android.permission.FOREGROUND_SERVICE_DATA_SYNC")
+  }
+
+  @Test
+  fun postNotificationsPermissionDeclared() {
+    // Required by Android 13+ to actually display the foreground-service
+    // notification posted by AutoImportWorker.
+    requirePermission("android.permission.POST_NOTIFICATIONS")
+  }
+
+  @Test
+  fun systemForegroundServiceDeclaresDataSyncType() {
+    val services = applicationElement.getElementsByTagName("service")
+    val foregroundService = (0 until services.length)
+      .map { services.item(it) as Element }
+      .firstOrNull { it.getAttributeNS(ANDROID_NAMESPACE, "name") == SYSTEM_FOREGROUND_SERVICE }
+    assertNotNull(
+      "WorkManager's SystemForegroundService must be present in the merged manifest " +
+        "(merged from work-runtime); auto-import worker depends on it.",
+      foregroundService,
+    )
+    val type = foregroundService!!.getAttributeNS(ANDROID_NAMESPACE, "foregroundServiceType")
+    assertEquals(
+      "auto-import worker requires foregroundServiceType=dataSync per ADR-007; got '$type'",
+      "dataSync",
+      type,
+    )
+  }
+
   // -- helpers ---------------------------------------------------------------
 
   private fun forbidPermission(name: String) {
     val permissions = collectPermissionNames(rootElement.getElementsByTagName("uses-permission"))
     assertFalse(
       "merged manifest must NOT declare uses-permission $name (found: $permissions)",
+      permissions.contains(name),
+    )
+  }
+
+  private fun requirePermission(name: String) {
+    val permissions = collectPermissionNames(rootElement.getElementsByTagName("uses-permission"))
+    assertTrue(
+      "merged manifest must declare uses-permission $name (found: $permissions)",
       permissions.contains(name),
     )
   }
@@ -208,5 +257,6 @@ class MergedManifestInvariantsTest {
 
   companion object {
     private const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
+    private const val SYSTEM_FOREGROUND_SERVICE = "androidx.work.impl.foreground.SystemForegroundService"
   }
 }

@@ -11,8 +11,28 @@
       slice is offline-only and only proves that the Rust core is wired.
     - Only one component is exported (the launcher activity, required by Android 12+).
     - android:requestLegacyExternalStorage is not declared (we never use it).
+
+  Background-work invariants (Band 6 auto-import worker — see ADR-007):
+    - FOREGROUND_SERVICE permission is declared so WorkManager can promote the
+      auto-import worker to a user-visible foreground service during a
+      long-running upload pass.
+    - FOREGROUND_SERVICE_DATA_SYNC narrows that promotion to the `dataSync`
+      service type that ADR-007 mandates for upload work; Android 14+ rejects
+      promotions whose service type was not declared at install time.
+    - POST_NOTIFICATIONS is declared because the user-visible notification
+      driving the foreground promotion is a hard requirement on Android 13+.
+    - The merged WorkManager `SystemForegroundService` is patched with
+      android:foregroundServiceType="dataSync" so the runtime `setForeground`
+      call from `AutoImportWorker` matches the manifest declaration. The merge
+      `tools:node="merge"` re-uses WorkManager's <service> entry instead of
+      duplicating it.
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
   <application
       android:name=".MosaicApplication"
@@ -34,6 +54,11 @@
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
     </activity>
+
+    <service
+        android:name="androidx.work.impl.foreground.SystemForegroundService"
+        android:foregroundServiceType="dataSync"
+        tools:node="merge" />
 
   </application>
 

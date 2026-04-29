@@ -38,6 +38,11 @@ apps/android-main/
         AndroidRustDiagnosticsApi.kt
         AndroidRustUploadApi.kt
         AndroidRustAlbumSyncApi.kt
+      work/
+        AutoImportRuntime.kt            # Process-scoped settings/runtime providers
+        AutoImportWorkPolicy.kt         # Pure decision + SHA-256 unique-work name
+        AutoImportWorkScheduler.kt      # WorkManager glue (enqueue/dedupe/cancel)
+        AutoImportWorker.kt             # CoroutineWorker — dataSync foreground service
     res/
       values/{strings.xml,themes.xml}
       mipmap-anydpi-v26/{ic_launcher.xml,ic_launcher_round.xml}
@@ -45,9 +50,15 @@ apps/android-main/
   src/test/
     kotlin/org/mosaic/android/main/bridge/
       AdapterCompilationContractTest.kt # JVM compile-time guard; does NOT load native lib
+    kotlin/org/mosaic/android/main/
+      MergedManifestInvariantsTest.kt   # Manifest privacy + foreground-service invariants
+    kotlin/org/mosaic/android/main/work/
+      AutoImportWorkPolicyTest.kt       # JVM unit test: pure decision + dedupe name
   src/androidTest/
     kotlin/org/mosaic/android/main/
       RustCoreSmokeTest.kt              # Instrumented end-to-end FFI smoke test
+    kotlin/org/mosaic/android/main/work/
+      AutoImportWorkInstrumentedTest.kt # Enqueue/dedupe/revocation on WorkManager
 ```
 
 ## How to build
@@ -92,6 +103,50 @@ command after Gradle and the Rust toolchain are installed.
 - Bridge DTOs continue the `<redacted>` `toString()` pattern from the
   android-shell foundation.
 
+## Background-work invariants (Band 6 auto-import)
+
+The `work/` package wires the
+[android-shell auto-import scheduling seam](../android-shell/src/main/kotlin/org/mosaic/android/foundation/AutoImportScheduler.kt)
+into a real `androidx.work` `CoroutineWorker`. The invariants below are
+enforced by `MergedManifestInvariantsTest`, `AutoImportWorkPolicyTest` (JVM),
+and `AutoImportWorkInstrumentedTest` (emulator).
+
+- **Policy-conditional enqueue.** `MosaicApplication.onCreate` calls
+  `AutoImportWorkScheduler.enqueueIfPolicyAllows(this)`. The default settings
+  are `AutoImportScheduleSettings.disabled()`, so the boot path short-circuits
+  through `AutoImportWorkPolicy.Decision.SHORT_CIRCUIT_DISABLED` and never
+  enqueues work in the absence of explicit user opt-in.
+- **Foreground service type.** When the schedule plan reaches
+  `READY_TO_SCHEDULE`, the worker promotes itself to a foreground service via
+  `setForeground(...)` with `ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC`.
+  The merged AndroidManifest patches WorkManager's `SystemForegroundService`
+  with `android:foregroundServiceType="dataSync"` so Android 14+ accepts the
+  promotion at runtime.
+- **Capability-boundary contract.** The worker re-reads the live
+  `AutoImportScheduleSettings` inside `doWork()` and re-evaluates the plan via
+  `AutoImportSchedulerContract.evaluate(...)`. If the auto-import capability
+  has been revoked between enqueue and execution, the worker returns
+  `Result.success()` without promoting itself or doing any upload work — i.e.
+  capability revocation is handled as a benign no-op rather than a crash or
+  retry storm.
+- **Dedupe.** `AutoImportWorkPolicy.uniqueWorkName(destination)` derives a
+  deterministic SHA-256 hash of the `(serverAccountId, albumId)` tuple under
+  the `auto-import.` namespace prefix. Re-submitting the same destination
+  resolves to the same WorkManager unique-work name and is collapsed by
+  `ExistingWorkPolicy.KEEP`. The hash keeps account / album identifiers out of
+  the WorkManager database in line with the privacy-redacted `<opaque>` /
+  `<redacted>` patterns enforced by the shell foundation.
+- **Permissions.** The manifest declares only `FOREGROUND_SERVICE`,
+  `FOREGROUND_SERVICE_DATA_SYNC`, and `POST_NOTIFICATIONS` — the minimum set
+  required to run a `dataSync` foreground service on Android 14+ and post the
+  user-visible notification. No `INTERNET`, no `READ_MEDIA_*`, and no
+  `MANAGE_EXTERNAL_STORAGE` are added; the Photo Picker integration owns
+  picking, not background scanning.
+- **No DI.** v1 ships no Hilt / Dagger graph, so the worker resolves runtime
+  state through the process-scoped `AutoImportRuntime` registry instead of
+  `HiltWorker`. Tests install a custom `AutoImportSettingsProvider` /
+  `AutoImportRuntimeProvider` for deterministic fixture setup.
+
 ## Dependencies
 
 | Component | Version |
@@ -109,7 +164,8 @@ command after Gradle and the Rust toolchain are installed.
 - Real account creation / login flow.
 - Real Photo Picker integration (Android 13+ system Photo Picker, with API 26
   fallback path that does NOT request `READ_EXTERNAL_STORAGE`).
-- WorkManager scheduling for `dataSync` foreground work.
-- Real Tus upload pipeline.
+- Real Tus upload pipeline inside `AutoImportWorker.doWork()` (the foreground
+  promotion + capability-boundary contract are wired in this slice; the
+  encrypt → upload payload arrives in the next Band 6 slice).
 - Real media tier encoding (HEIC/JPEG/WebP via platform encoders).
 - Release build signing config.

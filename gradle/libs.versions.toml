@@ -15,10 +15,19 @@ androidx-core = "1.13.1"
 # (which import `com.sun.jna.*`).
 jna = "5.14.0"
 
+# WorkManager powers the Band 6 auto-import foreground worker
+# (`apps/android-main/src/main/kotlin/org/mosaic/android/main/work/`). The
+# version line is shared by both the runtime and the testing artifact so the
+# two cannot drift apart on dependency resolution.
+androidx-work = "2.9.1"
+
 # Test dependencies for the Gradle module's `test` (JVM) and `androidTest` (instrumented) source sets.
 junit4 = "4.13.2"
 androidx-test-junit = "1.2.1"
 androidx-test-espresso = "3.6.1"
+androidx-test-core = "1.6.1"
+androidx-test-runner = "1.6.2"
+androidx-test-rules = "1.6.1"
 
 [libraries]
 androidx-activity = { module = "androidx.activity:activity-ktx", version.ref = "androidx-activity" }
@@ -29,9 +38,19 @@ androidx-core = { module = "androidx.core:core-ktx", version.ref = "androidx-cor
 # the `libjnidispatch.so` for arm64-v8a + x86_64 + others).
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 
+# WorkManager powers the auto-import foreground worker. `work-runtime-ktx`
+# carries the production CoroutineWorker / WorkManager APIs; `work-testing` is
+# used by the instrumented test to inject a synchronous executor and assert on
+# WorkInfo state without waiting on a real WorkManager scheduler.
+androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "androidx-work" }
+androidx-work-testing = { module = "androidx.work:work-testing", version.ref = "androidx-work" }
+
 junit4 = { module = "junit:junit", version.ref = "junit4" }
 androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "androidx-test-junit" }
 androidx-test-espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "androidx-test-espresso" }
+androidx-test-core = { module = "androidx.test:core-ktx", version.ref = "androidx-test-core" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }
+androidx-test-rules = { module = "androidx.test:rules", version.ref = "androidx-test-rules" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

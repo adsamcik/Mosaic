@@ -115,6 +115,9 @@ dependencies {
   implementation(libs.androidx.activity)
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.core)
+  // WorkManager powers the auto-import foreground (`dataSync`) worker. See
+  // `apps/android-main/src/main/kotlin/org/mosaic/android/main/work/`.
+  implementation(libs.androidx.work.runtime)
   // JNA Android `aar` is required by the generated `uniffi.mosaic_uniffi` bindings.
   // The `@aar` classifier ensures Gradle pulls the Android-specific artifact
   // packaging `libjnidispatch.so` per ABI rather than the desktop JAR.
@@ -130,6 +133,10 @@ dependencies {
 
   androidTestImplementation(libs.androidx.test.junit)
   androidTestImplementation(libs.androidx.test.espresso)
+  androidTestImplementation(libs.androidx.test.core)
+  androidTestImplementation(libs.androidx.test.runner)
+  androidTestImplementation(libs.androidx.test.rules)
+  androidTestImplementation(libs.androidx.work.testing)
 }
 
 // ---------------------------------------------------------------------------------------
