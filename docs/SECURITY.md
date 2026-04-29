@@ -401,3 +401,129 @@ Before deployment, verify:
 - [ ] COOP/COEP headers configured for SharedArrayBuffer
 - [ ] Trusted proxy CIDR list configured correctly
 - [ ] Database backups encrypted at rest
+
+## Dependabot triage 2026-04
+
+**Scope.** GitHub Dependabot raised 27 open alerts attributed to `settings.gradle.kts`
+across 12 unique Maven packages (Lane E, 2026-04). All 27 are dismissed with reason
+`tolerable_risk`; this section documents the per-package rationale and the
+verification each decision rests on.
+
+### How the alerts arose
+
+The only Gradle module in this repository is `:apps:android-main`. Its declared
+runtime/test dependencies are intentionally minimal (`gradle/libs.versions.toml`):
+AndroidX `activity-ktx` / `appcompat` / `core-ktx`, `net.java.dev.jna:jna:5.14.0`
+(both `@aar` for Android and the desktop JAR for JVM unit tests), JUnit 4, and
+AndroidX Test (`junit` + `espresso-core`). None of the alerted packages is one of
+those direct dependencies.
+
+The alerted packages enter the build through two indirect paths, both of which
+are properties of Android Gradle Plugin (AGP) 8.7.3 itself:
+
+1. **AGP buildscript classpath** — the `com.android.tools.build:gradle:8.7.3`
+   plugin pulls in `bouncycastle` (APK signing), `jose4j` (JWT parsing during
+   signing), `jdom2` (Maven POM and AndroidManifest XML parsing), and
+   `commons-compress` (AAR/APK packaging). These run on the Gradle daemon at
+   build time only; they are not packaged into the APK, are not loaded by
+   Android at runtime, and are not on any test classpath of our module.
+
+2. **AGP UTP (Unified Test Platform) configurations** — when AGP wires up the
+   instrumented-test infrastructure it creates several `_internal-unified-test-
+   platform-*` configurations to resolve emulator-control plugins. Those plugins
+   speak gRPC (HTTP/2 over plaintext localhost) to the emulator and pull in
+   `protobuf-java`, `commons-io`, and the `netty-*` family transitively via
+   `io.grpc:grpc-netty:1.57.0`. These configurations exist on the Gradle daemon
+   only — they are *not* the APK runtime, *not* the unit-test JVM classpath, and
+   *not* the instrumented-test app classpath. They are AGP-internal and prefixed
+   with an underscore for that reason.
+
+### Verification
+
+For every alerted package, the following four `:apps:android-main` configurations
+were inspected with `gradlew :apps:android-main:dependencies --configuration <CFG>
+--no-daemon --console=plain` (full reports archived under `artifacts/lane-e/`):
+
+| Configuration | Purpose | Result |
+|---------------|---------|--------|
+| `debugRuntimeClasspath` | What ships in the debug APK | All 12 packages absent |
+| `releaseRuntimeClasspath` | What ships in the release APK | All 12 packages absent |
+| `debugUnitTestRuntimeClasspath` | JVM unit tests (`testDebugUnitTest`) | All 12 packages absent |
+| `debugAndroidTestRuntimeClasspath` | Instrumented test app classpath | All 12 packages absent |
+
+The buildscript classpath was inspected with `gradlew :apps:android-main:buildEnvironment`,
+which confirmed the alerted versions are pinned by AGP 8.7.3 itself and cannot be
+overridden by a `dependencies { constraints { } }` block in `apps/android-main/build.gradle.kts`
+(constraints apply to module configurations, not to the buildscript classpath, and
+the UTP `_internal-*` configurations are private to AGP).
+
+### Per-package decisions
+
+| Alert # | Package | Severity | Patched in | Where it lives | Decision |
+|--------:|---------|----------|------------|----------------|----------|
+| 26 | `io.netty:netty-handler` | medium | 4.1.94.Final | AGP UTP gRPC handler (localhost) | dismissed (`tolerable_risk`) |
+| 27 | `io.netty:netty-codec-http2` | high | 4.1.100.Final | AGP UTP gRPC HTTP/2 (not exposed) | dismissed (`tolerable_risk`) |
+| 28 | `org.apache.commons:commons-compress` | medium | 1.26.0 | AGP buildscript (own outputs) | dismissed (`tolerable_risk`) |
+| 29 | `org.apache.commons:commons-compress` | medium | 1.26.0 | AGP buildscript (own outputs) | dismissed (`tolerable_risk`) |
+| 30 | `io.netty:netty-codec-http` | medium | 4.1.108.Final | AGP UTP gRPC transport | dismissed (`tolerable_risk`) |
+| 31 | `org.bouncycastle:bcprov-jdk18on` | medium | 1.78 | AGP buildscript (APK signing) | dismissed (`tolerable_risk`) |
+| 32 | `org.bouncycastle:bcprov-jdk18on` | medium | 1.78 | AGP buildscript (APK signing) | dismissed (`tolerable_risk`) |
+| 33 | `org.bouncycastle:bcprov-jdk18on` | medium | 1.78 | AGP buildscript (APK signing) | dismissed (`tolerable_risk`) |
+| 34 | `com.google.protobuf:protobuf-java` | high | 3.25.5 | AGP UTP emulator-control gRPC | dismissed (`tolerable_risk`) |
+| 35 | `commons-io:commons-io` | high | 2.14.0 | AGP UTP test-plugin host | dismissed (`tolerable_risk`) |
+| 36 | `org.bouncycastle:bcprov-jdk18on` | medium | 1.78 | AGP buildscript (APK signing) | dismissed (`tolerable_risk`) |
+| 37 | `io.netty:netty-handler` | high | 4.1.118.Final | AGP UTP gRPC (plaintext localhost) | dismissed (`tolerable_risk`) |
+| 38 | `io.netty:netty-common` | medium | 4.1.115.Final | AGP UTP gRPC common | dismissed (`tolerable_risk`) |
+| 39 | `io.netty:netty-common` | medium | 4.1.118.Final | AGP UTP gRPC common | dismissed (`tolerable_risk`) |
+| 40 | `org.bouncycastle:bcprov-jdk18on` | medium | 1.78 | AGP buildscript (APK signing) | dismissed (`tolerable_risk`) |
+| 41 | `io.netty:netty-codec-http2` | high | 4.1.124.Final | AGP UTP gRPC HTTP/2 | dismissed (`tolerable_risk`) |
+| 42 | `io.netty:netty-codec` | medium | 4.1.125.Final | AGP UTP gRPC codec | dismissed (`tolerable_risk`) |
+| 43 | `io.netty:netty-codec-http` | low | 4.1.125.Final | AGP UTP gRPC transport | dismissed (`tolerable_risk`) |
+| 44 | `org.jdom:jdom2` | high | 2.0.6.1 | AGP buildscript (trusted XML) | dismissed (`tolerable_risk`) |
+| 45 | `org.bouncycastle:bcpkix-jdk18on` | medium | 1.79 | AGP buildscript (cert path) | dismissed (`tolerable_risk`) |
+| 46 | `io.netty:netty-codec-http` | medium | 4.1.129.Final | AGP UTP gRPC transport | dismissed (`tolerable_risk`) |
+| 47 | `org.bitbucket.b_c:jose4j` | high | 0.9.6 | AGP buildscript (JWT) | dismissed (`tolerable_risk`) |
+| 48 | `io.netty:netty-codec-http` | high | 4.1.132.Final | AGP UTP gRPC transport | dismissed (`tolerable_risk`) |
+| 49 | `io.netty:netty-codec-http2` | high | 4.1.132.Final | AGP UTP gRPC HTTP/2 | dismissed (`tolerable_risk`) |
+| 50 | `org.bouncycastle:bcpkix-jdk18on` | medium | 1.84 | AGP buildscript (cert path) | dismissed (`tolerable_risk`) |
+| 51 | `org.bouncycastle:bcprov-jdk18on` | medium | 1.84 | AGP buildscript (APK signing) | dismissed (`tolerable_risk`) |
+| 52 | `org.bouncycastle:bcprov-jdk18on` | high | 1.84 | AGP buildscript (APK signing) | dismissed (`tolerable_risk`) |
+
+### Why `tolerable_risk` and not a bump
+
+- **No constraint can fix the buildscript classpath.** A `dependencies { constraints { } }`
+  block in `apps/android-main/build.gradle.kts` only governs module configurations.
+  The buildscript classpath is owned by AGP and would have to be overridden in a
+  root `buildscript { dependencies { constraints { } } }` block, which is risky
+  because AGP 8.7.3's plugin code may rely on specific BouncyCastle / jose4j /
+  protobuf APIs that newer versions remove.
+- **The UTP `_internal-*` configurations are AGP-private.** They are recreated
+  by AGP on every configuration phase and not user-modifiable.
+- **None of the vulnerable code paths is reachable from our build.** The CVEs
+  cover (a) parsing attacker-controlled inputs (XXE in jdom2, ZIP slip in
+  commons-compress, malformed certs in BouncyCastle), (b) running an exposed
+  network service (Netty HTTP/2 server CVEs), or (c) attacker-controlled UNC
+  paths (netty-common). At build time we are processing trusted Maven
+  artifacts and our own source on a developer or CI machine, and the gRPC
+  channels UTP uses are plaintext localhost loopbacks to a developer-controlled
+  emulator.
+- **The fix path is to bump AGP itself.** When the next AGP upgrade lands in
+  `gradle/libs.versions.toml` (`agp = "8.7.3"`), the buildscript and UTP
+  transitive versions will move forward automatically and Dependabot will
+  re-evaluate. Until then the alerts are accepted risk on build-time tooling.
+
+### Reproducing the verification
+
+```powershell
+# from the repository root
+.\gradlew.bat :apps:android-main:dependencies --configuration debugRuntimeClasspath --no-daemon --console=plain
+.\gradlew.bat :apps:android-main:dependencies --configuration releaseRuntimeClasspath --no-daemon --console=plain
+.\gradlew.bat :apps:android-main:dependencies --configuration debugUnitTestRuntimeClasspath --no-daemon --console=plain
+.\gradlew.bat :apps:android-main:dependencies --configuration debugAndroidTestRuntimeClasspath --no-daemon --console=plain
+.\gradlew.bat :apps:android-main:buildEnvironment --no-daemon --console=plain
+```
+
+Searching the output for any of `protobuf-java`, `commons-io`, `netty-*`,
+`jose4j`, `bcprov-jdk18on`, `bcpkix-jdk18on`, `jdom2`, or `commons-compress`
+will return zero matches in the four runtime/test classpath reports and matches
+only inside the buildscript / UTP listings.
