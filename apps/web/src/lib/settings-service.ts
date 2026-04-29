@@ -47,6 +47,50 @@ export interface UserSettings {
 }
 
 // =============================================================================
+// Security Policy (M8)
+// =============================================================================
+//
+// Settings such as `idleTimeout` and `keyCacheDuration` control client-side
+// security behaviour (auto-logout, key cache eviction). They are stored in
+// localStorage, which is fully writable by anyone with DevTools access on a
+// shared/kiosk device. The UI whitelist alone is not sufficient — an attacker
+// can bypass it with a single `localStorage.setItem(...)` call.
+//
+// Defense in depth: the public accessors below read the raw localStorage
+// value (bypassing the whitelist validator) and clamp the user preference
+// against compile-time policy constants before applying it. A malicious
+// write of `{ idleTimeout: 9999 }` is reduced to POLICY_MAX_IDLE_TIMEOUT_MINUTES.
+//
+// FOLLOW-UP: For true kiosk-grade enforcement the server should push policy
+// (idle timeout, key-cache cap) via `/api/auth/config`, and the client should
+// clamp against that server-pushed value rather than only a compile-time
+// constant. This is tracked separately and intentionally out of scope for v1.
+
+/**
+ * Maximum idle timeout (in minutes) the running client will honour,
+ * regardless of the value the user has stored in localStorage. (M8)
+ */
+export const POLICY_MAX_IDLE_TIMEOUT_MINUTES = 60;
+
+/**
+ * Minimum idle timeout (in minutes) the running client will honour. Negative
+ * or zero values written by an attacker are clamped up to this floor so a
+ * hostile localStorage write cannot accidentally produce a denial-of-service
+ * (instant logout) either. (M8)
+ */
+export const POLICY_MIN_IDLE_TIMEOUT_MINUTES = 5;
+
+/**
+ * Maximum key-cache duration (in hours) the running client will honour.
+ * Same rationale as POLICY_MAX_IDLE_TIMEOUT_MINUTES: key caching is a UX
+ * convenience and must not be unilaterally extended by the user beyond this
+ * ceiling. The documented sentinel values (0 = disabled, -1 = until tab
+ * close) are preserved for UX continuity; capping the "until tab close"
+ * sentinel against this ceiling is tracked as a follow-up. (M8)
+ */
+export const POLICY_MAX_KEY_CACHE_DURATION_HOURS = 8;
+
+// =============================================================================
 // Constants
 // =============================================================================
 
@@ -226,21 +270,71 @@ export function getDefaultSettings(): UserSettings {
 }
 
 /**
- * Get idle timeout in milliseconds.
+ * Read the raw JSON object stored at SETTINGS_KEY without running it through
+ * `validateSettings`. Security-relevant accessors use this so that the
+ * policy clamp is enforced even if the validator's whitelist is later
+ * relaxed or bypassed. Returns an empty object when the key is missing,
+ * malformed, or not an object. (M8)
+ */
+function readRawSettingsObject(): Record<string, unknown> {
+  try {
+    const stored = localStorage.getItem(SETTINGS_KEY);
+    if (!stored) return {};
+    const parsed: unknown = JSON.parse(stored);
+    if (typeof parsed !== 'object' || parsed === null) return {};
+    return parsed as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Get idle timeout in milliseconds, clamped to the security policy range
+ * `[POLICY_MIN_IDLE_TIMEOUT_MINUTES, POLICY_MAX_IDLE_TIMEOUT_MINUTES]`.
+ *
+ * Reads the raw user preference from localStorage rather than going through
+ * `getSettings()` so the clamp is enforced even when a malicious value
+ * (e.g. `idleTimeout: 9999`) bypasses the validator's whitelist. A
+ * non-numeric or non-finite value falls back to the default. (M8)
  */
 export function getIdleTimeoutMs(): number {
-  return getSettings().idleTimeout * 60 * 1000;
+  const raw = readRawSettingsObject().idleTimeout;
+  const userPref =
+    typeof raw === 'number' && Number.isFinite(raw)
+      ? raw
+      : DEFAULT_SETTINGS.idleTimeout;
+  const clamped = Math.min(
+    POLICY_MAX_IDLE_TIMEOUT_MINUTES,
+    Math.max(POLICY_MIN_IDLE_TIMEOUT_MINUTES, userPref),
+  );
+  return clamped * 60 * 1000;
 }
 
 /**
  * Get key cache duration in milliseconds.
- * Returns 0 for disabled, Infinity for until-tab-close.
+ *
+ * Returns the documented sentinels unchanged: `0` = disabled, `-1` = Infinity
+ * (until tab close). For non-sentinel numeric values the result is clamped
+ * to `[0, POLICY_MAX_KEY_CACHE_DURATION_HOURS * 60]` minutes before being
+ * converted to milliseconds. Reads the raw value (bypassing the whitelist
+ * validator) so that a tampered localStorage write of e.g.
+ * `{ keyCacheDuration: 99999 }` is reduced to the policy ceiling. (M8)
  */
 export function getKeyCacheDurationMs(): number {
-  const duration = getSettings().keyCacheDuration;
-  if (duration === 0) return 0; // Disabled
-  if (duration === -1) return Infinity; // Until tab close
-  return duration * 60 * 1000; // Convert minutes to ms
+  const raw = readRawSettingsObject().keyCacheDuration;
+
+  // Documented sentinels — preserved as-is for UX continuity.
+  if (raw === 0) return 0; // Disabled
+  if (raw === -1) return Infinity; // Until tab close
+
+  const userPref =
+    typeof raw === 'number' && Number.isFinite(raw)
+      ? raw
+      : DEFAULT_SETTINGS.keyCacheDuration;
+
+  const maxMinutes = POLICY_MAX_KEY_CACHE_DURATION_HOURS * 60;
+  const clamped = Math.min(maxMinutes, Math.max(0, userPref));
+  return clamped * 60 * 1000;
 }
 
 /**

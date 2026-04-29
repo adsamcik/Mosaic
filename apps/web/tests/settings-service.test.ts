@@ -9,6 +9,9 @@ import {
   getSetting,
   getSettings,
   getThumbnailQualityValue,
+  POLICY_MAX_IDLE_TIMEOUT_MINUTES,
+  POLICY_MAX_KEY_CACHE_DURATION_HOURS,
+  POLICY_MIN_IDLE_TIMEOUT_MINUTES,
   resetSettings,
   saveSettings,
   setSetting,
@@ -521,6 +524,185 @@ describe('settings-service', () => {
 
     it('returns default (30 min) when no settings stored', () => {
       expect(getKeyCacheDurationMs()).toBe(30 * 60 * 1000);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // M8: Policy clamping for security-relevant settings.
+  //
+  // A user (or attacker with DevTools access on a shared/kiosk device) can
+  // write any value to localStorage["mosaic:settings"], bypassing the UI
+  // whitelist. The accessors getIdleTimeoutMs() and getKeyCacheDurationMs()
+  // must read the raw value and clamp it to a hard policy ceiling/floor so
+  // that the auto-logout and cache-eviction security controls cannot be
+  // unilaterally weakened by a malicious localStorage write.
+  // ---------------------------------------------------------------------------
+  describe('policy clamping (M8)', () => {
+    /**
+     * Helper to write a tampered settings blob directly to the mocked
+     * localStorage, simulating an attacker with DevTools access bypassing the
+     * UI whitelist. Other settings are filled with defaults.
+     */
+    function tamperWith(overrides: Record<string, unknown>): void {
+      localStorageMock['mosaic:settings'] = JSON.stringify({
+        idleTimeout: 30,
+        theme: 'dark',
+        thumbnailQuality: 'medium',
+        autoSync: true,
+        keyCacheDuration: 30,
+        originalStorageFormat: 'avif',
+        stripExifFromOriginals: true,
+        ...overrides,
+      });
+    }
+
+    describe('policy constants', () => {
+      it('POLICY_MAX_IDLE_TIMEOUT_MINUTES is 60 minutes', () => {
+        expect(POLICY_MAX_IDLE_TIMEOUT_MINUTES).toBe(60);
+      });
+
+      it('POLICY_MIN_IDLE_TIMEOUT_MINUTES is 5 minutes', () => {
+        expect(POLICY_MIN_IDLE_TIMEOUT_MINUTES).toBe(5);
+      });
+
+      it('POLICY_MAX_KEY_CACHE_DURATION_HOURS is 8 hours', () => {
+        expect(POLICY_MAX_KEY_CACHE_DURATION_HOURS).toBe(8);
+      });
+    });
+
+    describe('getIdleTimeoutMs clamping', () => {
+      it('clamps a tampered idleTimeout above the ceiling to POLICY_MAX', () => {
+        // Attacker writes 9999 minutes to disable auto-logout. Must be
+        // reduced to POLICY_MAX_IDLE_TIMEOUT_MINUTES, not honoured.
+        tamperWith({ idleTimeout: 9999 });
+
+        expect(getIdleTimeoutMs()).toBe(
+          POLICY_MAX_IDLE_TIMEOUT_MINUTES * 60 * 1000,
+        );
+        expect(getIdleTimeoutMs()).not.toBe(9999 * 60 * 1000);
+      });
+
+      it('clamps a negative idleTimeout up to POLICY_MIN', () => {
+        tamperWith({ idleTimeout: -10 });
+
+        expect(getIdleTimeoutMs()).toBe(
+          POLICY_MIN_IDLE_TIMEOUT_MINUTES * 60 * 1000,
+        );
+      });
+
+      it('clamps a zero idleTimeout up to POLICY_MIN (no instant-logout DoS)', () => {
+        tamperWith({ idleTimeout: 0 });
+
+        expect(getIdleTimeoutMs()).toBe(
+          POLICY_MIN_IDLE_TIMEOUT_MINUTES * 60 * 1000,
+        );
+      });
+
+      it('preserves a within-policy idleTimeout (30)', () => {
+        tamperWith({ idleTimeout: 30 });
+
+        expect(getIdleTimeoutMs()).toBe(30 * 60 * 1000);
+      });
+
+      it('preserves an idleTimeout exactly at POLICY_MAX', () => {
+        tamperWith({ idleTimeout: POLICY_MAX_IDLE_TIMEOUT_MINUTES });
+
+        expect(getIdleTimeoutMs()).toBe(
+          POLICY_MAX_IDLE_TIMEOUT_MINUTES * 60 * 1000,
+        );
+      });
+
+      it('returns default idleTimeout when localStorage is empty', () => {
+        expect(getIdleTimeoutMs()).toBe(
+          getDefaultSettings().idleTimeout * 60 * 1000,
+        );
+      });
+
+      it('falls back to default when idleTimeout is a non-numeric type (string)', () => {
+        tamperWith({ idleTimeout: 'forever' });
+
+        expect(getIdleTimeoutMs()).toBe(
+          getDefaultSettings().idleTimeout * 60 * 1000,
+        );
+      });
+
+      it('falls back to default when idleTimeout is NaN', () => {
+        // JSON cannot represent NaN; a hand-crafted blob that contains "NaN"
+        // would fail JSON.parse. We instead simulate a non-finite value
+        // surviving JSON parsing by writing null, which is also rejected.
+        tamperWith({ idleTimeout: null });
+
+        expect(getIdleTimeoutMs()).toBe(
+          getDefaultSettings().idleTimeout * 60 * 1000,
+        );
+      });
+
+      it('falls back to default when settings JSON is malformed', () => {
+        localStorageMock['mosaic:settings'] = 'not valid json';
+
+        expect(getIdleTimeoutMs()).toBe(
+          getDefaultSettings().idleTimeout * 60 * 1000,
+        );
+      });
+    });
+
+    describe('getKeyCacheDurationMs clamping', () => {
+      it('clamps a tampered keyCacheDuration above the ceiling to POLICY_MAX', () => {
+        // Attacker writes 99999 minutes (~70 days) to keep keys cached
+        // indefinitely. Must be reduced to the policy ceiling.
+        tamperWith({ keyCacheDuration: 99999 });
+
+        const expectedMs =
+          POLICY_MAX_KEY_CACHE_DURATION_HOURS * 60 * 60 * 1000;
+        expect(getKeyCacheDurationMs()).toBe(expectedMs);
+        expect(getKeyCacheDurationMs()).not.toBe(99999 * 60 * 1000);
+      });
+
+      it('preserves the disabled sentinel (0)', () => {
+        tamperWith({ keyCacheDuration: 0 });
+
+        expect(getKeyCacheDurationMs()).toBe(0);
+      });
+
+      it('preserves the until-tab-close sentinel (-1)', () => {
+        tamperWith({ keyCacheDuration: -1 });
+
+        expect(getKeyCacheDurationMs()).toBe(Infinity);
+      });
+
+      it('clamps a non-sentinel negative keyCacheDuration up to 0', () => {
+        // -50 is not the documented -1 sentinel; treat as out-of-range.
+        tamperWith({ keyCacheDuration: -50 });
+
+        expect(getKeyCacheDurationMs()).toBe(0);
+      });
+
+      it('preserves a within-policy keyCacheDuration (60 minutes)', () => {
+        tamperWith({ keyCacheDuration: 60 });
+
+        expect(getKeyCacheDurationMs()).toBe(60 * 60 * 1000);
+      });
+
+      it('preserves a within-policy keyCacheDuration (240 minutes / 4h)', () => {
+        // 240 < POLICY_MAX_KEY_CACHE_DURATION_HOURS * 60 (= 480), so unchanged.
+        tamperWith({ keyCacheDuration: 240 });
+
+        expect(getKeyCacheDurationMs()).toBe(240 * 60 * 1000);
+      });
+
+      it('returns default keyCacheDuration when localStorage is empty', () => {
+        expect(getKeyCacheDurationMs()).toBe(
+          getDefaultSettings().keyCacheDuration * 60 * 1000,
+        );
+      });
+
+      it('falls back to default when keyCacheDuration is non-numeric', () => {
+        tamperWith({ keyCacheDuration: 'forever' });
+
+        expect(getKeyCacheDurationMs()).toBe(
+          getDefaultSettings().keyCacheDuration * 60 * 1000,
+        );
+      });
     });
   });
 });
