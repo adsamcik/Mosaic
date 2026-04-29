@@ -334,3 +334,104 @@ fn verify_and_open_rejects_invalid_signature_length() {
     assert_eq!(close_identity_handle(owner_identity), 0);
     assert_eq!(close_account_key_handle(owner_account), 0);
 }
+
+// ---------------------------------------------------------------------------
+// Slice 3 — `importEpochKeyHandleFromBundle` + `sealBundleWithEpochHandle`
+// facade exports. These surface the bundle round-trip without exposing payload
+// bytes to the caller of `seal_bundle_with_epoch_handle`.
+// ---------------------------------------------------------------------------
+
+use mosaic_wasm::{
+    close_epoch_key_handle, create_epoch_key_handle, import_epoch_key_handle_from_bundle,
+    seal_bundle_with_epoch_handle,
+};
+
+#[test]
+fn create_epoch_key_handle_facade_returns_sign_public_key() {
+    let (owner_account, owner_identity, _owner_pubkey) = unlock_owner_and_create_identity();
+
+    let result = create_epoch_key_handle(owner_account, EPOCH_ID);
+    assert_eq!(result.code, 0);
+    assert_eq!(result.epoch_id, EPOCH_ID);
+    // Fresh handles always populate the per-epoch sign public key.
+    assert_eq!(result.sign_public_key.len(), 32);
+    assert!(result.sign_public_key.iter().any(|byte| *byte != 0));
+
+    assert_eq!(close_epoch_key_handle(result.handle), 0);
+    assert_eq!(close_identity_handle(owner_identity), 0);
+    assert_eq!(close_account_key_handle(owner_account), 0);
+}
+
+#[test]
+fn seal_bundle_with_epoch_handle_facade_round_trips_through_import() {
+    let (owner_account, owner_identity, _owner_pubkey) = unlock_owner_and_create_identity();
+    let (recipient_account, recipient_identity, recipient_pubkey) =
+        unlock_recipient_and_create_identity();
+
+    let epoch = create_epoch_key_handle(owner_account, EPOCH_ID);
+    assert_eq!(epoch.code, 0);
+
+    let sealed = seal_bundle_with_epoch_handle(
+        owner_identity,
+        epoch.handle,
+        recipient_pubkey.clone(),
+        ALBUM_ID.to_owned(),
+    );
+    assert_eq!(sealed.code, 0);
+    assert!(!sealed.sealed.is_empty());
+    assert_eq!(sealed.signature.len(), 64);
+
+    let opened = verify_and_open_bundle(
+        recipient_identity,
+        sealed.sealed,
+        sealed.signature,
+        sealed.sharer_pubkey,
+        ALBUM_ID.to_owned(),
+        0,
+        false,
+    );
+    assert_eq!(opened.code, 0);
+    assert_eq!(opened.epoch_id, EPOCH_ID);
+    assert_eq!(opened.sign_public_key, epoch.sign_public_key);
+
+    let imported = import_epoch_key_handle_from_bundle(
+        recipient_account,
+        opened.epoch_id,
+        opened.epoch_seed,
+        opened.sign_secret_seed,
+        opened.sign_public_key.clone(),
+    );
+    assert_eq!(imported.code, 0);
+    assert_eq!(imported.epoch_id, EPOCH_ID);
+    // The imported handle on the recipient side carries the same per-epoch
+    // sign public key as the originator's handle.
+    assert_eq!(imported.sign_public_key, opened.sign_public_key);
+    assert!(!imported.wrapped_epoch_seed.is_empty());
+
+    assert_eq!(close_epoch_key_handle(epoch.handle), 0);
+    assert_eq!(close_epoch_key_handle(imported.handle), 0);
+    assert_eq!(close_identity_handle(owner_identity), 0);
+    assert_eq!(close_identity_handle(recipient_identity), 0);
+    assert_eq!(close_account_key_handle(owner_account), 0);
+    assert_eq!(close_account_key_handle(recipient_account), 0);
+}
+
+#[test]
+fn import_epoch_key_handle_from_bundle_facade_rejects_mismatched_sign_public_key() {
+    let (owner_account, owner_identity, _) = unlock_owner_and_create_identity();
+
+    let result = import_epoch_key_handle_from_bundle(
+        owner_account,
+        EPOCH_ID,
+        vec![0xaa_u8; 32],
+        SIGN_SECRET_SEED.to_vec(),
+        vec![0xff_u8; 32],
+    );
+    assert_eq!(result.code, ClientErrorCode::InvalidPublicKey.as_u16());
+    assert_eq!(result.handle, 0);
+    assert!(result.wrapped_epoch_seed.is_empty());
+    assert!(result.sign_public_key.is_empty());
+
+    assert_eq!(close_identity_handle(owner_identity), 0);
+    assert_eq!(close_account_key_handle(owner_account), 0);
+}

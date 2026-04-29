@@ -1,5 +1,10 @@
 /**
  * Epoch Key Service Unit Tests
+ *
+ * Slice 3 — `openEpochKeyBundle` returns an opaque epoch handle id (no raw
+ * seed/sign-secret bytes); the cache stores `{ epochHandleId, signPublicKey }`
+ * and the legacy fields are zero-filled placeholders during the multi-slice
+ * cutover.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,6 +45,7 @@ const mockCryptoClient = {
   getIdentityPublicKey: vi.fn(),
   deriveIdentity: vi.fn(),
   openEpochKeyBundle: vi.fn(),
+  closeEpochHandle: vi.fn(async (_handleId: string) => undefined),
 };
 
 // Helper to create base64-encoded test data
@@ -53,28 +59,33 @@ function createMockEpochKeyRecord(epochId: number): EpochKeyRecord {
     id: `key-${epochId}`,
     albumId: 'album-123',
     epochId,
-    encryptedKeyBundle: toBase64(new Uint8Array(100)), // Mock sealed box
-    ownerSignature: toBase64(new Uint8Array(64)), // Mock signature
-    sharerPubkey: toBase64(new Uint8Array(32)), // Mock pubkey
+    encryptedKeyBundle: toBase64(new Uint8Array(100)),
+    ownerSignature: toBase64(new Uint8Array(64)),
+    sharerPubkey: toBase64(new Uint8Array(32)),
     signPubkey: toBase64(new Uint8Array(32)),
     createdAt: new Date().toISOString(),
   };
 }
 
 describe('Epoch Key Service', () => {
+  let nextHandleId = 0;
+
   beforeEach(() => {
     vi.clearAllMocks();
     clearAllEpochKeys();
+    nextHandleId = 0;
 
-    // Default mock implementations
     mockCryptoClient.getIdentityPublicKey.mockResolvedValue(new Uint8Array(32));
     mockCryptoClient.deriveIdentity.mockResolvedValue(undefined);
     mockCryptoClient.openEpochKeyBundle.mockImplementation(
-      async (_bundle, _sender, albumId, _minEpoch) => ({
-        epochSeed: new Uint8Array(32).fill(1),
-        signPublicKey: new Uint8Array(32).fill(2),
-        signSecretKey: new Uint8Array(64).fill(3),
-      }),
+      async (_bundle, _sender, _albumId, _minEpoch) => {
+        nextHandleId += 1;
+        return {
+          epochHandleId: `epch_test-${String(nextHandleId)}`,
+          epochId: nextHandleId,
+          signPublicKey: new Uint8Array(32).fill(2),
+        };
+      },
     );
     mockApi.getEpochKeys.mockResolvedValue([createMockEpochKeyRecord(1)]);
   });
@@ -110,13 +121,13 @@ describe('Epoch Key Service', () => {
       const bundles = await fetchAndUnwrapEpochKeys('album-123');
 
       expect(bundles).toHaveLength(2);
-      expect(bundles.map((bundle) => bundle.epochId).sort((a, b) => a - b)).toEqual(
-        [1, 2],
-      );
+      expect(bundles.map((bundle) => bundle.epochId).sort((a, b) => a - b)).toEqual([
+        1, 2,
+      ]);
       expect(mockApi.getEpochKeys).toHaveBeenCalledWith('album-123');
     });
 
-    it('caches unwrapped keys', async () => {
+    it('caches unwrapped keys as opaque handle ids', async () => {
       mockApi.getEpochKeys.mockResolvedValue([createMockEpochKeyRecord(1)]);
 
       await fetchAndUnwrapEpochKeys('album-123');
@@ -124,26 +135,25 @@ describe('Epoch Key Service', () => {
       const cached = getEpochKey('album-123', 1);
       expect(cached).not.toBeNull();
       expect(cached?.epochId).toBe(1);
+      expect(typeof cached?.epochHandleId).toBe('string');
+      expect(cached!.epochHandleId.length).toBeGreaterThan(0);
+      // Slice 3 boundary — the cache must NOT carry the raw seed/sign secret.
+      expect(cached?.epochSeed.length).toBe(0);
+      expect(cached?.signKeypair.secretKey.length).toBe(0);
     });
 
     it('skips already cached keys', async () => {
-      // Pre-cache a key
       setEpochKey('album-123', {
         epochId: 1,
-        epochSeed: new Uint8Array(32).fill(99),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
+        epochHandleId: 'epch_pre-cached',
+        signPublicKey: new Uint8Array(32).fill(2),
       });
 
       mockApi.getEpochKeys.mockResolvedValue([createMockEpochKeyRecord(1)]);
 
       const bundles = await fetchAndUnwrapEpochKeys('album-123');
 
-      // Should return the cached key
-      expect(bundles[0].epochSeed[0]).toBe(99);
-      // Should not have called openEpochKeyBundle
+      expect(bundles[0]?.epochHandleId).toBe('epch_pre-cached');
       expect(mockCryptoClient.openEpochKeyBundle).not.toHaveBeenCalled();
     });
 
@@ -166,16 +176,16 @@ describe('Epoch Key Service', () => {
 
       mockCryptoClient.openEpochKeyBundle.mockImplementation(
         async (bundle: Uint8Array) => ({
-          epochSeed: new Uint8Array(32).fill(bundle[0] ?? 0),
+          epochHandleId: `epch_${String(bundle[0])}`,
+          epochId: 1,
           signPublicKey: new Uint8Array(32).fill(2),
-          signSecretKey: new Uint8Array(64).fill(3),
         }),
       );
 
       const bundles = await fetchAndUnwrapEpochKeys('album-123');
 
       expect(bundles).toHaveLength(1);
-      expect(bundles[0].epochSeed[0]).toBe(2);
+      expect(bundles[0]?.epochHandleId).toBe('epch_2');
       expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenCalledTimes(1);
     });
 
@@ -184,9 +194,9 @@ describe('Epoch Key Service', () => {
       mockCryptoClient.openEpochKeyBundle
         .mockRejectedValueOnce(new Error('Bundle albumId must not be empty'))
         .mockResolvedValueOnce({
-          epochSeed: new Uint8Array(32).fill(8),
+          epochHandleId: 'epch_legacy',
+          epochId: 1,
           signPublicKey: new Uint8Array(32).fill(2),
-          signSecretKey: new Uint8Array(64).fill(3),
         });
 
       const bundles = await fetchAndUnwrapEpochKeys('album-123', 0, {
@@ -194,7 +204,7 @@ describe('Epoch Key Service', () => {
       });
 
       expect(bundles).toHaveLength(1);
-      expect(bundles[0].epochSeed[0]).toBe(8);
+      expect(bundles[0]?.epochHandleId).toBe('epch_legacy');
       expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenNthCalledWith(
         1,
         expect.any(Uint8Array),
@@ -256,9 +266,9 @@ describe('Epoch Key Service', () => {
           }
 
           return {
-            epochSeed: new Uint8Array(32).fill(bundle[0] ?? 0),
+            epochHandleId: `epch_${String(bundle[0])}`,
+            epochId: 1,
             signPublicKey: new Uint8Array(32).fill(2),
-            signSecretKey: new Uint8Array(64).fill(3),
           };
         },
       );
@@ -268,7 +278,7 @@ describe('Epoch Key Service', () => {
       });
 
       expect(bundles).toHaveLength(1);
-      expect(bundles[0].epochSeed[0]).toBe(2);
+      expect(bundles[0]?.epochHandleId).toBe('epch_2');
       expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenCalledTimes(2);
       expect(
         mockCryptoClient.openEpochKeyBundle.mock.calls.every(
@@ -420,17 +430,14 @@ describe('Epoch Key Service', () => {
     it('returns cached key without fetching', async () => {
       setEpochKey('album-123', {
         epochId: 5,
-        epochSeed: new Uint8Array(32).fill(55),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
+        epochHandleId: 'epch_cached-5',
+        signPublicKey: new Uint8Array(32),
       });
 
       const bundle = await getOrFetchEpochKey('album-123', 5);
 
       expect(bundle.epochId).toBe(5);
-      expect(bundle.epochSeed[0]).toBe(55);
+      expect(bundle.epochHandleId).toBe('epch_cached-5');
       expect(mockApi.getEpochKeys).not.toHaveBeenCalled();
     });
 
@@ -465,24 +472,18 @@ describe('Epoch Key Service', () => {
     it('returns cached current key without fetching', async () => {
       setEpochKey('album-123', {
         epochId: 10,
-        epochSeed: new Uint8Array(32).fill(10),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
+        epochHandleId: 'epch_10',
+        signPublicKey: new Uint8Array(32),
       });
       setEpochKey('album-123', {
         epochId: 5,
-        epochSeed: new Uint8Array(32).fill(5),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
+        epochHandleId: 'epch_5',
+        signPublicKey: new Uint8Array(32),
       });
 
       const bundle = await getCurrentOrFetchEpochKey('album-123');
 
-      expect(bundle.epochId).toBe(10); // Highest epoch
+      expect(bundle.epochId).toBe(10);
       expect(mockApi.getEpochKeys).not.toHaveBeenCalled();
     });
 
@@ -493,17 +494,6 @@ describe('Epoch Key Service', () => {
         createMockEpochKeyRecord(3),
       ];
       mockApi.getEpochKeys.mockResolvedValue(records);
-
-      // Mock to return different epoch IDs
-      let callCount = 0;
-      mockCryptoClient.openEpochKeyBundle.mockImplementation(async () => {
-        const epochId = records[callCount++]?.epochId ?? 1;
-        return {
-          epochSeed: new Uint8Array(32).fill(epochId),
-          signPublicKey: new Uint8Array(32),
-          signSecretKey: new Uint8Array(64),
-        };
-      });
 
       const bundle = await getCurrentOrFetchEpochKey('album-123');
 
@@ -516,11 +506,8 @@ describe('Epoch Key Service', () => {
     it('returns true immediately if keys are cached', async () => {
       setEpochKey('album-123', {
         epochId: 1,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
+        epochHandleId: 'epch_1',
+        signPublicKey: new Uint8Array(32),
       });
 
       const result = await ensureEpochKeysLoaded('album-123');
@@ -549,8 +536,6 @@ describe('Epoch Key Service', () => {
 
   describe('bundle format handling', () => {
     it('passes encryptedKeyBundle directly without prepending signature (regression test for duplicated signature bug)', async () => {
-      // Create a record where encryptedKeyBundle already contains signature || sealed
-      // This matches the format sent by useAlbums.ts when creating albums
       const signature = new Uint8Array(64).fill(0xaa);
       const sealedBox = new Uint8Array(50).fill(0xbb);
       const fullBundle = new Uint8Array([...signature, ...sealedBox]);
@@ -559,8 +544,8 @@ describe('Epoch Key Service', () => {
         id: 'key-1',
         albumId: 'album-regression',
         epochId: 1,
-        encryptedKeyBundle: toBase64(fullBundle), // signature || sealed already combined
-        ownerSignature: toBase64(signature), // signature stored separately too
+        encryptedKeyBundle: toBase64(fullBundle),
+        ownerSignature: toBase64(signature),
         sharerPubkey: toBase64(new Uint8Array(32).fill(0xcc)),
         signPubkey: toBase64(new Uint8Array(32)),
         createdAt: new Date().toISOString(),
@@ -570,20 +555,13 @@ describe('Epoch Key Service', () => {
 
       await fetchAndUnwrapEpochKeys('album-regression');
 
-      // Verify openEpochKeyBundle was called with the encryptedKeyBundle directly
-      // NOT with signature prepended again (which would be 64 + 114 = 178 bytes)
       expect(mockCryptoClient.openEpochKeyBundle).toHaveBeenCalledTimes(1);
       const calledBundle = mockCryptoClient.openEpochKeyBundle.mock
         .calls[0][0] as Uint8Array;
 
-      // The bundle should be exactly what was in encryptedKeyBundle (114 bytes = 64 + 50)
-      // NOT 178 bytes (signature prepended again)
       expect(calledBundle.length).toBe(fullBundle.length);
       expect(calledBundle).toEqual(fullBundle);
-
-      // Verify the first 64 bytes are the signature
       expect(calledBundle.slice(0, 64)).toEqual(signature);
-      // Verify the remaining bytes are the sealed box
       expect(calledBundle.slice(64)).toEqual(sealedBox);
     });
   });

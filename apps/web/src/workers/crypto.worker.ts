@@ -28,7 +28,6 @@ import {
   decryptShard as cryptoDecryptShard,
   deriveLinkKeys as cryptoDeriveLinkKeys,
   encryptShard as cryptoEncryptShard,
-  generateEpochKey as cryptoGenerateEpochKey,
   generateLinkSecret as cryptoGenerateLinkSecret,
   signManifest as cryptoSignManifest,
   unwrapTierKeyFromLink as cryptoUnwrapTierKeyFromLink,
@@ -1161,13 +1160,14 @@ class CryptoWorker implements CryptoWorkerApi {
 
   /**
    * Open (decrypt) an epoch key bundle.
-   */
-  /**
-   * Open (decrypt) an epoch key bundle.
    *
-   * Slice 2 — routes through the handle-based `verifyAndOpenBundle` so
-   * the worker no longer needs to materialise the full identity keypair
-   * in JS. The legacy signature is preserved for slice 3 callers.
+   * Slice 3 — verifies and opens the bundle inside Rust, then atomically
+   * imports the cleartext payload into a new epoch handle via
+   * `importEpochKeyHandleFromBundle`. The seed and per-epoch sign secret
+   * are wiped on the JS side immediately after the import call returns;
+   * Rust wipes its own copies on every path. The caller only ever sees the
+   * opaque epoch handle id, the epoch id, and the (public) sign verifying
+   * key.
    */
   async openEpochKeyBundle(
     bundle: Uint8Array,
@@ -1176,13 +1176,13 @@ class CryptoWorker implements CryptoWorkerApi {
     minEpochId: number,
     options?: OpenEpochKeyBundleOptions,
   ): Promise<{
-    epochSeed: Uint8Array;
+    epochHandleId: EpochHandleId;
+    epochId: number;
     signPublicKey: Uint8Array;
-    signSecretKey: Uint8Array;
   }> {
     const identityId = this.requireIdentityHandle();
+    const accountId = this.requireAccountHandle();
 
-    // Parse the bundle format: signature (64) || sealed box
     if (bundle.length < 64) {
       throw new Error('Bundle too short');
     }
@@ -1190,7 +1190,7 @@ class CryptoWorker implements CryptoWorkerApi {
     const sealedBox = bundle.slice(64);
 
     const facade = await getRustFacade();
-    const timer = log.startTimer('verifyAndOpenBundle');
+    const verifyTimer = log.startTimer('verifyAndOpenBundle');
     const opened = await this.handleRegistry.withLease(
       identityId,
       'identity',
@@ -1205,44 +1205,77 @@ class CryptoWorker implements CryptoWorkerApi {
           options?.allowLegacyEmptyAlbumId ?? false,
         ),
     );
-    timer.end();
+    verifyTimer.end();
 
-    return {
-      epochSeed: opened.epochSeed,
-      signPublicKey: opened.signPublic,
-      signSecretKey: opened.signSecret,
-    };
+    try {
+      const importTimer = log.startTimer('importEpochKeyHandleFromBundle');
+      const imported = await this.handleRegistry.withLease(
+        accountId,
+        'account',
+        (rustAccount) =>
+          facade.importEpochKeyHandleFromBundle(
+            rustAccount,
+            opened.epochId,
+            opened.epochSeed,
+            opened.signSecret,
+            opened.signPublic,
+          ),
+      );
+      importTimer.end();
+
+      // Bind the freshly minted handle to the verified album so future
+      // `getEpochHandleId(albumId, epochId)` lookups can recover it.
+      const handle = this.handleRegistry.registerEpoch(
+        opened.albumId,
+        opened.epochId,
+        imported.handle,
+      );
+
+      return {
+        epochHandleId: handle.id as EpochHandleId,
+        epochId: opened.epochId,
+        signPublicKey: imported.signPublicKey,
+      };
+    } finally {
+      // Wipe the cleartext payload bytes that the JS side briefly held
+      // between `verifyAndOpenBundle` and `importEpochKeyHandleFromBundle`.
+      // Rust wipes its own copies on the import path; this is defence in
+      // depth for the JS reflection of those buffers.
+      sodium.memzero(opened.epochSeed);
+      sodium.memzero(opened.signSecret);
+    }
   }
 
   /**
    * Create an epoch key bundle for sharing with another user.
    *
-   * Slice 2 — routes through the handle-based `sealAndSignBundle` so the
-   * legacy identity keypair field is no longer needed.
+   * Slice 3 — bundle payload bytes never cross Comlink. The caller passes
+   * the sender's epoch handle id; the Rust facade clones the seed + sign
+   * keypair from the registry, builds and seals the bundle, and zeroizes
+   * the cloned payload before returning.
    */
   async createEpochKeyBundle(
+    epochHandleId: EpochHandleId,
     albumId: string,
-    epochId: number,
-    epochSeed: Uint8Array,
-    signPublicKey: Uint8Array,
-    signSecretKey: Uint8Array,
     recipientPubkey: Uint8Array,
   ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array }> {
     const identityId = this.requireIdentityHandle();
-
     const facade = await getRustFacade();
+
     const sealed = await this.handleRegistry.withLease(
       identityId,
       'identity',
       (rustIdentity) =>
-        facade.sealAndSignBundle(
-          rustIdentity,
-          recipientPubkey,
-          albumId,
-          epochId,
-          epochSeed,
-          signSecretKey,
-          signPublicKey,
+        this.handleRegistry.withLease(
+          epochHandleId,
+          'epoch',
+          (rustEpoch) =>
+            facade.sealBundleWithEpochHandle(
+              rustIdentity,
+              rustEpoch,
+              recipientPubkey,
+              albumId,
+            ),
         ),
     );
 
@@ -1254,21 +1287,19 @@ class CryptoWorker implements CryptoWorkerApi {
 
   /**
    * Generate a new epoch key for album creation or rotation.
+   *
+   * Slice 3 — no raw seed/sign-secret bytes cross Comlink. Routes through
+   * `createEpochHandle` which mints a Rust-owned handle whose registry
+   * record carries both the derived epoch material and a freshly generated
+   * per-epoch manifest signing keypair.
    */
   async generateEpochKey(epochId: number): Promise<{
-    epochSeed: Uint8Array;
+    epochHandleId: EpochHandleId;
+    wrappedSeed: Uint8Array;
     signPublicKey: Uint8Array;
-    signSecretKey: Uint8Array;
   }> {
-    await this.ensureSodiumReady();
-
-    const epochKey = cryptoGenerateEpochKey(epochId);
-
-    return {
-      epochSeed: epochKey.epochSeed,
-      signPublicKey: epochKey.signKeypair.publicKey,
-      signSecretKey: epochKey.signKeypair.secretKey,
-    };
+    const accountId = this.requireAccountHandle();
+    return this.createEpochHandle(accountId, epochId);
   }
 
   /**
@@ -1750,7 +1781,11 @@ class CryptoWorker implements CryptoWorkerApi {
   async createEpochHandle(
     accountHandleId: AccountHandleId,
     epochId: number,
-  ): Promise<{ epochHandleId: EpochHandleId; wrappedSeed: Uint8Array }> {
+  ): Promise<{
+    epochHandleId: EpochHandleId;
+    wrappedSeed: Uint8Array;
+    signPublicKey: Uint8Array;
+  }> {
     const facade = await getRustFacade();
     return this.handleRegistry.withLease(
       accountHandleId,
@@ -1759,13 +1794,14 @@ class CryptoWorker implements CryptoWorkerApi {
         const out = facade.createEpochKeyHandle(rustAccount, epochId);
         // Slice 1 contract: epoch handles are keyed by (albumId, epochId)
         // for the `getEpochHandleId` lookup. `createEpochHandle` doesn't
-        // know the albumId yet (Slice 3 wires it via openEpochKeyBundle's
-        // albumId argument). Use empty albumId here; callers needing the
-        // lookup should call `openEpochHandle` with an explicit albumId.
+        // know the albumId yet — Slice 3 callers that need album binding
+        // call `bindEpochHandleToAlbum` once the album is committed; the
+        // legacy lookup remains forward-compatible.
         const handle = this.handleRegistry.registerEpoch('', epochId, out.handle);
         return {
           epochHandleId: handle.id as EpochHandleId,
           wrappedSeed: out.wrappedEpochSeed,
+          signPublicKey: out.signPublicKey,
         };
       },
     );

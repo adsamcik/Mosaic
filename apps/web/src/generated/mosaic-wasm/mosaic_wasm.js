@@ -690,6 +690,24 @@ export class EpochKeyHandleResult {
         return BigInt.asUintN(64, ret);
     }
     /**
+     * Per-epoch Ed25519 manifest signing public key, or an empty array when
+     * the handle has no sign keypair attached.
+     * @returns {Uint8Array}
+     */
+    get signPublicKey() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.epochkeyhandleresult_signPublicKey(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
      * Wrapped epoch seed bytes returned on creation.
      * @returns {Uint8Array}
      */
@@ -1850,6 +1868,28 @@ export function identitySigningPubkey(handle) {
 }
 
 /**
+ * Imports an epoch handle from cleartext bundle payload bytes through WASM.
+ * Both the epoch seed and the manifest signing seed are zeroized inside
+ * Rust on every path.
+ * @param {bigint} account_key_handle
+ * @param {number} epoch_id
+ * @param {Uint8Array} epoch_seed
+ * @param {Uint8Array} sign_secret_seed
+ * @param {Uint8Array} sign_public
+ * @returns {EpochKeyHandleResult}
+ */
+export function importEpochKeyHandleFromBundle(account_key_handle, epoch_id, epoch_seed, sign_secret_seed, sign_public) {
+    const ptr0 = passArray8ToWasm0(epoch_seed, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(sign_secret_seed, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(sign_public, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.importEpochKeyHandleFromBundle(account_key_handle, epoch_id, ptr0, len0, ptr1, len1, ptr2, len2);
+    return EpochKeyHandleResult.__wrap(ret);
+}
+
+/**
  * Initializes an album sync coordinator through a primitive WASM proof surface.
  * @param {string} album_id
  * @param {string} request_id
@@ -1987,6 +2027,25 @@ export function sealAndSignBundle(identity_handle, recipient_pubkey, album_id, e
     const ptr4 = passArray8ToWasm0(sign_public, wasm.__wbindgen_export2);
     const len4 = WASM_VECTOR_LEN;
     const ret = wasm.sealAndSignBundle(identity_handle, ptr0, len0, ptr1, len1, epoch_id, ptr2, len2, ptr3, len3, ptr4, len4);
+    return SealedBundleResult.__wrap(ret);
+}
+
+/**
+ * Atomically seals an epoch key bundle for `recipient_pubkey` using a
+ * Rust-owned epoch handle through WASM. Bundle payload bytes never cross
+ * the FFI boundary.
+ * @param {bigint} identity_handle
+ * @param {bigint} epoch_handle
+ * @param {Uint8Array} recipient_pubkey
+ * @param {string} album_id
+ * @returns {SealedBundleResult}
+ */
+export function sealBundleWithEpochHandle(identity_handle, epoch_handle, recipient_pubkey, album_id) {
+    const ptr0 = passArray8ToWasm0(recipient_pubkey, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.sealBundleWithEpochHandle(identity_handle, epoch_handle, ptr0, len0, ptr1, len1);
     return SealedBundleResult.__wrap(ret);
 }
 

@@ -139,13 +139,16 @@ export async function rotateEpoch(
   }
 
   // Step 2: Generate fresh epoch key
-  // SECURITY: This MUST be completely random, never derived from previous keys
+  // SECURITY: This MUST be completely random, never derived from previous keys.
+  // Slice 3 — minted as a Rust-owned epoch handle. The seed/sign-secret stay
+  // in the worker; we only get back the opaque handle id, the wrapped seed
+  // (publishable / persistable), and the per-epoch sign public key.
   onProgress?.(RotationStep.GENERATING_KEY);
   const newEpochId = currentEpochId + 1;
   let newEpochKey: {
-    epochSeed: Uint8Array;
+    epochHandleId: string;
+    wrappedSeed: Uint8Array;
     signPublicKey: Uint8Array;
-    signSecretKey: Uint8Array;
   };
   try {
     newEpochKey = await crypto.generateEpochKey(newEpochId);
@@ -205,7 +208,6 @@ export async function rotateEpoch(
   const epochKeys: CreateEpochKeyRequest[] = [];
 
   for (const member of members) {
-    // Get recipient's identity pubkey
     const recipientPubkey = member.user?.identityPubkey;
     if (!recipientPubkey) {
       throw new EpochRotationError(
@@ -217,12 +219,12 @@ export async function rotateEpoch(
     try {
       const recipientPubkeyBytes = fromBase64(recipientPubkey);
 
+      // Slice 3 — bundle payload bytes never cross Comlink. The worker
+      // resolves the epoch handle internally and seals + signs in Rust.
       const sealed = await crypto.createEpochKeyBundle(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        newEpochKey.epochHandleId as any,
         albumId,
-        newEpochId,
-        newEpochKey.epochSeed,
-        newEpochKey.signPublicKey,
-        newEpochKey.signSecretKey,
         recipientPubkeyBytes,
       );
 
@@ -262,7 +264,7 @@ export async function rotateEpoch(
   onProgress?.(RotationStep.WRAPPING_SHARE_LINK_KEYS);
   const shareLinkKeys = await wrapKeysForShareLinks(
     shareLinks,
-    newEpochKey.epochSeed,
+    newEpochKey.epochHandleId,
   );
 
   // Step 8: Call rotate API with member keys and share link keys
@@ -284,16 +286,19 @@ export async function rotateEpoch(
   // Step 9: Update local cache
   onProgress?.(RotationStep.UPDATING_CACHE);
 
-  // Clear old epoch keys from store
+  // Clear old epoch keys from store (closes their underlying Rust handles)
   clearAlbumKeys(albumId);
 
-  // Cache the new epoch key for current user
+  // Cache the new epoch key reference for the current user.
   const newBundle: EpochKeyBundle = {
     epochId: newEpochId,
-    epochSeed: newEpochKey.epochSeed,
+    epochHandleId: newEpochKey.epochHandleId,
+    signPublicKey: newEpochKey.signPublicKey,
+    // Slice 3 transitional placeholders — see EpochKeyBundle docs.
+    epochSeed: new Uint8Array(0),
     signKeypair: {
       publicKey: newEpochKey.signPublicKey,
-      secretKey: newEpochKey.signSecretKey,
+      secretKey: new Uint8Array(0),
     },
   };
   setEpochKey(albumId, newBundle);
@@ -311,124 +316,103 @@ export async function rotateEpoch(
  * Wrap tier keys for all active share links during epoch rotation.
  *
  * For each share link with a stored owner-encrypted secret:
- * 1. Decrypt the owner-encrypted secret to get the link secret
- * 2. Derive the wrapping key from the link secret
- * 3. Derive tier keys from the new epoch's seed
- * 4. Wrap each tier key (up to the link's access tier) with the wrapping key
+ * 1. Decrypt the owner-encrypted secret to get the link secret.
+ * 2. Derive the per-link wrapping key from the link secret (in Rust).
+ * 3. Wrap each tier key (up to the link's access tier) with the wrapping
+ *    key using the new epoch handle (tier keys never leave the worker).
  *
- * @param shareLinks - Active share links with owner-encrypted secrets
- * @param epochSeed - The new epoch's seed (32 bytes)
- * @returns Array of share link key updates for the rotation request
+ * Slice 3 — `epochHandleId` replaces the raw seed parameter so tier-key
+ * derivation happens entirely inside the worker. Slice 6 will retire the
+ * remaining `@mosaic/crypto` import here once `useShareLinks` /
+ * `useLinkKeys` migrate.
+ *
+ * @param shareLinks - Active share links with owner-encrypted secrets.
+ * @param epochHandleId - Rust-owned epoch handle for the new epoch.
+ * @returns Share-link key updates ready for the rotate API request.
  */
 // Exported for unit testing in __tests__/epoch-rotation-service.test.ts.
 export async function wrapKeysForShareLinks(
   shareLinks: ShareLinkWithSecretResponse[],
-  epochSeed: Uint8Array,
+  epochHandleId: string,
 ): Promise<ShareLinkKeyUpdateRequest[]> {
-  // Import crypto functions dynamically to avoid circular deps
-  const {
-    deriveTierKeys,
-    deriveLinkKeys,
-    wrapTierKeyForLink,
-    AccessTier,
-    memzero,
-  } = await import('@mosaic/crypto');
+  // Import the @mosaic/crypto helpers that the worker hasn't yet absorbed
+  // (Slice 6 retires this import). `memzero` is needed for the per-link
+  // sensitive material the worker still hands back as plain bytes; tier
+  // key derivation now happens inside Rust via `wrapTierKeyForLinkRust`.
+  const { deriveLinkKeys, AccessTier, memzero } = await import('@mosaic/crypto');
 
   const crypto = await getCryptoClient();
   const results: ShareLinkKeyUpdateRequest[] = [];
 
-  // Derive tier keys from the new epoch's seed
-  const tierKeys = deriveTierKeys(epochSeed);
+  for (const link of shareLinks) {
+    if (!link.ownerEncryptedSecret || link.isRevoked) {
+      continue;
+    }
 
-  try {
-    for (const link of shareLinks) {
-      // Skip links without owner-encrypted secrets
-      if (!link.ownerEncryptedSecret || link.isRevoked) {
-        continue;
-      }
+    let linkSecret: Uint8Array | undefined;
+    let wrappingKey: Uint8Array | undefined;
 
-      // Per-iteration sensitive key material — declared outside the inner
-      // try so the inner finally can wipe whatever was successfully derived
-      // before any failure point.
-      let linkSecret: Uint8Array | undefined;
-      let wrappingKey: Uint8Array | undefined;
+    try {
+      const encryptedSecret = fromBase64(link.ownerEncryptedSecret);
+      linkSecret = await crypto.unwrapWithAccountKey(encryptedSecret);
 
-      try {
-        // Decrypt the owner-encrypted secret to recover the link secret
-        const encryptedSecret = fromBase64(link.ownerEncryptedSecret);
-        linkSecret = await crypto.unwrapWithAccountKey(encryptedSecret);
+      const linkKeys = deriveLinkKeys(linkSecret);
+      wrappingKey = linkKeys.wrappingKey;
 
-        // Derive the wrapping key from the link secret
-        const linkKeys = deriveLinkKeys(linkSecret);
-        wrappingKey = linkKeys.wrappingKey;
+      const wrappedKeys: ShareLinkKeyUpdateRequest['wrappedKeys'] = [];
 
-        // Wrap tier keys up to the link's access tier
-        const wrappedKeys: ShareLinkKeyUpdateRequest['wrappedKeys'] = [];
+      // Always wrap thumb key (tier 1).
+      const wrappedThumb = await crypto.wrapTierKeyForLinkRust(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        epochHandleId as any,
+        0,
+        wrappingKey,
+      );
+      wrappedKeys.push({
+        tier: AccessTier.THUMB,
+        nonce: toBase64(wrappedThumb.nonce),
+        encryptedKey: toBase64(wrappedThumb.encryptedKey),
+      });
 
-        // Always wrap thumb key (tier 1)
-        const wrappedThumb = wrapTierKeyForLink(
-          tierKeys.thumbKey,
-          AccessTier.THUMB,
+      if (link.accessTier >= 2) {
+        const wrappedPreview = await crypto.wrapTierKeyForLinkRust(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          epochHandleId as any,
+          1,
           wrappingKey,
         );
         wrappedKeys.push({
-          tier: 1,
-          nonce: toBase64(wrappedThumb.nonce),
-          encryptedKey: toBase64(wrappedThumb.encryptedKey),
+          tier: AccessTier.PREVIEW,
+          nonce: toBase64(wrappedPreview.nonce),
+          encryptedKey: toBase64(wrappedPreview.encryptedKey),
         });
-
-        // Wrap preview key if access tier >= 2
-        if (link.accessTier >= 2) {
-          const wrappedPreview = wrapTierKeyForLink(
-            tierKeys.previewKey,
-            AccessTier.PREVIEW,
-            wrappingKey,
-          );
-          wrappedKeys.push({
-            tier: 2,
-            nonce: toBase64(wrappedPreview.nonce),
-            encryptedKey: toBase64(wrappedPreview.encryptedKey),
-          });
-        }
-
-        // Wrap full key if access tier >= 3
-        if (link.accessTier >= 3) {
-          const wrappedFull = wrapTierKeyForLink(
-            tierKeys.fullKey,
-            AccessTier.FULL,
-            wrappingKey,
-          );
-          wrappedKeys.push({
-            tier: 3,
-            nonce: toBase64(wrappedFull.nonce),
-            encryptedKey: toBase64(wrappedFull.encryptedKey),
-          });
-        }
-
-        results.push({
-          shareLinkId: link.id,
-          wrappedKeys,
-        });
-      } catch (err) {
-        // Log but don't fail rotation for individual share link failures
-        log.error(`Failed to wrap keys for share link ${link.id}:`, err);
-        // Continue with other links
-      } finally {
-        // SECURITY (M1): wipe per-link sensitive material on every path so
-        // recovered link secrets and derived wrapping keys never linger
-        // after this iteration completes.
-        if (linkSecret) memzero(linkSecret);
-        if (wrappingKey) memzero(wrappingKey);
       }
+
+      if (link.accessTier >= 3) {
+        const wrappedFull = await crypto.wrapTierKeyForLinkRust(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          epochHandleId as any,
+          2,
+          wrappingKey,
+        );
+        wrappedKeys.push({
+          tier: AccessTier.FULL,
+          nonce: toBase64(wrappedFull.nonce),
+          encryptedKey: toBase64(wrappedFull.encryptedKey),
+        });
+      }
+
+      results.push({
+        shareLinkId: link.id,
+        wrappedKeys,
+      });
+    } catch (err) {
+      log.error(`Failed to wrap keys for share link ${link.id}:`, err);
+      // Continue with other links — non-fatal at the rotation level.
+    } finally {
+      if (linkSecret) memzero(linkSecret);
+      if (wrappingKey) memzero(wrappingKey);
     }
-  } finally {
-    // SECURITY (M1): wipe tier keys derived from the epoch seed on both the
-    // success and the throw path. Without this, thumb/preview/full keys
-    // remain in worker memory after every rotation and could be enumerated
-    // by a debugger or in-worker XSS payload.
-    memzero(tierKeys.thumbKey);
-    memzero(tierKeys.previewKey);
-    memzero(tierKeys.fullKey);
   }
 
   return results;

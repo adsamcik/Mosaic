@@ -293,12 +293,13 @@ export function useMemberManagement(
 
         for (const bundle of epochBundles) {
           try {
+            // Slice 3 — bundle payload bytes never cross Comlink. The
+            // worker resolves the cached epoch handle id internally and
+            // seals + signs in Rust.
             const sealed = await crypto.createEpochKeyBundle(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              bundle.epochHandleId as any,
               albumId,
-              bundle.epochId,
-              bundle.epochSeed,
-              bundle.signKeypair.publicKey,
-              bundle.signKeypair.secretKey,
               recipientPubkey,
             );
 
@@ -313,7 +314,7 @@ export function useMemberManagement(
               ),
               ownerSignature: toBase64(sealed.signature),
               sharerPubkey: toBase64(identityPubkey),
-              signPubkey: toBase64(bundle.signKeypair.publicKey),
+              signPubkey: toBase64(bundle.signPublicKey),
             });
           } catch (err) {
             const error = err instanceof Error ? err : new Error(String(err));

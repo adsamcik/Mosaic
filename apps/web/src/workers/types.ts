@@ -586,12 +586,19 @@ export interface CryptoWorkerApi {
   deriveIdentity(): Promise<void>;
 
   /**
-   * Open (decrypt) an epoch key bundle
+   * Open (decrypt) an epoch key bundle.
+   *
+   * Slice 3 — never returns raw seed/sign-secret bytes across Comlink. The
+   * sealed bundle is verified inside Rust, the cleartext payload is imported
+   * directly into a new epoch handle, and the only thing handed back to the
+   * caller is the opaque handle id plus the per-epoch sign public key
+   * (32-byte Ed25519, safe to expose).
+   *
    * @param bundle - Encrypted epoch key bundle from server
    * @param senderPubkey - Ed25519 public key of the sender (for signature verification)
    * @param albumId - Album ID for context validation
    * @param minEpochId - Minimum acceptable epoch ID (prevents replay)
-   * @returns Decrypted epoch key (epochSeed + signKeypair)
+   * @returns Opaque epoch handle id, epoch id, and per-epoch sign public key.
    */
   openEpochKeyBundle(
     bundle: Uint8Array,
@@ -600,38 +607,45 @@ export interface CryptoWorkerApi {
     minEpochId: number,
     options?: OpenEpochKeyBundleOptions,
   ): Promise<{
-    epochSeed: Uint8Array;
+    epochHandleId: EpochHandleId;
+    epochId: number;
     signPublicKey: Uint8Array;
-    signSecretKey: Uint8Array;
   }>;
 
   /**
-   * Create an epoch key bundle for sharing with another user
+   * Create an epoch key bundle for sharing with another user.
+   *
+   * Slice 3 — takes the sender's epoch handle id directly. Bundle payload
+   * bytes (epoch seed + per-epoch sign keypair) never cross Comlink; they
+   * are resolved from the registry inside Rust and consumed by the seal
+   * call atomically.
+   *
+   * @param epochHandleId - Sender's epoch handle that holds the bundle payload
    * @param albumId - Album ID
-   * @param epochId - Epoch ID
-   * @param epochSeed - Epoch seed key (32 bytes)
-   * @param signKeypair - Epoch signing keypair
    * @param recipientPubkey - Recipient's Ed25519 identity public key
    * @returns Sealed and signed bundle ready for transmission
    */
   createEpochKeyBundle(
+    epochHandleId: EpochHandleId,
     albumId: string,
-    epochId: number,
-    epochSeed: Uint8Array,
-    signPublicKey: Uint8Array,
-    signSecretKey: Uint8Array,
     recipientPubkey: Uint8Array,
   ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array }>;
 
   /**
-   * Generate a new epoch key for album creation or rotation
+   * Generate a new epoch key for album creation or rotation.
+   *
+   * Slice 3 — mints a Rust-owned epoch handle for the bound account key.
+   * Returns the opaque handle id plus the wrapped epoch seed (for any
+   * caller that wants to persist the seed for offline re-open) and the
+   * per-epoch sign public key (so the caller can publish `signPubkey` in
+   * create/rotate API requests). Raw secret bytes never cross Comlink.
+   *
    * @param epochId - Epoch ID
-   * @returns New epoch key with epochSeed and signKeypair
    */
   generateEpochKey(epochId: number): Promise<{
-    epochSeed: Uint8Array;
+    epochHandleId: EpochHandleId;
+    wrappedSeed: Uint8Array;
     signPublicKey: Uint8Array;
-    signSecretKey: Uint8Array;
   }>;
 
   /**
@@ -917,12 +931,17 @@ export interface CryptoWorkerApi {
 
   /**
    * Create a new epoch handle for an account at the given epoch ID.
-   * Returns the handle ID and the wrapped epoch seed (caller persists it).
+   * Returns the handle ID, the wrapped epoch seed (caller persists it),
+   * and the per-epoch Ed25519 manifest signing public key.
    */
   createEpochHandle(
     accountHandleId: AccountHandleId,
     epochId: number,
-  ): Promise<{ epochHandleId: EpochHandleId; wrappedSeed: Uint8Array }>;
+  ): Promise<{
+    epochHandleId: EpochHandleId;
+    wrappedSeed: Uint8Array;
+    signPublicKey: Uint8Array;
+  }>;
 
   /**
    * Open an existing epoch handle from its wrapped seed at the given epoch ID.

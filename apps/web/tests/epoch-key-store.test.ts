@@ -1,8 +1,14 @@
 /**
  * Epoch Key Store Unit Tests
+ *
+ * Slice 3 — the cache stores opaque crypto-worker handle ids, not raw
+ * epoch seeds or sign secrets. Tests assert handle-id round-trips and
+ * `closeHandle` cascade calls; legacy `epochSeed` / `signKeypair` fields
+ * remain on the type as zero-filled transitional placeholders during the
+ * Slice 4-7 cutover but are not exercised here.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearAlbumKeys,
   clearAllEpochKeys,
@@ -12,137 +18,109 @@ import {
   getEpochKey,
   hasEpochKey,
   setEpochKey,
-  type EpochKeyBundle,
 } from '../src/lib/epoch-key-store';
 
-describe('Epoch Key Store', () => {
-  // Clear cache before each test
+const closeEpochHandleMock = vi.fn(async (_handleId: string) => undefined);
+
+vi.mock('../src/lib/crypto-client', () => ({
+  getCryptoClient: vi.fn(async () => ({
+    closeEpochHandle: closeEpochHandleMock,
+  })),
+}));
+
+vi.mock('../src/lib/logger', () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
+function newBundle(overrides: {
+  epochId: number;
+  epochHandleId?: string;
+  signPublicKey?: Uint8Array;
+}) {
+  return {
+    epochId: overrides.epochId,
+    epochHandleId:
+      overrides.epochHandleId ?? `epch_test-${String(overrides.epochId)}`,
+    signPublicKey: overrides.signPublicKey ?? new Uint8Array(32),
+  };
+}
+
+describe('Epoch Key Store (handle-based)', () => {
   beforeEach(() => {
+    clearAllEpochKeys();
+    closeEpochHandleMock.mockClear();
+  });
+
+  afterEach(() => {
     clearAllEpochKeys();
   });
 
   describe('setEpochKey and getEpochKey', () => {
-    it('stores and retrieves an epoch key', () => {
-      const bundle: EpochKeyBundle = {
-        epochId: 1,
-        epochSeed: new Uint8Array([1, 2, 3, 4, 5]),
-        signKeypair: {
-          publicKey: new Uint8Array([10, 11, 12]),
-          secretKey: new Uint8Array([20, 21, 22]),
-        },
-      };
+    it('stores and retrieves an epoch handle id', () => {
+      const bundle = newBundle({ epochId: 1, epochHandleId: 'epch_one' });
 
       setEpochKey('album-1', bundle);
       const retrieved = getEpochKey('album-1', 1);
 
       expect(retrieved).not.toBeNull();
       expect(retrieved?.epochId).toBe(1);
-      expect(retrieved?.epochSeed).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
+      expect(retrieved?.epochHandleId).toBe('epch_one');
+      // The deprecated `epochSeed` placeholder must remain empty — the seed
+      // never crosses the worker boundary in the Slice 3+ contract.
+      expect(retrieved?.epochSeed.length).toBe(0);
+      expect(retrieved?.signKeypair.secretKey.length).toBe(0);
     });
 
     it('returns null for non-existent album', () => {
-      const result = getEpochKey('non-existent', 1);
-      expect(result).toBeNull();
+      expect(getEpochKey('non-existent', 1)).toBeNull();
     });
 
     it('returns null for non-existent epoch', () => {
-      const bundle: EpochKeyBundle = {
-        epochId: 1,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      };
-
-      setEpochKey('album-1', bundle);
-      const result = getEpochKey('album-1', 999);
-      expect(result).toBeNull();
+      setEpochKey('album-1', newBundle({ epochId: 1 }));
+      expect(getEpochKey('album-1', 999)).toBeNull();
     });
 
-    it('overwrites existing epoch key', () => {
-      const bundle1: EpochKeyBundle = {
-        epochId: 1,
-        epochSeed: new Uint8Array([1, 1, 1]),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      };
-
-      const bundle2: EpochKeyBundle = {
-        epochId: 1,
-        epochSeed: new Uint8Array([2, 2, 2]),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      };
-
-      setEpochKey('album-1', bundle1);
-      setEpochKey('album-1', bundle2);
+    it('replaces an existing entry and closes its prior handle', async () => {
+      setEpochKey('album-1', newBundle({ epochId: 1, epochHandleId: 'epch_a' }));
+      setEpochKey('album-1', newBundle({ epochId: 1, epochHandleId: 'epch_b' }));
 
       const retrieved = getEpochKey('album-1', 1);
-      expect(retrieved?.epochSeed).toEqual(new Uint8Array([2, 2, 2]));
+      expect(retrieved?.epochHandleId).toBe('epch_b');
+
+      // closeHandle is async — flush microtasks before asserting the call.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(closeEpochHandleMock).toHaveBeenCalledWith('epch_a');
     });
   });
 
   describe('getCurrentEpochKey', () => {
     it('returns null for empty album', () => {
-      const result = getCurrentEpochKey('empty-album');
-      expect(result).toBeNull();
+      expect(getCurrentEpochKey('empty-album')).toBeNull();
     });
 
-    it('returns the only epoch key', () => {
-      const bundle: EpochKeyBundle = {
-        epochId: 5,
-        epochSeed: new Uint8Array([5, 5, 5]),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      };
-
-      setEpochKey('album-1', bundle);
+    it('returns the only epoch handle', () => {
+      setEpochKey('album-1', newBundle({ epochId: 5, epochHandleId: 'epch_5' }));
       const result = getCurrentEpochKey('album-1');
 
       expect(result).not.toBeNull();
       expect(result?.epochId).toBe(5);
+      expect(result?.epochHandleId).toBe('epch_5');
     });
 
-    it('returns highest epoch id when multiple epochs exist', () => {
-      const bundles: EpochKeyBundle[] = [
-        {
-          epochId: 1,
-          epochSeed: new Uint8Array([1]),
-          signKeypair: {
-            publicKey: new Uint8Array(32),
-            secretKey: new Uint8Array(64),
-          },
-        },
-        {
-          epochId: 5,
-          epochSeed: new Uint8Array([5]),
-          signKeypair: {
-            publicKey: new Uint8Array(32),
-            secretKey: new Uint8Array(64),
-          },
-        },
-        {
-          epochId: 3,
-          epochSeed: new Uint8Array([3]),
-          signKeypair: {
-            publicKey: new Uint8Array(32),
-            secretKey: new Uint8Array(64),
-          },
-        },
-      ];
+    it('returns the highest epoch id when multiple are cached', () => {
+      for (const epochId of [1, 5, 3]) {
+        setEpochKey('album-1', newBundle({ epochId, epochHandleId: `epch_${String(epochId)}` }));
+      }
 
-      bundles.forEach((b) => setEpochKey('album-1', b));
       const result = getCurrentEpochKey('album-1');
-
       expect(result?.epochId).toBe(5);
-      expect(result?.epochSeed).toEqual(new Uint8Array([5]));
+      expect(result?.epochHandleId).toBe('epch_5');
     });
   });
 
@@ -152,28 +130,12 @@ describe('Epoch Key Store', () => {
     });
 
     it('returns false for non-existent epoch', () => {
-      setEpochKey('album-1', {
-        epochId: 1,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
-
+      setEpochKey('album-1', newBundle({ epochId: 1 }));
       expect(hasEpochKey('album-1', 999)).toBe(false);
     });
 
-    it('returns true for existing epoch', () => {
-      setEpochKey('album-1', {
-        epochId: 1,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
-
+    it('returns true for an existing epoch', () => {
+      setEpochKey('album-1', newBundle({ epochId: 1 }));
       expect(hasEpochKey('album-1', 1)).toBe(true);
     });
   });
@@ -184,18 +146,9 @@ describe('Epoch Key Store', () => {
     });
 
     it('returns all cached epoch ids', () => {
-      const epochs = [1, 3, 5, 10];
-      epochs.forEach((epochId) => {
-        setEpochKey('album-1', {
-          epochId,
-          epochSeed: new Uint8Array(32),
-          signKeypair: {
-            publicKey: new Uint8Array(32),
-            secretKey: new Uint8Array(64),
-          },
-        });
-      });
-
+      for (const epochId of [1, 3, 5, 10]) {
+        setEpochKey('album-1', newBundle({ epochId }));
+      }
       const result = getCachedEpochIds('album-1');
       expect(result.sort((a, b) => a - b)).toEqual([1, 3, 5, 10]);
     });
@@ -203,22 +156,8 @@ describe('Epoch Key Store', () => {
 
   describe('clearAlbumKeys', () => {
     it('clears keys for a specific album', () => {
-      setEpochKey('album-1', {
-        epochId: 1,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
-      setEpochKey('album-2', {
-        epochId: 1,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
+      setEpochKey('album-1', newBundle({ epochId: 1 }));
+      setEpochKey('album-2', newBundle({ epochId: 1 }));
 
       clearAlbumKeys('album-1');
 
@@ -226,21 +165,23 @@ describe('Epoch Key Store', () => {
       expect(getEpochKey('album-2', 1)).not.toBeNull();
     });
 
-    it('wipes key material before clearing', () => {
-      const epochSeed = new Uint8Array([1, 2, 3, 4, 5]);
-      const secretKey = new Uint8Array([10, 11, 12]);
-
-      setEpochKey('album-1', {
-        epochId: 1,
-        epochSeed,
-        signKeypair: { publicKey: new Uint8Array(32), secretKey },
-      });
+    it('closes every cached handle on the way out', async () => {
+      setEpochKey(
+        'album-1',
+        newBundle({ epochId: 1, epochHandleId: 'epch_a' }),
+      );
+      setEpochKey(
+        'album-1',
+        newBundle({ epochId: 2, epochHandleId: 'epch_b' }),
+      );
 
       clearAlbumKeys('album-1');
 
-      // Key material should be zeroed
-      expect(epochSeed).toEqual(new Uint8Array(5));
-      expect(secretKey).toEqual(new Uint8Array(3));
+      // Flush async closeHandle microtasks.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(closeEpochHandleMock).toHaveBeenCalledWith('epch_a');
+      expect(closeEpochHandleMock).toHaveBeenCalledWith('epch_b');
     });
 
     it('handles clearing non-existent album gracefully', () => {
@@ -250,22 +191,8 @@ describe('Epoch Key Store', () => {
 
   describe('clearAllEpochKeys', () => {
     it('clears all albums', () => {
-      setEpochKey('album-1', {
-        epochId: 1,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
-      setEpochKey('album-2', {
-        epochId: 2,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
+      setEpochKey('album-1', newBundle({ epochId: 1 }));
+      setEpochKey('album-2', newBundle({ epochId: 2 }));
 
       clearAllEpochKeys();
 
@@ -274,31 +201,22 @@ describe('Epoch Key Store', () => {
       expect(getEpochKey('album-2', 2)).toBeNull();
     });
 
-    it('wipes all key material before clearing', () => {
-      const epochSeed1 = new Uint8Array([1, 2, 3]);
-      const epochSeed2 = new Uint8Array([4, 5, 6]);
-
-      setEpochKey('album-1', {
-        epochId: 1,
-        epochSeed: epochSeed1,
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
-      setEpochKey('album-2', {
-        epochId: 1,
-        epochSeed: epochSeed2,
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
+    it('closes every cached handle across all albums', async () => {
+      setEpochKey(
+        'album-1',
+        newBundle({ epochId: 1, epochHandleId: 'epch_a' }),
+      );
+      setEpochKey(
+        'album-2',
+        newBundle({ epochId: 1, epochHandleId: 'epch_b' }),
+      );
 
       clearAllEpochKeys();
 
-      expect(epochSeed1).toEqual(new Uint8Array(3));
-      expect(epochSeed2).toEqual(new Uint8Array(3));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(closeEpochHandleMock).toHaveBeenCalledWith('epch_a');
+      expect(closeEpochHandleMock).toHaveBeenCalledWith('epch_b');
     });
   });
 
@@ -308,31 +226,9 @@ describe('Epoch Key Store', () => {
     });
 
     it('counts all keys across albums', () => {
-      setEpochKey('album-1', {
-        epochId: 1,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
-      setEpochKey('album-1', {
-        epochId: 2,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
-      setEpochKey('album-2', {
-        epochId: 1,
-        epochSeed: new Uint8Array(32),
-        signKeypair: {
-          publicKey: new Uint8Array(32),
-          secretKey: new Uint8Array(64),
-        },
-      });
-
+      setEpochKey('album-1', newBundle({ epochId: 1 }));
+      setEpochKey('album-1', newBundle({ epochId: 2 }));
+      setEpochKey('album-2', newBundle({ epochId: 1 }));
       expect(getCacheSize()).toBe(3);
     });
   });

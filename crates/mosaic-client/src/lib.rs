@@ -10,13 +10,14 @@ use std::sync::{Mutex, OnceLock};
 use mosaic_crypto::{
     AuthSigningSecretKey, BundleValidationContext, EncryptedContent, EpochKeyBundle,
     EpochKeyMaterial, IdentityKeypair, IdentitySignature, IdentitySigningPublicKey, KdfProfile,
-    LinkKeys, ManifestSigningSecretKey, MosaicCryptoError, SealedBundle, SecretKey, WrappedTierKey,
-    build_auth_challenge_transcript, decrypt_content, decrypt_shard, derive_account_key,
-    derive_auth_signing_keypair, derive_content_key, derive_db_session_key,
-    derive_epoch_key_material, derive_identity_keypair,
+    LinkKeys, ManifestSigningKeypair, ManifestSigningPublicKey, ManifestSigningSecretKey,
+    MosaicCryptoError, SealedBundle, SecretKey, WrappedTierKey, build_auth_challenge_transcript,
+    decrypt_content, decrypt_shard, derive_account_key, derive_auth_signing_keypair,
+    derive_content_key, derive_db_session_key, derive_epoch_key_material, derive_identity_keypair,
     derive_link_keys as crypto_derive_link_keys, encrypt_content, encrypt_shard,
     generate_epoch_key_material, generate_identity_seed,
-    generate_link_secret as crypto_generate_link_secret, get_tier_key,
+    generate_link_secret as crypto_generate_link_secret,
+    generate_manifest_signing_keypair as crypto_generate_manifest_signing_keypair, get_tier_key,
     seal_and_sign_bundle as crypto_seal_and_sign_bundle, sign_auth_challenge,
     sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_account_key,
     unwrap_key, unwrap_tier_key_from_link as crypto_unwrap_tier_key_from_link,
@@ -273,6 +274,16 @@ pub struct EpochKeyHandleResult {
     pub handle: u64,
     pub epoch_id: u32,
     pub wrapped_epoch_seed: Vec<u8>,
+    /// Per-epoch Ed25519 manifest signing public key.
+    ///
+    /// Empty when the epoch handle has no sign keypair attached (the legacy
+    /// `open_epoch_key_handle` path which only restores tier-key material).
+    /// Bundle-derived (`import_epoch_key_handle_from_bundle`) and freshly
+    /// generated (`create_epoch_key_handle`) handles always populate this
+    /// field with the 32-byte Ed25519 public key so callers can publish it
+    /// in the `signPubkey` field of the create/rotate API requests without
+    /// touching secret material.
+    pub sign_public_key: Vec<u8>,
 }
 
 impl fmt::Debug for EpochKeyHandleResult {
@@ -287,12 +298,18 @@ impl fmt::Debug for EpochKeyHandleResult {
 }
 
 impl EpochKeyHandleResult {
-    fn ok(handle: u64, epoch_id: u32, wrapped_epoch_seed: Vec<u8>) -> Self {
+    fn ok(
+        handle: u64,
+        epoch_id: u32,
+        wrapped_epoch_seed: Vec<u8>,
+        sign_public_key: Vec<u8>,
+    ) -> Self {
         Self {
             code: ClientErrorCode::Ok,
             handle,
             epoch_id,
             wrapped_epoch_seed,
+            sign_public_key,
         }
     }
 
@@ -302,6 +319,7 @@ impl EpochKeyHandleResult {
             handle: 0,
             epoch_id: 0,
             wrapped_epoch_seed: Vec::new(),
+            sign_public_key: Vec::new(),
         }
     }
 }
@@ -764,6 +782,15 @@ struct EpochRecord {
     account_handle: u64,
     epoch_id: u32,
     key_material: EpochKeyMaterial,
+    /// Per-epoch manifest signing keypair, populated for handles that are
+    /// expected to seal/open key bundles. Freshly minted handles
+    /// (`create_epoch_key_handle`) and bundle-imported handles
+    /// (`import_epoch_key_handle_from_bundle`) carry a `Some(..)` here. The
+    /// legacy `open_epoch_key_handle` path that re-derives material from a
+    /// wrapped seed only is left at `None`; bundle-emitting operations on
+    /// such a handle return `EpochHandleNotFound` so the caller is forced
+    /// onto the bundle-import path.
+    sign_keypair: Option<ManifestSigningKeypair>,
     open: bool,
 }
 
@@ -1791,6 +1818,98 @@ pub fn verify_and_open_bundle_with_identity_handle(
     }
 }
 
+/// Atomically seals an epoch key bundle for a recipient using a Rust-owned
+/// epoch handle. Bundle payload bytes (epoch seed + per-epoch sign keypair)
+/// never cross the FFI boundary — the caller only supplies the recipient's
+/// public key and the album id.
+///
+/// Errors:
+/// - `InvalidKeyLength` if `recipient_pubkey` is not exactly 32 bytes.
+/// - `IdentityHandleNotFound` if the identity handle is closed.
+/// - `EpochHandleNotFound` if the epoch handle is closed or was created via
+///   the legacy `open_epoch_key_handle` path (no sign keypair attached).
+#[must_use]
+pub fn seal_bundle_with_epoch_handle(
+    identity_handle: u64,
+    epoch_handle: u64,
+    recipient_pubkey: &[u8],
+    album_id: String,
+) -> SealedBundleResult {
+    if recipient_pubkey.len() != 32 {
+        return SealedBundleResult::error(ClientErrorCode::InvalidKeyLength);
+    }
+
+    let payload = match clone_epoch_bundle_payload(epoch_handle) {
+        Ok(value) => value,
+        Err(error) => return SealedBundleResult::error(error.code),
+    };
+
+    seal_and_sign_bundle_with_identity_handle(
+        identity_handle,
+        recipient_pubkey,
+        album_id,
+        payload.epoch_id,
+        payload.epoch_seed.as_slice(),
+        payload.sign_secret_seed.as_slice(),
+        payload.sign_public_bytes.as_slice(),
+    )
+}
+
+/// Cloned bundle payload bytes used by the seal path. All secret material is
+/// stored in `Zeroizing` and wiped on drop.
+struct EpochBundlePayloadClone {
+    epoch_id: u32,
+    epoch_seed: Zeroizing<Vec<u8>>,
+    sign_secret_seed: Zeroizing<Vec<u8>>,
+    sign_public_bytes: Vec<u8>,
+}
+
+/// Briefly takes the epoch registry lock to copy the underlying epoch seed
+/// and per-epoch manifest signing keypair seed into `Zeroizing` buffers. The
+/// returned struct auto-wipes secret payload on drop.
+fn clone_epoch_bundle_payload(handle: u64) -> Result<EpochBundlePayloadClone, ClientError> {
+    let registry = epoch_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "epoch registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::EpochHandleNotFound,
+                "epoch handle is not open",
+            )
+        })?;
+
+    let sign_keypair = record.sign_keypair.as_ref().ok_or_else(|| {
+        ClientError::new(
+            ClientErrorCode::EpochHandleNotFound,
+            "epoch handle has no manifest signing keypair attached (not bundle-derived)",
+        )
+    })?;
+
+    let seed = record.key_material.epoch_seed();
+    let mut seed_bytes = Zeroizing::new(vec![0_u8; seed.as_bytes().len()]);
+    seed_bytes.copy_from_slice(seed.as_bytes());
+
+    let sign_seed = sign_keypair.secret_key().expose_seed_bytes();
+    let mut sign_seed_bytes = Zeroizing::new(vec![0_u8; sign_seed.len()]);
+    sign_seed_bytes.copy_from_slice(sign_seed);
+
+    let sign_public_bytes = sign_keypair.public_key().as_bytes().to_vec();
+
+    Ok(EpochBundlePayloadClone {
+        epoch_id: record.epoch_id,
+        epoch_seed: seed_bytes,
+        sign_secret_seed: sign_seed_bytes,
+        sign_public_bytes,
+    })
+}
+
 /// Encrypts album content with the content key derived from an epoch handle.
 ///
 /// Output: `(nonce, ciphertext+tag)`. Authenticated AAD binds the ciphertext
@@ -1921,8 +2040,15 @@ fn create_epoch_key_handle_result(
     let key_material = generate_epoch_key_material(epoch_id).map_err(client_error_from_crypto)?;
     let wrapped_epoch_seed = wrap_key(key_material.epoch_seed().as_bytes(), &account_key)
         .map_err(client_error_from_crypto)?;
+    let sign_keypair =
+        crypto_generate_manifest_signing_keypair().map_err(client_error_from_crypto)?;
 
-    insert_epoch_key_handle(account_key_handle, key_material, wrapped_epoch_seed)
+    insert_epoch_key_handle(
+        account_key_handle,
+        key_material,
+        Some(sign_keypair),
+        wrapped_epoch_seed,
+    )
 }
 
 fn open_epoch_key_handle_result(
@@ -1936,17 +2062,108 @@ fn open_epoch_key_handle_result(
     let key_material = derive_epoch_key_material(epoch_id, epoch_seed.as_mut_slice())
         .map_err(client_error_from_crypto)?;
 
-    insert_epoch_key_handle(account_key_handle, key_material, Vec::new())
+    // The legacy wrapped-seed path predates the bundle-derived sign keypair
+    // contract — the recovered material lacks the per-epoch signing keypair
+    // so handles instantiated this way cannot seal new bundles. Bundle ops
+    // explicitly check `sign_keypair.is_some()` and surface
+    // `EpochHandleNotFound`.
+    insert_epoch_key_handle(account_key_handle, key_material, None, Vec::new())
+}
+
+/// Imports an epoch handle from the cleartext bundle payload that comes out of
+/// `verify_and_open_bundle_with_identity_handle`. The caller-provided seed
+/// material is wrapped under the account key for callers that want to persist
+/// a re-openable wrapped seed and is otherwise consumed inside Rust — neither
+/// the epoch seed nor the manifest signing seed cross the FFI boundary in
+/// either direction after this returns.
+///
+/// Errors:
+/// - `InvalidKeyLength` if any of the input buffers has the wrong length.
+/// - `InvalidPublicKey` if `sign_public_bytes` does not match the key derived
+///   from `sign_secret_seed`.
+/// - `SecretHandleNotFound` if the account handle is closed.
+#[must_use]
+pub fn import_epoch_key_handle_from_bundle(
+    account_key_handle: u64,
+    epoch_id: u32,
+    epoch_seed_bytes: &[u8],
+    sign_secret_seed: &[u8],
+    sign_public_bytes: &[u8],
+) -> EpochKeyHandleResult {
+    match import_epoch_key_handle_from_bundle_result(
+        account_key_handle,
+        epoch_id,
+        epoch_seed_bytes,
+        sign_secret_seed,
+        sign_public_bytes,
+    ) {
+        Ok(value) => value,
+        Err(error) => EpochKeyHandleResult::error(error.code),
+    }
+}
+
+fn import_epoch_key_handle_from_bundle_result(
+    account_key_handle: u64,
+    epoch_id: u32,
+    epoch_seed_bytes: &[u8],
+    sign_secret_seed: &[u8],
+    sign_public_bytes: &[u8],
+) -> Result<EpochKeyHandleResult, ClientError> {
+    if epoch_seed_bytes.len() != 32 {
+        return Err(ClientError::new(
+            ClientErrorCode::InvalidKeyLength,
+            "epoch_seed must be exactly 32 bytes",
+        ));
+    }
+
+    // Build the manifest signing secret first so we can reject mismatched
+    // public keys before touching the account registry.
+    let mut sign_seed_buf = Zeroizing::new(sign_secret_seed.to_vec());
+    let sign_secret_key = ManifestSigningSecretKey::from_seed(sign_seed_buf.as_mut_slice())
+        .map_err(client_error_from_crypto)?;
+    let derived_public = sign_secret_key.public_key();
+    let provided_public = ManifestSigningPublicKey::from_bytes(sign_public_bytes)
+        .map_err(client_error_from_crypto)?;
+    if derived_public.as_bytes() != provided_public.as_bytes() {
+        return Err(ClientError::new(
+            ClientErrorCode::InvalidPublicKey,
+            "sign_public_bytes does not match the public key derived from sign_secret_seed",
+        ));
+    }
+    let sign_keypair = ManifestSigningKeypair::from_parts(sign_secret_key, provided_public);
+
+    let account_key = account_secret_key_from_handle(account_key_handle)?;
+    let wrapped_epoch_seed =
+        wrap_key(epoch_seed_bytes, &account_key).map_err(client_error_from_crypto)?;
+
+    // `derive_epoch_key_material` zeroizes its input — copy first so we leave
+    // the caller-provided slice untouched (the caller is expected to wipe it
+    // on their side as well).
+    let mut seed_copy = Zeroizing::new(epoch_seed_bytes.to_vec());
+    let key_material = derive_epoch_key_material(epoch_id, seed_copy.as_mut_slice())
+        .map_err(client_error_from_crypto)?;
+
+    insert_epoch_key_handle(
+        account_key_handle,
+        key_material,
+        Some(sign_keypair),
+        wrapped_epoch_seed,
+    )
 }
 
 fn insert_epoch_key_handle(
     account_handle: u64,
     key_material: EpochKeyMaterial,
+    sign_keypair: Option<ManifestSigningKeypair>,
     wrapped_epoch_seed: Vec<u8>,
 ) -> Result<EpochKeyHandleResult, ClientError> {
     let handle = allocate_handle(&NEXT_EPOCH_HANDLE)?;
     let epoch_id = key_material.epoch_id();
-    let result = EpochKeyHandleResult::ok(handle, epoch_id, wrapped_epoch_seed);
+    let sign_public_bytes = sign_keypair
+        .as_ref()
+        .map(|kp| kp.public_key().as_bytes().to_vec())
+        .unwrap_or_default();
+    let result = EpochKeyHandleResult::ok(handle, epoch_id, wrapped_epoch_seed, sign_public_bytes);
 
     let registry = epoch_registry();
     let mut guard = registry.lock().map_err(|_| {
@@ -1967,6 +2184,7 @@ fn insert_epoch_key_handle(
             account_handle,
             epoch_id,
             key_material,
+            sign_keypair,
             open: true,
         },
     );
@@ -2435,9 +2653,10 @@ mod tests {
                 handle: 11,
                 epoch_id: 42,
                 wrapped_epoch_seed: vec![211, 212, 213],
+                sign_public_key: vec![214; 32],
             },
             &["wrapped_epoch_seed_len: 3"],
-            &["211", "212", "213", "wrapped_epoch_seed: ["],
+            &["211", "212", "213", "wrapped_epoch_seed: [", "sign_public_key"],
         );
 
         assert_debug_redacts(

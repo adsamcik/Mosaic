@@ -47,25 +47,16 @@ vi.mock('../src/lib/epoch-key-service', () => ({
   fetchAndUnwrapEpochKeys: vi.fn().mockResolvedValue([]),
 }));
 
-// Mock @mosaic/crypto for tier key derivation
+// Mock @mosaic/crypto — Slice 3 reduces this surface to `deriveLinkKeys`
+// (still consumed by `wrapKeysForShareLinks` for per-link wrapping keys)
+// and `memzero`. Tier-key derivation moved to the Rust crypto core via the
+// worker, so `deriveTierKeys` / `wrapTierKeyForLink` are no longer needed.
 vi.mock('@mosaic/crypto', () => ({
-  deriveTierKeys: vi.fn(() => ({
-    thumbKey: new Uint8Array(32).fill(10),
-    previewKey: new Uint8Array(32).fill(11),
-    fullKey: new Uint8Array(32).fill(12),
-  })),
   deriveLinkKeys: vi.fn(() => ({
     linkId: new Uint8Array(16).fill(1),
     wrappingKey: new Uint8Array(32).fill(20),
   })),
-  wrapTierKeyForLink: vi.fn((tierKey, tier) => ({
-    tier,
-    nonce: new Uint8Array(24).fill(tier),
-    encryptedKey: new Uint8Array(48).fill(tier),
-  })),
   AccessTier: { THUMB: 1, PREVIEW: 2, FULL: 3 },
-  // memzero is dynamic-imported by wrapKeysForShareLinks to wipe tier keys
-  // and per-iteration linkSecret/wrappingKey buffers (security fix M1).
   memzero: vi.fn((buf: Uint8Array) => {
     buf.fill(0);
   }),
@@ -106,9 +97,9 @@ describe('epoch-rotation-service', () => {
   ];
 
   const mockNewEpochKey = {
-    epochSeed: new Uint8Array(32).fill(42),
+    epochHandleId: 'epch_test-rotation',
+    wrappedSeed: new Uint8Array(72).fill(42),
     signPublicKey: new Uint8Array(32).fill(1),
-    signSecretKey: new Uint8Array(64).fill(2),
   };
 
   const mockIdentityPubkey = new Uint8Array(32).fill(99);
@@ -131,6 +122,7 @@ describe('epoch-rotation-service', () => {
     deriveIdentity: ReturnType<typeof vi.fn>;
     createEpochKeyBundle: ReturnType<typeof vi.fn>;
     unwrapWithAccountKey: ReturnType<typeof vi.fn>;
+    wrapTierKeyForLinkRust: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -151,6 +143,12 @@ describe('epoch-rotation-service', () => {
       unwrapWithAccountKey: vi
         .fn()
         .mockResolvedValue(new Uint8Array(32).fill(50)),
+      // Slice 3 — share-link tier-key wrapping moved to a Rust-handle path.
+      wrapTierKeyForLinkRust: vi.fn(async (_handle: string, tier: number) => ({
+        tier,
+        nonce: new Uint8Array(24).fill(tier),
+        encryptedKey: new Uint8Array(48).fill(tier),
+      })),
     };
 
     vi.mocked(getApi).mockReturnValue(mockApi as any);
@@ -294,11 +292,8 @@ describe('epoch-rotation-service', () => {
         albumId,
         expect.objectContaining({
           epochId: newEpochId,
-          epochSeed: mockNewEpochKey.epochSeed,
-          signKeypair: expect.objectContaining({
-            publicKey: mockNewEpochKey.signPublicKey,
-            secretKey: mockNewEpochKey.signSecretKey,
-          }),
+          epochHandleId: mockNewEpochKey.epochHandleId,
+          signPublicKey: mockNewEpochKey.signPublicKey,
         }),
       );
     });

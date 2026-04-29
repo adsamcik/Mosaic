@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
     generateEpochKey: vi.fn(),
     createEpochKeyBundle: vi.fn(),
     encryptShard: vi.fn(),
+    encryptShardWithEpoch: vi.fn(),
+    decryptShardWithEpoch: vi.fn(),
   },
   db: {
     getPhotoCount: vi.fn(),
@@ -135,10 +137,12 @@ describe('useAlbums createAlbum', () => {
     mocks.api.createEpochKey.mockResolvedValue({ id: 'epoch-1' });
     mocks.api.deleteAlbum.mockResolvedValue(undefined);
     mocks.crypto.getIdentityPublicKey.mockResolvedValue(new Uint8Array(32).fill(7));
+    // Slice 3 — generateEpochKey returns an opaque handle id + publishable
+    // wrapped seed + sign public key. No raw seed/sign secret bytes.
     mocks.crypto.generateEpochKey.mockResolvedValue({
-      epochSeed: new Uint8Array(32).fill(1),
+      epochHandleId: 'epch_test-create',
+      wrappedSeed: new Uint8Array(72).fill(1),
       signPublicKey: new Uint8Array(32).fill(2),
-      signSecretKey: new Uint8Array(64).fill(3),
     });
     mocks.crypto.createEpochKeyBundle
       .mockResolvedValueOnce({
@@ -151,6 +155,10 @@ describe('useAlbums createAlbum', () => {
       });
     mocks.crypto.encryptShard.mockResolvedValue({
       ciphertext: new Uint8Array([1, 2, 3]),
+      sha256: 'hash',
+    });
+    mocks.crypto.encryptShardWithEpoch.mockResolvedValue({
+      envelopeBytes: new Uint8Array([1, 2, 3]),
       sha256: 'hash',
     });
     mocks.db.getPhotoCount.mockResolvedValue(0);
@@ -191,20 +199,14 @@ describe('useAlbums createAlbum', () => {
     );
     expect(mocks.crypto.createEpochKeyBundle).toHaveBeenNthCalledWith(
       1,
+      'epch_test-create',
       '',
-      1,
-      expect.any(Uint8Array),
-      expect.any(Uint8Array),
-      expect.any(Uint8Array),
       expect.any(Uint8Array),
     );
     expect(mocks.crypto.createEpochKeyBundle).toHaveBeenNthCalledWith(
       2,
+      'epch_test-create',
       'album-123',
-      1,
-      expect.any(Uint8Array),
-      expect.any(Uint8Array),
-      expect.any(Uint8Array),
       expect.any(Uint8Array),
     );
     expect(mocks.api.createEpochKey).toHaveBeenCalledWith(

@@ -396,6 +396,24 @@ impl ManifestSigningKeypair {
     pub const fn public_key(&self) -> &ManifestSigningPublicKey {
         &self.public_key
     }
+
+    /// Constructs a keypair from already-validated secret and public halves.
+    ///
+    /// This bypasses the rederivation that `from_seed` performs and is only
+    /// intended for callers that have already validated the secret/public
+    /// match (for example, the bundle-import path that re-derives the public
+    /// key from the secret seed and explicitly compares the bytes before
+    /// calling).
+    #[must_use]
+    pub const fn from_parts(
+        secret_key: ManifestSigningSecretKey,
+        public_key: ManifestSigningPublicKey,
+    ) -> Self {
+        Self {
+            secret_key,
+            public_key,
+        }
+    }
 }
 
 /// Rust-owned Ed25519 LocalAuth signing secret.

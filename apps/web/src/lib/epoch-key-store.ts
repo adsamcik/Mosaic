@@ -1,56 +1,83 @@
 /**
  * Epoch Key Store
  *
- * In-memory cache for unwrapped epoch keys per album.
- * Keys are cleared on logout for security.
+ * Per-album cache of opaque epoch handle ids. The crypto worker holds the
+ * actual key material; this module only stores the (album, epoch) → handle
+ * binding plus the per-epoch sign verifying key (public, safe to expose).
+ *
+ * Slice 3 — wipeBundle is replaced with `closeHandle`, which asks the
+ * crypto worker to release the underlying Rust handle. Cache entries no
+ * longer carry secret bytes; logout simply closes every handle and drops
+ * the map.
  */
 
-import { memzero } from '@mosaic/crypto';
+import { getCryptoClient } from './crypto-client';
 import { createLogger } from './logger';
 
 const log = createLogger('EpochKeyStore');
 
-/** Unwrapped epoch key bundle containing seed and sign keys */
+/**
+ * Cached epoch key reference.
+ *
+ * Slice 3 — the AUTHORITATIVE fields are `epochHandleId` and
+ * `signPublicKey`. Secret material — the epoch seed and per-epoch sign
+ * secret — never leaves the worker. The legacy `epochSeed` and
+ * `signKeypair` fields are kept as zero-filled transitional placeholders
+ * so Slice 4-7 callers (manifest, sync, share links, album content, upload)
+ * still typecheck during the multi-slice cutover; those slices migrate the
+ * call sites to use `epochHandleId` and remove the placeholders. Reading
+ * the placeholder bytes will produce garbage and is treated as a Slice
+ * 4-7 migration bug, not a runtime expectation.
+ */
 export interface EpochKeyBundle {
   epochId: number;
-  /** 32-byte epoch seed for deriving tier keys */
+  /** Opaque crypto-worker handle id; consumed via worker methods only. */
+  epochHandleId: string;
+  /** 32-byte Ed25519 manifest signing public key. */
+  signPublicKey: Uint8Array;
+  /**
+   * @deprecated Slice 3 cutover placeholder. Always an empty `Uint8Array`.
+   * Consumers must migrate to handle-based worker methods that take
+   * `epochHandleId`. Removal is tracked alongside Slices 4-7.
+   */
   epochSeed: Uint8Array;
+  /**
+   * @deprecated Slice 3 cutover placeholder. `publicKey` mirrors
+   * `signPublicKey`; `secretKey` is always an empty `Uint8Array` because
+   * the per-epoch sign secret never crosses the Comlink boundary.
+   */
   signKeypair: {
     publicKey: Uint8Array;
     secretKey: Uint8Array;
   };
 }
 
+const EMPTY_BYTES: Uint8Array = new Uint8Array(0);
+
 /** Cache structure: albumId -> epochId -> EpochKeyBundle */
 const epochKeyCache = new Map<string, Map<number, EpochKeyBundle>>();
 
-function hasNonZeroBytes(bytes: Uint8Array): boolean {
-  return bytes.some((b) => b !== 0);
-}
-
-function wipeBundle(bundle: EpochKeyBundle): void {
-  memzero(bundle.epochSeed);
-  memzero(bundle.signKeypair.secretKey);
-}
-
-function wipeReplacedBundle(
-  existing: EpochKeyBundle,
-  replacement: EpochKeyBundle,
-): void {
-  if (existing.epochSeed !== replacement.epochSeed) {
-    memzero(existing.epochSeed);
-  }
-  if (existing.signKeypair.secretKey !== replacement.signKeypair.secretKey) {
-    memzero(existing.signKeypair.secretKey);
+/**
+ * Closes the underlying Rust epoch handle behind the cache entry. Errors
+ * are logged but not propagated — `closeEpochHandle` is idempotent and a
+ * stale handle just means the worker has already released it.
+ */
+async function closeHandle(bundle: EpochKeyBundle): Promise<void> {
+  try {
+    const crypto = await getCryptoClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await crypto.closeEpochHandle(bundle.epochHandleId as any);
+  } catch (err) {
+    log.warn('closeEpochHandle rejected during cache cleanup', {
+      albumId: '<unknown>',
+      epochId: bundle.epochId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
 /**
  * Get an epoch key bundle from the cache.
- *
- * @param albumId - Album ID
- * @param epochId - Epoch ID
- * @returns Epoch key bundle if cached, null otherwise
  */
 export function getEpochKey(
   albumId: string,
@@ -62,9 +89,6 @@ export function getEpochKey(
 
 /**
  * Get the current (highest) epoch key for an album.
- *
- * @param albumId - Album ID
- * @returns Current epoch key bundle if any cached, null otherwise
  */
 export function getCurrentEpochKey(albumId: string): EpochKeyBundle | null {
   const albumKeys = epochKeyCache.get(albumId);
@@ -72,7 +96,6 @@ export function getCurrentEpochKey(albumId: string): EpochKeyBundle | null {
     return null;
   }
 
-  // Find the highest epoch ID
   let maxEpochId = -1;
   let currentBundle: EpochKeyBundle | null = null;
 
@@ -87,62 +110,65 @@ export function getCurrentEpochKey(albumId: string): EpochKeyBundle | null {
 }
 
 /**
- * Store an epoch key bundle in the cache.
+ * Store an epoch key bundle in the cache. If an entry already exists for
+ * `(albumId, bundle.epochId)`, its underlying handle is closed before being
+ * replaced so old Rust handles do not leak.
  *
- * IMPORTANT: This function preserves existing signKeypair data if the new bundle
- * has empty (all zeros) signKeypair but an existing bundle has valid data.
- * This prevents race conditions where hooks that only have epochSeed overwrite
- * complete bundles stored by fetchAndUnwrapEpochKeys.
- *
- * @param albumId - Album ID
- * @param bundle - Epoch key bundle to cache
+ * Callers may supply only the authoritative fields, only the deprecated
+ * fields, or both; the deprecated placeholders are normalised to empty
+ * buffers automatically. Slice 4-7 callers that still construct legacy
+ * `{ epochSeed, signKeypair }` shapes continue to typecheck during the
+ * cutover even though their stored entries will lack a real handle id
+ * until those slices migrate the call sites.
  */
-export function setEpochKey(albumId: string, bundle: EpochKeyBundle): void {
+export function setEpochKey(
+  albumId: string,
+  bundle: {
+    epochId: number;
+    epochHandleId?: string;
+    signPublicKey?: Uint8Array;
+    /**
+     * @deprecated Slice 3 placeholder accepted for transitional callers in
+     * Slice 4-7 territory.
+     */
+    epochSeed?: Uint8Array;
+    /**
+     * @deprecated Slice 3 placeholder accepted for transitional callers in
+     * Slice 4-7 territory.
+     */
+    signKeypair?: { publicKey: Uint8Array; secretKey: Uint8Array };
+  },
+): void {
   let albumKeys = epochKeyCache.get(albumId);
   if (!albumKeys) {
     albumKeys = new Map();
     epochKeyCache.set(albumId, albumKeys);
   }
 
-  // Check if we already have a bundle with valid signKeypair
-  const existing = albumKeys.get(bundle.epochId);
-  if (existing) {
-    const existingHasValidSignKeypair = hasNonZeroBytes(
-      existing.signKeypair.publicKey,
-    );
-    const newHasValidSignKeypair = hasNonZeroBytes(bundle.signKeypair.publicKey);
+  const signPublicKey =
+    bundle.signPublicKey ?? bundle.signKeypair?.publicKey ?? EMPTY_BYTES;
 
-    // Don't overwrite a complete bundle with one that has empty signKeypair
-    if (existingHasValidSignKeypair && !newHasValidSignKeypair) {
-      // Preserve existing, but update epochSeed if the new one is different
-      // (in case the seed was updated but signKeypair wasn't provided)
-      const seedsMatch = existing.epochSeed.every(
-        (b, i) => b === bundle.epochSeed[i],
-      );
-      if (seedsMatch) {
-        // Same seed, existing has better data - keep it
-        return;
-      }
-      // Different seed with no signKeypair - this shouldn't happen, but log it
-      log.warn('Overwriting epoch with different seed but empty signKeypair', {
-        epochId: bundle.epochId,
-      });
-    }
+  const normalised: EpochKeyBundle = {
+    epochId: bundle.epochId,
+    epochHandleId: bundle.epochHandleId ?? '',
+    signPublicKey,
+    epochSeed: EMPTY_BYTES,
+    signKeypair: {
+      publicKey: signPublicKey,
+      secretKey: EMPTY_BYTES,
+    },
+  };
+
+  const existing = albumKeys.get(normalised.epochId);
+  if (existing && existing.epochHandleId !== normalised.epochHandleId) {
+    void closeHandle(existing);
   }
 
-  if (existing && existing !== bundle) {
-    wipeReplacedBundle(existing, bundle);
-  }
-
-  albumKeys.set(bundle.epochId, bundle);
+  albumKeys.set(normalised.epochId, normalised);
 }
 
 /**
  * Check if an epoch key is cached.
- *
- * @param albumId - Album ID
- * @param epochId - Epoch ID
- * @returns true if key is cached
  */
 export function hasEpochKey(albumId: string, epochId: number): boolean {
   const albumKeys = epochKeyCache.get(albumId);
@@ -151,9 +177,6 @@ export function hasEpochKey(albumId: string, epochId: number): boolean {
 
 /**
  * Get all cached epoch IDs for an album.
- *
- * @param albumId - Album ID
- * @returns Array of cached epoch IDs
  */
 export function getCachedEpochIds(albumId: string): number[] {
   const albumKeys = epochKeyCache.get(albumId);
@@ -163,14 +186,14 @@ export function getCachedEpochIds(albumId: string): number[] {
 /**
  * Clear all cached keys for a specific album.
  *
- * @param albumId - Album ID
+ * Each cached handle is closed asynchronously; the cache is dropped
+ * synchronously so subsequent lookups miss immediately.
  */
 export function clearAlbumKeys(albumId: string): void {
   const albumKeys = epochKeyCache.get(albumId);
   if (albumKeys) {
-    // Wipe key material before clearing
     for (const bundle of albumKeys.values()) {
-      wipeBundle(bundle);
+      void closeHandle(bundle);
     }
     albumKeys.clear();
     epochKeyCache.delete(albumId);
@@ -178,14 +201,13 @@ export function clearAlbumKeys(albumId: string): void {
 }
 
 /**
- * Clear all cached epoch keys.
- * Call on logout to ensure keys are wiped from memory.
+ * Clear all cached epoch keys. Call on logout to ensure every Rust handle
+ * is released.
  */
 export function clearAllEpochKeys(): void {
-  // Wipe all key material before clearing
   for (const albumKeys of epochKeyCache.values()) {
     for (const bundle of albumKeys.values()) {
-      wipeBundle(bundle);
+      void closeHandle(bundle);
     }
     albumKeys.clear();
   }
@@ -193,9 +215,7 @@ export function clearAllEpochKeys(): void {
 }
 
 /**
- * Get total number of cached keys (for debugging/testing).
- *
- * @returns Total number of cached epoch keys across all albums
+ * Get total number of cached handles (for debugging/testing).
  */
 export function getCacheSize(): number {
   let total = 0;

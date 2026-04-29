@@ -255,12 +255,18 @@ export class RustHandleFacade {
   createEpochKeyHandle(
     accountHandle: bigint,
     epochId: number,
-  ): { handle: bigint; epochId: number; wrappedEpochSeed: Uint8Array } {
+  ): {
+    handle: bigint;
+    epochId: number;
+    wrappedEpochSeed: Uint8Array;
+    signPublicKey: Uint8Array;
+  } {
     const result = rustWasm.createEpochKeyHandle(accountHandle, epochId);
     return consumeResult(result, 'createEpochKeyHandle', (r) => ({
       handle: r.handle,
       epochId: r.epochId,
       wrappedEpochSeed: copyBytes(r.wrappedEpochSeed),
+      signPublicKey: copyBytes(r.signPublicKey),
     }));
   }
 
@@ -277,6 +283,66 @@ export class RustHandleFacade {
     return consumeResult(result, 'openEpochKeyHandle', (r) => ({
       handle: r.handle,
       epochId: r.epochId,
+    }));
+  }
+
+  /**
+   * Imports an epoch handle from cleartext bundle payload bytes (the output
+   * of `verifyAndOpenBundle`). Both secret buffers are wiped inside Rust on
+   * every path; the caller is still expected to wipe its own copy after the
+   * call returns. The returned handle carries the per-epoch sign keypair, so
+   * subsequent `sealBundleWithEpochHandle` calls succeed without ever
+   * re-exposing the bundle payload.
+   */
+  importEpochKeyHandleFromBundle(
+    accountHandle: bigint,
+    epochId: number,
+    epochSeed: Uint8Array,
+    signSecretSeed: Uint8Array,
+    signPublic: Uint8Array,
+  ): {
+    handle: bigint;
+    epochId: number;
+    wrappedEpochSeed: Uint8Array;
+    signPublicKey: Uint8Array;
+  } {
+    const result = rustWasm.importEpochKeyHandleFromBundle(
+      accountHandle,
+      epochId,
+      epochSeed,
+      signSecretSeed,
+      signPublic,
+    );
+    return consumeResult(result, 'importEpochKeyHandleFromBundle', (r) => ({
+      handle: r.handle,
+      epochId: r.epochId,
+      wrappedEpochSeed: copyBytes(r.wrappedEpochSeed),
+      signPublicKey: copyBytes(r.signPublicKey),
+    }));
+  }
+
+  /**
+   * Atomically seals an epoch key bundle using both the sender identity
+   * handle and the sender's epoch handle. Bundle payload bytes never cross
+   * the FFI boundary — the caller only supplies the recipient's signing
+   * public key (Ed25519) and the album id.
+   */
+  sealBundleWithEpochHandle(
+    identityHandle: bigint,
+    epochHandle: bigint,
+    recipientPubkey: Uint8Array,
+    albumId: string,
+  ): { sealed: Uint8Array; signature: Uint8Array; sharerPubkey: Uint8Array } {
+    const result = rustWasm.sealBundleWithEpochHandle(
+      identityHandle,
+      epochHandle,
+      recipientPubkey,
+      albumId,
+    );
+    return consumeResult(result, 'sealBundleWithEpochHandle', (r) => ({
+      sealed: copyBytes(r.sealed),
+      signature: copyBytes(r.signature),
+      sharerPubkey: copyBytes(r.sharerPubkey),
     }));
   }
 

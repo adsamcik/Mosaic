@@ -128,6 +128,9 @@ pub struct EpochKeyHandleResult {
     pub handle: u64,
     pub epoch_id: u32,
     pub wrapped_epoch_seed: Vec<u8>,
+    /// Per-epoch Ed25519 manifest signing public key. Empty when the handle
+    /// has no sign keypair (legacy `open_epoch_key_handle` re-derivation).
+    pub sign_public_key: Vec<u8>,
 }
 
 impl fmt::Debug for EpochKeyHandleResult {
@@ -723,6 +726,7 @@ pub struct JsEpochKeyHandleResult {
     handle: u64,
     epoch_id: u32,
     wrapped_epoch_seed: Vec<u8>,
+    sign_public_key: Vec<u8>,
 }
 
 #[wasm_bindgen(js_class = EpochKeyHandleResult)]
@@ -753,6 +757,14 @@ impl JsEpochKeyHandleResult {
     #[must_use]
     pub fn wrapped_epoch_seed(&self) -> Vec<u8> {
         self.wrapped_epoch_seed.clone()
+    }
+
+    /// Per-epoch Ed25519 manifest signing public key, or an empty array when
+    /// the handle has no sign keypair attached.
+    #[wasm_bindgen(getter, js_name = signPublicKey)]
+    #[must_use]
+    pub fn sign_public_key(&self) -> Vec<u8> {
+        self.sign_public_key.clone()
     }
 }
 
@@ -1909,6 +1921,49 @@ pub fn verify_and_open_bundle(
     ))
 }
 
+/// Imports an epoch handle from cleartext bundle payload bytes (epoch seed
+/// plus the per-epoch manifest signing keypair) returned by
+/// `verify_and_open_bundle`. Both secret buffers are zeroized inside this
+/// function on every path.
+#[must_use]
+pub fn import_epoch_key_handle_from_bundle(
+    account_key_handle: u64,
+    epoch_id: u32,
+    mut epoch_seed: Vec<u8>,
+    mut sign_secret_seed: Vec<u8>,
+    sign_public: Vec<u8>,
+) -> EpochKeyHandleResult {
+    let result = epoch_result_from_client(mosaic_client::import_epoch_key_handle_from_bundle(
+        account_key_handle,
+        epoch_id,
+        &epoch_seed,
+        &sign_secret_seed,
+        &sign_public,
+    ));
+    epoch_seed.zeroize();
+    sign_secret_seed.zeroize();
+    result
+}
+
+/// Atomically seals an epoch key bundle for `recipient_pubkey` using a
+/// Rust-owned epoch handle. Bundle payload bytes never cross the FFI
+/// boundary — the caller only supplies the recipient's public key and the
+/// album id.
+#[must_use]
+pub fn seal_bundle_with_epoch_handle(
+    identity_handle: u64,
+    epoch_handle: u64,
+    recipient_pubkey: Vec<u8>,
+    album_id: String,
+) -> SealedBundleResult {
+    sealed_bundle_result_from_client(mosaic_client::seal_bundle_with_epoch_handle(
+        identity_handle,
+        epoch_handle,
+        &recipient_pubkey,
+        album_id,
+    ))
+}
+
 /// Encrypts album content with the content key derived from `epoch_handle`.
 #[must_use]
 pub fn encrypt_album_content(epoch_handle: u64, mut plaintext: Vec<u8>) -> EncryptedContentResult {
@@ -2633,6 +2688,46 @@ pub fn verify_and_open_bundle_js(
     ))
 }
 
+/// Imports an epoch handle from cleartext bundle payload bytes through WASM.
+/// Both the epoch seed and the manifest signing seed are zeroized inside
+/// Rust on every path.
+#[wasm_bindgen(js_name = importEpochKeyHandleFromBundle)]
+#[must_use]
+pub fn import_epoch_key_handle_from_bundle_js(
+    account_key_handle: u64,
+    epoch_id: u32,
+    epoch_seed: Vec<u8>,
+    sign_secret_seed: Vec<u8>,
+    sign_public: Vec<u8>,
+) -> JsEpochKeyHandleResult {
+    js_epoch_result_from_rust(import_epoch_key_handle_from_bundle(
+        account_key_handle,
+        epoch_id,
+        epoch_seed,
+        sign_secret_seed,
+        sign_public,
+    ))
+}
+
+/// Atomically seals an epoch key bundle for `recipient_pubkey` using a
+/// Rust-owned epoch handle through WASM. Bundle payload bytes never cross
+/// the FFI boundary.
+#[wasm_bindgen(js_name = sealBundleWithEpochHandle)]
+#[must_use]
+pub fn seal_bundle_with_epoch_handle_js(
+    identity_handle: u64,
+    epoch_handle: u64,
+    recipient_pubkey: Vec<u8>,
+    album_id: String,
+) -> JsSealedBundleResult {
+    js_sealed_bundle_result_from_rust(seal_bundle_with_epoch_handle(
+        identity_handle,
+        epoch_handle,
+        recipient_pubkey,
+        album_id,
+    ))
+}
+
 /// Encrypts album content with an epoch handle through WASM.
 #[wasm_bindgen(js_name = encryptAlbumContent)]
 #[must_use]
@@ -2727,6 +2822,7 @@ fn epoch_result_from_client(result: mosaic_client::EpochKeyHandleResult) -> Epoc
         handle: result.handle,
         epoch_id: result.epoch_id,
         wrapped_epoch_seed: result.wrapped_epoch_seed,
+        sign_public_key: result.sign_public_key,
     }
 }
 
@@ -3694,6 +3790,7 @@ fn js_epoch_result_from_rust(result: EpochKeyHandleResult) -> JsEpochKeyHandleRe
         handle: result.handle,
         epoch_id: result.epoch_id,
         wrapped_epoch_seed: result.wrapped_epoch_seed,
+        sign_public_key: result.sign_public_key,
     }
 }
 
@@ -3868,9 +3965,10 @@ mod tests {
                 handle: 11,
                 epoch_id: 42,
                 wrapped_epoch_seed: vec![221, 222, 223],
+                sign_public_key: vec![223; 32],
             },
             &["wrapped_epoch_seed_len: 3"],
-            &["221", "222", "223", "wrapped_epoch_seed: ["],
+            &["221", "222", "223", "wrapped_epoch_seed: [", "sign_public_key"],
         );
 
         assert_debug_redacts(

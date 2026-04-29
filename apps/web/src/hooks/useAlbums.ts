@@ -1,8 +1,6 @@
-import { memzero } from '@mosaic/crypto';
 import { useCallback, useEffect, useState } from 'react';
 import type { Album } from '../components/Albums/AlbumCard';
 import {
-  getDecryptedAlbumName,
   getStoredEncryptedName,
   setStoredEncryptedName,
 } from '../lib/album-metadata-service';
@@ -19,24 +17,55 @@ import { syncEngine } from '../lib/sync-engine';
 const log = createLogger('useAlbums');
 
 /**
- * Encrypt album name using XChaCha20-Poly1305 with the epoch seed.
- * Uses the envelope format via crypto worker's encryptShard.
+ * Encrypt album name using the worker's handle-based shard encryption.
  *
- * @param name - Album name to encrypt
- * @param epochSeed - Epoch seed key (32 bytes)
- * @returns Base64-encoded encrypted name
+ * Slice 3 — the epoch seed never crosses Comlink. The worker derives the
+ * thumb tier key from the epoch handle and writes a tier-0 shard envelope
+ * (same on-the-wire format that share-link recipients can decrypt with the
+ * shared thumb tier key).
+ *
+ * @param name - Album name to encrypt.
+ * @param epochHandleId - Opaque epoch handle id from the worker.
+ * @returns Base64-encoded encrypted name.
  */
 async function encryptAlbumName(
   name: string,
-  epochSeed: Uint8Array,
+  epochHandleId: string,
 ): Promise<string> {
   const crypto = await getCryptoClient();
   const nameBytes = new TextEncoder().encode(name);
 
-  // Use epoch 0, shard 0 for album metadata (reserved)
-  const encrypted = await crypto.encryptShard(nameBytes, epochSeed, 0, 0);
+  // tier=0 (thumb), shardIndex=0 — convention reserved for album metadata.
+  const encrypted = await crypto.encryptShardWithEpoch(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    epochHandleId as any,
+    nameBytes,
+    0,
+    0,
+  );
 
-  return toBase64(encrypted.ciphertext);
+  return toBase64(encrypted.envelopeBytes);
+}
+
+/**
+ * Decrypt an album name using the handle-based decrypt path.
+ *
+ * @param encryptedName - Base64 envelope from server / localStorage.
+ * @param epochHandleId - Opaque epoch handle id from the worker.
+ */
+async function decryptAlbumNameWithHandle(
+  encryptedName: string,
+  epochHandleId: string,
+): Promise<string> {
+  const crypto = await getCryptoClient();
+  const { fromBase64 } = await import('../lib/api');
+  const envelope = fromBase64(encryptedName);
+  const plaintext = await crypto.decryptShardWithEpoch(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    epochHandleId as any,
+    envelope,
+  );
+  return new TextDecoder('utf-8', { fatal: true }).decode(plaintext);
 }
 
 /**
@@ -189,11 +218,10 @@ export function useAlbums() {
           return;
         }
 
-        // Decrypt the album name
-        const decryptedName = await getDecryptedAlbumName(
-          album.id,
+        // Decrypt the album name via the handle-based decrypt path.
+        const decryptedName = await decryptAlbumNameWithHandle(
           encryptedName,
-          epochKey.epochSeed,
+          epochKey.epochHandleId,
         );
 
         // Update state with decrypted name
@@ -319,10 +347,10 @@ export function useAlbums() {
           throw new Error('Encryption keys not available');
         }
 
-        // Encrypt the new album name
+        // Encrypt the new album name via the handle-based path.
         const encryptedName = await encryptAlbumName(
           newName,
-          epochKey.epochSeed,
+          epochKey.epochHandleId,
         );
 
         // Call API to update the encrypted name
@@ -375,9 +403,6 @@ export function useAlbums() {
       setIsCreating(true);
       setCreateError(null);
 
-      let epochSeedToWipe: Uint8Array | null = null;
-      let signSecretKeyToWipe: Uint8Array | null = null;
-
       try {
         const api = getApi();
         const crypto = await getCryptoClient();
@@ -391,25 +416,25 @@ export function useAlbums() {
         // Get current user ID
         const currentUser = await api.getCurrentUser();
 
-        // Generate new epoch key for this album
-        const epochId = 1; // Initial epoch
+        // Generate new epoch key for this album.
+        // Slice 3 — `generateEpochKey` returns an opaque epoch handle id;
+        // raw seed/sign-secret bytes never cross Comlink. The handle stays
+        // open inside the worker and is reused for the inline self-seal,
+        // the post-create re-seal, and the album-name encryption below.
+        const epochId = 1;
         const epochKey = await crypto.generateEpochKey(epochId);
-        epochSeedToWipe = epochKey.epochSeed;
-        signSecretKeyToWipe = epochKey.signSecretKey;
 
-        // Encrypt the album name for local storage
-        // Note: The encrypted name is stored locally. When we add album metadata
-        // support to the API, this can be uploaded as part of the album manifest.
-        const encryptedName = await encryptAlbumName(name, epochKey.epochSeed);
+        // Encrypt the album name through the handle-based shard encrypt
+        // path so the seed never crosses Comlink. The on-the-wire envelope
+        // format is unchanged so existing decrypt paths still apply.
+        const encryptedName = await encryptAlbumName(name, epochKey.epochHandleId);
 
-        // Create sealed bundle for owner (self-seal)
+        // Create sealed bundle for owner (self-seal). Bundle payload bytes
+        // never cross Comlink — Rust resolves the epoch handle internally.
         const bundle = await crypto.createEpochKeyBundle(
+          epochKey.epochHandleId,
           '', // Bootstrap-only legacy placeholder; strict fetch prefers the corrected re-seal below.
-          epochId,
-          epochKey.epochSeed,
-          epochKey.signPublicKey,
-          epochKey.signSecretKey,
-          identityPubkey, // Seal to self
+          identityPubkey,
         );
 
         // Create album with initial epoch key and encrypted name
@@ -424,17 +449,14 @@ export function useAlbums() {
             sharerPubkey: toBase64(identityPubkey),
             signPubkey: toBase64(epochKey.signPublicKey),
           },
-          encryptedName, // Send encrypted name to server
+          encryptedName,
           ...(options?.expiresAt ? { expiresAt: options.expiresAt } : {}),
           ...(options?.expirationWarningDays ? { expirationWarningDays: options.expirationWarningDays } : {}),
         });
 
         const correctedBundle = await crypto.createEpochKeyBundle(
+          epochKey.epochHandleId,
           newAlbum.id,
-          epochId,
-          epochKey.epochSeed,
-          epochKey.signPublicKey,
-          epochKey.signSecretKey,
           identityPubkey,
         );
 
@@ -464,28 +486,21 @@ export function useAlbums() {
           throw error;
         }
 
-        // Also store in localStorage as a fallback for older server versions
-        // Use the service function for consistency
+        // Also store in localStorage as a fallback for older server versions.
         setStoredEncryptedName(newAlbum.id, encryptedName);
 
-        // Cache the epoch key locally for immediate use
+        // Cache the new epoch handle id for immediate use by the gallery.
         setEpochKey(newAlbum.id, {
           epochId,
-          epochSeed: epochKey.epochSeed,
-          signKeypair: {
-            publicKey: epochKey.signPublicKey,
-            secretKey: epochKey.signSecretKey,
-          },
+          epochHandleId: epochKey.epochHandleId,
+          signPublicKey: epochKey.signPublicKey,
         });
-        epochSeedToWipe = null;
-        signSecretKeyToWipe = null;
 
         // Transform to frontend format
-        // We know the real name since we just created it
         const album: Album = {
           id: newAlbum.id,
-          name, // Display name
-          decryptedName: name, // Mark as already decrypted
+          name,
+          decryptedName: name,
           photoCount: 0,
           createdAt: newAlbum.createdAt,
           expiresAt: newAlbum.expiresAt ?? options?.expiresAt ?? null,
@@ -498,7 +513,6 @@ export function useAlbums() {
           album.expirationWarningDays = expirationWarningDays;
         }
 
-        // Add to local state
         setAlbums((prev) => [...prev, album]);
 
         return album;
@@ -508,12 +522,6 @@ export function useAlbums() {
         setCreateError(message);
         return null;
       } finally {
-        if (epochSeedToWipe) {
-          memzero(epochSeedToWipe);
-        }
-        if (signSecretKeyToWipe) {
-          memzero(signSecretKeyToWipe);
-        }
         setIsCreating(false);
       }
     },
