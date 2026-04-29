@@ -1007,8 +1007,25 @@ pub fn advance_upload_job(
     snapshot: ClientCoreUploadJobSnapshot,
     event: ClientCoreUploadJobEvent,
 ) -> ClientCoreUploadJobTransitionResult {
-    let snapshot = upload_snapshot_to_client(snapshot);
-    match mosaic_client::advance_upload_job(&snapshot, upload_event_to_client(event)) {
+    let snapshot = match upload_snapshot_to_client(snapshot) {
+        Ok(value) => value,
+        Err(code) => {
+            return ClientCoreUploadJobTransitionResult {
+                code,
+                transition: empty_upload_transition(),
+            };
+        }
+    };
+    let event = match upload_event_to_client(event) {
+        Ok(value) => value,
+        Err(code) => {
+            return ClientCoreUploadJobTransitionResult {
+                code,
+                transition: empty_upload_transition(),
+            };
+        }
+    };
+    match mosaic_client::advance_upload_job(&snapshot, event) {
         Ok(transition) => ClientCoreUploadJobTransitionResult {
             code: mosaic_client::ClientErrorCode::Ok.as_u16(),
             transition: upload_transition_from_client(transition),
@@ -1041,11 +1058,25 @@ pub fn advance_album_sync(
     snapshot: ClientCoreAlbumSyncSnapshot,
     event: ClientCoreAlbumSyncEvent,
 ) -> ClientCoreAlbumSyncTransitionResult {
-    let snapshot = album_sync_snapshot_to_client(snapshot);
-    match mosaic_client::advance_album_sync(
-        &snapshot,
-        album_sync_event_to_client(event, &snapshot.album_id),
-    ) {
+    let snapshot = match album_sync_snapshot_to_client(snapshot) {
+        Ok(value) => value,
+        Err(code) => {
+            return ClientCoreAlbumSyncTransitionResult {
+                code,
+                transition: empty_album_sync_transition(),
+            };
+        }
+    };
+    let event = match album_sync_event_to_client(event, &snapshot.album_id) {
+        Ok(value) => value,
+        Err(code) => {
+            return ClientCoreAlbumSyncTransitionResult {
+                code,
+                transition: empty_album_sync_transition(),
+            };
+        }
+    };
+    match mosaic_client::advance_album_sync(&snapshot, event) {
         Ok(transition) => ClientCoreAlbumSyncTransitionResult {
             code: mosaic_client::ClientErrorCode::Ok.as_u16(),
             transition: album_sync_transition_from_client(transition),
@@ -1612,7 +1643,10 @@ fn upload_request_to_client(
 
 fn upload_snapshot_to_client(
     snapshot: ClientCoreUploadJobSnapshot,
-) -> mosaic_client::UploadJobSnapshot {
+) -> Result<mosaic_client::UploadJobSnapshot, u16> {
+    let invalid_snapshot = mosaic_client::ClientErrorCode::ClientCoreInvalidSnapshot.as_u16();
+    let invalid_input_length = mosaic_client::ClientErrorCode::InvalidInputLength.as_u16();
+
     let asset_id = snapshot.asset_id.clone();
     let pending_shard = snapshot
         .completed_shards
@@ -1641,6 +1675,8 @@ fn upload_snapshot_to_client(
         .collect();
     let planned_shards =
         upload_planned_shards_from_dto(&snapshot, &completed_shards, &pending_shard);
+    let planned_shard_count =
+        u32::try_from(planned_shards.len()).map_err(|_| invalid_input_length)?;
     let manifest_receipt = if snapshot.has_manifest_receipt {
         Some(mosaic_client::ManifestReceipt {
             manifest_id: snapshot.manifest_receipt.manifest_id,
@@ -1649,19 +1685,27 @@ fn upload_snapshot_to_client(
     } else {
         None
     };
-    let retry_target_phase = upload_phase_from_string(&snapshot.last_error_stage);
-    let last_error_code = client_error_code_from_u16(snapshot.last_error_code);
+    let retry_target_phase = if snapshot.last_error_stage.is_empty() {
+        None
+    } else {
+        Some(upload_phase_from_string(&snapshot.last_error_stage).ok_or(invalid_snapshot)?)
+    };
+    let last_error_code = match client_error_code_from_u16(snapshot.last_error_code) {
+        Some(code) => Some(code),
+        None => return Err(invalid_snapshot),
+    };
+    let phase = upload_phase_from_string(&snapshot.phase).ok_or(invalid_snapshot)?;
+    let schema_version = schema_version_u16(snapshot.schema_version)?;
 
-    mosaic_client::UploadJobSnapshot {
-        schema_version: schema_version_u16(snapshot.schema_version),
+    Ok(mosaic_client::UploadJobSnapshot {
+        schema_version,
         local_job_id: snapshot.job_id.clone(),
         upload_id: snapshot.job_id,
         album_id: snapshot.album_id,
         asset_id: asset_id.clone(),
         epoch_id: (snapshot.epoch_id != 0).then_some(snapshot.epoch_id),
-        phase: upload_phase_from_string(&snapshot.phase)
-            .unwrap_or(mosaic_client::UploadJobPhase::Queued),
-        planned_shard_count: u32::try_from(planned_shards.len()).unwrap_or(u32::MAX),
+        phase,
+        planned_shard_count,
         planned_shards,
         next_shard_index: snapshot.active_shard_index,
         pending_shard,
@@ -1684,11 +1728,14 @@ fn upload_snapshot_to_client(
             }
         }),
         failure_code: last_error_code,
-    }
+    })
 }
 
-fn upload_event_to_client(event: ClientCoreUploadJobEvent) -> mosaic_client::UploadJobEvent {
-    match event.kind.as_str() {
+fn upload_event_to_client(
+    event: ClientCoreUploadJobEvent,
+) -> Result<mosaic_client::UploadJobEvent, u16> {
+    let invalid_snapshot = mosaic_client::ClientErrorCode::ClientCoreInvalidSnapshot.as_u16();
+    Ok(match event.kind.as_str() {
         "StartRequested" | "Start" => mosaic_client::UploadJobEvent::StartRequested,
         "MediaPrepared" | "PreparedMedia" => mosaic_client::UploadJobEvent::MediaPrepared {
             plan: Some(mosaic_client::PreparedMediaPlan {
@@ -1741,20 +1788,20 @@ fn upload_event_to_client(event: ClientCoreUploadJobEvent) -> mosaic_client::Upl
             }),
         },
         "RetryableFailure" => mosaic_client::UploadJobEvent::RetryableFailure {
-            code: client_error_code_from_u16(event.error_code)
-                .unwrap_or(mosaic_client::ClientErrorCode::InvalidInputLength),
+            code: client_error_code_from_u16(event.error_code).ok_or(invalid_snapshot)?,
             retry_after_ms: (event.retry_after_unix_ms != 0).then_some(event.retry_after_unix_ms),
         },
         "RetryTimerElapsed" => mosaic_client::UploadJobEvent::RetryTimerElapsed,
         "CancelRequested" => mosaic_client::UploadJobEvent::CancelRequested,
         "NonRetryableFailure" => mosaic_client::UploadJobEvent::NonRetryableFailure {
-            code: client_error_code_from_u16(event.error_code)
-                .unwrap_or(mosaic_client::ClientErrorCode::InvalidInputLength),
+            code: client_error_code_from_u16(event.error_code).ok_or(invalid_snapshot)?,
         },
+        // Unknown event kinds drive the SM to its invalid-transition path; the SM owns the
+        // rejection so the host receives a stable Failed phase rather than an opaque code.
         _ => mosaic_client::UploadJobEvent::NonRetryableFailure {
             code: mosaic_client::ClientErrorCode::ClientCoreInvalidTransition,
         },
-    }
+    })
 }
 
 fn upload_snapshot_from_client(
@@ -1852,16 +1899,26 @@ fn album_sync_request_to_client(
 
 fn album_sync_snapshot_to_client(
     snapshot: ClientCoreAlbumSyncSnapshot,
-) -> mosaic_client::AlbumSyncSnapshot {
-    let retry_target_phase = album_sync_phase_from_string(&snapshot.last_error_stage);
-    let last_error_code = client_error_code_from_u16(snapshot.last_error_code);
+) -> Result<mosaic_client::AlbumSyncSnapshot, u16> {
+    let invalid_snapshot = mosaic_client::ClientErrorCode::ClientCoreInvalidSnapshot.as_u16();
 
-    mosaic_client::AlbumSyncSnapshot {
-        schema_version: schema_version_u16(snapshot.schema_version),
+    let retry_target_phase = if snapshot.last_error_stage.is_empty() {
+        None
+    } else {
+        Some(album_sync_phase_from_string(&snapshot.last_error_stage).ok_or(invalid_snapshot)?)
+    };
+    let last_error_code = match client_error_code_from_u16(snapshot.last_error_code) {
+        Some(code) => Some(code),
+        None => return Err(invalid_snapshot),
+    };
+    let phase = album_sync_phase_from_string(&snapshot.phase).ok_or(invalid_snapshot)?;
+    let schema_version = schema_version_u16(snapshot.schema_version)?;
+
+    Ok(mosaic_client::AlbumSyncSnapshot {
+        schema_version,
         sync_id: snapshot.album_id.clone(),
         album_id: snapshot.album_id,
-        phase: album_sync_phase_from_string(&snapshot.phase)
-            .unwrap_or(mosaic_client::AlbumSyncPhase::Idle),
+        phase,
         initial_page_token: optional_string(snapshot.active_cursor.clone()),
         next_page_token: optional_string(snapshot.active_cursor),
         current_page: None,
@@ -1877,14 +1934,15 @@ fn album_sync_snapshot_to_client(
             retry_target_phase,
         },
         failure_code: last_error_code,
-    }
+    })
 }
 
 fn album_sync_event_to_client(
     event: ClientCoreAlbumSyncEvent,
     album_id: &str,
-) -> mosaic_client::AlbumSyncEvent {
-    match event.kind.as_str() {
+) -> Result<mosaic_client::AlbumSyncEvent, u16> {
+    let invalid_snapshot = mosaic_client::ClientErrorCode::ClientCoreInvalidSnapshot.as_u16();
+    Ok(match event.kind.as_str() {
         "SyncRequested" | "StartRequested" | "Start" => {
             mosaic_client::AlbumSyncEvent::SyncRequested {
                 request: Some(mosaic_client::AlbumSyncRequest {
@@ -1909,20 +1967,20 @@ fn album_sync_event_to_client(
         },
         "PageApplied" => mosaic_client::AlbumSyncEvent::PageApplied,
         "RetryableFailure" => mosaic_client::AlbumSyncEvent::RetryableFailure {
-            code: client_error_code_from_u16(event.error_code)
-                .unwrap_or(mosaic_client::ClientErrorCode::InvalidInputLength),
+            code: client_error_code_from_u16(event.error_code).ok_or(invalid_snapshot)?,
             retry_after_ms: (event.retry_after_unix_ms != 0).then_some(event.retry_after_unix_ms),
         },
         "RetryTimerElapsed" => mosaic_client::AlbumSyncEvent::RetryTimerElapsed,
         "CancelRequested" => mosaic_client::AlbumSyncEvent::CancelRequested,
         "NonRetryableFailure" => mosaic_client::AlbumSyncEvent::NonRetryableFailure {
-            code: client_error_code_from_u16(event.error_code)
-                .unwrap_or(mosaic_client::ClientErrorCode::InvalidInputLength),
+            code: client_error_code_from_u16(event.error_code).ok_or(invalid_snapshot)?,
         },
+        // Unknown event kinds drive the SM to its invalid-transition path; the SM owns the
+        // rejection so the host receives a stable Failed phase rather than an opaque code.
         _ => mosaic_client::AlbumSyncEvent::NonRetryableFailure {
             code: mosaic_client::ClientErrorCode::ClientCoreInvalidTransition,
         },
-    }
+    })
 }
 
 fn album_sync_snapshot_from_client(
@@ -2139,8 +2197,9 @@ fn optional_string(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-fn schema_version_u16(value: u32) -> u16 {
-    u16::try_from(value).unwrap_or(0)
+fn schema_version_u16(value: u32) -> Result<u16, u16> {
+    u16::try_from(value)
+        .map_err(|_| mosaic_client::ClientErrorCode::ClientCoreInvalidSnapshot.as_u16())
 }
 
 fn client_error_code_from_u16(value: u16) -> Option<mosaic_client::ClientErrorCode> {
@@ -2333,28 +2392,40 @@ fn uuid_bytes(bytes: &[u8]) -> Result<[u8; 16], u16> {
     Ok(value)
 }
 
+/// Maximum byte length permitted for a single encoded metadata field value. Larger values
+/// are rejected with `ClientErrorCode::InvalidInputLength` to prevent host-supplied length
+/// fields from driving large allocations or downstream `usize`-truncation footguns.
+const MAX_METADATA_FIELD_VALUE_BYTES: usize = 64 * 1024;
+
 fn metadata_fields_from_encoded(
     encoded_fields: &[u8],
 ) -> Result<Vec<MetadataSidecarField<'_>>, u16> {
+    let invalid_input_length = mosaic_client::ClientErrorCode::InvalidInputLength.as_u16();
     let mut fields = Vec::new();
     let mut offset = 0_usize;
     while offset < encoded_fields.len() {
         let remaining = &encoded_fields[offset..];
         if remaining.len() < 6 {
-            return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
+            return Err(invalid_input_length);
         }
 
         let tag = u16::from_le_bytes([remaining[0], remaining[1]]);
-        let value_len =
-            u32::from_le_bytes([remaining[2], remaining[3], remaining[4], remaining[5]]) as usize;
+        let value_len_u32 =
+            u32::from_le_bytes([remaining[2], remaining[3], remaining[4], remaining[5]]);
+        // Compare against the cap as u64 so the check is independent of host pointer width
+        // and runs before any `usize` cast on the user-supplied length.
+        if u64::from(value_len_u32) > MAX_METADATA_FIELD_VALUE_BYTES as u64 {
+            return Err(invalid_input_length);
+        }
+        let value_len = value_len_u32 as usize;
         offset += 6;
 
         let end = match offset.checked_add(value_len) {
             Some(value) => value,
-            None => return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()),
+            None => return Err(invalid_input_length),
         };
         if end > encoded_fields.len() {
-            return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
+            return Err(invalid_input_length);
         }
 
         fields.push(MetadataSidecarField::new(tag, &encoded_fields[offset..end]));

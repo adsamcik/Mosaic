@@ -249,6 +249,249 @@ fn uniffi_upload_retry_budget_survives_snapshot_round_trip() {
 }
 
 #[test]
+fn uniffi_advance_upload_job_rejects_unknown_phase_string() {
+    let mut snapshot = retry_waiting_upload_snapshot();
+    snapshot.phase = "DefinitelyNotAPhase".to_owned();
+
+    let result = advance_upload_job(snapshot, upload_event("RetryTimerElapsed", 0, 0, 0));
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+    assert_eq!(result.transition.snapshot.schema_version, 0);
+    assert!(result.transition.snapshot.phase.is_empty());
+    assert!(result.transition.effects.is_empty());
+}
+
+#[test]
+fn uniffi_advance_upload_job_rejects_unknown_last_error_code() {
+    let mut snapshot = retry_waiting_upload_snapshot();
+    snapshot.last_error_code = 4242;
+
+    let result = advance_upload_job(snapshot, upload_event("RetryTimerElapsed", 0, 0, 0));
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+    assert_eq!(result.transition.snapshot.schema_version, 0);
+}
+
+#[test]
+fn uniffi_advance_upload_job_rejects_unknown_last_error_stage() {
+    let mut snapshot = retry_waiting_upload_snapshot();
+    snapshot.last_error_stage = "NotAStage".to_owned();
+
+    let result = advance_upload_job(snapshot, upload_event("RetryTimerElapsed", 0, 0, 0));
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+}
+
+#[test]
+fn uniffi_advance_upload_job_rejects_oversized_schema_version() {
+    let mut snapshot = retry_waiting_upload_snapshot();
+    snapshot.schema_version = u32::from(u16::MAX) + 1;
+
+    let result = advance_upload_job(snapshot, upload_event("RetryTimerElapsed", 0, 0, 0));
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+}
+
+#[test]
+fn uniffi_advance_upload_job_rejects_unknown_event_error_code() {
+    let snapshot = retry_waiting_upload_snapshot();
+    let event = upload_event("RetryableFailure", 0, 0, 4242);
+
+    let result = advance_upload_job(snapshot, event);
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+    assert!(result.transition.effects.is_empty());
+}
+
+#[test]
+fn uniffi_advance_upload_job_rejects_unknown_event_error_code_on_non_retryable() {
+    let snapshot = retry_waiting_upload_snapshot();
+    let event = upload_event("NonRetryableFailure", 0, 0, 4242);
+
+    let result = advance_upload_job(snapshot, event);
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+}
+
+#[test]
+fn uniffi_advance_album_sync_accepts_valid_snapshot_and_event() {
+    let snapshot = retry_waiting_album_sync_snapshot();
+    let event = album_sync_event("RetryTimerElapsed", 0);
+
+    let result = advance_album_sync(snapshot, event);
+
+    assert_eq!(result.code, 0);
+    assert_eq!(
+        result.transition.snapshot.album_id,
+        "album-album-sync-regression"
+    );
+}
+
+#[test]
+fn uniffi_advance_album_sync_rejects_unknown_phase_string() {
+    let mut snapshot = retry_waiting_album_sync_snapshot();
+    snapshot.phase = "BogusPhase".to_owned();
+
+    let result = advance_album_sync(snapshot, album_sync_event("RetryTimerElapsed", 0));
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+    assert!(result.transition.snapshot.album_id.is_empty());
+}
+
+#[test]
+fn uniffi_advance_album_sync_rejects_unknown_last_error_code() {
+    let mut snapshot = retry_waiting_album_sync_snapshot();
+    snapshot.last_error_code = 4242;
+
+    let result = advance_album_sync(snapshot, album_sync_event("RetryTimerElapsed", 0));
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+}
+
+#[test]
+fn uniffi_advance_album_sync_rejects_unknown_event_error_code() {
+    let snapshot = retry_waiting_album_sync_snapshot();
+    let event = album_sync_event("RetryableFailure", 4242);
+
+    let result = advance_album_sync(snapshot, event);
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+}
+
+#[test]
+fn uniffi_metadata_sidecar_rejects_oversized_field_value_length() {
+    // Encoded layout: tag:u16le | value_len:u32le | value
+    // We declare an oversized value_len header without supplying the payload bytes;
+    // the cap must trigger before any usize cast or downstream allocation.
+    let oversized_len: u32 = (64 * 1024) + 1;
+    let mut encoded = Vec::with_capacity(6);
+    encoded.extend_from_slice(&1_u16.to_le_bytes());
+    encoded.extend_from_slice(&oversized_len.to_le_bytes());
+
+    let result = canonical_metadata_sidecar_bytes(
+        [0x11; 16].to_vec(),
+        [0x22; 16].to_vec(),
+        7,
+        encoded,
+    );
+
+    assert_eq!(result.code, ClientErrorCode::InvalidInputLength.as_u16());
+    assert!(result.bytes.is_empty());
+}
+
+#[test]
+fn uniffi_metadata_sidecar_accepts_field_value_at_cap() {
+    let cap: usize = 64 * 1024;
+    let mut encoded = Vec::with_capacity(6 + cap);
+    encoded.extend_from_slice(&4_u16.to_le_bytes());
+    let cap_u32 = match u32::try_from(cap) {
+        Ok(value) => value,
+        Err(error) => panic!("cap should fit u32: {error:?}"),
+    };
+    encoded.extend_from_slice(&cap_u32.to_le_bytes());
+    encoded.extend(std::iter::repeat_n(0_u8, cap));
+
+    let result = canonical_metadata_sidecar_bytes(
+        [0x11; 16].to_vec(),
+        [0x22; 16].to_vec(),
+        7,
+        encoded,
+    );
+
+    assert_eq!(result.code, 0);
+    assert!(result.bytes.starts_with(b"Mosaic_Metadata_v1"));
+}
+
+fn retry_waiting_upload_snapshot() -> ClientCoreUploadJobSnapshot {
+    ClientCoreUploadJobSnapshot {
+        schema_version: 1,
+        job_id: "job-validation".to_owned(),
+        album_id: "album-validation".to_owned(),
+        asset_id: "asset-validation".to_owned(),
+        epoch_id: 42,
+        phase: "RetryWaiting".to_owned(),
+        active_tier: 3,
+        active_shard_index: 0,
+        completed_shards: vec![ClientCoreUploadShardRef {
+            tier: 3,
+            shard_index: 0,
+            shard_id: String::new(),
+            sha256: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                .to_owned(),
+            uploaded: false,
+        }],
+        has_manifest_receipt: false,
+        manifest_receipt: ClientCoreManifestReceipt {
+            manifest_id: String::new(),
+            manifest_version: 0,
+        },
+        retry_count: 1,
+        max_retry_count: 5,
+        next_retry_unix_ms: 1_700_000_020_000,
+        last_error_code: ClientErrorCode::InvalidInputLength.as_u16(),
+        last_error_stage: "CreatingShardUpload".to_owned(),
+        sync_confirmed: false,
+        updated_at_unix_ms: 1_700_000_020_000,
+    }
+}
+
+fn retry_waiting_album_sync_snapshot() -> ClientCoreAlbumSyncSnapshot {
+    ClientCoreAlbumSyncSnapshot {
+        schema_version: 1,
+        album_id: "album-album-sync-regression".to_owned(),
+        phase: "RetryWaiting".to_owned(),
+        active_cursor: "cursor-validation".to_owned(),
+        pending_cursor: String::new(),
+        rerun_requested: false,
+        retry_count: 1,
+        max_retry_count: 5,
+        next_retry_unix_ms: 1_700_000_020_000,
+        last_error_code: ClientErrorCode::InvalidInputLength.as_u16(),
+        last_error_stage: "FetchingPage".to_owned(),
+        updated_at_unix_ms: 1_700_000_020_000,
+    }
+}
+
+fn album_sync_event(kind: &str, error_code: u16) -> ClientCoreAlbumSyncEvent {
+    ClientCoreAlbumSyncEvent {
+        kind: kind.to_owned(),
+        fetched_cursor: String::new(),
+        next_cursor: String::new(),
+        applied_count: 0,
+        observed_asset_ids: Vec::new(),
+        retry_after_unix_ms: 0,
+        error_code,
+    }
+}
+
+#[test]
 fn uniffi_facade_exports_protocol_version_for_android_bridge_probe() {
     assert_eq!(protocol_version(), "mosaic-v1");
 }
