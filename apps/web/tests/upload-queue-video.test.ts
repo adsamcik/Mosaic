@@ -96,6 +96,10 @@ vi.mock('../src/lib/thumbnail-generator', () => ({
 
 vi.mock('../src/lib/settings-service', () => ({
   getThumbnailQualityValue: vi.fn().mockReturnValue(0.8),
+  // H5: tiered-upload-handler now reads these to decide EXIF stripping.
+  // Mock to defaults that exercise the real code paths in tests.
+  shouldStripExifFromOriginals: vi.fn().mockReturnValue(true),
+  shouldStoreOriginalsAsAvif: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('@mosaic/crypto', () => ({
@@ -234,9 +238,9 @@ describe('UploadQueue — Video Upload Pipeline', () => {
         '../src/lib/thumbnail-generator'
       );
       (generateTieredImages as Mock).mockResolvedValue({
-        thumbnail: { blob: new Blob([new Uint8Array(10)]), width: 200, height: 150 },
-        preview: { blob: new Blob([new Uint8Array(20)]), width: 800, height: 600 },
-        original: { blob: new Blob([new Uint8Array(30)]), width: 1920, height: 1080 },
+        thumbnail: { data: new Uint8Array(10), width: 200, height: 150 },
+        preview: { data: new Uint8Array(20), width: 800, height: 600 },
+        original: { data: new Uint8Array(30), width: 1920, height: 1080 },
         thumbhash: 'abc123',
         embeddedThumbnail: 'base64data',
         embeddedWidth: 300,
@@ -268,8 +272,9 @@ describe('UploadQueue — Video Upload Pipeline', () => {
         '../src/lib/thumbnail-generator'
       );
       (generateTieredImages as Mock).mockResolvedValue({
-        thumbnail: { width: 200, height: 150 },
-        preview: { width: 800, height: 600 },
+        thumbnail: { data: new Uint8Array(10), width: 200, height: 150 },
+        preview: { data: new Uint8Array(20), width: 800, height: 600 },
+        original: { data: new Uint8Array(30), width: 1920, height: 1080 },
         originalWidth: 1920,
         originalHeight: 1080,
       });
