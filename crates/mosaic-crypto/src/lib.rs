@@ -13,6 +13,9 @@ use mosaic_domain::{SHARD_ENVELOPE_HEADER_LEN, ShardEnvelopeHeader, ShardTier};
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, Zeroizing};
 
+mod content;
+pub use content::{EncryptedContent, decrypt_content, encrypt_content};
+
 /// Maximum allowed plaintext size for shard encryption (100 MiB).
 const MAX_SHARD_BYTES: usize = 100 * 1024 * 1024;
 
