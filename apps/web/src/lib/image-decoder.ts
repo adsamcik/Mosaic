@@ -18,6 +18,170 @@ import { needsDecoding as checkNeedsDecoding } from './mime-type-detection';
 const log = createLogger('ImageDecoder');
 
 // =============================================================================
+// Decompression-bomb / Resource-exhaustion Guards (M5)
+// =============================================================================
+
+/**
+ * Maximum accepted size for a single input image blob (100 MB).
+ *
+ * Sized as a sane upper bound for any legitimate single photo: even RAW DSLR
+ * files and uncompressed bitmaps fit comfortably below this. Prevents a
+ * hostile client from feeding gigabyte-scale blobs into the decode pipeline.
+ */
+export const MAX_INPUT_BYTES = 100 * 1024 * 1024;
+
+/**
+ * Maximum accepted decoded image surface in pixels (200 megapixels).
+ *
+ * Bounds in-memory bitmap allocation to ~800 MB at 4 bytes/pixel, which is
+ * still large enough for any legitimate camera output but small enough to
+ * prevent a decompression bomb (e.g. a 100 KB compressed image expanding to
+ * a 100 000 x 100 000 surface) from OOMing the tab.
+ */
+export const MAX_DECODED_PIXELS = 200_000_000;
+
+/**
+ * Maximum wall-clock time allowed for a single decode step (30 seconds).
+ *
+ * Both `heic-to` and `createImageBitmap` are wrapped in a timeout race so a
+ * malformed image cannot stall the worker indefinitely.
+ */
+export const DECODE_TIMEOUT_MS = 30_000;
+
+/** Thrown when an input blob exceeds {@link MAX_INPUT_BYTES}. */
+export class ImageTooLargeError extends Error {
+  constructor(
+    public readonly size: number,
+    public readonly limit: number = MAX_INPUT_BYTES,
+  ) {
+    super(`Image input is ${size} bytes, exceeds the ${limit}-byte cap`);
+    this.name = 'ImageTooLargeError';
+  }
+}
+
+/** Thrown when a decoded bitmap's pixel count exceeds {@link MAX_DECODED_PIXELS}. */
+export class ImageDimensionsExceededError extends Error {
+  constructor(
+    public readonly width: number,
+    public readonly height: number,
+    public readonly limit: number = MAX_DECODED_PIXELS,
+  ) {
+    super(
+      `Decoded image is ${width}x${height} (${width * height} pixels), ` +
+        `exceeds the ${limit}-pixel cap`,
+    );
+    this.name = 'ImageDimensionsExceededError';
+  }
+}
+
+/** Thrown when a decode step exceeds {@link DECODE_TIMEOUT_MS}. */
+export class ImageDecodeTimeoutError extends Error {
+  constructor(
+    public readonly stage: string,
+    public readonly timeoutMs: number = DECODE_TIMEOUT_MS,
+  ) {
+    super(`Image decode stage "${stage}" timed out after ${timeoutMs} ms`);
+    this.name = 'ImageDecodeTimeoutError';
+  }
+}
+
+/**
+ * Reject a blob whose size already exceeds the input cap.
+ * Throws synchronously so callers can fail before allocating anything.
+ */
+function assertInputSize(blob: Blob): void {
+  if (blob.size > MAX_INPUT_BYTES) {
+    log.warn('Rejecting oversized image input', {
+      size: blob.size,
+      limit: MAX_INPUT_BYTES,
+    });
+    throw new ImageTooLargeError(blob.size);
+  }
+}
+
+/**
+ * Race a promise against a timeout. If the timeout wins, an
+ * {@link ImageDecodeTimeoutError} is thrown. The original promise is left to
+ * settle in the background; if it eventually yields a closeable resource
+ * (e.g. an {@link ImageBitmap}) we close it to release memory.
+ */
+function withDecodeTimeout<T>(
+  promise: Promise<T>,
+  stage: string,
+  timeoutMs: number = DECODE_TIMEOUT_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+
+  // If the late result is closeable, free it once it eventually resolves.
+  promise
+    .then((value) => {
+      if (
+        timedOut &&
+        value !== null &&
+        typeof value === 'object' &&
+        'close' in (value as object) &&
+        typeof (value as { close?: unknown }).close === 'function'
+      ) {
+        try {
+          (value as unknown as { close: () => void }).close();
+        } catch {
+          /* ignore cleanup failure */
+        }
+      }
+    })
+    .catch(() => {
+      /* swallow late rejection */
+    });
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new ImageDecodeTimeoutError(stage, timeoutMs));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  });
+}
+
+/**
+ * Wrap {@link createImageBitmap} with all three decompression-bomb guards:
+ *
+ *   1. Input size cap — rejects with {@link ImageTooLargeError}.
+ *   2. Decode timeout — rejects with {@link ImageDecodeTimeoutError}.
+ *   3. Decoded dimension cap — rejects with
+ *      {@link ImageDimensionsExceededError} (closing the bitmap first).
+ *
+ * Use this in place of `createImageBitmap` at every decode entry point.
+ */
+export async function safeCreateImageBitmap(blob: Blob): Promise<ImageBitmap> {
+  assertInputSize(blob);
+
+  const bitmap = await withDecodeTimeout(
+    createImageBitmap(blob),
+    'createImageBitmap',
+  );
+
+  if (bitmap.width * bitmap.height > MAX_DECODED_PIXELS) {
+    const { width, height } = bitmap;
+    log.warn('Rejecting oversized decoded bitmap', {
+      width,
+      height,
+      pixels: width * height,
+      limit: MAX_DECODED_PIXELS,
+    });
+    bitmap.close();
+    throw new ImageDimensionsExceededError(width, height);
+  }
+
+  return bitmap;
+}
+
+// =============================================================================
 // HEIC Decoding (via heic-to/csp)
 // =============================================================================
 
@@ -65,15 +229,20 @@ export async function isHeicDecodingAvailable(): Promise<boolean> {
  * @returns JPEG blob
  */
 async function decodeHeicToJpeg(blob: Blob): Promise<Blob> {
+  assertInputSize(blob);
+
   const heicTo = await getHeicTo();
 
   log.debug('Decoding HEIC image', { size: blob.size });
 
-  const result = await heicTo.heicTo({
-    blob,
-    type: 'image/jpeg',
-    quality: 0.95, // High quality since we'll re-encode to AVIF
-  });
+  const result = await withDecodeTimeout(
+    heicTo.heicTo({
+      blob,
+      type: 'image/jpeg',
+      quality: 0.95, // High quality since we'll re-encode to AVIF
+    }),
+    'heic-to',
+  );
 
   if (!result) {
     throw new Error('HEIC decoding returned empty result');
@@ -180,6 +349,11 @@ export async function prepareForBitmap(
   file: File,
   mimeType: string,
 ): Promise<Blob> {
+  // Reject oversized inputs before doing any work — covers both HEIC and
+  // pass-through paths so downstream `safeCreateImageBitmap` is not the only
+  // gatekeeper.
+  assertInputSize(file);
+
   if (checkNeedsDecoding(mimeType)) {
     log.info('Converting HEIC/HEIF to JPEG for bitmap creation', {
       filename: file.name,

@@ -30,7 +30,13 @@ import {
   type EncryptedShard,
   type EpochKey,
 } from '@mosaic/crypto';
-import { prepareForBitmap } from './image-decoder';
+import {
+  prepareForBitmap,
+  safeCreateImageBitmap,
+  ImageTooLargeError,
+  ImageDimensionsExceededError,
+  ImageDecodeTimeoutError,
+} from './image-decoder';
 import { getMimeType } from './mime-type-detection';
 import { shouldStoreOriginalsAsAvif } from './settings-service';
 import { createLogger } from './logger';
@@ -508,11 +514,22 @@ export async function generateThumbnail(
     const orientation = await getExifOrientation(file);
 
     // Create bitmap for efficient decoding
-    // Note: createImageBitmap automatically handles most image formats
+    // Note: createImageBitmap automatically handles most image formats.
+    // safeCreateImageBitmap enforces input-size, decoded-dimension, and
+    // timeout caps so a hostile image cannot OOM the tab.
     let bitmap: ImageBitmap;
     try {
-      bitmap = await createImageBitmap(processableBlob);
+      bitmap = await safeCreateImageBitmap(processableBlob);
     } catch (error) {
+      // Let decompression-bomb guard errors propagate untouched so callers
+      // can distinguish them from generic decode failures.
+      if (
+        error instanceof ImageTooLargeError ||
+        error instanceof ImageDimensionsExceededError ||
+        error instanceof ImageDecodeTimeoutError
+      ) {
+        throw error;
+      }
       throw new ThumbnailError('Failed to decode image', error);
     }
 
@@ -622,7 +639,12 @@ export async function generateThumbnail(
       thumbhash,
     };
   } catch (error) {
-    if (error instanceof ThumbnailError) {
+    if (
+      error instanceof ThumbnailError ||
+      error instanceof ImageTooLargeError ||
+      error instanceof ImageDimensionsExceededError ||
+      error instanceof ImageDecodeTimeoutError
+    ) {
       throw error;
     }
     throw new ThumbnailError('Thumbnail generation failed', error);
@@ -785,11 +807,18 @@ export async function generateTieredImages(
     // Note: For HEIC files, EXIF may be lost after conversion, but heic-to preserves it
     const orientation = await getExifOrientation(file);
 
-    // Create bitmap for efficient decoding
+    // Create bitmap for efficient decoding (with decompression-bomb guards).
     let bitmap: ImageBitmap;
     try {
-      bitmap = await createImageBitmap(processableBlob);
+      bitmap = await safeCreateImageBitmap(processableBlob);
     } catch (error) {
+      if (
+        error instanceof ImageTooLargeError ||
+        error instanceof ImageDimensionsExceededError ||
+        error instanceof ImageDecodeTimeoutError
+      ) {
+        throw error;
+      }
       throw new ThumbnailError('Failed to decode image', error);
     }
 
@@ -876,7 +905,12 @@ export async function generateTieredImages(
       originalHeight: logicalHeight,
     };
   } catch (error) {
-    if (error instanceof ThumbnailError) {
+    if (
+      error instanceof ThumbnailError ||
+      error instanceof ImageTooLargeError ||
+      error instanceof ImageDimensionsExceededError ||
+      error instanceof ImageDecodeTimeoutError
+    ) {
       throw error;
     }
     throw new ThumbnailError('Tiered image generation failed', error);
