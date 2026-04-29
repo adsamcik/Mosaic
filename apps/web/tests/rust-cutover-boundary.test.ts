@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -32,6 +32,13 @@ const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../src');
  * "Shell-class" symbols are utilities that are not security-critical:
  * memory wiping, base64 codecs, error class re-exports, public type
  * re-exports.
+ *
+ * After the Rust cutover landed (Slices 1-8), the share-link, manifest,
+ * sync-engine, and OPFS DB worker surfaces no longer import
+ * `@mosaic/crypto` at all; they route through Rust handles. Their
+ * entries have been removed from this map. The
+ * `cutover slice retirement guards` describe below pins those modules
+ * down with explicit "no protocol-class TS symbols imported" assertions.
  */
 interface CryptoCompatibilityEntry {
   readonly rationale: string;
@@ -44,87 +51,10 @@ interface CryptoCompatibilityEntry {
 
 const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
   [
-    'components/Shared/SharedGallery.tsx',
-    {
-      rationale: 'shared-link base64 decoding (shell-class)',
-      allowedSymbols: ['fromBase64'],
-    },
-  ],
-  [
-    'hooks/useAlbums.ts',
-    {
-      rationale: 'epoch key memory wiping (shell-class)',
-      allowedSymbols: ['memzero'],
-    },
-  ],
-  [
-    'hooks/useLinkKeys.ts',
-    {
-      rationale:
-        'shared-link key unwrap compatibility pending Rust link facade',
-      allowedSymbols: [
-        'AccessTier',
-        'AccessTierEnum',
-        'constantTimeEqual',
-        'decodeLinkId',
-        'decodeLinkSecret',
-        'deriveLinkKeys',
-        'fromBase64',
-        'unwrapTierKeyFromLink',
-      ],
-    },
-  ],
-  [
-    'hooks/useShareLinks.ts',
-    {
-      rationale:
-        'shared-link key wrapping compatibility pending Rust link facade',
-      allowedSymbols: [
-        'AccessTier',
-        'AccessTierEnum',
-        'deriveLinkKeys',
-        'deriveTierKeys',
-        'encodeLinkId',
-        'encodeLinkSecret',
-        'generateLinkSecret',
-        'wrapTierKeyForLink',
-      ],
-    },
-  ],
-  [
-    'lib/api-types.ts',
-    {
-      rationale: 'AccessTier API enum (shell-class type re-export)',
-      allowedSymbols: ['AccessTier'],
-    },
-  ],
-  [
     'lib/epoch-key-store.ts',
     {
       rationale: 'epoch seed and sign-key memory wiping (shell-class)',
       allowedSymbols: ['memzero'],
-    },
-  ],
-  [
-    'lib/epoch-rotation-service.ts',
-    {
-      rationale:
-        'share-link tier rewrap compatibility pending Rust epoch-rotation facade',
-      allowedSymbols: [
-        'AccessTier',
-        'deriveLinkKeys',
-        'deriveTierKeys',
-        'memzero',
-        'unwrapTierKeyFromLink',
-        'wrapTierKeyForLink',
-      ],
-    },
-  ],
-  [
-    'lib/error-messages.ts',
-    {
-      rationale: 'TypeScript crypto error mapping (shell-class)',
-      allowedSymbols: ['CryptoError', 'CryptoErrorCode'],
     },
   ],
   [
@@ -133,13 +63,6 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
       rationale:
         'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)',
       allowedSymbols: ['getArgon2Params'],
-    },
-  ],
-  [
-    'lib/sync-engine.ts',
-    {
-      rationale: 'manifest tier-key derivation compatibility',
-      allowedSymbols: ['deriveTierKeys', 'memzero'],
     },
   ],
   [
@@ -179,13 +102,6 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
     },
   ],
   [
-    'workers/db.worker.ts',
-    {
-      rationale: 'local OPFS snapshot encryption (shell-class constants + memzero)',
-      allowedSymbols: ['NONCE_SIZE', 'TAG_SIZE', 'memzero'],
-    },
-  ],
-  [
     'workers/types.ts',
     {
       rationale: 'temporary EncryptedShard worker API type (shell-class)',
@@ -197,7 +113,6 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
 const directSodiumPrimitiveAllowlist = new Map<string, string>([
   ['lib/session.ts', 'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)'],
   ['workers/crypto.worker.ts', 'central TypeScript crypto compatibility facade'],
-  ['workers/db.worker.ts', 'local OPFS snapshot encryption adapter'],
 ]);
 
 /**
@@ -232,6 +147,10 @@ const PROTOCOL_CLASS_SYMBOLS: ReadonlySet<string> = new Set([
   'deriveIdentityKeypair',
   'deriveKeys',
   'unwrapAccountKey',
+  'deriveLinkKeys',
+  'wrapTierKeyForLink',
+  'unwrapTierKeyFromLink',
+  'generateLinkSecret',
 ]);
 
 function normalizePath(path: string): string {
@@ -467,11 +386,11 @@ describe('web Rust crypto cutover per-symbol allowlist', () => {
 
   it('verifies sync-engine notifyContentConflict does not log key material', () => {
     /**
-     * The new `notifyContentConflict` seam dispatches a sanitised
-     * payload (opaque ids and counts only). Make sure the dispatch
-     * site does not accidentally log key material when conflicts
-     * occur. The check is lexical — "key material" patterns we want
-     * to never see in this code path.
+     * The `notifyContentConflict` seam dispatches a sanitised payload
+     * (opaque ids and counts only). Make sure the dispatch site does
+     * not accidentally log key material when conflicts occur. The
+     * check is lexical — "key material" patterns we want to never see
+     * in this code path.
      */
     const fullPath = resolve(srcRoot, 'lib/sync-engine.ts');
     const content = readFileSync(fullPath, 'utf8');
@@ -499,4 +418,190 @@ describe('web Rust crypto cutover per-symbol allowlist', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Slice 1 boundary — handle-based methods MUST return string handle IDs only,
+// never raw secret-key bytes.
+// ---------------------------------------------------------------------------
 
+const typesPath = resolve(srcRoot, 'workers/types.ts');
+const typesSource = readFileSync(typesPath, 'utf8');
+
+/**
+ * Methods that mint or close handle objects. We assert each declares a
+ * return type containing `HandleId` (or `void` for close methods) — the
+ * regex below is conservative; a method that returns `Uint8Array` for a
+ * handle slot fails this check.
+ */
+const HANDLE_RETURN_METHODS = [
+  // Account
+  { name: 'unlockAccount', mustContain: 'AccountHandleId', mustNotContain: ['accountKey:', 'accountSeed:'] },
+  { name: 'createNewAccount', mustContain: 'AccountHandleId', mustNotContain: ['accountKey:', 'accountSeed:'] },
+  { name: 'getAccountHandleId', mustContain: 'AccountHandleId | null', mustNotContain: ['Uint8Array'] },
+  // Identity
+  { name: 'createIdentityForAccount', mustContain: 'IdentityHandleId', mustNotContain: ['identitySecretKey:', 'signingSecretKey:'] },
+  { name: 'openIdentityForAccount', mustContain: 'IdentityHandleId', mustNotContain: ['identitySecretKey:', 'signingSecretKey:'] },
+  // Epoch
+  { name: 'createEpochHandle', mustContain: 'EpochHandleId', mustNotContain: ['epochSeed:'] },
+  { name: 'openEpochHandle', mustContain: 'EpochHandleId', mustNotContain: ['epochSeed:'] },
+  { name: 'getEpochHandleId', mustContain: 'EpochHandleId | null', mustNotContain: ['Uint8Array'] },
+];
+
+function extractMethodSignature(
+  source: string,
+  methodName: string,
+): string | null {
+  // Match `methodName(...): ReturnType;` allowing nested braces in either side.
+  // We greedily consume from the method name to the next `;` at zero brace
+  // depth — robust enough for the typed Comlink contract.
+  const start = source.indexOf(`${methodName}(`);
+  if (start === -1) return null;
+  let i = start;
+  let depth = 0;
+  let inAngle = 0;
+  while (i < source.length) {
+    const ch = source[i]!;
+    if (ch === '{') depth += 1;
+    else if (ch === '}') depth -= 1;
+    else if (ch === '<') inAngle += 1;
+    else if (ch === '>') inAngle = Math.max(0, inAngle - 1);
+    else if (ch === ';' && depth === 0 && inAngle === 0) {
+      return source.slice(start, i + 1);
+    }
+    i += 1;
+  }
+  return null;
+}
+
+describe('web Rust cutover handle-id boundary (Slice 1)', () => {
+  for (const { name, mustContain, mustNotContain } of HANDLE_RETURN_METHODS) {
+    it(`${name}() declares ${mustContain} in its return type`, () => {
+      const sig = extractMethodSignature(typesSource, name);
+      expect(sig, `${name} method not found in workers/types.ts`).not.toBeNull();
+      expect(sig).toContain(mustContain);
+    });
+
+    it(`${name}() does not leak raw secret bytes in its return type`, () => {
+      const sig = extractMethodSignature(typesSource, name);
+      expect(sig).not.toBeNull();
+      for (const banned of mustNotContain) {
+        expect(
+          sig,
+          `${name} return type contains forbidden secret-key field "${banned}"`,
+        ).not.toContain(banned);
+      }
+    });
+  }
+
+  it('exposes a stable WorkerCryptoErrorCode enum mirroring Rust ClientErrorCode', () => {
+    // Anchor that the enum exports the codes Slice 1 callers branch on.
+    const requiredCodes = [
+      'StaleHandle = 1000',
+      'HandleNotFound = 1001',
+      'HandleWrongKind = 1002',
+      'ClosedHandle = 1003',
+      'WorkerNotInitialized = 1004',
+      'InvalidKeyLength = 201',
+      'AuthenticationFailed = 205',
+      'BundleSignatureInvalid = 216',
+    ];
+    for (const code of requiredCodes) {
+      expect(typesSource).toContain(code);
+    }
+  });
+
+  it('exports a WorkerCryptoError class with a `code` field for Comlink round-tripping', () => {
+    expect(typesSource).toMatch(
+      /export\s+class\s+WorkerCryptoError\s+extends\s+Error/,
+    );
+    expect(typesSource).toMatch(/readonly\s+code\s*:\s*WorkerCryptoErrorCode/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cutover slice retirement guards — every module the Rust handle cutover
+// migrated MUST stop importing protocol-class TypeScript crypto symbols.
+//
+// The per-symbol allowlist above is the positive boundary (modules that may
+// still touch `@mosaic/crypto` and exactly which symbols they may use).
+// The retirement guards below are the negative boundary: modules that were
+// in the pre-cutover allowlist but have been migrated to Rust handles
+// MUST import zero protocol-class helpers and MUST NOT pull libsodium in
+// directly. A regression that re-introduces a TS crypto import to one of
+// these surfaces fails the build.
+// ---------------------------------------------------------------------------
+
+interface RetiredModuleAssertion {
+  readonly slice: string;
+  readonly relativePath: string;
+  readonly forbidLibsodium: boolean;
+}
+
+const CUTOVER_RETIRED_MODULES: readonly RetiredModuleAssertion[] = [
+  // Slice 2 — account/session bootstrap migrated to Rust account-handle contract.
+  // lib/session.ts retains a single shell-class import (getArgon2Params for the
+  // pre-worker Argon2id KDF). The retirement check below pins the protocol-class
+  // surface closed; the per-symbol allowlist pins the shell-class surface.
+  { slice: 'Slice 2 (account/session bootstrap)', relativePath: 'lib/session.ts', forbidLibsodium: false },
+  // Slice 3 — epoch key lifecycle uses Rust epoch handles end-to-end.
+  // lib/epoch-key-store.ts retains a single shell-class import (memzero) for
+  // wiping the legacy in-memory caches as they drain.
+  { slice: 'Slice 3 (epoch key lifecycle)', relativePath: 'lib/epoch-key-store.ts', forbidLibsodium: true },
+  { slice: 'Slice 3 (epoch key lifecycle)', relativePath: 'hooks/useAlbums.ts', forbidLibsodium: true },
+  // Slice 4 — manifest sign/verify + sync routes through Rust epoch handles.
+  { slice: 'Slice 4 (manifest sign/verify + sync)', relativePath: 'lib/sync-engine.ts', forbidLibsodium: true },
+  { slice: 'Slice 4 (manifest sign/verify + sync)', relativePath: 'lib/manifest-service.ts', forbidLibsodium: true },
+  { slice: 'Slice 4 (manifest sign/verify + sync)', relativePath: 'lib/photo-edit-service.ts', forbidLibsodium: true },
+  { slice: 'Slice 4 (manifest sign/verify + sync)', relativePath: 'components/Shared/SharedGallery.tsx', forbidLibsodium: true },
+  // Slice 6 — share-link key wrapping migrated to Rust handles.
+  { slice: 'Slice 6 (share-link key wrapping)', relativePath: 'hooks/useLinkKeys.ts', forbidLibsodium: true },
+  { slice: 'Slice 6 (share-link key wrapping)', relativePath: 'hooks/useShareLinks.ts', forbidLibsodium: true },
+  { slice: 'Slice 6 (share-link key wrapping)', relativePath: 'hooks/useMemberManagement.ts', forbidLibsodium: true },
+  { slice: 'Slice 6 (share-link key wrapping)', relativePath: 'lib/epoch-rotation-service.ts', forbidLibsodium: true },
+  { slice: 'Slice 6 (share-link key wrapping)', relativePath: 'lib/link-encoding.ts', forbidLibsodium: true },
+  { slice: 'Slice 6 (share-link key wrapping)', relativePath: 'lib/link-tier-key-store.ts', forbidLibsodium: true },
+  { slice: 'Slice 6 (share-link key wrapping)', relativePath: 'lib/api-types.ts', forbidLibsodium: true },
+  { slice: 'Slice 6 (share-link key wrapping)', relativePath: 'lib/error-messages.ts', forbidLibsodium: true },
+  // Slice 7 — album content + UI utility uses Rust epoch handles.
+  { slice: 'Slice 7 (album content + UI utility)', relativePath: 'contexts/AlbumContentContext.tsx', forbidLibsodium: true },
+  // Slice 8 — OPFS DB worker encryption routed through Rust wrap_key/unwrap_key.
+  { slice: 'Slice 8 (OPFS DB worker encryption)', relativePath: 'workers/db.worker.ts', forbidLibsodium: true },
+];
+
+describe('Rust cutover slice retirement guards', () => {
+  for (const { slice, relativePath, forbidLibsodium } of CUTOVER_RETIRED_MODULES) {
+    it(`${slice}: ${relativePath} imports no protocol-class @mosaic/crypto symbols`, () => {
+      const fullPath = resolve(srcRoot, relativePath);
+      // The module MUST exist after the cutover lands. If it was deleted
+      // outright by the migration, the importer-equality test above already
+      // catches any regression that resurrects it.
+      expect(
+        existsSync(fullPath),
+        `${relativePath} not found — retirement guard cannot verify it`,
+      ).toBe(true);
+
+      const content = readFileSync(fullPath, 'utf8');
+      const { symbols, hasWildcard } = extractMosaicCryptoSymbols(content);
+
+      expect(
+        hasWildcard,
+        `${relativePath} uses wildcard @mosaic/crypto import after ${slice} retirement`,
+      ).toBe(false);
+
+      const protocolClassImports = [...symbols].filter((sym) =>
+        PROTOCOL_CLASS_SYMBOLS.has(sym),
+      );
+
+      expect(
+        protocolClassImports,
+        `${relativePath} imports protocol-class TS crypto symbols (${protocolClassImports.join(', ')}) despite being retired by ${slice} — must route through Rust handles instead`,
+      ).toEqual([]);
+
+      if (forbidLibsodium) {
+        expect(
+          /from\s+['"]libsodium-wrappers-sumo['"]/.test(content),
+          `${relativePath} imports libsodium-wrappers-sumo directly after ${slice} retirement — must route through the Rust crypto worker`,
+        ).toBe(false);
+      }
+    });
+  }
+});

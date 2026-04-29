@@ -6,6 +6,148 @@ import type { EncryptedShard } from '@mosaic/crypto';
 // Re-export EncryptedShard from crypto lib (single source of truth)
 export type { EncryptedShard };
 
+// =============================================================================
+// Stable error codes for the Rust cutover handle-based contract
+// =============================================================================
+
+/**
+ * Stable numeric error codes mirroring `mosaic_client::ClientErrorCode`
+ * (subset that is reachable through the worker), plus worker-only codes for
+ * handle-lifecycle errors that originate inside the TypeScript worker layer.
+ *
+ * Worker-only codes start at 1000 to avoid collisions with the Rust enum
+ * (which currently maxes out at 706 — `ClientCoreInvalidSnapshot`). Adding
+ * a new worker-only code? Pick the next free value above 1000 and document
+ * the failure mode here.
+ */
+export enum WorkerCryptoErrorCode {
+  Ok = 0,
+
+  // Mirrors `mosaic_client::ClientErrorCode` — keep in sync.
+  InvalidHeaderLength = 100,
+  InvalidMagic = 101,
+  UnsupportedVersion = 102,
+  InvalidTier = 103,
+  NonZeroReservedByte = 104,
+  EmptyContext = 200,
+  InvalidKeyLength = 201,
+  InvalidInputLength = 202,
+  InvalidEnvelope = 203,
+  MissingCiphertext = 204,
+  AuthenticationFailed = 205,
+  RngFailure = 206,
+  WrappedKeyTooShort = 207,
+  KdfProfileTooWeak = 208,
+  InvalidSaltLength = 209,
+  KdfFailure = 210,
+  InvalidSignatureLength = 211,
+  InvalidPublicKey = 212,
+  InvalidUsername = 213,
+  KdfProfileTooCostly = 214,
+  LinkTierMismatch = 215,
+  BundleSignatureInvalid = 216,
+  BundleAlbumIdEmpty = 217,
+  BundleAlbumIdMismatch = 218,
+  BundleEpochTooOld = 219,
+  BundleRecipientMismatch = 220,
+  BundleJsonParse = 221,
+  BundleSealOpenFailed = 222,
+  OperationCancelled = 300,
+  SecretHandleNotFound = 400,
+  IdentityHandleNotFound = 401,
+  HandleSpaceExhausted = 402,
+  EpochHandleNotFound = 403,
+  InternalStatePoisoned = 500,
+
+  // Worker-only error codes start at 1000.
+  /** Operation issued against a handle whose generation no longer matches. */
+  StaleHandle = 1000,
+  /** Handle ID is not registered with the worker's handle registry. */
+  HandleNotFound = 1001,
+  /** Handle ID exists but refers to a handle of a different kind than expected. */
+  HandleWrongKind = 1002,
+  /** Handle has been closed; subsequent operations are rejected. */
+  ClosedHandle = 1003,
+  /** Worker has not been bootstrapped or has been cleared via clear(). */
+  WorkerNotInitialized = 1004,
+}
+
+/**
+ * Wire-shape used to round-trip a `WorkerCryptoError` across the Comlink
+ * boundary. Comlink serializes thrown values via `structuredClone` which
+ * preserves plain own-properties on Error subclasses, so we attach `code`
+ * and a `name` that callers can branch on.
+ */
+export interface WorkerCryptoErrorJson {
+  readonly name: 'WorkerCryptoError';
+  readonly code: WorkerCryptoErrorCode;
+  readonly message: string;
+}
+
+/**
+ * Error class thrown by the crypto worker for every Rust-mapped or
+ * handle-lifecycle failure. The `code` field is the stable contract — Slice
+ * 1+ callers must branch on `code`, never on `message` text.
+ */
+export class WorkerCryptoError extends Error {
+  readonly name = 'WorkerCryptoError' as const;
+  readonly code: WorkerCryptoErrorCode;
+
+  constructor(code: WorkerCryptoErrorCode, message: string) {
+    super(message);
+    this.code = code;
+    // Preserve own-properties through Comlink's structuredClone.
+    Object.defineProperty(this, 'code', {
+      value: code,
+      enumerable: true,
+      writable: false,
+      configurable: false,
+    });
+  }
+
+  /**
+   * Test whether an arbitrary thrown value carries the WorkerCryptoError
+   * shape — works across both same-realm `instanceof` and Comlink-cloned
+   * objects from another realm.
+   */
+  static is(err: unknown): err is { code: WorkerCryptoErrorCode; message: string; name: string } {
+    if (err instanceof WorkerCryptoError) return true;
+    if (
+      typeof err === 'object' &&
+      err !== null &&
+      'name' in err &&
+      'code' in err &&
+      (err as { name: unknown }).name === 'WorkerCryptoError' &&
+      typeof (err as { code: unknown }).code === 'number'
+    ) {
+      return true;
+    }
+    return false;
+  }
+}
+
+/**
+ * KDF parameter triple required by the Rust handle-based account methods.
+ * Matches `mosaic_client::AccountUnlockRequest` field naming.
+ */
+export interface WorkerKdfParams {
+  readonly memoryKib: number;
+  readonly iterations: number;
+  readonly parallelism: number;
+}
+
+/**
+ * Branded string type for opaque handle IDs returned across Comlink.
+ *
+ * Slice 1 contract: ALL handle IDs are stable strings of the form
+ *   `${kind}_${12-byte-base64url}` where `kind ∈ { acct, idnt, epch }`.
+ * Callers must treat them as opaque — the worker is the only authority
+ * for resolving an ID back to a Rust handle.
+ */
+export type AccountHandleId = string & { readonly __brand: 'AccountHandleId' };
+export type IdentityHandleId = string & { readonly __brand: 'IdentityHandleId' };
+export type EpochHandleId = string & { readonly __brand: 'EpochHandleId' };
+
 /** Photo metadata stored in local SQLite */
 export interface PhotoMeta {
   id: string;
@@ -557,6 +699,263 @@ export interface CryptoWorkerApi {
     epochSeed: Uint8Array,
     epochId: number,
   ): Promise<Uint8Array>;
+
+  // ===========================================================================
+  // Slice 1 handle-based contract — Rust cutover surface
+  //
+  // These methods are the migration target for slices 2-8. They return string
+  // handle IDs across the Comlink boundary; the worker maps them to internal
+  // Rust handles via the HandleRegistry. NEVER returns raw secret key
+  // material in a response shape that names a key (e.g. *Key, *Seed, *Secret).
+  // Wrapped/sealed bytes are ciphertext and may cross the boundary.
+  // ===========================================================================
+
+  // ---- Account handle lifecycle (Slice 2 will route init/initWithWrappedKey through these) ----
+
+  /**
+   * Open (unlock) an existing account-key handle from a wrapped account key.
+   * Returns the opaque account handle ID; the underlying L2 key never crosses
+   * the Comlink boundary.
+   */
+  unlockAccount(opts: {
+    password: string;
+    userSalt: Uint8Array;
+    accountSalt: Uint8Array;
+    wrappedAccountKey: Uint8Array;
+    kdf: WorkerKdfParams;
+  }): Promise<{ accountHandleId: AccountHandleId }>;
+
+  /**
+   * Create a new account: generate a fresh random L2 key, wrap it under
+   * Argon2id-derived L1, register the handle, and return both the handle ID
+   * and the wrapped account key for the caller to persist on the server.
+   */
+  createNewAccount(opts: {
+    password: string;
+    userSalt: Uint8Array;
+    accountSalt: Uint8Array;
+    kdf: WorkerKdfParams;
+  }): Promise<{ accountHandleId: AccountHandleId; wrappedAccountKey: Uint8Array }>;
+
+  /**
+   * Close an account handle. Cascades closure of any identity / epoch
+   * handles that depend on it (Slice 1 lifetime semantics).
+   */
+  closeAccountHandle(handleId: AccountHandleId): Promise<void>;
+
+  /** Returns the currently-open account handle ID, or null if none. */
+  getAccountHandleId(): Promise<AccountHandleId | null>;
+
+  // ---- Identity handle lifecycle (Slice 2 will route deriveIdentity through these) ----
+
+  /**
+   * Create a fresh identity for an account: random Ed25519 + X25519 seed,
+   * wrapped under the account key. Returns the identity handle plus public
+   * keys plus wrapped seed (caller persists wrapped seed on the server).
+   */
+  createIdentityForAccount(accountHandleId: AccountHandleId): Promise<{
+    identityHandleId: IdentityHandleId;
+    signingPublicKey: Uint8Array;
+    encryptionPublicKey: Uint8Array;
+    wrappedSeed: Uint8Array;
+  }>;
+
+  /**
+   * Open an existing identity handle from its wrapped seed.
+   */
+  openIdentityForAccount(
+    accountHandleId: AccountHandleId,
+    wrappedSeed: Uint8Array,
+  ): Promise<{
+    identityHandleId: IdentityHandleId;
+    signingPublicKey: Uint8Array;
+    encryptionPublicKey: Uint8Array;
+  }>;
+
+  closeIdentityHandle(handleId: IdentityHandleId): Promise<void>;
+
+  /**
+   * Sign a manifest transcript using the identity's Ed25519 signing key.
+   */
+  signManifestWithIdentity(
+    identityHandleId: IdentityHandleId,
+    transcriptBytes: Uint8Array,
+  ): Promise<Uint8Array>;
+
+  /**
+   * Verify a detached manifest signature. No identity handle required —
+   * verification only needs the public key.
+   */
+  verifyManifestWithIdentity(
+    transcriptBytes: Uint8Array,
+    signature: Uint8Array,
+    signingPublicKey: Uint8Array,
+  ): Promise<boolean>;
+
+  // ---- Epoch handle lifecycle (Slice 3 will route epoch ops through these) ----
+
+  /**
+   * Create a new epoch handle for an account at the given epoch ID.
+   * Returns the handle ID and the wrapped epoch seed (caller persists it).
+   */
+  createEpochHandle(
+    accountHandleId: AccountHandleId,
+    epochId: number,
+  ): Promise<{ epochHandleId: EpochHandleId; wrappedSeed: Uint8Array }>;
+
+  /**
+   * Open an existing epoch handle from its wrapped seed at the given epoch ID.
+   */
+  openEpochHandle(
+    accountHandleId: AccountHandleId,
+    wrappedSeed: Uint8Array,
+    epochId: number,
+  ): Promise<{ epochHandleId: EpochHandleId }>;
+
+  closeEpochHandle(handleId: EpochHandleId): Promise<void>;
+
+  /**
+   * Look up an epoch handle by `(albumId, epochId)`. Allows callers to
+   * deduplicate epoch-handle creation when the same album+epoch is reopened.
+   * Slice 3+ will key the registry through this method.
+   */
+  getEpochHandleId(
+    albumId: string,
+    epochId: number,
+  ): Promise<EpochHandleId | null>;
+
+  /**
+   * Encrypt a single shard using the epoch handle's tier sub-key.
+   * `tier`: 0=thumb, 1=preview, 2=original (matches the WASM contract).
+   */
+  encryptShardWithEpoch(
+    epochHandleId: EpochHandleId,
+    plaintext: Uint8Array,
+    shardIndex: number,
+    tier: 0 | 1 | 2,
+  ): Promise<{ envelopeBytes: Uint8Array; sha256: string }>;
+
+  /**
+   * Decrypt a complete shard envelope (header + ciphertext) using the
+   * epoch handle.
+   */
+  decryptShardWithEpoch(
+    epochHandleId: EpochHandleId,
+    envelopeBytes: Uint8Array,
+  ): Promise<Uint8Array>;
+
+  /**
+   * Encrypt a metadata sidecar using the epoch handle. Output is a shard
+   * envelope keyed by the epoch's metadata sub-key with the album/photo IDs
+   * bound as AAD.
+   */
+  encryptMetadataSidecarWithEpoch(
+    epochHandleId: EpochHandleId,
+    albumId: Uint8Array,
+    photoId: Uint8Array,
+    epochId: number,
+    encodedFields: Uint8Array,
+    shardIndex: number,
+  ): Promise<{ envelopeBytes: Uint8Array; sha256: string }>;
+
+  // ---- Link sharing (Slice 6 will route hooks through these) ----
+
+  /** Generate a fresh 32-byte link secret. */
+  generateLinkSecretRust(): Promise<Uint8Array>;
+
+  /** Derive `(linkId, wrappingKey)` from a link secret. */
+  deriveLinkKeysRust(
+    linkSecret: Uint8Array,
+  ): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }>;
+
+  /**
+   * Wrap a tier key for share-link distribution. The tier key never crosses
+   * Comlink — it's derived inside the worker from the epoch handle.
+   */
+  wrapTierKeyForLinkRust(
+    epochHandleId: EpochHandleId,
+    tier: 0 | 1 | 2,
+    wrappingKey: Uint8Array,
+  ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
+
+  unwrapTierKeyFromLinkRust(
+    nonce: Uint8Array,
+    encryptedKey: Uint8Array,
+    tier: 0 | 1 | 2,
+    wrappingKey: Uint8Array,
+  ): Promise<Uint8Array>;
+
+  // ---- Album content (Slice 7) ----
+
+  encryptAlbumContentWithEpoch(
+    epochHandleId: EpochHandleId,
+    plaintext: Uint8Array,
+  ): Promise<{ nonce: Uint8Array; ciphertext: Uint8Array }>;
+
+  decryptAlbumContentWithEpoch(
+    epochHandleId: EpochHandleId,
+    nonce: Uint8Array,
+    ciphertext: Uint8Array,
+  ): Promise<Uint8Array>;
+
+  // ---- Bundle sealing (Slice 6) ----
+
+  /**
+   * Seal and sign an epoch key bundle for a recipient.
+   *
+   * The bundle protocol requires the per-epoch signing keypair (and seed)
+   * to flow inside the bundle. Recipients call `verifyAndOpenBundle` and
+   * then bootstrap an epoch handle from the returned bytes via
+   * `openEpochHandle`. The returned signSecret/epochSeed are intentional
+   * payload, not key leakage — they are immediately consumed by
+   * `openEpochHandle` and wiped.
+   */
+  sealAndSignBundle(
+    identityHandleId: IdentityHandleId,
+    recipientPubkey: Uint8Array,
+    albumId: string,
+    epochId: number,
+    epochSeed: Uint8Array,
+    signSecret: Uint8Array,
+    signPublic: Uint8Array,
+  ): Promise<{ sealed: Uint8Array; signature: Uint8Array; sharerPubkey: Uint8Array }>;
+
+  verifyAndOpenBundle(
+    identityHandleId: IdentityHandleId,
+    sealed: Uint8Array,
+    signature: Uint8Array,
+    sharerPubkey: Uint8Array,
+    expectedAlbumId: string,
+    expectedMinEpoch: number,
+    allowLegacyEmpty: boolean,
+  ): Promise<{
+    albumId: string;
+    epochId: number;
+    epochSeed: Uint8Array;
+    signSecret: Uint8Array;
+    signPublic: Uint8Array;
+  }>;
+
+  // ---- Auth challenge (Slice 2) ----
+
+  deriveAuthKeypairForAccount(
+    accountHandleId: AccountHandleId,
+  ): Promise<{ authPublicKey: Uint8Array }>;
+
+  signAuthChallengeWithAccount(
+    accountHandleId: AccountHandleId,
+    challengeBytes: Uint8Array,
+  ): Promise<Uint8Array>;
+
+  getAuthPublicKeyForAccount(
+    accountHandleId: AccountHandleId,
+  ): Promise<Uint8Array>;
+
+  // ---- Generic key wrap (Slice 8 db worker) ----
+
+  wrapKey(keyBytes: Uint8Array, wrapperKey: Uint8Array): Promise<Uint8Array>;
+
+  unwrapKey(wrapped: Uint8Array, wrapperKey: Uint8Array): Promise<Uint8Array>;
 }
 
 /** Exported keys structure for session caching */

@@ -111,6 +111,32 @@ export interface AvailableHarness {
   readonly lifecycleHarness: () => LifecycleHarness;
   /** Concurrency helpers — N parallel ops on the same handle, no deadlock. */
   readonly concurrencyHarness: () => ConcurrencyHarness;
+  /**
+   * Slice 1 — claim a fresh account handle for tests that need one. Uses
+   * `unlockAccount` if `wrappedAccountKey` is supplied, otherwise creates
+   * a new account via `createNewAccount`. Returns the handle ID and (for
+   * the create flow) the wrapped account key bytes the caller must persist.
+   */
+  readonly claimAccountHandle: (
+    opts?: ClaimAccountHandleOptions,
+  ) => Promise<ClaimedAccountHandle>;
+  /**
+   * Slice 1 — claim an epoch handle bound to the supplied account handle.
+   * Always uses `createEpochHandle` (returns wrappedSeed for re-open).
+   */
+  readonly claimEpochHandle: (
+    accountHandleId: string,
+    epochId?: number,
+  ) => Promise<ClaimedEpochHandle>;
+  /**
+   * Slice 1 — assert that an operation against the given handle ID rejects
+   * with a `WorkerCryptoErrorCode.ClosedHandle` or `StaleHandle` /
+   * `HandleNotFound` error. Returns the error for further inspection.
+   */
+  readonly assertHandleIsClosed: (
+    handleId: string,
+    kind: 'account' | 'identity' | 'epoch',
+  ) => Promise<{ code: number; message: string }>;
 }
 
 export type CryptoWorkerHarness = AvailableHarness | UnavailableHarness;
@@ -210,6 +236,11 @@ export async function createCryptoWorkerHarness(options?: {
     assertNoRawSecrets: (opts) => assertNoRawSecrets(api, opts),
     lifecycleHarness: () => buildLifecycleHarness(api),
     concurrencyHarness: () => buildConcurrencyHarness(api),
+    claimAccountHandle: (opts) => claimAccountHandle(api, opts),
+    claimEpochHandle: (accountHandleId, epochId) =>
+      claimEpochHandle(api, accountHandleId, epochId),
+    assertHandleIsClosed: (handleId, kind) =>
+      assertHandleIsClosed(api, handleId, kind),
   };
 }
 
@@ -535,5 +566,130 @@ function buildConcurrencyHarness(
       const elapsedMs = performance.now() - start;
       return { fulfilled, rejected, elapsedMs };
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Slice 1 handle helpers — used by handle-lifecycle tests.
+// ---------------------------------------------------------------------------
+
+export interface ClaimAccountHandleOptions {
+  readonly password?: string;
+  readonly userSalt?: Uint8Array;
+  readonly accountSalt?: Uint8Array;
+  /** When supplied, calls `unlockAccount`. Otherwise calls `createNewAccount`. */
+  readonly wrappedAccountKey?: Uint8Array;
+  readonly kdf?: { memoryKib: number; iterations: number; parallelism: number };
+}
+
+export interface ClaimedAccountHandle {
+  readonly accountHandleId: string;
+  /** Present only when the helper called `createNewAccount`. */
+  readonly wrappedAccountKey?: Uint8Array;
+}
+
+export interface ClaimedEpochHandle {
+  readonly epochHandleId: string;
+  readonly wrappedSeed: Uint8Array;
+  readonly epochId: number;
+}
+
+/**
+ * Default Argon2 params for tests. With `VITE_E2E_WEAK_KEYS=true` the
+ * worker's `getArgon2Params()` already returns these or weaker, but the
+ * Slice 1 handle methods accept the params explicitly so tests can stay
+ * deterministic across config changes.
+ */
+const DEFAULT_TEST_KDF = {
+  memoryKib: 8192,
+  iterations: 1,
+  parallelism: 1,
+} as const;
+
+async function claimAccountHandle(
+  api: Comlink.Remote<CryptoWorkerApi>,
+  opts: ClaimAccountHandleOptions = {},
+): Promise<ClaimedAccountHandle> {
+  const password = opts.password ?? 'harness-pw';
+  const userSalt = opts.userSalt ?? makeFixedSalt(0x55);
+  const accountSalt = opts.accountSalt ?? makeFixedSalt(0x66);
+  const kdf = opts.kdf ?? DEFAULT_TEST_KDF;
+
+  if (opts.wrappedAccountKey) {
+    const out = await api.unlockAccount({
+      password,
+      userSalt,
+      accountSalt,
+      wrappedAccountKey: opts.wrappedAccountKey,
+      kdf,
+    });
+    return { accountHandleId: out.accountHandleId };
+  }
+
+  const out = await api.createNewAccount({
+    password,
+    userSalt,
+    accountSalt,
+    kdf,
+  });
+  return {
+    accountHandleId: out.accountHandleId,
+    wrappedAccountKey: out.wrappedAccountKey,
+  };
+}
+
+async function claimEpochHandle(
+  api: Comlink.Remote<CryptoWorkerApi>,
+  accountHandleId: string,
+  epochId = 1,
+): Promise<ClaimedEpochHandle> {
+  const out = await api.createEpochHandle(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    accountHandleId as any,
+    epochId,
+  );
+  return {
+    epochHandleId: out.epochHandleId,
+    wrappedSeed: out.wrappedSeed,
+    epochId,
+  };
+}
+
+async function assertHandleIsClosed(
+  api: Comlink.Remote<CryptoWorkerApi>,
+  handleId: string,
+  kind: 'account' | 'identity' | 'epoch',
+): Promise<{ code: number; message: string }> {
+  // Pick an op for each kind that goes through `withLease` and so will
+  // surface ClosedHandle / StaleHandle / HandleNotFound deterministically.
+  const probe = async (): Promise<unknown> => {
+    switch (kind) {
+      case 'account':
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return await api.getAuthPublicKeyForAccount(handleId as any);
+      case 'identity':
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return await api.signManifestWithIdentity(handleId as any, new Uint8Array(8));
+      case 'epoch':
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return await api.encryptShardWithEpoch(handleId as any, new Uint8Array(8), 0, 0);
+    }
+  };
+
+  let err: unknown = null;
+  try {
+    await probe();
+  } catch (caught) {
+    err = caught;
+  }
+  if (err === null) {
+    throw new Error(
+      `assertHandleIsClosed: ${kind} handle ${handleId} did not reject — operation succeeded`,
+    );
+  }
+  const e = err as { code?: unknown; message?: unknown };
+  return {
+    code: typeof e.code === 'number' ? e.code : -1,
+    message: typeof e.message === 'string' ? e.message : String(err),
   };
 }

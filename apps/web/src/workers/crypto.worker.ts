@@ -2,12 +2,18 @@
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
 import { createLogger } from '../lib/logger';
-import type {
-  CryptoWorkerApi,
-  EncryptedShard,
-  ExportedKeys,
-  OpenEpochKeyBundleOptions,
-  PhotoMeta,
+import {
+  WorkerCryptoError,
+  WorkerCryptoErrorCode,
+  type AccountHandleId,
+  type CryptoWorkerApi,
+  type EncryptedShard,
+  type EpochHandleId,
+  type ExportedKeys,
+  type IdentityHandleId,
+  type OpenEpochKeyBundleOptions,
+  type PhotoMeta,
+  type WorkerKdfParams,
 } from './types';
 
 // Import real crypto functions from @mosaic/crypto
@@ -38,12 +44,364 @@ import {
 } from '@mosaic/crypto';
 import {
   getRustCryptoCore,
+  getRustFacade,
   parseEnvelopeHeaderFromRust,
   verifyLegacyManifestWithRust,
+  type RustHandleFacade,
 } from './rust-crypto-core';
 
 // Create scoped logger for crypto worker
 const log = createLogger('CryptoWorker');
+
+// =============================================================================
+// Slice 1 — Handle registry & lifetime semantics
+// =============================================================================
+//
+// Lifetime invariants — Slice 1 contract:
+//
+//  - Handle IDs are stable opaque strings of the form
+//    `acct_<12b64url>` / `idnt_<12b64url>` / `epch_<12b64url>`. They are
+//    minted by the worker and meaningful only inside the worker; callers
+//    treat them as opaque.
+//
+//  - Each handle carries a generation counter incremented on every
+//    `clearAll()` cycle. Operations that present a handle with the wrong
+//    generation reject with `WorkerCryptoErrorCode.StaleHandle`.
+//
+//  - Operations on a handle take a refcounted *lease* (`withLease`).
+//    Closing a handle while a lease is held marks it closed but defers
+//    the actual WASM `closeXxxHandle` call until the last lease drops.
+//    No timeouts on leases — they release when the wrapped callback
+//    settles. Promise rejections still drop the lease (finally block).
+//
+//  - `closeHandle` is idempotent. Double-close (or close after `clear()`)
+//    is a silent no-op.
+//
+//  - `clearAll()` (invoked by `clear()`) cascades closures in the order:
+//        epoch → identity → account.
+//    This ordering matches the dependency order: epoch handles reference
+//    the account, identity handles reference the account, so children
+//    must close first. The generation counter increments AFTER the
+//    cascade so handles minted before the cycle become stale.
+//
+//  - Worker termination: callers should always `await api.clear()` before
+//    calling `worker.terminate()`. If they don't, in-flight Comlink calls
+//    reject with whatever the runtime surfaces (typically a port-closed
+//    error) — `clearAll()` is the only deterministic shutdown path.
+//
+//  - `init()` / `unlockAccount()` called twice is idempotent: the prior
+//    state is `clearAll()`-ed first, so the second call always wins. This
+//    matches the React Strict Mode double-mount expectation.
+//
+//  - Concurrency: shard encrypt/decrypt is parallelizable (multiple
+//    concurrent leases on one epoch handle are allowed). Account unlock,
+//    identity creation, and epoch creation/open are serialized inside
+//    Rust (the underlying handle table is mutex-guarded). The worker does
+//    not add extra serialization on top.
+//
+//  - Generation rollover: counter is `number` (~2^53 capacity); a sustained
+//    1000 cycles/sec workload would still take >285k years to wrap. We do
+//    not implement explicit rollover handling.
+// =============================================================================
+
+type WasmHandleKind = 'account' | 'identity' | 'epoch';
+
+interface WasmHandle {
+  /** Stable string ID exposed across Comlink. */
+  readonly id: string;
+  /** Underlying Rust bigint from wasm-bindgen. */
+  readonly rustHandle: bigint;
+  /** Generation counter — incremented on every `clearAll()`. */
+  readonly generation: number;
+  /** Type discriminator for asserts/telemetry. */
+  readonly kind: WasmHandleKind;
+  /** Closed flag. Operations on closed handles return ClosedHandle. */
+  closed: boolean;
+  /** Active leases (in-flight ops). Close defers free until count==0. */
+  leaseCount: number;
+}
+
+const HANDLE_PREFIX_BY_KIND: Record<WasmHandleKind, string> = {
+  account: 'acct',
+  identity: 'idnt',
+  epoch: 'epch',
+};
+
+function mintHandleId(kind: WasmHandleKind): string {
+  // 12 random bytes → 16-char base64url. Plenty of collision resistance for
+  // a single-worker registry.
+  const bytes = sodium.randombytes_buf(12);
+  const id = sodium.to_base64(bytes, sodium.base64_variants.URLSAFE_NO_PADDING);
+  return `${HANDLE_PREFIX_BY_KIND[kind]}_${id}`;
+}
+
+class HandleRegistry {
+  /** Singleton account handle. */
+  private accountHandle: WasmHandle | null = null;
+  /** Singleton identity handle (child of account). */
+  private identityHandle: WasmHandle | null = null;
+  /**
+   * Epoch handles keyed by `${albumId}|${epochId}`. albumId is empty when
+   * the registry is used pre-album-binding (Slice 1 contract supports
+   * unkeyed lookup via `lookupById`).
+   */
+  private epochHandles = new Map<string, WasmHandle>();
+  /** Index from id → handle for fast lookup across all kinds. */
+  private byId = new Map<string, WasmHandle>();
+  /**
+   * Monotonic generation. Incremented after every `clearAll()`. Handles
+   * minted under generation N never resolve under generation N+1 even if
+   * a numeric collision occurred (b64url collisions are astronomically
+   * unlikely; this provides defense in depth).
+   */
+  private generation = 0;
+
+  constructor(private readonly facade: () => Promise<RustHandleFacade>) {}
+
+  // -- account ------------------------------------------------------------
+
+  registerAccount(rustHandle: bigint): WasmHandle {
+    if (this.accountHandle && !this.accountHandle.closed) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InternalStatePoisoned,
+        'attempted to register a second open account handle without clearing the first',
+      );
+    }
+    const id = mintHandleId('account');
+    const handle: WasmHandle = {
+      id,
+      rustHandle,
+      generation: this.generation,
+      kind: 'account',
+      closed: false,
+      leaseCount: 0,
+    };
+    this.accountHandle = handle;
+    this.byId.set(id, handle);
+    return handle;
+  }
+
+  getAccount(): WasmHandle | null {
+    return this.accountHandle && !this.accountHandle.closed
+      ? this.accountHandle
+      : null;
+  }
+
+  // -- identity -----------------------------------------------------------
+
+  registerIdentity(rustHandle: bigint): WasmHandle {
+    if (this.identityHandle && !this.identityHandle.closed) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InternalStatePoisoned,
+        'attempted to register a second open identity handle without closing the first',
+      );
+    }
+    const id = mintHandleId('identity');
+    const handle: WasmHandle = {
+      id,
+      rustHandle,
+      generation: this.generation,
+      kind: 'identity',
+      closed: false,
+      leaseCount: 0,
+    };
+    this.identityHandle = handle;
+    this.byId.set(id, handle);
+    return handle;
+  }
+
+  // -- epoch --------------------------------------------------------------
+
+  registerEpoch(albumId: string, epochId: number, rustHandle: bigint): WasmHandle {
+    const id = mintHandleId('epoch');
+    const handle: WasmHandle = {
+      id,
+      rustHandle,
+      generation: this.generation,
+      kind: 'epoch',
+      closed: false,
+      leaseCount: 0,
+    };
+    this.epochHandles.set(epochKey(albumId, epochId), handle);
+    this.byId.set(id, handle);
+    return handle;
+  }
+
+  getEpochByAlbumEpoch(albumId: string, epochId: number): WasmHandle | null {
+    const handle = this.epochHandles.get(epochKey(albumId, epochId));
+    return handle && !handle.closed ? handle : null;
+  }
+
+  // -- lookup with lease --------------------------------------------------
+
+  /**
+   * Resolve a handle ID and run `callback` while holding a lease. The
+   * callback receives the Rust handle. On callback completion the lease
+   * decrements; if `closeHandle` was called during the lease, the
+   * underlying Rust handle is freed when the last lease drops.
+   *
+   * Throws `HandleNotFound` / `HandleWrongKind` / `ClosedHandle` /
+   * `StaleHandle` per the Slice 1 contract.
+   */
+  async withLease<T>(
+    handleId: string,
+    expectedKind: WasmHandleKind,
+    callback: (rustHandle: bigint) => Promise<T> | T,
+  ): Promise<T> {
+    const handle = this.byId.get(handleId);
+    if (!handle) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.HandleNotFound,
+        `handle ID ${handleId} is not registered`,
+      );
+    }
+    if (handle.kind !== expectedKind) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.HandleWrongKind,
+        `handle ID ${handleId} resolves to kind ${handle.kind}, expected ${expectedKind}`,
+      );
+    }
+    if (handle.generation !== this.generation) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.StaleHandle,
+        `handle ID ${handleId} was minted in generation ${String(handle.generation)} but registry is at ${String(this.generation)}`,
+      );
+    }
+    if (handle.closed) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.ClosedHandle,
+        `handle ID ${handleId} has been closed`,
+      );
+    }
+
+    handle.leaseCount += 1;
+    try {
+      return await callback(handle.rustHandle);
+    } finally {
+      handle.leaseCount -= 1;
+      if (handle.closed && handle.leaseCount === 0) {
+        await this.freeRustHandle(handle).catch((err: unknown) => {
+          // Free errors after a deferred close are non-fatal — log and
+          // continue. The handle is already removed from `byId`.
+          log.warn('deferred handle free failed', {
+            handleId,
+            kind: handle.kind,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    }
+  }
+
+  /**
+   * Mark a handle closed and free it if no leases are held. Idempotent —
+   * double-close, close-after-clear, and close on an already-stale handle
+   * all succeed silently.
+   */
+  async closeHandle(handleId: string, expectedKind: WasmHandleKind): Promise<void> {
+    const handle = this.byId.get(handleId);
+    if (!handle) return; // Idempotent: unknown ID is a no-op.
+    if (handle.kind !== expectedKind) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.HandleWrongKind,
+        `closeHandle: handle ${handleId} is kind ${handle.kind}, expected ${expectedKind}`,
+      );
+    }
+    if (handle.closed) return; // Already closed.
+    handle.closed = true;
+    if (handle.leaseCount === 0) {
+      await this.freeRustHandle(handle);
+    }
+    // else: deferred until the last lease drops in withLease's finally.
+  }
+
+  /**
+   * Cascade-close every handle and bump the generation. Any handle ID
+   * minted before this call resolves to `StaleHandle` afterwards.
+   *
+   * Cascade order: epoch → identity → account. This matches the dependency
+   * graph: epoch and identity both reference the account-key handle, so
+   * the account must outlive both during teardown. Order within a cohort
+   * doesn't matter for correctness.
+   */
+  async clearAll(): Promise<void> {
+    // 1. Close all epoch handles first (children of account).
+    for (const handle of this.epochHandles.values()) {
+      handle.closed = true;
+      if (handle.leaseCount === 0) {
+        await this.freeRustHandle(handle).catch((err: unknown) => {
+          log.warn('clearAll: epoch free failed', {
+            handleId: handle.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    }
+
+    // 2. Close identity (child of account).
+    if (this.identityHandle) {
+      this.identityHandle.closed = true;
+      if (this.identityHandle.leaseCount === 0) {
+        await this.freeRustHandle(this.identityHandle).catch((err: unknown) => {
+          log.warn('clearAll: identity free failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    }
+
+    // 3. Close account last.
+    if (this.accountHandle) {
+      this.accountHandle.closed = true;
+      if (this.accountHandle.leaseCount === 0) {
+        await this.freeRustHandle(this.accountHandle).catch((err: unknown) => {
+          log.warn('clearAll: account free failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    }
+
+    // 4. Drop registry pointers and bump generation.
+    this.epochHandles.clear();
+    this.byId.clear();
+    this.identityHandle = null;
+    this.accountHandle = null;
+    this.generation += 1;
+  }
+
+  private async freeRustHandle(handle: WasmHandle): Promise<void> {
+    // Remove from byId immediately so further lookups fail fast even if
+    // the WASM free is still in flight (it isn't — calls are sync).
+    this.byId.delete(handle.id);
+    if (handle.kind === 'epoch') {
+      // Drop the album/epoch key entry too. We don't store the key on the
+      // handle so we have to scan; the map is small (handful of epochs).
+      for (const [k, v] of this.epochHandles) {
+        if (v.id === handle.id) {
+          this.epochHandles.delete(k);
+          break;
+        }
+      }
+    }
+    const facade = await this.facade();
+    switch (handle.kind) {
+      case 'account':
+        facade.closeAccountHandle(handle.rustHandle);
+        break;
+      case 'identity':
+        facade.closeIdentityHandle(handle.rustHandle);
+        break;
+      case 'epoch':
+        facade.closeEpochKeyHandle(handle.rustHandle);
+        break;
+    }
+  }
+}
+
+function epochKey(albumId: string, epochId: number): string {
+  return `${albumId}|${String(epochId)}`;
+}
 
 /**
  * Crypto Worker Implementation
@@ -70,6 +428,12 @@ class CryptoWorker implements CryptoWorkerApi {
 
   /** Whether libsodium has been initialized */
   private sodiumReady = false;
+
+  /**
+   * Slice 1 — Rust handle registry. Mutates only via the methods below
+   * and via `clear()` (which calls `handleRegistry.clearAll()`).
+   */
+  private readonly handleRegistry = new HandleRegistry(() => getRustFacade());
 
   /**
    * Ensure libsodium is initialized before crypto operations.
@@ -194,8 +558,17 @@ class CryptoWorker implements CryptoWorkerApi {
 
   /**
    * Clear all keys from memory.
+   *
+   * Slice 1 contract: also cascades closure of every Rust handle in the
+   * registry (epoch → identity → account) and bumps the registry's
+   * generation counter so any handle ID minted before the call resolves
+   * to `WorkerCryptoErrorCode.StaleHandle`. Idempotent.
    */
   async clear(): Promise<void> {
+    // Cascade-close Rust handles first; the legacy TS state below is a
+    // duplicate that Slices 2-4 will retire.
+    await this.handleRegistry.clearAll();
+
     if (this.sessionKey) {
       memzero(this.sessionKey);
       this.sessionKey = null;
@@ -1005,6 +1378,459 @@ class CryptoWorker implements CryptoWorkerApi {
       // Always zero the derived key
       memzero(contentKey);
     }
+  }
+
+  // ===========================================================================
+  // Slice 1 — handle-based contract implementations
+  //
+  // These methods route directly through the Rust facade, never touching
+  // legacy `@mosaic/crypto` state. Slices 2-8 will atomically swap each
+  // legacy method body to delegate to one of these.
+  // ===========================================================================
+
+  async unlockAccount(opts: {
+    password: string;
+    userSalt: Uint8Array;
+    accountSalt: Uint8Array;
+    wrappedAccountKey: Uint8Array;
+    kdf: WorkerKdfParams;
+  }): Promise<{ accountHandleId: AccountHandleId }> {
+    // Strict Mode double-mount: a second `unlockAccount` cascade-closes the
+    // prior handle so the new handle ID is the only authoritative one.
+    await this.handleRegistry.clearAll();
+    const facade = await getRustFacade();
+    const passwordBytes = new TextEncoder().encode(opts.password);
+    try {
+      const rustHandle = facade.unlockAccount({
+        password: passwordBytes,
+        userSalt: opts.userSalt,
+        accountSalt: opts.accountSalt,
+        wrappedAccountKey: opts.wrappedAccountKey,
+        kdfMemoryKib: opts.kdf.memoryKib,
+        kdfIterations: opts.kdf.iterations,
+        kdfParallelism: opts.kdf.parallelism,
+      });
+      const handle = this.handleRegistry.registerAccount(rustHandle);
+      return { accountHandleId: handle.id as AccountHandleId };
+    } finally {
+      // Wipe the password copy. Rust also zeroizes its incoming `Vec<u8>`.
+      passwordBytes.fill(0);
+    }
+  }
+
+  async createNewAccount(opts: {
+    password: string;
+    userSalt: Uint8Array;
+    accountSalt: Uint8Array;
+    kdf: WorkerKdfParams;
+  }): Promise<{ accountHandleId: AccountHandleId; wrappedAccountKey: Uint8Array }> {
+    // TODO(Slice 2): replace with a single Rust-side `wrap_account_key`
+    // call once `crates/mosaic-client` exposes that surface. For now we
+    // run the legacy TS `deriveKeys` path (which generates a random L2,
+    // wraps it under L1, and zeroes intermediates), then immediately open
+    // the resulting wrapped key as a Rust handle. Argon2id runs twice
+    // here — that's acceptable for the contract slice; Slice 2 will
+    // collapse it. See plan.md "Slice 2 — Account unlock" notes.
+    await this.handleRegistry.clearAll();
+    await this.ensureSodiumReady();
+
+    const params: WorkerKdfParams = {
+      memoryKib: opts.kdf.memoryKib,
+      iterations: opts.kdf.iterations,
+      parallelism: opts.kdf.parallelism,
+    };
+    const sodiumParams = {
+      memory: params.memoryKib,
+      iterations: params.iterations,
+      parallelism: params.parallelism,
+    };
+
+    const keys = await deriveKeys(
+      opts.password,
+      opts.userSalt,
+      opts.accountSalt,
+      sodiumParams,
+    );
+    const wrappedAccountKey = new Uint8Array(keys.accountKeyWrapped);
+    memzero(keys.accountKey);
+
+    const facade = await getRustFacade();
+    const passwordBytes = new TextEncoder().encode(opts.password);
+    try {
+      const rustHandle = facade.unlockAccount({
+        password: passwordBytes,
+        userSalt: opts.userSalt,
+        accountSalt: opts.accountSalt,
+        wrappedAccountKey,
+        kdfMemoryKib: params.memoryKib,
+        kdfIterations: params.iterations,
+        kdfParallelism: params.parallelism,
+      });
+      const handle = this.handleRegistry.registerAccount(rustHandle);
+      return {
+        accountHandleId: handle.id as AccountHandleId,
+        wrappedAccountKey,
+      };
+    } finally {
+      passwordBytes.fill(0);
+    }
+  }
+
+  async closeAccountHandle(handleId: AccountHandleId): Promise<void> {
+    await this.handleRegistry.closeHandle(handleId, 'account');
+  }
+
+  async getAccountHandleId(): Promise<AccountHandleId | null> {
+    const handle = this.handleRegistry.getAccount();
+    return handle ? (handle.id as AccountHandleId) : null;
+  }
+
+  async createIdentityForAccount(
+    accountHandleId: AccountHandleId,
+  ): Promise<{
+    identityHandleId: IdentityHandleId;
+    signingPublicKey: Uint8Array;
+    encryptionPublicKey: Uint8Array;
+    wrappedSeed: Uint8Array;
+  }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      accountHandleId,
+      'account',
+      (rustAccount) => {
+        const out = facade.createIdentityHandle(rustAccount);
+        const handle = this.handleRegistry.registerIdentity(out.handle);
+        return {
+          identityHandleId: handle.id as IdentityHandleId,
+          signingPublicKey: out.signingPubkey,
+          encryptionPublicKey: out.encryptionPubkey,
+          wrappedSeed: out.wrappedSeed,
+        };
+      },
+    );
+  }
+
+  async openIdentityForAccount(
+    accountHandleId: AccountHandleId,
+    wrappedSeed: Uint8Array,
+  ): Promise<{
+    identityHandleId: IdentityHandleId;
+    signingPublicKey: Uint8Array;
+    encryptionPublicKey: Uint8Array;
+  }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      accountHandleId,
+      'account',
+      (rustAccount) => {
+        const out = facade.openIdentityHandle(wrappedSeed, rustAccount);
+        const handle = this.handleRegistry.registerIdentity(out.handle);
+        return {
+          identityHandleId: handle.id as IdentityHandleId,
+          signingPublicKey: out.signingPubkey,
+          encryptionPublicKey: out.encryptionPubkey,
+        };
+      },
+    );
+  }
+
+  async closeIdentityHandle(handleId: IdentityHandleId): Promise<void> {
+    await this.handleRegistry.closeHandle(handleId, 'identity');
+  }
+
+  async signManifestWithIdentity(
+    identityHandleId: IdentityHandleId,
+    transcriptBytes: Uint8Array,
+  ): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      identityHandleId,
+      'identity',
+      (rustIdentity) =>
+        facade.signManifestWithIdentity(rustIdentity, transcriptBytes),
+    );
+  }
+
+  async verifyManifestWithIdentity(
+    transcriptBytes: Uint8Array,
+    signature: Uint8Array,
+    signingPublicKey: Uint8Array,
+  ): Promise<boolean> {
+    const facade = await getRustFacade();
+    return facade.verifyManifestWithIdentity(
+      transcriptBytes,
+      signature,
+      signingPublicKey,
+    );
+  }
+
+  async createEpochHandle(
+    accountHandleId: AccountHandleId,
+    epochId: number,
+  ): Promise<{ epochHandleId: EpochHandleId; wrappedSeed: Uint8Array }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      accountHandleId,
+      'account',
+      (rustAccount) => {
+        const out = facade.createEpochKeyHandle(rustAccount, epochId);
+        // Slice 1 contract: epoch handles are keyed by (albumId, epochId)
+        // for the `getEpochHandleId` lookup. `createEpochHandle` doesn't
+        // know the albumId yet (Slice 3 wires it via openEpochKeyBundle's
+        // albumId argument). Use empty albumId here; callers needing the
+        // lookup should call `openEpochHandle` with an explicit albumId.
+        const handle = this.handleRegistry.registerEpoch('', epochId, out.handle);
+        return {
+          epochHandleId: handle.id as EpochHandleId,
+          wrappedSeed: out.wrappedEpochSeed,
+        };
+      },
+    );
+  }
+
+  async openEpochHandle(
+    accountHandleId: AccountHandleId,
+    wrappedSeed: Uint8Array,
+    epochId: number,
+  ): Promise<{ epochHandleId: EpochHandleId }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      accountHandleId,
+      'account',
+      (rustAccount) => {
+        const out = facade.openEpochKeyHandle(wrappedSeed, rustAccount, epochId);
+        const handle = this.handleRegistry.registerEpoch('', epochId, out.handle);
+        return { epochHandleId: handle.id as EpochHandleId };
+      },
+    );
+  }
+
+  async closeEpochHandle(handleId: EpochHandleId): Promise<void> {
+    await this.handleRegistry.closeHandle(handleId, 'epoch');
+  }
+
+  async getEpochHandleId(
+    albumId: string,
+    epochId: number,
+  ): Promise<EpochHandleId | null> {
+    const handle = this.handleRegistry.getEpochByAlbumEpoch(albumId, epochId);
+    return handle ? (handle.id as EpochHandleId) : null;
+  }
+
+  async encryptShardWithEpoch(
+    epochHandleId: EpochHandleId,
+    plaintext: Uint8Array,
+    shardIndex: number,
+    tier: 0 | 1 | 2,
+  ): Promise<{ envelopeBytes: Uint8Array; sha256: string }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      epochHandleId,
+      'epoch',
+      (rustEpoch) =>
+        facade.encryptShardWithEpochHandle(rustEpoch, plaintext, shardIndex, tier),
+    );
+  }
+
+  async decryptShardWithEpoch(
+    epochHandleId: EpochHandleId,
+    envelopeBytes: Uint8Array,
+  ): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      epochHandleId,
+      'epoch',
+      (rustEpoch) => facade.decryptShardWithEpochHandle(rustEpoch, envelopeBytes),
+    );
+  }
+
+  async encryptMetadataSidecarWithEpoch(
+    epochHandleId: EpochHandleId,
+    albumId: Uint8Array,
+    photoId: Uint8Array,
+    epochId: number,
+    encodedFields: Uint8Array,
+    shardIndex: number,
+  ): Promise<{ envelopeBytes: Uint8Array; sha256: string }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      epochHandleId,
+      'epoch',
+      (rustEpoch) =>
+        facade.encryptMetadataSidecarWithEpochHandle(
+          rustEpoch,
+          albumId,
+          photoId,
+          epochId,
+          encodedFields,
+          shardIndex,
+        ),
+    );
+  }
+
+  async generateLinkSecretRust(): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    return facade.generateLinkSecret();
+  }
+
+  async deriveLinkKeysRust(
+    linkSecret: Uint8Array,
+  ): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }> {
+    const facade = await getRustFacade();
+    return facade.deriveLinkKeys(linkSecret);
+  }
+
+  async wrapTierKeyForLinkRust(
+    epochHandleId: EpochHandleId,
+    tier: 0 | 1 | 2,
+    wrappingKey: Uint8Array,
+  ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      epochHandleId,
+      'epoch',
+      (rustEpoch) => facade.wrapTierKeyForLink(rustEpoch, tier, wrappingKey),
+    );
+  }
+
+  async unwrapTierKeyFromLinkRust(
+    nonce: Uint8Array,
+    encryptedKey: Uint8Array,
+    tier: 0 | 1 | 2,
+    wrappingKey: Uint8Array,
+  ): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    return facade.unwrapTierKeyFromLink(nonce, encryptedKey, tier, wrappingKey);
+  }
+
+  async encryptAlbumContentWithEpoch(
+    epochHandleId: EpochHandleId,
+    plaintext: Uint8Array,
+  ): Promise<{ nonce: Uint8Array; ciphertext: Uint8Array }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      epochHandleId,
+      'epoch',
+      (rustEpoch) => facade.encryptAlbumContent(rustEpoch, plaintext),
+    );
+  }
+
+  async decryptAlbumContentWithEpoch(
+    epochHandleId: EpochHandleId,
+    nonce: Uint8Array,
+    ciphertext: Uint8Array,
+  ): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      epochHandleId,
+      'epoch',
+      (rustEpoch) => facade.decryptAlbumContent(rustEpoch, nonce, ciphertext),
+    );
+  }
+
+  async sealAndSignBundle(
+    identityHandleId: IdentityHandleId,
+    recipientPubkey: Uint8Array,
+    albumId: string,
+    epochId: number,
+    epochSeed: Uint8Array,
+    signSecret: Uint8Array,
+    signPublic: Uint8Array,
+  ): Promise<{ sealed: Uint8Array; signature: Uint8Array; sharerPubkey: Uint8Array }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      identityHandleId,
+      'identity',
+      (rustIdentity) =>
+        facade.sealAndSignBundle(
+          rustIdentity,
+          recipientPubkey,
+          albumId,
+          epochId,
+          epochSeed,
+          signSecret,
+          signPublic,
+        ),
+    );
+  }
+
+  async verifyAndOpenBundle(
+    identityHandleId: IdentityHandleId,
+    sealed: Uint8Array,
+    signature: Uint8Array,
+    sharerPubkey: Uint8Array,
+    expectedAlbumId: string,
+    expectedMinEpoch: number,
+    allowLegacyEmpty: boolean,
+  ): Promise<{
+    albumId: string;
+    epochId: number;
+    epochSeed: Uint8Array;
+    signSecret: Uint8Array;
+    signPublic: Uint8Array;
+  }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      identityHandleId,
+      'identity',
+      (rustIdentity) =>
+        facade.verifyAndOpenBundle(
+          rustIdentity,
+          sealed,
+          signature,
+          sharerPubkey,
+          expectedAlbumId,
+          expectedMinEpoch,
+          allowLegacyEmpty,
+        ),
+    );
+  }
+
+  async deriveAuthKeypairForAccount(
+    accountHandleId: AccountHandleId,
+  ): Promise<{ authPublicKey: Uint8Array }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      accountHandleId,
+      'account',
+      (rustAccount) => ({
+        authPublicKey: facade.deriveAuthKeypairFromAccount(rustAccount),
+      }),
+    );
+  }
+
+  async signAuthChallengeWithAccount(
+    accountHandleId: AccountHandleId,
+    challengeBytes: Uint8Array,
+  ): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      accountHandleId,
+      'account',
+      (rustAccount) =>
+        facade.signAuthChallengeWithAccount(rustAccount, challengeBytes),
+    );
+  }
+
+  async getAuthPublicKeyForAccount(
+    accountHandleId: AccountHandleId,
+  ): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(
+      accountHandleId,
+      'account',
+      (rustAccount) => facade.getAuthPublicKeyFromAccount(rustAccount),
+    );
+  }
+
+  async wrapKey(keyBytes: Uint8Array, wrapperKey: Uint8Array): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    return facade.wrapKey(keyBytes, wrapperKey);
+  }
+
+  async unwrapKey(wrapped: Uint8Array, wrapperKey: Uint8Array): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    return facade.unwrapKey(wrapped, wrapperKey);
   }
 }
 
