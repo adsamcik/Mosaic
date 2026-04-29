@@ -11,6 +11,7 @@ import type {
   PhotoMeta,
 } from './types';
 import { buildFtsSearchQuery } from './fts-query';
+import { SQL_WASM_SHA384 } from '../generated/sql-wasm-integrity';
 
 // Create scoped logger for database worker
 const log = createLogger('DbWorker');
@@ -40,9 +41,49 @@ export class DbWorkerError extends Error {
 let cachedSqlJs: SqlJsStatic | null = null;
 
 /**
+ * Encode an ArrayBuffer as a standard (non-URL-safe) base64 string.
+ * Worker scope provides btoa(); we only call this on small (≤48 byte)
+ * digest buffers so the per-character loop is cheap.
+ */
+function bufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Verify that the SHA-384 digest of `scriptText` matches the pinned
+ * `expected` value (in `sha384-<base64>` form, mirroring SRI syntax).
+ *
+ * Exported so the integrity check seam can be unit-tested without invoking
+ * the full sql.js loader. Callers MUST treat a thrown error as fatal:
+ * mismatch indicates the upstream bundle or the build-time copy was
+ * tampered with, and the script must NOT be evaluated.
+ */
+export async function verifyIntegrity(
+  scriptText: string,
+  expected: string,
+): Promise<void> {
+  const data = new TextEncoder().encode(scriptText);
+  const hashBuffer = await crypto.subtle.digest('SHA-384', data);
+  const actual = `sha384-${bufferToBase64(hashBuffer)}`;
+  if (actual !== expected) {
+    throw new Error('sql.js integrity check failed');
+  }
+}
+
+/**
  * Load sql.js from the public folder.
  * This approach avoids Vite's module transformation issues in Workers.
  * sql.js is fetched and evaluated directly, bypassing ESM import issues.
+ *
+ * Before evaluation the fetched bytes are verified against a SHA-384 digest
+ * pinned at build time by `scripts/copy-sql-wasm.cjs`. A mismatch aborts
+ * loading so a compromised `fts5-sql-bundle` package or build-time tamper
+ * cannot inject code into the DB worker (which holds the session DB key).
  */
 async function loadSqlJs(): Promise<SqlJsStatic> {
   if (cachedSqlJs) return cachedSqlJs;
@@ -52,6 +93,10 @@ async function loadSqlJs(): Promise<SqlJsStatic> {
   // Fetch and evaluate sql.js from public folder
   const response = await fetch('/sql-wasm.js');
   const scriptText = await response.text();
+
+  // Defense-in-depth: verify the fetched bytes match the digest pinned at
+  // build time before handing them to `new Function`.
+  await verifyIntegrity(scriptText, SQL_WASM_SHA384);
 
   // sql.js exports initSqlJs as a global - capture it via Function constructor
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
