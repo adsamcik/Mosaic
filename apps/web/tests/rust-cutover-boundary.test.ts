@@ -19,6 +19,7 @@ const tsCryptoCompatibilityAllowlist = new Map<string, string>([
   ['lib/epoch-key-store.ts', 'epoch seed and sign-key memory wiping'],
   ['lib/epoch-rotation-service.ts', 'share-link tier rewrap compatibility'],
   ['lib/error-messages.ts', 'TypeScript crypto error mapping'],
+  ['lib/session.ts', 'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)'],
   ['lib/sync-engine.ts', 'manifest tier-key derivation compatibility'],
   ['lib/thumbnail-generator.ts', 'tiered image encryption compatibility'],
   ['lib/upload/tiered-upload-handler.ts', 'tier-key derivation compatibility'],
@@ -29,6 +30,7 @@ const tsCryptoCompatibilityAllowlist = new Map<string, string>([
 ]);
 
 const directSodiumPrimitiveAllowlist = new Map<string, string>([
+  ['lib/session.ts', 'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)'],
   ['workers/crypto.worker.ts', 'central TypeScript crypto compatibility facade'],
   ['workers/db.worker.ts', 'local OPFS snapshot encryption adapter'],
 ]);
