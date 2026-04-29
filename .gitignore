@@ -78,9 +78,13 @@ mutation-report/
 .stryker-tmp/
 mutants.out/
 mutants.out.old/
+
+# Validation artifacts at repo root (use artifacts/validation/<lane>/ instead)
+/*-output.txt
+/manifest-fix-*.txt
 *-output.txt
-test-output.txt
 *-results.txt
+test-output.txt
 cookies.txt
 npm-audit-output.json
 
