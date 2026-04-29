@@ -1,10 +1,9 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
-import sodium from 'libsodium-wrappers-sumo';
-import { memzero, NONCE_SIZE, TAG_SIZE } from '@mosaic/crypto';
 import { createLogger } from '../lib/logger';
 import type {
   Bounds,
+  DbCryptoBridge,
   DbWorkerApi,
   DecryptedManifest,
   GeoPoint,
@@ -20,6 +19,24 @@ const log = createLogger('DbWorker');
 type SqlJsStatic = Awaited<ReturnType<typeof import('sql.js').default>>;
 type DatabaseType = import('sql.js').Database;
 
+/**
+ * On-disk envelope version for the OPFS-persisted SQLite snapshot.
+ *
+ * Layout: `[u8 SNAPSHOT_VERSION][...wrapKey blob (nonce(24) || ciphertext_with_tag(16))...]`.
+ *
+ * Slice 8 hard cutover: bumped from the legacy un-prefixed
+ * `[nonce(24) || ciphertext]` libsodium-secretbox layout to a versioned
+ * envelope wrapped via Rust `wrap_key`. Snapshots whose first byte does
+ * not match {@link SNAPSHOT_VERSION} are silently discarded on load —
+ * the cutover policy is that the server is the source of truth and
+ * existing OPFS snapshots are invalidated at the migration boundary.
+ *
+ * Bumps must always invalidate older versions (not migrate them) — the
+ * snapshot is a local cache that the sync engine repopulates from the
+ * server, so there is no data-loss concern.
+ */
+export const SNAPSHOT_VERSION = 2 as const;
+
 export enum DbWorkerErrorCode {
   NOT_INITIALIZED = 'NOT_INITIALIZED',
   RESET_REQUIRED = 'RESET_REQUIRED',
@@ -34,6 +51,22 @@ export class DbWorkerError extends Error {
   ) {
     super(message);
     this.name = 'DbWorkerError';
+  }
+}
+
+/**
+ * Sentinel thrown internally when the persisted snapshot's version byte
+ * does not match {@link SNAPSHOT_VERSION}. Callers in `init` translate
+ * this to "discard snapshot, reinitialize empty" rather than the
+ * `SNAPSHOT_DECRYPT_FAILED` fail-closed path used for genuine
+ * authentication failures on a matching-version snapshot.
+ */
+class SnapshotVersionMismatchError extends Error {
+  constructor(public readonly observed: number) {
+    super(
+      `OPFS snapshot version ${String(observed)} does not match expected ${String(SNAPSHOT_VERSION)}`,
+    );
+    this.name = 'SnapshotVersionMismatchError';
   }
 }
 
@@ -113,8 +146,6 @@ async function loadSqlJs(): Promise<SqlJsStatic> {
   return cachedSqlJs!;
 }
 
-// NONCE_SIZE and TAG_SIZE imported from @mosaic/crypto
-
 /**
  * Database Worker Implementation
  * Manages SQLite-WASM database with OPFS persistence
@@ -122,37 +153,26 @@ async function loadSqlJs(): Promise<SqlJsStatic> {
 export class DbWorker implements DbWorkerApi {
   private sql: SqlJsStatic | null = null;
   private db: DatabaseType | null = null;
-  private sessionKey: Uint8Array | null = null;
-  private sodiumReady = false;
+  /**
+   * Slice 8: replaces the legacy `sessionKey: Uint8Array` field. The
+   * worker no longer holds raw key bytes — wrap/unwrap is delegated to
+   * the crypto worker via this Comlink-proxied bridge.
+   */
+  private crypto: DbCryptoBridge | null = null;
   private lastError: DbWorkerError | null = null;
 
-  /**
-   * Ensure libsodium is initialized before crypto operations.
-   */
-  private async ensureSodiumReady(): Promise<void> {
-    if (!this.sodiumReady) {
-      const timer = log.startTimer('libsodium initialization');
-      await sodium.ready;
-      this.sodiumReady = true;
-      timer.end();
-    }
-  }
-
-  async init(sessionKey: Uint8Array): Promise<void> {
+  async init(crypto: DbCryptoBridge): Promise<void> {
     if (this.lastError) {
       throw this.lastError;
     }
 
     const initTimer = log.startTimer('database initialization');
-    this.sessionKey = sessionKey;
+    this.crypto = crypto;
 
-    // Initialize libsodium and SQL.js WASM in parallel
-    const [, sqlModule] = await Promise.all([
-      this.ensureSodiumReady(),
-      loadSqlJs(),
-    ]);
-
-    this.sql = sqlModule;
+    // Slice 8: SQLite WASM is the only synchronous bootstrap left here.
+    // libsodium is no longer imported — encryption is delegated via the
+    // crypto bridge.
+    this.sql = await loadSqlJs();
 
     // Try to load existing DB from OPFS
     const existingData = await this.loadFromOPFS();
@@ -161,7 +181,7 @@ export class DbWorker implements DbWorkerApi {
         size: existingData.byteLength,
       });
       try {
-        // Decrypt existing database with XChaCha20-Poly1305
+        // Decrypt existing database via the crypto bridge (Rust-backed)
         const decryptTimer = log.startTimer('database decryption');
         const decrypted = await this.decryptBlob(existingData);
         decryptTimer.end({ decryptedSize: decrypted.byteLength });
@@ -169,14 +189,27 @@ export class DbWorker implements DbWorkerApi {
         this.lastError = null;
         log.info('Loaded existing database from OPFS');
       } catch (error) {
-        this.markUnavailable(
-          new DbWorkerError(
-            'Failed to decrypt existing database snapshot; explicit reset required',
-            DbWorkerErrorCode.SNAPSHOT_DECRYPT_FAILED,
-            error,
-          ),
-        );
-        throw this.lastError;
+        if (error instanceof SnapshotVersionMismatchError) {
+          // Slice 8 hard-migration policy: a snapshot whose envelope
+          // version does not match the current `SNAPSHOT_VERSION` is
+          // silently discarded. The server is the source of truth and
+          // the sync engine will repopulate the local cache.
+          log.warn(
+            `Discarding OPFS snapshot with version ${String(error.observed)} (expected ${String(SNAPSHOT_VERSION)}); reinitializing empty database`,
+          );
+          await this.deleteFromOPFS();
+          this.db = new this.sql.Database();
+          this.lastError = null;
+        } else {
+          this.markUnavailable(
+            new DbWorkerError(
+              'Failed to decrypt existing database snapshot; explicit reset required',
+              DbWorkerErrorCode.SNAPSHOT_DECRYPT_FAILED,
+              error,
+            ),
+          );
+          throw this.lastError;
+        }
       }
     } else {
       log.debug('No existing database found, creating new one');
@@ -203,7 +236,7 @@ export class DbWorker implements DbWorkerApi {
   }
 
   async resetStorage(): Promise<void> {
-    if (!this.sessionKey) {
+    if (!this.crypto) {
       throw new DbWorkerError(
         'Database not initialized',
         DbWorkerErrorCode.NOT_INITIALIZED,
@@ -231,11 +264,10 @@ export class DbWorker implements DbWorkerApi {
       this.db.close();
       this.db = null;
     }
-    if (this.sessionKey) {
-      // Clear sensitive key material using libsodium's secure wipe
-      memzero(this.sessionKey);
-      this.sessionKey = null;
-    }
+    // Slice 8: nothing to wipe — the crypto bridge holds no key bytes.
+    // The crypto worker's account handle owns the L2-derived material
+    // and is cleared via its own `clear()` lifecycle.
+    this.crypto = null;
   }
 
   private markUnavailable(error: DbWorkerError): void {
@@ -893,54 +925,49 @@ export class DbWorker implements DbWorkerApi {
   }
 
   /**
-   * Encrypt data using XChaCha20-Poly1305.
-   * Format: nonce (24 bytes) || ciphertext (data + 16 byte auth tag)
+   * Wrap an OPFS snapshot with the crypto bridge's account-derived DB
+   * key. Returns `[u8 SNAPSHOT_VERSION][...wrapKey blob...]` — the
+   * wrapKey blob is the Rust XChaCha20-Poly1305 envelope
+   * (`nonce(24) || ciphertext_with_tag(16)`), so the only on-disk
+   * additions over the legacy libsodium-secretbox layout are the
+   * leading version byte and the Rust-side framing.
    */
   private async encryptBlob(data: Uint8Array): Promise<Uint8Array> {
-    if (!this.sessionKey) {
-      throw new Error('Session key not initialized');
+    if (!this.crypto) {
+      throw new Error('Crypto bridge not initialized');
     }
 
-    // Generate fresh random nonce (24 bytes for XChaCha20-Poly1305)
-    const nonce = sodium.randombytes_buf(NONCE_SIZE);
+    const wrapped = await this.crypto.wrap(data);
 
-    // Encrypt with XChaCha20-Poly1305
-    const ciphertext = sodium.crypto_secretbox_easy(
-      data,
-      nonce,
-      this.sessionKey,
-    );
-
-    // Return nonce || ciphertext
-    const result = new Uint8Array(NONCE_SIZE + ciphertext.length);
-    result.set(nonce, 0);
-    result.set(ciphertext, NONCE_SIZE);
-
+    const result = new Uint8Array(1 + wrapped.length);
+    result[0] = SNAPSHOT_VERSION;
+    result.set(wrapped, 1);
     return result;
   }
 
+  /**
+   * Inverse of {@link encryptBlob}. Throws
+   * {@link SnapshotVersionMismatchError} when the leading version byte
+   * does not match {@link SNAPSHOT_VERSION} so callers can route the
+   * blob to the discard-and-reinitialize path; throws other errors
+   * (e.g. authentication failures) unchanged so they reach the
+   * `SNAPSHOT_DECRYPT_FAILED` fail-closed branch in `init`.
+   */
   private async decryptBlob(data: Uint8Array): Promise<Uint8Array> {
-    if (!this.sessionKey) {
-      throw new Error('Session key not initialized');
+    if (!this.crypto) {
+      throw new Error('Crypto bridge not initialized');
     }
 
-    // Minimum length: nonce + tag + 1 byte of data
-    if (data.length < NONCE_SIZE + TAG_SIZE + 1) {
-      throw new Error('Encrypted data too short');
+    if (data.length < 1) {
+      throw new SnapshotVersionMismatchError(-1);
     }
 
-    const nonce = data.slice(0, NONCE_SIZE);
-    const ciphertext = data.slice(NONCE_SIZE);
-
-    try {
-      return sodium.crypto_secretbox_open_easy(
-        ciphertext,
-        nonce,
-        this.sessionKey,
-      );
-    } catch {
-      throw new Error('Decryption failed - authentication error');
+    const version = data[0];
+    if (version !== SNAPSHOT_VERSION) {
+      throw new SnapshotVersionMismatchError(version ?? -1);
     }
+
+    return this.crypto.unwrap(data.subarray(1));
   }
 }
 

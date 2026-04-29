@@ -280,20 +280,55 @@ export interface OpenEpochKeyBundleOptions {
 }
 
 /**
+ * Bridge object passed to the DB worker so it can wrap and unwrap OPFS
+ * snapshots without ever holding raw key bytes.
+ *
+ * Slice 8 contract: the DB worker never sees the L2-derived DB key — it
+ * only invokes these callbacks, which round-trip through the crypto
+ * worker's `wrapDbBlob` / `unwrapDbBlob` Comlink methods. Pass the
+ * functions through `Comlink.proxy(...)` so the SharedWorker can invoke
+ * them across the worker boundary.
+ */
+export interface DbCryptoBridge {
+  /**
+   * Wrap an OPFS snapshot plaintext with the active account's DB key.
+   * Output is opaque ciphertext (`nonce(24) || ciphertext_with_tag`).
+   */
+  wrap(plaintext: Uint8Array): Promise<Uint8Array>;
+  /**
+   * Unwrap a snapshot blob previously produced by `wrap`. Returns plaintext.
+   */
+  unwrap(wrapped: Uint8Array): Promise<Uint8Array>;
+}
+
+/**
  * Database Worker API
  * Manages SQLite-WASM database with encrypted persistence to OPFS
  */
 export interface DbWorkerApi {
   /**
-   * Initialize the database with a session key for encryption
-   * @param sessionKey - 32-byte key for database encryption
+   * Initialize the database worker.
+   *
+   * Slice 8 contract: the DB worker no longer accepts raw key bytes.
+   * Instead, the caller passes a {@link DbCryptoBridge} whose callbacks
+   * route through the crypto worker's `wrapDbBlob` / `unwrapDbBlob`
+   * methods. Wrap each callback with `Comlink.proxy(...)` so the bridge
+   * survives transfer to a SharedWorker.
+   *
+   * `init` performs sql.js bootstrap, loads (and decrypts) any persisted
+   * OPFS snapshot, runs schema migrations, and leaves the worker ready
+   * for use. A snapshot whose first byte does not match the current
+   * `SNAPSHOT_VERSION` is silently discarded and the worker reinitializes
+   * from an empty database (the cutover policy: server is the source of
+   * truth, stale snapshots are not preserved across the migration).
    */
-  init(sessionKey: Uint8Array): Promise<void>;
+  init(crypto: DbCryptoBridge): Promise<void>;
 
   /**
    * Delete the persisted encrypted snapshot and recreate an empty database.
-   * Reuses the current session key and leaves the worker ready for immediate use.
-   * Must only be called after init(sessionKey) has established that session key.
+   * Reuses the crypto bridge supplied to `init` and leaves the worker ready
+   * for immediate use. Must only be called after `init(crypto)` has
+   * attached the bridge.
    */
   resetStorage(): Promise<void>;
 
@@ -405,16 +440,28 @@ export interface CryptoWorkerApi {
   clear(): Promise<void>;
 
   /**
-   * Derive the 32-byte OPFS-snapshot DB session key from the active
-   * account handle.
+   * Wrap an OPFS-snapshot plaintext blob with the active account's
+   * DB-encryption key. The wrap key is derived from the account handle's
+   * L2 key inside the worker; raw key bytes never cross the Comlink
+   * boundary in either direction.
    *
-   * Slice 2 transitional API — replaces the legacy `getSessionKey()`
-   * that exposed L2-derived bytes to the DB worker. Slice 8 will replace
-   * the call site with an opaque encryption handle on the DB worker.
+   * Output is the Rust `wrap_key` envelope: XChaCha20-Poly1305
+   * `[nonce(24) || ciphertext_with_tag(16)]`. Slice 8 — replaces the
+   * legacy `getDbSessionKey()` -> raw bytes path that fed the DB worker
+   * directly with key material.
    *
    * @throws WorkerCryptoError(WorkerNotInitialized) if no account handle is open.
    */
-  getDbSessionKey(): Promise<Uint8Array>;
+  wrapDbBlob(plaintext: Uint8Array): Promise<Uint8Array>;
+
+  /**
+   * Unwrap a blob previously wrapped by {@link wrapDbBlob}. Returns the
+   * plaintext on success.
+   *
+   * @throws WorkerCryptoError(WorkerNotInitialized) if no account handle is open.
+   * @throws WorkerCryptoError on Rust-side authentication / parsing failures.
+   */
+  unwrapDbBlob(wrapped: Uint8Array): Promise<Uint8Array>;
 
   /**
    * Wrap `plaintext` with a key derived from the active account handle.

@@ -107,7 +107,7 @@ describe('handle-lifecycle: double-close on legacy clear()', () => {
 
 describe('handle-lifecycle: close-then-use returns observable error', () => {
   it.skipIf(noWorker())(
-    'using getDbSessionKey after clear() returns either null or a recognisable error',
+    'using wrapDbBlob after clear() returns either null or a recognisable error',
     async () => {
       harness = await createCryptoWorkerHarness();
       if (!harness.available) return;

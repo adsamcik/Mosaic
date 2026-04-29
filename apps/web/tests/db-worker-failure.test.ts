@@ -45,6 +45,19 @@ import {
 describe('DbWorker failure handling', () => {
   const originalFetch = global.fetch;
 
+  /**
+   * Slice 8: the DB worker no longer accepts raw key bytes. Tests pass
+   * a stub `DbCryptoBridge` whose wrap/unwrap behave like an XOR
+   * pass-through — sufficient to exercise the worker's persistence
+   * codepaths without booting the real crypto worker.
+   */
+  function makeBridgeStub() {
+    return {
+      wrap: vi.fn(async (plaintext: Uint8Array) => plaintext),
+      unwrap: vi.fn(async (wrapped: Uint8Array) => wrapped),
+    };
+  }
+
   beforeEach(() => {
     global.fetch = vi.fn().mockResolvedValue({
       text: () => Promise.resolve(sqlBootstrap),
@@ -70,7 +83,7 @@ describe('DbWorker failure handling', () => {
       new Error('authentication failed'),
     );
 
-    await expect(worker.init(new Uint8Array(32).fill(1))).rejects.toMatchObject({
+    await expect(worker.init(makeBridgeStub())).rejects.toMatchObject({
       code: DbWorkerErrorCode.SNAPSHOT_DECRYPT_FAILED,
     });
 

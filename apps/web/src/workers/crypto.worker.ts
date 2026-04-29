@@ -667,16 +667,56 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   /**
-   * Slice 2 transitional: derive a 32-byte OPFS-snapshot DB session key
-   * from the active account handle. Slice 8 will replace this with an
-   * opaque encryption handle on the DB worker.
+   * Slice 8 — wrap an OPFS-snapshot plaintext with the account-derived
+   * DB encryption key. The dbKey is derived inside the lease and wiped
+   * immediately after the Rust `wrap_key` call returns; raw key bytes
+   * never cross the Comlink boundary.
+   *
+   * Decision: derive on every call rather than caching the bytes in the
+   * worker. The derivation is a single HKDF step inside Rust (cheap), and
+   * keeping the bytes ephemeral keeps the in-process attack surface
+   * minimal — no long-lived 32-byte slot for an attacker to scrape.
    */
-  async getDbSessionKey(): Promise<Uint8Array> {
+  async wrapDbBlob(plaintext: Uint8Array): Promise<Uint8Array> {
     const accountId = this.requireAccountHandle();
     const facade = await getRustFacade();
     return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
-      facade.deriveDbSessionKeyFromAccount(rustAccount),
+      this.withDbWrapKey(facade, rustAccount, (dbKey) =>
+        facade.wrapKey(plaintext, dbKey),
+      ),
     );
+  }
+
+  /**
+   * Slice 8 — unwrap a blob previously wrapped by {@link wrapDbBlob}.
+   * Same lease + wipe pattern as `wrapDbBlob`.
+   */
+  async unwrapDbBlob(wrapped: Uint8Array): Promise<Uint8Array> {
+    const accountId = this.requireAccountHandle();
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
+      this.withDbWrapKey(facade, rustAccount, (dbKey) =>
+        facade.unwrapKey(wrapped, dbKey),
+      ),
+    );
+  }
+
+  /**
+   * Run `fn` with a freshly-derived DB wrap key (32 bytes), wiping the
+   * key bytes via `memzero` once `fn` settles. Internal helper for
+   * {@link wrapDbBlob} / {@link unwrapDbBlob}.
+   */
+  private withDbWrapKey<T>(
+    facade: RustHandleFacade,
+    rustAccount: bigint,
+    fn: (dbKey: Uint8Array) => T,
+  ): T {
+    const dbKey = facade.deriveDbSessionKeyFromAccount(rustAccount);
+    try {
+      return fn(dbKey);
+    } finally {
+      memzero(dbKey);
+    }
   }
 
   async getDbEncryptionWrap(plaintext: Uint8Array): Promise<Uint8Array> {

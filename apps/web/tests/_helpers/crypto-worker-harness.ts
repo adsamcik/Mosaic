@@ -183,10 +183,10 @@ export async function createCryptoWorkerHarness(options?: {
 
   const api = Comlink.wrap<CryptoWorkerApi>(worker);
 
-  // Confirm initialization. The current contract has no `ensureReady` method,
-  // so we issue a cheap no-op that exercises the Comlink boundary: getDbSessionKey
-  // returns null (or throws "not initialized") — both confirm the worker is
-  // alive and responsive.
+  // Confirm initialization. The current contract has no `ensureReady`
+  // method, so we issue a cheap no-op that exercises the Comlink boundary
+  // (`getIdentityPublicKey()` — null pre-init, bytes post-init; either way
+  // a healthy round-trip resolves).
   try {
     await waitForRoundTrip(api, readyTimeoutMs);
   } catch (err) {
@@ -311,10 +311,10 @@ const SECRET_BEARING_METHODS: ReadonlyArray<{
   { name: 'getWrappedAccountKey', classification: 'wrapped' },
   { name: 'getIdentityPublicKey', classification: 'public' },
   { name: 'getAuthPublicKey', classification: 'public' },
-  // Slice 2 renamed `getSessionKey` → `getDbSessionKey`. The bytes are
-  // still random and only emitted while the worker is initialised; the
-  // harness keeps treating them as opaque.
-  { name: 'getDbSessionKey', classification: 'random' },
+  // Slice 8 deletes `getDbSessionKey` from the worker contract entirely;
+  // the DB-encryption secret never leaves Rust now (consumed inside
+  // `wrapDbBlob` / `unwrapDbBlob`). The remaining three methods above
+  // continue to exercise the no-raw-secrets invariant on every bench run.
 ];
 
 async function assertNoRawSecrets(
@@ -438,7 +438,9 @@ function inspectObjectForRawSecrets(
 export interface LifecycleHarness {
   /**
    * Initialize a session with weak Argon2 params (E2E mode). Returns true
-   * once `getDbSessionKey()` produces non-null bytes.
+   * once a `wrapDbBlob()` round-trip succeeds — Slice 8 readiness check
+   * (replaced the old `getDbSessionKey()` probe when that method was
+   * deleted from the worker contract).
    */
   readonly bringToInitialized: (
     password?: string,
@@ -464,8 +466,11 @@ function buildLifecycleHarness(
       const us = userSalt ?? makeFixedSalt(0x11);
       const as = accountSalt ?? makeFixedSalt(0x22);
       await api.init(password, us, as);
-      const key = await api.getDbSessionKey();
-      return key instanceof Uint8Array && key.length === 32;
+      // Slice 8 readiness probe: a wrapDbBlob round-trip exercises the
+      // account-handle-derived DB key path that Slice 8 introduced
+      // (replacing the legacy `getDbSessionKey()` byte-emitting probe).
+      const wrapped = await api.wrapDbBlob(new Uint8Array([0x01, 0x02, 0x03]));
+      return wrapped instanceof Uint8Array && wrapped.length > 24;
     },
     async closeIdempotent(rounds: number) {
       let okCount = 0;
@@ -482,10 +487,11 @@ function buildLifecycleHarness(
     },
     async observeUseAfterClose() {
       try {
-        // After clear(), getDbSessionKey should reject with a "not initialized"
-        // -shaped error. We treat both reject and a "null" result as
-        // observable, but reject is the contract Slice 1 will enforce.
-        const result = await api.getDbSessionKey();
+        // After clear(), wrapDbBlob should reject with a "not initialized"
+        // -shaped error (Slice 8 swap from the legacy `getDbSessionKey()`
+        // probe). We treat both reject and a "null" result as observable,
+        // but reject is the contract Slice 1 will enforce.
+        const result = await api.wrapDbBlob(new Uint8Array([0x00]));
         if (result === null || result === undefined) {
           // current legacy behaviour returns null; surface it as an Error
           // so the test can assert on either branch.

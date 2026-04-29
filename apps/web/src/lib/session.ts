@@ -1,3 +1,4 @@
+import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
 import { getArgon2Params } from '@mosaic/crypto';
 import { toArrayBufferView } from './buffer-utils';
@@ -23,8 +24,30 @@ import { localAuthLogin, localAuthRegister } from './local-auth';
 import { createLogger } from './logger';
 import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
 import { syncCoordinator } from './sync-coordinator';
+import type { CryptoWorkerApi, DbCryptoBridge } from '../workers/types';
 
 const log = createLogger('session');
+
+/**
+ * Build a Comlink-proxied {@link DbCryptoBridge} that the DB SharedWorker
+ * uses to wrap/unwrap OPFS snapshots.
+ *
+ * Slice 8 hard-cutover replaces the old `getDbSessionKey()` -> raw bytes
+ * -> `db.init(sessionKey)` plumbing: the DB worker no longer holds key
+ * material, and instead invokes these callbacks across the worker
+ * boundary, which round-trip through the crypto worker's Rust-backed
+ * `wrapDbBlob` / `unwrapDbBlob` methods.
+ */
+function makeDbCryptoBridge(
+  cryptoClient: Comlink.Remote<CryptoWorkerApi>,
+): DbCryptoBridge {
+  return Comlink.proxy({
+    wrap: (plaintext: Uint8Array): Promise<Uint8Array> =>
+      cryptoClient.wrapDbBlob(plaintext),
+    unwrap: (wrapped: Uint8Array): Promise<Uint8Array> =>
+      cryptoClient.unwrapDbBlob(wrapped),
+  });
+}
 
 /** Events that reset the idle timer.
  *
@@ -729,10 +752,10 @@ class SessionManager {
       // Derive identity keypair for epoch key operations
       await cryptoClient.deriveIdentity();
 
-      // Initialize database worker with session key
+      // Slice 8: bridge OPFS snapshot wrap/unwrap through the crypto
+      // worker — the DB worker no longer holds raw key bytes.
       const db = await getDbClient();
-      const sessionKey = await cryptoClient.getDbSessionKey();
-      await db.init(sessionKey);
+      await db.init(makeDbCryptoBridge(cryptoClient));
 
       this._isLoggedIn = true;
       this.markSessionActive();
@@ -873,10 +896,10 @@ class SessionManager {
       // This is needed to open sealed epoch key bundles
       await cryptoClient.deriveIdentity();
 
-      // Initialize database worker with session key
+      // Slice 8: bridge OPFS snapshot wrap/unwrap through the crypto
+      // worker — the DB worker no longer holds raw key bytes.
       const db = await getDbClient();
-      const sessionKey = await cryptoClient.getDbSessionKey();
-      await db.init(sessionKey);
+      await db.init(makeDbCryptoBridge(cryptoClient));
 
       this._isLoggedIn = true;
       this.markSessionActive();
@@ -950,10 +973,10 @@ class SessionManager {
       // For new users, localAuthLogin already called init() with correct key
       await cryptoClient.deriveIdentity();
 
-      // Initialize database worker with session key
+      // Slice 8: bridge OPFS snapshot wrap/unwrap through the crypto
+      // worker — the DB worker no longer holds raw key bytes.
       const db = await getDbClient();
-      const sessionKey = await cryptoClient.getDbSessionKey();
-      await db.init(sessionKey);
+      await db.init(makeDbCryptoBridge(cryptoClient));
 
       this._isLoggedIn = true;
       this.markSessionActive();
@@ -1024,10 +1047,10 @@ class SessionManager {
       }
       await cryptoClient.deriveIdentity();
 
-      // Initialize database worker with session key
+      // Slice 8: bridge OPFS snapshot wrap/unwrap through the crypto
+      // worker — the DB worker no longer holds raw key bytes.
       const db = await getDbClient();
-      const sessionKey = await cryptoClient.getDbSessionKey();
-      await db.init(sessionKey);
+      await db.init(makeDbCryptoBridge(cryptoClient));
 
       this._isLoggedIn = true;
       this.markSessionActive();
