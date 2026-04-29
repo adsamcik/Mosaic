@@ -45,6 +45,13 @@ pub enum ClientErrorCode {
     InvalidUsername = 213,
     KdfProfileTooCostly = 214,
     LinkTierMismatch = 215,
+    BundleSignatureInvalid = 216,
+    BundleAlbumIdEmpty = 217,
+    BundleAlbumIdMismatch = 218,
+    BundleEpochTooOld = 219,
+    BundleRecipientMismatch = 220,
+    BundleJsonParse = 221,
+    BundleSealOpenFailed = 222,
     OperationCancelled = 300,
     SecretHandleNotFound = 400,
     IdentityHandleNotFound = 401,
@@ -1258,12 +1265,13 @@ fn map_crypto_error(error: MosaicCryptoError) -> ClientErrorCode {
         MosaicCryptoError::InvalidPublicKey => ClientErrorCode::InvalidPublicKey,
         MosaicCryptoError::InvalidUsername => ClientErrorCode::InvalidUsername,
         MosaicCryptoError::LinkTierMismatch { .. } => ClientErrorCode::LinkTierMismatch,
-        // Default for crypto error variants that have not been wired to a
-        // dedicated `ClientErrorCode` yet (currently the bundle-* variants
-        // landed by Slice 0A.2). `AuthenticationFailed` is a safe sentinel
-        // because every variant currently in this group represents an
-        // authentication or integrity failure on a sealed bundle.
-        _ => ClientErrorCode::AuthenticationFailed,
+        MosaicCryptoError::BundleSignatureInvalid => ClientErrorCode::BundleSignatureInvalid,
+        MosaicCryptoError::BundleAlbumIdEmpty => ClientErrorCode::BundleAlbumIdEmpty,
+        MosaicCryptoError::BundleAlbumIdMismatch => ClientErrorCode::BundleAlbumIdMismatch,
+        MosaicCryptoError::BundleEpochTooOld => ClientErrorCode::BundleEpochTooOld,
+        MosaicCryptoError::BundleRecipientMismatch => ClientErrorCode::BundleRecipientMismatch,
+        MosaicCryptoError::BundleJsonParse => ClientErrorCode::BundleJsonParse,
+        MosaicCryptoError::BundleSealOpenFailed => ClientErrorCode::BundleSealOpenFailed,
     }
 }
 
