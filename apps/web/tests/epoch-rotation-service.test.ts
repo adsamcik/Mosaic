@@ -64,6 +64,11 @@ vi.mock('@mosaic/crypto', () => ({
     encryptedKey: new Uint8Array(48).fill(tier),
   })),
   AccessTier: { THUMB: 1, PREVIEW: 2, FULL: 3 },
+  // memzero is dynamic-imported by wrapKeysForShareLinks to wipe tier keys
+  // and per-iteration linkSecret/wrappingKey buffers (security fix M1).
+  memzero: vi.fn((buf: Uint8Array) => {
+    buf.fill(0);
+  }),
 }));
 
 import { getApi } from '../src/lib/api';
