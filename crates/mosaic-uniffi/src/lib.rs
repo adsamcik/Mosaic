@@ -2,8 +2,10 @@
 
 #![forbid(unsafe_code)]
 
+use std::fmt;
+
 use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 /// UniFFI record for header parse results.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -30,14 +32,23 @@ pub struct ProgressResult {
 }
 
 /// UniFFI record for byte-array results.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct BytesResult {
     pub code: u16,
     pub bytes: Vec<u8>,
 }
 
-/// UniFFI record for non-secret account unlock parameters.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+impl fmt::Debug for BytesResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BytesResult")
+            .field("code", &self.code)
+            .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
+}
+
+/// UniFFI record for account unlock parameters.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct AccountUnlockRequest {
     pub user_salt: Vec<u8>,
     pub account_salt: Vec<u8>,
@@ -45,6 +56,19 @@ pub struct AccountUnlockRequest {
     pub kdf_memory_kib: u32,
     pub kdf_iterations: u32,
     pub kdf_parallelism: u32,
+}
+
+impl fmt::Debug for AccountUnlockRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AccountUnlockRequest")
+            .field("user_salt_len", &self.user_salt.len())
+            .field("account_salt_len", &self.account_salt.len())
+            .field("wrapped_account_key_len", &self.wrapped_account_key.len())
+            .field("kdf_memory_kib", &self.kdf_memory_kib)
+            .field("kdf_iterations", &self.kdf_iterations)
+            .field("kdf_parallelism", &self.kdf_parallelism)
+            .finish()
+    }
 }
 
 /// UniFFI record for account unlock results.
@@ -62,7 +86,7 @@ pub struct AccountKeyHandleStatusResult {
 }
 
 /// UniFFI record for identity handle results.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct IdentityHandleResult {
     pub code: u16,
     pub handle: u64,
@@ -71,13 +95,36 @@ pub struct IdentityHandleResult {
     pub wrapped_seed: Vec<u8>,
 }
 
+impl fmt::Debug for IdentityHandleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IdentityHandleResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("signing_pubkey_len", &self.signing_pubkey.len())
+            .field("encryption_pubkey_len", &self.encryption_pubkey.len())
+            .field("wrapped_seed_len", &self.wrapped_seed.len())
+            .finish()
+    }
+}
+
 /// UniFFI record for epoch-key handle results.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct EpochKeyHandleResult {
     pub code: u16,
     pub handle: u64,
     pub epoch_id: u32,
     pub wrapped_epoch_seed: Vec<u8>,
+}
+
+impl fmt::Debug for EpochKeyHandleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EpochKeyHandleResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("epoch_id", &self.epoch_id)
+            .field("wrapped_epoch_seed_len", &self.wrapped_epoch_seed.len())
+            .finish()
+    }
 }
 
 /// UniFFI record for epoch-key handle status checks.
@@ -88,11 +135,21 @@ pub struct EpochKeyHandleStatusResult {
 }
 
 /// UniFFI record for encrypted shard results.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct EncryptedShardResult {
     pub code: u16,
     pub envelope_bytes: Vec<u8>,
     pub sha256: String,
+}
+
+impl fmt::Debug for EncryptedShardResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptedShardResult")
+            .field("code", &self.code)
+            .field("envelope_bytes_len", &self.envelope_bytes.len())
+            .field("sha256", &self.sha256)
+            .finish()
+    }
 }
 
 /// UniFFI record for decrypted shard results.
@@ -372,23 +429,29 @@ pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> Pr
 }
 
 /// Unwraps an account key into a Rust-owned opaque account-key handle.
+///
+/// The caller-owned `password` buffer is wrapped in `Zeroizing` so it is
+/// guaranteed to be wiped on every exit path, including panics during the
+/// inner call. The wrapped account key in `request` is also wrapped in
+/// `Zeroizing` because it carries password-equivalent material at rest.
 #[uniffi::export]
 #[must_use]
-pub fn unlock_account_key(
-    mut password: Vec<u8>,
-    request: AccountUnlockRequest,
-) -> AccountUnlockResult {
+pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> AccountUnlockResult {
+    let mut password = Zeroizing::new(password);
+    // Move the wrapped key into a Zeroizing wrapper so it is wiped on drop
+    // regardless of whether the inner call returns or panics.
+    let wrapped_account_key = Zeroizing::new(request.wrapped_account_key);
+    let user_salt = request.user_salt;
+    let account_salt = request.account_salt;
     let result = mosaic_client::unlock_account_key(mosaic_client::AccountUnlockRequest {
         password: password.as_mut_slice(),
-        user_salt: &request.user_salt,
-        account_salt: &request.account_salt,
-        wrapped_account_key: &request.wrapped_account_key,
+        user_salt: &user_salt,
+        account_salt: &account_salt,
+        wrapped_account_key: &wrapped_account_key,
         kdf_memory_kib: request.kdf_memory_kib,
         kdf_iterations: request.kdf_iterations,
         kdf_parallelism: request.kdf_parallelism,
     });
-    password.zeroize();
-
     AccountUnlockResult {
         code: result.code.as_u16(),
         handle: result.handle,
@@ -429,12 +492,16 @@ pub fn create_identity_handle(account_key_handle: u64) -> IdentityHandleResult {
 }
 
 /// Opens an identity handle from wrapped identity seed bytes.
+///
+/// `wrapped_identity_seed` is wrapped in `Zeroizing` so the caller-owned
+/// buffer is wiped on every exit path.
 #[uniffi::export]
 #[must_use]
 pub fn open_identity_handle(
     wrapped_identity_seed: Vec<u8>,
     account_key_handle: u64,
 ) -> IdentityHandleResult {
+    let wrapped_identity_seed = Zeroizing::new(wrapped_identity_seed);
     identity_result_from_client(mosaic_client::open_identity_handle(
         &wrapped_identity_seed,
         account_key_handle,
@@ -456,9 +523,13 @@ pub fn identity_encryption_pubkey(handle: u64) -> BytesResult {
 }
 
 /// Signs manifest transcript bytes with an identity handle.
+///
+/// `transcript_bytes` is wrapped in `Zeroizing` so the caller-owned buffer is
+/// wiped on every exit path. The transcript may contain manifest payloads.
 #[uniffi::export]
 #[must_use]
 pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: Vec<u8>) -> BytesResult {
+    let transcript_bytes = Zeroizing::new(transcript_bytes);
     bytes_result_from_client(mosaic_client::sign_manifest_with_identity(
         handle,
         &transcript_bytes,
@@ -466,6 +537,9 @@ pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: Vec<u8>) -> By
 }
 
 /// Builds canonical plaintext metadata sidecar bytes from a compact encoded field list.
+///
+/// `encoded_fields` is wrapped in `Zeroizing` so the caller-owned buffer is
+/// wiped on every exit path. The encoded fields contain plaintext metadata.
 ///
 /// `encoded_fields` is a repeated sequence of `tag:u16le | value_len:u32le | value`.
 /// The returned bytes are client-local plaintext metadata and must be encrypted before
@@ -478,6 +552,7 @@ pub fn canonical_metadata_sidecar_bytes(
     epoch_id: u32,
     encoded_fields: Vec<u8>,
 ) -> BytesResult {
+    let encoded_fields = Zeroizing::new(encoded_fields);
     match canonical_metadata_sidecar_bytes_result(&album_id, &photo_id, epoch_id, &encoded_fields) {
         Ok(bytes) => BytesResult {
             code: mosaic_client::ClientErrorCode::Ok.as_u16(),
@@ -491,6 +566,10 @@ pub fn canonical_metadata_sidecar_bytes(
 }
 
 /// Encrypts canonical metadata sidecar bytes with a Rust-owned epoch-key handle.
+///
+/// `encoded_fields` is wrapped in `Zeroizing` so the caller-owned buffer is
+/// wiped on every exit path. The intermediate canonical bytes are also kept
+/// in `Zeroizing` so they are wiped after encryption succeeds or fails.
 #[uniffi::export]
 #[must_use]
 pub fn encrypt_metadata_sidecar_with_epoch_handle(
@@ -501,13 +580,14 @@ pub fn encrypt_metadata_sidecar_with_epoch_handle(
     encoded_fields: Vec<u8>,
     shard_index: u32,
 ) -> EncryptedShardResult {
-    let mut plaintext = match canonical_metadata_sidecar_bytes_result(
+    let encoded_fields = Zeroizing::new(encoded_fields);
+    let plaintext = match canonical_metadata_sidecar_bytes_result(
         &album_id,
         &photo_id,
         epoch_id,
         &encoded_fields,
     ) {
-        Ok(bytes) => bytes,
+        Ok(bytes) => Zeroizing::new(bytes),
         Err(code) => {
             return EncryptedShardResult {
                 code,
@@ -517,15 +597,12 @@ pub fn encrypt_metadata_sidecar_with_epoch_handle(
         }
     };
 
-    let result =
-        encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
-            handle,
-            &plaintext,
-            shard_index,
-            ShardTier::Thumbnail.to_byte(),
-        ));
-    plaintext.zeroize();
-    result
+    encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
+        handle,
+        &plaintext,
+        shard_index,
+        ShardTier::Thumbnail.to_byte(),
+    ))
 }
 
 /// Inspects media bytes for Android adapter planning without decoding pixels.
@@ -568,6 +645,9 @@ pub fn plan_media_tier_layout(width: u32, height: u32) -> MediaTierLayoutResult 
 
 /// Builds plaintext canonical metadata sidecar bytes from inspected media bytes.
 ///
+/// `media_bytes` is wrapped in `Zeroizing` (via the inner `media_metadata_sidecar_bytes_result`
+/// helper) so the caller-owned buffer is wiped on every exit path.
+///
 /// The returned bytes are client-local plaintext metadata and must be encrypted before
 /// manifest binding, persistence, upload, or logging.
 #[uniffi::export]
@@ -591,6 +671,10 @@ pub fn canonical_media_metadata_sidecar_bytes(
 }
 
 /// Encrypts inspected media metadata sidecar bytes with a Rust-owned epoch-key handle.
+///
+/// The media bytes flow through `media_metadata_sidecar_bytes_result` which already wraps
+/// them in `Zeroizing` internally. The intermediate canonical bytes are also wrapped in
+/// `Zeroizing` so they are wiped after encryption succeeds or fails.
 #[uniffi::export]
 #[must_use]
 pub fn encrypt_media_metadata_sidecar_with_epoch_handle(
@@ -601,9 +685,9 @@ pub fn encrypt_media_metadata_sidecar_with_epoch_handle(
     media_bytes: Vec<u8>,
     shard_index: u32,
 ) -> EncryptedShardResult {
-    let mut plaintext =
+    let plaintext =
         match media_metadata_sidecar_bytes_result(&album_id, &photo_id, epoch_id, media_bytes) {
-            Ok(bytes) => bytes,
+            Ok(bytes) => Zeroizing::new(bytes),
             Err(code) => {
                 return EncryptedShardResult {
                     code,
@@ -613,15 +697,12 @@ pub fn encrypt_media_metadata_sidecar_with_epoch_handle(
             }
         };
 
-    let result =
-        encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
-            handle,
-            &plaintext,
-            shard_index,
-            ShardTier::Thumbnail.to_byte(),
-        ));
-    plaintext.zeroize();
-    result
+    encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
+        handle,
+        &plaintext,
+        shard_index,
+        ShardTier::Thumbnail.to_byte(),
+    ))
 }
 
 /// Closes an identity handle and returns the stable error code.
@@ -645,6 +726,9 @@ pub fn create_epoch_key_handle(account_key_handle: u64, epoch_id: u32) -> EpochK
 }
 
 /// Opens an epoch-key handle from wrapped epoch seed bytes.
+///
+/// `wrapped_epoch_seed` is wrapped in `Zeroizing` so the caller-owned buffer
+/// is wiped on every exit path.
 #[uniffi::export]
 #[must_use]
 pub fn open_epoch_key_handle(
@@ -652,6 +736,7 @@ pub fn open_epoch_key_handle(
     account_key_handle: u64,
     epoch_id: u32,
 ) -> EpochKeyHandleResult {
+    let wrapped_epoch_seed = Zeroizing::new(wrapped_epoch_seed);
     epoch_result_from_client(mosaic_client::open_epoch_key_handle(
         &wrapped_epoch_seed,
         account_key_handle,
@@ -686,6 +771,11 @@ pub fn close_epoch_key_handle(handle: u64) -> u16 {
 }
 
 /// Encrypts shard bytes with a Rust-owned epoch-key handle.
+///
+/// `plaintext` is wrapped in `Zeroizing` so the caller-owned plaintext shard
+/// buffer is wiped on every exit path. This mirrors the Kotlin-side
+/// `encryptShardWipingPlaintext` extension and ensures plaintext does not
+/// linger in heap memory beyond the encryption call.
 #[uniffi::export]
 #[must_use]
 pub fn encrypt_shard_with_epoch_handle(
@@ -694,6 +784,7 @@ pub fn encrypt_shard_with_epoch_handle(
     shard_index: u32,
     tier_byte: u8,
 ) -> EncryptedShardResult {
+    let plaintext = Zeroizing::new(plaintext);
     encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
         handle,
         &plaintext,
@@ -703,12 +794,17 @@ pub fn encrypt_shard_with_epoch_handle(
 }
 
 /// Decrypts shard envelope bytes with a Rust-owned epoch-key handle.
+///
+/// `envelope_bytes` is wrapped in `Zeroizing` so the caller-owned buffer is
+/// wiped on every exit path. The envelope is encrypted ciphertext so this is
+/// defense-in-depth, but consistent with the broader wipe-discipline pattern.
 #[uniffi::export]
 #[must_use]
 pub fn decrypt_shard_with_epoch_handle(
     handle: u64,
     envelope_bytes: Vec<u8>,
 ) -> DecryptedShardResult {
+    let envelope_bytes = Zeroizing::new(envelope_bytes);
     decrypted_shard_result_from_client(mosaic_client::decrypt_shard_with_epoch_handle(
         handle,
         &envelope_bytes,
@@ -874,11 +970,11 @@ fn encrypted_shard_result_from_client(
 }
 
 fn decrypted_shard_result_from_client(
-    result: mosaic_client::DecryptedShardResult,
+    mut result: mosaic_client::DecryptedShardResult,
 ) -> DecryptedShardResult {
     DecryptedShardResult {
         code: result.code.as_u16(),
-        plaintext: result.plaintext,
+        plaintext: std::mem::take(&mut result.plaintext),
     }
 }
 
@@ -1738,5 +1834,91 @@ mod tests {
     #[test]
     fn uses_client_protocol_version() {
         assert_eq!(super::protocol_version(), "mosaic-v1");
+    }
+
+    #[test]
+    fn debug_output_redacts_boundary_byte_payloads() {
+        assert_debug_redacts(
+            &super::BytesResult {
+                code: 0,
+                bytes: vec![231, 232, 233],
+            },
+            &["bytes_len: 3"],
+            &["231", "232", "233", "bytes: ["],
+        );
+
+        assert_debug_redacts(
+            &super::AccountUnlockRequest {
+                user_salt: vec![201; 16],
+                account_salt: vec![202; 16],
+                wrapped_account_key: vec![203, 204, 205],
+                kdf_memory_kib: 65_536,
+                kdf_iterations: 3,
+                kdf_parallelism: 1,
+            },
+            &[
+                "user_salt_len: 16",
+                "account_salt_len: 16",
+                "wrapped_account_key_len: 3",
+            ],
+            &["201", "202", "203", "wrapped_account_key: ["],
+        );
+
+        assert_debug_redacts(
+            &super::IdentityHandleResult {
+                code: 0,
+                handle: 7,
+                signing_pubkey: vec![211; 32],
+                encryption_pubkey: vec![212; 32],
+                wrapped_seed: vec![213, 214, 215],
+            },
+            &[
+                "signing_pubkey_len: 32",
+                "encryption_pubkey_len: 32",
+                "wrapped_seed_len: 3",
+            ],
+            &["211", "212", "213", "wrapped_seed: ["],
+        );
+
+        assert_debug_redacts(
+            &super::EpochKeyHandleResult {
+                code: 0,
+                handle: 11,
+                epoch_id: 42,
+                wrapped_epoch_seed: vec![221, 222, 223],
+            },
+            &["wrapped_epoch_seed_len: 3"],
+            &["221", "222", "223", "wrapped_epoch_seed: ["],
+        );
+
+        assert_debug_redacts(
+            &super::EncryptedShardResult {
+                code: 0,
+                envelope_bytes: vec![224, 225, 226],
+                sha256: "digest".to_owned(),
+            },
+            &["envelope_bytes_len: 3", "sha256: \"digest\""],
+            &["224", "225", "226", "envelope_bytes: ["],
+        );
+    }
+
+    fn assert_debug_redacts<T: std::fmt::Debug>(
+        value: &T,
+        expected_fragments: &[&str],
+        forbidden_fragments: &[&str],
+    ) {
+        let debug = format!("{value:?}");
+        for fragment in expected_fragments {
+            assert!(
+                debug.contains(fragment),
+                "expected debug output to contain {fragment:?}: {debug}"
+            );
+        }
+        for fragment in forbidden_fragments {
+            assert!(
+                !debug.contains(fragment),
+                "debug output leaked {fragment:?}: {debug}"
+            );
+        }
     }
 }

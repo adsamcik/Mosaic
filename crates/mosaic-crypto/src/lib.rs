@@ -221,6 +221,13 @@ impl SecretKey {
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_slice()
     }
+
+    /// Eagerly zeroes the underlying key buffer in place without dropping the
+    /// `SecretKey`. Use when a higher-level holder wants to wipe a key while
+    /// keeping its slot allocated. Idempotent; subsequent calls are no-ops.
+    pub fn zeroize_in_place(&mut self) {
+        self.0.zeroize();
+    }
 }
 
 impl Drop for SecretKey {
@@ -811,6 +818,20 @@ impl EpochKeyMaterial {
     #[must_use]
     pub const fn content_key(&self) -> &SecretKey {
         &self.content_key
+    }
+
+    /// Eagerly zeroizes the underlying secret-key bytes of every key in this
+    /// material. Use when a higher-level handle is being closed and wants to
+    /// proactively wipe key material before the surrounding `Drop` chain runs.
+    ///
+    /// Idempotent. Subsequent reads of `epoch_seed`/`thumb_key`/etc. observe
+    /// all-zero buffers.
+    pub fn zeroize_keys(&mut self) {
+        self.epoch_seed.zeroize_in_place();
+        self.thumb_key.zeroize_in_place();
+        self.preview_key.zeroize_in_place();
+        self.full_key.zeroize_in_place();
+        self.content_key.zeroize_in_place();
     }
 }
 

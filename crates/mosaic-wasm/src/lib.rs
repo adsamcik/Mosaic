@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+use std::fmt;
+
 use wasm_bindgen::prelude::wasm_bindgen;
 use zeroize::Zeroize;
 
@@ -32,14 +34,23 @@ pub struct ProgressResult {
 }
 
 /// Rust-side WASM facade bytes result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct BytesResult {
     pub code: u16,
     pub bytes: Vec<u8>,
 }
 
-/// Rust-side WASM facade non-secret account unlock parameters.
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl fmt::Debug for BytesResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BytesResult")
+            .field("code", &self.code)
+            .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
+}
+
+/// Rust-side WASM facade account unlock parameters.
+#[derive(Clone, PartialEq, Eq)]
 pub struct AccountUnlockRequest {
     pub user_salt: Vec<u8>,
     pub account_salt: Vec<u8>,
@@ -47,6 +58,19 @@ pub struct AccountUnlockRequest {
     pub kdf_memory_kib: u32,
     pub kdf_iterations: u32,
     pub kdf_parallelism: u32,
+}
+
+impl fmt::Debug for AccountUnlockRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AccountUnlockRequest")
+            .field("user_salt_len", &self.user_salt.len())
+            .field("account_salt_len", &self.account_salt.len())
+            .field("wrapped_account_key_len", &self.wrapped_account_key.len())
+            .field("kdf_memory_kib", &self.kdf_memory_kib)
+            .field("kdf_iterations", &self.kdf_iterations)
+            .field("kdf_parallelism", &self.kdf_parallelism)
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade account unlock result.
@@ -64,7 +88,7 @@ pub struct AccountKeyHandleStatusResult {
 }
 
 /// Rust-side WASM facade identity handle result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct IdentityHandleResult {
     pub code: u16,
     pub handle: u64,
@@ -73,13 +97,36 @@ pub struct IdentityHandleResult {
     pub wrapped_seed: Vec<u8>,
 }
 
+impl fmt::Debug for IdentityHandleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IdentityHandleResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("signing_pubkey_len", &self.signing_pubkey.len())
+            .field("encryption_pubkey_len", &self.encryption_pubkey.len())
+            .field("wrapped_seed_len", &self.wrapped_seed.len())
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade epoch-key handle result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct EpochKeyHandleResult {
     pub code: u16,
     pub handle: u64,
     pub epoch_id: u32,
     pub wrapped_epoch_seed: Vec<u8>,
+}
+
+impl fmt::Debug for EpochKeyHandleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EpochKeyHandleResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("epoch_id", &self.epoch_id)
+            .field("wrapped_epoch_seed_len", &self.wrapped_epoch_seed.len())
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade epoch-key handle status result.
@@ -90,11 +137,21 @@ pub struct EpochKeyHandleStatusResult {
 }
 
 /// Rust-side WASM facade encrypted shard result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct EncryptedShardResult {
     pub code: u16,
     pub envelope_bytes: Vec<u8>,
     pub sha256: String,
+}
+
+impl fmt::Debug for EncryptedShardResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptedShardResult")
+            .field("code", &self.code)
+            .field("envelope_bytes_len", &self.envelope_bytes.len())
+            .field("sha256", &self.sha256)
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade decrypted shard result.
@@ -297,15 +354,25 @@ pub struct AuthKeypairResult {
 }
 
 /// Rust-side WASM facade share-link key derivation result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct LinkKeysResult {
     pub code: u16,
     pub link_id: Vec<u8>,
     pub wrapping_key: Vec<u8>,
 }
 
+impl fmt::Debug for LinkKeysResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkKeysResult")
+            .field("code", &self.code)
+            .field("link_id_len", &self.link_id.len())
+            .field("wrapping_key_len", &self.wrapping_key.len())
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade wrapped tier key result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct WrappedTierKeyResult {
     pub code: u16,
     pub tier: u8,
@@ -313,13 +380,35 @@ pub struct WrappedTierKeyResult {
     pub encrypted_key: Vec<u8>,
 }
 
+impl fmt::Debug for WrappedTierKeyResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WrappedTierKeyResult")
+            .field("code", &self.code)
+            .field("tier", &self.tier)
+            .field("nonce_len", &self.nonce.len())
+            .field("encrypted_key_len", &self.encrypted_key.len())
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade sealed bundle result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SealedBundleResult {
     pub code: u16,
     pub sealed: Vec<u8>,
     pub signature: Vec<u8>,
     pub sharer_pubkey: Vec<u8>,
+}
+
+impl fmt::Debug for SealedBundleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SealedBundleResult")
+            .field("code", &self.code)
+            .field("sealed_len", &self.sealed.len())
+            .field("signature_len", &self.signature.len())
+            .field("sharer_pubkey_len", &self.sharer_pubkey.len())
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade opened-bundle result.
@@ -339,11 +428,21 @@ pub struct OpenedBundleResult {
 }
 
 /// Rust-side WASM facade encrypted album content result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct EncryptedContentResult {
     pub code: u16,
     pub nonce: Vec<u8>,
     pub ciphertext: Vec<u8>,
+}
+
+impl fmt::Debug for EncryptedContentResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptedContentResult")
+            .field("code", &self.code)
+            .field("nonce_len", &self.nonce.len())
+            .field("ciphertext_len", &self.ciphertext.len())
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade decrypted album content result.
@@ -2309,11 +2408,11 @@ fn encrypted_shard_result_from_client(
 }
 
 fn decrypted_shard_result_from_client(
-    result: mosaic_client::DecryptedShardResult,
+    mut result: mosaic_client::DecryptedShardResult,
 ) -> DecryptedShardResult {
     DecryptedShardResult {
         code: result.code.as_u16(),
-        plaintext: result.plaintext,
+        plaintext: std::mem::take(&mut result.plaintext),
     }
 }
 
@@ -2324,11 +2423,11 @@ fn auth_keypair_result_from_client(result: mosaic_client::AuthKeypairResult) -> 
     }
 }
 
-fn link_keys_result_from_client(result: mosaic_client::LinkKeysResult) -> LinkKeysResult {
+fn link_keys_result_from_client(mut result: mosaic_client::LinkKeysResult) -> LinkKeysResult {
     LinkKeysResult {
         code: result.code.as_u16(),
-        link_id: result.link_id,
-        wrapping_key: result.wrapping_key,
+        link_id: std::mem::take(&mut result.link_id),
+        wrapping_key: std::mem::take(&mut result.wrapping_key),
     }
 }
 
@@ -2355,17 +2454,17 @@ fn sealed_bundle_result_from_client(
 }
 
 fn opened_bundle_result_from_client(
-    result: mosaic_client::OpenedBundleResult,
+    mut result: mosaic_client::OpenedBundleResult,
 ) -> OpenedBundleResult {
     OpenedBundleResult {
         code: result.code.as_u16(),
         version: result.version,
-        album_id: result.album_id,
+        album_id: std::mem::take(&mut result.album_id),
         epoch_id: result.epoch_id,
-        recipient_pubkey: result.recipient_pubkey,
-        epoch_seed: result.epoch_seed,
-        sign_secret_seed: result.sign_secret_seed,
-        sign_public_key: result.sign_public_key,
+        recipient_pubkey: std::mem::take(&mut result.recipient_pubkey),
+        epoch_seed: std::mem::take(&mut result.epoch_seed),
+        sign_secret_seed: std::mem::take(&mut result.sign_secret_seed),
+        sign_public_key: std::mem::take(&mut result.sign_public_key),
     }
 }
 
@@ -2380,11 +2479,11 @@ fn encrypted_content_result_from_client(
 }
 
 fn decrypted_content_result_from_client(
-    result: mosaic_client::DecryptedContentResult,
+    mut result: mosaic_client::DecryptedContentResult,
 ) -> DecryptedContentResult {
     DecryptedContentResult {
         code: result.code.as_u16(),
-        plaintext: result.plaintext,
+        plaintext: std::mem::take(&mut result.plaintext),
     }
 }
 
@@ -3369,5 +3468,133 @@ mod tests {
     #[test]
     fn uses_client_protocol_version() {
         assert_eq!(super::protocol_version(), "mosaic-v1");
+    }
+
+    #[test]
+    fn debug_output_redacts_boundary_byte_payloads() {
+        assert_debug_redacts(
+            &super::BytesResult {
+                code: 0,
+                bytes: vec![231, 232, 233],
+            },
+            &["bytes_len: 3"],
+            &["231", "232", "233", "bytes: ["],
+        );
+
+        assert_debug_redacts(
+            &super::AccountUnlockRequest {
+                user_salt: vec![201; 16],
+                account_salt: vec![202; 16],
+                wrapped_account_key: vec![203, 204, 205],
+                kdf_memory_kib: 65_536,
+                kdf_iterations: 3,
+                kdf_parallelism: 1,
+            },
+            &[
+                "user_salt_len: 16",
+                "account_salt_len: 16",
+                "wrapped_account_key_len: 3",
+            ],
+            &["201", "202", "203", "wrapped_account_key: ["],
+        );
+
+        assert_debug_redacts(
+            &super::IdentityHandleResult {
+                code: 0,
+                handle: 7,
+                signing_pubkey: vec![211; 32],
+                encryption_pubkey: vec![212; 32],
+                wrapped_seed: vec![213, 214, 215],
+            },
+            &[
+                "signing_pubkey_len: 32",
+                "encryption_pubkey_len: 32",
+                "wrapped_seed_len: 3",
+            ],
+            &["211", "212", "213", "wrapped_seed: ["],
+        );
+
+        assert_debug_redacts(
+            &super::EpochKeyHandleResult {
+                code: 0,
+                handle: 11,
+                epoch_id: 42,
+                wrapped_epoch_seed: vec![221, 222, 223],
+            },
+            &["wrapped_epoch_seed_len: 3"],
+            &["221", "222", "223", "wrapped_epoch_seed: ["],
+        );
+
+        assert_debug_redacts(
+            &super::EncryptedShardResult {
+                code: 0,
+                envelope_bytes: vec![224, 225, 226],
+                sha256: "digest".to_owned(),
+            },
+            &["envelope_bytes_len: 3", "sha256: \"digest\""],
+            &["224", "225", "226", "envelope_bytes: ["],
+        );
+
+        assert_debug_redacts(
+            &super::LinkKeysResult {
+                code: 0,
+                link_id: vec![227; 16],
+                wrapping_key: vec![228, 229, 230],
+            },
+            &["link_id_len: 16", "wrapping_key_len: 3"],
+            &["227", "228", "229", "wrapping_key: ["],
+        );
+
+        assert_debug_redacts(
+            &super::WrappedTierKeyResult {
+                code: 0,
+                tier: 1,
+                nonce: vec![234; 24],
+                encrypted_key: vec![235, 236, 237],
+            },
+            &["nonce_len: 24", "encrypted_key_len: 3"],
+            &["234", "235", "236", "encrypted_key: ["],
+        );
+
+        assert_debug_redacts(
+            &super::SealedBundleResult {
+                code: 0,
+                sealed: vec![238, 239, 240],
+                signature: vec![241, 242],
+                sharer_pubkey: vec![243; 32],
+            },
+            &["sealed_len: 3", "signature_len: 2", "sharer_pubkey_len: 32"],
+            &["238", "239", "241", "243", "sealed: ["],
+        );
+
+        assert_debug_redacts(
+            &super::EncryptedContentResult {
+                code: 0,
+                nonce: vec![244; 24],
+                ciphertext: vec![245, 246, 247],
+            },
+            &["nonce_len: 24", "ciphertext_len: 3"],
+            &["244", "245", "246", "ciphertext: ["],
+        );
+    }
+
+    fn assert_debug_redacts<T: std::fmt::Debug>(
+        value: &T,
+        expected_fragments: &[&str],
+        forbidden_fragments: &[&str],
+    ) {
+        let debug = format!("{value:?}");
+        for fragment in expected_fragments {
+            assert!(
+                debug.contains(fragment),
+                "expected debug output to contain {fragment:?}: {debug}"
+            );
+        }
+        for fragment in forbidden_fragments {
+            assert!(
+                !debug.contains(fragment),
+                "debug output leaked {fragment:?}: {debug}"
+            );
+        }
     }
 }

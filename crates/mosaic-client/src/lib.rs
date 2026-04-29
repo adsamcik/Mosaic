@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
@@ -140,10 +141,19 @@ impl HeaderResult {
 }
 
 /// FFI-safe bytes result for the test-only derivation probe.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct BytesResult {
     pub code: ClientErrorCode,
     pub bytes: Vec<u8>,
+}
+
+impl fmt::Debug for BytesResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BytesResult")
+            .field("code", &self.code)
+            .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
 }
 
 /// FFI-adjacent account unlock request.
@@ -181,13 +191,25 @@ impl AccountUnlockResult {
 }
 
 /// FFI-safe identity handle result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct IdentityHandleResult {
     pub code: ClientErrorCode,
     pub handle: u64,
     pub signing_pubkey: Vec<u8>,
     pub encryption_pubkey: Vec<u8>,
     pub wrapped_seed: Vec<u8>,
+}
+
+impl fmt::Debug for IdentityHandleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IdentityHandleResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("signing_pubkey_len", &self.signing_pubkey.len())
+            .field("encryption_pubkey_len", &self.encryption_pubkey.len())
+            .field("wrapped_seed_len", &self.wrapped_seed.len())
+            .finish()
+    }
 }
 
 impl IdentityHandleResult {
@@ -213,12 +235,23 @@ impl IdentityHandleResult {
 }
 
 /// FFI-safe epoch-key handle result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct EpochKeyHandleResult {
     pub code: ClientErrorCode,
     pub handle: u64,
     pub epoch_id: u32,
     pub wrapped_epoch_seed: Vec<u8>,
+}
+
+impl fmt::Debug for EpochKeyHandleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EpochKeyHandleResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("epoch_id", &self.epoch_id)
+            .field("wrapped_epoch_seed_len", &self.wrapped_epoch_seed.len())
+            .finish()
+    }
 }
 
 impl EpochKeyHandleResult {
@@ -249,11 +282,21 @@ pub struct EpochKeyHandleStatusResult {
 }
 
 /// FFI-safe encrypted shard result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct EncryptedShardResult {
     pub code: ClientErrorCode,
     pub envelope_bytes: Vec<u8>,
     pub sha256: String,
+}
+
+impl fmt::Debug for EncryptedShardResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptedShardResult")
+            .field("code", &self.code)
+            .field("envelope_bytes_len", &self.envelope_bytes.len())
+            .field("sha256", &self.sha256)
+            .finish()
+    }
 }
 
 impl EncryptedShardResult {
@@ -277,11 +320,19 @@ impl EncryptedShardResult {
 /// FFI-safe decrypted shard result.
 ///
 /// This type carries client-local plaintext media bytes on success and
-/// intentionally does not implement `Debug`.
+/// intentionally does not implement `Debug`. The `Drop` impl proactively
+/// zeroes the plaintext buffer so dropped (un-consumed) results do not leak
+/// plaintext shard bytes through heap memory.
 #[derive(Clone, PartialEq, Eq)]
 pub struct DecryptedShardResult {
     pub code: ClientErrorCode,
     pub plaintext: Vec<u8>,
+}
+
+impl Drop for DecryptedShardResult {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
 }
 
 impl DecryptedShardResult {
@@ -332,13 +383,23 @@ impl AuthKeypairResult {
 /// FFI-safe link-key derivation result.
 ///
 /// The 16-byte `link_id` is server-visible by design (it is the lookup
-/// token). The 32-byte `wrapping_key` stays client-side and callers MUST
-/// memzero the buffer after using it to wrap or unwrap tier keys.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// token). The 32-byte `wrapping_key` stays client-side; the `Drop` impl
+/// proactively zeroes it so dropped results do not leak the wrapping key.
+///
+/// Intentionally does not derive `Debug` to avoid accidental logging of
+/// `wrapping_key`. Callers that need a privacy-safe log line should format
+/// only `code` and the length of `link_id`.
+#[derive(Clone, PartialEq, Eq)]
 pub struct LinkKeysResult {
     pub code: ClientErrorCode,
     pub link_id: Vec<u8>,
     pub wrapping_key: Vec<u8>,
+}
+
+impl Drop for LinkKeysResult {
+    fn drop(&mut self) {
+        self.wrapping_key.zeroize();
+    }
 }
 
 impl LinkKeysResult {
@@ -363,12 +424,23 @@ impl LinkKeysResult {
 ///
 /// Layout matches the TypeScript reference: `tier` byte, `nonce` 24 bytes,
 /// `encrypted_key` ciphertext (32 bytes payload + 16 bytes Poly1305 tag).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct WrappedTierKeyResult {
     pub code: ClientErrorCode,
     pub tier: u8,
     pub nonce: Vec<u8>,
     pub encrypted_key: Vec<u8>,
+}
+
+impl fmt::Debug for WrappedTierKeyResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WrappedTierKeyResult")
+            .field("code", &self.code)
+            .field("tier", &self.tier)
+            .field("nonce_len", &self.nonce.len())
+            .field("encrypted_key_len", &self.encrypted_key.len())
+            .finish()
+    }
 }
 
 impl WrappedTierKeyResult {
@@ -392,12 +464,23 @@ impl WrappedTierKeyResult {
 }
 
 /// FFI-safe sealed bundle result returned by `seal_and_sign_bundle_with_identity_handle`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SealedBundleResult {
     pub code: ClientErrorCode,
     pub sealed: Vec<u8>,
     pub signature: Vec<u8>,
     pub sharer_pubkey: Vec<u8>,
+}
+
+impl fmt::Debug for SealedBundleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SealedBundleResult")
+            .field("code", &self.code)
+            .field("sealed_len", &self.sealed.len())
+            .field("signature_len", &self.signature.len())
+            .field("sharer_pubkey_len", &self.sharer_pubkey.len())
+            .finish()
+    }
 }
 
 impl SealedBundleResult {
@@ -423,8 +506,11 @@ impl SealedBundleResult {
 /// FFI-safe opened-bundle result.
 ///
 /// Carries the recovered epoch seed, manifest signing seed/pubkey, and
-/// metadata fields. All secret bytes are caller-owned; callers MUST memzero
-/// `epoch_seed` and `sign_secret_seed` after they are consumed.
+/// metadata fields. The `Drop` impl proactively zeroes the secret seed
+/// buffers (`epoch_seed`, `sign_secret_seed`) so dropped results do not
+/// leak key material; callers that consume the seeds must do so via
+/// `std::mem::take` or a destructuring move while the struct is still
+/// owned by the caller.
 #[derive(Clone, PartialEq, Eq)]
 pub struct OpenedBundleResult {
     pub code: ClientErrorCode,
@@ -435,6 +521,13 @@ pub struct OpenedBundleResult {
     pub epoch_seed: Vec<u8>,
     pub sign_secret_seed: Vec<u8>,
     pub sign_public_key: Vec<u8>,
+}
+
+impl Drop for OpenedBundleResult {
+    fn drop(&mut self) {
+        self.epoch_seed.zeroize();
+        self.sign_secret_seed.zeroize();
+    }
 }
 
 impl OpenedBundleResult {
@@ -474,11 +567,21 @@ impl OpenedBundleResult {
 }
 
 /// FFI-safe encrypted album content result (24-byte nonce + ciphertext+tag).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct EncryptedContentResult {
     pub code: ClientErrorCode,
     pub nonce: Vec<u8>,
     pub ciphertext: Vec<u8>,
+}
+
+impl fmt::Debug for EncryptedContentResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptedContentResult")
+            .field("code", &self.code)
+            .field("nonce_len", &self.nonce.len())
+            .field("ciphertext_len", &self.ciphertext.len())
+            .finish()
+    }
 }
 
 impl EncryptedContentResult {
@@ -502,11 +605,18 @@ impl EncryptedContentResult {
 /// FFI-safe decrypted album content result.
 ///
 /// Carries client-local plaintext bytes on success and intentionally does
-/// not implement `Debug`.
+/// not implement `Debug`. The `Drop` impl proactively zeroes the plaintext
+/// buffer.
 #[derive(Clone, PartialEq, Eq)]
 pub struct DecryptedContentResult {
     pub code: ClientErrorCode,
     pub plaintext: Vec<u8>,
+}
+
+impl Drop for DecryptedContentResult {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
 }
 
 impl DecryptedContentResult {
@@ -627,6 +737,12 @@ struct EpochRecord {
 
 impl EpochRecord {
     fn close(&mut self) {
+        // Eagerly wipe key material in place so the keys are zeroed even on
+        // soft-close paths that keep the record allocated. The Drop chain
+        // would also zeroize via each SecretKey's Drop impl, but explicit
+        // close keeps the symmetry with `SecretRecord::close` and
+        // `IdentityRecord::close`.
+        self.key_material.zeroize_keys();
         self.open = false;
     }
 }
@@ -2022,5 +2138,106 @@ mod tests {
 
         assert_eq!(error.code, super::ClientErrorCode::HandleSpaceExhausted);
         assert_eq!(counter.load(std::sync::atomic::Ordering::Relaxed), u64::MAX);
+    }
+
+    #[test]
+    fn debug_output_redacts_boundary_byte_payloads() {
+        assert_debug_redacts(
+            &super::BytesResult {
+                code: super::ClientErrorCode::Ok,
+                bytes: vec![231, 232, 233],
+            },
+            &["bytes_len: 3"],
+            &["231", "232", "233", "bytes: ["],
+        );
+
+        assert_debug_redacts(
+            &super::IdentityHandleResult {
+                code: super::ClientErrorCode::Ok,
+                handle: 7,
+                signing_pubkey: vec![201; 32],
+                encryption_pubkey: vec![202; 32],
+                wrapped_seed: vec![203, 204, 205],
+            },
+            &[
+                "signing_pubkey_len: 32",
+                "encryption_pubkey_len: 32",
+                "wrapped_seed_len: 3",
+            ],
+            &["201", "202", "203", "wrapped_seed: ["],
+        );
+
+        assert_debug_redacts(
+            &super::EpochKeyHandleResult {
+                code: super::ClientErrorCode::Ok,
+                handle: 11,
+                epoch_id: 42,
+                wrapped_epoch_seed: vec![211, 212, 213],
+            },
+            &["wrapped_epoch_seed_len: 3"],
+            &["211", "212", "213", "wrapped_epoch_seed: ["],
+        );
+
+        assert_debug_redacts(
+            &super::EncryptedShardResult {
+                code: super::ClientErrorCode::Ok,
+                envelope_bytes: vec![221, 222, 223],
+                sha256: "digest".to_owned(),
+            },
+            &["envelope_bytes_len: 3", "sha256: \"digest\""],
+            &["221", "222", "223", "envelope_bytes: ["],
+        );
+
+        assert_debug_redacts(
+            &super::WrappedTierKeyResult {
+                code: super::ClientErrorCode::Ok,
+                tier: 1,
+                nonce: vec![224; 24],
+                encrypted_key: vec![225, 226, 227],
+            },
+            &["nonce_len: 24", "encrypted_key_len: 3"],
+            &["224", "225", "226", "encrypted_key: ["],
+        );
+
+        assert_debug_redacts(
+            &super::SealedBundleResult {
+                code: super::ClientErrorCode::Ok,
+                sealed: vec![228, 229, 230],
+                signature: vec![234, 235],
+                sharer_pubkey: vec![236; 32],
+            },
+            &["sealed_len: 3", "signature_len: 2", "sharer_pubkey_len: 32"],
+            &["228", "229", "234", "236", "sealed: ["],
+        );
+
+        assert_debug_redacts(
+            &super::EncryptedContentResult {
+                code: super::ClientErrorCode::Ok,
+                nonce: vec![237; 24],
+                ciphertext: vec![238, 239, 240],
+            },
+            &["nonce_len: 24", "ciphertext_len: 3"],
+            &["237", "238", "239", "ciphertext: ["],
+        );
+    }
+
+    fn assert_debug_redacts<T: std::fmt::Debug>(
+        value: &T,
+        expected_fragments: &[&str],
+        forbidden_fragments: &[&str],
+    ) {
+        let debug = format!("{value:?}");
+        for fragment in expected_fragments {
+            assert!(
+                debug.contains(fragment),
+                "expected debug output to contain {fragment:?}: {debug}"
+            );
+        }
+        for fragment in forbidden_fragments {
+            assert!(
+                !debug.contains(fragment),
+                "debug output leaked {fragment:?}: {debug}"
+            );
+        }
     }
 }

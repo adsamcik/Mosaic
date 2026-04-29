@@ -26,6 +26,7 @@
 use blake2::Blake2bMac;
 use blake2::digest::{KeyInit, Mac, consts::U16, consts::U32};
 use mosaic_domain::ShardTier;
+use std::fmt;
 use zeroize::Zeroizing;
 
 use crate::{
@@ -64,7 +65,7 @@ pub struct LinkKeys {
 /// `wrapTierKeyForLink` produces in TypeScript; concatenated as
 /// `nonce || encrypted_key` it is exactly what [`crate::unwrap_key`]
 /// expects.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct WrappedTierKey {
     /// The tier this wrapped key grants access to.
     pub tier: ShardTier,
@@ -72,6 +73,16 @@ pub struct WrappedTierKey {
     pub nonce: [u8; LINK_WRAP_NONCE_BYTES],
     /// Ciphertext including the trailing 16-byte Poly1305 tag.
     pub encrypted_key: Vec<u8>,
+}
+
+impl fmt::Debug for WrappedTierKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WrappedTierKey")
+            .field("tier", &self.tier)
+            .field("nonce_len", &self.nonce.len())
+            .field("encrypted_key_len", &self.encrypted_key.len())
+            .finish()
+    }
 }
 
 /// Generates a fresh 32-byte link secret using the OS CSPRNG.
@@ -214,4 +225,26 @@ where
         .map_err(|_| MosaicCryptoError::InvalidKeyLength { actual: key.len() })?;
     Mac::update(&mut mac, msg);
     Ok(mac.finalize().into_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wrapped_tier_key_debug_redacts_wrapped_key_bytes() {
+        let wrapped = WrappedTierKey {
+            tier: ShardTier::Preview,
+            nonce: [201; LINK_WRAP_NONCE_BYTES],
+            encrypted_key: vec![231, 232, 233],
+        };
+
+        let debug = format!("{wrapped:?}");
+        assert!(debug.contains("tier: Preview"), "{debug}");
+        assert!(debug.contains("nonce_len: 24"), "{debug}");
+        assert!(debug.contains("encrypted_key_len: 3"), "{debug}");
+        assert!(!debug.contains("201"), "{debug}");
+        assert!(!debug.contains("231"), "{debug}");
+        assert!(!debug.contains("encrypted_key: ["), "{debug}");
+    }
 }

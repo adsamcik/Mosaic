@@ -72,6 +72,10 @@ fun main() {
     BridgeTestCase("metadata sidecar canonicalMedia wipes FFI bytes", ::metadataSidecarCanonicalMediaWipesFfi),
     BridgeTestCase("diagnostics bridge cryptoDomainGoldenVector wipes FFI vector", ::diagnosticsBridgeWipesFfiGoldenVector),
     BridgeTestCase("diagnostics golden vector FFI wipe zeros all 7 byte arrays", ::diagnosticsFfiGoldenVectorWipeZerosAll),
+    BridgeTestCase("openIdentityWipingWrappedSeed wipes caller wrapped seed", ::openIdentityWipingWrappedSeedWipesCallerBuffer),
+    BridgeTestCase("openEpochWipingWrappedSeed wipes caller wrapped seed", ::openEpochWipingWrappedSeedWipesCallerBuffer),
+    BridgeTestCase("decryptShardWipingEnvelope wipes caller envelope", ::decryptShardWipingEnvelopeWipesCallerBuffer),
+    BridgeTestCase("signManifestWipingTranscript wipes caller transcript", ::signManifestWipingTranscriptWipesCallerBuffer),
   )
 
   var failed = 0
@@ -1338,6 +1342,66 @@ private fun diagnosticsFfiGoldenVectorWipeZerosAll() {
   bridgeAssertTrue(ffi.identitySigningPubkey.all { it == 0.toByte() })
   bridgeAssertTrue(ffi.identityEncryptionPubkey.all { it == 0.toByte() })
   bridgeAssertTrue(ffi.identitySignature.all { it == 0.toByte() })
+}
+
+private fun openIdentityWipingWrappedSeedWipesCallerBuffer() {
+  val wrappedSeed = ByteArray(64) { 0x12 }
+  val api = FakeGeneratedRustIdentityApi(
+    open = RustIdentityHandleFfiResult(
+      code = RustIdentityStableCode.OK,
+      handle = 1,
+      signingPubkey = ByteArray(32),
+      encryptionPubkey = ByteArray(32),
+      wrappedSeed = ByteArray(64),
+    ),
+  )
+  val bridge = GeneratedRustIdentityBridge(api)
+  val result = bridge.openIdentityWipingWrappedSeed(wrappedSeed, AccountKeyHandle(7))
+  bridgeAssertTrue(result.code == IdentityOpenCode.SUCCESS)
+  bridgeAssertTrue(wrappedSeed.all { it == 0.toByte() })
+}
+
+private fun openEpochWipingWrappedSeedWipesCallerBuffer() {
+  val wrappedSeed = ByteArray(48) { 0x34 }
+  val api = FakeGeneratedRustEpochApi(
+    open = RustEpochHandleFfiResult(
+      code = RustEpochStableCode.OK,
+      handle = 9,
+      epochId = 3,
+      wrappedEpochSeed = ByteArray(48),
+    ),
+  )
+  val bridge = GeneratedRustEpochBridge(api)
+  val result = bridge.openEpochWipingWrappedSeed(wrappedSeed, AccountKeyHandle(7), epochId = 3)
+  bridgeAssertTrue(result.code == EpochOpenCode.SUCCESS)
+  bridgeAssertTrue(wrappedSeed.all { it == 0.toByte() })
+}
+
+private fun decryptShardWipingEnvelopeWipesCallerBuffer() {
+  val envelope = ByteArray(128) { 0x56 }
+  val plaintext = ByteArray(64) { 0x78 }
+  val expectedPlaintext = plaintext.copyOf()
+  val api = FakeGeneratedRustShardApi(
+    decrypt = RustDecryptedShardFfiResult(code = RustShardStableCode.OK, plaintext = plaintext),
+  )
+  val bridge = GeneratedRustShardBridge(api)
+  val result = bridge.decryptShardWipingEnvelope(EpochKeyHandle(1), envelope)
+  bridgeAssertTrue(result.code == ShardDecryptCode.SUCCESS)
+  // Decrypted shard kept its own copy.
+  bridgeAssertTrue(result.shard?.plaintext?.contentEquals(expectedPlaintext) == true)
+  // Caller's envelope buffer is now zeroed.
+  bridgeAssertTrue(envelope.all { it == 0.toByte() })
+}
+
+private fun signManifestWipingTranscriptWipesCallerBuffer() {
+  val transcript = ByteArray(96) { 0x9A.toByte() }
+  val api = FakeGeneratedRustIdentityApi(
+    signature = RustBytesFfiResult(code = RustIdentityStableCode.OK, bytes = ByteArray(64) { 0xBC.toByte() }),
+  )
+  val bridge = GeneratedRustIdentityBridge(api)
+  val result = bridge.signManifestWipingTranscript(IdentityHandle(1), transcript)
+  bridgeAssertTrue(result.code == IdentitySignCode.SUCCESS)
+  bridgeAssertTrue(transcript.all { it == 0.toByte() })
 }
 
 // endregion
