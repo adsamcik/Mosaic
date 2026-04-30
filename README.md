@@ -16,6 +16,7 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 - 🗺️ **Map view** - Browse photos by location (GPS metadata encrypted)
 - 🔍 **Full-text search** - Search photo metadata (client-side)
 - 📱 **Offline capable** - Local database with sync
+- 🦀 **Shared Rust client core** - Web (`mosaic-wasm`) and Android (`mosaic-uniffi`) call into the same audited Rust workspace; cross-client byte-equality is enforced by the golden-vector corpus under `tests/vectors/`
 
 ## Architecture
 
@@ -36,12 +37,13 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 
 | Layer | Technology |
 | ----- | ---------- |
-| Frontend | React 19, Vite, TypeScript |
+| Frontend | React 19, Vite 8, TypeScript 5.9 |
 | Backend | .NET 10, ASP.NET Core |
 | Database | PostgreSQL 16+ |
-| Crypto | libsodium today, Rust client core in progress |
-| Local DB | SQLite-WASM + OPFS |
+| Crypto | libsodium (legacy surface) + Rust client core (`crates/`, handle-based facade) |
+| Local DB | SQLite-WASM (`fts5-sql-bundle`) + OPFS |
 | Uploads | Tus protocol (resumable) |
+| Android | Kotlin 2.0 + AGP 8.7 + Rust UniFFI core (`apps/android-main`, foundation slice) |
 
 ## Project Structure
 
@@ -49,10 +51,13 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 mosaic/
 ├── apps/
 │   ├── web/            # React frontend
-│   └── backend/        # .NET API
-├── crates/             # Rust client-core workspace
+│   ├── backend/        # .NET API
+│   ├── android-main/   # Android Gradle module (Rust UniFFI APK, foundation slice)
+│   └── android-shell/  # JVM-only Kotlin scaffold for the Android bridge contracts
+├── crates/             # Rust client-core workspace (mosaic-{domain,crypto,client,
+│                       #   media,wasm,uniffi,vectors})
 ├── libs/
-│   └── crypto/         # TypeScript crypto/reference library
+│   └── crypto/         # TypeScript crypto/reference library (@mosaic/crypto)
 ├── docs/               # Documentation
 ├── tests/              # Integration, E2E, vectors, architecture checks
 └── scripts/            # Deployment scripts
