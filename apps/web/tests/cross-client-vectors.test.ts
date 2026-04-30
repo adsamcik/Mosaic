@@ -3,11 +3,21 @@
  *
  * Drives the Rust core through the WASM facade (`apps/web/src/workers/rust-crypto-core.ts`)
  * so any drift between the Rust crate and the bytes captured from the TS reference
- * surfaces here too. Many vectors (account unlock, identity sign, content/shard
- * encrypt/decrypt with raw keys, sealed bundle open) require WASM facade
- * functions that have not landed yet — those are skipped with a TODO referencing
- * Slice 0C so the moment the facade grows the corresponding entry point, the
- * skip flips into a byte-exact assertion.
+ * surfaces here too. Slice 0C wired up the WASM surface (`deriveLinkKeys`,
+ * `generateLinkSecret`, `verifyManifestWithIdentity`, etc.), so every vector
+ * whose canonical bytes are reachable through the facade is now locked
+ * byte-exact below. The remaining `it.skip` blocks are split into two narrow
+ * categories with explicit rationale:
+ *
+ *   1. `deviation:<id>` — `tests/vectors/deviations.md` still flags these as
+ *      open (TS-canonical vs Rust production-path bytes diverge); the Slice 0B
+ *      Rust differential runner mirrors the same `#[ignore = "deviation:…"]`.
+ *   2. `facade-gap:no-raw-key-binding` — the facade currently exposes only
+ *      handle-based encrypt/decrypt/derivation entry points, so the corpus's
+ *      caller-provided raw keys (content key, tier key, epoch seed) cannot be
+ *      injected without a new top-level binding. Round-trip behavior of the
+ *      handle-based path is already locked by the Rust-side
+ *      `crates/mosaic-wasm/tests/*.rs` differential tests.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -157,62 +167,199 @@ describe('cross-client golden vector corpus (Web WASM facade)', () => {
   });
 
   // -------------------------------------------------------------------------
-  // The following vectors require WASM facade entry points that have not
-  // shipped yet. They are locked in the corpus and the Rust differential test
-  // already exercises them; switching these from `it.skip` to active
-  // assertions is part of Slice 0C.
+  // Slice 0C closures: byte-exact assertions against the corpus go through
+  // the WASM facade entry points listed below. Each `it.skip` either
+  //   - flipped to an active byte-exact `it()` (binding present, no deviation),
+  //   - stays skipped with a `deviation:<id>` reason (open deviation —
+  //     `tests/vectors/deviations.md`), or
+  //   - stays skipped with a `facade-gap:no-raw-key-binding` reason (corpus
+  //     locks bytes that require raw-key/raw-seed injection the facade does
+  //     not currently expose).
   // -------------------------------------------------------------------------
 
-  it.skip(
-    'link_keys.json — TODO Slice 0C: needs WASM deriveLinkKeys binding to lock byte-exact',
-    () => {
-      const v = loadVector('link_keys.json');
-      expect((v.expected as { linkIdHex: string }).linkIdHex.length).toBeGreaterThan(0);
-    },
-  );
+  it('link_keys.json — deriveLinkKeys produces byte-exact (linkId, wrappingKey)', () => {
+    const v = loadVector('link_keys.json');
+    const inputs = v.inputs as { linkSecretHex: string };
+    const expected = v.expected as { linkIdHex: string; wrappingKeyHex: string };
+
+    const linkSecret = fromHex(inputs.linkSecretHex);
+    const result = rustWasm.deriveLinkKeys(linkSecret);
+    try {
+      expect(result.code).toBe(0);
+      expect(bytesEqual(result.linkId, fromHex(expected.linkIdHex))).toBe(true);
+      expect(bytesEqual(result.wrappingKey, fromHex(expected.wrappingKeyHex))).toBe(true);
+    } finally {
+      result.free();
+    }
+
+    // Negative: the corpus declares INVALID_KEY_LENGTH for a 31-byte secret.
+    const truncated = linkSecret.slice(0, 31);
+    const failure = rustWasm.deriveLinkKeys(truncated);
+    try {
+      expect(failure.code).not.toBe(0);
+    } finally {
+      failure.free();
+    }
+  });
+
+  it('link_secret.json — generateLinkSecret returns 32 fresh CSPRNG bytes', () => {
+    const v = loadVector('link_secret.json');
+    const expected = v.expected as { lengthBytes: number };
+    expect(expected.lengthBytes).toBe(32);
+
+    const a = rustWasm.generateLinkSecret();
+    const b = rustWasm.generateLinkSecret();
+    try {
+      expect(a.code).toBe(0);
+      expect(b.code).toBe(0);
+      expect(a.bytes.length).toBe(expected.lengthBytes);
+      expect(b.bytes.length).toBe(expected.lengthBytes);
+      // Two consecutive draws must differ; corpus only locks length, but the
+      // CSPRNG contract is meaningless if successive calls return the same
+      // bytes, so assert it here as a smoke guard.
+      expect(bytesEqual(a.bytes, b.bytes)).toBe(false);
+    } finally {
+      a.free();
+      b.free();
+    }
+  });
 
   it.skip(
-    'link_secret.json — smoke vector, no byte-exact output',
+    'tier_key_wrap.json — deviation:tier-key-wrap (Rust core uses XChaCha20-Poly1305; corpus locks libsodium crypto_secretbox / XSalsa20-Poly1305 bytes — see tests/vectors/deviations.md)',
     () => {},
   );
 
   it.skip(
-    'tier_key_wrap.json — TODO Slice 0C: needs WASM unwrapTierKeyFromLink + deviation:tier-key-wrap closure',
+    'content_encrypt.json — facade-gap:no-raw-key-binding (corpus locks ciphertext under a caller-provided contentKey + nonce; encryptAlbumContent / decryptAlbumContent only accept an opaque epoch handle, so raw-key injection cannot be byte-asserted through the facade)',
     () => {},
   );
 
   it.skip(
-    'content_encrypt.json — TODO Slice 0C: needs WASM raw-key decryptContent binding',
+    'shard_envelope.json full decrypt — facade-gap:no-raw-key-binding (corpus locks per-tier ciphertext under caller-provided tierKey bytes; encryptShardWithEpochHandle / decryptShardWithEpochHandle only accept an opaque epoch handle, so the tier-key path cannot be byte-asserted through the facade)',
+    () => {},
+  );
+
+  it('auth_challenge.json — verifyManifestWithIdentity locks corpus signatures byte-exactly', () => {
+    const v = loadVector('auth_challenge.json');
+    const inputs = v.inputs as { authPublicKeyHex: string };
+    const expected = v.expected as {
+      transcriptNoTimestampHex: string;
+      transcriptWithTimestampHex: string;
+      signatureNoTimestampHex: string;
+      signatureWithTimestampHex: string;
+    };
+
+    const pub = fromHex(inputs.authPublicKeyHex);
+    const transcriptNoTs = fromHex(expected.transcriptNoTimestampHex);
+    const sigNoTs = fromHex(expected.signatureNoTimestampHex);
+    const transcriptWithTs = fromHex(expected.transcriptWithTimestampHex);
+    const sigWithTs = fromHex(expected.signatureWithTimestampHex);
+
+    // The auth-challenge transcript framing + Ed25519 signature is fully
+    // determined by the corpus inputs; verifying the captured signature with
+    // the captured public key over the captured transcript is a complete
+    // byte-exact check. Sign-side reproduction would require a deviation
+    // closure on auth-keypair, which is out of scope (see auth_keypair.json).
+    expect(rustWasm.verifyManifestWithIdentity(transcriptNoTs, sigNoTs, pub)).toBe(0);
+    expect(rustWasm.verifyManifestWithIdentity(transcriptWithTs, sigWithTs, pub)).toBe(0);
+
+    // Negative case: tampered signature must fail verification.
+    const tamperedSig = new Uint8Array(sigNoTs);
+    tamperedSig[0] ^= 0xff;
+    expect(
+      rustWasm.verifyManifestWithIdentity(transcriptNoTs, tamperedSig, pub),
+    ).not.toBe(0);
+
+    // Negative case: wrong public key must fail verification.
+    const tamperedPub = new Uint8Array(pub);
+    tamperedPub[0] ^= 0xff;
+    expect(
+      rustWasm.verifyManifestWithIdentity(transcriptNoTs, sigNoTs, tamperedPub),
+    ).not.toBe(0);
+
+    // Negative case: cross-feeding a no-timestamp signature against the
+    // with-timestamp transcript (the corpus's `timestamp-mismatch` mutation)
+    // must fail. Locks the transcript framing — flipping the framing changes
+    // the signed bytes, so a stale signature no longer verifies.
+    expect(
+      rustWasm.verifyManifestWithIdentity(transcriptWithTs, sigNoTs, pub),
+    ).not.toBe(0);
+  });
+
+  it.skip(
+    'auth_keypair.json — deviation:auth-keypair (Rust core uses HKDF-SHA256 over L0; corpus locks BLAKE2b("Mosaic_AuthKey_v1" || L0) bytes — see tests/vectors/deviations.md)',
     () => {},
   );
 
   it.skip(
-    'shard_envelope.json full decrypt — TODO Slice 0C: needs WASM raw-key decryptShard binding (current API requires an open epoch handle)',
+    'account_unlock.json — deviation:account-unlock (Rust core uses HKDF-SHA256 + XChaCha20-Poly1305; corpus locks the BLAKE2b L1 chain + crypto_secretbox wrap bytes — see tests/vectors/deviations.md)',
     () => {},
   );
 
   it.skip(
-    'auth_challenge.json — TODO Slice 0C: needs WASM signAuthChallenge / verifyAuthChallenge bindings',
+    'epoch_derive.json — facade-gap:no-raw-key-binding (corpus locks SHA-256 of tier/content keys derived from a caller-provided 32-byte epochSeed; the facade only exposes getTierKeyFromEpoch / deriveContentKeyFromEpoch behind an opaque handle whose seed cannot be injected without a raw-seed binding)',
     () => {},
   );
 
-  it.skip(
-    'auth_keypair.json — TODO Slice 0C: requires WASM auth-keypair derivation + deviation:auth-keypair closure',
-    () => {},
-  );
+  it('sealed_bundle.json — verifyManifestWithIdentity locks corpus bundle signature byte-exactly', () => {
+    const v = loadVector('sealed_bundle.json');
+    const inputs = v.inputs as {
+      sealedHex: string;
+      signatureHex: string;
+      sharerPubkeyHex: string;
+      expectedOwnerEd25519PubHex: string;
+    };
 
-  it.skip(
-    'account_unlock.json — TODO Slice 0C: needs WASM unlockAccountKey driven from L0 + deviation:account-unlock closure',
-    () => {},
-  );
+    const sealed = fromHex(inputs.sealedHex);
+    const signature = fromHex(inputs.signatureHex);
+    const sharerPub = fromHex(inputs.sharerPubkeyHex);
+    const expectedOwnerPub = fromHex(inputs.expectedOwnerEd25519PubHex);
 
-  it.skip(
-    'epoch_derive.json — TODO Slice 0C: needs WASM tier-key SHA-256 discriminator binding + deviation:epoch-tier-keys closure',
-    () => {},
-  );
+    // The corpus pins the bundle envelope as `sharerPubkey === expectedOwner`;
+    // a regression that decoupled them would slip past verification, so lock
+    // it explicitly.
+    expect(bytesEqual(sharerPub, expectedOwnerPub)).toBe(true);
 
-  it.skip(
-    'sealed_bundle.json — TODO Slice 0C: needs WASM verifyAndOpenBundle binding',
-    () => {},
-  );
+    // The sealed-bundle signature transcript is `BUNDLE_SIGN_CONTEXT ||
+    // sealed`, where `BUNDLE_SIGN_CONTEXT` is the ASCII literal
+    // `"Mosaic_EpochBundle_v1"` (mirrored in `crates/mosaic-crypto/src/lib.rs`
+    // and `libs/crypto/src/sharing.ts`). Constructing the transcript directly
+    // and verifying through `verifyManifestWithIdentity` (a thin wrapper over
+    // Ed25519 strict verify) locks the corpus signature byte-for-byte.
+    const bundleSignContext = new TextEncoder().encode('Mosaic_EpochBundle_v1');
+    const transcript = new Uint8Array(bundleSignContext.length + sealed.length);
+    transcript.set(bundleSignContext, 0);
+    transcript.set(sealed, bundleSignContext.length);
+
+    expect(rustWasm.verifyManifestWithIdentity(transcript, signature, sharerPub)).toBe(0);
+
+    // Negative case: tampered-signature (corpus mutation: flip first byte).
+    const tamperedSig = new Uint8Array(signature);
+    tamperedSig[0] ^= 0xff;
+    expect(
+      rustWasm.verifyManifestWithIdentity(transcript, tamperedSig, sharerPub),
+    ).not.toBe(0);
+
+    // Negative case: tampered-sealed (corpus mutation: flip first byte of
+    // sealed). The transcript prefix stays valid, but the signed bytes shift
+    // out from under the captured signature.
+    const tamperedSealed = new Uint8Array(sealed);
+    tamperedSealed[0] ^= 0xff;
+    const tamperedTranscript = new Uint8Array(
+      bundleSignContext.length + tamperedSealed.length,
+    );
+    tamperedTranscript.set(bundleSignContext, 0);
+    tamperedTranscript.set(tamperedSealed, bundleSignContext.length);
+    expect(
+      rustWasm.verifyManifestWithIdentity(tamperedTranscript, signature, sharerPub),
+    ).not.toBe(0);
+
+    // Negative case: wrong-owner-pubkey (corpus mutation: flip first byte of
+    // expectedOwnerEd25519PubHex). Verification must reject the signature.
+    const tamperedPub = new Uint8Array(sharerPub);
+    tamperedPub[0] ^= 0xff;
+    expect(
+      rustWasm.verifyManifestWithIdentity(transcript, signature, tamperedPub),
+    ).not.toBe(0);
+  });
 });
