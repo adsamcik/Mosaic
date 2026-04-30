@@ -12,11 +12,13 @@
 2. [System Architecture](#system-architecture)
 3. [Backend (.NET 10)](#backend-net-10)
 4. [Frontend (React 19)](#frontend-react-19)
-5. [Crypto Library](#crypto-library)
-6. [Database Schema](#database-schema)
-7. [Authentication](#authentication)
-8. [Testing Infrastructure](#testing-infrastructure)
-9. [Deployment](#deployment)
+5. [Rust Client Core](#rust-client-core)
+6. [Android Main App](#android-main-app)
+7. [Crypto Library](#crypto-library)
+8. [Database Schema](#database-schema)
+9. [Authentication](#authentication)
+10. [Testing Infrastructure](#testing-infrastructure)
+11. [Deployment](#deployment)
 
 ---
 
@@ -42,7 +44,8 @@ Mosaic is a **zero-knowledge encrypted photo gallery** designed for small-scale 
 │  React 19 + TypeScript + Vite + TanStack Virtual            │
 │  ├── Web Workers (Crypto, Database, Geo)                    │
 │  ├── SQLite-WASM + OPFS (local encrypted storage)          │
-│  └── libsodium-wrappers-sumo (cryptography)                 │
+│  ├── libsodium-wrappers-sumo (legacy crypto surface)        │
+│  └── mosaic-wasm (Rust client-core, handle-based facade)    │
 └──────────────────────────┬──────────────────────────────────┘
                            │ HTTPS (encrypted blobs)
 ┌──────────────────────────▼──────────────────────────────────┐
@@ -52,7 +55,17 @@ Mosaic is a **zero-knowledge encrypted photo gallery** designed for small-scale 
 │  ├── PostgreSQL (production) / SQLite (development)         │
 │  └── LocalAuth or ProxyAuth (trusted reverse proxy)         │
 └─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                       ANDROID (apps/android-main)            │
+│  Kotlin/AGP 8.7.3 + JNA bindings                            │
+│  └── mosaic-uniffi (Rust client-core, JNI/UniFFI facade)    │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+Both clients share the same Rust workspace under `crates/` (see
+[Rust Client Core](#rust-client-core)) and the same cross-client golden
+vector corpus under `tests/vectors/`.
 
 ---
 
@@ -300,6 +313,123 @@ All workers use **Comlink** for RPC communication.
 
 ---
 
+## Rust Client Core
+
+The Rust workspace under `crates/` is the canonical implementation of every
+security-critical primitive. The web frontend and the Android app both consume
+it through facade crates so the same audited code runs on both clients.
+
+### Crates
+
+| Crate | Purpose |
+|-------|---------|
+| **mosaic-domain** | Protocol/domain constants, schema versions, late-v1 lock |
+| **mosaic-crypto** | Canonical crypto boundary (envelope, manifest signing, sidecar, link/sealed/account/identity/epoch primitives, plus `ts_canonical` byte-equality helpers) |
+| **mosaic-client** | Upload/sync/session state-machine boundary + `ClientErrorCode` mapping |
+| **mosaic-media** | Gated media-processing prototype boundary |
+| **mosaic-wasm** | `wasm-bindgen` facade consumed by `apps/web` |
+| **mosaic-uniffi** | UniFFI/JNI facade consumed by `apps/android-main` |
+| **mosaic-vectors** | Loader for the cross-client golden-vector corpus (`tests/vectors/*.json`) |
+
+The Rust toolchain is pinned by `rust-toolchain.toml` (current `1.93.1`,
+MSRV `1.85`, with `aarch64-linux-android`, `x86_64-linux-android`, and
+`wasm32-unknown-unknown` targets).
+
+### Handle-based opaque-secret API
+
+The web cutover slices (Slices 2–8) replaced direct libsodium calls with a
+handle-based contract owned by the Rust core:
+
+* Account, identity, epoch, shard, link, manifest-signing, and metadata-sidecar
+  operations all return integer **handles** to callers; plaintext key material
+  never crosses the FFI boundary in unwrapped form.
+* `apps/web/src/workers/rust-crypto-core.ts` is the **single TypeScript entry
+  point** into `apps/web/src/generated/mosaic-wasm/`; an architecture-fitness
+  test (`tests/rust-cutover-boundary.test.ts`) enforces that no other worker
+  file imports the generated wasm-bindgen module directly.
+* On Android, the equivalent contract is provided by `AndroidRust*Api`
+  adapters under `apps/android-main/src/main/kotlin/.../bridge/`, which call
+  into `uniffi.mosaic_uniffi.*` over JNA.
+* Handle close functions explicitly zero the underlying secret bytes inside
+  Rust (`zeroize` crate); FFI Debug impls redact byte payloads as
+  `<redacted-{N}-bytes>` so panic logs and `Debug` formatting cannot leak key
+  material.
+
+### Late-v1 protocol surfaces (shared)
+
+These constants are fixed in `crates/mosaic-domain/src/lib.rs` and locked by
+`crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs`:
+
+| Surface | Value |
+|---------|-------|
+| Shard envelope magic | `SGzk` (4 bytes) |
+| Shard envelope version | `0x03` |
+| Shard envelope header length | `64` bytes |
+| Manifest signing context | `Mosaic_Manifest_v1` |
+| Metadata sidecar context | `Mosaic_Metadata_v1` |
+| Sidecar TLV tags | orientation, device timestamp, dimensions, MIME, caption, filename, camera make/model, GPS |
+
+### Cross-client vector corpus
+
+`tests/vectors/*.json` contains golden inputs/outputs for every primitive
+(envelope, manifest transcript, metadata sidecar, identity, auth challenge,
+content encrypt, link keys, link secret, sealed bundle, tier key wrap, epoch
+derive, account unlock). `mosaic-vectors` loads the corpus and the same
+fixtures drive Rust differential tests, web Vitest assertions, and Android
+JVM round-trip tests in `apps/android-main/src/test/.../bridge/` — proving
+byte-for-byte parity between TS, Rust, and JNA. Outstanding deviations are
+tracked in `tests/vectors/deviations.md`.
+
+---
+
+## Android Main App
+
+`apps/android-main` is the first real Android Gradle module in Mosaic. It
+consumes `crates/mosaic-uniffi` directly: the cross-compiled
+`libmosaic_uniffi.so` ships in the APK and JNA-generated Kotlin bindings
+(`uniffi.mosaic_uniffi.*`) call into Rust at runtime.
+
+### Module layout
+
+| Path | Role |
+|------|------|
+| `apps/android-shell/` | JVM-only Kotlin scaffold; source of truth for `Generated*Api` bridge contracts. No Android SDK required. |
+| `apps/android-main/` | Real AGP application module. Implements every `Generated*Api` contract via `AndroidRust*Api` adapters and ships a debug APK. |
+
+### Build chain
+
+| Component | Version |
+|-----------|---------|
+| Gradle | 8.10.2 (wrapper SHA256 pinned) |
+| Android Gradle Plugin | 8.7.3 |
+| Kotlin | 2.0.21 (JVM target 17) |
+| compileSdk / targetSdk | 35 |
+| minSdk | 26 |
+| JNA (Android `aar`) | 5.14.0 |
+| cargo-ndk | 4.1.2 |
+| uniffi-bindgen | 0.31.1 |
+| ABI filters | `arm64-v8a` + `x86_64` only |
+
+`scripts/build-android-main.{ps1,sh}` runs `scripts/build-rust-android.{ps1,sh}`
+first to produce the `.so` artifacts and Kotlin bindings, then invokes
+`gradlew :apps:android-main:assembleDebug`. `scripts/test-android-main.{ps1,sh}`
+runs the JVM unit tests (manifest invariants, adapter compilation contract,
+auto-import policy, cross-client vector round-trips).
+
+### Privacy invariants
+
+- `android:allowBackup="false"`; no `INTERNET`, `READ_MEDIA_*`, or
+  `MANAGE_EXTERNAL_STORAGE` permissions.
+- Bridge DTOs use `<redacted>` `toString()` — see
+  `apps/android-shell/src/main/kotlin/.../foundation/`.
+- The Band 6 auto-import `CoroutineWorker` runs as a `dataSync` foreground
+  service when policy allows; capability revocation between enqueue and
+  execution is a benign no-op.
+- WorkManager unique-work names are SHA-256 hashes of `(serverAccountId,
+  albumId)` so account/album identifiers never enter the WorkManager database.
+
+---
+
 ## Crypto Library
 
 ### Key Hierarchy
@@ -366,10 +496,13 @@ Total = Header (64) + Ciphertext + Tag (16)
 ### Security Invariants
 
 1. **Nonces never reused** - Fresh `randombytes_buf(24)` per encryption
-2. **Keys zeroed after use** - Explicit `memzero()` calls
+2. **Keys zeroed after use** - Explicit `memzero()` calls (TS) and `zeroize` (Rust)
 3. **Reserved bytes validated** - Checked as zero on decrypt
 4. **Signature before decrypt** - Prevents processing forged bundles
-5. **Domain separation** - Context strings prevent cross-protocol attacks
+5. **Domain separation** - Context strings (`Mosaic_Manifest_v1`,
+   `Mosaic_Metadata_v1`, tier-specific HKDF labels) prevent cross-protocol
+   attacks. The set of contexts and the late-v1 envelope header are locked
+   in `crates/mosaic-domain` (see [Rust Client Core](#rust-client-core)).
 
 ---
 
@@ -577,4 +710,4 @@ add_header Cross-Origin-Embedder-Policy "require-corp" always;
 
 ---
 
-*Generated: December 29, 2025*
+*Generated: December 29, 2025. Last refreshed: April 30, 2026 (post-Slice-0C, post-web-Rust-cutover, post-android-main).*
