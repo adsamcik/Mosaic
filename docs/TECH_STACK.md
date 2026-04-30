@@ -14,20 +14,23 @@ Mosaic is a self-hosted, end-to-end encrypted photo gallery where all encryption
 | Technology | Version | Purpose |
 |------------|---------|---------|
 | **React** | 19.0 | UI component library with the latest concurrent features |
-| **TypeScript** | 5.7 | Type-safe JavaScript with strict mode enabled |
-| **Vite** | 7.x | Fast build tool and dev server with HMR |
+| **TypeScript** | 5.9 | Type-safe JavaScript with strict mode enabled |
+| **Vite** | 8.x | Fast build tool and dev server with HMR |
 
 ### Key Libraries
 | Library | Purpose |
 |---------|---------|
 | **@tanstack/react-virtual** | Virtualized lists for efficient rendering of large photo grids |
 | **Comlink** | Simplified Web Worker communication via proxied async calls |
-| **sql.js** | SQLite compiled to WASM for client-side database storage |
+| **fts5-sql-bundle** | SQLite-WASM with FTS5 full-text search compiled in (production runtime; `sql.js` remains as a typings-only dev dependency) |
 | **idb** | Promise-based IndexedDB wrapper |
 | **libsodium-wrappers-sumo** | Cryptographic operations (see Crypto section) |
 | **tus-js-client** | Resumable file uploads via the Tus protocol |
 | **Leaflet** | Interactive map for geolocation-based photo browsing |
 | **Supercluster** | Fast point clustering for map markers |
+| **Zustand + zustand-mutative** | In-memory state stores with mutative draft updates |
+| **i18next + react-i18next** | UI localization (English + Czech bundles in `src/locales/`) |
+| **Zod** | Runtime validation of API responses (Zero-Knowledge defence-in-depth) |
 
 ### Browser APIs
 | API | Usage |
@@ -79,7 +82,7 @@ A shared TypeScript library providing all cryptographic primitives.
 | **XChaCha20-Poly1305** | Authenticated encryption for photo shards |
 | **Ed25519** | Digital signatures for manifests and identity |
 | **Argon2id** | Password-based key derivation (memory-hard) |
-| **HKDF-SHA256** | Deterministic key expansion |
+| **HKDF-style BLAKE2b** | Deterministic key expansion with domain-separated context strings |
 | **X25519** | Key exchange for sharing (via Ed25519 conversion) |
 
 ### Key Hierarchy
@@ -96,20 +99,33 @@ L3 (Epoch)   = ReadKey + SignKey per album  # Distributed to members
 - Constant-time comparisons for all sensitive data
 - Automatic memory zeroing after key use
 
-### Rust Client Core (in progress)
+### Rust Client Core
+
+The Rust workspace under `crates/` is the canonical client-core. It exposes a
+**handle-based opaque-secret API** (account-key, identity, epoch, shard, link,
+metadata-sidecar, manifest-signing handles): callers hold integer handles and
+the plaintext key material lives only inside Rust-owned memory which is zeroed
+on close. The web worker's `apps/web/src/workers/rust-crypto-core.ts` is the
+single TypeScript entry-point for that contract; on Android the
+`AndroidRust*Api` adapters in `apps/android-main` consume the same handles via
+JNA.
 
 | Crate | Purpose |
 |-------|---------|
-| **mosaic-domain** | Canonical protocol/domain types and schema versions |
-| **mosaic-crypto** | Canonical Rust cryptographic boundary |
+| **mosaic-domain** | Canonical protocol/domain types, schema versions, late-v1 protocol constants |
+| **mosaic-crypto** | Canonical Rust cryptographic boundary (libsodium-rust + RustCrypto stack) |
 | **mosaic-client** | Shared upload/sync/session state-machine boundary |
 | **mosaic-media** | Gated media-processing prototype boundary |
-| **mosaic-wasm** | Web Worker/WASM facade |
-| **mosaic-uniffi** | Android UniFFI/JNI facade |
+| **mosaic-wasm** | Web Worker/WASM facade (`wasm-bindgen` exports consumed by `apps/web`) |
+| **mosaic-uniffi** | Android UniFFI/JNI facade (`apps/android-main` JNA bindings) |
+| **mosaic-vectors** | Cross-client golden-vector loader for `tests/vectors/*.json` parity |
 
-Rust is pinned with `rust-toolchain.toml`. The Rust client core powers the
-web frontend via `mosaic-wasm` and the Android app via `mosaic-uniffi` (see
-the Android section below).
+Rust is pinned by `rust-toolchain.toml` (current toolchain `1.93.1`, MSRV
+`1.85`). The web frontend calls into the Rust core via `mosaic-wasm`; the
+Android app does so via `mosaic-uniffi` (see the Android section below). The
+`tests/vectors/` corpus is shared by both clients and a TS-canonical fallback
+lives in `mosaic-crypto::ts_canonical` to close residual byte-equality gaps
+during the cutover.
 
 ---
 
@@ -215,8 +231,9 @@ apps/android-shell                                      apps/android-main
 ### Crypto Library
 | Tool | Purpose |
 |------|---------|
-| **Vitest** | Unit tests with 100% coverage |
-| **Stryker** | Mutation testing for quality assurance |
+| **Vitest** | Unit tests with high coverage on the TypeScript reference (`libs/crypto`) |
+| **Stryker** | Mutation testing for the TypeScript crypto library |
+| **cargo-mutants** | Mutation testing for Rust client-core crates (opt-in only — see `.github/copilot-instructions.md`); fast iteration via the `weak-kdf` Cargo feature on `mosaic-crypto` |
 
 ---
 
@@ -244,8 +261,11 @@ Cross-Origin-Embedder-Policy: require-corp
 |------|---------|
 | **Node.js** | 20+ LTS for frontend tooling |
 | **pnpm/npm** | Package management |
-| **.NET CLI** | Backend development |
-| **Rust** | Shared client-core development |
+| **.NET CLI** | Backend development (`dotnet 10` SDK) |
+| **Rust** | Shared client-core development; pinned via `rust-toolchain.toml` |
+| **cargo-ndk** | 4.1.2 — Android cross-compile orchestrator |
+| **uniffi-bindgen** | 0.31.1 — Generates Kotlin bindings for `mosaic-uniffi` |
+| **wasm-bindgen-cli** | 0.2.118 — Generates JS bindings for `mosaic-wasm` |
 | **ESLint** | TypeScript/JavaScript linting |
 | **TypeScript** | Static type checking |
 
