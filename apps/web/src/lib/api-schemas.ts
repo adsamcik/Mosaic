@@ -99,13 +99,13 @@ export type HealthResponse = z.infer<typeof HealthResponseSchema>;
 export const UserSchema = z.object({
   id: UuidSchema,
   authSub: z.string(),
-  identityPubkey: Base64Schema.optional(),
+  identityPubkey: Base64Schema.nullish(),
   createdAt: IsoDateTimeSchema,
   isAdmin: z.boolean().optional(),
-  encryptedSalt: Base64Schema.optional(),
-  saltNonce: Base64Schema.optional(),
-  accountSalt: Base64Schema.optional(),
-  wrappedAccountKey: Base64Schema.optional(),
+  encryptedSalt: Base64Schema.nullish(),
+  saltNonce: Base64Schema.nullish(),
+  accountSalt: Base64Schema.nullish(),
+  wrappedAccountKey: Base64Schema.nullish(),
 });
 export type User = z.infer<typeof UserSchema>;
 
