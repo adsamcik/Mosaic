@@ -31,8 +31,7 @@ const NONCE: [u8; 24] = [
 #[test]
 fn shard_envelope_magic_is_frozen_at_sgzk_four_bytes() {
     assert_eq!(
-        SHARD_ENVELOPE_MAGIC,
-        *b"SGzk",
+        SHARD_ENVELOPE_MAGIC, *b"SGzk",
         "SHARD_ENVELOPE_MAGIC must be the four ASCII bytes `SGzk`. {FREEZE_HINT}"
     );
     assert_eq!(
@@ -81,7 +80,11 @@ fn shard_envelope_reserved_bytes_are_zero_on_encode() {
     // Reserved bytes occupy header offsets 38..64 (26 bytes total). They are
     // covered by the AAD — `bytes[38..64]` must be all zero on encode for every
     // tier. Decode-side enforcement is asserted in the decode test below.
-    for &tier in &[ShardTier::Thumbnail, ShardTier::Preview, ShardTier::Original] {
+    for &tier in &[
+        ShardTier::Thumbnail,
+        ShardTier::Preview,
+        ShardTier::Original,
+    ] {
         let header = ShardEnvelopeHeader::new(42, 7, NONCE, tier);
         let bytes = header.to_bytes();
 

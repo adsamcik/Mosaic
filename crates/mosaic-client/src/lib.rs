@@ -2813,11 +2813,7 @@ mod tests {
                 handle: 17,
                 wrapped_account_key: vec![241, 242, 243],
             },
-            &[
-                "code: Ok",
-                "handle: 17",
-                "wrapped_account_key_len: 3",
-            ],
+            &["code: Ok", "handle: 17", "wrapped_account_key_len: 3"],
             &["241", "242", "243", "wrapped_account_key: ["],
         );
 
