@@ -94,9 +94,14 @@ fn shard_envelope_reserved_bytes_are_zero_on_encode() {
             "header length drift on encode for tier {tier:?}. {FREEZE_HINT}"
         );
 
-        for offset in 38..SHARD_ENVELOPE_HEADER_LEN {
+        for (offset, byte) in bytes
+            .iter()
+            .enumerate()
+            .take(SHARD_ENVELOPE_HEADER_LEN)
+            .skip(38)
+        {
             assert_eq!(
-                bytes[offset], 0,
+                *byte, 0,
                 "Reserved byte at offset {offset} must be zero on encode for \
                  tier {tier:?}. {FREEZE_HINT}"
             );
