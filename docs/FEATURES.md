@@ -851,6 +851,37 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 
 **Status:** v1 foundation slice — proves FFI is wired. Real Photo Picker, Tus upload, codec/tier-generation, and WorkManager scheduling are follow-ups.
 
+### Cross-client cryptographic vector parity (Android, Slice 0C)
+
+**Purpose:** Drive `tests/vectors/*.json` byte-equality assertions from the Android side through the production `AndroidRust*Api` adapters into the host-built `mosaic_uniffi` cdylib. Proves the Rust → Kotlin FFI boundary preserves byte-for-byte agreement with the canonical cross-client corpus for link-key derivation, identity-from-seed, auth-challenge sign/verify, sealed-bundle verify-and-open, and raw-key album content decrypt.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Rust UniFFI exports | `crates/mosaic-uniffi/src/lib.rs` (8 new `#[uniffi::export]` fns + 5 new Records) |
+| Numeric error code snapshot | `crates/mosaic-uniffi/tests/error_code_table.rs` |
+| Shell-side bridge contracts | `apps/android-shell/src/main/kotlin/org/mosaic/android/foundation/GeneratedRust{LinkKeys,IdentitySeed,AuthChallenge,SealedBundle,Content}Bridge.kt` |
+| Android-main adapters | `apps/android-main/src/main/kotlin/org/mosaic/android/main/bridge/AndroidRust{LinkKeys,IdentitySeed,AuthChallenge,SealedBundle,Content}Api.kt` |
+| Round-trip tests (host-lib JNA override) | `apps/android-main/src/test/kotlin/org/mosaic/android/main/bridge/AndroidRust*ApiRoundTripTest.kt` (30 tests) |
+| Shell-side cross-client byte-equality | `apps/android-shell/src/test/kotlin/org/mosaic/android/foundation/CrossClientVectorTest.kt` (5 deferred tests converted) |
+| Architecture guard | `tests/architecture/kotlin-raw-input-ffi.{ps1,sh}` |
+| SPEC | `docs/specs/SPEC-AndroidSlice0CCryptoBridges.md` |
+
+**Features:**
+- 7 new UniFFI exports for cross-client raw-input crypto (`derive_link_keys_from_raw_secret`, `derive_identity_from_raw_seed`, `build_auth_challenge_transcript_bytes`, `sign_auth_challenge_with_raw_seed`, `verify_auth_challenge_signature`, `verify_and_open_bundle_with_recipient_seed`, `decrypt_content_with_raw_key`).
+- Sealed-bundle FFI Record intentionally OMITS `sign_secret_seed` from `mosaic_client::OpenedBundleResult` — only public-side fields and `epoch_seed` cross the FFI surface.
+- All input byte arrays wiped on the Rust side via `Zeroizing` before return; result records implement custom `fmt::Debug` that redacts byte payloads as `<redacted-{N}-bytes>`.
+- Shell-side Kotlin DTOs render every byte field as `<redacted>` in `toString()`; round-trip tests assert no forbidden hex appears in the rendered output.
+- Architecture guard fails CI on any non-test Kotlin caller of the 5 new bridges, enforcing test-only usage of the raw-input path.
+- New `client_error_code_table_*` snapshot tests in `crates/mosaic-uniffi/tests/error_code_table.rs` pin the full numeric `ClientErrorCode` → `u16` table to detect drift, renumbering, or collision.
+
+**Tests:**
+- Rust: `crates/mosaic-uniffi/tests/{ffi_snapshot,error_code_table}.rs` (snapshot + 49-row code table).
+- Android shell: `apps/android-shell/src/test/.../CrossClientVectorTest.kt` (5 vector byte-equality tests, all green).
+- Android main: 30 round-trip tests across 5 bridges; covers all 11 vector negatives + 4 sealed-bundle edge cases (BundleAlbumIdEmpty / EpochTooOld paths).
+
+**Status:** v1 — five `TODO Slice 0C:` markers closed. Four remaining `tests/vectors/*.json` files (`tier_key_wrap`, `auth_keypair`, `account_unlock`, `epoch_derive`) are tracked in `tests/vectors/deviations.md` and addressed by commit `0e2957a`'s `mosaic-crypto::ts_canonical` module; their Android wiring is a follow-up.
+
 ---
 
 ## Feature Documentation Template
@@ -887,7 +918,10 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-04-30 | Cross-client cryptographic vector parity (Android, Slice 0C) | Added | 7 new raw-input UniFFI exports + 5 Generated*Bridge contracts + 5 AndroidRust*Api adapters + 30 round-trip tests; closes 5 `TODO Slice 0C:` markers in `CrossClientVectorTest.kt`; new `kotlin-raw-input-ffi` architecture guard; new `error_code_table.rs` snapshot test |
+| 2026-04-30 | TS-Canonical Cryptographic Primitives | Added | `mosaic-crypto::ts_canonical` module: BLAKE2b-keyed link IDs, BLAKE2b auth-key + L1 derivation, XSalsa20-Poly1305 (`crypto_secretbox`) wrap/unwrap; reproduces TS reference byte-exact for `auth_keypair.json`, `account_unlock.json`, `link_keys.json` corpora |
 | 2026-04-29 | Sync Conflict Resolution     | Added    | Lane B: deterministic three-way block merge with LWW fallback for album content; expanded rust-cutover boundary guard to per-symbol classification |
+| 2026-04-29 | FFI Debug Redaction (M5)     | Added    | 24 custom `fmt::Debug` impls across `mosaic-{client,crypto,media,uniffi,wasm}` replacing `derive(Debug)` on public FFI surfaces; redacts byte payloads as `<redacted-{N}-bytes>`; 30 mutation-kill tests in `mosaic-client/tests/mutation_kills.rs` |
 | 2026-04-29 | Android Main Module (Rust UniFFI APK) | Added | First real Android Gradle module wiring `mosaic-uniffi` cdylib + JNA Kotlin bindings into a debug APK; closes 11-bridge FFI drift between `apps/android-shell` and `crates/mosaic-uniffi` |
 | 2026-04-28 | Timed Album/Photo Expiration | Modified | Backend adds server-clock album/photo expiry, deterministic sweeps, access enforcement, and focused tests |
 | 2026-04-28 | Temporary Albums (TTL)      | Modified | Added explicit destructive acknowledgement, photo expiration adapter, and local purge wiring for expired/deleted client state |
