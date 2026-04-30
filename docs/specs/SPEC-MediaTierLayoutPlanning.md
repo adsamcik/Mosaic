@@ -2,7 +2,11 @@
 
 ## Status
 
-Approved for implementation.
+Locked at v1. Implemented in `4dc18ac` (`feat(media): plan canonical tier
+layouts`). `plan_tier_layout` returns canonical thumbnail (256×256, fit,
+no-upscale), preview (1024×1024, fit, no-upscale), and original (validated
+normalized dimensions) `TierDimensions` and is consumed by the tier generation
+adapter and the Android UniFFI media bridge.
 
 ## Scope
 

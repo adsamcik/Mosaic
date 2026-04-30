@@ -2,7 +2,12 @@
 
 ## Status
 
-Approved for implementation.
+Locked at v1. Implemented in `044d192` (`feat(media): add tier generation
+adapter`). The adapter contract bridges `inspect_image`,
+`strip_known_metadata`, and `plan_tier_layout` to a `MediaTierEncoder`
+boundary; live codecs remain on the platform side per the slice's exclusion
+list. Combined sidecar+tier API landed via `5bfdf5b` (`feat(media): integrate
+metadata sidecars`).
 
 ## Scope
 

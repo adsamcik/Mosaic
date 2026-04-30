@@ -1,5 +1,13 @@
 # Media Orientation Normalization
 
+## Status
+
+Locked at v1. Implemented in `eef8841` (`feat(media): normalize EXIF
+orientation`). `inspect_image` parses JPEG EXIF tag `0x0112` and returns
+display-normalized dimensions plus the canonical `1..=8` orientation value;
+`strip_known_metadata` (added in `787bd69` `feat(media): strip image metadata
+carriers`) removes EXIF from gallery tier bytes before encryption.
+
 ## Problem
 
 Android Photo Picker can return JPEG bytes whose pixels are stored in one orientation while EXIF tag `0x0112` describes the intended display transform. Mosaic gallery tiers must be visually consistent across web and Android, but server-bound tier bytes must not carry plaintext EXIF metadata.
