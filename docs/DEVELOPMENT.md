@@ -209,7 +209,37 @@ For debugging, use launch configurations:
 
 ## Rust Client-Core Workspace
 
-The Rust workspace is the foundation for the shared client core used by future web WASM and Android UniFFI integrations.
+The Rust workspace under `crates/` is the canonical client-core consumed by
+the web frontend (via `mosaic-wasm`) and the Android app (via `mosaic-uniffi`).
+See [ARCHITECTURE.md → Rust Client Core](ARCHITECTURE.md#rust-client-core) for
+the crate map and handle-based API contract.
+
+### Toolchain (one-time setup)
+
+The Rust toolchain is pinned by `rust-toolchain.toml` (`1.93.1` channel,
+MSRV `1.85`, `aarch64-linux-android` + `x86_64-linux-android` +
+`wasm32-unknown-unknown` targets installed automatically). Beyond `rustc`,
+you also need three CLI helpers at the exact pinned versions enforced by
+the build scripts:
+
+```powershell
+# Versions checked by scripts/build-rust-android.ps1 and scripts/build-rust-wasm.ps1
+cargo install cargo-ndk         --version 4.1.2   --locked
+cargo install uniffi            --version 0.31.1  --features cli --locked   # provides uniffi-bindgen
+cargo install wasm-bindgen-cli  --version 0.2.118 --locked
+```
+
+```bash
+# Linux/macOS equivalents
+cargo install cargo-ndk         --version 4.1.2   --locked
+cargo install uniffi            --version 0.31.1  --features cli --locked
+cargo install wasm-bindgen-cli  --version 0.2.118 --locked
+```
+
+The build scripts `throw` if any of these CLIs are missing or at the wrong
+version, so a local install drift surfaces immediately.
+
+### Common commands
 
 ```powershell
 # Format, lint, test, and run architecture boundary checks
@@ -218,10 +248,10 @@ The Rust workspace is the foundation for the shared client core used by future w
 # Include cargo-deny, cargo-audit, and cargo-vet checks when installed
 .\scripts\rust-check.ps1
 
-# Build the WASM facade crate
+# Build the WASM facade crate (used by apps/web)
 .\scripts\build-rust-wasm.ps1
 
-# Build Android facade artifacts with cargo-ndk
+# Build Android facade artifacts with cargo-ndk (used by apps/android-main)
 .\scripts\build-rust-android.ps1
 ```
 
@@ -232,7 +262,63 @@ The Rust workspace is the foundation for the shared client core used by future w
 ./scripts/build-rust-android.sh
 ```
 
-The Rust crates intentionally do not affect production web or backend behavior until later feature-flagged integration phases.
+The Rust crates power both clients today (web cutover Slices 2–8 + Android
+Slice 0C have landed); changes that affect the FFI surface are gated by
+snapshot tests under `crates/mosaic-{wasm,uniffi}/tests/ffi_snapshot.rs`.
+
+---
+
+## Android Main App
+
+`apps/android-main` is the first real Android Gradle module (AGP 8.7.3,
+Kotlin 2.0.21). It links the Rust UniFFI core (`crates/mosaic-uniffi`) into
+a debug APK. See `apps/android-main/README.md` for the module layout and
+[ARCHITECTURE.md → Android Main App](ARCHITECTURE.md#android-main-app) for
+the bridge contracts.
+
+### One-shot build + test
+
+```powershell
+# Windows — runs build-rust-android.ps1 first, then gradlew :apps:android-main:assembleDebug
+.\scripts\build-android-main.ps1
+
+# Run JVM unit tests (manifest invariants, adapter compilation contract,
+# auto-import policy, cross-client vector round-trips)
+.\scripts\test-android-main.ps1
+```
+
+```bash
+./scripts/build-android-main.sh
+./scripts/test-android-main.sh
+```
+
+### Prerequisites
+
+In addition to the Rust toolchain CLIs above, `build-android-main` needs:
+
+- **JDK 17** on `PATH` / `JAVA_HOME`.
+- **Android NDK 29.0.14206865** (or NDK 27/28 with `ANDROID_NDK_HOME`
+  pointing at the install).
+- **Android SDK** with `platforms;android-35` + `build-tools;35.x` accepted.
+
+The Gradle wrapper (`8.10.2`, SHA256 pinned in
+`gradle/wrapper/gradle-wrapper.properties`) downloads the rest. There is no
+separate `dev.ps1` entry for the Android module — it lives outside the
+PostgreSQL/backend/frontend dev loop.
+
+### Shell-only (no Android SDK required)
+
+The JVM-only contract scaffold in `apps/android-shell` runs without any
+Android tooling — useful for verifying `Generated*Api` bridge contracts in
+seconds:
+
+```powershell
+.\scripts\test-android-shell.ps1
+```
+
+```bash
+./scripts/test-android-shell.sh
+```
 
 ---
 
