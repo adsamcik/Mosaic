@@ -2,14 +2,23 @@
 
 ## Status
 
-Prepared for Band 7 / Phase G (`late-v1 protocol freeze`). This is a
-current-main inventory and freeze-gate specification, not a reimplementation and
-not a dependency on unmerged Bands 5/6 or Android upload work.
+**Late-v1 freeze gate: DECLARED on 2026-04-30.** The freeze candidates listed
+under §"Freeze candidates when the gate is declared" are now **frozen**
+alongside §"Frozen now". Lock tests pin every byte-format constant, FFI API
+snapshot, and stable error code (see docs/RELEASE.md → "Late-v1 Protocol
+Freeze" → "Lock tests"). The list under §"Explicitly open until Bands 5/6 and
+Android upload finish" remains explicitly open and is the only surface that
+may evolve before v1.x.
+
+This document was prepared for Band 7 / Phase G (`late-v1 protocol freeze`).
+It is a current-main inventory and freeze-gate specification, not a
+reimplementation and not a dependency on unmerged Bands 5/6 or Android upload
+work.
 
 The freeze gate is intentionally dependency-safe:
 
-- surfaces listed as **freeze candidates** may be locked once the release owner
-  declares the late-v1 freeze;
+- surfaces previously listed as **freeze candidates** are now **frozen** as of
+  the 2026-04-30 declaration;
 - surfaces listed as **explicitly open** remain changeable until Bands 5/6 and
   Android upload finish and their final shapes are re-inventoried;
 - zero-knowledge invariants are already frozen and non-negotiable.

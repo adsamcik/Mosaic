@@ -248,19 +248,28 @@ fn client_error_code_table_matches_expected_v1_layout() {
         expected.len(),
         live.len(),
         "ClientErrorCode variant count drifted from the snapshot — \
-         add the new variant to expected_table() and live_table()"
+         API surface change. Stable numeric error codes are append-only after \
+         the late-v1 freeze. To add a variant: append it to BOTH expected_table() \
+         and live_table(), keep numeric values unique, and update \
+         SPEC-LateV1ProtocolFreeze §Frozen now (numeric error code table 0–222)."
     );
 
     for ((expected_name, expected_code), (live_name, live_code)) in expected.iter().zip(&live) {
         assert_eq!(
             expected_name, live_name,
-            "ClientErrorCode variant order drifted at code {}",
+            "ClientErrorCode variant order drifted at code {} — \
+             reordering or renaming an existing variant is a release-blocker \
+             contract change. Update SPEC-LateV1ProtocolFreeze §Frozen now if you \
+             genuinely need to bump the protocol.",
             expected_code
         );
         assert_eq!(
             expected_code, live_code,
             "ClientErrorCode::{expected_name} numeric value drifted: \
-             expected {expected_code}, live {live_code}"
+             expected {expected_code}, live {live_code}. Numeric error codes are \
+             append-only after the late-v1 freeze; reusing or reinterpreting a \
+             stable code is a release-blocker per SPEC-LateV1ProtocolFreeze \
+             §Versioning and freeze gate rules → Rust FFI DTOs."
         );
     }
 }

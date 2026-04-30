@@ -34,11 +34,37 @@ const ACCOUNT_SALT: [u8; 16] = [
 const MAX_PROGRESS_EVENTS: u32 = 10_000;
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 
+/// Late-v1 protocol freeze lock: the UniFFI API snapshot string is part of the
+/// frozen Android/Rust boundary. Changing it without coordinated bindings,
+/// vectors, and a SPEC update is a release-blocker contract change.
+///
+/// If this test fails: API surface change — bump version + add migration vector
+/// + update SPEC-LateV1ProtocolFreeze §Frozen now.
 #[test]
 fn uniffi_facade_exposes_stable_ffi_spike_surface() {
+    const FROZEN_UNIFFI_API_SNAPSHOT: &str = "mosaic-uniffi ffi-spike:v9 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)";
+
     assert_eq!(
         uniffi_api_snapshot(),
-        "mosaic-uniffi ffi-spike:v9 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
+        FROZEN_UNIFFI_API_SNAPSHOT,
+        "API surface change — bump version + add migration vector + update \
+         SPEC-LateV1ProtocolFreeze §Frozen now (this snapshot pins the Android/Rust \
+         UniFFI boundary at ffi-spike:v9)"
+    );
+}
+
+/// Late-v1 protocol freeze lock: the version label `ffi-spike:v9` is part of
+/// the frozen surface. Bumping it requires an ADR, regenerated bindings, and
+/// migration vectors per SPEC-LateV1ProtocolFreeze §"Versioning and freeze
+/// gate rules" → "Rust FFI DTOs".
+#[test]
+fn uniffi_api_snapshot_version_label_is_frozen_at_v9() {
+    let snapshot = uniffi_api_snapshot();
+    assert!(
+        snapshot.starts_with("mosaic-uniffi ffi-spike:v9 "),
+        "uniffi_api_snapshot() must begin with `mosaic-uniffi ffi-spike:v9 ` — \
+         API surface change requires bumping the version label, adding a migration \
+         vector, and updating SPEC-LateV1ProtocolFreeze §Frozen now. Got: {snapshot}"
     );
 }
 

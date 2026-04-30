@@ -31,11 +31,37 @@ const ACCOUNT_SALT: [u8; 16] = [
 ];
 const MAX_PROGRESS_EVENTS: u32 = 10_000;
 
+/// Late-v1 protocol freeze lock: the WASM API snapshot string is part of the
+/// frozen Web/Rust boundary. Changing it without coordinated bindings,
+/// vectors, and a SPEC update is a release-blocker contract change.
+///
+/// If this test fails: API surface change — bump version + add migration vector
+/// + update SPEC-LateV1ProtocolFreeze §Frozen now.
 #[test]
 fn wasm_facade_exposes_stable_ffi_spike_surface() {
+    const FROZEN_WASM_API_SNAPSHOT: &str = "mosaic-wasm ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)";
+
     assert_eq!(
         wasm_api_snapshot(),
-        "mosaic-wasm ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)"
+        FROZEN_WASM_API_SNAPSHOT,
+        "API surface change — bump version + add migration vector + update \
+         SPEC-LateV1ProtocolFreeze §Frozen now (this snapshot pins the Web/Rust \
+         WASM boundary at ffi-spike:v6)"
+    );
+}
+
+/// Late-v1 protocol freeze lock: the version label `ffi-spike:v6` is part of
+/// the frozen surface. Bumping it requires an ADR, regenerated bindings, and
+/// migration vectors per SPEC-LateV1ProtocolFreeze §"Versioning and freeze
+/// gate rules" → "Rust FFI DTOs".
+#[test]
+fn wasm_api_snapshot_version_label_is_frozen_at_v6() {
+    let snapshot = wasm_api_snapshot();
+    assert!(
+        snapshot.starts_with("mosaic-wasm ffi-spike:v6 "),
+        "wasm_api_snapshot() must begin with `mosaic-wasm ffi-spike:v6 ` — \
+         API surface change requires bumping the version label, adding a migration \
+         vector, and updating SPEC-LateV1ProtocolFreeze §Frozen now. Got: {snapshot}"
     );
 }
 
