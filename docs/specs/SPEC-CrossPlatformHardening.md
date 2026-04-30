@@ -2,7 +2,18 @@
 
 ## Status
 
-Band 7 prep checklist and static-guard baseline for v1 release readiness.
+Implementation in flight via Lane D as of 2026-04-30. The static-guard
+baseline and v1-release threat checklist were captured in `b86e4d4`
+(`docs(security): define cross-platform hardening gates`) and `c0c6950`
+(`docs(security): triage 27 Dependabot alerts on AGP transitive deps`). The
+Lane D execution is landing as parallel slices: D1 (web boundary guard +
+persistence-safe-snapshot, `a827cc3`), D2 (manifest invariants + Slice 0C
+DTO redaction, `4789184`), D3 (rust-no-secret-logs guard + Debug
+redaction, `4c398f7`), and D4 (late-v1 protocol freeze, `3915248` —
+tracked separately under `SPEC-LateV1ProtocolFreeze.md`). Subsequent
+hardening commits include `fb26573` (FFI Debug payload redaction, M5),
+`2fdf57e`, `4e1e7ce`, `3ea4a8a`, `c5fb4ed`, `aa69916` and the broader
+`fix(web/security)` series that closed M1–M9 / L1–L8 findings.
 
 This document is dependency-safe against current `main`. It does not require
 unmerged Bands 5 or 6 work, and it intentionally avoids replacing the deeper

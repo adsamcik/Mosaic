@@ -2,7 +2,10 @@
 
 **Date:** January 6, 2026  
 **Issue:** Firefox E2E tests hang indefinitely during registration/login  
-**Status:** Root cause identified, recommendation provided
+**Status:** Locked at v1 — root cause identified, decision recorded: keep
+Firefox E2E tests skipped for v1, document Firefox as unsupported for the
+E2E matrix. This is an ADR-style report rather than a build SPEC; the
+recommendation has shipped as the operating policy of `tests/e2e/`.
 
 ---
 

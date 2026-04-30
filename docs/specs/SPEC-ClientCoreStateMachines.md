@@ -1,5 +1,26 @@
 # Client Core State Machines
 
+## Status
+
+Locked at v1 for the contract layer. Implemented across:
+
+- `1aa2baa` (`build(rust): add ffi facade spike`) and `a3b0ce4`
+  (`build(rust): add client core workspace skeleton`) — workspace skeleton.
+- `d4e2ff6` (`feat(client): add client-core state reducers`) — reducer-style
+  upload/sync state machines.
+- `eeb9697` (`feat(ffi): expose client-core state DTO adapters`) — UniFFI/WASM
+  DTO adapters for the reducer API.
+- `50cb647` (`test(client-core): add state machine contract vectors`) and
+  `730d1cb` (`test(client-core): add public-API, error-mapping, and crafted-snapshot
+  fixtures`) — contract vectors and snapshot regression coverage.
+- `77559f7` (`fix(client-core): align FFI adapters with reducer API`) and
+  `0fd7859` (`test(ffi): harden client-core snapshot regressions`) — FFI alignment.
+- `407c216` (`fix(rust/ffi): strict snapshot enum decoding; metadata length cap;
+  clamp-as-error (L1, L2, L4)`) — late-v1 snapshot hardening.
+
+The full Rust ownership of upload transport, sync engine, and Android
+WorkManager remain platform-side per the original goal.
+
 ## Goal
 
 Add a Rust-native, deterministic upload/sync orchestration slice for the

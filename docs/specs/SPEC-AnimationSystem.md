@@ -1,6 +1,6 @@
 # Mosaic Animation System Design
 
-> **Status:** ✅ Implemented  
+> **Status:** ✅ Implemented — Locked at v1.
 > **Author:** Copilot  
 > **Date:** 2025-12-31  
 > **Implemented:** 2025-07-24
