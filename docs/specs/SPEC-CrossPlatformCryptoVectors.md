@@ -1,5 +1,17 @@
 # Cross-Platform Crypto Golden Vectors
 
+## Status
+
+Locked at v1. Implemented in `cc207b5` (`test(crypto): add cross-platform
+golden vectors`) and expanded into a full corpus in `c7ba68b`
+(`feat(crypto): add cross-client golden vector corpus`). The corpus lives
+under `tests/vectors/` and covers `account_unlock`, `auth_challenge`,
+`auth_keypair`, `content_encrypt`, `epoch_derive`, `identity`, `link_keys`,
+`link_secret`, `manifest_transcript`, `sealed_bundle`, `shard_envelope`, and
+`tier_key_wrap`. Cross-impl parity gaps were closed in `f8b0165`
+(`fix(crypto): close cross-impl parity gaps for tier keys and manifest
+transcript`) and `0e2957a` (Slice 0C `ts_canonical` primitives).
+
 ## Scope
 
 This slice adds a narrow golden-vector runner for Rust canonical crypto/domain outputs that must remain identical across native Rust, Android UniFFI, and Web WASM facades.

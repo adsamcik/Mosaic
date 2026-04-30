@@ -1,5 +1,31 @@
 # Web Rust Crypto Cutover
 
+## Status
+
+Locked at v1. Lane J cutover landed across seven slices, each replacing the
+TypeScript helper inside `apps/web/src/workers/crypto.worker.ts` and the
+relevant adapter modules with the Rust handle contract:
+
+- Slice 1 — handle-based crypto contract: `20c8b23`
+  (`feat(web/worker): add handle-based crypto contract for Rust cutover`).
+- Slice 2 — account/session bootstrap: `3d5043a`
+  (`feat(web): migrate account/session bootstrap to Rust handle contract`).
+- Slice 3 — epoch key lifecycle: `8f8bb43`
+  (`feat(web): migrate epoch key lifecycle to Rust handle contract`).
+- Slice 4 — manifest sign/verify + sync: `c8f6eaa`
+  (`feat(web): migrate manifest sign/verify + sync to Rust handles`).
+- Slice 6 — share-link key wrapping: `22019b5`
+  (`feat(web): migrate share-link key wrapping to Rust handles`).
+- Slice 7 — album content + UI utility: `bd240a1`
+  (`feat(web): migrate album content + UI utility to Rust handles`).
+- Slice 8 — OPFS DB worker encryption: `aaa6d65`
+  (`feat(web): migrate OPFS DB worker encryption to Rust handle contract`).
+
+The 15 missing WASM exports needed for the cutover were added in `aaa2af8e`
+(`feat(crypto): expose 15 missing WASM exports for web cutover`). Cross-client
+parity with the legacy TypeScript construction was preserved via the
+`ts_canonical` BLAKE2b/`crypto_secretbox` primitives (`0e2957a`, Slice 0C).
+
 ## Problem
 
 The web app currently routes security-critical Mosaic protocol operations through `apps/web/src/workers/crypto.worker.ts`, but that worker is implemented with TypeScript helpers from `libs/crypto` and direct `libsodium-wrappers-sumo` calls. Android and future client-core work require Rust to be the canonical implementation for crypto/protocol behavior while preserving the existing React UI and worker boundary.

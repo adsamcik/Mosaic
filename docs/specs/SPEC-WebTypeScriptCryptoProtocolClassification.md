@@ -2,7 +2,16 @@
 
 ## Status
 
-Band 4 / Phase D classification for the `ts-crypto-classification` lane. This is a deletion map, not a deletion approval. It records which `apps/web` TypeScript surfaces still own crypto/protocol/client-core behavior while Band 2/3 Rust state-machine, epoch-handle, upload, sync, and Android interop work is still landing.
+Locked at v1. Implemented in `478f9ae` (`docs(web): classify TypeScript
+crypto protocol surfaces`) and pinned by the boundary guard
+`apps/web/tests/rust-cutover-boundary.test.ts`. The guard was extended in
+`90a6243` (`test(web): expand rust-cutover boundary with per-symbol
+allowlist`) and `00b1b68` (`test(web): guard Rust crypto cutover
+boundaries`), and now enforces four invariants: file-level allowlist,
+per-symbol allowlist, Slice 1 handle-id boundary, and per-slice retirement
+guards. Subsequent Slice 2/3/4/6/7/8 migrations (see
+`SPEC-WebRustCryptoCutover.md`) shrank the production TypeScript surface as
+the boundary guard tightened.
 
 ## Classification legend
 

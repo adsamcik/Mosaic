@@ -2,7 +2,12 @@
 
 ## Status
 
-Prepared for Band 4 / Phase D web thin-shell cleanup.
+Locked at v1. Adapter seam implemented in `aca0695` (`feat(web): add
+client-core adapter seam`) at `apps/web/src/lib/client-core-adapter.ts`,
+with the cleanup-debt inventory captured in `a08ab14` (`docs(web): inventory
+crypto cleanup debt`). The seam selects the existing TypeScript web upload
+queue and sync engine by default; the subsequent Rust handle cutover landed
+under `SPEC-WebRustCryptoCutover.md` (Slices 1–8).
 
 ## Scope
 
