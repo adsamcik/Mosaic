@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "bench": "vitest bench --run",
     "postinstall": "node scripts/copy-sql-wasm.cjs"
   },

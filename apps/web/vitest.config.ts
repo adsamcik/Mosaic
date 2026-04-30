@@ -26,6 +26,17 @@ export default defineConfig({
         'src/App.tsx',
         'src/components/**/*.tsx',
       ],
+      // Thresholds are calibrated to current achieved coverage minus a small
+      // buffer (rounded down to the nearest 5%) so day-to-day churn doesn't
+      // flap the gate while still preventing regression. The .github/agents.md
+      // aspirational target is 80% lines for the frontend; raise these numbers
+      // as coverage improves toward that goal.
+      thresholds: {
+        lines: 50,
+        functions: 40,
+        branches: 40,
+        statements: 50,
+      },
     },
   },
   resolve: {
