@@ -2,7 +2,17 @@
 
 ## Status
 
-Approved by user; implemented at commit time.
+Locked at v1. Implemented in `fe49557` (`feat(android): wire android-main
+Gradle module to Rust core (M0, S1)`) — first real `apps/android-main`
+Gradle application module that consumes the generated UniFFI Kotlin bindings,
+packages the Rust `cdylib` for `arm64-v8a` and `x86_64`, and replaces every
+test-fake `GeneratedRust*Api` consumer in `apps/android-shell` with a real
+adapter. Subsequent hardening landed in `5f7216a` (input preconditions),
+`5aa3758` (FFI buffer wiping in generated bridges), `dc02b52` (extensive
+bridge-layer test coverage), `043b4dd` (round-trip alignment), `c37fb88`
+(Slice 0C cross-client crypto bridges), `ba1cac1` (Band 6 AutoImportWorker),
+`fb9b0aa` (header smoke rejection), and the Lane D2 manifest-invariant +
+DTO-redaction asserts in `4789184`.
 
 This SPEC explicitly overrides the gate stated in `apps/android-shell/README.md`
 ("*Do not add real upload/networking or codec work until those dependencies

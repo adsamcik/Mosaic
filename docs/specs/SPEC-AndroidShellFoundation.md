@@ -2,7 +2,13 @@
 
 ## Status
 
-Approved for implementation.
+Locked at v1. Implemented in `ea1c3b2` (`feat(android): add upload shell
+foundation`) — JVM-only Kotlin scaffold under `apps/android-shell` with
+the privacy-safe upload queue records, immediate-read Photo Picker abstraction,
+crypto-unlock vs server-auth state-machine separation, and the
+`GeneratedRustAccountBridge` seam. The Gradle/Android conversion landed via
+`SPEC-AndroidMainGradleModule` (`fe49557`); the shell foundation contracts
+remain authoritative.
 
 ## Scope
 

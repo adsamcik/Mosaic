@@ -2,10 +2,14 @@
 
 ## Status
 
-Implemented as a focused Band 3 contract proof. This is not a full device/browser
-E2E proof because the repository still has only the JVM-only Android shell
-foundation and no complete Android app, WorkManager drain, Tus networking harness,
-or real-device upload UI.
+Locked at v1 as a Band 3 contract proof. Implemented in `7f0161c`
+(`feat(android): wire manual upload client-core handoff`) and
+`1a8f145` (`test(cross-client): prove android manual upload contract`).
+The shared executable fixture lives at
+`tests/contracts/android-manual-upload-cross-client.json` and is asserted by
+the Android shell, backend controller, and web Vitest fixture tests
+referenced below. A full device/browser E2E proof remains out of scope here
+and is tracked by the Band 8 final validation matrix.
 
 ## Scope
 

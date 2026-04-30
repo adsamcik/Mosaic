@@ -2,7 +2,18 @@
 
 ## Status
 
-Implemented for Android manual one-photo encrypted upload readiness.
+Locked at v1. Implemented across two slices:
+
+- `4dc94b5` (`feat(android): add media adapter bridge seam`) — adds the
+  Android-side bridge contract for media inspection and tier planning.
+- `7a0952f` (`feat(android): expose media core bridge readiness`) — surfaces
+  `inspect_media_image`, `plan_media_tier_layout`, the canonical media
+  metadata sidecar construction, and `encrypt_metadata_sidecar_with_epoch_handle`
+  through `mosaic-uniffi` and the Android shell.
+
+Together they meet the Android manual one-photo encrypted upload readiness
+goal stated in this slice; concrete codecs and Photo Picker UI remain
+out of scope per the original exclusions.
 
 ## Scope
 

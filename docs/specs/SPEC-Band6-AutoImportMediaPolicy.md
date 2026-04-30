@@ -2,7 +2,16 @@
 
 ## Status
 
-Implemented as a dependency-safe Android shell foundation seam.
+Locked at v1. Implemented as a dependency-safe Android shell foundation
+seam in `02d7e2f` (`feat(android): add auto-import media policy seam`),
+`7f3003d` (`feat(android): add auto-import scheduling seam`),
+`e52d599` (`feat(android): add auto-import dedupe drift contracts`),
+`38e4f75` (`test(android): harden auto-import capability boundary`), and
+`b562f66` / `34b08a6` (test isolation fix-ups). The Lane C scheduling-seam
+graduation landed in `ba1cac1` (`feat(android): wire Band 6 auto-import
+scheduling seam into a real WorkManager worker`), which produced the real
+`AutoImportWorker`, `AutoImportRuntime`, `AutoImportWorkPolicy`, and
+`AutoImportWorkScheduler` under `apps/android-main/src/main/kotlin/.../work/`.
 
 ## Scope
 
