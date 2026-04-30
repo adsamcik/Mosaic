@@ -51,7 +51,7 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@types/supercluster": "^7.1.3",
-    "@vitejs/plugin-react": "^5.1.2",
+    "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^4.0.16",
     "sql.js": "^1.14.1",
     "typescript": "^5.9.3",
