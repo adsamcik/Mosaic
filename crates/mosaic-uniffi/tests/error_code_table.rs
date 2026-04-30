@@ -8,7 +8,10 @@
 //! freeze (see `docs/specs/SPEC-LateV1ProtocolFreeze.md`) treats this table
 //! as part of the v1 wire surface.
 
+use std::collections::BTreeSet;
+
 use mosaic_client::ClientErrorCode;
+use strum::{EnumCount, IntoEnumIterator};
 
 /// Returns the canonical `(name, u16)` table for every `ClientErrorCode`
 /// variant. Adding a new variant requires a corresponding row here.
@@ -285,4 +288,67 @@ fn client_error_code_table_has_no_collisions() {
         );
         seen.push(*code);
     }
+}
+
+/// Locks the 1:1 invariant between `ClientErrorCode` variants and the rows
+/// of `expected_table()` using `strum::EnumCount` + `strum::EnumIter`
+/// (gated by `mosaic-client`'s `__variant-introspection` feature, which
+/// is enabled only via this crate's `[dev-dependencies]`).
+///
+/// Without this guard, the existing positional snapshot tests above would
+/// silently miss a newly-added variant: `expected_table()` and
+/// `live_table()` are both author-maintained lists, so dropping a new
+/// variant into the enum (and into `live_table()`) without updating
+/// `expected_table()` would still produce two equal-length lists.
+///
+/// This test fails when:
+///   * A variant is added to `ClientErrorCode` but no matching row was
+///     added to `expected_table()` — `missing_from_table` is reported.
+///   * A variant is renamed in the enum but `expected_table()` still has
+///     the old name — `stale_in_table` is reported (renames also break
+///     `live_table()` at compile time, which is the first line of defence).
+///   * The total count drifts for any reason — final `assert_eq!` reports
+///     the discrepancy.
+#[test]
+fn client_error_code_table_covers_every_variant() {
+    let table_names: BTreeSet<String> = expected_table()
+        .into_iter()
+        .map(|(name, _)| name.to_owned())
+        .collect();
+
+    // `Debug` on a unit-only `#[repr(u16)]` enum prints just the variant
+    // name, which matches the strings used in `expected_table()`.
+    let live_names: BTreeSet<String> = ClientErrorCode::iter()
+        .map(|variant| format!("{variant:?}"))
+        .collect();
+
+    let missing_from_table: Vec<&String> = live_names.difference(&table_names).collect();
+    let stale_in_table: Vec<&String> = table_names.difference(&live_names).collect();
+
+    assert!(
+        missing_from_table.is_empty(),
+        "ClientErrorCode variants missing from expected_table(): \
+         {missing_from_table:?}. Numeric error codes are append-only after \
+         the late-v1 freeze. Add a row in BOTH expected_table() and \
+         live_table() with a unique numeric value, then update \
+         SPEC-LateV1ProtocolFreeze §Frozen now (numeric error code table)."
+    );
+    assert!(
+        stale_in_table.is_empty(),
+        "expected_table() lists names that no longer exist on \
+         ClientErrorCode: {stale_in_table:?}. Renaming or removing a stable \
+         variant is a release-blocker contract change after the late-v1 \
+         freeze; see SPEC-LateV1ProtocolFreeze §Versioning and freeze gate \
+         rules → Rust FFI DTOs."
+    );
+    assert_eq!(
+        table_names.len(),
+        ClientErrorCode::COUNT,
+        "expected_table() has {} unique variant names but \
+         ClientErrorCode has {} variants — the snapshot drifted from the \
+         enum even though no per-name diff was reported (likely a \
+         duplicated row in expected_table()).",
+        table_names.len(),
+        ClientErrorCode::COUNT,
+    );
 }

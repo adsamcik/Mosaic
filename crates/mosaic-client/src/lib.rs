@@ -35,6 +35,10 @@ pub use state_machine::*;
 
 /// Stable client error codes exported through FFI facades.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "__variant-introspection",
+    derive(strum::EnumCount, strum::EnumIter)
+)]
 #[repr(u16)]
 pub enum ClientErrorCode {
     Ok = 0,

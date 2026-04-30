@@ -11,12 +11,22 @@ publish.workspace = true
 mosaic-crypto = { path = "../mosaic-crypto", version = "0.1.0" }
 mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
 zeroize = "=1.8.2"
+# Optional: only pulled in when the `__variant-introspection` feature is
+# enabled (currently only by cross-crate test builds in `mosaic-uniffi`).
+# Keeps strum out of the release dependency closure.
+strum = { version = "=0.28.0", default-features = false, features = ["derive"], optional = true }
 
 [features]
 default = []
 # SECURITY: Propagates `mosaic-crypto/weak-kdf`. Test-only. Never enable in
 # production builds. See `mosaic-crypto/Cargo.toml`.
 weak-kdf = ["mosaic-crypto/weak-kdf"]
+# Test-only: enables `strum::EnumCount` / `strum::EnumIter` derives on
+# `ClientErrorCode` so cross-crate snapshot tests (see
+# `crates/mosaic-uniffi/tests/error_code_table.rs`) can enforce a 1:1
+# mapping between every enum variant and the on-wire numeric code table.
+# NOT for production: keeps the release surface clean of strum.
+__variant-introspection = ["dep:strum"]
 
 [lints]
 workspace = true
