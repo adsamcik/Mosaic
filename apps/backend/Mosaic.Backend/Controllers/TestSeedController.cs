@@ -120,7 +120,7 @@ public class TestSeedController : ControllerBase
         var existingUsers = new List<string>();
 
         // Ensure pool-proxy user (for ProxyAuth tests)
-        var proxyResult = await EnsurePoolUser(PoolProxyEmail, "proxy");
+        var proxyResult = await EnsurePoolUserAsync(PoolProxyEmail, "proxy");
         if (proxyResult.WasCreated)
         {
             createdUsers.Add(PoolProxyEmail);
@@ -131,7 +131,7 @@ public class TestSeedController : ControllerBase
         }
 
         // Ensure pool-local user (for LocalAuth tests)
-        var localResult = await EnsurePoolUser(PoolLocalEmail, "local");
+        var localResult = await EnsurePoolUserAsync(PoolLocalEmail, "local");
         if (localResult.WasCreated)
         {
             createdUsers.Add(PoolLocalEmail);
@@ -229,7 +229,7 @@ public class TestSeedController : ControllerBase
     /// <summary>
     /// Ensures a pool user exists, creating if necessary.
     /// </summary>
-    private async Task<(User? User, bool WasCreated)> EnsurePoolUser(string email, string authMode)
+    private async Task<(User? User, bool WasCreated)> EnsurePoolUserAsync(string email, string authMode)
     {
         var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == email);
         if (existingUser != null)

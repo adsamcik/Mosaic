@@ -84,7 +84,7 @@ public partial class CombinedAuthMiddleware
         // This enables public endpoints (e.g. /api/auth/register) to
         // perform their own authorization checks when needed.
         var authenticated = false;
-        if (_localAuthEnabled && await TryLocalAuth(context, db))
+        if (_localAuthEnabled && await TryLocalAuthAsync(context, db))
         {
             authenticated = true;
         }
@@ -111,7 +111,7 @@ public partial class CombinedAuthMiddleware
         await context.Response.WriteAsJsonAsync(new { error = "Authentication required" });
     }
 
-    private async Task<bool> TryLocalAuth(HttpContext context, MosaicDbContext db)
+    private async Task<bool> TryLocalAuthAsync(HttpContext context, MosaicDbContext db)
     {
         // Get session token from cookie
         if (!context.Request.Cookies.TryGetValue("mosaic_session", out var tokenBase64))

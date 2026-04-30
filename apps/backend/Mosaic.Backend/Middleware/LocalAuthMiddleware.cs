@@ -47,7 +47,7 @@ public class LocalAuthMiddleware
 
         // Always attempt authentication to populate context items.
         // This enables public endpoints to perform their own authorization checks.
-        await TryAuthenticate(context, db);
+        await TryAuthenticateAsync(context, db);
 
         // Public paths proceed regardless of auth result
         if (isPublicPath)
@@ -67,7 +67,7 @@ public class LocalAuthMiddleware
         await context.Response.WriteAsJsonAsync(new { error = "Authentication required" });
     }
 
-    private async Task TryAuthenticate(HttpContext context, MosaicDbContext db)
+    private async Task TryAuthenticateAsync(HttpContext context, MosaicDbContext db)
     {
         // Get session token from cookie
         if (!context.Request.Cookies.TryGetValue("mosaic_session", out var tokenBase64))

@@ -265,23 +265,23 @@ app.MapTus("/api/files", async httpContext => new tusdotnet.Models.DefaultTusCon
     {
         OnAuthorizeAsync = async ctx =>
         {
-            await TusEventHandlers.OnAuthorize(ctx, app.Services);
+            await TusEventHandlers.OnAuthorizeAsync(ctx, app.Services);
         },
         OnBeforeCreateAsync = async ctx =>
         {
-            await TusEventHandlers.OnBeforeCreate(ctx, app.Services);
+            await TusEventHandlers.OnBeforeCreateAsync(ctx, app.Services);
         },
         OnCreateCompleteAsync = async ctx =>
         {
-            await TusEventHandlers.OnCreateComplete(ctx, app.Services);
+            await TusEventHandlers.OnCreateCompleteAsync(ctx, app.Services);
         },
         OnFileCompleteAsync = async ctx =>
         {
-            await TusEventHandlers.OnFileComplete(ctx, app.Services);
+            await TusEventHandlers.OnFileCompleteAsync(ctx, app.Services);
         },
         OnDeleteCompleteAsync = async ctx =>
         {
-            await TusEventHandlers.OnDeleteComplete(ctx, app.Services);
+            await TusEventHandlers.OnDeleteCompleteAsync(ctx, app.Services);
         }
     }
 });

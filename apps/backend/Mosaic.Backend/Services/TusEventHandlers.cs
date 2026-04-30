@@ -18,7 +18,7 @@ public static class TusEventHandlers
     private const string ReservationAlbumIdItemKey = "TusReservationAlbumId";
     private static readonly TimeSpan ReservationLifetime = TimeSpan.FromHours(24);
 
-    public static async Task OnBeforeCreate(
+    public static async Task OnBeforeCreateAsync(
         BeforeCreateContext context,
         IServiceProvider services)
     {
@@ -74,7 +74,7 @@ public static class TusEventHandlers
         }
     }
 
-    public static async Task OnCreateComplete(
+    public static async Task OnCreateCompleteAsync(
         CreateCompleteContext context,
         IServiceProvider services)
     {
@@ -122,7 +122,7 @@ public static class TusEventHandlers
         await db.SaveChangesAsync();
     }
 
-    public static async Task OnAuthorize(
+    public static async Task OnAuthorizeAsync(
         AuthorizeContext context,
         IServiceProvider services)
     {
@@ -179,7 +179,7 @@ public static class TusEventHandlers
         }
     }
 
-    public static async Task OnDeleteComplete(
+    public static async Task OnDeleteCompleteAsync(
         DeleteCompleteContext context,
         IServiceProvider services)
     {
@@ -197,7 +197,7 @@ public static class TusEventHandlers
         await db.SaveChangesAsync();
     }
 
-    public static async Task OnFileComplete(
+    public static async Task OnFileCompleteAsync(
         FileCompleteContext context,
         IServiceProvider services)
     {
@@ -273,7 +273,7 @@ public static class TusEventHandlers
         }
     }
 
-    public static async Task<int> CleanupExpiredReservations(
+    public static async Task<int> CleanupExpiredReservationsAsync(
         IServiceProvider services,
         CancellationToken cancellationToken = default)
     {

@@ -168,7 +168,7 @@ public partial class AuthController : ControllerBase
         await _db.SaveChangesAsync();
 
         // Cleanup old challenges
-        await CleanupExpiredChallenges();
+        await CleanupExpiredChallengesAsync();
 
         return Ok(new AuthInitResponse
         {
@@ -531,7 +531,7 @@ public partial class AuthController : ControllerBase
             return NotFound();
         }
 
-        var userId = await GetCurrentUserId();
+        var userId = await GetCurrentUserIdAsync();
         if (userId == null)
         {
             return Unauthorized();
@@ -583,7 +583,7 @@ public partial class AuthController : ControllerBase
             return NotFound();
         }
 
-        var userId = await GetCurrentUserId();
+        var userId = await GetCurrentUserIdAsync();
         if (userId == null)
         {
             return Unauthorized();
@@ -613,7 +613,7 @@ public partial class AuthController : ControllerBase
             return NotFound();
         }
 
-        var userId = await GetCurrentUserId();
+        var userId = await GetCurrentUserIdAsync();
         if (userId == null)
         {
             return Unauthorized();
@@ -658,7 +658,7 @@ public partial class AuthController : ControllerBase
         return token != null ? SHA256.HashData(token) : null;
     }
 
-    private async Task<Guid?> GetCurrentUserId()
+    private async Task<Guid?> GetCurrentUserIdAsync()
     {
         var token = GetSessionToken();
         if (token == null)
@@ -804,7 +804,7 @@ public partial class AuthController : ControllerBase
         return "Unknown";
     }
 
-    private async Task CleanupExpiredChallenges()
+    private async Task CleanupExpiredChallengesAsync()
     {
         // Delete challenges older than 5 minutes
         var cutoff = DateTime.UtcNow.AddMinutes(-5);

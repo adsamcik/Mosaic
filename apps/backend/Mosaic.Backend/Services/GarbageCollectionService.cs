@@ -42,13 +42,13 @@ public class GarbageCollectionService : BackgroundService
                 var expiredAlbums = 0;
                 var expiredUploadReservations = 0;
 
-                expiredUploadReservations = await TusEventHandlers.CleanupExpiredReservations(_services, stoppingToken);
-                orphanedBlobs = await CleanExpiredPendingShards();
-                orphanedBlobs += await CleanTrashedShards(stoppingToken);
-                expiredAlbums = await CleanExpiredAlbums(stoppingToken);
-                expiredAlbums += await CleanExpiredManifests(stoppingToken);
-                await CleanExpiredShareLinkGrants();
-                expiredLinks = await CleanExpiredShareLinks();
+                expiredUploadReservations = await TusEventHandlers.CleanupExpiredReservationsAsync(_services, stoppingToken);
+                orphanedBlobs = await CleanExpiredPendingShardsAsync();
+                orphanedBlobs += await CleanTrashedShardsAsync(stoppingToken);
+                expiredAlbums = await CleanExpiredAlbumsAsync(stoppingToken);
+                expiredAlbums += await CleanExpiredManifestsAsync(stoppingToken);
+                await CleanExpiredShareLinkGrantsAsync();
+                expiredLinks = await CleanExpiredShareLinksAsync();
 
                 _logger.GarbageCollectionCompleted(
                     orphanedBlobs + expiredUploadReservations,
@@ -65,7 +65,7 @@ public class GarbageCollectionService : BackgroundService
         }
     }
 
-    private async Task<int> CleanExpiredPendingShards()
+    private async Task<int> CleanExpiredPendingShardsAsync()
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
@@ -91,7 +91,7 @@ public class GarbageCollectionService : BackgroundService
         return count;
     }
 
-    internal async Task<int> CleanTrashedShards(CancellationToken cancellationToken = default)
+    internal async Task<int> CleanTrashedShardsAsync(CancellationToken cancellationToken = default)
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
@@ -185,7 +185,7 @@ public class GarbageCollectionService : BackgroundService
         return totalDeleted;
     }
 
-    internal async Task<int> CleanExpiredAlbums(CancellationToken cancellationToken = default)
+    internal async Task<int> CleanExpiredAlbumsAsync(CancellationToken cancellationToken = default)
     {
         using var scope = _services.CreateScope();
         var expirationService = scope.ServiceProvider.GetRequiredService<IAlbumExpirationService>();
@@ -199,14 +199,14 @@ public class GarbageCollectionService : BackgroundService
         return deletedCount;
     }
 
-    internal async Task<int> CleanExpiredManifests(CancellationToken cancellationToken = default)
+    internal async Task<int> CleanExpiredManifestsAsync(CancellationToken cancellationToken = default)
     {
         using var scope = _services.CreateScope();
         var expirationService = scope.ServiceProvider.GetRequiredService<IAlbumExpirationService>();
         return await expirationService.SweepExpiredManifestsAsync(cancellationToken: cancellationToken);
     }
 
-    internal async Task<int> CleanExpiredShareLinks()
+    internal async Task<int> CleanExpiredShareLinksAsync()
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
@@ -253,7 +253,7 @@ public class GarbageCollectionService : BackgroundService
         return totalDeleted;
     }
 
-    internal async Task<int> CleanExpiredShareLinkGrants()
+    internal async Task<int> CleanExpiredShareLinkGrantsAsync()
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();

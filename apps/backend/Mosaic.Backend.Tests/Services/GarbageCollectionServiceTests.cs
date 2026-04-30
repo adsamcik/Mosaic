@@ -57,7 +57,7 @@ public class GarbageCollectionServiceTests
         await db.SaveChangesAsync();
 
         // Act
-        var count = await service.CleanExpiredAlbums();
+        var count = await service.CleanExpiredAlbumsAsync();
 
         // Assert
         Assert.Equal(1, count);
@@ -77,7 +77,7 @@ public class GarbageCollectionServiceTests
         await db.SaveChangesAsync();
 
         // Act
-        var count = await service.CleanExpiredAlbums();
+        var count = await service.CleanExpiredAlbumsAsync();
 
         // Assert
         Assert.Equal(0, count);
@@ -96,7 +96,7 @@ public class GarbageCollectionServiceTests
         Assert.Null(album.ExpiresAt);
 
         // Act
-        var count = await service.CleanExpiredAlbums();
+        var count = await service.CleanExpiredAlbumsAsync();
 
         // Assert
         Assert.Equal(0, count);
@@ -129,7 +129,7 @@ public class GarbageCollectionServiceTests
         quota.CurrentAlbumCount = 3;
         await db.SaveChangesAsync();
 
-        await service.CleanExpiredAlbums();
+        await service.CleanExpiredAlbumsAsync();
 
         var updatedQuota = await db.UserQuotas.FindAsync(owner.Id);
         Assert.Equal(8000, updatedQuota!.UsedStorageBytes);
@@ -141,7 +141,7 @@ public class GarbageCollectionServiceTests
         trashedShard.StatusUpdatedAt = DateTime.UtcNow.AddDays(-8);
         await db.SaveChangesAsync();
 
-        var cleaned = await service.CleanTrashedShards();
+        var cleaned = await service.CleanTrashedShardsAsync();
         Assert.Equal(1, cleaned);
 
         updatedQuota = await db.UserQuotas.FindAsync(owner.Id);
@@ -180,7 +180,7 @@ public class GarbageCollectionServiceTests
         db.Shards.AddRange(shards);
         await db.SaveChangesAsync();
 
-        var cleaned = await service.CleanTrashedShards();
+        var cleaned = await service.CleanTrashedShardsAsync();
 
         Assert.Equal(250, cleaned);
         Assert.Empty(db.Shards);
@@ -214,7 +214,7 @@ public class GarbageCollectionServiceTests
         await db.SaveChangesAsync();
 
         // Act
-        var count = await service.CleanExpiredAlbums();
+        var count = await service.CleanExpiredAlbumsAsync();
 
         // Assert — storage is reclaimed when trashed shards are purged, but album slot is reclaimed now
         Assert.Equal(1, count);
@@ -235,7 +235,7 @@ public class GarbageCollectionServiceTests
         var recentExpiredLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-29));
         var activeLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(2));
 
-        var count = await service.CleanExpiredShareLinks();
+        var count = await service.CleanExpiredShareLinksAsync();
 
         Assert.Equal(1, count);
         Assert.Null(await db.ShareLinks.FindAsync(expiredLink.Id));
@@ -275,7 +275,7 @@ public class GarbageCollectionServiceTests
         db.ShareLinkGrants.AddRange(oldGrant, bufferedGrant);
         await db.SaveChangesAsync();
 
-        var count = await service.CleanExpiredShareLinkGrants();
+        var count = await service.CleanExpiredShareLinkGrantsAsync();
 
         Assert.Equal(1, count);
         Assert.Null(await db.ShareLinkGrants.FindAsync(oldGrant.Id));

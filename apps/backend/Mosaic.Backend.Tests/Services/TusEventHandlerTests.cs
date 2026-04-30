@@ -15,7 +15,7 @@ using Xunit;
 namespace Mosaic.Backend.Tests.Services;
 
 /// <summary>
-/// Tests for TusEventHandlers.OnBeforeCreate album expiration guard.
+/// Tests for TusEventHandlers.OnBeforeCreateAsync album expiration guard.
 /// Uses SQLite in-memory so the raw SQL quota queries work correctly.
 /// </summary>
 public class TusEventHandlerTests : IDisposable
@@ -94,7 +94,7 @@ public class TusEventHandlerTests : IDisposable
         var httpContext = TestHttpContext.Create("test-user");
         var context = CreateBeforeCreateContext(httpContext, album.Id);
 
-        await TusEventHandlers.OnBeforeCreate(context, _provider);
+        await TusEventHandlers.OnBeforeCreateAsync(context, _provider);
 
         Assert.True(context.HasFailed);
         Assert.Equal("Album has expired", context.ErrorMessage);
@@ -112,7 +112,7 @@ public class TusEventHandlerTests : IDisposable
         var httpContext = TestHttpContext.Create("test-user");
         var context = CreateBeforeCreateContext(httpContext, album.Id);
 
-        await TusEventHandlers.OnBeforeCreate(context, _provider);
+        await TusEventHandlers.OnBeforeCreateAsync(context, _provider);
 
         if (context.HasFailed)
         {
@@ -131,7 +131,7 @@ public class TusEventHandlerTests : IDisposable
         var httpContext = TestHttpContext.Create("test-user");
         var context = CreateBeforeCreateContext(httpContext, album.Id);
 
-        await TusEventHandlers.OnBeforeCreate(context, _provider);
+        await TusEventHandlers.OnBeforeCreateAsync(context, _provider);
 
         if (context.HasFailed)
         {
@@ -162,7 +162,7 @@ public class TusEventHandlerTests : IDisposable
         _db.TusUploadReservations.AddRange(reservations);
         await _db.SaveChangesAsync();
 
-        var cleaned = await TusEventHandlers.CleanupExpiredReservations(_provider);
+        var cleaned = await TusEventHandlers.CleanupExpiredReservationsAsync(_provider);
 
         Assert.Equal(250, cleaned);
         Assert.Empty(_db.TusUploadReservations);

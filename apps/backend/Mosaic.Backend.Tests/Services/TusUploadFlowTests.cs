@@ -65,7 +65,7 @@ public sealed class TusUploadFlowTests : IDisposable
 
         var httpContext = TestHttpContext.Create("tus-owner");
         var beforeCreate = CreateBeforeCreateContext(httpContext, album.Id, uploadLength: 1024);
-        await TusEventHandlers.OnBeforeCreate(beforeCreate, _provider);
+        await TusEventHandlers.OnBeforeCreateAsync(beforeCreate, _provider);
         Assert.False(beforeCreate.HasFailed);
 
         _db.ChangeTracker.Clear();
@@ -81,7 +81,7 @@ public sealed class TusUploadFlowTests : IDisposable
             ctx.Metadata = metadata;
         });
 
-        await TusEventHandlers.OnCreateComplete(createComplete, _provider);
+        await TusEventHandlers.OnCreateCompleteAsync(createComplete, _provider);
         _db.ChangeTracker.Clear();
         Assert.NotNull(await _db.TusUploadReservations.FindAsync(fileId));
 
@@ -93,7 +93,7 @@ public sealed class TusUploadFlowTests : IDisposable
             ctx.Store = store;
         });
 
-        await TusEventHandlers.OnFileComplete(fileComplete, _provider);
+        await TusEventHandlers.OnFileCompleteAsync(fileComplete, _provider);
 
         _db.ChangeTracker.Clear();
         quota = await _db.UserQuotas.FindAsync(user.Id);
@@ -133,7 +133,7 @@ public sealed class TusUploadFlowTests : IDisposable
             ctx.Store = store;
         });
 
-        await TusEventHandlers.OnFileComplete(fileComplete, _provider);
+        await TusEventHandlers.OnFileCompleteAsync(fileComplete, _provider);
 
         _db.ChangeTracker.Clear();
         var shard = await _db.Shards.SingleAsync(s => s.Id == Guid.Parse(fileId));
@@ -180,7 +180,7 @@ public sealed class TusUploadFlowTests : IDisposable
             ctx.Store = store;
         });
 
-        await TusEventHandlers.OnFileComplete(fileComplete, _provider);
+        await TusEventHandlers.OnFileCompleteAsync(fileComplete, _provider);
 
         _db.ChangeTracker.Clear();
         var shard = await _db.Shards.SingleAsync(s => s.Id == Guid.Parse(fileId));
@@ -232,7 +232,7 @@ public sealed class TusUploadFlowTests : IDisposable
             ctx.Intent = IntentType.WriteFile;
         });
 
-        await TusEventHandlers.OnAuthorize(context, _provider);
+        await TusEventHandlers.OnAuthorizeAsync(context, _provider);
 
         Assert.True(context.HasFailed);
         Assert.Equal("Unauthorized", context.ErrorMessage);
@@ -262,7 +262,7 @@ public sealed class TusUploadFlowTests : IDisposable
             ctx.FileId = reservation.FileId;
         });
 
-        await TusEventHandlers.OnDeleteComplete(context, _provider);
+        await TusEventHandlers.OnDeleteCompleteAsync(context, _provider);
 
         _db.ChangeTracker.Clear();
         quota = await _db.UserQuotas.FindAsync(user.Id);
@@ -304,7 +304,7 @@ public sealed class TusUploadFlowTests : IDisposable
             ctx.Store = store;
         });
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => TusEventHandlers.OnFileComplete(fileComplete, _provider));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => TusEventHandlers.OnFileCompleteAsync(fileComplete, _provider));
         Assert.Equal("Access denied", ex.Message);
 
         _db.ChangeTracker.Clear();
