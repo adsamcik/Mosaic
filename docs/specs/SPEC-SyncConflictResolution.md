@@ -1,6 +1,9 @@
 # SPEC: Sync & Conflict Resolution for Block-Based Content
 
-> **Status:** Research Complete  
+> **Status:** Implemented (Lane B). Deterministic LWW conflict resolution for
+> album content landed in `3d66b67` (`feat(web/sync): add deterministic
+> conflict resolution for album content`). The CRDT/Yjs path remains a
+> deferred enhancement and is not part of v1.
 > **Author:** GitHub Copilot  
 > **Date:** 2026-01-29  
 > **Scope:** Sync protocol design, conflict resolution strategies, implementation recommendations

@@ -1,6 +1,15 @@
 # SPEC: Sync Coordination System
 
-> **Status:** Design Proposal  
+> **Status:** Implemented. The web sync stack lives in
+> `apps/web/src/lib/sync-engine.ts`, `apps/web/src/lib/sync-coordinator.tsx`,
+> and `apps/web/src/contexts/SyncContext.tsx`, with deduplicated
+> sync-complete listeners, single-flight refetch, and the upload-promotion
+> handshake described here. Subsequent v1 hardening landed via
+> `3e9fb5d` (`feat(web/sync): route 410 (gone) responses through
+> purgeLocalAlbum`) and `3d66b67` (`feat(web/sync): add deterministic
+> conflict resolution for album content`). The Rust client-core sync state
+> machine seam is provided by `SPEC-ClientCoreStateMachines.md` and
+> `SPEC-WebClientCoreAdapterSeam.md`.
 > **Author:** GitHub Copilot  
 > **Date:** 2026-01-02  
 > **Scope:** `apps/web/src/` sync coordination, upload lifecycle, refetch deduplication

@@ -2,9 +2,23 @@
 
 ## Status
 
-Authoritative Band 5 contract spec for timed album and photo expiration. This workstream owns the executable contract/focused tests; backend and web implementation lanes may merge before these tests go green.
+Locked at v1. Implemented across backend, web, and routing lanes:
 
-Related decision record: `docs/adr/ADR-011-timed-expiration.md`.
+- Backend (Lane I): `f83b688` (`feat(backend): add timed photo expiration`),
+  `f6b88b7` (`fix(backend): harden expiration cleanup contracts`),
+  and `efb02ed` (`fix(share-links): enforce album expiry and MaxUses on
+  subresource endpoints`).
+- Web client (Lane H): `3131cfa` (`feat(web): harden timed expiration local
+  purge`), `66ae297` (`fix(web): handle invalid date strings in
+  formatExpirationBadge`), and `54105e0` (`test(backend): fill album
+  expiration test gaps`) / `34a90ad` (`test(web): harden frontend
+  assertions for expiration tests`).
+- Sync 410 routing (Lane D5): `3e9fb5d` (`feat(web/sync): route 410 (gone)
+  responses through purgeLocalAlbum`).
+- Contract coverage: `757a496` (`test(expiration): add timed expiration
+  contract coverage`).
+
+The decision record is `docs/adr/ADR-011-timed-expiration.md`.
 
 ## Goals
 
