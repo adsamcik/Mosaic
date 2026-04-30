@@ -41,9 +41,11 @@ allow-build-scripts = [
   "rustversion",
   "serde",
   "serde_core",
+  "serde_json",
   "wasm-bindgen",
   "wasm-bindgen-shared",
   "wit-bindgen",
+  "zmij",
 ]
 
 [sources]
