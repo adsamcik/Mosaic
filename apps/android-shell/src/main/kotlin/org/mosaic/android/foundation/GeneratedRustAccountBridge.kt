@@ -51,7 +51,14 @@ class RustAccountUnlockFfiRequest private constructor(
 data class RustAccountUnlockFfiResult(
   val code: Int,
   val handle: Long,
-)
+) {
+  // Redacts the raw account-key handle Long. Per SPEC-CrossPlatformHardening
+  // "Android shell" checklist: DTO toString methods must redact handles. The
+  // handle is an opaque capability; logging its raw value would leak the same
+  // information `AccountKeyHandle.toString()` already redacts.
+  override fun toString(): String =
+    "RustAccountUnlockFfiResult(code=$code, handle=<redacted>)"
+}
 
 data class RustAccountKeyHandleStatusFfiResult(
   val code: Int,
