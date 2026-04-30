@@ -1,5 +1,14 @@
 # Rust Account Unlock Integration
 
+## Status
+
+Locked at v1. Implemented in `7e3c085` (`feat(crypto): add account unlock
+handles`) — `mosaic_client::unlock_account_key`, account-key handle lifecycle,
+and the UniFFI/WASM facades for unlock/status/close/protocol-version. Web
+Slice 2 cutover (`3d5043a` `feat(web): migrate account/session bootstrap to
+Rust handle contract`) routes login/session bootstrap through the Rust account
+handle.
+
 ## Scope
 
 This slice adds Android-first Rust client-core account unlock integration.

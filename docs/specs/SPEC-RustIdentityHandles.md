@@ -1,5 +1,13 @@
 # Rust Identity Handles
 
+## Status
+
+Locked at v1. Implemented in `d729f08` (`feat(crypto): add identity
+handles`) — Ed25519 + X25519 derivation from a 32-byte seed, fresh seed
+generation/wrap with the L2 account-key handle, reopen-from-wrapped-seed,
+manifest transcript signing through an opaque identity handle, and
+UniFFI/WASM facade shapes.
+
 ## Scope
 
 This slice adds Rust-owned identity seed handling and opaque identity handles for the client-core upload path.

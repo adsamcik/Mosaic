@@ -1,5 +1,15 @@
 # Rust Auth Challenge Signing
 
+## Status
+
+Locked at v1. Implemented in `b4bd3f6` (`feat(crypto): add auth challenge
+signing`). The deviation:rust-auth-key-derivation parity gap with the
+TypeScript BLAKE2b construction was closed in `0e2957a` (`feat(crypto): add
+TS-canonical BLAKE2b + crypto_secretbox primitives for cross-client parity
+(Slice 0C)`) and is now byte-equal across the Rust, UniFFI, and WASM
+facades — see the `auth_challenge.json` and `auth_keypair.json` corpus in
+`tests/vectors/`.
+
 ## Scope
 
 This slice adds Rust-owned LocalAuth challenge signing and verification for account unlock.

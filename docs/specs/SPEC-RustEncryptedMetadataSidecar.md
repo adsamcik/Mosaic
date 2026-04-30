@@ -1,5 +1,13 @@
 # Rust Encrypted Metadata Sidecar
 
+## Status
+
+Locked at v1. Implemented in `58ca56f` (`feat(domain): add encrypted metadata
+sidecar`) and `8d43e9a` (`fix(domain): wrap metadata envelope test`). The
+schema is bound into the media pipeline via `5bfdf5b` (`feat(media): integrate
+metadata sidecars`) and exposed across UniFFI/WASM by `65ba9d6` (`feat(uniffi):
+expose metadata sidecar encryption`).
+
 ## Scope
 
 This slice adds a dependency-free Rust domain schema for deterministic canonical

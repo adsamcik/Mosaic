@@ -1,5 +1,14 @@
 # Manifest Canonical Transcript
 
+## Status
+
+Locked at v1. Implemented in `933382f` (`feat(domain): add manifest signing
+transcript`) — `Mosaic_Manifest_v1` canonical transcript builder over album,
+epoch, encrypted metadata, and per-shard refs (id, tier, ciphertext SHA-256).
+Signed/verified by `mosaic-crypto` per `SPEC-RustManifestSigning.md` and
+covered by the cross-platform `manifest_transcript.json` corpus in
+`tests/vectors/`.
+
 ## Scope
 
 This slice adds a dependency-free Rust domain transcript builder for future manifest signatures. It does not add Ed25519 signing, backend verification, web cutover, Android code, or FFI exports.

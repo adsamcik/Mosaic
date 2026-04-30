@@ -1,5 +1,13 @@
 # Rust Manifest Signing
 
+## Status
+
+Locked at v1. Implemented in `a0c5abb` (`feat(crypto): add manifest
+signing`) — Ed25519 sign/verify over the canonical `mosaic-domain` transcript,
+Rust-owned signing key types, and golden-vector coverage. Web Slice 4 cutover
+(`c8f6eaa` `feat(web): migrate manifest sign/verify + sync to Rust handles`)
+routes manifest sign/verify and sync through the Rust handles in production.
+
 ## Scope
 
 This slice adds Rust Ed25519 signing and verification for the canonical manifest transcript produced by `mosaic-domain`.

@@ -1,5 +1,16 @@
 # Rust Epoch/Tier Keys
 
+## Status
+
+Locked at v1. Implemented in `f7fa8b8` (`feat(crypto): derive rust epoch tier
+keys`) and `e8079cf` (`feat(crypto): add rust keychain kdf`). The
+deviation:epoch-tier-keys parity gap (Rust HKDF-SHA256 vs legacy TypeScript
+BLAKE2b) was closed by routing the legacy callers through the
+`ts_canonical` primitives added in `0e2957a` (`feat(crypto): add TS-canonical
+BLAKE2b + crypto_secretbox primitives for cross-client parity (Slice 0C)`)
+and the parity fix-ups in `f8b0165` (`fix(crypto): close cross-impl parity
+gaps for tier keys and manifest transcript`).
+
 ## Data flow
 
 This slice stays inside the Rust client core and does not add server-visible fields or platform FFI exports.

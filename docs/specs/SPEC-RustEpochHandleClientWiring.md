@@ -1,5 +1,14 @@
 # Rust Epoch Handle Client Wiring
 
+## Status
+
+Locked at v1. Implemented in `e1096d7` (`feat(client): add epoch key
+handles`) — create/open/close/status, account-cascade close, encrypted
+wrapped epoch seed I/O, and shard encrypt/decrypt wrappers across
+`mosaic-client`, `mosaic-uniffi`, and `mosaic-wasm`. Web Slice 3 cutover
+(`8f8bb43` `feat(web): migrate epoch key lifecycle to Rust handle contract`)
+routes the web epoch key lifecycle through the Rust handle.
+
 ## Scope
 
 This approved slice wires Rust-owned opaque epoch-key handles through the native client core, UniFFI, and WASM facade so Android and web clients can encrypt and decrypt shard tiers without raw epoch seeds, tier keys, content keys, account keys, passwords, identity seeds, or plaintext metadata sidecar keys crossing FFI/WASM.

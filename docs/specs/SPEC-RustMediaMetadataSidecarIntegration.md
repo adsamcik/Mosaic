@@ -1,5 +1,14 @@
 # Rust Media Metadata Sidecar Integration
 
+## Status
+
+Locked at v1. Implemented in `5bfdf5b` (`feat(media): integrate metadata
+sidecars`) — combined tier-generation API returning sanitized tiers plus
+plaintext sidecar bytes, and tests proving the sanitized tier bytes do not
+retain stripped metadata while the sidecar preserves the inspected fields.
+The encrypted sidecar surface across UniFFI/WASM was added in `65ba9d6`
+(`feat(uniffi): expose metadata sidecar encryption`).
+
 ## Scope
 
 This slice connects the dependency-free media pipeline to the domain metadata
