@@ -194,7 +194,9 @@ public partial class CombinedAuthMiddleware
 
         if (!ValidUserPattern().IsMatch(remoteUser))
         {
-            _logger.LogWarning("Invalid Remote-User format: {User}", remoteUser);
+            // SPEC-CrossPlatformHardening: never log raw Remote-User values.
+            // Emit only coarse identifiers (length) for diagnostics.
+            _logger.LogWarning("Invalid Remote-User format rejected (length: {Length})", remoteUser.Length);
             return false;
         }
 

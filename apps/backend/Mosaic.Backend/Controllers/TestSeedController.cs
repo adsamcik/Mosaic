@@ -188,8 +188,8 @@ public class TestSeedController : ControllerBase
             return Conflict(new ErrorResponse("User with this email already exists"));
         }
 
-        _logger.LogInformation("Creating E2E test user: {Email} with auth mode: {AuthMode}",
-            request.Email, request.AuthMode);
+        _logger.LogInformation("Creating E2E test user with auth mode: {AuthMode}",
+            request.AuthMode);
 
         // Create the user
         var user = new User
@@ -263,7 +263,7 @@ public class TestSeedController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Created pool user: {Email}", email);
+        _logger.LogInformation("Created pool user: {UserId}", user.Id);
 
         return (user, true);
     }
@@ -289,7 +289,7 @@ public class TestSeedController : ControllerBase
         user.IsAdmin = true;
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Promoted E2E test user to admin: {Email}", email);
+        _logger.LogInformation("Promoted E2E test user to admin: {UserId}", user.Id);
 
         return Ok(new { email = user.AuthSub, isAdmin = true });
     }
@@ -374,7 +374,7 @@ public class TestSeedController : ControllerBase
             return BadRequest(new ErrorResponse($"Email must end with {E2EEmailSuffix}"));
         }
 
-        _logger.LogInformation("Creating authenticated E2E test user: {Email}", request.Email);
+        _logger.LogInformation("Creating authenticated E2E test user");
 
         // Check if user already exists
         var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == request.Email);
@@ -408,7 +408,7 @@ public class TestSeedController : ControllerBase
             await _db.SaveChangesAsync();
             wasCreated = true;
 
-            _logger.LogInformation("Created new E2E test user: {Email} with Id: {UserId}", request.Email, user.Id);
+            _logger.LogInformation("Created new E2E test user: {UserId}", user.Id);
         }
         else
         {
@@ -427,7 +427,7 @@ public class TestSeedController : ControllerBase
             }
             await _db.SaveChangesAsync();
 
-            _logger.LogInformation("Updated existing E2E test user: {Email}", request.Email);
+            _logger.LogInformation("Updated existing E2E test user: {UserId}", user.Id);
         }
 
         // Create a session for this user (bypass signature verification for tests)
@@ -458,7 +458,7 @@ public class TestSeedController : ControllerBase
             MaxAge = SessionSlidingExpiry
         });
 
-        _logger.LogInformation("Created session for E2E test user: {Email}", request.Email);
+        _logger.LogInformation("Created session for E2E test user: {UserId}", user.Id);
 
         return Ok(new CreateAuthenticatedUserResponse(
             user.Id,
