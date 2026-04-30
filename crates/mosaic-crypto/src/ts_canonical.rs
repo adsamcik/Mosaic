@@ -308,6 +308,11 @@ pub fn unwrap_account_key_v1(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "Test code uses unwrap/expect to fail loudly on bad fixtures."
+)]
 mod tests {
     use super::*;
 
