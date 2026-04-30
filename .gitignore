@@ -153,3 +153,7 @@ apps/android-main/.idea/
 apps/android-main/build/
 apps/android-main/**/build/
 gradle-wrapper-bootstrap-output.txt
+
+# Broader transient root artifacts (lanes/scratch outputs)
+/lane-*.txt
+/spec-commits.txt
