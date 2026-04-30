@@ -204,6 +204,24 @@ export type EpochKeyRecord = z.infer<typeof EpochKeyRecordSchema>;
 
 export const EpochKeyRecordListSchema = z.array(EpochKeyRecordSchema);
 
+/**
+ * Response shape from POST /albums/{id}/epoch-keys (create) and the
+ * upsert path. The backend deliberately echoes only the metadata back
+ * (id, albumId, recipientId, epochId, createdAt) — the client already
+ * has the encrypted bundle / signatures it just sent, so re-sending
+ * them would just bloat the response.
+ */
+export const CreateEpochKeyResponseSchema = z.object({
+  id: UuidSchema,
+  albumId: UuidSchema,
+  recipientId: UuidSchema,
+  epochId: z.number().int().nonnegative(),
+  createdAt: IsoDateTimeSchema,
+});
+export type CreateEpochKeyResponse = z.infer<
+  typeof CreateEpochKeyResponseSchema
+>;
+
 // =============================================================================
 // Manifests
 // =============================================================================
@@ -341,29 +359,31 @@ export type AddShareLinkEpochKeysResponse = z.infer<
 // =============================================================================
 
 export const QuotaDefaultsSchema = z.object({
-  maxStorageBytes: z.number().int().nonnegative(),
-  maxAlbums: z.number().int().nonnegative(),
-  maxPhotosPerAlbum: z.number().int().nonnegative(),
-  maxAlbumSizeBytes: z.number().int().nonnegative(),
+  maxStorageBytes: z.number().int().nonnegative().nullish(),
+  maxAlbums: z.number().int().nonnegative().nullish(),
+  maxPhotosPerAlbum: z.number().int().nonnegative().nullish(),
+  maxAlbumSizeBytes: z.number().int().nonnegative().nullish(),
 });
 export type QuotaDefaults = z.infer<typeof QuotaDefaultsSchema>;
 
 export const AdminUserQuotaSchema = z.object({
-  maxStorageBytes: z.number().int().nonnegative().optional(),
-  currentStorageBytes: z.number().int().nonnegative(),
-  maxAlbums: z.number().int().nonnegative().optional(),
-  currentAlbumCount: z.number().int().nonnegative(),
+  maxStorageBytes: z.number().int().nonnegative().nullish(),
+  usedStorageBytes: z.number().int().nonnegative().nullish(),
+  currentStorageBytes: z.number().int().nonnegative().nullish(),
+  maxAlbums: z.number().int().nonnegative().nullish(),
+  currentAlbumCount: z.number().int().nonnegative().nullish(),
+  isCustom: z.boolean().optional(),
 });
 export type AdminUserQuota = z.infer<typeof AdminUserQuotaSchema>;
 
 export const AdminUserResponseSchema = z.object({
   id: UuidSchema,
   authSub: z.string(),
-  identityPubkey: Base64Schema.optional(),
+  identityPubkey: Base64Schema.nullish(),
   isAdmin: z.boolean(),
   createdAt: IsoDateTimeSchema,
-  albumCount: z.number().int().nonnegative(),
-  totalStorageBytes: z.number().int().nonnegative(),
+  albumCount: z.number().int().nonnegative().nullish(),
+  totalStorageBytes: z.number().int().nonnegative().nullish(),
   quota: AdminUserQuotaSchema,
 });
 export type AdminUserResponse = z.infer<typeof AdminUserResponseSchema>;
@@ -374,10 +394,11 @@ export const AdminUserListEnvelopeSchema = z.object({
 });
 
 export const AdminAlbumLimitsSchema = z.object({
-  maxPhotos: z.number().int().nonnegative().optional(),
-  currentPhotoCount: z.number().int().nonnegative(),
-  maxSizeBytes: z.number().int().nonnegative().optional(),
-  currentSizeBytes: z.number().int().nonnegative(),
+  maxPhotos: z.number().int().nonnegative().nullish(),
+  currentPhotoCount: z.number().int().nonnegative().nullish(),
+  maxSizeBytes: z.number().int().nonnegative().nullish(),
+  currentSizeBytes: z.number().int().nonnegative().nullish(),
+  isCustom: z.boolean().optional(),
 });
 export type AdminAlbumLimits = z.infer<typeof AdminAlbumLimitsSchema>;
 
@@ -386,8 +407,8 @@ export const AdminAlbumResponseSchema = z.object({
   ownerId: UuidSchema,
   ownerAuthSub: z.string(),
   createdAt: IsoDateTimeSchema,
-  photoCount: z.number().int().nonnegative(),
-  totalSizeBytes: z.number().int().nonnegative(),
+  photoCount: z.number().int().nonnegative().nullish(),
+  totalSizeBytes: z.number().int().nonnegative().nullish(),
   limits: AdminAlbumLimitsSchema.optional(),
 });
 export type AdminAlbumResponse = z.infer<typeof AdminAlbumResponseSchema>;

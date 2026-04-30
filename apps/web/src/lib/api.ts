@@ -75,7 +75,7 @@ import {
   AlbumMemberSchema,
   AlbumSchema,
   EpochKeyRecordListSchema,
-  EpochKeyRecordSchema,
+  CreateEpochKeyResponseSchema,
   HealthResponseSchema,
   LinkAccessResponseSchema,
   LinkEpochKeyResponseListSchema,
@@ -451,11 +451,33 @@ export function createApiClient(): MosaicApi {
       albumId: string,
       request: CreateEpochKeyRequest,
     ): Promise<EpochKeyRecord> {
-      return apiRequest(`/albums/${albumId}/epoch-keys`, {
+      // Backend POST /albums/{id}/epoch-keys returns only metadata (id,
+      // albumId, recipientId, epochId, createdAt) — see
+      // EpochKeysController.Create. Validate against the slim
+      // CreateEpochKeyResponseSchema, then expand into the EpochKeyRecord
+      // shape callers expect by echoing back the bundle/signatures the
+      // client already had in the request.
+      const created = await apiRequest<{
+        id: string;
+        albumId: string;
+        recipientId: string;
+        epochId: number;
+        createdAt: string;
+      }>(`/albums/${albumId}/epoch-keys`, {
         method: 'POST',
         body: request,
-        schema: EpochKeyRecordSchema,
+        schema: CreateEpochKeyResponseSchema,
       });
+      return {
+        id: created.id,
+        albumId: created.albumId,
+        epochId: created.epochId,
+        encryptedKeyBundle: request.encryptedKeyBundle,
+        ownerSignature: request.ownerSignature,
+        sharerPubkey: request.sharerPubkey,
+        signPubkey: request.signPubkey,
+        createdAt: created.createdAt,
+      };
     },
 
     async rotateEpoch(
