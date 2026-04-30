@@ -215,6 +215,145 @@ class MergedManifestInvariantsTest {
     )
   }
 
+  // -- Lane D2 (SPEC-CrossPlatformHardening Android shell checklist) extensions --
+
+  /**
+   * Stronger version of the existing `systemForegroundServiceDeclaresDataSyncType`
+   * test: assert the merged manifest declares exactly ONE service with
+   * `foregroundServiceType="dataSync"`. Multiple dataSync services would mean
+   * either a misconfigured `tools:node="merge"` directive or an unreviewed
+   * additional foreground promotion, both of which expand the foreground-
+   * privilege blast radius beyond AutoImportWorker.
+   */
+  @Test
+  fun dataSyncForegroundServiceDeclaredExactlyOnce() {
+    val services = applicationElement.getElementsByTagName("service")
+    val dataSyncServices = (0 until services.length)
+      .map { services.item(it) as Element }
+      .filter { it.getAttributeNS(ANDROID_NAMESPACE, "foregroundServiceType") == "dataSync" }
+    val names = dataSyncServices.map { it.getAttributeNS(ANDROID_NAMESPACE, "name") }
+    assertEquals(
+      "merged manifest must declare exactly one foregroundServiceType=dataSync service " +
+        "(found: $names); ADR-007 scopes the promotion to AutoImportWorker via WorkManager's " +
+        "SystemForegroundService and any extra dataSync promotion is unreviewed.",
+      1,
+      dataSyncServices.size,
+    )
+    assertEquals(
+      "the single dataSync service must be WorkManager's SystemForegroundService",
+      SYSTEM_FOREGROUND_SERVICE,
+      names.first(),
+    )
+  }
+
+  /**
+   * No service in the merged manifest may be exported with
+   * `android:exported="true"` unless it is permission-guarded. Mirrors the
+   * existing provider / receiver export checks. SystemForegroundService is
+   * non-exported by default in WorkManager's manifest, so this should pass
+   * cleanly; the test exists to lock the invariant against a future
+   * accidental `tools:node="replace"` that flips a service exported.
+   *
+   * Stronger guarantee for our own package: NO `org.mosaic.*` service is
+   * allowed to be exported at all.
+   */
+  @Test
+  fun applicationServicesAreNotExported() {
+    val services = applicationElement.getElementsByTagName("service")
+    val mosaicViolations = mutableListOf<String>()
+    val unguardedExportedViolations = mutableListOf<String>()
+    (0 until services.length).forEach { i ->
+      val service = services.item(i) as Element
+      val name = service.getAttributeNS(ANDROID_NAMESPACE, "name")
+      val exported = service.getAttributeNS(ANDROID_NAMESPACE, "exported")
+      if (name.startsWith("org.mosaic.") && exported == "true") {
+        mosaicViolations += name
+      }
+      if (exported == "true") {
+        val permission = service.getAttributeNS(ANDROID_NAMESPACE, "permission")
+        if (permission.isBlank()) {
+          unguardedExportedViolations += name
+        }
+      }
+    }
+    assertTrue(
+      "no org.mosaic.* service may be exported (got: $mosaicViolations)",
+      mosaicViolations.isEmpty(),
+    )
+    assertTrue(
+      "any exported service must declare a permission attribute (unguarded: $unguardedExportedViolations)",
+      unguardedExportedViolations.isEmpty(),
+    )
+  }
+
+  /**
+   * abiFilters in the AGP `build.gradle.kts` for this module must restrict
+   * the shipped ABIs to arm64-v8a + x86_64 only. 32-bit ABIs (armeabi-v7a,
+   * x86) are forbidden:
+   *   1. `cargo-ndk` in `scripts/build-rust-android.{ps1,sh}` only produces
+   *      arm64-v8a / x86_64; including a 32-bit filter would either ship an
+   *      empty native dir (boot crash) or pull in a non-reviewed cross
+   *      compile;
+   *   2. dropping 32-bit halves attack surface for the JNA / native-side
+   *      crypto code, matching the ".instructions.md" invariant
+   *      "abiFilters restricted to `arm64-v8a` + `x86_64`. No 32-bit builds.".
+   *
+   * AGP merges abiFilters into the APK manifest only as `<uses-feature>`
+   * elements (not as a string attribute), so the highest-fidelity enforce-
+   * ment point is the source of `build.gradle.kts`. We parse it as plain
+   * text and assert the declaration matches exactly the allowed pair.
+   */
+  @Test
+  fun abiFiltersRestrictedToArm64AndX8664() {
+    val gradleFile = locateModuleGradleFile()
+    assertTrue(
+      "build.gradle.kts must exist at ${gradleFile.absolutePath}",
+      gradleFile.exists(),
+    )
+    val source = gradleFile.readText()
+
+    // The declaration must include arm64-v8a and x86_64.
+    val abiFiltersRegex = Regex("""abiFilters\s*\+=\s*listOf\(([^)]*)\)""")
+    val match = abiFiltersRegex.find(source)
+    assertNotNull(
+      "build.gradle.kts must declare `abiFilters += listOf(\"arm64-v8a\", \"x86_64\")` " +
+        "in the defaultConfig.ndk block; declaration not found",
+      match,
+    )
+    val rawList = match!!.groupValues[1]
+    val abis = Regex("""\"([^\"]+)\"""").findAll(rawList).map { it.groupValues[1] }.toSet()
+    assertEquals(
+      "abiFilters must be exactly {arm64-v8a, x86_64} (got: $abis)",
+      setOf("arm64-v8a", "x86_64"),
+      abis,
+    )
+
+    // 32-bit ABIs must not appear anywhere in the build script (defense-in-
+    // depth against future blocks like `splits { abi { include(...) } }`).
+    val forbiddenAbis = listOf("armeabi-v7a", "armeabi", "mips", "mips64")
+    for (abi in forbiddenAbis) {
+      assertFalse(
+        "build.gradle.kts must not reference 32-bit / legacy ABI '$abi'",
+        source.contains("\"$abi\""),
+      )
+    }
+    // The bare token `"x86"` must not appear; only `"x86_64"` is allowed.
+    // We use a regex with negative lookahead to avoid matching `"x86_64"`.
+    val bareX86 = Regex("""\"x86(?!_64)\"""")
+    assertFalse(
+      "build.gradle.kts must not reference 32-bit ABI 'x86'",
+      bareX86.containsMatchIn(source),
+    )
+  }
+
+  private fun locateModuleGradleFile(): File {
+    // Mirror the merged-manifest path resolution: the AGP test task sets
+    // `user.dir` to the module root, so a plain relative path works.
+    val direct = File("build.gradle.kts")
+    if (direct.exists()) return direct
+    return File(System.getProperty("user.dir"), "build.gradle.kts")
+  }
+
   // -- helpers ---------------------------------------------------------------
 
   private fun forbidPermission(name: String) {

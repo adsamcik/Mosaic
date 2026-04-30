@@ -54,6 +54,17 @@ fun main() {
 
     BridgeTestCase("public android shell DTOs avoid privacy-forbidden media text", ::publicBridgeDtosAvoidPrivacyForbiddenText),
 
+    // Slice 0C raw-input bridge DTO redaction (SPEC-CrossPlatformHardening,
+    // Android shell checklist: "DTO toString methods redact staged sources,
+    // handles, plan IDs, and request salts/wrapped keys.").
+    BridgeTestCase("RustLinkKeysFfiResult redacts linkId and wrappingKey", ::rustLinkKeysFfiResultRedactsBytes),
+    BridgeTestCase("RustIdentitySeedFfiResult redacts pubkeys and signature", ::rustIdentitySeedFfiResultRedactsBytes),
+    BridgeTestCase("RustContentDecryptFfiResult redacts plaintext", ::rustContentDecryptFfiResultRedactsPlaintext),
+    BridgeTestCase("AuthChallenge transcript / sign result strings redact secret-equivalent bytes", ::authChallengeResultsRedactBytes),
+    BridgeTestCase("RustOpenedBundleFfiResult redacts album-id chars and key bytes", ::rustOpenedBundleFfiResultRedactsAllSensitiveFields),
+    BridgeTestCase("OpenedBundleResult redacts albumId and key bytes", ::openedBundleResultRedactsBytes),
+    BridgeTestCase("RustAccountUnlockFfiResult redacts raw account-key handle", ::rustAccountUnlockFfiResultRedactsHandle),
+
     BridgeTestCase("identity create result wipes wrapped seed and pubkeys", ::identityCreateResultWipesAllSensitiveBytes),
     BridgeTestCase("identity open result wipes pubkeys", ::identityOpenResultWipesPubkeys),
     BridgeTestCase("identity pubkey result wipes pubkey", ::identityPubkeyResultWipesPubkey),
@@ -796,6 +807,191 @@ private fun publicBridgeDtosAvoidPrivacyForbiddenText() {
       bridgeAssertFalse(text.contains(term, ignoreCase = true))
     }
   }
+}
+
+// endregion
+
+// region slice-0c DTO redaction (SPEC-CrossPlatformHardening Android shell)
+
+private fun rustLinkKeysFfiResultRedactsBytes() {
+  // Use real-shaped bytes (16 + 32) so the size suffix is meaningful but the
+  // raw values must not appear in toString output.
+  val linkId = ByteArray(16) { 0x11 }
+  val wrappingKey = ByteArray(32) { 0x22 }
+  val ffi = RustLinkKeysFfiResult(
+    code = RustLinkKeysStableCode.OK,
+    linkId = linkId,
+    wrappingKey = wrappingKey,
+  )
+  val s = ffi.toString()
+  bridgeAssertTrue("linkId=<redacted" in s)
+  bridgeAssertTrue("wrappingKey=<redacted" in s)
+  // The high-level LinkKeysResult must also redact.
+  val high = LinkKeysResult(
+    code = LinkKeysCode.SUCCESS,
+    linkId = linkId,
+    wrappingKey = wrappingKey,
+  )
+  val highStr = high.toString()
+  bridgeAssertTrue("linkId=<redacted" in highStr)
+  bridgeAssertTrue("wrappingKey=<redacted" in highStr)
+  // No raw byte-pattern (0x11 / 0x22) leaks as text — search for typical hex
+  // / decimal renderings that a default toString could have produced.
+  for (forbidden in listOf("[17,", "17, 17", "[34,", "34, 34", "[B@")) {
+    bridgeAssertFalse(s.contains(forbidden))
+    bridgeAssertFalse(highStr.contains(forbidden))
+  }
+}
+
+private fun rustIdentitySeedFfiResultRedactsBytes() {
+  val signing = ByteArray(32) { 0x33 }
+  val encryption = ByteArray(32) { 0x44 }
+  val signature = ByteArray(64) { 0x55 }
+  val ffi = RustIdentitySeedFfiResult(
+    code = RustIdentitySeedStableCode.OK,
+    signingPubkey = signing,
+    encryptionPubkey = encryption,
+    signature = signature,
+  )
+  val s = ffi.toString()
+  bridgeAssertTrue("signingPubkey=<redacted" in s)
+  bridgeAssertTrue("encryptionPubkey=<redacted" in s)
+  bridgeAssertTrue("signature=<redacted" in s)
+
+  val high = IdentityFromSeedResult(
+    code = IdentityFromSeedCode.SUCCESS,
+    signingPubkey = signing,
+    encryptionPubkey = encryption,
+    signature = signature,
+  )
+  val highStr = high.toString()
+  bridgeAssertTrue("signingPubkey=<redacted" in highStr)
+  bridgeAssertTrue("encryptionPubkey=<redacted" in highStr)
+  bridgeAssertTrue("signature=<redacted" in highStr)
+  for (forbidden in listOf("[51,", "51, 51", "[68,", "68, 68", "[85,", "85, 85", "[B@")) {
+    bridgeAssertFalse(s.contains(forbidden))
+    bridgeAssertFalse(highStr.contains(forbidden))
+  }
+}
+
+private fun rustContentDecryptFfiResultRedactsPlaintext() {
+  // Use a non-empty plaintext so the size suffix is non-zero. The bytes are
+  // SECRET-EQUIVALENT (decrypted album content) and must never reach logs.
+  val plaintext = ByteArray(48) { 0x66 }
+  val ffi = RustContentDecryptFfiResult(
+    code = RustContentDecryptStableCode.OK,
+    plaintext = plaintext,
+  )
+  val s = ffi.toString()
+  bridgeAssertTrue("plaintext=<redacted" in s)
+
+  val high = DecryptedContentResult(
+    code = ContentDecryptCode.SUCCESS,
+    plaintext = plaintext,
+  )
+  val highStr = high.toString()
+  bridgeAssertTrue("plaintext=<redacted" in highStr)
+  for (forbidden in listOf("102, 102", "[102,", "[B@")) {
+    bridgeAssertFalse(s.contains(forbidden))
+    bridgeAssertFalse(highStr.contains(forbidden))
+  }
+}
+
+private fun authChallengeResultsRedactBytes() {
+  // Transcript bytes are derived from the challenge + username + timestamp and
+  // are not themselves secret, but logging the full bytes is privacy-noisy
+  // and a future analysis could correlate transcripts to users — redact.
+  val transcript = ByteArray(96) { 0x77 }
+  val transcriptResult = AuthChallengeTranscriptResult(
+    code = AuthChallengeTranscriptCode.SUCCESS,
+    transcript = transcript,
+  )
+  bridgeAssertTrue("transcript=<redacted" in transcriptResult.toString())
+
+  val signature = ByteArray(AuthChallengeSignResult.ED25519_SIGNATURE_BYTES) { 0x88.toByte() }
+  val signResult = AuthChallengeSignResult(
+    code = AuthChallengeSignCode.SUCCESS,
+    signature = signature,
+  )
+  bridgeAssertTrue("signature=<redacted" in signResult.toString())
+
+  // Negative regression: the default data-class style "[B@..." reference text
+  // and raw byte sequences must not appear.
+  for (forbidden in listOf("[119,", "119, 119", "[136,", "[B@")) {
+    bridgeAssertFalse(transcriptResult.toString().contains(forbidden))
+    bridgeAssertFalse(signResult.toString().contains(forbidden))
+  }
+}
+
+private fun rustOpenedBundleFfiResultRedactsAllSensitiveFields() {
+  // Recipient pubkey + epoch_seed + sign_public_key are 32 bytes each. The
+  // epoch_seed in particular is SECRET-EQUIVALENT and must never reach logs.
+  // Album id is a string but is also a privacy-noisy identifier — redacted
+  // as `<redacted-${length}-chars>`.
+  val recipient = ByteArray(32) { 0x99.toByte() }
+  val epochSeed = ByteArray(32) { 0xAA.toByte() }
+  val signPub = ByteArray(32) { 0xBB.toByte() }
+  val ffi = RustOpenedBundleFfiResult(
+    code = RustSealedBundleStableCode.OK,
+    version = 1,
+    albumId = "album-id-with-leakable-chars",
+    epochId = 7,
+    recipientPubkey = recipient,
+    epochSeed = epochSeed,
+    signPublicKey = signPub,
+  )
+  val s = ffi.toString()
+  bridgeAssertTrue("albumId=<redacted" in s)
+  bridgeAssertTrue("recipientPubkey=<redacted" in s)
+  bridgeAssertTrue("epochSeed=<redacted" in s)
+  bridgeAssertTrue("signPublicKey=<redacted" in s)
+  // The literal albumId text must not appear:
+  bridgeAssertFalse(s.contains("album-id-with-leakable-chars"))
+  for (forbidden in listOf("[153,", "153, 153", "[170,", "170, 170", "[187,", "187, 187", "[B@")) {
+    bridgeAssertFalse(s.contains(forbidden))
+  }
+}
+
+private fun openedBundleResultRedactsBytes() {
+  val recipient = ByteArray(32) { 0xCC.toByte() }
+  val epochSeed = ByteArray(32) { 0xDD.toByte() }
+  val signPub = ByteArray(32) { 0xEE.toByte() }
+  val high = OpenedBundleResult(
+    code = OpenedBundleCode.SUCCESS,
+    version = 1,
+    albumId = "secret-album-name",
+    epochId = 3,
+    recipientPubkey = recipient,
+    epochSeed = epochSeed,
+    signPublicKey = signPub,
+  )
+  val s = high.toString()
+  bridgeAssertTrue("albumId=<redacted" in s)
+  bridgeAssertTrue("recipientPubkey=<redacted" in s)
+  bridgeAssertTrue("epochSeed=<redacted" in s)
+  bridgeAssertTrue("signPublicKey=<redacted" in s)
+  bridgeAssertFalse(s.contains("secret-album-name"))
+  for (forbidden in listOf("[204,", "204, 204", "[221,", "221, 221", "[238,", "238, 238", "[B@")) {
+    bridgeAssertFalse(s.contains(forbidden))
+  }
+}
+
+private fun rustAccountUnlockFfiResultRedactsHandle() {
+  // The raw handle Long is an opaque capability into an unlocked Rust
+  // account-key registry; logging it would defeat the same redaction
+  // contract `AccountKeyHandle.toString` already enforces. Default
+  // data-class toString prints the raw value, so a custom override is
+  // required.
+  val ffi = RustAccountUnlockFfiResult(
+    code = RustClientStableCode.OK,
+    handle = 0x4242_DEAD_BEEFL,
+  )
+  val s = ffi.toString()
+  bridgeAssertTrue("handle=<redacted>" in s)
+  bridgeAssertFalse(s.contains("0x4242"))
+  bridgeAssertFalse(s.contains("4242"))
+  bridgeAssertFalse(s.contains("DEADBEEF"))
+  bridgeAssertFalse(s.contains("3735928559")) // 0xDEADBEEF in decimal
 }
 
 // endregion
