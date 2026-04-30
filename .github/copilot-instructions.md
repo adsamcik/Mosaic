@@ -563,6 +563,7 @@ Cross-Origin-Embedder-Policy: require-corp
 
 - **Never use Simple Browser** - Do not use `open_simple_browser` to preview the app. The app requires COOP/COEP headers for SharedArrayBuffer which Simple Browser doesn't support.
 - **Non-Interactive Terminal Only** - ALL terminal commands must be non-interactive. See the dedicated "🚨 CRITICAL: Non-Interactive Terminal Commands" section below for the complete reference table.
+- **Mutation Testing is Opt-In Only** - Do NOT run `cargo mutants` (or any other mutation testing tool) as part of normal development. A full broad `cargo mutants -p mosaic-crypto --features weak-kdf` pass takes ~45 minutes; broader passes are slower. Mutation testing must NOT run during routine test/build/lint loops, code review, test-gen workflows, or bug fixes. Only invoke it when the user explicitly asks (e.g. "run mutation testing", "find mutation survivors", "kill mutants", "mutation campaign"). For fast KDF-bound test iteration, use the `weak-kdf` Cargo feature on `mosaic-crypto` (mirrors `VITE_E2E_WEAK_KEYS`).
 
 ### Execution Rules
 
