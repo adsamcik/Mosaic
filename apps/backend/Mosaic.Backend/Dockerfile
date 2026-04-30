@@ -20,6 +20,14 @@ RUN dotnet publish -c Release -a $TARGETARCH --no-restore -o /app/publish
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS runtime
 WORKDIR /app
 
+# Install wget for HEALTHCHECK probe.
+# The aspnet:10.0-noble runtime image is minimal and does NOT ship wget or
+# curl by default. wget is a single low-dependency package and works under
+# QEMU emulation in multi-arch Docker builds (unlike curl).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends wget \
+    && rm -rf /var/lib/apt/lists/*
+
 # OCI Image Labels (overwritten by docker/metadata-action in CI)
 LABEL org.opencontainers.image.title="Mosaic Backend" \
       org.opencontainers.image.description="Zero-knowledge encrypted photo gallery backend API" \
@@ -43,10 +51,12 @@ USER mosaic
 # Expose port
 EXPOSE 8080
 
-# Health check — use wget (included in Ubuntu Noble base) to avoid
-# installing curl which fails under QEMU in multi-arch Docker builds
+# Health check — use wget GET to /health (backend doesn't support HEAD, so
+# `wget --spider` returns 405). `-O /dev/null` forces GET while discarding
+# the response body. Installed via apt above to avoid the QEMU multi-arch
+# issues that affected curl.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget -q --spider http://localhost:8080/health || exit 1
+    CMD wget -q -O /dev/null http://localhost:8080/health || exit 1
 
 # Set environment variables
 ENV ASPNETCORE_URLS=http://+:8080
