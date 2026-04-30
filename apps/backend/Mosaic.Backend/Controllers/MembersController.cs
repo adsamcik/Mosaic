@@ -40,7 +40,10 @@ public class MembersController : ControllerBase
 
         // Verify access
         var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
-        if (accessError != null) return accessError;
+        if (accessError != null)
+        {
+            return accessError;
+        }
 
         var query = _db.AlbumMembers
             .AsNoTracking()
@@ -95,7 +98,10 @@ public class MembersController : ControllerBase
 
         // Verify caller has permission to manage members
         var (_, memberError) = await _db.RequireAlbumMemberManagerAsync(albumId, user.Id);
-        if (memberError != null) return memberError;
+        if (memberError != null)
+        {
+            return memberError;
+        }
 
         // Check if recipient user exists
         var targetUser = await _db.Users.FindAsync(request.RecipientId);
@@ -194,7 +200,10 @@ public class MembersController : ControllerBase
 
         // Verify ownership
         var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
-        if (ownerError != null) return ownerError;
+        if (ownerError != null)
+        {
+            return ownerError;
+        }
 
         // Cannot remove owner
         if (userId == album!.OwnerId)

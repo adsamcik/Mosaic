@@ -41,9 +41,15 @@ public static class AlbumAuthorizationExtensions
     {
         var album = await db.Albums.FindAsync(albumId);
         if (album == null)
+        {
             return (null, notFoundResult ?? new NotFoundResult());
+        }
+
         if (album.OwnerId != userId)
+        {
             return (null, new ForbidResult());
+        }
+
         return (album, null);
     }
 
@@ -74,7 +80,10 @@ public static class AlbumAuthorizationExtensions
             .AsNoTracking()
             .FirstOrDefaultAsync(am => am.AlbumId == albumId && am.UserId == userId && am.RevokedAt == null);
         if (member == null)
+        {
             return (null, notMemberResult ?? new ForbidResult());
+        }
+
         return (member, null);
     }
 

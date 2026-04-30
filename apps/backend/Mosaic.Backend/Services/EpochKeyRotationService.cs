@@ -81,14 +81,18 @@ public class EpochKeyRotationService : IEpochKeyRotationService
 
             var memberKeysError = ValidateMemberKeys(request.EpochKeys, activeMembers, existingKeys);
             if (memberKeysError != null)
+            {
                 return memberKeysError;
+            }
 
             AddMemberKeys(albumId, epochId, request.EpochKeys);
 
             var (shareLinkKeysUpdated, shareLinkError) =
                 ValidateAndAddShareLinkKeys(epochId, request.ShareLinkKeys, shareLinksByLinkId);
             if (shareLinkError != null)
+            {
                 return shareLinkError;
+            }
 
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
@@ -186,7 +190,9 @@ public class EpochKeyRotationService : IEpochKeyRotationService
         Dictionary<Guid, ShareLink>? shareLinksByLinkId)
     {
         if (shareLinkKeys is not { Length: > 0 } || shareLinksByLinkId == null)
+        {
             return (0, null);
+        }
 
         var updated = 0;
         foreach (var linkUpdate in shareLinkKeys)
@@ -202,7 +208,9 @@ public class EpochKeyRotationService : IEpochKeyRotationService
             }
 
             if (shareLink.IsRevoked)
+            {
                 continue;
+            }
 
             foreach (var wrappedKey in linkUpdate.WrappedKeys)
             {

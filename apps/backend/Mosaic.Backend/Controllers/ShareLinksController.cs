@@ -39,7 +39,10 @@ public class ShareLinksController : ControllerBase
         // Verify album ownership
         var albumNotFound = Problem(detail: "Album not found", statusCode: StatusCodes.Status404NotFound);
         var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id, albumNotFound);
-        if (ownerError != null) return ownerError;
+        if (ownerError != null)
+        {
+            return ownerError;
+        }
 
         // Reject creating share links for expired albums
         if (album!.ExpiresAt.HasValue && album.ExpiresAt.Value <= _timeProvider.GetUtcNow())
@@ -187,7 +190,10 @@ public class ShareLinksController : ControllerBase
         // Verify album ownership
         var albumNotFound = Problem(detail: "Album not found", statusCode: StatusCodes.Status404NotFound);
         var (_, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id, albumNotFound);
-        if (ownerError != null) return ownerError;
+        if (ownerError != null)
+        {
+            return ownerError;
+        }
 
         // Note: SQLite doesn't support DateTimeOffset in ORDER BY, so we order client-side
         var shareLinks = await _db.ShareLinks
@@ -230,7 +236,10 @@ public class ShareLinksController : ControllerBase
         // Verify album ownership
         var albumNotFound = Problem(detail: "Album not found", statusCode: StatusCodes.Status404NotFound);
         var (_, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id, albumNotFound);
-        if (ownerError != null) return ownerError;
+        if (ownerError != null)
+        {
+            return ownerError;
+        }
 
         // Only return active (non-revoked, non-expired) links with stored secrets
         // Note: For SQLite compatibility, we load all links for this album and filter client-side
@@ -322,7 +331,10 @@ public class ShareLinksController : ControllerBase
         // Verify album exists and user is owner
         var albumNotFound = Problem(detail: "Album not found", statusCode: StatusCodes.Status404NotFound);
         var (_, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id, albumNotFound);
-        if (ownerError != null) return ownerError;
+        if (ownerError != null)
+        {
+            return ownerError;
+        }
 
         // Decode linkId from base64url
         var linkIdBytes = Base64UrlHelper.FromBase64Url(linkId);

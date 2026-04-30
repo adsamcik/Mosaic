@@ -34,7 +34,9 @@ public class ShardsController : ControllerBase
     public async Task<IActionResult> Download(Guid shardId)
     {
         if (HttpContext.Items["AuthSub"] is not string)
+        {
             return Unauthorized();
+        }
 
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
@@ -62,7 +64,7 @@ public class ShardsController : ControllerBase
         Response.Headers.CacheControl = "no-store, no-cache, max-age=0";
         Response.Headers.Pragma = "no-cache";
         Response.Headers.Expires = "0";
-        
+
         // Add SHA256 for client-side integrity verification
         if (!string.IsNullOrEmpty(shard.Sha256))
         {
@@ -80,7 +82,9 @@ public class ShardsController : ControllerBase
     public async Task<IActionResult> GetMeta(Guid shardId)
     {
         if (HttpContext.Items["AuthSub"] is not string)
+        {
             return Unauthorized();
+        }
 
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 

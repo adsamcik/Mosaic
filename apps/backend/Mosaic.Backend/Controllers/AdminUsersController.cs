@@ -73,8 +73,8 @@ public class AdminUsersController : ControllerBase
             )
         ));
 
-        return Ok(new 
-        { 
+        return Ok(new
+        {
             users = result,
             pagination = new
             {

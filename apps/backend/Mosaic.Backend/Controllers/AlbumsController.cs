@@ -256,7 +256,10 @@ public class AlbumsController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var (membership, memberError) = await _db.GetAlbumMemberAsync(albumId, user.Id);
-        if (memberError != null) return memberError;
+        if (memberError != null)
+        {
+            return memberError;
+        }
 
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null)
@@ -294,7 +297,10 @@ public class AlbumsController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
-        if (ownerError != null) return ownerError;
+        if (ownerError != null)
+        {
+            return ownerError;
+        }
 
         if (_expirationService.IsExpired(album!.ExpiresAt))
         {
@@ -351,7 +357,10 @@ public class AlbumsController : ControllerBase
 
         // Verify access
         var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
-        if (accessError != null) return accessError;
+        if (accessError != null)
+        {
+            return accessError;
+        }
 
         // Fetch album first to ensure it exists
         var album = await _db.Albums.FindAsync(albumId);
@@ -414,7 +423,10 @@ public class AlbumsController : ControllerBase
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
-        if (ownerError != null) return ownerError;
+        if (ownerError != null)
+        {
+            return ownerError;
+        }
 
         if (_expirationService.IsExpired(album!.ExpiresAt))
         {
@@ -466,7 +478,10 @@ public class AlbumsController : ControllerBase
 
         // Check membership - owner or editor can rename
         var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
-        if (memberError != null) return memberError;
+        if (memberError != null)
+        {
+            return memberError;
+        }
 
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null)
@@ -518,7 +533,10 @@ public class AlbumsController : ControllerBase
 
         // Check membership - owner or editor can update description
         var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
-        if (memberError != null) return memberError;
+        if (memberError != null)
+        {
+            return memberError;
+        }
 
         var album = await _db.Albums.FindAsync(albumId);
         if (album == null)

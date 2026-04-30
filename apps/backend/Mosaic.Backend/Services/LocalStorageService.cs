@@ -19,7 +19,9 @@ public class LocalStorageService : IStorageService
     private static void ValidateKey(string key)
     {
         if (string.IsNullOrEmpty(key))
+        {
             throw new ArgumentException("Storage key cannot be null or empty", nameof(key));
+        }
 
         // Prevent path traversal attacks
         // Explicitly check for both separators regardless of platform

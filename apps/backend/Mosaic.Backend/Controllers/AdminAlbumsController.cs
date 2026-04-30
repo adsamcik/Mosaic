@@ -74,8 +74,8 @@ public class AdminAlbumsController : ControllerBase
             )
         ));
 
-        return Ok(new 
-        { 
+        return Ok(new
+        {
             albums = result,
             pagination = new
             {

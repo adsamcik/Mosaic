@@ -33,7 +33,10 @@ public class EpochKeysController : ControllerBase
 
         // Verify user has access to album
         var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
-        if (accessError != null) return accessError;
+        if (accessError != null)
+        {
+            return accessError;
+        }
 
         var keys = await _db.EpochKeys
             .AsNoTracking()
@@ -65,7 +68,10 @@ public class EpochKeysController : ControllerBase
 
         // Verify album ownership or editor role
         var (member, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
-        if (memberError != null) return memberError;
+        if (memberError != null)
+        {
+            return memberError;
+        }
 
         // Check recipient exists
         var recipient = await _db.Users.FindAsync(request.RecipientId);
@@ -205,7 +211,10 @@ public class EpochKeysController : ControllerBase
 
         // Verify album ownership
         var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
-        if (ownerError != null) return ownerError;
+        if (ownerError != null)
+        {
+            return ownerError;
+        }
 
         // Validate epoch ID is greater than current
         if (epochId <= album!.CurrentEpochId)

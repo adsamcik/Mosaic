@@ -118,7 +118,10 @@ public class ManifestsController : ControllerBase
 
             // 2. Verify membership
             var (_, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id);
-            if (memberError != null) return memberError;
+            if (memberError != null)
+            {
+                return memberError;
+            }
 
             if (_expirationService.IsExpired(album.ExpiresAt))
             {
@@ -298,7 +301,10 @@ public class ManifestsController : ControllerBase
             }
 
             var (_, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id, new NotFoundResult());
-            if (memberError != null) return memberError;
+            if (memberError != null)
+            {
+                return memberError;
+            }
 
             if (_expirationService.IsExpired(album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
             {
@@ -389,7 +395,10 @@ public class ManifestsController : ControllerBase
         }
 
         var (_, memberError) = await _db.RequireAlbumEditorAsync(manifest.AlbumId, user.Id, new NotFoundResult());
-        if (memberError != null) return memberError;
+        if (memberError != null)
+        {
+            return memberError;
+        }
 
         if (_expirationService.IsExpired(manifest.Album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
         {
@@ -441,7 +450,10 @@ public class ManifestsController : ControllerBase
 
         // Verify access
         var accessError = await _db.RequireAlbumMemberAsync(manifest.AlbumId, user.Id);
-        if (accessError != null) return accessError;
+        if (accessError != null)
+        {
+            return accessError;
+        }
 
         if (_expirationService.IsExpired(manifest.Album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
         {
@@ -505,7 +517,10 @@ public class ManifestsController : ControllerBase
 
             // Verify editor/owner access
             var (_, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id);
-            if (memberError != null) return memberError;
+            if (memberError != null)
+            {
+                return memberError;
+            }
 
             if (_expirationService.IsExpired(album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
             {

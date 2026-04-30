@@ -49,7 +49,10 @@ public class AlbumContentController : ControllerBase
 
         // Check user is a member
         var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
-        if (accessError != null) return accessError;
+        if (accessError != null)
+        {
+            return accessError;
+        }
 
         // Get content
         var content = await _db.AlbumContents.FindAsync(albumId);
@@ -99,7 +102,10 @@ public class AlbumContentController : ControllerBase
 
         // Check user is owner or editor
         var (membership, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id);
-        if (memberError != null) return memberError;
+        if (memberError != null)
+        {
+            return memberError;
+        }
 
         // Get or create content
         var content = await _db.AlbumContents.FindAsync(albumId);

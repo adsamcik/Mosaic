@@ -281,10 +281,16 @@ public class TestSeedController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> PromoteAdmin(string email)
     {
-        if (!IsTestEnvironment()) return NotFound();
+        if (!IsTestEnvironment())
+        {
+            return NotFound();
+        }
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.AuthSub == email);
-        if (user == null) return NotFound(new ErrorResponse("User not found"));
+        if (user == null)
+        {
+            return NotFound(new ErrorResponse("User not found"));
+        }
 
         user.IsAdmin = true;
         await _db.SaveChangesAsync();
