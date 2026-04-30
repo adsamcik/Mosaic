@@ -4011,7 +4011,13 @@ mod tests {
                 sign_public_key: vec![223; 32],
             },
             &["wrapped_epoch_seed_len: 3"],
-            &["221", "222", "223", "wrapped_epoch_seed: [", "sign_public_key"],
+            &[
+                "221",
+                "222",
+                "223",
+                "wrapped_epoch_seed: [",
+                "sign_public_key",
+            ],
         );
 
         assert_debug_redacts(

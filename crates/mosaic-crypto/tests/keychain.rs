@@ -1,7 +1,7 @@
 use mosaic_crypto::{
     KdfProfile, MAX_KDF_ITERATIONS, MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM, MIN_KDF_ITERATIONS,
-    MIN_KDF_MEMORY_KIB, MosaicCryptoError, derive_account_key, derive_root_key,
-    unwrap_account_key, wrap_key,
+    MIN_KDF_MEMORY_KIB, MosaicCryptoError, derive_account_key, derive_root_key, unwrap_account_key,
+    wrap_key,
 };
 use zeroize::Zeroizing;
 
@@ -64,7 +64,11 @@ fn kdf_profile_rejects_resource_exhaustion_parameters() {
         Err(MosaicCryptoError::KdfProfileTooCostly)
     );
     assert_eq!(
-        KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, MAX_KDF_PARALLELISM + 1),
+        KdfProfile::new(
+            MIN_KDF_MEMORY_KIB,
+            MIN_KDF_ITERATIONS,
+            MAX_KDF_PARALLELISM + 1
+        ),
         Err(MosaicCryptoError::KdfProfileTooCostly)
     );
 }

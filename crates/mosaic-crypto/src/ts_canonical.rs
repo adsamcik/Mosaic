@@ -68,8 +68,7 @@ fn blake2b_keyed_32(key: &[u8], msg: &[u8]) -> Result<[u8; BLAKE2B_OUT_BYTES], M
         msg: &[u8],
     ) -> Result<blake2::digest::Output<blake2::Blake2bMac<OutSize>>, MosaicCryptoError>
     where
-        OutSize: blake2::digest::generic_array::ArrayLength<u8>
-            + IsLessOrEqual<Blake2bMaxKey>,
+        OutSize: blake2::digest::generic_array::ArrayLength<u8> + IsLessOrEqual<Blake2bMaxKey>,
         blake2::digest::typenum::LeEq<OutSize, Blake2bMaxKey>: NonZero,
     {
         let mut mac = <blake2::Blake2bMac<OutSize> as Blake2KeyInit>::new_from_slice(key)

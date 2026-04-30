@@ -31,9 +31,8 @@ pub use link_sharing::{
 
 pub mod ts_canonical;
 pub use ts_canonical::{
-    SECRETBOX_NONCE_BYTES, SECRETBOX_TAG_BYTES, blake2b_keyed_16,
-    derive_auth_signing_seed_blake2b, derive_root_key_blake2b, unwrap_account_key_v1,
-    unwrap_key_secretbox, wrap_key_secretbox,
+    SECRETBOX_NONCE_BYTES, SECRETBOX_TAG_BYTES, blake2b_keyed_16, derive_auth_signing_seed_blake2b,
+    derive_root_key_blake2b, unwrap_account_key_v1, unwrap_key_secretbox, wrap_key_secretbox,
 };
 
 /// Maximum allowed plaintext size for shard encryption (100 MiB).

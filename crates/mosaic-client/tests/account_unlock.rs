@@ -211,7 +211,11 @@ fn account_unlock_rejects_each_costly_kdf_limit_and_zeroizes_password() {
     let cases = [
         (MAX_KDF_MEMORY_KIB + 1, MIN_KDF_ITERATIONS, 1),
         (MIN_KDF_MEMORY_KIB, MAX_KDF_ITERATIONS + 1, 1),
-        (MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, MAX_KDF_PARALLELISM + 1),
+        (
+            MIN_KDF_MEMORY_KIB,
+            MIN_KDF_ITERATIONS,
+            MAX_KDF_PARALLELISM + 1,
+        ),
     ];
 
     for (memory_kib, iterations, parallelism) in cases {
