@@ -40,6 +40,14 @@ try {
     Invoke-Step "Rust tests" { cargo test --workspace --locked }
     Invoke-Step "Rust architecture boundaries" { & "$ProjectRoot/tests/architecture/rust-boundaries.ps1" }
 
+    # NOTE: Web boundary guard (Band 7 / Lane D1) is intentionally NOT run
+    # here because this script is the Rust check. Future Band 8 readiness
+    # should also invoke:
+    #   pwsh tests/architecture/web-no-direct-console.ps1
+    # which keeps direct `console.*` calls out of the high-risk web
+    # crypto/storage/upload boundaries (see docs/SECURITY.md
+    # "Web hardening static guards").
+
     if (-not $SkipSupplyChain) {
         Assert-RequiredTool "cargo-deny"
         Assert-RequiredTool "cargo-audit"

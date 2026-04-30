@@ -402,6 +402,112 @@ Before deployment, verify:
 - [ ] Trusted proxy CIDR list configured correctly
 - [ ] Database backups encrypted at rest
 
+## Web hardening static guards
+
+Two deterministic guards enforce the "Web client" slice of
+[`SPEC-CrossPlatformHardening.md`](specs/SPEC-CrossPlatformHardening.md).
+Both are non-interactive, run in CI on every push, and are intended to
+be invoked manually during Band 8 release readiness. They are
+**parallel-safe** with the Rust and Android boundary guards
+(`tests/architecture/rust-boundaries.{ps1,sh}`,
+`tests/architecture/kotlin-raw-input-ffi.{ps1,sh}`) and follow the same
+file-pair convention.
+
+### `web-no-direct-console.{ps1,sh}` — direct-console redaction guard
+
+**Purpose.** Implements the redaction rule from
+`SPEC-CrossPlatformHardening.md` lines 111-113: *"Web production code
+uses the centralized logger only; no `console.*` calls in high-risk
+crypto/storage/upload boundaries."*
+
+**What it scans.** TypeScript / TSX sources directly under the
+following high-risk roots — boundaries where a `console.*` regression
+would bypass the centralized logger's redaction guarantees and risk
+leaking secrets, PII, raw URIs, or plaintext metadata:
+
+| Root | Scope |
+|------|-------|
+| `apps/web/src/workers/` | All `.ts` / `.tsx` (recursive) |
+| `apps/web/src/lib/*-service.ts` | Service modules (album-download, album-cover, photo-edit, photo, manifest, settings, shard, epoch-key, epoch-rotation, album-metadata) |
+| `apps/web/src/lib/sync-engine.ts`, `sync-coordinator.{ts,tsx}` | Sync pipeline |
+| `apps/web/src/lib/shared-album-download.ts` | Shared-album content boundary |
+| `apps/web/src/lib/local-purge.ts` | Local-storage purge path |
+| `apps/web/src/lib/api.ts` | Server API client |
+| `apps/web/src/lib/key-cache.ts`, `epoch-key-store.ts`, `epoch-key-service.ts`, `epoch-rotation-service.ts` | Key storage / epoch rotation |
+| `apps/web/src/contexts/SyncContext.tsx`, `AlbumContentContext.tsx` | Sync / album contexts |
+
+**What it allows.** The guard exempts the following paths so tests,
+helper scripts, and the centralized logger itself can use `console.*`
+freely:
+
+- `*/__tests__/*`, `*.test.ts`, `*.test.tsx` — test sources
+- `*/scripts/*` — dev / build scripts
+- `apps/web/src/lib/logger.ts` — the centralized logger (the *only*
+  sanctioned `console.*` callsite)
+
+**What counts as a violation.** Any executable line containing
+`console.log`, `console.warn`, `console.error`, `console.info`,
+`console.debug`, or `console.trace` in a non-allowlisted file. Comment
+lines (starting with `//`, `*`, `/*`) are skipped so JSDoc snippets
+that *describe* `console.*` (e.g. as a "do-not-do-this" example) do
+not trip the guard.
+
+**Failure mode.** Exit code `1` with a `file:line` summary of every
+violation. Exit code `0` when the boundary is clean.
+
+**How to invoke.**
+
+```powershell
+# Windows / PowerShell 7+
+pwsh tests\architecture\web-no-direct-console.ps1
+```
+
+```bash
+# Linux / macOS
+bash tests/architecture/web-no-direct-console.sh
+```
+
+**Where it sits in the build.** The guard is intentionally not part of
+the existing `scripts/rust-check.ps1` pipeline (it is not a Rust
+check). It is meant to be run on every Band 7/8 release readiness
+pass alongside `rust-boundaries.{ps1,sh}` and
+`kotlin-raw-input-ffi.{ps1,sh}`. A reference comment in
+`scripts/rust-check.ps1` reminds future Band 8 readiness work to invoke
+it.
+
+### `db-worker-no-raw-secrets.test.ts` — persistence-safe-snapshot guard
+
+Companion vitest in `apps/web/tests/db-worker-no-raw-secrets.test.ts`
+locks down the OPFS/SQLite persistence rule from the same SPEC (lines
+136-138): *"OPFS/SQLite persistence contains encrypted data and
+persistence-safe snapshots only; no raw handles, raw picker URIs,
+plaintext media, plaintext metadata, or key material."*
+
+The test runs the DB worker against a real `sql.js` database and a
+passthrough crypto bridge, then substring-checks the bytes that go
+into `bridge.wrap` (i.e. the snapshot plaintext) for known raw-secret
+field names: `epochSeed`, `signSecret`, `signSeed`, `linkSecret`,
+`accountKey`, `identitySeed`, `sessionKey`, `authSecret`, `password`,
+`passphrase`, plus their snake-case column variants and any raw
+`nonce` / `iv` token outside an envelope. It also verifies the on-disk
+shape carries the `SNAPSHOT_VERSION` envelope and source-checks that
+no schema column declaration uses any forbidden field name.
+
+Run it with:
+
+```powershell
+cd apps\web
+npm run test:run -- tests/db-worker-no-raw-secrets.test.ts
+```
+
+### Known web logger exceptions
+
+None at the time of writing. Lane D1 (Band 7 prep, 2026-04) audited
+every high-risk root listed above and found zero direct `console.*`
+calls in production code. Any future justified exception must be
+gated by a single-line `// eslint-disable-next-line no-console -- <reason
+ref to spec>` comment AND added to this subsection with a citation.
+
 ## Dependabot triage 2026-04
 
 **Scope.** GitHub Dependabot raised 27 open alerts attributed to `settings.gradle.kts`
