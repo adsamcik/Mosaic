@@ -14,6 +14,7 @@ export type LocalPurgeReason =
   | 'sync-expired'
   | 'sync-deleted'
   | 'album-404'
+  | 'album-410'
   | 'user-deleted';
 
 export interface LocalAlbumPurgeTarget {

@@ -111,16 +111,27 @@ export function SyncProvider({ children }: SyncProviderProps) {
       setLastSyncTime((prev) => new Map([...prev, [albumId, new Date()]]));
       log.info(`Auto-sync complete for album ${albumId}`);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        log.warn(`Album ${albumId} no longer exists (404), cleaning up`);
+      // Per SPEC-TimedExpiration: clients MUST treat 410 Gone the same as 404
+      // for local purge. 410 means the album existed but is now inaccessible
+      // due to expiry; 404 means it has been hard-deleted. Both routes purge
+      // local state, but with distinct reasons so blocker telemetry can
+      // distinguish expired-album purges from missing-album purges.
+      if (
+        err instanceof ApiError &&
+        (err.status === 404 || err.status === 410)
+      ) {
+        const reason: 'album-404' | 'album-410' =
+          err.status === 410 ? 'album-410' : 'album-404';
+        log.warn(
+          `Album ${albumId} is ${
+            err.status === 410 ? 'expired' : 'gone'
+          } (${err.status}), cleaning up`,
+        );
         registeredAlbums.current.delete(albumId);
 
         // Clear local data for the deleted or expired album.
         try {
-          const result = await purgeLocalAlbum({
-            albumId,
-            reason: 'album-404',
-          });
+          const result = await purgeLocalAlbum({ albumId, reason });
           if (result.blockers.length > 0) {
             log.warn('Album local purge completed with blockers', {
               albumId,
