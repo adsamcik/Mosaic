@@ -85,11 +85,25 @@ pub struct AccountUnlockResult {
 /// Returned by [`create_new_account`]. Carries the freshly minted account
 /// handle plus the wrapped account key the caller must persist on the
 /// server. The L2 account key never crosses the WASM boundary.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` is implemented manually to redact the `wrapped_account_key`
+/// byte payload (see SPEC-CrossPlatformHardening "Secret, PII, and Log
+/// Redaction Rules"; mirrors the M5 wrapped-key redaction precedent).
+#[derive(Clone, PartialEq, Eq)]
 pub struct CreateAccountResult {
     pub code: u16,
     pub handle: u64,
     pub wrapped_account_key: Vec<u8>,
+}
+
+impl fmt::Debug for CreateAccountResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CreateAccountResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("wrapped_account_key_len", &self.wrapped_account_key.len())
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade account-key handle status result.
@@ -362,10 +376,24 @@ pub struct ClientCoreAlbumSyncTransitionResult {
 ///
 /// The auth signing secret stays inside Rust; only the 32-byte Ed25519
 /// public key is exposed across the FFI boundary.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` is implemented manually to redact the `auth_public_key` byte
+/// payload — same `<redacted>` discipline applied to other key-bearing
+/// FFI structs (`IdentityHandleResult`, etc.), established by M5
+/// (commit fb26573).
+#[derive(Clone, PartialEq, Eq)]
 pub struct AuthKeypairResult {
     pub code: u16,
     pub auth_public_key: Vec<u8>,
+}
+
+impl fmt::Debug for AuthKeypairResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AuthKeypairResult")
+            .field("code", &self.code)
+            .field("auth_public_key_len", &self.auth_public_key.len())
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade share-link key derivation result.
@@ -4070,6 +4098,30 @@ mod tests {
             },
             &["nonce_len: 24", "ciphertext_len: 3"],
             &["244", "245", "246", "ciphertext: ["],
+        );
+
+        // D3 lock-down: wrapped account-key bytes must never surface in
+        // `{:?}` output (see SPEC-CrossPlatformHardening "Secret, PII, and
+        // Log Redaction Rules"). 248..=250 are the sentinels we forbid.
+        assert_debug_redacts(
+            &super::CreateAccountResult {
+                code: 0,
+                handle: 19,
+                wrapped_account_key: vec![248, 249, 250],
+            },
+            &["code: 0", "handle: 19", "wrapped_account_key_len: 3"],
+            &["248", "249", "250", "wrapped_account_key: ["],
+        );
+
+        // D3 lock-down: keep auth-public-key Debug output length-only,
+        // mirroring the IdentityHandleResult precedent established by M5.
+        assert_debug_redacts(
+            &super::AuthKeypairResult {
+                code: 0,
+                auth_public_key: vec![251, 252, 253, 254],
+            },
+            &["code: 0", "auth_public_key_len: 4"],
+            &["251", "252", "253", "254", "auth_public_key: ["],
         );
     }
 

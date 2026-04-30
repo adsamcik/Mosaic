@@ -201,11 +201,28 @@ impl AccountUnlockResult {
 /// Mirrors the `(handle, wrapped_account_key)` shape produced by
 /// [`create_new_account`]: the L2 account key never crosses the FFI boundary
 /// — only the opaque handle plus its server-storable wrapped form.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` is implemented manually to redact the `wrapped_account_key` byte
+/// payload (see SPEC-CrossPlatformHardening "Secret, PII, and Log Redaction
+/// Rules"; matches the M5 `<redacted>` precedent used for every other
+/// wrapped-key result). Only the byte length is exposed in the formatted
+/// string so accidental `{:?}` log lines or panic messages cannot leak the
+/// wrapped account key bytes.
+#[derive(Clone, PartialEq, Eq)]
 pub struct CreateAccountResult {
     pub code: ClientErrorCode,
     pub handle: u64,
     pub wrapped_account_key: Vec<u8>,
+}
+
+impl fmt::Debug for CreateAccountResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CreateAccountResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("wrapped_account_key_len", &self.wrapped_account_key.len())
+            .finish()
+    }
 }
 
 impl CreateAccountResult {
@@ -411,10 +428,26 @@ impl DecryptedShardResult {
 /// key is exposed across the WASM boundary. Callers that want to memzero
 /// the public key bytes after use are free to do so but the value is not
 /// secret on its own.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` is implemented manually to redact the `auth_public_key` byte
+/// payload — same `<redacted>` discipline applied to every other key-bearing
+/// FFI struct (`IdentityHandleResult` etc., established by M5,
+/// commit fb26573). Only the byte length surfaces in the formatted string so
+/// a stray `{:?}` log or panic cannot dump the public-key bytes alongside
+/// neighbouring sensitive context.
+#[derive(Clone, PartialEq, Eq)]
 pub struct AuthKeypairResult {
     pub code: ClientErrorCode,
     pub auth_public_key: Vec<u8>,
+}
+
+impl fmt::Debug for AuthKeypairResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AuthKeypairResult")
+            .field("code", &self.code)
+            .field("auth_public_key_len", &self.auth_public_key.len())
+            .finish()
+    }
 }
 
 impl AuthKeypairResult {
@@ -2768,6 +2801,36 @@ mod tests {
             },
             &["nonce_len: 24", "ciphertext_len: 3"],
             &["237", "238", "239", "ciphertext: ["],
+        );
+
+        // D3 lock-down: SPEC-CrossPlatformHardening "Secret, PII, and Log
+        // Redaction Rules" requires wrapped account-key bytes to never
+        // surface in `{:?}` output. The byte values 241..=243 below are the
+        // sentinels we forbid in the rendered string.
+        assert_debug_redacts(
+            &super::CreateAccountResult {
+                code: super::ClientErrorCode::Ok,
+                handle: 17,
+                wrapped_account_key: vec![241, 242, 243],
+            },
+            &[
+                "code: Ok",
+                "handle: 17",
+                "wrapped_account_key_len: 3",
+            ],
+            &["241", "242", "243", "wrapped_account_key: ["],
+        );
+
+        // D3 lock-down: even the auth public key (server-visible by
+        // design) is rendered length-only in Debug to keep the redaction
+        // discipline uniform with `IdentityHandleResult` (M5 fb26573).
+        assert_debug_redacts(
+            &super::AuthKeypairResult {
+                code: super::ClientErrorCode::Ok,
+                auth_public_key: vec![244, 245, 246, 247],
+            },
+            &["code: Ok", "auth_public_key_len: 4"],
+            &["244", "245", "246", "247", "auth_public_key: ["],
         );
     }
 
