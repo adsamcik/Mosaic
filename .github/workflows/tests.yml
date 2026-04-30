@@ -191,6 +191,9 @@ jobs:
       - name: Run Rust workspace checks
         run: bash ./scripts/rust-check.sh --skip-supply-chain
 
+      - name: Run rust-no-secret-logs architecture guard
+        run: bash ./tests/architecture/rust-no-secret-logs.sh
+
       - name: Install wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
 
@@ -219,6 +222,9 @@ jobs:
           npm ci
           npm run build
 
+      - name: Run web-no-direct-console architecture guard
+        run: bash ./tests/architecture/web-no-direct-console.sh
+
   android-shell:
     name: Android Shell (JVM)
     runs-on: ubuntu-latest
@@ -245,6 +251,9 @@ jobs:
 
       - name: Run kotlin-raw-input-ffi architecture guard
         run: bash ./tests/architecture/kotlin-raw-input-ffi.sh
+
+      - name: Run android-no-direct-log architecture guard
+        run: bash ./tests/architecture/android-no-direct-log.sh
 
   android-main:
     name: Android Main (Gradle)
