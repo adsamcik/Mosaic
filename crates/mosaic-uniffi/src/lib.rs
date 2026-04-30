@@ -385,7 +385,7 @@ pub fn protocol_version() -> String {
 /// Returns the stable UniFFI API snapshot for this FFI spike.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v8 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)"
+    "mosaic-uniffi ffi-spike:v9 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
 }
 
 const CLIENT_CORE_STATE_MACHINE_SURFACE: &str = "client-core-state-machines:v1 \
@@ -1592,6 +1592,14 @@ fn client_error_code_from_u16(value: u16) -> Option<mosaic_client::ClientErrorCo
         212 => Some(mosaic_client::ClientErrorCode::InvalidPublicKey),
         213 => Some(mosaic_client::ClientErrorCode::InvalidUsername),
         214 => Some(mosaic_client::ClientErrorCode::KdfProfileTooCostly),
+        215 => Some(mosaic_client::ClientErrorCode::LinkTierMismatch),
+        216 => Some(mosaic_client::ClientErrorCode::BundleSignatureInvalid),
+        217 => Some(mosaic_client::ClientErrorCode::BundleAlbumIdEmpty),
+        218 => Some(mosaic_client::ClientErrorCode::BundleAlbumIdMismatch),
+        219 => Some(mosaic_client::ClientErrorCode::BundleEpochTooOld),
+        220 => Some(mosaic_client::ClientErrorCode::BundleRecipientMismatch),
+        221 => Some(mosaic_client::ClientErrorCode::BundleJsonParse),
+        222 => Some(mosaic_client::ClientErrorCode::BundleSealOpenFailed),
         300 => Some(mosaic_client::ClientErrorCode::OperationCancelled),
         400 => Some(mosaic_client::ClientErrorCode::SecretHandleNotFound),
         401 => Some(mosaic_client::ClientErrorCode::IdentityHandleNotFound),
@@ -1824,6 +1832,561 @@ const fn empty_media_tier_dimensions() -> MediaTierDimensions {
         tier: 0,
         width: 0,
         height: 0,
+    }
+}
+
+fn map_crypto_error_uniffi(error: mosaic_crypto::MosaicCryptoError) -> u16 {
+    match error {
+        mosaic_crypto::MosaicCryptoError::EmptyContext => {
+            mosaic_client::ClientErrorCode::EmptyContext.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidKeyLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidKeyLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidInputLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::AuthenticationFailed => {
+            mosaic_client::ClientErrorCode::AuthenticationFailed.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::WrappedKeyTooShort { .. } => {
+            mosaic_client::ClientErrorCode::WrappedKeyTooShort.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidSaltLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidSaltLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidSignatureLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidSignatureLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidPublicKey => {
+            mosaic_client::ClientErrorCode::InvalidPublicKey.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidUsername => {
+            mosaic_client::ClientErrorCode::InvalidUsername.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::KdfFailure => {
+            mosaic_client::ClientErrorCode::KdfFailure.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::KdfProfileTooWeak => {
+            mosaic_client::ClientErrorCode::KdfProfileTooWeak.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::KdfProfileTooCostly => {
+            mosaic_client::ClientErrorCode::KdfProfileTooCostly.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::RngFailure => {
+            mosaic_client::ClientErrorCode::RngFailure.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidEnvelope => {
+            mosaic_client::ClientErrorCode::InvalidEnvelope.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::MissingCiphertext => {
+            mosaic_client::ClientErrorCode::MissingCiphertext.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleSignatureInvalid => {
+            mosaic_client::ClientErrorCode::BundleSignatureInvalid.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleAlbumIdEmpty => {
+            mosaic_client::ClientErrorCode::BundleAlbumIdEmpty.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleAlbumIdMismatch => {
+            mosaic_client::ClientErrorCode::BundleAlbumIdMismatch.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleEpochTooOld => {
+            mosaic_client::ClientErrorCode::BundleEpochTooOld.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleRecipientMismatch => {
+            mosaic_client::ClientErrorCode::BundleRecipientMismatch.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleJsonParse => {
+            mosaic_client::ClientErrorCode::BundleJsonParse.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleSealOpenFailed => {
+            mosaic_client::ClientErrorCode::BundleSealOpenFailed.as_u16()
+        }
+        _ => mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Slice 0C — raw-input cross-client crypto entry points
+//
+// These exports exist exclusively to drive the cross-client byte-equality
+// tests in `tests/vectors/*.json` from the Android (and other) FFI consumer.
+// Each takes raw secret bytes (link secrets, identity seeds, content keys,
+// auth signing seeds, recipient identity seeds) ONLY because the canonical
+// vectors are defined in terms of those raw inputs.
+//
+// Production code MUST continue to use the handle-based exports
+// (`open_identity_handle`, `encrypt_album_content_with_epoch_handle`, etc.)
+// so long-lived key material stays inside the registry with structured
+// zeroization. The architecture-guard at
+// `tests/architecture/kotlin-raw-input-ffi.{ps1,sh}` enforces that no
+// non-test Kotlin caller references the bridges added on top of these
+// exports.
+//
+// Inputs are wrapped in `Zeroizing` and wiped before return. Result records
+// implement custom `fmt::Debug` that redacts byte payloads per the
+// commit `fb26573` (M5) discipline.
+// ---------------------------------------------------------------------------
+
+/// UniFFI record for raw-secret link-key derivation results.
+///
+/// `link_id` is server-visible (16 bytes); `wrapping_key` is
+/// secret-equivalent (32 bytes) and the cross-client vector requires
+/// byte-equality on it.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LinkKeysFfiResult {
+    pub code: u16,
+    pub link_id: Vec<u8>,
+    pub wrapping_key: Vec<u8>,
+}
+
+impl fmt::Debug for LinkKeysFfiResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkKeysFfiResult")
+            .field("code", &self.code)
+            .field("link_id_len", &self.link_id.len())
+            .field("wrapping_key_len", &self.wrapping_key.len())
+            .finish()
+    }
+}
+
+/// UniFFI record for raw-seed identity derivation results.
+///
+/// All three fields are public-cryptographic outputs (no secret seed bytes
+/// leave the FFI boundary).
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct IdentityFromSeedFfiResult {
+    pub code: u16,
+    pub signing_pubkey: Vec<u8>,
+    pub encryption_pubkey: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
+impl fmt::Debug for IdentityFromSeedFfiResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IdentityFromSeedFfiResult")
+            .field("code", &self.code)
+            .field("signing_pubkey_len", &self.signing_pubkey.len())
+            .field("encryption_pubkey_len", &self.encryption_pubkey.len())
+            .field("signature_len", &self.signature.len())
+            .finish()
+    }
+}
+
+/// UniFFI record for auth-challenge signature verification results.
+#[derive(Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct AuthChallengeVerifyFfiResult {
+    pub code: u16,
+    pub valid: bool,
+}
+
+impl fmt::Debug for AuthChallengeVerifyFfiResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AuthChallengeVerifyFfiResult")
+            .field("code", &self.code)
+            .field("valid", &self.valid)
+            .finish()
+    }
+}
+
+/// UniFFI record for sealed-bundle verify-and-open results.
+///
+/// Mirrors `mosaic_client::OpenedBundleResult` but intentionally omits
+/// `sign_secret_seed` — production sealed-sharing flows use the handle-based
+/// `verify_and_open_bundle_with_identity_handle` so the per-epoch manifest
+/// signing secret stays inside the registry. `epoch_seed` is
+/// secret-equivalent and the cross-client vector asserts byte-equality on it.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct OpenedBundleFfiResult {
+    pub code: u16,
+    pub version: u32,
+    pub album_id: String,
+    pub epoch_id: u32,
+    pub recipient_pubkey: Vec<u8>,
+    pub epoch_seed: Vec<u8>,
+    pub sign_public_key: Vec<u8>,
+}
+
+impl fmt::Debug for OpenedBundleFfiResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenedBundleFfiResult")
+            .field("code", &self.code)
+            .field("version", &self.version)
+            .field("album_id_len", &self.album_id.len())
+            .field("epoch_id", &self.epoch_id)
+            .field("recipient_pubkey_len", &self.recipient_pubkey.len())
+            .field("epoch_seed_len", &self.epoch_seed.len())
+            .field("sign_public_key_len", &self.sign_public_key.len())
+            .finish()
+    }
+}
+
+/// UniFFI record for raw-key album-content decrypt results.
+///
+/// `plaintext` is secret-equivalent and the cross-client vector asserts
+/// byte-equality on it.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ContentDecryptFfiResult {
+    pub code: u16,
+    pub plaintext: Vec<u8>,
+}
+
+impl fmt::Debug for ContentDecryptFfiResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ContentDecryptFfiResult")
+            .field("code", &self.code)
+            .field("plaintext_len", &self.plaintext.len())
+            .finish()
+    }
+}
+
+/// Derives the `(link_id, wrapping_key)` pair from a 32-byte share-link
+/// secret.
+///
+/// Used by the cross-client `link_keys.json` corpus driver. Production code
+/// should use the higher-level link-sharing helpers, not this raw-input
+/// surface.
+///
+/// SECURITY: The caller-provided link secret is wiped on the Rust side
+/// before this function returns. `wrapping_key` in the result is
+/// secret-equivalent — Kotlin callers MUST wipe the byte array after use.
+#[uniffi::export]
+#[must_use]
+pub fn derive_link_keys_from_raw_secret(link_secret: Vec<u8>) -> LinkKeysFfiResult {
+    let mut secret_buf = link_secret;
+    let result = match mosaic_crypto::derive_link_keys(&secret_buf) {
+        Ok(keys) => LinkKeysFfiResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            link_id: keys.link_id.to_vec(),
+            wrapping_key: keys.wrapping_key.as_bytes().to_vec(),
+        },
+        Err(error) => LinkKeysFfiResult {
+            code: map_crypto_error_uniffi(error),
+            link_id: Vec::new(),
+            wrapping_key: Vec::new(),
+        },
+    };
+    use zeroize::Zeroize;
+    secret_buf.zeroize();
+    result
+}
+
+/// Derives identity public keys + a deterministic Ed25519 detached
+/// signature over a caller-supplied message from a 32-byte identity seed.
+///
+/// Used by the cross-client `identity.json` corpus driver. Production code
+/// should use the handle-based `create_identity_handle` /
+/// `open_identity_handle` exports.
+///
+/// SECURITY: The caller-provided seed is wiped on the Rust side before
+/// this function returns. The result does not contain the seed.
+#[uniffi::export]
+#[must_use]
+pub fn derive_identity_from_raw_seed(
+    identity_seed: Vec<u8>,
+    message: Vec<u8>,
+) -> IdentityFromSeedFfiResult {
+    use zeroize::Zeroize;
+    if identity_seed.len() != 32 {
+        let mut seed_buf = identity_seed;
+        seed_buf.zeroize();
+        return IdentityFromSeedFfiResult {
+            code: mosaic_client::ClientErrorCode::InvalidKeyLength.as_u16(),
+            signing_pubkey: Vec::new(),
+            encryption_pubkey: Vec::new(),
+            signature: Vec::new(),
+        };
+    }
+    let mut seed_buf = Zeroizing::new(identity_seed);
+    let mut keypair = match mosaic_crypto::derive_identity_keypair(seed_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => {
+            return IdentityFromSeedFfiResult {
+                code: map_crypto_error_uniffi(error),
+                signing_pubkey: Vec::new(),
+                encryption_pubkey: Vec::new(),
+                signature: Vec::new(),
+            };
+        }
+    };
+    let signing_pubkey = keypair.signing_public_key().as_bytes().to_vec();
+    let encryption_pubkey = keypair.encryption_public_key().as_bytes().to_vec();
+    let signature = mosaic_crypto::sign_manifest_with_identity(&message, keypair.secret_key())
+        .as_bytes()
+        .to_vec();
+    keypair.zeroize_secret();
+    IdentityFromSeedFfiResult {
+        code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+        signing_pubkey,
+        encryption_pubkey,
+        signature,
+    }
+}
+
+/// Builds the canonical LocalAuth challenge transcript bytes.
+///
+/// `timestamp_ms < 0` selects the no-timestamp transcript variant (matches
+/// the JS API where the timestamp argument is optional). The resulting
+/// bytes are suitable for direct Ed25519 detached signing via
+/// [`sign_auth_challenge_with_raw_seed`].
+#[uniffi::export]
+#[must_use]
+pub fn build_auth_challenge_transcript_bytes(
+    username: String,
+    timestamp_ms: i64,
+    challenge: Vec<u8>,
+) -> BytesResult {
+    let timestamp = if timestamp_ms < 0 {
+        None
+    } else {
+        Some(timestamp_ms as u64)
+    };
+    match mosaic_crypto::build_auth_challenge_transcript(&username, timestamp, &challenge) {
+        Ok(bytes) => BytesResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            bytes,
+        },
+        Err(error) => BytesResult {
+            code: map_crypto_error_uniffi(error),
+            bytes: Vec::new(),
+        },
+    }
+}
+
+/// Signs LocalAuth challenge transcript bytes with a 32-byte auth signing
+/// seed and returns a 64-byte detached Ed25519 signature.
+///
+/// Used by the cross-client `auth_challenge.json` corpus driver.
+///
+/// SECURITY: The caller-provided seed is wiped on the Rust side before
+/// this function returns.
+#[uniffi::export]
+#[must_use]
+pub fn sign_auth_challenge_with_raw_seed(
+    transcript_bytes: Vec<u8>,
+    auth_signing_seed: Vec<u8>,
+) -> BytesResult {
+    use zeroize::Zeroize;
+    let mut seed_buf = auth_signing_seed;
+    let secret = match mosaic_crypto::AuthSigningSecretKey::from_seed(seed_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => {
+            seed_buf.zeroize();
+            return BytesResult {
+                code: map_crypto_error_uniffi(error),
+                bytes: Vec::new(),
+            };
+        }
+    };
+    let signature = mosaic_crypto::sign_auth_challenge(&transcript_bytes, &secret);
+    seed_buf.zeroize();
+    BytesResult {
+        code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+        bytes: signature.as_bytes().to_vec(),
+    }
+}
+
+/// Verifies a LocalAuth challenge transcript signature against a 32-byte
+/// public key.
+///
+/// On success returns `code = 0` and `valid = true`. Any verification
+/// failure (wrong key, tampered transcript, tampered signature) returns
+/// `code = 205` (`AuthenticationFailed`) and `valid = false`. Malformed
+/// inputs return their length/shape error codes (211/212/201) with
+/// `valid = false`.
+#[uniffi::export]
+#[must_use]
+pub fn verify_auth_challenge_signature(
+    transcript_bytes: Vec<u8>,
+    signature: Vec<u8>,
+    auth_public_key: Vec<u8>,
+) -> AuthChallengeVerifyFfiResult {
+    let signature_value = match mosaic_crypto::AuthSignature::from_bytes(&signature) {
+        Ok(value) => value,
+        Err(error) => {
+            return AuthChallengeVerifyFfiResult {
+                code: map_crypto_error_uniffi(error),
+                valid: false,
+            };
+        }
+    };
+    let public_key = match mosaic_crypto::AuthSigningPublicKey::from_bytes(&auth_public_key) {
+        Ok(value) => value,
+        Err(error) => {
+            return AuthChallengeVerifyFfiResult {
+                code: map_crypto_error_uniffi(error),
+                valid: false,
+            };
+        }
+    };
+    if mosaic_crypto::verify_auth_challenge(&transcript_bytes, &signature_value, &public_key) {
+        AuthChallengeVerifyFfiResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            valid: true,
+        }
+    } else {
+        AuthChallengeVerifyFfiResult {
+            code: mosaic_client::ClientErrorCode::AuthenticationFailed.as_u16(),
+            valid: false,
+        }
+    }
+}
+
+/// Verifies and opens a sealed epoch bundle using a caller-supplied raw
+/// 32-byte recipient identity seed.
+///
+/// `expected_owner_pubkey` is the Ed25519 public key the caller expects to
+/// match `sealed_bundle.sharer_pubkey`. `expected_album_id` and
+/// `expected_min_epoch_id` enforce album/epoch policy. When
+/// `allow_legacy_empty_album_id` is true the open succeeds even if the
+/// embedded album_id is empty.
+///
+/// Used exclusively by the cross-client `sealed_bundle.json` corpus driver.
+/// Production code should use the handle-based
+/// `verify_and_open_bundle_with_identity_handle`.
+///
+/// SECURITY: `epoch_seed` in the result is secret-equivalent. Kotlin
+/// callers MUST wipe the byte array after use. The recipient seed is wiped
+/// on the Rust side before return. `sign_secret_seed` (the per-epoch
+/// manifest signing secret carried by `mosaic_client::OpenedBundleResult`)
+/// is intentionally NOT exposed across this FFI surface.
+#[uniffi::export]
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn verify_and_open_bundle_with_recipient_seed(
+    recipient_identity_seed: Vec<u8>,
+    sealed: Vec<u8>,
+    signature: Vec<u8>,
+    sharer_pubkey: Vec<u8>,
+    expected_owner_pubkey: Vec<u8>,
+    expected_album_id: String,
+    expected_min_epoch_id: u32,
+    allow_legacy_empty_album_id: bool,
+) -> OpenedBundleFfiResult {
+    use zeroize::Zeroize;
+    let empty_result = |code: u16| OpenedBundleFfiResult {
+        code,
+        version: 0,
+        album_id: String::new(),
+        epoch_id: 0,
+        recipient_pubkey: Vec::new(),
+        epoch_seed: Vec::new(),
+        sign_public_key: Vec::new(),
+    };
+
+    let mut seed_buf = recipient_identity_seed;
+    if seed_buf.len() != 32 {
+        seed_buf.zeroize();
+        return empty_result(mosaic_client::ClientErrorCode::InvalidKeyLength.as_u16());
+    }
+    if signature.len() != 64 {
+        seed_buf.zeroize();
+        return empty_result(mosaic_client::ClientErrorCode::InvalidSignatureLength.as_u16());
+    }
+    if sharer_pubkey.len() != 32 || expected_owner_pubkey.len() != 32 {
+        seed_buf.zeroize();
+        return empty_result(mosaic_client::ClientErrorCode::InvalidKeyLength.as_u16());
+    }
+
+    let mut keypair = match mosaic_crypto::derive_identity_keypair(seed_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => {
+            seed_buf.zeroize();
+            return empty_result(map_crypto_error_uniffi(error));
+        }
+    };
+
+    let mut signature_array = [0_u8; 64];
+    signature_array.copy_from_slice(&signature);
+    let mut sharer_array = [0_u8; 32];
+    sharer_array.copy_from_slice(&sharer_pubkey);
+    let mut expected_owner_array = [0_u8; 32];
+    expected_owner_array.copy_from_slice(&expected_owner_pubkey);
+
+    let sealed_bundle = mosaic_crypto::SealedBundle {
+        sealed,
+        signature: signature_array,
+        sharer_pubkey: sharer_array,
+    };
+
+    let context = mosaic_crypto::BundleValidationContext {
+        album_id: expected_album_id,
+        min_epoch_id: expected_min_epoch_id,
+        allow_legacy_empty_album_id,
+        expected_owner_ed25519_pub: expected_owner_array,
+    };
+
+    let outcome = mosaic_crypto::verify_and_open_bundle(&sealed_bundle, &keypair, &context);
+    keypair.zeroize_secret();
+
+    match outcome {
+        Ok(bundle) => {
+            let recipient_pubkey = bundle.recipient_pubkey.to_vec();
+            let epoch_seed = bundle.epoch_seed.as_bytes().to_vec();
+            let sign_public_key = bundle.sign_public_key.as_bytes().to_vec();
+            OpenedBundleFfiResult {
+                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                version: bundle.version,
+                album_id: bundle.album_id,
+                epoch_id: bundle.epoch_id,
+                recipient_pubkey,
+                epoch_seed,
+                sign_public_key,
+            }
+        }
+        Err(error) => empty_result(map_crypto_error_uniffi(error)),
+    }
+}
+
+/// Decrypts album content with a caller-supplied raw 32-byte content key
+/// and 24-byte XChaCha20 nonce.
+///
+/// Used exclusively by the cross-client `content_encrypt.json` corpus
+/// driver. Production code should use the handle-based
+/// `decrypt_album_content_with_epoch_handle`.
+///
+/// SECURITY: The caller-provided content key is wiped on the Rust side
+/// before this function returns. `plaintext` in the result is
+/// secret-equivalent — Kotlin callers MUST wipe the byte array after use.
+#[uniffi::export]
+#[must_use]
+pub fn decrypt_content_with_raw_key(
+    content_key: Vec<u8>,
+    nonce: Vec<u8>,
+    ciphertext: Vec<u8>,
+    epoch_id: u32,
+) -> ContentDecryptFfiResult {
+    use zeroize::Zeroize;
+    if nonce.len() != 24 {
+        let mut key_buf = content_key;
+        key_buf.zeroize();
+        return ContentDecryptFfiResult {
+            code: mosaic_client::ClientErrorCode::InvalidInputLength.as_u16(),
+            plaintext: Vec::new(),
+        };
+    }
+    let mut key_buf = Zeroizing::new(content_key);
+    let content_key_value = match mosaic_crypto::SecretKey::from_bytes(key_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => {
+            return ContentDecryptFfiResult {
+                code: map_crypto_error_uniffi(error),
+                plaintext: Vec::new(),
+            };
+        }
+    };
+    let mut nonce_array = [0_u8; 24];
+    nonce_array.copy_from_slice(&nonce);
+    match mosaic_crypto::decrypt_content(&ciphertext, &nonce_array, &content_key_value, epoch_id) {
+        Ok(plaintext) => ContentDecryptFfiResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            plaintext: plaintext.to_vec(),
+        },
+        Err(error) => ContentDecryptFfiResult {
+            code: map_crypto_error_uniffi(error),
+            plaintext: Vec::new(),
+        },
     }
 }
 
