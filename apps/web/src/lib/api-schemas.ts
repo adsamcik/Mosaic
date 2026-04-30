@@ -125,11 +125,11 @@ export const AlbumSchema = z.object({
   currentVersion: z.number().int().nonnegative(),
   currentEpochId: z.number().int().nonnegative(),
   createdAt: IsoDateTimeSchema,
-  updatedAt: IsoDateTimeSchema.optional(),
+  updatedAt: IsoDateTimeSchema.nullish(),
   encryptedName: Base64Schema.nullable().optional(),
   encryptedDescription: Base64Schema.nullable().optional(),
   expiresAt: IsoDateTimeSchema.nullable().optional(),
-  expirationWarningDays: z.number().int().nonnegative().optional(),
+  expirationWarningDays: z.number().int().nonnegative().nullish(),
 });
 export type Album = z.infer<typeof AlbumSchema>;
 
@@ -178,7 +178,7 @@ export type AlbumRole = z.infer<typeof AlbumRoleSchema>;
 export const AlbumMemberSchema = z.object({
   userId: UuidSchema,
   role: AlbumRoleSchema,
-  invitedBy: UuidSchema.optional(),
+  invitedBy: UuidSchema.nullish(),
   joinedAt: IsoDateTimeSchema,
   user: UserPublicSchema.optional(),
 });
@@ -240,7 +240,7 @@ export const ManifestRecordSchema = z.object({
   // cryptographically).
   shardIds: z.array(z.string()),
   createdAt: IsoDateTimeSchema,
-  updatedAt: IsoDateTimeSchema.optional(),
+  updatedAt: IsoDateTimeSchema.nullish(),
 });
 export type ManifestRecord = z.infer<typeof ManifestRecordSchema>;
 
@@ -279,8 +279,8 @@ export const ShareLinkResponseSchema = z.object({
   // linkId is a 16-byte random identifier transported as base64.
   linkId: Base64Schema,
   accessTier: AccessTierSchema,
-  expiresAt: IsoDateTimeSchema.optional(),
-  maxUses: z.number().int().nonnegative().optional(),
+  expiresAt: IsoDateTimeSchema.nullish(),
+  maxUses: z.number().int().nonnegative().nullish(),
   useCount: z.number().int().nonnegative(),
   isRevoked: z.boolean(),
   createdAt: IsoDateTimeSchema,
@@ -294,7 +294,7 @@ export const ShareLinkWithSecretResponseSchema = z.object({
   linkId: Base64Schema,
   accessTier: AccessTierSchema,
   isRevoked: z.boolean(),
-  ownerEncryptedSecret: Base64Schema.optional(),
+  ownerEncryptedSecret: Base64Schema.nullish(),
 });
 export type ShareLinkWithSecretResponse = z.infer<
   typeof ShareLinkWithSecretResponseSchema
@@ -320,7 +320,7 @@ export const LinkEpochKeyResponseSchema = z.object({
   tier: AccessTierSchema,
   nonce: Base64Schema,
   encryptedKey: Base64Schema,
-  signPubkey: Base64Schema.optional(),
+  signPubkey: Base64Schema.nullish(),
 });
 export type LinkEpochKeyResponse = z.infer<typeof LinkEpochKeyResponseSchema>;
 
