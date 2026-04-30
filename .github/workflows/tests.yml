@@ -243,6 +243,9 @@ jobs:
       - name: Run Android shell foundation tests
         run: bash ./scripts/test-android-shell.sh
 
+      - name: Run kotlin-raw-input-ffi architecture guard
+        run: bash ./tests/architecture/kotlin-raw-input-ffi.sh
+
   android-main:
     name: Android Main (Gradle)
     runs-on: ubuntu-latest
