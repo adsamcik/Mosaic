@@ -32,6 +32,7 @@ services:
       Storage__Path: /app/data/blobs
       Auth__LocalAuthEnabled: "true"
       Auth__ProxyAuthEnabled: "true"
+      Auth__AllowDualMode: "true"           # Test env intentionally enables both auth modes; required since 7a0952f fail-closed validation
       Auth__TrustedProxies__0: "0.0.0.0/0"  # Trust all IPv4 for testing
       Auth__TrustedProxies__1: "::/0"       # Trust all IPv6 for testing
       Quota__DefaultMaxBytes: "10737418240"
