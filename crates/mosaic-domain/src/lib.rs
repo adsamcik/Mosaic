@@ -31,6 +31,10 @@ pub const METADATA_SIDECAR_CONTEXT: &[u8] = b"Mosaic_Metadata_v1";
 pub const METADATA_SIDECAR_VERSION: u8 = 1;
 
 /// Known metadata sidecar TLV field tags.
+///
+/// Every new `pub const` in this module must be appended to
+/// [`KNOWN_FIELD_TAGS`] and to `crates/mosaic-domain/tests/sidecar_tag_table.rs`
+/// in the same change. The lock test verifies both lists stay complete.
 pub mod metadata_field_tags {
     /// EXIF orientation value encoded as a little-endian `u16`.
     pub const ORIENTATION: u16 = 1;
@@ -50,6 +54,28 @@ pub mod metadata_field_tags {
     pub const CAMERA_MODEL: u16 = 8;
     /// GPS payload encoded by the client metadata layer.
     pub const GPS: u16 = 9;
+
+    /// Complete list of known allocated metadata field tag numbers.
+    ///
+    /// This list is intentionally append-only and is covered by
+    /// `sidecar_tag_table.rs` so adding a new `pub const` without updating the
+    /// registry fails CI. Tags 10-13 are reserved for R-M7 and intentionally do
+    /// not have individual constants yet.
+    pub const KNOWN_FIELD_TAGS: &[(u16, &str)] = &[
+        (ORIENTATION, "orientation"),
+        (DEVICE_TIMESTAMP_MS, "device_timestamp_ms"),
+        (ORIGINAL_DIMENSIONS, "original_dimensions"),
+        (MIME_OVERRIDE, "mime_override"),
+        (CAPTION, "caption"),
+        (FILENAME, "filename"),
+        (CAMERA_MAKE, "camera_make"),
+        (CAMERA_MODEL, "camera_model"),
+        (GPS, "gps"),
+        (10, "codec_fourcc"),
+        (11, "duration_ms"),
+        (12, "frame_rate_x100"),
+        (13, "video_orientation"),
+    ];
 }
 
 /// Domain-level parse and validation errors.
