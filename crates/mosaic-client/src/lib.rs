@@ -70,6 +70,16 @@ pub enum ClientErrorCode {
     BundleRecipientMismatch = 220,
     BundleJsonParse = 221,
     BundleSealOpenFailed = 222,
+    /// Shard bytes failed digest/integrity verification against the manifest commitment.
+    ShardIntegrityFailed = 223,
+    /// Legacy raw-key decrypt fallback succeeded and should emit telemetry only.
+    LegacyRawKeyDecryptFallback = 224,
+    /// Streaming AEAD decrypt observed a chunk index that did not follow the expected order.
+    StreamingChunkOutOfOrder = 225,
+    /// Streaming AEAD decrypt observed a final chunk count that differs from the committed total.
+    StreamingTotalChunkMismatch = 226,
+    /// Streaming AEAD encrypt panic recovery detected output divergence for the same plaintext.
+    StreamingPlaintextDivergence = 227,
     OperationCancelled = 300,
     SecretHandleNotFound = 400,
     IdentityHandleNotFound = 401,
@@ -83,6 +93,28 @@ pub enum ClientErrorCode {
     MediaMetadataMismatch = 604,
     InvalidMediaSidecar = 605,
     MediaAdapterOutputMismatch = 606,
+    /// Video container parsing rejected malformed or unsupported container structure.
+    VideoContainerInvalid = 607,
+    /// Media inspection failed before a safe format and tier plan could be produced.
+    MediaInspectFailed = 608,
+    /// Metadata stripping failed before producing sanitized media bytes.
+    MediaStripFailed = 609,
+    /// A canonical sidecar field exceeded its append-only registry byte cap.
+    SidecarFieldOverflow = 610,
+    /// A canonical sidecar field used an unknown append-only registry tag.
+    SidecarTagUnknown = 611,
+    /// Canonical sidecar bytes failed structural validation.
+    MalformedSidecar = 612,
+    /// EXIF MakerNote metadata was encountered where parsing is disallowed.
+    MakerNoteRejected = 613,
+    /// EXIF traversal exceeded bounded parser depth, entry, or offset limits.
+    ExifTraversalLimitExceeded = 614,
+    /// Video input exceeds the v1 maximum accepted size.
+    VideoTooLargeForV1 = 615,
+    /// Video source bytes cannot be read due to corruption, DRM, or unsupported source encoding.
+    VideoSourceUnreadable = 616,
+    /// Generated video tier dimensions or duration shape violate the v1 tier policy.
+    VideoTierShapeRejected = 617,
     ClientCoreInvalidTransition = 700,
     ClientCoreMissingEventPayload = 701,
     ClientCoreRetryBudgetExhausted = 702,
@@ -90,6 +122,18 @@ pub enum ClientErrorCode {
     ClientCoreManifestOutcomeUnknown = 704,
     ClientCoreUnsupportedSnapshotVersion = 705,
     ClientCoreInvalidSnapshot = 706,
+    /// Manifest finalization payload shape failed client-side contract validation.
+    ManifestShapeRejected = 707,
+    /// Backend idempotency state expired before a manifest/upload operation could be resolved.
+    IdempotencyExpired = 708,
+    /// Manifest set reconciliation found a conflicting committed manifest set.
+    ManifestSetConflict = 709,
+    /// Backend idempotency response conflicts with the client operation fingerprint.
+    BackendIdempotencyConflict = 710,
+    /// Video poster extraction failed; emitted as an event code without failing the upload.
+    VideoPosterExtractionFailed = 711,
+    /// Android TLS certificate pin validation failed for a configured Mosaic endpoint.
+    PinValidationFailed = 800,
 }
 
 impl ClientErrorCode {

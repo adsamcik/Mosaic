@@ -46,6 +46,11 @@ fn expected_table() -> Vec<(&'static str, u16)> {
         ("BundleRecipientMismatch", 220),
         ("BundleJsonParse", 221),
         ("BundleSealOpenFailed", 222),
+        ("ShardIntegrityFailed", 223),
+        ("LegacyRawKeyDecryptFallback", 224),
+        ("StreamingChunkOutOfOrder", 225),
+        ("StreamingTotalChunkMismatch", 226),
+        ("StreamingPlaintextDivergence", 227),
         ("OperationCancelled", 300),
         ("SecretHandleNotFound", 400),
         ("IdentityHandleNotFound", 401),
@@ -59,6 +64,17 @@ fn expected_table() -> Vec<(&'static str, u16)> {
         ("MediaMetadataMismatch", 604),
         ("InvalidMediaSidecar", 605),
         ("MediaAdapterOutputMismatch", 606),
+        ("VideoContainerInvalid", 607),
+        ("MediaInspectFailed", 608),
+        ("MediaStripFailed", 609),
+        ("SidecarFieldOverflow", 610),
+        ("SidecarTagUnknown", 611),
+        ("MalformedSidecar", 612),
+        ("MakerNoteRejected", 613),
+        ("ExifTraversalLimitExceeded", 614),
+        ("VideoTooLargeForV1", 615),
+        ("VideoSourceUnreadable", 616),
+        ("VideoTierShapeRejected", 617),
         ("ClientCoreInvalidTransition", 700),
         ("ClientCoreMissingEventPayload", 701),
         ("ClientCoreRetryBudgetExhausted", 702),
@@ -66,6 +82,12 @@ fn expected_table() -> Vec<(&'static str, u16)> {
         ("ClientCoreManifestOutcomeUnknown", 704),
         ("ClientCoreUnsupportedSnapshotVersion", 705),
         ("ClientCoreInvalidSnapshot", 706),
+        ("ManifestShapeRejected", 707),
+        ("IdempotencyExpired", 708),
+        ("ManifestSetConflict", 709),
+        ("BackendIdempotencyConflict", 710),
+        ("VideoPosterExtractionFailed", 711),
+        ("PinValidationFailed", 800),
     ]
 }
 
@@ -161,6 +183,26 @@ fn live_table() -> Vec<(&'static str, u16)> {
             ClientErrorCode::BundleSealOpenFailed.as_u16(),
         ),
         (
+            "ShardIntegrityFailed",
+            ClientErrorCode::ShardIntegrityFailed.as_u16(),
+        ),
+        (
+            "LegacyRawKeyDecryptFallback",
+            ClientErrorCode::LegacyRawKeyDecryptFallback.as_u16(),
+        ),
+        (
+            "StreamingChunkOutOfOrder",
+            ClientErrorCode::StreamingChunkOutOfOrder.as_u16(),
+        ),
+        (
+            "StreamingTotalChunkMismatch",
+            ClientErrorCode::StreamingTotalChunkMismatch.as_u16(),
+        ),
+        (
+            "StreamingPlaintextDivergence",
+            ClientErrorCode::StreamingPlaintextDivergence.as_u16(),
+        ),
+        (
             "OperationCancelled",
             ClientErrorCode::OperationCancelled.as_u16(),
         ),
@@ -213,6 +255,50 @@ fn live_table() -> Vec<(&'static str, u16)> {
             ClientErrorCode::MediaAdapterOutputMismatch.as_u16(),
         ),
         (
+            "VideoContainerInvalid",
+            ClientErrorCode::VideoContainerInvalid.as_u16(),
+        ),
+        (
+            "MediaInspectFailed",
+            ClientErrorCode::MediaInspectFailed.as_u16(),
+        ),
+        (
+            "MediaStripFailed",
+            ClientErrorCode::MediaStripFailed.as_u16(),
+        ),
+        (
+            "SidecarFieldOverflow",
+            ClientErrorCode::SidecarFieldOverflow.as_u16(),
+        ),
+        (
+            "SidecarTagUnknown",
+            ClientErrorCode::SidecarTagUnknown.as_u16(),
+        ),
+        (
+            "MalformedSidecar",
+            ClientErrorCode::MalformedSidecar.as_u16(),
+        ),
+        (
+            "MakerNoteRejected",
+            ClientErrorCode::MakerNoteRejected.as_u16(),
+        ),
+        (
+            "ExifTraversalLimitExceeded",
+            ClientErrorCode::ExifTraversalLimitExceeded.as_u16(),
+        ),
+        (
+            "VideoTooLargeForV1",
+            ClientErrorCode::VideoTooLargeForV1.as_u16(),
+        ),
+        (
+            "VideoSourceUnreadable",
+            ClientErrorCode::VideoSourceUnreadable.as_u16(),
+        ),
+        (
+            "VideoTierShapeRejected",
+            ClientErrorCode::VideoTierShapeRejected.as_u16(),
+        ),
+        (
             "ClientCoreInvalidTransition",
             ClientErrorCode::ClientCoreInvalidTransition.as_u16(),
         ),
@@ -239,6 +325,30 @@ fn live_table() -> Vec<(&'static str, u16)> {
         (
             "ClientCoreInvalidSnapshot",
             ClientErrorCode::ClientCoreInvalidSnapshot.as_u16(),
+        ),
+        (
+            "ManifestShapeRejected",
+            ClientErrorCode::ManifestShapeRejected.as_u16(),
+        ),
+        (
+            "IdempotencyExpired",
+            ClientErrorCode::IdempotencyExpired.as_u16(),
+        ),
+        (
+            "ManifestSetConflict",
+            ClientErrorCode::ManifestSetConflict.as_u16(),
+        ),
+        (
+            "BackendIdempotencyConflict",
+            ClientErrorCode::BackendIdempotencyConflict.as_u16(),
+        ),
+        (
+            "VideoPosterExtractionFailed",
+            ClientErrorCode::VideoPosterExtractionFailed.as_u16(),
+        ),
+        (
+            "PinValidationFailed",
+            ClientErrorCode::PinValidationFailed.as_u16(),
         ),
     ]
 }
