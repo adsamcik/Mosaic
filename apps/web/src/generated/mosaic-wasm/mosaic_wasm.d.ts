@@ -347,47 +347,6 @@ export class LinkKeysResult {
 }
 
 /**
- * WASM-bindgen class for opened-bundle results.
- */
-export class OpenedBundleResult {
-    private constructor();
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * Album identifier the bundle was issued for.
-     */
-    readonly albumId: string;
-    /**
-     * Stable error code. Zero means success.
-     */
-    readonly code: number;
-    /**
-     * Epoch identifier inside the bundle payload.
-     */
-    readonly epochId: number;
-    /**
-     * 32-byte epoch seed. Callers MUST memzero after deriving tier/content keys.
-     */
-    readonly epochSeed: Uint8Array;
-    /**
-     * 32-byte recipient Ed25519 public key from the payload.
-     */
-    readonly recipientPubkey: Uint8Array;
-    /**
-     * 32-byte per-epoch Ed25519 manifest signing public key.
-     */
-    readonly signPublicKey: Uint8Array;
-    /**
-     * 32-byte per-epoch Ed25519 manifest signing seed. Callers MUST memzero.
-     */
-    readonly signSecretSeed: Uint8Array;
-    /**
-     * Bundle format version recovered from the payload.
-     */
-    readonly version: number;
-}
-
-/**
  * WASM-bindgen class for progress events.
  */
 export class ProgressEvent {
@@ -730,9 +689,9 @@ export function unwrapTierKeyFromLink(nonce: Uint8Array, encrypted_key: Uint8Arr
 export function unwrapWithAccountHandle(account_handle: bigint, wrapped: Uint8Array): BytesResult;
 
 /**
- * Verifies and opens a sealed epoch key bundle through WASM.
+ * Verifies and imports a sealed epoch key bundle through WASM.
  */
-export function verifyAndOpenBundle(identity_handle: bigint, sealed: Uint8Array, signature: Uint8Array, sharer_pubkey: Uint8Array, expected_album_id: string, expected_min_epoch: number, allow_legacy_empty: boolean): OpenedBundleResult;
+export function verifyAndImportEpochBundle(identity_handle: bigint, sealed: Uint8Array, signature: Uint8Array, sharer_pubkey: Uint8Array, expected_album_id: string, expected_min_epoch: number, allow_legacy_empty: boolean): EpochKeyHandleResult;
 
 /**
  * Verifies manifest transcript bytes with a per-epoch manifest signing
@@ -774,7 +733,6 @@ export interface InitOutput {
     readonly __wbg_epochkeyhandleresult_free: (a: number, b: number) => void;
     readonly __wbg_headerresult_free: (a: number, b: number) => void;
     readonly __wbg_identityhandleresult_free: (a: number, b: number) => void;
-    readonly __wbg_openedbundleresult_free: (a: number, b: number) => void;
     readonly __wbg_progressevent_free: (a: number, b: number) => void;
     readonly __wbg_progressresult_free: (a: number, b: number) => void;
     readonly __wbg_sealedbundleresult_free: (a: number, b: number) => void;
@@ -853,14 +811,6 @@ export interface InitOutput {
     readonly initUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly openIdentityHandle: (a: number, b: number, c: bigint) => number;
-    readonly openedbundleresult_albumId: (a: number, b: number) => void;
-    readonly openedbundleresult_code: (a: number) => number;
-    readonly openedbundleresult_epochId: (a: number) => number;
-    readonly openedbundleresult_epochSeed: (a: number, b: number) => void;
-    readonly openedbundleresult_recipientPubkey: (a: number, b: number) => void;
-    readonly openedbundleresult_signPublicKey: (a: number, b: number) => void;
-    readonly openedbundleresult_signSecretSeed: (a: number, b: number) => void;
-    readonly openedbundleresult_version: (a: number) => number;
     readonly parseEnvelopeHeader: (a: number, b: number) => number;
     readonly progressProbe: (a: number, b: bigint) => number;
     readonly progressevent_completedSteps: (a: number) => number;
@@ -881,7 +831,7 @@ export interface InitOutput {
     readonly unwrapKey: (a: number, b: number, c: number, d: number) => number;
     readonly unwrapTierKeyFromLink: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly unwrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
-    readonly verifyAndOpenBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
+    readonly verifyAndImportEpochBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly verifyManifestWithEpoch: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly verifyManifestWithIdentity: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly wrapKey: (a: number, b: number, c: number, d: number) => number;
@@ -895,22 +845,22 @@ export interface InitOutput {
     readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
     readonly __wbg_bytesresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
-    readonly epochkeyhandlestatusresult_code: (a: number) => number;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
+    readonly epochkeyhandlestatusresult_code: (a: number) => number;
     readonly linkkeysresult_linkId: (a: number, b: number) => void;
-    readonly linkkeysresult_code: (a: number) => number;
     readonly wrappedtierkeyresult_code: (a: number) => number;
     readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
-    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
     readonly linkkeysresult_wrappingKey: (a: number, b: number) => void;
+    readonly linkkeysresult_code: (a: number) => number;
     readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
     readonly encryptedshardresult_code: (a: number) => number;
-    readonly decryptedcontentresult_code: (a: number) => number;
-    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
-    readonly bytesresult_bytes: (a: number, b: number) => void;
-    readonly bytesresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
     readonly decryptedshardresult_code: (a: number) => number;
+    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedcontentresult_code: (a: number) => number;
+    readonly bytesresult_bytes: (a: number, b: number) => void;
     readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
+    readonly bytesresult_code: (a: number) => number;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export2: (a: number, b: number) => number;

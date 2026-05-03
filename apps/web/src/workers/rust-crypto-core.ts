@@ -293,41 +293,6 @@ export class RustHandleFacade {
   }
 
   /**
-   * Imports an epoch handle from cleartext bundle payload bytes (the output
-   * of `verifyAndOpenBundle`). Both secret buffers are wiped inside Rust on
-   * every path; the caller is still expected to wipe its own copy after the
-   * call returns. The returned handle carries the per-epoch sign keypair, so
-   * subsequent `sealBundleWithEpochHandle` calls succeed without ever
-   * re-exposing the bundle payload.
-   */
-  importEpochKeyHandleFromBundle(
-    accountHandle: bigint,
-    epochId: number,
-    epochSeed: Uint8Array,
-    signSecretSeed: Uint8Array,
-    signPublic: Uint8Array,
-  ): {
-    handle: bigint;
-    epochId: number;
-    wrappedEpochSeed: Uint8Array;
-    signPublicKey: Uint8Array;
-  } {
-    const result = rustWasm.importEpochKeyHandleFromBundle(
-      accountHandle,
-      epochId,
-      epochSeed,
-      signSecretSeed,
-      signPublic,
-    );
-    return consumeResult(result, 'importEpochKeyHandleFromBundle', (r) => ({
-      handle: r.handle,
-      epochId: r.epochId,
-      wrappedEpochSeed: copyBytes(r.wrappedEpochSeed),
-      signPublicKey: copyBytes(r.signPublicKey),
-    }));
-  }
-
-  /**
    * Atomically seals an epoch key bundle using both the sender identity
    * handle and the sender's epoch handle. Bundle payload bytes never cross
    * the FFI boundary — the caller only supplies the recipient's signing
@@ -666,7 +631,7 @@ export class RustHandleFacade {
     }));
   }
 
-  verifyAndOpenBundle(
+  verifyAndImportEpochBundle(
     identityHandle: bigint,
     sealed: Uint8Array,
     signature: Uint8Array,
@@ -675,13 +640,12 @@ export class RustHandleFacade {
     expectedMinEpoch: number,
     allowLegacyEmpty: boolean,
   ): {
-    albumId: string;
+    handle: bigint;
     epochId: number;
-    epochSeed: Uint8Array;
-    signSecret: Uint8Array;
-    signPublic: Uint8Array;
+    wrappedEpochSeed: Uint8Array;
+    signPublicKey: Uint8Array;
   } {
-    const result = rustWasm.verifyAndOpenBundle(
+    const result = rustWasm.verifyAndImportEpochBundle(
       identityHandle,
       sealed,
       signature,
@@ -690,12 +654,11 @@ export class RustHandleFacade {
       expectedMinEpoch,
       allowLegacyEmpty,
     );
-    return consumeResult(result, 'verifyAndOpenBundle', (r) => ({
-      albumId: r.albumId,
+    return consumeResult(result, 'verifyAndImportEpochBundle', (r) => ({
+      handle: r.handle,
       epochId: r.epochId,
-      epochSeed: copyBytes(r.epochSeed),
-      signSecret: copyBytes(r.signSecretSeed),
-      signPublic: copyBytes(r.signPublicKey),
+      wrappedEpochSeed: copyBytes(r.wrappedEpochSeed),
+      signPublicKey: copyBytes(r.signPublicKey),
     }));
   }
 

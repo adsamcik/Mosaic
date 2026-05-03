@@ -609,36 +609,6 @@ impl fmt::Debug for SealedBundleResult {
     }
 }
 
-/// Rust-side WASM facade opened-bundle result.
-///
-/// Carries client-local secret bytes (`epoch_seed`, `sign_secret_seed`).
-#[derive(Clone, PartialEq, Eq)]
-pub struct OpenedBundleResult {
-    pub code: u16,
-    pub version: u32,
-    pub album_id: String,
-    pub epoch_id: u32,
-    pub recipient_pubkey: Vec<u8>,
-    pub epoch_seed: Vec<u8>,
-    pub sign_secret_seed: Vec<u8>,
-    pub sign_public_key: Vec<u8>,
-}
-
-impl fmt::Debug for OpenedBundleResult {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OpenedBundleResult")
-            .field("code", &self.code)
-            .field("version", &self.version)
-            .field("album_id", &self.album_id)
-            .field("epoch_id", &self.epoch_id)
-            .field("recipient_pubkey_len", &self.recipient_pubkey.len())
-            .field("epoch_seed_len", &self.epoch_seed.len())
-            .field("sign_secret_seed_len", &self.sign_secret_seed.len())
-            .field("sign_public_key_len", &self.sign_public_key.len())
-            .finish()
-    }
-}
-
 /// Rust-side WASM facade encrypted album content result.
 #[derive(Clone, PartialEq, Eq)]
 pub struct EncryptedContentResult {
@@ -1282,78 +1252,6 @@ impl JsSealedBundleResult {
     #[must_use]
     pub fn sharer_pubkey(&self) -> Vec<u8> {
         self.sharer_pubkey.clone()
-    }
-}
-
-/// WASM-bindgen class for opened-bundle results.
-#[wasm_bindgen(js_name = OpenedBundleResult)]
-pub struct JsOpenedBundleResult {
-    code: u16,
-    version: u32,
-    album_id: String,
-    epoch_id: u32,
-    recipient_pubkey: Vec<u8>,
-    epoch_seed: Vec<u8>,
-    sign_secret_seed: Vec<u8>,
-    sign_public_key: Vec<u8>,
-}
-
-#[wasm_bindgen(js_class = OpenedBundleResult)]
-impl JsOpenedBundleResult {
-    /// Stable error code. Zero means success.
-    #[wasm_bindgen(getter)]
-    #[must_use]
-    pub fn code(&self) -> u16 {
-        self.code
-    }
-
-    /// Bundle format version recovered from the payload.
-    #[wasm_bindgen(getter)]
-    #[must_use]
-    pub fn version(&self) -> u32 {
-        self.version
-    }
-
-    /// Album identifier the bundle was issued for.
-    #[wasm_bindgen(getter, js_name = albumId)]
-    #[must_use]
-    pub fn album_id(&self) -> String {
-        self.album_id.clone()
-    }
-
-    /// Epoch identifier inside the bundle payload.
-    #[wasm_bindgen(getter, js_name = epochId)]
-    #[must_use]
-    pub fn epoch_id(&self) -> u32 {
-        self.epoch_id
-    }
-
-    /// 32-byte recipient Ed25519 public key from the payload.
-    #[wasm_bindgen(getter, js_name = recipientPubkey)]
-    #[must_use]
-    pub fn recipient_pubkey(&self) -> Vec<u8> {
-        self.recipient_pubkey.clone()
-    }
-
-    /// 32-byte epoch seed. Callers MUST memzero after deriving tier/content keys.
-    #[wasm_bindgen(getter, js_name = epochSeed)]
-    #[must_use]
-    pub fn epoch_seed(&self) -> Vec<u8> {
-        self.epoch_seed.clone()
-    }
-
-    /// 32-byte per-epoch Ed25519 manifest signing seed. Callers MUST memzero.
-    #[wasm_bindgen(getter, js_name = signSecretSeed)]
-    #[must_use]
-    pub fn sign_secret_seed(&self) -> Vec<u8> {
-        self.sign_secret_seed.clone()
-    }
-
-    /// 32-byte per-epoch Ed25519 manifest signing public key.
-    #[wasm_bindgen(getter, js_name = signPublicKey)]
-    #[must_use]
-    pub fn sign_public_key(&self) -> Vec<u8> {
-        self.sign_public_key.clone()
     }
 }
 
@@ -2150,11 +2048,11 @@ pub fn seal_and_sign_bundle(
     ))
 }
 
-/// Verifies a sealed bundle's signature and opens it for the recipient
-/// bound to `identity_handle`.
+/// Verifies a sealed bundle's signature and imports the recovered epoch
+/// payload directly into the Rust epoch-handle registry.
 #[allow(clippy::too_many_arguments)]
 #[must_use]
-pub fn verify_and_open_bundle(
+pub fn verify_and_import_epoch_bundle(
     identity_handle: u64,
     sealed: Vec<u8>,
     signature: Vec<u8>,
@@ -2162,21 +2060,24 @@ pub fn verify_and_open_bundle(
     expected_album_id: String,
     expected_min_epoch: u32,
     allow_legacy_empty: bool,
-) -> OpenedBundleResult {
-    opened_bundle_result_from_client(mosaic_client::verify_and_open_bundle_with_identity_handle(
-        identity_handle,
-        &sealed,
-        &signature,
-        &sharer_pubkey,
-        expected_album_id,
-        expected_min_epoch,
-        allow_legacy_empty,
-    ))
+) -> EpochKeyHandleResult {
+    let sealed = Zeroizing::new(sealed);
+    epoch_result_from_client(
+        mosaic_client::verify_and_import_epoch_bundle_with_identity_handle(
+            identity_handle,
+            &sealed,
+            &signature,
+            &sharer_pubkey,
+            expected_album_id,
+            expected_min_epoch,
+            allow_legacy_empty,
+        ),
+    )
 }
 
 /// Imports an epoch handle from cleartext bundle payload bytes (epoch seed
 /// plus the per-epoch manifest signing keypair) returned by
-/// `verify_and_open_bundle`. Both secret buffers are zeroized inside this
+/// `verify_and_import_epoch_bundle` legacy raw-payload path. Both secret buffers are zeroized inside this
 /// function on every path.
 #[must_use]
 pub fn import_epoch_key_handle_from_bundle(
@@ -2958,11 +2859,11 @@ pub fn seal_and_sign_bundle_js(
     ))
 }
 
-/// Verifies and opens a sealed epoch key bundle through WASM.
+/// Verifies and imports a sealed epoch key bundle through WASM.
 #[allow(clippy::too_many_arguments)]
-#[wasm_bindgen(js_name = verifyAndOpenBundle)]
+#[wasm_bindgen(js_name = verifyAndImportEpochBundle)]
 #[must_use]
-pub fn verify_and_open_bundle_js(
+pub fn verify_and_import_epoch_bundle_js(
     identity_handle: u64,
     sealed: Vec<u8>,
     signature: Vec<u8>,
@@ -2970,8 +2871,8 @@ pub fn verify_and_open_bundle_js(
     expected_album_id: String,
     expected_min_epoch: u32,
     allow_legacy_empty: bool,
-) -> JsOpenedBundleResult {
-    js_opened_bundle_result_from_rust(verify_and_open_bundle(
+) -> JsEpochKeyHandleResult {
+    js_epoch_result_from_rust(verify_and_import_epoch_bundle(
         identity_handle,
         sealed,
         signature,
@@ -3180,21 +3081,6 @@ fn sealed_bundle_result_from_client(
         sealed: result.sealed,
         signature: result.signature,
         sharer_pubkey: result.sharer_pubkey,
-    }
-}
-
-fn opened_bundle_result_from_client(
-    mut result: mosaic_client::OpenedBundleResult,
-) -> OpenedBundleResult {
-    OpenedBundleResult {
-        code: result.code.as_u16(),
-        version: result.version,
-        album_id: std::mem::take(&mut result.album_id),
-        epoch_id: result.epoch_id,
-        recipient_pubkey: std::mem::take(&mut result.recipient_pubkey),
-        epoch_seed: std::mem::take(&mut result.epoch_seed),
-        sign_secret_seed: std::mem::take(&mut result.sign_secret_seed),
-        sign_public_key: std::mem::take(&mut result.sign_public_key),
     }
 }
 
@@ -4229,19 +4115,6 @@ fn js_sealed_bundle_result_from_rust(result: SealedBundleResult) -> JsSealedBund
         sealed: result.sealed,
         signature: result.signature,
         sharer_pubkey: result.sharer_pubkey,
-    }
-}
-
-fn js_opened_bundle_result_from_rust(result: OpenedBundleResult) -> JsOpenedBundleResult {
-    JsOpenedBundleResult {
-        code: result.code,
-        version: result.version,
-        album_id: result.album_id,
-        epoch_id: result.epoch_id,
-        recipient_pubkey: result.recipient_pubkey,
-        epoch_seed: result.epoch_seed,
-        sign_secret_seed: result.sign_secret_seed,
-        sign_public_key: result.sign_public_key,
     }
 }
 

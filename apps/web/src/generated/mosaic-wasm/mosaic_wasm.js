@@ -998,142 +998,6 @@ export class LinkKeysResult {
 if (Symbol.dispose) LinkKeysResult.prototype[Symbol.dispose] = LinkKeysResult.prototype.free;
 
 /**
- * WASM-bindgen class for opened-bundle results.
- */
-export class OpenedBundleResult {
-    static __wrap(ptr) {
-        ptr = ptr >>> 0;
-        const obj = Object.create(OpenedBundleResult.prototype);
-        obj.__wbg_ptr = ptr;
-        OpenedBundleResultFinalization.register(obj, obj.__wbg_ptr, obj);
-        return obj;
-    }
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-        OpenedBundleResultFinalization.unregister(this);
-        return ptr;
-    }
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_openedbundleresult_free(ptr, 0);
-    }
-    /**
-     * Album identifier the bundle was issued for.
-     * @returns {string}
-     */
-    get albumId() {
-        let deferred1_0;
-        let deferred1_1;
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.openedbundleresult_albumId(retptr, this.__wbg_ptr);
-            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-            deferred1_0 = r0;
-            deferred1_1 = r1;
-            return getStringFromWasm0(r0, r1);
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
-            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
-        }
-    }
-    /**
-     * Stable error code. Zero means success.
-     * @returns {number}
-     */
-    get code() {
-        const ret = wasm.openedbundleresult_code(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Epoch identifier inside the bundle payload.
-     * @returns {number}
-     */
-    get epochId() {
-        const ret = wasm.openedbundleresult_epochId(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * 32-byte epoch seed. Callers MUST memzero after deriving tier/content keys.
-     * @returns {Uint8Array}
-     */
-    get epochSeed() {
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.openedbundleresult_epochSeed(retptr, this.__wbg_ptr);
-            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-            var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export4(r0, r1 * 1, 1);
-            return v1;
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
-        }
-    }
-    /**
-     * 32-byte recipient Ed25519 public key from the payload.
-     * @returns {Uint8Array}
-     */
-    get recipientPubkey() {
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.openedbundleresult_recipientPubkey(retptr, this.__wbg_ptr);
-            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-            var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export4(r0, r1 * 1, 1);
-            return v1;
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
-        }
-    }
-    /**
-     * 32-byte per-epoch Ed25519 manifest signing public key.
-     * @returns {Uint8Array}
-     */
-    get signPublicKey() {
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.openedbundleresult_signPublicKey(retptr, this.__wbg_ptr);
-            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-            var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export4(r0, r1 * 1, 1);
-            return v1;
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
-        }
-    }
-    /**
-     * 32-byte per-epoch Ed25519 manifest signing seed. Callers MUST memzero.
-     * @returns {Uint8Array}
-     */
-    get signSecretSeed() {
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.openedbundleresult_signSecretSeed(retptr, this.__wbg_ptr);
-            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-            var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export4(r0, r1 * 1, 1);
-            return v1;
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
-        }
-    }
-    /**
-     * Bundle format version recovered from the payload.
-     * @returns {number}
-     */
-    get version() {
-        const ret = wasm.openedbundleresult_version(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-}
-if (Symbol.dispose) OpenedBundleResult.prototype[Symbol.dispose] = OpenedBundleResult.prototype.free;
-
-/**
  * WASM-bindgen class for progress events.
  */
 export class ProgressEvent {
@@ -1975,23 +1839,6 @@ export function initUploadJob(job_id, album_id, asset_id, idempotency_key, max_r
 }
 
 /**
- * @returns {Uint8Array}
- */
-export function leak_master_key() {
-    try {
-        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        wasm.leak_master_key(retptr);
-        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-        var v1 = getArrayU8FromWasm0(r0, r1).slice();
-        wasm.__wbindgen_export4(r0, r1 * 1, 1);
-        return v1;
-    } finally {
-        wasm.__wbindgen_add_to_stack_pointer(16);
-    }
-}
-
-/**
  * Opens an epoch-key handle through WASM.
  * @param {Uint8Array} wrapped_epoch_seed
  * @param {bigint} account_key_handle
@@ -2221,7 +2068,7 @@ export function unwrapWithAccountHandle(account_handle, wrapped) {
 }
 
 /**
- * Verifies and opens a sealed epoch key bundle through WASM.
+ * Verifies and imports a sealed epoch key bundle through WASM.
  * @param {bigint} identity_handle
  * @param {Uint8Array} sealed
  * @param {Uint8Array} signature
@@ -2229,9 +2076,9 @@ export function unwrapWithAccountHandle(account_handle, wrapped) {
  * @param {string} expected_album_id
  * @param {number} expected_min_epoch
  * @param {boolean} allow_legacy_empty
- * @returns {OpenedBundleResult}
+ * @returns {EpochKeyHandleResult}
  */
-export function verifyAndOpenBundle(identity_handle, sealed, signature, sharer_pubkey, expected_album_id, expected_min_epoch, allow_legacy_empty) {
+export function verifyAndImportEpochBundle(identity_handle, sealed, signature, sharer_pubkey, expected_album_id, expected_min_epoch, allow_legacy_empty) {
     const ptr0 = passArray8ToWasm0(sealed, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(signature, wasm.__wbindgen_export2);
@@ -2240,8 +2087,8 @@ export function verifyAndOpenBundle(identity_handle, sealed, signature, sharer_p
     const len2 = WASM_VECTOR_LEN;
     const ptr3 = passStringToWasm0(expected_album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
     const len3 = WASM_VECTOR_LEN;
-    const ret = wasm.verifyAndOpenBundle(identity_handle, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, expected_min_epoch, allow_legacy_empty);
-    return OpenedBundleResult.__wrap(ret);
+    const ret = wasm.verifyAndImportEpochBundle(identity_handle, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, expected_min_epoch, allow_legacy_empty);
+    return EpochKeyHandleResult.__wrap(ret);
 }
 
 /**
@@ -2387,9 +2234,6 @@ const IdentityHandleResultFinalization = (typeof FinalizationRegistry === 'undef
 const LinkKeysResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_linkkeysresult_free(ptr >>> 0, 1));
-const OpenedBundleResultFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_openedbundleresult_free(ptr >>> 0, 1));
 const ProgressEventFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_progressevent_free(ptr >>> 0, 1));

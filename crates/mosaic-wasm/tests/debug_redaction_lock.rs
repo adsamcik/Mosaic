@@ -5,8 +5,7 @@ use mosaic_wasm::{
     ClientCoreUploadJobEvent, ClientCoreUploadJobSnapshot, ClientCoreUploadShardRef,
     CreateAccountResult, CryptoDomainGoldenVectorSnapshot, DecryptedContentResult,
     DecryptedShardResult, EncryptedContentResult, EncryptedShardResult, EpochKeyHandleResult,
-    HeaderResult, IdentityHandleResult, LinkKeysResult, OpenedBundleResult, SealedBundleResult,
-    WrappedTierKeyResult,
+    HeaderResult, IdentityHandleResult, LinkKeysResult, SealedBundleResult, WrappedTierKeyResult,
 };
 
 const SENTINEL: u8 = 0xab;
@@ -220,24 +219,6 @@ fn wasm_boundary_debug_output_redacts_vec_payloads() {
             "sealed_len: 96",
             "signature_len: 64",
             "sharer_pubkey_len: 32",
-        ],
-    );
-    assert_debug_redacts(
-        &OpenedBundleResult {
-            code: 0,
-            version: 1,
-            album_id: "album".to_owned(),
-            epoch_id: 2,
-            recipient_pubkey: bytes(32),
-            epoch_seed: bytes(32),
-            sign_secret_seed: bytes(32),
-            sign_public_key: bytes(32),
-        },
-        &[
-            "recipient_pubkey_len: 32",
-            "epoch_seed_len: 32",
-            "sign_secret_seed_len: 32",
-            "sign_public_key_len: 32",
         ],
     );
     assert_debug_redacts(

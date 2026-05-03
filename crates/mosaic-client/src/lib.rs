@@ -2096,6 +2096,71 @@ pub fn verify_and_open_bundle_with_identity_handle(
     }
 }
 
+/// Verifies a sealed bundle's signature, opens it for the recipient bound to
+/// `identity_handle`, and imports the recovered epoch/signing secrets directly
+/// into the Rust epoch-handle registry. No raw bundle payload secrets cross FFI.
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn verify_and_import_epoch_bundle_with_identity_handle(
+    identity_handle: u64,
+    sealed: &[u8],
+    signature: &[u8],
+    sharer_pubkey: &[u8],
+    expected_album_id: String,
+    expected_min_epoch_id: u32,
+    allow_legacy_empty_album_id: bool,
+) -> EpochKeyHandleResult {
+    if signature.len() != 64 {
+        return EpochKeyHandleResult::error(ClientErrorCode::InvalidSignatureLength);
+    }
+    if sharer_pubkey.len() != 32 {
+        return EpochKeyHandleResult::error(ClientErrorCode::InvalidKeyLength);
+    }
+
+    let mut signature_array = [0_u8; 64];
+    signature_array.copy_from_slice(signature);
+    let mut sharer_array = [0_u8; 32];
+    sharer_array.copy_from_slice(sharer_pubkey);
+
+    let sealed_bundle = SealedBundle {
+        sealed: sealed.to_vec(),
+        signature: signature_array,
+        sharer_pubkey: sharer_array,
+    };
+    let context = BundleValidationContext {
+        album_id: expected_album_id,
+        min_epoch_id: expected_min_epoch_id,
+        allow_legacy_empty_album_id,
+        expected_owner_ed25519_pub: sharer_array,
+    };
+
+    let outcome = with_identity(identity_handle, |record| {
+        crypto_verify_and_open_bundle(&sealed_bundle, &record.keypair, &context)
+            .map(|bundle| (record.account_handle, bundle))
+    });
+
+    match outcome {
+        Ok(Ok((
+            account_handle,
+            EpochKeyBundle {
+                epoch_id,
+                epoch_seed,
+                sign_secret_key,
+                sign_public_key,
+                ..
+            },
+        ))) => import_epoch_key_handle_from_bundle(
+            account_handle,
+            epoch_id,
+            epoch_seed.as_bytes(),
+            sign_secret_key.expose_seed_bytes(),
+            sign_public_key.as_bytes(),
+        ),
+        Ok(Err(error)) => EpochKeyHandleResult::error(map_crypto_error(error)),
+        Err(error) => EpochKeyHandleResult::error(error.code),
+    }
+}
+
 /// Atomically seals an epoch key bundle for a recipient using a Rust-owned
 /// epoch handle. Bundle payload bytes (epoch seed + per-epoch sign keypair)
 /// never cross the FFI boundary — the caller only supplies the recipient's

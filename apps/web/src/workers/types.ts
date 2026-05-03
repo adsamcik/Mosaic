@@ -1122,12 +1122,9 @@ export interface CryptoWorkerApi {
   /**
    * Seal and sign an epoch key bundle for a recipient.
    *
-   * The bundle protocol requires the per-epoch signing keypair (and seed)
-   * to flow inside the bundle. Recipients call `verifyAndOpenBundle` and
-   * then bootstrap an epoch handle from the returned bytes via
-   * `openEpochHandle`. The returned signSecret/epochSeed are intentional
-   * payload, not key leakage — they are immediately consumed by
-   * `openEpochHandle` and wiped.
+   * The bundle protocol carries the per-epoch signing keypair inside the
+   * sealed payload. Recipients open it through the handle-based bundle flow,
+   * which imports payload secrets inside Rust without exposing them to JS.
    */
   sealAndSignBundle(
     identityHandleId: IdentityHandleId,
@@ -1139,21 +1136,7 @@ export interface CryptoWorkerApi {
     signPublic: Uint8Array,
   ): Promise<{ sealed: Uint8Array; signature: Uint8Array; sharerPubkey: Uint8Array }>;
 
-  verifyAndOpenBundle(
-    identityHandleId: IdentityHandleId,
-    sealed: Uint8Array,
-    signature: Uint8Array,
-    sharerPubkey: Uint8Array,
-    expectedAlbumId: string,
-    expectedMinEpoch: number,
-    allowLegacyEmpty: boolean,
-  ): Promise<{
-    albumId: string;
-    epochId: number;
-    epochSeed: Uint8Array;
-    signSecret: Uint8Array;
-    signPublic: Uint8Array;
-  }>;
+
 
   // ---- Auth challenge (Slice 2) ----
 

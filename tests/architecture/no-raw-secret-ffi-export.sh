@@ -26,8 +26,6 @@ allowlist = {
     "crates/mosaic-wasm/src/lib.rs::unwrap_key_js",
     "crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link",
     "crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link_js",
-    "crates/mosaic-wasm/src/lib.rs::verify_and_open_bundle",
-    "crates/mosaic-wasm/src/lib.rs::verify_and_open_bundle_js",
     "crates/mosaic-wasm/src/lib.rs::derive_db_session_key_from_account",
     "crates/mosaic-wasm/src/lib.rs::derive_db_session_key_from_account_js",
     "crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret",
@@ -40,8 +38,6 @@ struct_field_allowlist = {
     "crates/mosaic-wasm/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed",
     "crates/mosaic-wasm/src/lib.rs::LinkKeysResult.wrapping_key",
     "crates/mosaic-wasm/src/lib.rs::WrappedTierKeyResult.encrypted_key",
-    "crates/mosaic-wasm/src/lib.rs::OpenedBundleResult.epoch_seed",
-    "crates/mosaic-wasm/src/lib.rs::OpenedBundleResult.sign_secret_seed",
     "crates/mosaic-uniffi/src/lib.rs::AccountUnlockRequest.wrapped_account_key",
     "crates/mosaic-uniffi/src/lib.rs::IdentityHandleResult.wrapped_seed",
     "crates/mosaic-uniffi/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed",
@@ -53,8 +49,6 @@ dts_allowlist = {
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::EpochKeyHandleResult.wrappedEpochSeed",
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::IdentityHandleResult.wrappedSeed",
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::LinkKeysResult.wrappingKey",
-    "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::OpenedBundleResult.epochSeed",
-    "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::OpenedBundleResult.signSecretSeed",
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::WrappedTierKeyResult.encryptedKey",
 }
 

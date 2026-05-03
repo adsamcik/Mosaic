@@ -1106,11 +1106,9 @@ class CryptoWorker implements CryptoWorkerApi {
   /**
    * Open (decrypt) an epoch key bundle.
    *
-   * Slice 3 — verifies and opens the bundle inside Rust, then atomically
-   * imports the cleartext payload into a new epoch handle via
-   * `importEpochKeyHandleFromBundle`. The seed and per-epoch sign secret
-   * are wiped on the JS side immediately after the import call returns;
-   * Rust wipes its own copies on every path. The caller only ever sees the
+   * Slice 3 - verifies and imports the bundle inside Rust in one step.
+   * The seed and per-epoch sign secret never cross the WASM/JS boundary.
+   * The caller only ever sees the
    * opaque epoch handle id, the epoch id, and the (public) sign verifying
    * key.
    */
@@ -1126,8 +1124,6 @@ class CryptoWorker implements CryptoWorkerApi {
     signPublicKey: Uint8Array;
   }> {
     const identityId = this.requireIdentityHandle();
-    const accountId = this.requireAccountHandle();
-
     if (bundle.length < 64) {
       throw new Error('Bundle too short');
     }
@@ -1135,12 +1131,12 @@ class CryptoWorker implements CryptoWorkerApi {
     const sealedBox = bundle.slice(64);
 
     const facade = await getRustFacade();
-    const verifyTimer = log.startTimer('verifyAndOpenBundle');
-    const opened = await this.handleRegistry.withLease(
+    const verifyTimer = log.startTimer('verifyAndImportEpochBundle');
+    const imported = await this.handleRegistry.withLease(
       identityId,
       'identity',
       (rustIdentity) =>
-        facade.verifyAndOpenBundle(
+        facade.verifyAndImportEpochBundle(
           rustIdentity,
           sealedBox,
           signature,
@@ -1152,43 +1148,19 @@ class CryptoWorker implements CryptoWorkerApi {
     );
     verifyTimer.end();
 
-    try {
-      const importTimer = log.startTimer('importEpochKeyHandleFromBundle');
-      const imported = await this.handleRegistry.withLease(
-        accountId,
-        'account',
-        (rustAccount) =>
-          facade.importEpochKeyHandleFromBundle(
-            rustAccount,
-            opened.epochId,
-            opened.epochSeed,
-            opened.signSecret,
-            opened.signPublic,
-          ),
-      );
-      importTimer.end();
+    // Bind the freshly minted handle to the verified album so future
+    // `getEpochHandleId(albumId, epochId)` lookups can recover it.
+    const handle = this.handleRegistry.registerEpoch(
+      albumId,
+      imported.epochId,
+      imported.handle,
+    );
 
-      // Bind the freshly minted handle to the verified album so future
-      // `getEpochHandleId(albumId, epochId)` lookups can recover it.
-      const handle = this.handleRegistry.registerEpoch(
-        opened.albumId,
-        opened.epochId,
-        imported.handle,
-      );
-
-      return {
-        epochHandleId: handle.id as EpochHandleId,
-        epochId: opened.epochId,
-        signPublicKey: imported.signPublicKey,
-      };
-    } finally {
-      // Wipe the cleartext payload bytes that the JS side briefly held
-      // between `verifyAndOpenBundle` and `importEpochKeyHandleFromBundle`.
-      // Rust wipes its own copies on the import path; this is defence in
-      // depth for the JS reflection of those buffers.
-      sodium.memzero(opened.epochSeed);
-      sodium.memzero(opened.signSecret);
-    }
+    return {
+      epochHandleId: handle.id as EpochHandleId,
+      epochId: imported.epochId,
+      signPublicKey: imported.signPublicKey,
+    };
   }
 
   /**
@@ -1851,38 +1823,6 @@ class CryptoWorker implements CryptoWorkerApi {
           epochSeed,
           signSecret,
           signPublic,
-        ),
-    );
-  }
-
-  async verifyAndOpenBundle(
-    identityHandleId: IdentityHandleId,
-    sealed: Uint8Array,
-    signature: Uint8Array,
-    sharerPubkey: Uint8Array,
-    expectedAlbumId: string,
-    expectedMinEpoch: number,
-    allowLegacyEmpty: boolean,
-  ): Promise<{
-    albumId: string;
-    epochId: number;
-    epochSeed: Uint8Array;
-    signSecret: Uint8Array;
-    signPublic: Uint8Array;
-  }> {
-    const facade = await getRustFacade();
-    return this.handleRegistry.withLease(
-      identityHandleId,
-      'identity',
-      (rustIdentity) =>
-        facade.verifyAndOpenBundle(
-          rustIdentity,
-          sealed,
-          signature,
-          sharerPubkey,
-          expectedAlbumId,
-          expectedMinEpoch,
-          allowLegacyEmpty,
         ),
     );
   }
