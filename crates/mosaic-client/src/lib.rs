@@ -30,7 +30,15 @@ use mosaic_crypto::{
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
 use zeroize::{Zeroize, Zeroizing};
 
+pub mod snapshot_schema;
 pub mod state_machine;
+pub use snapshot_schema::{
+    AlbumSyncSnapshotPlaceholder, CURRENT_SNAPSHOT_SCHEMA_VERSION, FORBIDDEN_FIELD_NAMES,
+    SCHEMA_VERSION_KEY, SNAPSHOT_SCHEMA_VERSION_V1, SnapshotMigrationError,
+    UploadJobSnapshotPlaceholder, album_sync_phase_codes, album_sync_snapshot_keys,
+    upgrade_album_sync_snapshot, upgrade_upload_job_snapshot, upload_job_phase_codes,
+    upload_job_snapshot_keys,
+};
 pub use state_machine::*;
 
 pub use mosaic_crypto::{ShardIntegrityError, ShardSha256, verify_shard_integrity};
