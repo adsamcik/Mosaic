@@ -103,13 +103,11 @@ export const signAuthChallengeWithPassword: (a: number, b: number, c: number, d:
 export const signManifestWithEpochHandle: (a: bigint, b: number, c: number) => number;
 export const signManifestWithIdentity: (a: bigint, b: number, c: number) => number;
 export const unlockAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
-export const unwrapKey: (a: number, b: number, c: number, d: number) => number;
 export const unwrapTierKeyFromLink: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
 export const unwrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
 export const verifyAndImportEpochBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
 export const verifyManifestWithEpoch: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
 export const verifyManifestWithIdentity: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-export const wrapKey: (a: number, b: number, c: number, d: number) => number;
 export const wrapTierKeyForLink: (a: bigint, b: number, c: number, d: number) => number;
 export const wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
 export const wrappedtierkeyresult_tier: (a: number) => number;

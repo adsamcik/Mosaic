@@ -12,14 +12,14 @@ from pathlib import Path
 ffi_files = [Path("crates/mosaic-wasm/src/lib.rs"), Path("crates/mosaic-uniffi/src/lib.rs")]
 dts_files = [Path("apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts")]
 secret_result_types = re.compile(r"->\s*(Vec\s*<\s*u8\s*>|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)")
-secret_name_pattern = re.compile(r"(derive.*(key|keys|secret)|get.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)", re.IGNORECASE)
+secret_name_pattern = re.compile(r"(derive.*(key|keys|secret)|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)", re.IGNORECASE)
 secret_shaped_name = re.compile(r"(seed|secret|key)$", re.IGNORECASE)
 public_key_name = re.compile(r"(public_?key|pub_?key|PublicKey|PubKey|pubkey)", re.IGNORECASE)
 allowlist = {
     "crates/mosaic-wasm/src/lib.rs::derive_link_keys",
     "crates/mosaic-wasm/src/lib.rs::derive_link_keys_js",
-    "crates/mosaic-wasm/src/lib.rs::unwrap_key",
-    "crates/mosaic-wasm/src/lib.rs::unwrap_key_js",
+    "crates/mosaic-wasm/src/lib.rs::wrapped_account_key",
+    "crates/mosaic-wasm/src/lib.rs::wrapping_key",
     "crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link",
     "crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link_js",
     "crates/mosaic-wasm/src/lib.rs::derive_db_session_key_from_account",

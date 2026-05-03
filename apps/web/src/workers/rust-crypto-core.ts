@@ -662,26 +662,14 @@ export class RustHandleFacade {
     }));
   }
 
-  // ---- Generic key wrap (Slice 8 db worker) ----
-
-  wrapKey(keyBytes: Uint8Array, wrapperKey: Uint8Array): Uint8Array {
-    const result = rustWasm.wrapKey(keyBytes, wrapperKey);
-    return consumeResult(result, 'wrapKey', (r) => copyBytes(r.bytes));
-  }
-
-  unwrapKey(wrapped: Uint8Array, wrapperKey: Uint8Array): Uint8Array {
-    const result = rustWasm.unwrapKey(wrapped, wrapperKey);
-    return consumeResult(result, 'unwrapKey', (r) => copyBytes(r.bytes));
-  }
-
-  // ---- Account-handle-keyed wrap/unwrap (Slice 2 + Slice 6) ----
+  // ---- Account-handle-keyed wrap/unwrap (Slice 2 + Slice 6 + Slice 8) ----
 
   /**
    * Wrap `plaintext` with the L2 account key referenced by `accountHandle`.
    *
    * The L2 bytes never cross the JS boundary; this resolves the handle
-   * inside Rust and uses the secret directly. Output layout matches
-   * `wrap_key`: `nonce(24) || ciphertext_with_tag`.
+   * inside Rust and uses the secret directly. Output layout is
+   * `nonce(24) || ciphertext_with_tag`.
    */
   wrapWithAccountHandle(accountHandle: bigint, plaintext: Uint8Array): Uint8Array {
     const result = rustWasm.wrapWithAccountHandle(accountHandle, plaintext);
@@ -691,20 +679,6 @@ export class RustHandleFacade {
   unwrapWithAccountHandle(accountHandle: bigint, wrapped: Uint8Array): Uint8Array {
     const result = rustWasm.unwrapWithAccountHandle(accountHandle, wrapped);
     return consumeResult(result, 'unwrapWithAccountHandle', (r) => copyBytes(r.bytes));
-  }
-
-  /**
-   * Derive the 32-byte OPFS-snapshot DB session key from the L2 account
-   * key referenced by `accountHandle`. Bootstrap material for the legacy
-   * DB worker — Slice 8 will replace it with an opaque handle.
-   *
-   * Callers MUST memzero the returned bytes after use.
-   */
-  deriveDbSessionKeyFromAccount(accountHandle: bigint): Uint8Array {
-    const result = rustWasm.deriveDbSessionKeyFromAccount(accountHandle);
-    return consumeResult(result, 'deriveDbSessionKeyFromAccount', (r) =>
-      copyBytes(r.bytes),
-    );
   }
 
   // ---- LocalAuth challenge transcript ----

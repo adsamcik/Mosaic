@@ -6,8 +6,8 @@
  *      `@mosaic/crypto`. Encryption is delegated to the supplied
  *      `DbCryptoBridge` (which in production routes through the crypto
  *      worker's Rust-backed `wrapDbBlob` / `unwrapDbBlob`).
- *   2. `init(bridge)` round-trips a v2 snapshot through the bridge:
- *      `[u8 SNAPSHOT_VERSION][...wrapKey blob...]`.
+ *   2. `init(bridge)` round-trips a v3 snapshot through the bridge:
+ *      `[u8 SNAPSHOT_VERSION][...account-handle wrap blob...]`.
  *   3. A snapshot whose leading version byte does not match
  *      `SNAPSHOT_VERSION` is silently discarded and the DB worker
  *      reinitializes from an empty database — the migration policy that
@@ -90,8 +90,8 @@ describe('DbWorker — Slice 8 source-level invariants', () => {
     expect(source).not.toMatch(/from\s+['"]@mosaic\/crypto['"]/);
   });
 
-  it('exports SNAPSHOT_VERSION = 2 (Slice 8 envelope bump)', () => {
-    expect(SNAPSHOT_VERSION).toBe(2);
+  it('exports SNAPSHOT_VERSION = 3 (P-W7.3 account-handle wrap envelope)', () => {
+    expect(SNAPSHOT_VERSION).toBe(3);
   });
 });
 
@@ -125,7 +125,7 @@ describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
     expect(bridge.wrap).not.toHaveBeenCalled();
   });
 
-  it('round-trips a v2 snapshot through the crypto bridge on encryptBlob/decryptBlob', async () => {
+  it('round-trips a v3 snapshot through the crypto bridge on encryptBlob/decryptBlob', async () => {
     const worker = new DbWorker();
     const internal = worker as unknown as {
       loadFromOPFS: () => Promise<Uint8Array | null>;
@@ -190,7 +190,7 @@ describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
     expect(bridge.unwrap).not.toHaveBeenCalled();
   });
 
-  it('keeps the SNAPSHOT_DECRYPT_FAILED fail-closed path for a v2 snapshot whose unwrap rejects', async () => {
+  it('keeps the SNAPSHOT_DECRYPT_FAILED fail-closed path for a current-version snapshot whose unwrap rejects', async () => {
     const { DbWorkerErrorCode } = await import('../src/workers/db.worker');
     const worker = new DbWorker();
     const internal = worker as unknown as {
@@ -199,9 +199,9 @@ describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
 
     // Properly-versioned envelope but the bridge's unwrap rejects (e.g.
     // genuine corruption / auth-tag mismatch).
-    const v2Snapshot = new Uint8Array(64);
-    v2Snapshot[0] = SNAPSHOT_VERSION;
-    vi.spyOn(internal, 'loadFromOPFS').mockResolvedValue(v2Snapshot);
+    const versionedSnapshot = new Uint8Array(64);
+    versionedSnapshot[0] = SNAPSHOT_VERSION;
+    vi.spyOn(internal, 'loadFromOPFS').mockResolvedValue(versionedSnapshot);
 
     const bridge = {
       wrap: vi.fn(async (b: Uint8Array) => b),

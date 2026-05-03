@@ -22,20 +22,21 @@ type DatabaseType = import('sql.js').Database;
 /**
  * On-disk envelope version for the OPFS-persisted SQLite snapshot.
  *
- * Layout: `[u8 SNAPSHOT_VERSION][...wrapKey blob (nonce(24) || ciphertext_with_tag(16))...]`.
+ * Layout: `[u8 SNAPSHOT_VERSION][...account-handle wrap blob (nonce(24) || ciphertext_with_tag(16))...]`.
  *
  * Slice 8 hard cutover: bumped from the legacy un-prefixed
  * `[nonce(24) || ciphertext]` libsodium-secretbox layout to a versioned
- * envelope wrapped via Rust `wrap_key`. Snapshots whose first byte does
- * not match {@link SNAPSHOT_VERSION} are silently discarded on load —
- * the cutover policy is that the server is the source of truth and
- * existing OPFS snapshots are invalidated at the migration boundary.
+ * envelope wrapped via Rust `wrapWithAccountHandle`. Snapshots whose
+ * first byte does not match {@link SNAPSHOT_VERSION} are silently
+ * discarded on load — the cutover policy is that the server is the
+ * source of truth and existing OPFS snapshots are invalidated at the
+ * migration boundary.
  *
  * Bumps must always invalidate older versions (not migrate them) — the
  * snapshot is a local cache that the sync engine repopulates from the
  * server, so there is no data-loss concern.
  */
-export const SNAPSHOT_VERSION = 2 as const;
+export const SNAPSHOT_VERSION = 3 as const;
 
 export enum DbWorkerErrorCode {
   NOT_INITIALIZED = 'NOT_INITIALIZED',
@@ -925,9 +926,9 @@ export class DbWorker implements DbWorkerApi {
   }
 
   /**
-   * Wrap an OPFS snapshot with the crypto bridge's account-derived DB
-   * key. Returns `[u8 SNAPSHOT_VERSION][...wrapKey blob...]` — the
-   * wrapKey blob is the Rust XChaCha20-Poly1305 envelope
+   * Wrap an OPFS snapshot with the crypto bridge's account-handle
+   * wrapper. Returns `[u8 SNAPSHOT_VERSION][...account-handle wrap blob...]` —
+   * the wrapped blob is the Rust XChaCha20-Poly1305 envelope
    * (`nonce(24) || ciphertext_with_tag(16)`), so the only on-disk
    * additions over the legacy libsodium-secretbox layout are the
    * leading version byte and the Rust-side framing.

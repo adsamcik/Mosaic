@@ -477,15 +477,13 @@ export interface CryptoWorkerApi {
   clear(): Promise<void>;
 
   /**
-   * Wrap an OPFS-snapshot plaintext blob with the active account's
-   * DB-encryption key. The wrap key is derived from the account handle's
-   * L2 key inside the worker; raw key bytes never cross the Comlink
+   * Wrap an OPFS-snapshot plaintext blob with the active account's L2 key
+   * through the Rust account handle; raw key bytes never cross the Comlink
    * boundary in either direction.
    *
-   * Output is the Rust `wrap_key` envelope: XChaCha20-Poly1305
-   * `[nonce(24) || ciphertext_with_tag(16)]`. Slice 8 — replaces the
-   * legacy `getDbSessionKey()` -> raw bytes path that fed the DB worker
-   * directly with key material.
+   * Output is the Rust account-handle envelope:
+   * `[nonce(24) || ciphertext_with_tag(16)]`. P-W7.3 replaces the
+   * account-derived DB-session wrapper key with handle-based L2 wrapping.
    *
    * @throws WorkerCryptoError(WorkerNotInitialized) if no account handle is open.
    */
@@ -1135,9 +1133,6 @@ export interface CryptoWorkerApi {
     signSecret: Uint8Array,
     signPublic: Uint8Array,
   ): Promise<{ sealed: Uint8Array; signature: Uint8Array; sharerPubkey: Uint8Array }>;
-
-
-
   // ---- Auth challenge (Slice 2) ----
 
   deriveAuthKeypairForAccount(
@@ -1152,12 +1147,6 @@ export interface CryptoWorkerApi {
   getAuthPublicKeyForAccount(
     accountHandleId: AccountHandleId,
   ): Promise<Uint8Array>;
-
-  // ---- Generic key wrap (Slice 8 db worker) ----
-
-  wrapKey(keyBytes: Uint8Array, wrapperKey: Uint8Array): Promise<Uint8Array>;
-
-  unwrapKey(wrapped: Uint8Array, wrapperKey: Uint8Array): Promise<Uint8Array>;
 }
 
 /** GeoJSON Feature for map clustering */

@@ -1999,21 +1999,6 @@ export function unlockAccountKey(password, user_salt, account_salt, wrapped_acco
 }
 
 /**
- * Unwraps a wrapped key with a 32-byte wrapper key through WASM.
- * @param {Uint8Array} wrapped
- * @param {Uint8Array} wrapper_key
- * @returns {BytesResult}
- */
-export function unwrapKey(wrapped, wrapper_key) {
-    const ptr0 = passArray8ToWasm0(wrapped, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(wrapper_key, wasm.__wbindgen_export2);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.unwrapKey(ptr0, len0, ptr1, len1);
-    return BytesResult.__wrap(ret);
-}
-
-/**
  * Unwraps a tier key from a share-link record through WASM.
  * @param {Uint8Array} nonce
  * @param {Uint8Array} encrypted_key
@@ -2105,21 +2090,6 @@ export function verifyManifestWithIdentity(transcript_bytes, signature, public_k
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.verifyManifestWithIdentity(ptr0, len0, ptr1, len1, ptr2, len2);
     return ret;
-}
-
-/**
- * Wraps a key with a 32-byte wrapper key through WASM.
- * @param {Uint8Array} key_bytes
- * @param {Uint8Array} wrapper_key
- * @returns {BytesResult}
- */
-export function wrapKey(key_bytes, wrapper_key) {
-    const ptr0 = passArray8ToWasm0(key_bytes, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(wrapper_key, wasm.__wbindgen_export2);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.wrapKey(ptr0, len0, ptr1, len1);
-    return BytesResult.__wrap(ret);
 }
 
 /**

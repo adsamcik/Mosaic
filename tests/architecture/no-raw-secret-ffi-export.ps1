@@ -8,14 +8,14 @@ Set-Location $ProjectRoot
 $ffiFiles = @('crates/mosaic-wasm/src/lib.rs', 'crates/mosaic-uniffi/src/lib.rs')
 $dtsFiles = @('apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts')
 $secretResultTypes = '(Vec\s*<\s*u8\s*>|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)'
-$secretNamePattern = '(derive.*(key|keys|secret)|get.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
+$secretNamePattern = '(derive.*(key|keys|secret)|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
 $secretShapedName = '(?i)(seed|secret|key)$'
 $publicKeyName = '(public_?key|pub_?key|PublicKey|PubKey|pubkey)'
 $allowlist = @{
   'crates/mosaic-wasm/src/lib.rs::derive_link_keys' = 'SPEC-WebRustCryptoCutover Slice 6 share-link wrapping-key compatibility debt.'
   'crates/mosaic-wasm/src/lib.rs::derive_link_keys_js' = 'WASM wrapper for Slice 6 share-link compatibility debt.'
-  'crates/mosaic-wasm/src/lib.rs::unwrap_key' = 'Generic legacy unwrap helper retained for web cutover parity.'
-  'crates/mosaic-wasm/src/lib.rs::unwrap_key_js' = 'WASM wrapper for generic legacy unwrap helper.'
+  'crates/mosaic-wasm/src/lib.rs::wrapped_account_key' = 'Getter for server-storable wrapped account key.'
+  'crates/mosaic-wasm/src/lib.rs::wrapping_key' = 'ADR-006 compatibility debt for share-link vectors.'
   'crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link' = 'SPEC-WebRustCryptoCutover Slice 6 link-share raw tier-key debt.'
   'crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link_js' = 'WASM wrapper for Slice 6 link-share raw tier-key debt.'
   'crates/mosaic-wasm/src/lib.rs::derive_db_session_key_from_account' = 'SPEC-WebRustCryptoCutover Slice 8 OPFS DB session-key compatibility debt.'

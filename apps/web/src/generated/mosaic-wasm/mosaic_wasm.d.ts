@@ -663,11 +663,6 @@ export function signManifestWithIdentity(handle: bigint, transcript_bytes: Uint8
 export function unlockAccountKey(password: Uint8Array, user_salt: Uint8Array, account_salt: Uint8Array, wrapped_account_key: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number): AccountUnlockResult;
 
 /**
- * Unwraps a wrapped key with a 32-byte wrapper key through WASM.
- */
-export function unwrapKey(wrapped: Uint8Array, wrapper_key: Uint8Array): BytesResult;
-
-/**
  * Unwraps a tier key from a share-link record through WASM.
  */
 export function unwrapTierKeyFromLink(nonce: Uint8Array, encrypted_key: Uint8Array, tier_byte: number, wrapping_key: Uint8Array): BytesResult;
@@ -693,11 +688,6 @@ export function verifyManifestWithEpoch(transcript_bytes: Uint8Array, signature:
  * Verifies manifest transcript bytes through WASM.
  */
 export function verifyManifestWithIdentity(transcript_bytes: Uint8Array, signature: Uint8Array, public_key: Uint8Array): number;
-
-/**
- * Wraps a key with a 32-byte wrapper key through WASM.
- */
-export function wrapKey(key_bytes: Uint8Array, wrapper_key: Uint8Array): BytesResult;
 
 /**
  * Wraps a tier key for share-link distribution through WASM.
@@ -816,13 +806,11 @@ export interface InitOutput {
     readonly signManifestWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly signManifestWithIdentity: (a: bigint, b: number, c: number) => number;
     readonly unlockAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
-    readonly unwrapKey: (a: number, b: number, c: number, d: number) => number;
     readonly unwrapTierKeyFromLink: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly unwrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly verifyAndImportEpochBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly verifyManifestWithEpoch: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly verifyManifestWithIdentity: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-    readonly wrapKey: (a: number, b: number, c: number, d: number) => number;
     readonly wrapTierKeyForLink: (a: bigint, b: number, c: number, d: number) => number;
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly wrappedtierkeyresult_tier: (a: number) => number;

@@ -663,23 +663,19 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   /**
-   * Slice 8 — wrap an OPFS-snapshot plaintext with the account-derived
-   * DB encryption key. The dbKey is derived inside the lease and wiped
-   * immediately after the Rust `wrap_key` call returns; raw key bytes
-   * never cross the Comlink boundary.
+   * Slice 8 — wrap an OPFS-snapshot plaintext with the active L2 account
+   * key referenced by the Rust handle. Raw key bytes never cross the
+   * Comlink boundary.
    *
-   * Decision: derive on every call rather than caching the bytes in the
-   * worker. The derivation is a single HKDF step inside Rust (cheap), and
-   * keeping the bytes ephemeral keeps the in-process attack surface
-   * minimal — no long-lived 32-byte slot for an attacker to scrape.
+   * P-W7.3 hard cutover: OPFS snapshots use the handle-based account
+   * wrap/unwrap export directly. Older DB-session-key snapshots are
+   * invalidated by `SNAPSHOT_VERSION`.
    */
   async wrapDbBlob(plaintext: Uint8Array): Promise<Uint8Array> {
     const accountId = this.requireAccountHandle();
     const facade = await getRustFacade();
     return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
-      this.withDbWrapKey(facade, rustAccount, (dbKey) =>
-        facade.wrapKey(plaintext, dbKey),
-      ),
+      facade.wrapWithAccountHandle(rustAccount, plaintext),
     );
   }
 
@@ -691,28 +687,8 @@ class CryptoWorker implements CryptoWorkerApi {
     const accountId = this.requireAccountHandle();
     const facade = await getRustFacade();
     return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
-      this.withDbWrapKey(facade, rustAccount, (dbKey) =>
-        facade.unwrapKey(wrapped, dbKey),
-      ),
+      facade.unwrapWithAccountHandle(rustAccount, wrapped),
     );
-  }
-
-  /**
-   * Run `fn` with a freshly-derived DB wrap key (32 bytes), wiping the
-   * key bytes via `memzero` once `fn` settles. Internal helper for
-   * {@link wrapDbBlob} / {@link unwrapDbBlob}.
-   */
-  private withDbWrapKey<T>(
-    facade: RustHandleFacade,
-    rustAccount: bigint,
-    fn: (dbKey: Uint8Array) => T,
-  ): T {
-    const dbKey = facade.deriveDbSessionKeyFromAccount(rustAccount);
-    try {
-      return fn(dbKey);
-    } finally {
-      memzero(dbKey);
-    }
   }
 
   async getDbEncryptionWrap(plaintext: Uint8Array): Promise<Uint8Array> {
@@ -1864,15 +1840,6 @@ class CryptoWorker implements CryptoWorkerApi {
     );
   }
 
-  async wrapKey(keyBytes: Uint8Array, wrapperKey: Uint8Array): Promise<Uint8Array> {
-    const facade = await getRustFacade();
-    return facade.wrapKey(keyBytes, wrapperKey);
-  }
-
-  async unwrapKey(wrapped: Uint8Array, wrapperKey: Uint8Array): Promise<Uint8Array> {
-    const facade = await getRustFacade();
-    return facade.unwrapKey(wrapped, wrapperKey);
-  }
 }
 
 // Create worker instance and expose via Comlink

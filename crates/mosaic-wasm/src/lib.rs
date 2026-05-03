@@ -5,7 +5,7 @@
 use std::fmt;
 
 use wasm_bindgen::prelude::wasm_bindgen;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
 
@@ -1819,29 +1819,6 @@ pub fn close_identity_handle(handle: u64) -> u16 {
     }
 }
 
-/// Wraps `key_bytes` with the supplied 32-byte wrapper key.
-#[must_use]
-pub fn wrap_key(mut key_bytes: Vec<u8>, mut wrapper_key: Vec<u8>) -> BytesResult {
-    let result = bytes_result_from_client(mosaic_client::wrap_key_with_wrapper_bytes(
-        &key_bytes,
-        &wrapper_key,
-    ));
-    key_bytes.zeroize();
-    wrapper_key.zeroize();
-    result
-}
-
-/// Unwraps a previously wrapped key with the supplied 32-byte wrapper key.
-#[must_use]
-pub fn unwrap_key(wrapped: Vec<u8>, mut wrapper_key: Vec<u8>) -> BytesResult {
-    let result = bytes_result_from_client(mosaic_client::unwrap_key_with_wrapper_bytes(
-        &wrapped,
-        &wrapper_key,
-    ));
-    wrapper_key.zeroize();
-    result
-}
-
 /// Derives the deterministic LocalAuth Ed25519 keypair from an account-key
 /// handle and returns the public key. The signing secret stays in Rust.
 #[must_use]
@@ -2601,20 +2578,6 @@ pub fn advance_album_sync_js(
 #[must_use]
 pub fn close_identity_handle_js(handle: u64) -> u16 {
     close_identity_handle(handle)
-}
-
-/// Wraps a key with a 32-byte wrapper key through WASM.
-#[wasm_bindgen(js_name = wrapKey)]
-#[must_use]
-pub fn wrap_key_js(key_bytes: Vec<u8>, wrapper_key: Vec<u8>) -> JsBytesResult {
-    js_bytes_result_from_rust(wrap_key(key_bytes, wrapper_key))
-}
-
-/// Unwraps a wrapped key with a 32-byte wrapper key through WASM.
-#[wasm_bindgen(js_name = unwrapKey)]
-#[must_use]
-pub fn unwrap_key_js(wrapped: Vec<u8>, wrapper_key: Vec<u8>) -> JsBytesResult {
-    js_bytes_result_from_rust(unwrap_key(wrapped, wrapper_key))
 }
 
 /// Wraps `plaintext` with the L2 account key referenced by `account_handle`

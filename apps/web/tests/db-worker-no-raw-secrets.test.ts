@@ -285,7 +285,7 @@ describe('DbWorker — persistence-safe-snapshot rule (Lane D1)', () => {
     expect(opfs.writes.length).toBeGreaterThan(0);
     const onDisk = opfs.writes.at(-1) as Uint8Array;
 
-    // Slice 8 envelope: `[u8 SNAPSHOT_VERSION][...wrapKey blob...]`.
+    // Slice 8 envelope: `[u8 SNAPSHOT_VERSION][...account-handle wrap blob...]`.
     expect(onDisk[0]).toBe(SNAPSHOT_VERSION);
 
     // With the passthrough bridge the wrapped tail equals the SQLite

@@ -1635,44 +1635,6 @@ pub fn close_identity_handle(handle: u64) -> Result<(), ClientError> {
     }
 }
 
-/// Wraps `key_bytes` with a caller-supplied 32-byte wrapper key.
-///
-/// Output layout: `nonce(24) || ciphertext_with_tag`. Internally builds a
-/// short-lived `SecretKey` from the supplied wrapper bytes and zeroizes it
-/// when the call returns.
-#[must_use]
-pub fn wrap_key_with_wrapper_bytes(key_bytes: &[u8], wrapper_key_bytes: &[u8]) -> BytesResult {
-    let mut wrapper_buf = Zeroizing::new(wrapper_key_bytes.to_vec());
-    let wrapper = match SecretKey::from_bytes(wrapper_buf.as_mut_slice()) {
-        Ok(value) => value,
-        Err(error) => return bytes_error_code(map_crypto_error(error)),
-    };
-    match wrap_key(key_bytes, &wrapper) {
-        Ok(bytes) => BytesResult {
-            code: ClientErrorCode::Ok,
-            bytes,
-        },
-        Err(error) => bytes_error_code(map_crypto_error(error)),
-    }
-}
-
-/// Unwraps a previously wrapped key with a caller-supplied 32-byte wrapper key.
-#[must_use]
-pub fn unwrap_key_with_wrapper_bytes(wrapped: &[u8], wrapper_key_bytes: &[u8]) -> BytesResult {
-    let mut wrapper_buf = Zeroizing::new(wrapper_key_bytes.to_vec());
-    let wrapper = match SecretKey::from_bytes(wrapper_buf.as_mut_slice()) {
-        Ok(value) => value,
-        Err(error) => return bytes_error_code(map_crypto_error(error)),
-    };
-    match unwrap_key(wrapped, &wrapper) {
-        Ok(bytes) => BytesResult {
-            code: ClientErrorCode::Ok,
-            bytes: bytes.to_vec(),
-        },
-        Err(error) => bytes_error_code(map_crypto_error(error)),
-    }
-}
-
 /// Derives the password-rooted LocalAuth Ed25519 keypair from an account-key
 /// handle and returns the public key only.
 ///
