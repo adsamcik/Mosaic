@@ -553,7 +553,12 @@ where
 {
     let snapshot = snapshot.borrow();
     validate_upload_snapshot(snapshot)?;
-    if Some(event.effect_id()) == snapshot.last_applied_event_id {
+    let event_effect_id = event.effect_id();
+    validate_uuid_v7(event_effect_id)?;
+    if matches!(event, UploadJobEvent::EffectAck { .. }) {
+        return acknowledge_effect(snapshot, event_effect_id);
+    }
+    if Some(event_effect_id) == snapshot.last_applied_event_id {
         return Ok(upload_transition(snapshot.clone(), Vec::new()));
     }
     match event {
@@ -694,11 +699,8 @@ where
             reset_retry(&mut next);
             Ok(upload_transition(next, Vec::new()))
         }
-        UploadJobEvent::EffectAck { effect_id } => {
-            let mut next = snapshot.clone();
-            next.snapshot_revision = next.snapshot_revision.saturating_add(1);
-            next.last_acknowledged_effect_id = Some(effect_id);
-            Ok(upload_transition(next, Vec::new()))
+        UploadJobEvent::EffectAck { .. } => {
+            unreachable!("EffectAck is handled before replay dedup")
         }
         UploadJobEvent::RetryableFailure {
             effect_id,
@@ -979,7 +981,7 @@ fn manifest_recovery(
 fn retryable_failure(
     snapshot: &UploadJobSnapshot,
     effect_id: Uuid,
-    _code: ClientErrorCode,
+    code: ClientErrorCode,
     now_ms: i64,
     base_backoff_ms: u64,
     server_retry_after_ms: Option<u64>,
@@ -988,12 +990,14 @@ fn retryable_failure(
         return Err(invalid_transition_error("invalid state transition"));
     }
     if snapshot.retry_count >= snapshot.max_retry_count {
-        return failed(
+        let mut transition = failed(
             snapshot,
             effect_id,
             ClientErrorCode::ClientCoreRetryBudgetExhausted,
             CleanupStagingReason::Failed,
-        );
+        )?;
+        transition.next_snapshot.failure_code = Some(code);
+        return Ok(transition);
     }
     let target = snapshot.phase;
     let mut next = base_next(snapshot, effect_id);
@@ -1087,6 +1091,25 @@ fn base_next(snapshot: &UploadJobSnapshot, effect_id: Uuid) -> UploadJobSnapshot
     next.last_applied_event_id = Some(effect_id);
     next.failure_code = None;
     next
+}
+
+fn acknowledge_effect(
+    snapshot: &UploadJobSnapshot,
+    effect_id: Uuid,
+) -> Result<UploadJobTransition, ClientError> {
+    validate_uuid_v7(effect_id)?;
+    if Some(effect_id) == snapshot.last_acknowledged_effect_id {
+        return Ok(upload_transition(snapshot.clone(), Vec::new()));
+    }
+    if let Some(previous) = snapshot.last_acknowledged_effect_id {
+        if effect_id <= previous {
+            return Err(invalid_transition_error("stale effect ack"));
+        }
+    }
+    let mut next = snapshot.clone();
+    next.snapshot_revision = next.snapshot_revision.saturating_add(1);
+    next.last_acknowledged_effect_id = Some(effect_id);
+    Ok(upload_transition(next, Vec::new()))
 }
 
 fn reset_retry(snapshot: &mut UploadJobSnapshot) {
@@ -1364,12 +1387,6 @@ fn decode_upload_snapshot_value(
     let Value::Map(entries) = value else {
         return Err(SnapshotMigrationError::SchemaVersionMissing);
     };
-    validate_exact_keys(
-        entries,
-        upload_job_snapshot_keys::KNOWN_UPLOAD_JOB_KEYS
-            .iter()
-            .map(|(_, key)| *key),
-    )?;
     let schema_version = required_u16(entries, upload_job_snapshot_keys::SCHEMA_VERSION)
         .ok_or(SnapshotMigrationError::SchemaVersionMissing)?;
     if schema_version > snapshot_schema::CURRENT_SNAPSHOT_SCHEMA_VERSION {
@@ -1378,6 +1395,10 @@ fn decode_upload_snapshot_value(
             max_supported: snapshot_schema::CURRENT_SNAPSHOT_SCHEMA_VERSION,
         });
     }
+    let expected_keys =
+        upload_job_snapshot_keys::upload_job_keys_for_schema_version(schema_version)
+            .ok_or(SnapshotMigrationError::SchemaCorrupt)?;
+    validate_exact_keys(entries, expected_keys.iter().copied())?;
     if schema_version != SNAPSHOT_SCHEMA_VERSION_V1 {
         return Err(SnapshotMigrationError::StepFailed {
             from: schema_version,
@@ -1461,6 +1482,39 @@ fn validate_decoded_upload_snapshot(
         if !seen.insert((shard.tier, shard.shard_index)) {
             return Err(SnapshotMigrationError::SchemaCorrupt);
         }
+    }
+    let has_shards = !snapshot.tiered_shards.is_empty();
+    let all_uploaded = snapshot.tiered_shards.iter().all(|shard| shard.uploaded);
+    let has_pending_upload = snapshot.tiered_shards.iter().any(|shard| !shard.uploaded);
+    match snapshot.phase {
+        UploadJobPhase::Queued | UploadJobPhase::AwaitingPreparedMedia => {
+            if has_shards {
+                return Err(SnapshotMigrationError::SchemaCorrupt);
+            }
+        }
+        UploadJobPhase::AwaitingEpochHandle
+        | UploadJobPhase::EncryptingShard
+        | UploadJobPhase::CreatingShardUpload
+        | UploadJobPhase::UploadingShard
+        | UploadJobPhase::RetryWaiting => {
+            if !has_shards || !has_pending_upload {
+                return Err(SnapshotMigrationError::SchemaCorrupt);
+            }
+        }
+        UploadJobPhase::CreatingManifest
+        | UploadJobPhase::AwaitingSyncConfirmation
+        | UploadJobPhase::Confirmed
+        | UploadJobPhase::ManifestCommitUnknown => {
+            if !has_shards || !all_uploaded {
+                return Err(SnapshotMigrationError::SchemaCorrupt);
+            }
+        }
+        UploadJobPhase::Failed => {
+            if snapshot.failure_code.is_none() {
+                return Err(SnapshotMigrationError::SchemaCorrupt);
+            }
+        }
+        UploadJobPhase::Cancelled => {}
     }
     Ok(())
 }
@@ -1796,6 +1850,8 @@ pub fn advance_album_sync(
                 )
             })?;
             let mut next = snapshot.clone();
+            // Phase matrix: active syncs coalesce rerun requests; idle and
+            // terminal snapshots start a fresh sync cycle.
             if matches!(
                 next.phase,
                 AlbumSyncPhase::FetchingPage
@@ -1823,6 +1879,7 @@ pub fn advance_album_sync(
             })
         }
         AlbumSyncEvent::PageFetched { page } => {
+            require_album_sync_phase(snapshot.phase, AlbumSyncPhase::FetchingPage)?;
             let page = page.ok_or_else(|| {
                 ClientError::new(
                     ClientErrorCode::ClientCoreMissingEventPayload,
@@ -1841,6 +1898,7 @@ pub fn advance_album_sync(
             })
         }
         AlbumSyncEvent::PageApplied => {
+            require_album_sync_phase(snapshot.phase, AlbumSyncPhase::ApplyingPage)?;
             let page = snapshot
                 .current_page
                 .clone()
@@ -1881,6 +1939,12 @@ pub fn advance_album_sync(
             code,
             retry_after_ms,
         } => {
+            if !matches!(
+                snapshot.phase,
+                AlbumSyncPhase::FetchingPage | AlbumSyncPhase::ApplyingPage
+            ) {
+                return Err(invalid_transition_error("invalid state transition"));
+            }
             if snapshot.retry.attempt_count >= snapshot.retry.max_attempts {
                 let mut next = snapshot.clone();
                 next.phase = AlbumSyncPhase::Failed;
@@ -1906,11 +1970,18 @@ pub fn advance_album_sync(
             })
         }
         AlbumSyncEvent::RetryTimerElapsed => {
+            require_album_sync_phase(snapshot.phase, AlbumSyncPhase::RetryWaiting)?;
             let mut next = snapshot.clone();
             let target = next
                 .retry
                 .retry_target_phase
                 .ok_or_else(|| invalid_snapshot_error("snapshot validation failed"))?;
+            if !matches!(
+                target,
+                AlbumSyncPhase::FetchingPage | AlbumSyncPhase::ApplyingPage
+            ) {
+                return Err(invalid_transition_error("invalid state transition"));
+            }
             next.phase = target;
             let effect = match target {
                 AlbumSyncPhase::FetchingPage => vec![AlbumSyncEffect::FetchPage {
@@ -1930,6 +2001,18 @@ pub fn advance_album_sync(
             })
         }
         AlbumSyncEvent::CancelRequested => {
+            if snapshot.phase == AlbumSyncPhase::Cancelled {
+                return Ok(AlbumSyncTransition {
+                    snapshot: snapshot.clone(),
+                    effects: Vec::new(),
+                });
+            }
+            if matches!(
+                snapshot.phase,
+                AlbumSyncPhase::Completed | AlbumSyncPhase::Failed
+            ) {
+                return Err(invalid_transition_error("invalid state transition"));
+            }
             let mut next = snapshot.clone();
             next.phase = AlbumSyncPhase::Cancelled;
             Ok(AlbumSyncTransition {
@@ -1938,6 +2021,9 @@ pub fn advance_album_sync(
             })
         }
         AlbumSyncEvent::NonRetryableFailure { code } => {
+            if album_sync_phase_is_terminal(snapshot.phase) {
+                return Err(invalid_transition_error("invalid state transition"));
+            }
             let mut next = snapshot.clone();
             next.phase = AlbumSyncPhase::Failed;
             next.failure_code = Some(code);
@@ -1947,4 +2033,22 @@ pub fn advance_album_sync(
             })
         }
     }
+}
+
+fn require_album_sync_phase(
+    actual: AlbumSyncPhase,
+    expected: AlbumSyncPhase,
+) -> Result<(), ClientError> {
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(invalid_transition_error("invalid state transition"))
+    }
+}
+
+fn album_sync_phase_is_terminal(phase: AlbumSyncPhase) -> bool {
+    matches!(
+        phase,
+        AlbumSyncPhase::Completed | AlbumSyncPhase::Cancelled | AlbumSyncPhase::Failed
+    )
 }

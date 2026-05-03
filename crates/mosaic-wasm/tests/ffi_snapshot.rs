@@ -188,6 +188,22 @@ fn wasm_upload_retry_budget_survives_snapshot_round_trip() {
 }
 
 #[test]
+fn wasm_init_upload_job_rejects_non_v7_uuid_string() {
+    let result = init_upload_job(ClientCoreUploadJobRequest {
+        job_id: "00000000-0000-4000-8000-000000000000".to_owned(),
+        album_id: ALBUM_ID.to_owned(),
+        asset_id: ASSET_ID.to_owned(),
+        idempotency_key: IDEMPOTENCY_KEY.to_owned(),
+        max_retry_count: 5,
+    });
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+}
+
+#[test]
 fn wasm_advance_upload_job_rejects_unknown_phase_string() {
     let mut snapshot = retry_waiting_upload_snapshot();
     snapshot.phase = "DefinitelyNotAPhase".to_owned();

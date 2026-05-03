@@ -88,6 +88,35 @@ pub mod upload_job_snapshot_keys {
         ("LAST_APPLIED_EVENT_ID", LAST_APPLIED_EVENT_ID),
         ("FAILURE_CODE", FAILURE_CODE),
     ];
+
+    /// Immutable v1 upload snapshot key set.
+    ///
+    /// Future schema versions must define their own key slice that includes this
+    /// complete prefix plus append-only additions.
+    pub const UPLOAD_JOB_KEYS_V1: &[u32] = &[
+        SCHEMA_VERSION,
+        JOB_ID,
+        ALBUM_ID,
+        PHASE,
+        RETRY_COUNT,
+        MAX_RETRY_COUNT,
+        NEXT_RETRY_NOT_BEFORE_MS,
+        IDEMPOTENCY_KEY,
+        TIERED_SHARDS,
+        SHARD_SET_HASH,
+        SNAPSHOT_REVISION,
+        LAST_ACKNOWLEDGED_EFFECT_ID,
+        LAST_APPLIED_EVENT_ID,
+        FAILURE_CODE,
+    ];
+
+    #[must_use]
+    pub const fn upload_job_keys_for_schema_version(schema_version: u16) -> Option<&'static [u32]> {
+        match schema_version {
+            super::SNAPSHOT_SCHEMA_VERSION_V1 => Some(UPLOAD_JOB_KEYS_V1),
+            _ => None,
+        }
+    }
 }
 
 /// Integer-key registry for album-sync snapshot fields.

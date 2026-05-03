@@ -61,6 +61,7 @@ fn phase_encoding_lock_integration() {
 #[test]
 fn snapshot_cbor_canonical_golden_vector() {
     let mut snap = snapshot(UploadJobPhase::Queued);
+    snap.tiered_shards = Vec::new();
     snap.snapshot_revision = 42;
     snap.last_acknowledged_effect_id = Some(uuid(4));
     let bytes = snap.to_canonical_cbor();
@@ -69,14 +70,10 @@ fn snapshot_cbor_canonical_golden_vector() {
         0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x50, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x72,
         0x02, 0x82, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x03, 0x00, 0x04, 0x00, 0x05, 0x03,
         0x06, 0xf6, 0x07, 0x50, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x73, 0x03, 0x83, 0x03, 0x03,
-        0x03, 0x03, 0x03, 0x03, 0x03, 0x08, 0x81, 0xa7, 0x00, 0x03, 0x01, 0x00, 0x02, 0x50, 0x14,
-        0x14, 0x14, 0x14, 0x14, 0x14, 0x74, 0x14, 0x94, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14,
-        0x03, 0x58, 0x20, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0,
-        0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0xa0,
-        0xa0, 0xa0, 0xa0, 0xa0, 0xa0, 0x04, 0x19, 0x04, 0xd2, 0x05, 0x03, 0x06, 0xf4, 0x09, 0x58,
-        0x20, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
-        9, 9, 9, 9, 0x0a, 0x18, 0x2a, 0x0b, 0x50, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x74, 0x04,
-        0x84, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0c, 0xf6, 0x0d, 0xf6,
+        0x03, 0x03, 0x03, 0x03, 0x03, 0x08, 0x80, 0x09, 0x58, 0x20, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+        9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0x0a, 0x18, 0x2a, 0x0b,
+        0x50, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x74, 0x04, 0x84, 0x04, 0x04, 0x04, 0x04, 0x04,
+        0x04, 0x04, 0x0c, 0xf6, 0x0d, 0xf6,
     ];
     assert_eq!(bytes, expected);
     assert_eq!(
@@ -337,4 +334,67 @@ fn effect_idempotency_deterministic_replay_and_revision_increment() {
     .unwrap();
     assert_eq!(replay.next_snapshot, a.next_snapshot);
     assert!(replay.effects.is_empty());
+}
+
+#[test]
+fn retryable_failure_budget_exhausted_preserves_originating_code() {
+    let mut snap = snapshot(UploadJobPhase::UploadingShard);
+    snap.retry_count = 3;
+    snap.max_retry_count = 3;
+
+    let transition = advance_upload_job(
+        snap,
+        UploadJobEvent::RetryableFailure {
+            effect_id: uuid(53),
+            code: ClientErrorCode::AuthenticationFailed,
+            now_ms: 10_000,
+            base_backoff_ms: 1_000,
+            server_retry_after_ms: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(transition.next_snapshot.phase, UploadJobPhase::Failed);
+    assert_eq!(
+        transition.next_snapshot.failure_code,
+        Some(ClientErrorCode::AuthenticationFailed)
+    );
+    assert!(matches!(
+        transition.effects.as_slice(),
+        [UploadJobEffect::CleanupStaging {
+            reason: CleanupStagingReason::Failed,
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn v1_key_list_is_subset_of_hypothetical_v2() {
+    let mut hypothetical_v2 =
+        snapshot_schema::upload_job_snapshot_keys::UPLOAD_JOB_KEYS_V1.to_vec();
+    hypothetical_v2.push(14);
+
+    assert!(
+        hypothetical_v2.starts_with(snapshot_schema::upload_job_snapshot_keys::UPLOAD_JOB_KEYS_V1)
+    );
+    assert_eq!(hypothetical_v2.last(), Some(&14));
+}
+
+#[test]
+fn v1_decoder_rejects_extra_key_14() {
+    let bytes = snapshot(UploadJobPhase::EncryptingShard).to_canonical_cbor();
+    let mut value: ciborium::value::Value =
+        ciborium::de::from_reader(std::io::Cursor::new(&bytes)).unwrap();
+    let ciborium::value::Value::Map(entries) = &mut value else {
+        panic!("upload snapshot encodes as a map");
+    };
+    entries.push((
+        ciborium::value::Value::from(14_u32),
+        ciborium::value::Value::Null,
+    ));
+    entries.sort_by_key(|(key, _)| key.as_integer().unwrap());
+    let mut encoded = Vec::new();
+    ciborium::ser::into_writer(&value, &mut encoded).unwrap();
+
+    assert!(UploadJobSnapshot::from_canonical_cbor(&encoded).is_err());
 }
