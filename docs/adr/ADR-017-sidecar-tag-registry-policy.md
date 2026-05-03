@@ -47,26 +47,28 @@ Sidecar tag numbers are governed by an **append-only, lock-tested, ADR-changeabl
 ### Lock test (`sidecar_tag_table.rs`)
 
 ```rust
-const REGISTRY_V1: &[(u16, &str, TagLayout)] = &[
-    (1, "orientation", TagLayout::U16Le { range: 1..=8 }),
-    (2, "device_timestamp", TagLayout::TimestampWithTz { ms_le: I64Le, tz_min_le: I16Le, sub_ms_le: U16Le }),
-    (3, "original_dimensions", TagLayout::DimensionsLe),
-    (4, "mime_override", TagLayout::Utf8Nfc { max_bytes: 64 }),
-    (7, "camera_make", TagLayout::Utf8Nfc { max_bytes: 64 }),
-    (8, "camera_model", TagLayout::Utf8Nfc { max_bytes: 64 }),
-    (9, "gps", TagLayout::GpsRecordV1),
-    (10, "codec_fourcc", TagLayout::U32LeFourCc),
-    (11, "duration_ms", TagLayout::U64Le),
-    (12, "frame_rate_x100", TagLayout::U16Le),
-    (13, "video_orientation", TagLayout::U8 { range: 1..=8 }),
+const REGISTRY_V1: &[(u16, &str, TagLayout, TagStatus)] = &[
+    (1, "orientation", TagLayout::U16Le { range: 1..=8 }, TagStatus::Active),
+    (2, "device_timestamp", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M4")),
+    (3, "original_dimensions", TagLayout::DimensionsLe, TagStatus::Active),
+    (4, "mime_override", TagLayout::Utf8Nfc { max_bytes: 64 }, TagStatus::Active),
+    (7, "camera_make", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M4")),
+    (8, "camera_model", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M4")),
+    (9, "gps", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M3")),
+    (10, "codec_fourcc", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M7")),
+    (11, "duration_ms", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M7")),
+    (12, "frame_rate_x100", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M7")),
+    (13, "video_orientation", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M7")),
 ];
 
 #[test]
 fn registry_is_append_only() {
-    // Asserts no entry has changed (number, name, layout) tuple,
+    // Asserts no entry has changed (number, name, status) tuple,
     // no entry was removed, and any new entry is at the next free slot.
 }
 ```
+
+Tag *numbers* are locked by this ADR and by `sidecar_tag_table.rs`; *byte layouts* for tags marked `ReservedNumberPending<TicketId>` are finalized by their corresponding R-M ticket and are not normative until that ticket merges with golden vectors. Until then, `ReservedAwaitingLayout` means the number is allocated, but producers must not emit the tag and decoders must not treat a concrete layout as frozen.
 
 ### Reserved tag-number ranges
 
@@ -141,7 +143,7 @@ Deprecating a tag requires:
 
 - New SPEC `docs/specs/SPEC-CanonicalSidecarTags.md` documents the registry, layouts, and reserved ranges.
 - New lock test `crates/mosaic-domain/tests/sidecar_tag_table.rs` mirrors `error_code_table.rs`.
-- R-M3, R-M4, R-M7 each ship with a registry entry, a lock-test update, and golden vectors.
+- R-M3, R-M4, R-M7 each convert their `ReservedNumberPending<TicketId>` entries into active layouts with a lock-test update and golden vectors.
 - The decode validator returns `SidecarFieldOverflow`, `MalformedSidecar`, or `SidecarTagUnknown` for the failure classes above (allocated under R-C1).
 - ADR-022 (manifest finalization) references this ADR for the encrypted-meta-sidecar opaque-bytes contract.
 - WASM (P-W2) and UniFFI (P-U1) sidecar exports surface the same numeric tags by reference to this registry.
@@ -150,4 +152,4 @@ Deprecating a tag requires:
 
 ## Reversibility
 
-The registry policy itself is reversible (this ADR can be amended). The numeric allocations made under it are **not reversible**: once shipped, every (tag → layout) tuple is forever frozen by the lock test. Deprecation preserves the numeric value; outright reuse is forbidden.
+The registry policy itself is reversible (this ADR can be amended). The numeric allocations made under it are **not reversible**: tag numbers are forever reserved once allocated. For active tags, the (tag → layout) tuple is forever frozen by the lock test; for `ReservedNumberPending<TicketId>` tags, the byte layout becomes irreversible only when the corresponding R-M ticket merges with its golden vector. Deprecation preserves the numeric value; outright reuse is forbidden.

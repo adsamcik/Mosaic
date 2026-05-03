@@ -45,11 +45,15 @@ const KEY_IDEMPOTENCY_KEY: u32 = 7;      // UUIDv7 bytes
 const KEY_TIERED_SHARDS: u32 = 8;        // array of canonical CBOR maps per ADR-022
 const KEY_SHARD_SET_HASH: u32 = 9;       // 32 bytes
 const KEY_SNAPSHOT_REVISION: u32 = 10;   // u64, monotonic; explicit u64 to avoid wrap
-const KEY_LAST_EFFECT_ID: u32 = 11;      // UUIDv7 bytes
-// ... reserved up to 127 for v1; 128+ for future schema versions
+const KEY_LAST_ACKNOWLEDGED_EFFECT_ID: u32 = 11;  // UUIDv7 bytes; was KEY_LAST_EFFECT_ID; renamed pre-freeze
+const KEY_LAST_APPLIED_EVENT_ID: u32 = 12;        // R-Cl1 split for replay-dedup
+const KEY_FAILURE_CODE: u32 = 13;                 // R-Cl1 added
+// ... keys 14..=127 reserved for v1; 128+ for future schema versions
 ```
 
 The integer-key registry is governed identically to the sidecar tag registry (ADR-017): append-only, lock-tested, ADR-changeable. New keys take the next available value; deprecated keys retain their numeric position.
+
+**Schema evolution note (R-Cl1).** Key `11` was renamed from `KEY_LAST_EFFECT_ID` to `KEY_LAST_ACKNOWLEDGED_EFFECT_ID` before the v1 freeze. The wire byte remains the integer-key slot `11`; only the semantics narrowed to the effect acknowledgement watermark. Replay deduplication moved to its own append-only key `12` (`KEY_LAST_APPLIED_EVENT_ID`), and terminal failure persistence uses key `13` (`KEY_FAILURE_CODE`). Keys `14..=127` remain reserved for v1 append-only growth.
 
 **Forbidden field types.** The snapshot encoder rejects:
 - `f32` / `f64` floating-point (canonicalization is unstable for NaN payloads),

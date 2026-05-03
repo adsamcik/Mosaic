@@ -2,9 +2,7 @@
 
 ## Status
 
-Proposed for R-Cl4. This is a design document only: the Rust trait signatures
-below are illustrative contract examples for R-Cl1/R-Cl2/W-A1/A13 materialization,
-not committed API.
+**Locked at design level.** Trait signatures are advisory until W-A1/A13 materialize them; the *port set* (15 ports) and *contractual semantics* (privacy, blocking, error mapping) are normative as of R-Cl4 commit `95bfa66`. Concrete trait shapes may shift during W-A1/A13 implementation as long as the port-set and semantics are preserved.
 
 ## Scope
 

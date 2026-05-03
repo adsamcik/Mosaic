@@ -2,7 +2,7 @@
 
 ## Status
 
-Locked at snapshot schema version v1. Existing integer keys and phase numeric allocations are append-only.
+Locked at snapshot schema version v1. Existing integer keys and phase numeric allocations are append-only. UploadJob v1 concrete decode is active post-R-Cl1; AlbumSync concrete CBOR remains pending R-Cl2.
 
 This SPEC is governed by [ADR-023: Persisted snapshot schema strategy](../adr/ADR-023-persisted-snapshot-schema.md) §"Decision" and §"Consequences". CI enforcement lives in `crates/mosaic-client/tests/phase_enum_lock.rs` and `crates/mosaic-client/tests/snapshot_key_registry_lock.rs`.
 
@@ -16,8 +16,8 @@ This document defines the durable on-device wire format for:
 
 Out of scope:
 
-- The complete concrete field type layout for `UploadJobSnapshot`; R-Cl1 locks that additively on top of this registry.
-- The complete concrete field type layout for `AlbumSyncSnapshot`; R-Cl2 locks that additively on top of this registry.
+- Future additive `UploadJobSnapshot` fields beyond the R-Cl1 v1 registry; additions must use keys `14..=127` or a future schema version.
+- The complete concrete field type layout for `AlbumSyncSnapshot`; AlbumSync concrete CBOR remains pending R-Cl2.
 - Platform persistence transaction APIs. IDB and Room consume opaque CBOR bytes and implement CAS per ADR-023 §"Persistence transactions and CAS".
 
 ## Governance
@@ -48,7 +48,7 @@ Persistence layers store the bytes opaquely:
 
 ## Integer-key registry — `UploadJobSnapshot`
 
-Keys `12..=127` are reserved for v1+ append-only growth.
+Current as of the R-Cl1 lock: keys `0..=13` are allocated and keys `14..=127` are reserved for v1+ append-only growth.
 
 | Key | Name | Type / planned type |
 |---:|---|---|
@@ -56,14 +56,16 @@ Keys `12..=127` are reserved for v1+ append-only growth.
 | 1 | `job_id` | UUIDv7 bytes / opaque job identifier |
 | 2 | `album_id` | UUIDv7 bytes / opaque album identifier |
 | 3 | `phase` | `u8` using `UploadJobPhase` allocation |
-| 4 | `retry_count` | bounded integer; R-Cl1 finalizes exact width |
-| 5 | `max_retry_count` | bounded integer, `<= MAX_RETRY_COUNT_LIMIT (64)` |
-| 6 | `next_retry_not_before_ms` | reducer-supplied absolute timestamp in milliseconds |
+| 4 | `retry_count` | `u8`, bounded by `max_retry_count` |
+| 5 | `max_retry_count` | `u8`, `<= MAX_RETRY_COUNT_LIMIT (64)` |
+| 6 | `next_retry_not_before_ms` | `null` or reducer-supplied absolute timestamp in milliseconds |
 | 7 | `idempotency_key` | UUIDv7 bytes for manifest/Tus idempotency |
 | 8 | `tiered_shards` | array of canonical CBOR maps shaped by ADR-022 `tieredShards` |
-| 9 | `shard_set_hash` | 32 bytes |
+| 9 | `shard_set_hash` | `null` or 32 bytes |
 | 10 | `snapshot_revision` | monotonic `u64` CAS coordinate |
-| 11 | `last_effect_id` | UUIDv7 bytes when present |
+| 11 | `last_acknowledged_effect_id` | UUIDv7 bytes when present; ack watermark formerly named `last_effect_id` pre-freeze |
+| 12 | `last_applied_event_id` | UUIDv7 bytes when present; replay-dedup watermark |
+| 13 | `failure_code` | `null` or stable `ClientErrorCode` numeric value |
 
 ## Integer-key registry — `AlbumSyncSnapshot`
 
@@ -152,14 +154,15 @@ pub fn upgrade_album_sync_snapshot(bytes: &[u8])
     -> Result<AlbumSyncSnapshot, SnapshotMigrationError>;
 ```
 
-R-Cl3 ships these entry points with placeholder return types while R-Cl1/R-Cl2 finalize concrete DTOs. The current R-Cl3 behavior is:
+UploadJob v1 concrete decode is active post-R-Cl1. AlbumSync concrete CBOR remains pending R-Cl2. The current behavior is:
 
 1. Decode enough CBOR to validate the schema-level invariants.
 2. Read `schema_version` from integer key `0`.
 3. Return `SchemaVersionMissing`, `CborDecodeFailed`, `ForbiddenField`, `SchemaCorrupt`, or `SchemaTooNew` for schema-level failures.
-4. Return `StepFailed { from: 1, to: 1 }` for current-version bytes until R-Cl1/R-Cl2 replace the placeholder branch with concrete v1 decode.
+4. For `UploadJobSnapshot`, decode the concrete R-Cl1 v1 field set, including keys `0..=13`.
+5. For `AlbumSyncSnapshot`, retain the temporary `StepFailed { from: 1, to: 1 }` sentinel until R-Cl2 replaces the placeholder branch with concrete v1 decode.
 
-R-Cl1/R-Cl2 will replace the `StepFailed { from: 1, to: 1 }` sentinel with a successful decoded-snapshot return; the lock-test branch `current_version_placeholder_branch_is_explicit_step_failed` is temporary and must be deleted/replaced when those tickets land.
+R-Cl2 will replace the AlbumSync `StepFailed { from: 1, to: 1 }` sentinel with a successful decoded-snapshot return; any placeholder lock-test branch for AlbumSync is temporary and must be deleted/replaced when R-Cl2 lands.
 
 When schema version `N+1` is added:
 
