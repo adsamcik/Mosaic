@@ -49,27 +49,27 @@ const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 /// + update SPEC-LateV1ProtocolFreeze §Frozen now.
 #[test]
 fn uniffi_facade_exposes_stable_ffi_spike_surface() {
-    const FROZEN_UNIFFI_API_SNAPSHOT: &str = "mosaic-uniffi ffi-spike:v9 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)";
+    const FROZEN_UNIFFI_API_SNAPSHOT: &str = "mosaic-uniffi ffi-spike:v10 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt)->EpochKeyHandleResult{code,handle,epoch_id,wrapped_epoch_seed,sign_public_key} metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)";
 
     assert_eq!(
         uniffi_api_snapshot(),
         FROZEN_UNIFFI_API_SNAPSHOT,
         "API surface change — bump version + add migration vector + update \
          SPEC-LateV1ProtocolFreeze §Frozen now (this snapshot pins the Android/Rust \
-         UniFFI boundary at ffi-spike:v9)"
+         UniFFI boundary at ffi-spike:v10)"
     );
 }
 
-/// Late-v1 protocol freeze lock: the version label `ffi-spike:v9` is part of
+/// Late-v1 protocol freeze lock: the version label `ffi-spike:v10` is part of
 /// the frozen surface. Bumping it requires an ADR, regenerated bindings, and
 /// migration vectors per SPEC-LateV1ProtocolFreeze §"Versioning and freeze
 /// gate rules" → "Rust FFI DTOs".
 #[test]
-fn uniffi_api_snapshot_version_label_is_frozen_at_v9() {
+fn uniffi_api_snapshot_version_label_is_frozen_at_v10() {
     let snapshot = uniffi_api_snapshot();
     assert!(
-        snapshot.starts_with("mosaic-uniffi ffi-spike:v9 "),
-        "uniffi_api_snapshot() must begin with `mosaic-uniffi ffi-spike:v9 ` — \
+        snapshot.starts_with("mosaic-uniffi ffi-spike:v10 "),
+        "uniffi_api_snapshot() must begin with `mosaic-uniffi ffi-spike:v10 ` — \
          API surface change requires bumping the version label, adding a migration \
          vector, and updating SPEC-LateV1ProtocolFreeze §Frozen now. Got: {snapshot}"
     );
@@ -189,6 +189,22 @@ fn uniffi_upload_retry_budget_survives_snapshot_round_trip() {
     assert_eq!(resumed.code, 0);
     assert_eq!(resumed.transition.next_snapshot.retry_count, 1);
     assert_eq!(resumed.transition.next_snapshot.max_retry_count, 5);
+}
+
+#[test]
+fn uniffi_init_upload_job_rejects_non_v7_uuid_string() {
+    let result = init_upload_job(ClientCoreUploadJobRequest {
+        job_id: "00000000-0000-4000-8000-000000000000".to_owned(),
+        album_id: ALBUM_ID.to_owned(),
+        asset_id: ASSET_ID.to_owned(),
+        idempotency_key: IDEMPOTENCY_KEY.to_owned(),
+        max_retry_count: 5,
+    });
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
 }
 
 #[test]

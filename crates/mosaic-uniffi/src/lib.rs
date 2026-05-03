@@ -114,6 +114,7 @@ pub struct EpochKeyHandleResult {
     pub handle: u64,
     pub epoch_id: u32,
     pub wrapped_epoch_seed: Vec<u8>,
+    pub sign_public_key: Vec<u8>,
 }
 
 impl fmt::Debug for EpochKeyHandleResult {
@@ -123,6 +124,7 @@ impl fmt::Debug for EpochKeyHandleResult {
             .field("handle", &self.handle)
             .field("epoch_id", &self.epoch_id)
             .field("wrapped_epoch_seed_len", &self.wrapped_epoch_seed.len())
+            .field("sign_public_key_len", &self.sign_public_key.len())
             .finish()
     }
 }
@@ -401,7 +403,7 @@ pub fn protocol_version() -> String {
 /// Returns the stable UniFFI API snapshot for this FFI spike.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v9 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
+    "mosaic-uniffi ffi-spike:v10 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt)->EpochKeyHandleResult{code,handle,epoch_id,wrapped_epoch_seed,sign_public_key} metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
 }
 
 const CLIENT_CORE_STATE_MACHINE_SURFACE: &str = "client-core-state-machines:v1 \
@@ -1005,6 +1007,7 @@ fn epoch_result_from_client(result: mosaic_client::EpochKeyHandleResult) -> Epoc
         handle: result.handle,
         epoch_id: result.epoch_id,
         wrapped_epoch_seed: result.wrapped_epoch_seed,
+        sign_public_key: result.sign_public_key,
     }
 }
 
@@ -1632,7 +1635,11 @@ fn uuid_from_string(value: &str) -> Result<mosaic_client::Uuid, u16> {
         };
         *byte = parsed;
     }
-    Ok(mosaic_client::Uuid::from_bytes(bytes))
+    let uuid = mosaic_client::Uuid::from_bytes(bytes);
+    if !uuid.is_uuid_v7() {
+        return Err(invalid_snapshot);
+    }
+    Ok(uuid)
 }
 
 fn optional_uuid_from_string(value: &str) -> Result<Option<mosaic_client::Uuid>, u16> {
@@ -2623,9 +2630,10 @@ mod tests {
                 handle: 11,
                 epoch_id: 42,
                 wrapped_epoch_seed: vec![221, 222, 223],
+                sign_public_key: vec![224; 32],
             },
-            &["wrapped_epoch_seed_len: 3"],
-            &["221", "222", "223", "wrapped_epoch_seed: ["],
+            &["wrapped_epoch_seed_len: 3", "sign_public_key_len: 32"],
+            &["221", "222", "223", "224", "wrapped_epoch_seed: ["],
         );
 
         assert_debug_redacts(

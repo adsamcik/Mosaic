@@ -56,6 +56,23 @@ fn shard_envelope_version_is_frozen_at_0x03() {
 }
 
 #[test]
+fn shard_tier_byte_discriminants_locked() {
+    assert_eq!(ShardTier::Thumbnail as u8, 1);
+    assert_eq!(ShardTier::Preview as u8, 2);
+    assert_eq!(ShardTier::Original as u8, 3);
+    assert!(ShardTier::try_from(0).is_err());
+    assert!(ShardTier::try_from(4).is_err());
+
+    fn _exhaust(t: ShardTier) -> u8 {
+        match t {
+            ShardTier::Thumbnail => 1,
+            ShardTier::Preview => 2,
+            ShardTier::Original => 3,
+        }
+    }
+}
+
+#[test]
 fn shard_envelope_header_total_length_is_frozen_at_64_bytes() {
     assert_eq!(
         SHARD_ENVELOPE_HEADER_LEN, 64_usize,

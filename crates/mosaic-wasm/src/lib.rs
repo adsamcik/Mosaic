@@ -5,7 +5,7 @@
 use std::fmt;
 
 use wasm_bindgen::prelude::wasm_bindgen;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
 
@@ -1292,21 +1292,22 @@ pub fn wasm_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> Progr
 
 /// Unwraps an account key into a Rust-owned opaque account-key handle.
 #[must_use]
-pub fn unlock_account_key(
-    mut password: Vec<u8>,
-    request: AccountUnlockRequest,
-) -> AccountUnlockResult {
-    let result = mosaic_client::unlock_account_key(mosaic_client::AccountUnlockRequest {
-        password: password.as_mut_slice(),
-        user_salt: &request.user_salt,
-        account_salt: &request.account_salt,
-        wrapped_account_key: &request.wrapped_account_key,
-        kdf_memory_kib: request.kdf_memory_kib,
-        kdf_iterations: request.kdf_iterations,
-        kdf_parallelism: request.kdf_parallelism,
-    });
-    password.zeroize();
-    account_unlock_result_from_client(result)
+pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> AccountUnlockResult {
+    let mut password = Zeroizing::new(password);
+    let wrapped_account_key = Zeroizing::new(request.wrapped_account_key);
+    let user_salt = request.user_salt;
+    let account_salt = request.account_salt;
+    account_unlock_result_from_client(mosaic_client::unlock_account_key(
+        mosaic_client::AccountUnlockRequest {
+            password: password.as_mut_slice(),
+            user_salt: &user_salt,
+            account_salt: &account_salt,
+            wrapped_account_key: &wrapped_account_key,
+            kdf_memory_kib: request.kdf_memory_kib,
+            kdf_iterations: request.kdf_iterations,
+            kdf_parallelism: request.kdf_parallelism,
+        },
+    ))
 }
 
 /// Creates a fresh account-key handle in a single Argon2id pass.
@@ -1317,28 +1318,28 @@ pub fn unlock_account_key(
 /// this function returns.
 #[must_use]
 pub fn create_new_account(
-    mut password: Vec<u8>,
+    password: Vec<u8>,
     user_salt: Vec<u8>,
     account_salt: Vec<u8>,
     kdf_memory_kib: u32,
     kdf_iterations: u32,
     kdf_parallelism: u32,
 ) -> CreateAccountResult {
-    let result = mosaic_client::create_new_account_handle(
+    let mut password = Zeroizing::new(password);
+    create_account_result_from_client(mosaic_client::create_new_account_handle(
         password.as_mut_slice(),
         &user_salt,
         &account_salt,
         kdf_memory_kib,
         kdf_iterations,
         kdf_parallelism,
-    );
-    password.zeroize();
-    create_account_result_from_client(result)
+    ))
 }
 
 /// Wraps `plaintext` with the L2 account key referenced by `account_handle`.
 #[must_use]
 pub fn wrap_with_account_handle(account_handle: u64, plaintext: Vec<u8>) -> BytesResult {
+    let plaintext = Zeroizing::new(plaintext);
     let result = mosaic_client::wrap_with_account_handle(account_handle, &plaintext);
     bytes_result_from_client(result)
 }
@@ -1410,6 +1411,7 @@ pub fn open_identity_handle(
     wrapped_identity_seed: Vec<u8>,
     account_key_handle: u64,
 ) -> IdentityHandleResult {
+    let wrapped_identity_seed = Zeroizing::new(wrapped_identity_seed);
     identity_result_from_client(mosaic_client::open_identity_handle(
         &wrapped_identity_seed,
         account_key_handle,
@@ -1503,13 +1505,13 @@ pub fn encrypt_metadata_sidecar_with_epoch_handle(
     encoded_fields: Vec<u8>,
     shard_index: u32,
 ) -> EncryptedShardResult {
-    let mut plaintext = match canonical_metadata_sidecar_bytes_result(
+    let plaintext = match canonical_metadata_sidecar_bytes_result(
         &album_id,
         &photo_id,
         epoch_id,
         &encoded_fields,
     ) {
-        Ok(bytes) => bytes,
+        Ok(bytes) => Zeroizing::new(bytes),
         Err(code) => {
             return EncryptedShardResult {
                 code,
@@ -1519,15 +1521,12 @@ pub fn encrypt_metadata_sidecar_with_epoch_handle(
         }
     };
 
-    let result =
-        encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
-            handle,
-            &plaintext,
-            shard_index,
-            ShardTier::Thumbnail.to_byte(),
-        ));
-    plaintext.zeroize();
-    result
+    encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
+        handle,
+        &plaintext,
+        shard_index,
+        ShardTier::Thumbnail.to_byte(),
+    ))
 }
 
 /// Creates a new epoch-key handle for an existing account-key handle.
@@ -1546,6 +1545,7 @@ pub fn open_epoch_key_handle(
     account_key_handle: u64,
     epoch_id: u32,
 ) -> EpochKeyHandleResult {
+    let wrapped_epoch_seed = Zeroizing::new(wrapped_epoch_seed);
     epoch_result_from_client(mosaic_client::open_epoch_key_handle(
         &wrapped_epoch_seed,
         account_key_handle,
@@ -1585,6 +1585,7 @@ pub fn encrypt_shard_with_epoch_handle(
     shard_index: u32,
     tier_byte: u8,
 ) -> EncryptedShardResult {
+    let plaintext = Zeroizing::new(plaintext);
     encrypted_shard_result_from_client(mosaic_client::encrypt_shard_with_epoch_handle(
         handle,
         &plaintext,
@@ -1840,12 +1841,13 @@ pub fn get_auth_public_key_from_account(account_handle: u64) -> BytesResult {
 /// zeroized on every path before this function returns.
 #[must_use]
 pub fn derive_auth_keypair_from_password(
-    mut password: Vec<u8>,
+    password: Vec<u8>,
     user_salt: Vec<u8>,
     kdf_memory_kib: u32,
     kdf_iterations: u32,
     kdf_parallelism: u32,
 ) -> AuthKeypairResult {
+    let mut password = Zeroizing::new(password);
     let result = mosaic_client::derive_auth_keypair_from_password(
         password.as_mut_slice(),
         &user_salt,
@@ -1853,7 +1855,6 @@ pub fn derive_auth_keypair_from_password(
         kdf_iterations,
         kdf_parallelism,
     );
-    password.zeroize();
     auth_keypair_result_from_client(result)
 }
 
@@ -1866,13 +1867,14 @@ pub fn derive_auth_keypair_from_password(
 /// returns.
 #[must_use]
 pub fn sign_auth_challenge_with_password(
-    mut password: Vec<u8>,
+    password: Vec<u8>,
     user_salt: Vec<u8>,
     kdf_memory_kib: u32,
     kdf_iterations: u32,
     kdf_parallelism: u32,
     transcript_bytes: Vec<u8>,
 ) -> BytesResult {
+    let mut password = Zeroizing::new(password);
     let result = mosaic_client::sign_auth_challenge_with_password(
         password.as_mut_slice(),
         &user_salt,
@@ -1881,7 +1883,6 @@ pub fn sign_auth_challenge_with_password(
         kdf_parallelism,
         &transcript_bytes,
     );
-    password.zeroize();
     bytes_result_from_client(result)
 }
 
@@ -1893,12 +1894,13 @@ pub fn sign_auth_challenge_with_password(
 /// amortise the KDF cost.
 #[must_use]
 pub fn get_auth_public_key_from_password(
-    mut password: Vec<u8>,
+    password: Vec<u8>,
     user_salt: Vec<u8>,
     kdf_memory_kib: u32,
     kdf_iterations: u32,
     kdf_parallelism: u32,
 ) -> BytesResult {
+    let mut password = Zeroizing::new(password);
     let result = mosaic_client::get_auth_public_key_from_password(
         password.as_mut_slice(),
         &user_salt,
@@ -1906,7 +1908,6 @@ pub fn get_auth_public_key_from_password(
         kdf_iterations,
         kdf_parallelism,
     );
-    password.zeroize();
     bytes_result_from_client(result)
 }
 
@@ -1918,10 +1919,9 @@ pub fn generate_link_secret() -> BytesResult {
 
 /// Derives the `(link_id, wrapping_key)` pair from a 32-byte share-link secret.
 #[must_use]
-pub fn derive_link_keys(mut link_secret: Vec<u8>) -> LinkKeysResult {
-    let result = link_keys_result_from_client(mosaic_client::derive_link_keys(&link_secret));
-    link_secret.zeroize();
-    result
+pub fn derive_link_keys(link_secret: Vec<u8>) -> LinkKeysResult {
+    let link_secret = Zeroizing::new(link_secret);
+    link_keys_result_from_client(mosaic_client::derive_link_keys(&link_secret))
 }
 
 /// Wraps the tier key for `epoch_handle` so it can be stored on a
@@ -1930,17 +1930,14 @@ pub fn derive_link_keys(mut link_secret: Vec<u8>) -> LinkKeysResult {
 pub fn wrap_tier_key_for_link(
     epoch_handle: u64,
     tier_byte: u8,
-    mut wrapping_key: Vec<u8>,
+    wrapping_key: Vec<u8>,
 ) -> WrappedTierKeyResult {
-    let result = wrapped_tier_key_result_from_client(
-        mosaic_client::wrap_tier_key_for_link_with_epoch_handle(
-            epoch_handle,
-            tier_byte,
-            &wrapping_key,
-        ),
-    );
-    wrapping_key.zeroize();
-    result
+    let wrapping_key = Zeroizing::new(wrapping_key);
+    wrapped_tier_key_result_from_client(mosaic_client::wrap_tier_key_for_link_with_epoch_handle(
+        epoch_handle,
+        tier_byte,
+        &wrapping_key,
+    ))
 }
 
 /// Unwraps a previously wrapped tier key from a share-link record.
@@ -1951,16 +1948,15 @@ pub fn unwrap_tier_key_from_link(
     nonce: Vec<u8>,
     encrypted_key: Vec<u8>,
     tier_byte: u8,
-    mut wrapping_key: Vec<u8>,
+    wrapping_key: Vec<u8>,
 ) -> BytesResult {
-    let result = bytes_result_from_client(mosaic_client::unwrap_tier_key_from_link_bytes(
+    let wrapping_key = Zeroizing::new(wrapping_key);
+    bytes_result_from_client(mosaic_client::unwrap_tier_key_from_link_bytes(
         &nonce,
         &encrypted_key,
         tier_byte,
         &wrapping_key,
-    ));
-    wrapping_key.zeroize();
-    result
+    ))
 }
 
 /// Seals an epoch key bundle for `recipient_pubkey` and signs it with the
@@ -1972,23 +1968,21 @@ pub fn seal_and_sign_bundle(
     recipient_pubkey: Vec<u8>,
     album_id: String,
     epoch_id: u32,
-    mut epoch_seed: Vec<u8>,
-    mut sign_secret: Vec<u8>,
+    epoch_seed: Vec<u8>,
+    sign_secret: Vec<u8>,
     sign_public: Vec<u8>,
 ) -> SealedBundleResult {
-    let result =
-        sealed_bundle_result_from_client(mosaic_client::seal_and_sign_bundle_with_identity_handle(
-            identity_handle,
-            &recipient_pubkey,
-            album_id,
-            epoch_id,
-            &epoch_seed,
-            &sign_secret,
-            &sign_public,
-        ));
-    epoch_seed.zeroize();
-    sign_secret.zeroize();
-    result
+    let epoch_seed = Zeroizing::new(epoch_seed);
+    let sign_secret = Zeroizing::new(sign_secret);
+    sealed_bundle_result_from_client(mosaic_client::seal_and_sign_bundle_with_identity_handle(
+        identity_handle,
+        &recipient_pubkey,
+        album_id,
+        epoch_id,
+        &epoch_seed,
+        &sign_secret,
+        &sign_public,
+    ))
 }
 
 /// Verifies a sealed bundle's signature and opens it for the recipient
@@ -2023,20 +2017,19 @@ pub fn verify_and_open_bundle(
 pub fn import_epoch_key_handle_from_bundle(
     account_key_handle: u64,
     epoch_id: u32,
-    mut epoch_seed: Vec<u8>,
-    mut sign_secret_seed: Vec<u8>,
+    epoch_seed: Vec<u8>,
+    sign_secret_seed: Vec<u8>,
     sign_public: Vec<u8>,
 ) -> EpochKeyHandleResult {
-    let result = epoch_result_from_client(mosaic_client::import_epoch_key_handle_from_bundle(
+    let epoch_seed = Zeroizing::new(epoch_seed);
+    let sign_secret_seed = Zeroizing::new(sign_secret_seed);
+    epoch_result_from_client(mosaic_client::import_epoch_key_handle_from_bundle(
         account_key_handle,
         epoch_id,
         &epoch_seed,
         &sign_secret_seed,
         &sign_public,
-    ));
-    epoch_seed.zeroize();
-    sign_secret_seed.zeroize();
-    result
+    ))
 }
 
 /// Atomically seals an epoch key bundle for `recipient_pubkey` using a
@@ -2060,12 +2053,12 @@ pub fn seal_bundle_with_epoch_handle(
 
 /// Encrypts album content with the content key derived from `epoch_handle`.
 #[must_use]
-pub fn encrypt_album_content(epoch_handle: u64, mut plaintext: Vec<u8>) -> EncryptedContentResult {
-    let result = encrypted_content_result_from_client(
-        mosaic_client::encrypt_album_content_with_epoch_handle(epoch_handle, &plaintext),
-    );
-    plaintext.zeroize();
-    result
+pub fn encrypt_album_content(epoch_handle: u64, plaintext: Vec<u8>) -> EncryptedContentResult {
+    let plaintext = Zeroizing::new(plaintext);
+    encrypted_content_result_from_client(mosaic_client::encrypt_album_content_with_epoch_handle(
+        epoch_handle,
+        &plaintext,
+    ))
 }
 
 /// Decrypts album content with the content key derived from `epoch_handle`.
@@ -3664,7 +3657,11 @@ fn uuid_from_string(value: &str) -> Result<mosaic_client::Uuid, u16> {
         };
         *byte = parsed;
     }
-    Ok(mosaic_client::Uuid::from_bytes(bytes))
+    let uuid = mosaic_client::Uuid::from_bytes(bytes);
+    if !uuid.is_uuid_v7() {
+        return Err(invalid_snapshot);
+    }
+    Ok(uuid)
 }
 
 fn optional_uuid_from_string(value: &str) -> Result<Option<mosaic_client::Uuid>, u16> {
