@@ -566,6 +566,7 @@ dependencies = [
  "mosaic-crypto",
  "mosaic-domain",
  "mosaic-vectors",
+ "strum",
  "wasm-bindgen",
  "zeroize",
 ]

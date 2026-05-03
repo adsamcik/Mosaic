@@ -23,6 +23,13 @@ const ENVELOPE_HEADER_BYTES = 64;
 const MANIFEST_SIGNATURE_BYTES = 64;
 const IDENTITY_PUBLIC_KEY_BYTES = 32;
 const MANIFEST_CONTEXT_BYTES = new TextEncoder().encode('Mosaic_Manifest_v1');
+const WORKER_ONLY_ERROR_CODE_START = 1000;
+const KNOWN_RUST_CLIENT_ERROR_CODES = new Set<number>(
+  Object.values(WorkerCryptoErrorCode).filter(
+    (code): code is number =>
+      typeof code === 'number' && code < WORKER_ONLY_ERROR_CODE_START,
+  ),
+);
 
 // ---------------------------------------------------------------------------
 // Lazy WASM init — single shared promise across the worker.
@@ -40,12 +47,11 @@ export function ensureRustReady(): Promise<void> {
 // Error translation
 // ---------------------------------------------------------------------------
 
-function rustCodeToWorkerCode(code: number): WorkerCryptoErrorCode {
+export function rustCodeToWorkerCode(code: number): WorkerCryptoErrorCode {
   // Numeric codes in `WorkerCryptoErrorCode` are aligned with
-  // `mosaic_client::ClientErrorCode`, so a simple cast suffices today. If
-  // future Rust additions land outside the enum, fall back to a generic
-  // poisoned-state code so callers can branch on the numeric value.
-  if (Object.values(WorkerCryptoErrorCode).includes(code)) {
+  // `mosaic_client::ClientErrorCode`. Worker-only codes remain reserved for
+  // TypeScript-originated failures and must not be accepted from Rust.
+  if (KNOWN_RUST_CLIENT_ERROR_CODES.has(code)) {
     return code as WorkerCryptoErrorCode;
   }
   return WorkerCryptoErrorCode.InternalStatePoisoned;
