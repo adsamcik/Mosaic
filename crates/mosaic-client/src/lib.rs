@@ -33,6 +33,8 @@ use zeroize::{Zeroize, Zeroizing};
 pub mod state_machine;
 pub use state_machine::*;
 
+pub use mosaic_crypto::{ShardIntegrityError, ShardSha256, verify_shard_integrity};
+
 /// Stable client error codes exported through FFI facades.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(

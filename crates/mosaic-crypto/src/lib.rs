@@ -12,6 +12,7 @@ use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey, Verifying
 use hkdf::Hkdf;
 use mosaic_domain::{SHARD_ENVELOPE_HEADER_LEN, ShardEnvelopeHeader, ShardTier};
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 mod content;
@@ -730,6 +731,71 @@ pub struct EncryptedShard {
     pub bytes: Vec<u8>,
     /// Base64url no-padding SHA-256 digest of `bytes`.
     pub sha256: String,
+}
+
+/// SHA-256 digest of a shard envelope.
+///
+/// **Hash scope.** The full envelope bytes — header (64 B) + nonce + ciphertext +
+/// 16-byte AEAD tag — exactly matching backend `X-Content-SHA256` and
+/// `tieredShards[].sha256` in the manifest (per ADR-022 §"Rules" #6).
+///
+/// **`pub [u8; 32]` field rationale.** The inner `[u8; 32]` is `pub` to allow
+/// zero-copy construction at the FFI boundary (WASM/UniFFI). FFI consumers
+/// build a `ShardSha256` from caller-supplied bytes without going through a
+/// constructor.
+///
+/// **Redaction scope.** The `Debug` impl deliberately prints
+/// `"ShardSha256(<32-byte>)"` instead of the hex digest, preventing accidental
+/// hex leakage in logs / panics / `tracing` output. **However, the redaction
+/// only protects against accidental logging.** Callers can read `.0` and
+/// print the bytes themselves; it is the caller's responsibility to redact
+/// any user-facing surface that handles a `ShardSha256` (e.g. error UI,
+/// share-link diagnostics, debug toolbars).
+///
+/// **`#[repr(transparent)]`.** Required for FFI ABI stability — the byte
+/// layout is identical to `[u8; 32]` so WASM/UniFFI bindings can read the
+/// digest directly.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct ShardSha256(pub [u8; 32]);
+
+impl core::fmt::Debug for ShardSha256 {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("ShardSha256(<32-byte>)")
+    }
+}
+
+/// Errors returned by [`verify_shard_integrity`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ShardIntegrityError {
+    /// Envelope is shorter than the canonical 64-byte header.
+    InvalidEnvelopeLength { actual: usize } = 0,
+    /// SHA-256 digest of the envelope did not match the expected digest.
+    DigestMismatch = 1,
+}
+
+impl ShardIntegrityError {
+    /// Stable numeric discriminant for FFI mapping. Append-only.
+    #[must_use]
+    pub const fn variant_discriminant(&self) -> u8 {
+        match self {
+            Self::InvalidEnvelopeLength { .. } => 0,
+            Self::DigestMismatch => 1,
+        }
+    }
+}
+
+#[cfg(test)]
+mod constant_time_audit {
+    #[test]
+    fn subtle_constant_time_eq_is_available_to_this_crate() {
+        use subtle::ConstantTimeEq as _;
+
+        let left = [0_u8; 32];
+        let right = [0_u8; 32];
+        let _ = left.ct_eq(&right);
+    }
 }
 
 /// Mosaic Argon2id profile for deriving password-rooted key material.
@@ -1573,6 +1639,46 @@ pub fn unwrap_key(
         .map_err(|_| MosaicCryptoError::AuthenticationFailed)?;
 
     Ok(Zeroizing::new(plaintext))
+}
+
+/// Verify that the SHA-256 of `envelope_bytes` equals `expected`.
+///
+/// **Hash scope.** The full envelope bytes — header (64 B) + nonce + ciphertext +
+/// 16-byte AEAD tag — exactly matching backend `X-Content-SHA256` and
+/// `tieredShards[].sha256` in the manifest (see ADR-022 §"Rules" #6).
+///
+/// **Constant time.** Uses `subtle::ConstantTimeEq` to avoid timing oracles on
+/// the comparison.
+///
+/// Unit tests cannot prove constant-time behavior: correctness-preserving
+/// mutations that replace `ct_eq` with `==` or `iter().eq()` (M1/M6 in the
+/// R-C2 plan) are known unit-test escapes. The protection layers are the
+/// `subtle::ConstantTimeEq` implementation, the pinned `subtle = "=2.6.1"`
+/// dependency, and mandatory crypto-class code review.
+///
+/// **No allocation on success.** The digest is computed via streaming SHA-256
+/// over `envelope_bytes`; no copy of the envelope is made.
+pub fn verify_shard_integrity(
+    envelope_bytes: &[u8],
+    expected: &ShardSha256,
+) -> Result<(), ShardIntegrityError> {
+    if envelope_bytes.len() < SHARD_ENVELOPE_HEADER_LEN {
+        return Err(ShardIntegrityError::InvalidEnvelopeLength {
+            actual: envelope_bytes.len(),
+        });
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(envelope_bytes);
+    let digest = hasher.finalize();
+    let mut digest_bytes = [0_u8; 32];
+    digest_bytes.copy_from_slice(&digest);
+
+    if bool::from(digest_bytes.ct_eq(&expected.0)) {
+        Ok(())
+    } else {
+        Err(ShardIntegrityError::DigestMismatch)
+    }
 }
 
 /// Returns the base64url no-padding SHA-256 digest of `bytes` as a `String`.
