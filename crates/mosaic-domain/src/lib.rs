@@ -30,52 +30,181 @@ pub const METADATA_SIDECAR_CONTEXT: &[u8] = b"Mosaic_Metadata_v1";
 /// Current canonical metadata sidecar format version.
 pub const METADATA_SIDECAR_VERSION: u8 = 1;
 
+/// Client-local plaintext sensitivity class for a sidecar tag.
+///
+/// All sidecar TLV plaintext is encrypted before server transit. This class is
+/// for client-side redaction, logging, and platform handling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidecarTagPrivacyClass {
+    SensitiveLocation,
+    SensitiveTimestamp,
+    DeviceFingerprint,
+    UserContent,
+    RenderingOnly,
+    ContainerTechnical,
+}
+
+/// Governance status for a sidecar tag number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidecarTagStatus {
+    Active,
+    ReservedNumberPending,
+}
+
+/// One entry in the canonical sidecar tag registry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidecarTagRegistryEntry {
+    tag_number: u16,
+    tag_name: &'static str,
+    status: SidecarTagStatus,
+    privacy_class: SidecarTagPrivacyClass,
+}
+impl SidecarTagRegistryEntry {
+    #[must_use]
+    pub const fn new(
+        tag_number: u16,
+        tag_name: &'static str,
+        status: SidecarTagStatus,
+        privacy_class: SidecarTagPrivacyClass,
+    ) -> Self {
+        Self {
+            tag_number,
+            tag_name,
+            status,
+            privacy_class,
+        }
+    }
+    #[must_use]
+    pub const fn tag_number(self) -> u16 {
+        self.tag_number
+    }
+    #[must_use]
+    pub const fn tag_name(self) -> &'static str {
+        self.tag_name
+    }
+    #[must_use]
+    pub const fn status(self) -> SidecarTagStatus {
+        self.status
+    }
+    #[must_use]
+    pub const fn privacy_class(self) -> SidecarTagPrivacyClass {
+        self.privacy_class
+    }
+}
+
 /// Known metadata sidecar TLV field tags.
 ///
 /// Every new `pub const` in this module must be appended to
 /// [`KNOWN_FIELD_TAGS`] and to `crates/mosaic-domain/tests/sidecar_tag_table.rs`
 /// in the same change. The lock test verifies both lists stay complete.
 pub mod metadata_field_tags {
-    /// EXIF orientation value encoded as a little-endian `u16`.
+    use super::{SidecarTagPrivacyClass, SidecarTagRegistryEntry, SidecarTagStatus};
     pub const ORIENTATION: u16 = 1;
-    /// Original device timestamp encoded as little-endian Unix epoch milliseconds `i64`.
     pub const DEVICE_TIMESTAMP_MS: u16 = 2;
-    /// Original pixel dimensions encoded as little-endian width `u32` then height `u32`.
     pub const ORIGINAL_DIMENSIONS: u16 = 3;
-    /// MIME override encoded as UTF-8 bytes.
     pub const MIME_OVERRIDE: u16 = 4;
-    /// User caption encoded as UTF-8 bytes.
     pub const CAPTION: u16 = 5;
-    /// Original filename encoded as UTF-8 bytes.
-    pub const FILENAME: u16 = 6;
-    /// Camera make encoded as UTF-8 bytes.
+    // Tag 6 is permanently reserved for the forbidden filename payload class.
+    // Do not expose a friendly public constant; production callers must not
+    // accidentally encode filenames into sidecar plaintext.
     pub const CAMERA_MAKE: u16 = 7;
-    /// Camera model encoded as UTF-8 bytes.
     pub const CAMERA_MODEL: u16 = 8;
-    /// GPS payload encoded by the client metadata layer.
     pub const GPS: u16 = 9;
-
-    /// Complete list of known allocated metadata field tag numbers.
-    ///
-    /// This list is intentionally append-only and is covered by
-    /// `sidecar_tag_table.rs` so adding a new `pub const` without updating the
-    /// registry fails CI. Tags 10-13 are reserved for R-M7 and intentionally do
-    /// not have individual constants yet.
-    pub const KNOWN_FIELD_TAGS: &[(u16, &str)] = &[
-        (ORIENTATION, "orientation"),
-        (DEVICE_TIMESTAMP_MS, "device_timestamp_ms"),
-        (ORIGINAL_DIMENSIONS, "original_dimensions"),
-        (MIME_OVERRIDE, "mime_override"),
-        (CAPTION, "caption"),
-        (FILENAME, "filename"),
-        (CAMERA_MAKE, "camera_make"),
-        (CAMERA_MODEL, "camera_model"),
-        (GPS, "gps"),
-        (10, "codec_fourcc"),
-        (11, "duration_ms"),
-        (12, "frame_rate_x100"),
-        (13, "video_orientation"),
+    pub const KNOWN_FIELD_TAGS: &[SidecarTagRegistryEntry] = &[
+        SidecarTagRegistryEntry::new(
+            ORIENTATION,
+            "orientation",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::RenderingOnly,
+        ),
+        SidecarTagRegistryEntry::new(
+            DEVICE_TIMESTAMP_MS,
+            "device_timestamp_ms",
+            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagPrivacyClass::SensitiveTimestamp,
+        ),
+        SidecarTagRegistryEntry::new(
+            ORIGINAL_DIMENSIONS,
+            "original_dimensions",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::RenderingOnly,
+        ),
+        SidecarTagRegistryEntry::new(
+            MIME_OVERRIDE,
+            "mime_override",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::ContainerTechnical,
+        ),
+        SidecarTagRegistryEntry::new(
+            CAPTION,
+            "caption",
+            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagPrivacyClass::UserContent,
+        ),
+        SidecarTagRegistryEntry::new(
+            6,
+            "filename",
+            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagPrivacyClass::UserContent,
+        ),
+        SidecarTagRegistryEntry::new(
+            CAMERA_MAKE,
+            "camera_make",
+            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagPrivacyClass::DeviceFingerprint,
+        ),
+        SidecarTagRegistryEntry::new(
+            CAMERA_MODEL,
+            "camera_model",
+            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagPrivacyClass::DeviceFingerprint,
+        ),
+        SidecarTagRegistryEntry::new(
+            GPS,
+            "gps",
+            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagPrivacyClass::SensitiveLocation,
+        ),
+        SidecarTagRegistryEntry::new(
+            10,
+            "codec_fourcc",
+            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagPrivacyClass::ContainerTechnical,
+        ),
+        SidecarTagRegistryEntry::new(
+            11,
+            "duration_ms",
+            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagPrivacyClass::ContainerTechnical,
+        ),
+        SidecarTagRegistryEntry::new(
+            12,
+            "frame_rate_x100",
+            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagPrivacyClass::ContainerTechnical,
+        ),
+        SidecarTagRegistryEntry::new(
+            13,
+            "video_orientation",
+            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagPrivacyClass::RenderingOnly,
+        ),
     ];
+    #[must_use]
+    pub fn registry_entry(tag: u16) -> Option<SidecarTagRegistryEntry> {
+        KNOWN_FIELD_TAGS
+            .iter()
+            .copied()
+            .find(|entry| entry.tag_number() == tag)
+    }
+    #[must_use]
+    pub fn status(tag: u16) -> Option<SidecarTagStatus> {
+        registry_entry(tag).map(SidecarTagRegistryEntry::status)
+    }
+    #[must_use]
+    pub fn privacy_class(tag: u16) -> Option<SidecarTagPrivacyClass> {
+        registry_entry(tag).map(SidecarTagRegistryEntry::privacy_class)
+    }
 }
 
 /// Domain-level parse and validation errors.
@@ -119,6 +248,10 @@ pub enum MetadataSidecarError {
     DuplicateFieldTag { tag: u16 },
     /// Canonical sidecar fields must be supplied in strictly ascending tag order.
     UnsortedFieldTag { previous: u16, actual: u16 },
+    /// The tag number is known but its byte layout has not been promoted.
+    ReservedTagNotPromoted { tag: u16 },
+    /// The tag number is outside the append-only sidecar registry.
+    UnknownTag { tag: u16 },
 }
 
 /// Supported shard tiers for the current MVP envelope.
@@ -179,6 +312,27 @@ impl<'a> MetadataSidecarField<'a> {
     }
 
     /// Returns the canonical field value bytes.
+    #[must_use]
+    pub const fn value(&self) -> &[u8] {
+        self.value
+    }
+}
+
+#[cfg(any(test, feature = "cross-client-vectors"))]
+pub struct RawMetadataSidecarField<'a> {
+    tag: u16,
+    value: &'a [u8],
+}
+#[cfg(any(test, feature = "cross-client-vectors"))]
+impl<'a> RawMetadataSidecarField<'a> {
+    #[must_use]
+    pub const fn new_for_test(tag: u16, value: &'a [u8]) -> Self {
+        Self { tag, value }
+    }
+    #[must_use]
+    pub const fn tag(&self) -> u16 {
+        self.tag
+    }
     #[must_use]
     pub const fn value(&self) -> &[u8] {
         self.value
@@ -387,8 +541,13 @@ impl<'a> ManifestTranscript<'a> {
 pub fn canonical_metadata_sidecar_bytes(
     sidecar: &MetadataSidecar<'_>,
 ) -> Result<Vec<u8>, MetadataSidecarError> {
+    canonical_metadata_sidecar_bytes_inner(sidecar, true)
+}
+fn canonical_metadata_sidecar_bytes_inner(
+    sidecar: &MetadataSidecar<'_>,
+    enforce_active_tags: bool,
+) -> Result<Vec<u8>, MetadataSidecarError> {
     let field_count = checked_metadata_sidecar_len("fields", sidecar.fields().len())?;
-
     let mut bytes = Vec::new();
     bytes.extend_from_slice(METADATA_SIDECAR_CONTEXT);
     bytes.push(METADATA_SIDECAR_VERSION);
@@ -396,13 +555,11 @@ pub fn canonical_metadata_sidecar_bytes(
     bytes.extend_from_slice(sidecar.photo_id());
     bytes.extend_from_slice(&sidecar.epoch_id().to_le_bytes());
     bytes.extend_from_slice(&field_count.to_le_bytes());
-
     let mut previous_tag = None;
     for field in sidecar.fields() {
         if field.tag() == 0 {
             return Err(MetadataSidecarError::ZeroFieldTag);
         }
-
         if let Some(previous) = previous_tag {
             if field.tag() <= previous {
                 if field.tag() == previous {
@@ -414,20 +571,41 @@ pub fn canonical_metadata_sidecar_bytes(
                 });
             }
         }
-
         if field.value().is_empty() {
             return Err(MetadataSidecarError::EmptyFieldValue { tag: field.tag() });
         }
-
+        if enforce_active_tags {
+            match metadata_field_tags::status(field.tag()) {
+                Some(SidecarTagStatus::Active) => {}
+                Some(SidecarTagStatus::ReservedNumberPending) => {
+                    return Err(MetadataSidecarError::ReservedTagNotPromoted { tag: field.tag() });
+                }
+                None => return Err(MetadataSidecarError::UnknownTag { tag: field.tag() }),
+            }
+        }
         let value_len = checked_metadata_sidecar_len("field_value", field.value().len())?;
         bytes.extend_from_slice(&field.tag().to_le_bytes());
         bytes.extend_from_slice(&value_len.to_le_bytes());
         bytes.extend_from_slice(field.value());
-
         previous_tag = Some(field.tag());
     }
-
     Ok(bytes)
+}
+#[cfg(any(test, feature = "cross-client-vectors"))]
+pub fn canonical_metadata_sidecar_bytes_from_raw_fields_for_test(
+    album_id: [u8; 16],
+    photo_id: [u8; 16],
+    epoch_id: u32,
+    fields: &[RawMetadataSidecarField<'_>],
+) -> Result<Vec<u8>, MetadataSidecarError> {
+    let fields: Vec<MetadataSidecarField<'_>> = fields
+        .iter()
+        .map(|field| MetadataSidecarField::new(field.tag(), field.value()))
+        .collect();
+    canonical_metadata_sidecar_bytes_inner(
+        &MetadataSidecar::new(album_id, photo_id, epoch_id, &fields),
+        false,
+    )
 }
 
 fn checked_metadata_sidecar_len(

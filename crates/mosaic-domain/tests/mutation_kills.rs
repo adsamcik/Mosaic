@@ -92,7 +92,11 @@ fn metadata_field_tags_have_fixed_protocol_values() {
     assert_eq!(metadata_field_tags::ORIGINAL_DIMENSIONS, 3);
     assert_eq!(metadata_field_tags::MIME_OVERRIDE, 4);
     assert_eq!(metadata_field_tags::CAPTION, 5);
-    assert_eq!(metadata_field_tags::FILENAME, 6);
+    assert!(
+        metadata_field_tags::KNOWN_FIELD_TAGS
+            .iter()
+            .any(|entry| entry.tag_number() == 6 && entry.tag_name() == "filename")
+    );
     assert_eq!(metadata_field_tags::CAMERA_MAKE, 7);
     assert_eq!(metadata_field_tags::CAMERA_MODEL, 8);
     assert_eq!(metadata_field_tags::GPS, 9);
@@ -181,12 +185,12 @@ fn canonical_metadata_sidecar_bytes_serialize_two_fields_in_tag_order() {
 fn canonical_metadata_sidecar_bytes_distinguishes_duplicate_and_unsorted_tags() {
     let value = [0xaa, 0xbb];
     let duplicate = [
-        MetadataSidecarField::new(2, &value),
-        MetadataSidecarField::new(2, &value),
+        MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &value),
+        MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &value),
     ];
     let unsorted = [
-        MetadataSidecarField::new(5, &value),
-        MetadataSidecarField::new(3, &value),
+        MetadataSidecarField::new(metadata_field_tags::MIME_OVERRIDE, &value),
+        MetadataSidecarField::new(metadata_field_tags::ORIGINAL_DIMENSIONS, &value),
     ];
 
     let duplicate_error = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
@@ -197,7 +201,9 @@ fn canonical_metadata_sidecar_bytes_distinguishes_duplicate_and_unsorted_tags() 
     };
     assert_eq!(
         duplicate_error,
-        MetadataSidecarError::DuplicateFieldTag { tag: 2 }
+        MetadataSidecarError::DuplicateFieldTag {
+            tag: metadata_field_tags::ORIENTATION
+        }
     );
 
     let unsorted_error = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
@@ -209,8 +215,8 @@ fn canonical_metadata_sidecar_bytes_distinguishes_duplicate_and_unsorted_tags() 
     assert_eq!(
         unsorted_error,
         MetadataSidecarError::UnsortedFieldTag {
-            previous: 5,
-            actual: 3
+            previous: metadata_field_tags::MIME_OVERRIDE,
+            actual: metadata_field_tags::ORIGINAL_DIMENSIONS
         }
     );
 }
@@ -219,7 +225,10 @@ fn canonical_metadata_sidecar_bytes_distinguishes_duplicate_and_unsorted_tags() 
 fn canonical_metadata_sidecar_bytes_rejects_zero_tag_and_empty_value() {
     let value = [0xcc];
     let zero_tag = [MetadataSidecarField::new(0, &value)];
-    let empty_value = [MetadataSidecarField::new(2, b"")];
+    let empty_value = [MetadataSidecarField::new(
+        metadata_field_tags::ORIENTATION,
+        b"",
+    )];
 
     assert_eq!(
         canonical_metadata_sidecar_bytes(&MetadataSidecar::new(ALBUM_ID, PHOTO_ID, 0, &zero_tag)),
@@ -232,7 +241,9 @@ fn canonical_metadata_sidecar_bytes_rejects_zero_tag_and_empty_value() {
             0,
             &empty_value
         )),
-        Err(MetadataSidecarError::EmptyFieldValue { tag: 2 })
+        Err(MetadataSidecarError::EmptyFieldValue {
+            tag: metadata_field_tags::ORIENTATION
+        })
     );
 }
 

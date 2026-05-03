@@ -75,6 +75,7 @@ fn expected_table() -> Vec<(&'static str, u16)> {
         ("VideoTooLargeForV1", 615),
         ("VideoSourceUnreadable", 616),
         ("VideoTierShapeRejected", 617),
+        ("MetadataSidecarReservedTagNotPromoted", 618),
         ("ClientCoreInvalidTransition", 700),
         ("ClientCoreMissingEventPayload", 701),
         ("ClientCoreRetryBudgetExhausted", 702),
@@ -299,6 +300,10 @@ fn live_table() -> Vec<(&'static str, u16)> {
             ClientErrorCode::VideoTierShapeRejected.as_u16(),
         ),
         (
+            "MetadataSidecarReservedTagNotPromoted",
+            ClientErrorCode::MetadataSidecarReservedTagNotPromoted.as_u16(),
+        ),
+        (
             "ClientCoreInvalidTransition",
             ClientErrorCode::ClientCoreInvalidTransition.as_u16(),
         ),
@@ -397,6 +402,17 @@ fn client_error_code_table_has_no_collisions() {
             "ClientErrorCode::{name} collides on numeric value {code}"
         );
         seen.push(*code);
+    }
+}
+
+#[test]
+fn client_error_code_try_from_u16_round_trips_every_variant() {
+    for variant in ClientErrorCode::iter() {
+        assert_eq!(
+            ClientErrorCode::try_from_u16(variant.as_u16()),
+            Some(variant),
+            "round-trip failed for {variant:?}"
+        );
     }
 }
 

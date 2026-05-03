@@ -9,5 +9,11 @@ publish.workspace = true
 
 [dependencies]
 
+[dev-dependencies]
+regex = "1"
+
+[features]
+cross-client-vectors = []
+
 [lints]
 workspace = true

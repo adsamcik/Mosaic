@@ -35,10 +35,17 @@ fn contains_subsequence(bytes: &[u8], needle: &[u8]) -> bool {
 #[test]
 fn metadata_sidecar_serializes_to_fixed_canonical_golden_bytes() {
     let orientation = [0x06, 0x00];
-    let filename = b"img.jpg";
+    let dimensions = {
+        let mut bytes = [0_u8; 8];
+        bytes[..4].copy_from_slice(&4032_u32.to_le_bytes());
+        bytes[4..].copy_from_slice(&3024_u32.to_le_bytes());
+        bytes
+    };
+    let mime = b"image/jpeg";
     let fields = [
         MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &orientation),
-        MetadataSidecarField::new(metadata_field_tags::FILENAME, filename),
+        MetadataSidecarField::new(metadata_field_tags::ORIGINAL_DIMENSIONS, &dimensions),
+        MetadataSidecarField::new(metadata_field_tags::MIME_OVERRIDE, mime),
     ];
     let sidecar = MetadataSidecar::new(ALBUM_ID, PHOTO_ID, 0x0102_0304, &fields);
 
@@ -47,10 +54,10 @@ fn metadata_sidecar_serializes_to_fixed_canonical_golden_bytes() {
         Err(error) => panic!("metadata sidecar should serialize: {error:?}"),
     };
 
-    assert_eq!(bytes.len(), 80);
+    assert_eq!(bytes.len(), 97);
     assert_eq!(
         hex(&bytes),
-        "4d6f736169635f4d657461646174615f763101000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f04030201020000000100020000000600060007000000696d672e6a7067"
+        "4d6f736169635f4d657461646174615f763101000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f04030201030000000100020000000600030008000000c00f0000d00b000004000a000000696d6167652f6a706567"
     );
 }
 
@@ -73,9 +80,9 @@ fn metadata_sidecar_accepts_empty_field_list_as_canonical_empty_payload() {
 #[test]
 fn metadata_sidecar_rejects_unsorted_and_duplicate_tags() {
     let orientation = [0x06, 0x00];
-    let filename = b"img.jpg";
+    let mime = b"image/jpeg";
     let unsorted = [
-        MetadataSidecarField::new(metadata_field_tags::FILENAME, filename),
+        MetadataSidecarField::new(metadata_field_tags::MIME_OVERRIDE, mime),
         MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &orientation),
     ];
     let duplicate = [
@@ -92,7 +99,7 @@ fn metadata_sidecar_rejects_unsorted_and_duplicate_tags() {
     assert_eq!(
         unsorted_error,
         MetadataSidecarError::UnsortedFieldTag {
-            previous: metadata_field_tags::FILENAME,
+            previous: metadata_field_tags::MIME_OVERRIDE,
             actual: metadata_field_tags::ORIENTATION
         }
     );
@@ -115,7 +122,10 @@ fn metadata_sidecar_rejects_unsorted_and_duplicate_tags() {
 fn metadata_sidecar_rejects_zero_tags_and_empty_field_values() {
     let value = [0x01];
     let zero_tag = [MetadataSidecarField::new(0, &value)];
-    let empty_value = [MetadataSidecarField::new(metadata_field_tags::CAPTION, &[])];
+    let empty_value = [MetadataSidecarField::new(
+        metadata_field_tags::ORIENTATION,
+        &[],
+    )];
 
     let zero_tag_error = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
         ALBUM_ID, PHOTO_ID, 1, &zero_tag,
@@ -137,17 +147,17 @@ fn metadata_sidecar_rejects_zero_tags_and_empty_field_values() {
     assert_eq!(
         empty_value_error,
         MetadataSidecarError::EmptyFieldValue {
-            tag: metadata_field_tags::CAPTION
+            tag: metadata_field_tags::ORIENTATION
         }
     );
 }
 
 #[test]
 fn manifest_transcript_binds_encrypted_opaque_sidecar_envelope_bytes_not_plaintext_sidecar() {
-    let filename = b"img.jpg";
+    let orientation = [0x06, 0x00];
     let fields = [MetadataSidecarField::new(
-        metadata_field_tags::FILENAME,
-        filename,
+        metadata_field_tags::ORIENTATION,
+        &orientation,
     )];
     let plaintext_canonical_sidecar = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
         ALBUM_ID, PHOTO_ID, 9, &fields,
@@ -180,4 +190,47 @@ fn manifest_transcript_binds_encrypted_opaque_sidecar_envelope_bytes_not_plainte
         &transcript_bytes,
         &plaintext_canonical_sidecar
     ));
+}
+
+#[test]
+fn encoder_rejects_filename_tag_6_reserved() {
+    let fields = [MetadataSidecarField::new(6, b"img.jpg")];
+    assert_eq!(
+        canonical_metadata_sidecar_bytes(&MetadataSidecar::new(ALBUM_ID, PHOTO_ID, 1, &fields)),
+        Err(MetadataSidecarError::ReservedTagNotPromoted { tag: 6 })
+    );
+}
+#[test]
+fn encoder_rejects_vendor_range_tag_4096() {
+    let fields = [MetadataSidecarField::new(4096, b"vendor")];
+    assert_eq!(
+        canonical_metadata_sidecar_bytes(&MetadataSidecar::new(ALBUM_ID, PHOTO_ID, 1, &fields)),
+        Err(MetadataSidecarError::UnknownTag { tag: 4096 })
+    );
+}
+#[test]
+fn encoder_rejects_unknown_tag_500() {
+    let fields = [MetadataSidecarField::new(500, b"unknown")];
+    assert_eq!(
+        canonical_metadata_sidecar_bytes(&MetadataSidecar::new(ALBUM_ID, PHOTO_ID, 1, &fields)),
+        Err(MetadataSidecarError::UnknownTag { tag: 500 })
+    );
+}
+#[test]
+fn encoder_accepts_active_orientation_tag_1() {
+    let orientation = 1_u16.to_le_bytes();
+    let fields = [MetadataSidecarField::new(
+        metadata_field_tags::ORIENTATION,
+        &orientation,
+    )];
+    let bytes = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
+        ALBUM_ID, PHOTO_ID, 1, &fields,
+    )) {
+        Ok(bytes) => bytes,
+        Err(error) => panic!("active orientation should serialize: {error:?}"),
+    };
+    assert_eq!(
+        &bytes[59..61],
+        &metadata_field_tags::ORIENTATION.to_le_bytes()
+    );
 }

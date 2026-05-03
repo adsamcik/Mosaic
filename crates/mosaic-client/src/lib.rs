@@ -124,6 +124,8 @@ pub enum ClientErrorCode {
     VideoSourceUnreadable = 616,
     /// Generated video tier dimensions or duration shape violate the v1 tier policy.
     VideoTierShapeRejected = 617,
+    /// A canonical sidecar field used a reserved tag before layout promotion.
+    MetadataSidecarReservedTagNotPromoted = 618,
     ClientCoreInvalidTransition = 700,
     ClientCoreMissingEventPayload = 701,
     ClientCoreRetryBudgetExhausted = 702,
@@ -217,6 +219,7 @@ impl ClientErrorCode {
             615 => Some(Self::VideoTooLargeForV1),
             616 => Some(Self::VideoSourceUnreadable),
             617 => Some(Self::VideoTierShapeRejected),
+            618 => Some(Self::MetadataSidecarReservedTagNotPromoted),
             700 => Some(Self::ClientCoreInvalidTransition),
             701 => Some(Self::ClientCoreMissingEventPayload),
             702 => Some(Self::ClientCoreRetryBudgetExhausted),

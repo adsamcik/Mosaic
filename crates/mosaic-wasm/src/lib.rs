@@ -4003,8 +4003,24 @@ fn metadata_fields_from_encoded(
     Ok(fields)
 }
 
-fn map_metadata_sidecar_error(_error: MetadataSidecarError) -> u16 {
-    mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()
+fn map_metadata_sidecar_error(error: MetadataSidecarError) -> u16 {
+    match error {
+        MetadataSidecarError::LengthTooLarge { .. } => {
+            mosaic_client::ClientErrorCode::SidecarFieldOverflow.as_u16()
+        }
+        MetadataSidecarError::ReservedTagNotPromoted { .. } => {
+            mosaic_client::ClientErrorCode::MetadataSidecarReservedTagNotPromoted.as_u16()
+        }
+        MetadataSidecarError::UnknownTag { .. } => {
+            mosaic_client::ClientErrorCode::SidecarTagUnknown.as_u16()
+        }
+        MetadataSidecarError::ZeroFieldTag
+        | MetadataSidecarError::EmptyFieldValue { .. }
+        | MetadataSidecarError::DuplicateFieldTag { .. }
+        | MetadataSidecarError::UnsortedFieldTag { .. } => {
+            mosaic_client::ClientErrorCode::MalformedSidecar.as_u16()
+        }
+    }
 }
 
 fn js_account_unlock_result_from_rust(result: AccountUnlockResult) -> JsAccountUnlockResult {
