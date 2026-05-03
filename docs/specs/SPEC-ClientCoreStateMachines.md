@@ -1,403 +1,152 @@
-# Client Core State Machines
+# SPEC: Client Core State Machines
 
 ## Status
 
-Locked at v1 for the contract layer. Implemented across:
+Locked for R-Cl1 upload state-machine DTO finalization. This SPEC is governed by ADR-011, ADR-013, ADR-018, ADR-022, and ADR-023. AlbumSync remains the legacy/R-Cl2 reducer surface in this file: existing AlbumSync behavior and tests are preserved, but the frozen AlbumSync DTO/CBOR contract is not finalized by R-Cl1.
 
-- `1aa2baa` (`build(rust): add ffi facade spike`) and `a3b0ce4`
-  (`build(rust): add client core workspace skeleton`) — workspace skeleton.
-- `d4e2ff6` (`feat(client): add client-core state reducers`) — reducer-style
-  upload/sync state machines.
-- `eeb9697` (`feat(ffi): expose client-core state DTO adapters`) — UniFFI/WASM
-  DTO adapters for the reducer API.
-- `50cb647` (`test(client-core): add state machine contract vectors`) and
-  `730d1cb` (`test(client-core): add public-API, error-mapping, and crafted-snapshot
-  fixtures`) — contract vectors and snapshot regression coverage.
-- `77559f7` (`fix(client-core): align FFI adapters with reducer API`) and
-  `0fd7859` (`test(ffi): harden client-core snapshot regressions`) — FFI alignment.
-- `407c216` (`fix(rust/ffi): strict snapshot enum decoding; metadata length cap;
-  clamp-as-error (L1, L2, L4)`) — late-v1 snapshot hardening.
+## Scope and zero-knowledge invariant
 
-The full Rust ownership of upload transport, sync engine, and Android
-WorkManager remain platform-side per the original goal.
+The upload reducer is a pure client-side state machine. It receives opaque UUIDv7 identifiers, shard commitments, retry inputs, sync outcomes, and effect IDs from adapters. It never reads clocks, randomness, files, HTTP, media bytes, plaintext metadata, keys, captions, EXIF, GPS, filenames, URIs, or device metadata. Server-visible data remains encrypted/opaque; `sha256` values are commitments over encrypted envelope bytes.
 
-## Goal
+## Upload job snapshot: frozen canonical CBOR v1
 
-Add a Rust-native, deterministic upload/sync orchestration slice for the
-Android manual upload MVP without moving platform transport, storage, media IO,
-or background execution into Rust.
+`UploadJobSnapshot` is persisted as canonical CBOR linked to ADR-023 and `docs/specs/SPEC-ClientCoreSnapshotSchema.md`. Top-level map keys are integer-only, sorted, exact, and append-only. R-Cl1 v1 decoders reject unknown/missing keys, non-canonical order, text values, string keys, all CBOR tags, floats, invalid UUIDv7 bytes, invalid phase numerics, retry bound violations, duplicate shard coordinates, zero-length shard refs, and all-zero SHA-256 commitments. Snapshot bytes are capped before decode for a 10,000-shard upper bound.
 
-The slice centralizes upload lifecycle state, keeps pending uploads visible
-until sync confirmation, deduplicates album sync requests, survives retries and
-restarts through persisted snapshots, and exposes a small FFI-friendly API for
-Android and web adapters.
+| Key | Field | Type | Normative rules |
+|---:|---|---|---|
+| 0 | `schema_version` | `u16` | Must be `1`; newer versions are rejected. |
+| 1 | `job_id` | UUIDv7 bytes | Client-generated opaque upload job id; debug-redacted. |
+| 2 | `album_id` | UUIDv7 bytes | Opaque album id; no plaintext metadata. |
+| 3 | `phase` | `u8` | Must match `UploadJobPhase` table below. |
+| 4 | `retry_count` | `u8` | `<= max_retry_count`; resets to `0` on forward progress. |
+| 5 | `max_retry_count` | `u8` | `<= MAX_RETRY_COUNT_LIMIT (64)`. |
+| 6 | `next_retry_not_before_ms` | `null` or `i64` | Absolute adapter-clock gate; reducer does not read time. |
+| 7 | `idempotency_key` | UUIDv7 bytes | ADR-022 manifest idempotency key; the backend idempotency window is 30 days and adapters must treat expiry as `IdempotencyExpired`. |
+| 8 | `tiered_shards` | array of shard maps | At most 10,000; unique `(tier, shard_index)`. |
+| 9 | `shard_set_hash` | `null` or 32 bytes | Commitment for ADR-022 manifest recovery; debug-redacted. |
+| 10 | `snapshot_revision` | `u64` | Increments for non-idempotent accepted events only. |
+| 11 | `last_acknowledged_effect_id` | `null` or UUIDv7 bytes | Last host-acknowledged effect id; informational and never used for replay dedup. |
+| 12 | `last_applied_event_id` | `null` or UUIDv7 bytes | Crash-replay idempotency marker for phase-changing events. |
+| 13 | `failure_code` | `null` or `u16` | Persisted `ClientErrorCode` cause for `Failed`/`Cancelled`; canonical source of failure cause. |
 
-Out of scope for this phase:
+`asset_id` is intentionally not persisted in the frozen v1 snapshot. ADR-022 recovery gets `asset_id` from the event/effect boundary (`ManifestOutcomeUnknown` -> `RecoverManifestThroughSync`) so the persisted key set remains append-only. R-Cl1 adds keys 12 and 13 in the ADR-023 reserved v1 growth range; existing keys 0..=11 keep their numeric meanings.
 
-- Android manual upload UI or WorkManager implementation.
-- Full media generation in Rust.
-- Full sync/download engine rewrite.
-- Backend contract changes unless Phase B explicitly proves a gap.
+### UploadShardRef CBOR map
 
-## Current inputs
+Nested shard maps contain exactly integer keys `0..=6` in ascending order.
 
-- Rust client core is currently crypto/handle oriented.
-- UniFFI exports stable records and numeric error codes for Android.
-- Web upload orchestration is spread across upload queue handlers, manifest
-  finalization, and sync callbacks.
-- Backend manifest creation atomically links pending shards to a manifest and
-  activates them, but a transport failure after the request is sent leaves the
-  client unsure whether manifest creation committed.
-- Android shell already separates server authentication, crypto unlock state,
-  privacy-safe queued records, and the Rust account bridge seam.
+| Key | Field | Type | Normative rules |
+|---:|---|---|---|
+| 0 | `tier` | `u8` | `1=thumb`, `2=preview`, `3=original`. |
+| 1 | `shard_index` | `u32` | Unique with tier within a snapshot. |
+| 2 | `shard_id` | UUIDv7 bytes | Client-generated immutable shard storage id. |
+| 3 | `sha256` | 32 bytes | Non-zero SHA-256 over encrypted envelope bytes. |
+| 4 | `content_length` | `u64` | Must be >0. |
+| 5 | `envelope_version` | `u8` | Must be `3` or `4`; values cite ADR-013 envelope-version governance. |
+| 6 | `uploaded` | bool | Only mutable shard field; may transition `false -> true`. |
 
-## Architecture
+Upsert immutability: after a shard coordinate exists, `shard_id`, `sha256`, `content_length`, and `envelope_version` must not change. The only allowed mutation is `uploaded: false -> true` after `ShardUploaded`.
 
-Implement pure reducer-style state machines in `mosaic-client`. Rust owns state
-enums, transition validation, emitted effects, retry/cancel semantics, and
-persistence-safe snapshots. Platform adapters own media preparation, Tus
-transport, backend HTTP, local DB writes, timers, background execution, and
-app-private staging references.
+## Upload phases
 
-This keeps the core deterministic, testable, and FFI-safe. Snapshots must never
-contain raw keys, passwords, plaintext media, plaintext metadata, or raw picker
-URIs.
+`UploadJobPhase` is `#[repr(u8)]` and append-only.
 
-## Upload job machine
+| Value | Phase | Meaning |
+|---:|---|---|
+| 0 | `Queued` | Job is created but no work effect emitted. |
+| 1 | `AwaitingPreparedMedia` | Waiting for media/tier planning. |
+| 2 | `AwaitingEpochHandle` | Waiting for an epoch/tier-key handle. |
+| 3 | `EncryptingShard` | Adapter should encrypt next unuploaded shard. |
+| 4 | `CreatingShardUpload` | Adapter should create/resume Tus upload for a shard. |
+| 5 | `UploadingShard` | Adapter should upload encrypted shard bytes. |
+| 6 | `CreatingManifest` | Adapter should POST ADR-022 manifest with idempotency key. |
+| 7 | `ManifestCommitUnknown` | Manifest POST outcome is unknown; recover via sync. |
+| 8 | `AwaitingSyncConfirmation` | Waiting for album sync confirmation. |
+| 9 | `RetryWaiting` | Timer gate before retrying a caller-specified target phase. |
+| 10 | `Confirmed` | Terminal success. |
+| 11 | `Cancelled` | Terminal cancellation. |
+| 12 | `Failed` | Terminal failure. |
 
-One machine exists per local upload job.
+## Upload event taxonomy
 
-Suggested phases:
+Every event carries a UUIDv7 `effect_id`. If a non-`EffectAck` incoming event's `effect_id == snapshot.last_applied_event_id`, the reducer returns `{ next_snapshot: snapshot, effects: [] }` with no revision bump. This is the crash replay idempotency rule for dropped acknowledgements. `EffectAck` updates only `last_acknowledged_effect_id` and cannot poison replay dedup.
 
-| Phase | Meaning |
-| --- | --- |
-| `Queued` | Job exists but no irreversible work has started. |
-| `AwaitingPreparedMedia` | Adapter must inspect/strip/plan media and return shard plan. |
-| `AwaitingEpochHandle` | Adapter must provide an open epoch handle for encryption. |
-| `EncryptingShard` | Adapter/Rust crypto is encrypting the next planned shard. |
-| `CreatingShardUpload` | Adapter must initialize server-side Tus upload for a shard. |
-| `UploadingShard` | Adapter must upload encrypted shard bytes. |
-| `CreatingManifest` | Adapter must post the encrypted manifest and shard refs. |
-| `ManifestCommitUnknown` | Manifest request outcome is unknown; recover through sync. |
-| `AwaitingSyncConfirmation` | Manifest was accepted; wait until album sync confirms it. |
-| `RetryWaiting` | Retryable failure is waiting for adapter-owned backoff time. |
-| `Confirmed` | Sync observed the uploaded asset. |
-| `Cancelled` | Job was cancelled before an irreversible commit. |
-| `Failed` | Non-retryable failure or retry budget exhausted. |
+| Event | Fields beyond `effect_id` | Valid source phases | Result/effects |
+|---|---|---|---|
+| `StartRequested` | none | `Queued` | `AwaitingPreparedMedia`; `PrepareMedia`. |
+| `MediaPrepared` | `tiered_shards`, `shard_set_hash` | `AwaitingPreparedMedia` | Stores immutable shard refs; `AwaitingEpochHandle`; `AcquireEpochHandle`. |
+| `EpochHandleAcquired` | none | `AwaitingEpochHandle` | `EncryptingShard`; `EncryptShard` for first unuploaded shard; retry reset. |
+| `ShardEncrypted` | `shard` | `EncryptingShard` | Validates immutable ref; `CreatingShardUpload`; `CreateShardUpload`. |
+| `ShardUploadCreated` | `shard` | `CreatingShardUpload` | Validates immutable ref; `UploadingShard`; `UploadShard`. |
+| `ShardUploaded` | `shard` | `UploadingShard` | Marks uploaded; next `EncryptShard` or `CreatingManifest` + `CreateManifest`; retry reset. |
+| `ManifestCreated` | none | `CreatingManifest` | `AwaitingSyncConfirmation`; `AwaitSyncConfirmation`. |
+| `ManifestOutcomeUnknown` | `asset_id`, `since_metadata_version` | `CreatingManifest`, `ManifestCommitUnknown` | `ManifestCommitUnknown`; `RecoverManifestThroughSync`. |
+| `ManifestRecoveryResolved` | `outcome`, `now_ms`, `base_backoff_ms`, `server_retry_after_ms` | `ManifestCommitUnknown` | See recovery table. |
+| `SyncConfirmed` | none | `AwaitingSyncConfirmation`, `ManifestCommitUnknown` | `Confirmed`; no effects; retry reset. |
+| `EffectAck` | none | any valid snapshot | Records `last_acknowledged_effect_id`/revision only; does not mutate `last_applied_event_id`. |
+| `RetryableFailure` | `code`, `now_ms`, `base_backoff_ms`, `server_retry_after_ms` | retryable active phases | `RetryWaiting`; `ScheduleRetry`, or `Failed` when exhausted. |
+| `RetryTimerElapsed` | `target_phase` | `RetryWaiting` | Resumes exactly non-terminal `target_phase`; terminal targets (`Confirmed`, `Cancelled`, `Failed`) are invalid transitions. |
+| `CancelRequested` | none | non-terminal | `Cancelled`; `CleanupStaging(UserCancelled)`. |
+| `AlbumDeleted` | none | non-terminal | `Cancelled`; `CleanupStaging(AlbumDeleted)` per ADR-011. |
+| `NonRetryableFailure` | `code` | non-terminal | `Failed`; `CleanupStaging(Failed)`. |
+| `IdempotencyExpired` | none | non-terminal | `Failed`; `CleanupStaging(Failed)`. |
 
-Happy path:
+## Upload effect taxonomy
 
-```text
-Queued
-  -> AwaitingPreparedMedia
-  -> AwaitingEpochHandle
-  -> EncryptingShard
-  -> CreatingShardUpload
-  -> UploadingShard
-  -> CreatingManifest
-  -> AwaitingSyncConfirmation
-  -> Confirmed
-```
+Every effect carries the deterministic event `effect_id` that caused it.
 
-Retryable failures move to `RetryWaiting`, then back to the previous actionable
-phase. Once a manifest request may have committed, cancellation is no longer a
-hard cancel: the machine moves to `ManifestCommitUnknown` and requires sync
-recovery.
+| Effect | Fields | Adapter obligation |
+|---|---|---|
+| `PrepareMedia` | `effect_id` | Generate encrypted-media tier plan without leaking plaintext metadata. |
+| `AcquireEpochHandle` | `effect_id` | Acquire client-local epoch/tier-key handle. |
+| `EncryptShard` | `effect_id`, `tier`, `shard_index` | Encrypt the selected shard client-side. |
+| `CreateShardUpload` | `effect_id`, `shard` | Create/resume upload using immutable shard id. |
+| `UploadShard` | `effect_id`, `shard` | Upload encrypted bytes only. |
+| `CreateManifest` | `effect_id`, `idempotency_key`, `tiered_shards`, `shard_set_hash` | POST ADR-022 manifest with deterministic idempotency; telemetry/error codes cite ADR-018. |
+| `AwaitSyncConfirmation` | `effect_id` | Trigger/wait for sync confirmation. |
+| `RecoverManifestThroughSync` | `effect_id`, `asset_id`, `since_metadata_version`, `shard_set_hash` | Scan sync results per ADR-022 recovery law. |
+| `ScheduleRetry` | `effect_id`, `attempt`, `not_before_ms`, `target_phase` | Persist timer and later emit `RetryTimerElapsed { target_phase }`. |
+| `CleanupStaging` | `effect_id`, `reason` | Delete local staging state; never touch committed encrypted blobs. |
 
-## Album sync coordinator
+## Backoff law
 
-One machine exists per album.
-
-Suggested phases:
-
-| Phase | Meaning |
-| --- | --- |
-| `Idle` | No sync is active. |
-| `FetchingPage` | Adapter must fetch the next sync page. |
-| `ApplyingPage` | Adapter must decrypt/apply the current page. |
-| `RetryWaiting` | Retryable sync failure is waiting for backoff time. |
-| `Completed` | Current sync cycle is done. |
-| `Cancelled` | Sync was cancelled before completion. |
-| `Failed` | Non-retryable failure or retry budget exhausted. |
-
-If a sync request arrives while the same album is active, the machine should
-dedupe it and record a rerun request. After the active cycle completes, it emits
-one more fetch effect rather than starting parallel duplicate syncs.
-
-## Native Rust API shape
-
-Recommended module:
+The reducer never reads a clock. Events supply `now_ms` and adapter/server retry hints.
 
 ```text
-crates/mosaic-client/src/state_machine.rs
+computed = base_backoff_ms.saturating_mul(2u64.saturating_pow(attempt))
+delay = max(server_retry_after_ms.unwrap_or(0), computed).clamp(1_000, 300_000)
+not_before_ms = now_ms + delay
 ```
 
-Recommended public types:
+Per ADR-018, retry/failure telemetry uses stable `ClientErrorCode` values. `attempt` in `ScheduleRetry` is the retry count before incrementing the persisted snapshot. Retry budget is capped by `MAX_RETRY_COUNT_LIMIT = 64`. Forward progress (`MediaPrepared`, `EpochHandleAcquired`, shard progress, manifest success, sync confirmation, recovery match) resets retry fields.
 
-```rust
-pub struct UploadJobSnapshot { /* persistence-safe fields */ }
-pub enum UploadJobPhase { /* phases above */ }
-pub enum UploadJobEffect { /* adapter work requests */ }
-pub enum UploadJobEvent { /* adapter completions/failures */ }
-pub struct UploadJobTransition { /* next snapshot + effects */ }
+Because the frozen snapshot has no retry-target key, `RetryTimerElapsed` carries `target_phase`. Adapters must persist the scheduled `target_phase` alongside the timer/effect journal and replay it into the event. The reducer must not infer manifest retry from shard phases and must not jump from shard phases to `CreatingManifest` unless `target_phase == CreatingManifest`.
 
-pub struct AlbumSyncSnapshot { /* persistence-safe fields */ }
-pub enum AlbumSyncPhase { /* phases above */ }
-pub enum AlbumSyncEffect { /* adapter work requests */ }
-pub enum AlbumSyncEvent { /* adapter completions/failures */ }
-pub struct AlbumSyncTransition { /* next snapshot + effects */ }
-```
+## Manifest-unknown recovery table (ADR-022)
 
-Recommended functions:
+| Sync/recovery outcome | Required comparison | Reducer result |
+|---|---|---|
+| `Match` | `asset_id` and `shard_set_hash` match the committed sync result | `Confirmed`; no cleanup. |
+| `ShardSetConflict` | `asset_id` matches but shard-set commitment differs | `Failed`; `CleanupStaging(Failed)`; `failure_code = ManifestSetConflict`; cleanup reason remains presentation-only. |
+| `NotFoundTimedOut` | No matching sync result before adapter timeout | `RetryWaiting` + `ScheduleRetry { target_phase: CreatingManifest }` while budget remains; exhausted budget fails. |
+| `IdempotencyExpired` | Backend idempotency window expired | `Failed`; `CleanupStaging(Failed)`; `failure_code = IdempotencyExpired`; cleanup reason remains presentation-only. |
 
-```rust
-pub fn new_upload_job(request: UploadJobRequest) -> Result<UploadJobSnapshot, ClientError>;
-pub fn advance_upload_job(
-    snapshot: &UploadJobSnapshot,
-    event: UploadJobEvent,
-) -> Result<UploadJobTransition, ClientError>;
+`RecoverManifestThroughSync` includes `asset_id`, `since_metadata_version`, and `shard_set_hash` so ADR-022 recovery can query only sync deltas needed to classify the outcome. `asset_id` is event/effect scoped and not persisted in snapshot v1. ADR-022 idempotency records expire after 30 days; expiry is represented by persisted `failure_code = IdempotencyExpired`.
 
-pub fn new_album_sync(request: AlbumSyncRequest) -> Result<AlbumSyncSnapshot, ClientError>;
-pub fn advance_album_sync(
-    snapshot: &AlbumSyncSnapshot,
-    event: AlbumSyncEvent,
-) -> Result<AlbumSyncTransition, ClientError>;
-```
+## ADR-011 album deletion interaction
 
-Pure functions are preferred because they are easy to persist, export through
-UniFFI/WASM, and test without platform services.
+`AlbumDeleted` during any non-terminal upload phase transitions to `Cancelled` and emits `CleanupStaging { reason: AlbumDeleted }`. Adapters must not retry manifest commits after this event. This applies especially to `EncryptingShard`, `UploadingShard`, `CreatingManifest`, `ManifestCommitUnknown`, and `AwaitingSyncConfirmation`.
 
-### Phase B reducer contract
+## AlbumSync status
 
-The contract/vector tests define the minimal public DTO shape Phase B adapters
-can rely on. Implementations may add fields, but these fields and variants must
-remain stable:
-
-- `UploadJobRequest { job_id, album_id, local_asset_id, retry_budget }`
-- `UploadJobSnapshot` with persistence-safe fields:
-  - `job_id`, `album_id`, `local_asset_id`
-  - `phase`
-  - `retry_budget`, `retry_count`, `retry_target_phase`
-  - `last_error_code`, `last_error_stage`
-  - `epoch_id`
-  - `planned_shard_count`, `current_shard_index`,
-    `completed_shard_count`
-  - `manifest_id`, `manifest_version`
-  - `confirmed_remote_asset_id`
-- `UploadJobEvent` variants:
-  - `StartRequested`
-  - `ResumeRequested`
-  - `PreparedMedia { planned_shard_count }`
-  - `EpochHandleReady { epoch_id }`
-  - `ShardEncrypted { tier, index, encrypted_sha256, encrypted_size_bytes }`
-  - `ShardUploadCreated { tier, index, upload_id }`
-  - `ShardUploaded { tier, index, shard_id, encrypted_sha256 }`
-  - `ManifestCreated { manifest_id, version }`
-  - `ManifestOutcomeUnknown { error_code }`
-  - `SyncConfirmed { local_asset_id, remote_asset_id }`
-  - `RetryableFailure { stage, code, retry_after_ms }`
-  - `RetryTimerElapsed`
-  - `CancelRequested`
-- `UploadJobEffect` variants:
-  - `PrepareMedia { job_id, album_id, local_asset_id }`
-  - `OpenEpochHandle { job_id, album_id }`
-  - `EncryptShard { job_id, epoch_id, tier, index }`
-  - `CreateShardUpload { job_id, tier, index, encrypted_sha256 }`
-  - `UploadShard { job_id, tier, index, upload_id }`
-  - `CreateManifest { job_id, album_id, local_asset_id,
-    completed_shard_count }`
-  - `RequestSyncConfirmation { album_id, local_asset_id }`
-  - `RecoverManifestBySync { album_id, local_asset_id }`
-  - `ScheduleRetry { job_id, retry_count, target_phase, after_ms }`
-
-Upload retry budget is the number of retry timers the reducer may schedule.
-For a budget of `2`, the first two retryable failures schedule retries and the
-third retryable failure transitions to `Failed` without a third timer.
-
-`ResumeRequested` re-emits the next missing actionable effect for the current
-snapshot without replaying completed shard work. If shard `0` is already marked
-complete in the snapshot, recovery must continue at shard `1` and must not
-request encryption, upload creation, or upload bytes for shard `0`.
-
-Manifest recovery is keyed by `local_asset_id`. `SyncConfirmed` only confirms a
-job in `ManifestCommitUnknown` or `AwaitingSyncConfirmation` when its
-`local_asset_id` matches the upload snapshot.
-
-- `AlbumSyncRequest { album_id, initial_cursor, retry_budget }`
-- `AlbumSyncSnapshot` with persistence-safe fields:
-  - `album_id`, `phase`, `cursor`, `retry_budget`, `retry_count`
-  - `last_error_code`, `last_error_stage`
-  - `rerun_requested`
-- `AlbumSyncEvent` variants:
-  - `StartRequested`
-  - `PageFetched { requested_cursor, next_cursor, item_count, has_more }`
-  - `PageApplied { applied_cursor }`
-  - `RetryableFailure { stage, code, retry_after_ms }`
-  - `RetryTimerElapsed`
-  - `CancelRequested`
-- `AlbumSyncEffect` variants:
-  - `FetchPage { album_id, cursor }`
-  - `ApplyPage { album_id, next_cursor, item_count, has_more }`
-  - `ScheduleRetry { album_id, retry_count, target_phase, after_ms }`
-
-A duplicate `StartRequested` for the same album while a sync is active must not
-emit another `FetchPage`. It sets one sticky rerun flag; when the active cycle
-finishes, the reducer emits exactly one fresh `FetchPage` and clears the flag.
-
-When `has_more` is true, a fetched page must advance from
-`requested_cursor` to a different `next_cursor`. A non-advancing page returns
-the stable `ClientErrorCode::SyncPageDidNotAdvance` error instead of spinning.
-
-The existing media adapter uses `ClientErrorCode` values in the `600..=606`
-range. Client-core orchestration errors should use the next stable block
-(for example `700+`) while preserving variant names such as
-`SyncPageDidNotAdvance`.
-
-## FFI boundary
-
-The first FFI surface should be DTO-only:
-
-- `client_core_state_machine_snapshot() -> String`
-- upload/sync init functions
-- upload/sync advance functions
-- record/enum DTOs only
-
-Rules:
-
-- Persisted snapshots contain no raw handles.
-- Ephemeral effects/events may reference account or epoch handles only when the
-  adapter is actively executing crypto work.
-- Adapter-private Tus resume tokens stay in platform storage unless a later
-  threat model proves they are safe to persist in Rust snapshots.
-- Raw file paths, picker URIs, and plaintext media bytes stay outside Rust
-  state snapshots.
-
-## Error, cancellation, and retry model
-
-Reserve stable client-core orchestration error codes in a block that does not
-overlap existing media-adapter codes, for example in the `700+` range:
-
-- invalid state transition
-- missing required event payload
-- retry budget exhausted
-- sync page did not advance
-- manifest outcome unknown
-- snapshot version unsupported
-
-`CancelRequested` is an explicit event. If no irreversible side effect has
-committed, it transitions to `Cancelled`. If manifest creation may already have
-committed, cancellation transitions to `ManifestCommitUnknown` so sync recovery
-can confirm or fail the job.
-
-Backoff timing is adapter-driven, but the machine owns retry shape:
-
-- retry count
-- next retry timestamp
-- last error code
-- last error stage
-
-## Idempotency and recovery
-
-Shard upload is safe to retry when the snapshot already records the encrypted
-shard hash, server shard id, and completed upload marker. The machine must not
-re-encrypt or re-upload a shard already marked uploaded.
-
-Manifest creation is atomic but not safely idempotent when transport outcome is
-unknown:
-
-- if a success response is received, persist manifest receipt and move to
-  `AwaitingSyncConfirmation`;
-- if the request was definitely not sent, retry;
-- if the outcome is unknown, move to `ManifestCommitUnknown` and recover through
-  album sync before any retry.
-
-Recovery confirmation should use the locally stable `assetId` embedded in the
-encrypted manifest metadata. When sync decrypts a manifest whose `assetId`
-matches the local upload id, the job is `Confirmed`.
-
-## Persistence model
-
-Persist two records separately:
-
-1. Platform queue record, privacy-safe and platform-owned.
-2. Rust machine snapshot, persistence-safe and schema-versioned.
-
-Snapshot fields may include:
-
-- schema version
-- upload/job id
-- album id
-- epoch id
-- phase
-- planned shard slots
-- completed shard refs `{ tier, index, shard_id, sha256 }`
-- manifest receipt if known `{ manifest_id, version }`
-- retry metadata
-- sync confirmation metadata
-
-Snapshot fields must not include:
-
-- raw handles
-- plaintext media
-- plaintext metadata
-- passwords
-- raw content or file URIs
-
-## Adapter mapping
-
-Android:
-
-- `MediaPort` executes media preparation effects.
-- Future network/worker layer executes shard init/upload, manifest POST, and
-  sync GET effects.
-- Privacy-safe queue records map to machine phases:
-  - `PENDING`: `Queued`, `AwaitingPreparedMedia`, or `AwaitingEpochHandle`
-  - `RUNNING`: active crypto/network phases
-  - `RETRY_WAITING`: `RetryWaiting`
-  - `FAILED`: `Failed` or `ManifestCommitUnknown`
-  - `COMPLETED`: `Confirmed`
-
-Web:
-
-- upload handlers execute media preparation and encrypted upload effects.
-- manifest service executes manifest creation effects.
-- sync engine executes sync fetch/apply effects.
-- pending UI should remain visible until `Confirmed`, not merely until upload
-  bytes finish.
-
-## Phase B implementation workstreams
-
-1. Rust core:
-   - add `state_machine.rs`;
-   - define snapshots, phases, effects, and events;
-   - add reducer tests.
-2. Android bridge:
-   - export DTOs through UniFFI;
-   - map generated bindings into Kotlin shell types;
-   - integrate with privacy-safe queue records.
-3. Web adapter alignment:
-   - map current upload queue, manifest service, and sync callbacks onto the new
-     machine;
-   - ensure pending photos survive until confirmation.
-4. Recovery hardening:
-   - implement `ManifestCommitUnknown` recovery through sync confirmation;
-   - validate per-album sync dedupe.
+AlbumSync legacy reducer behavior remains covered by `client_core_state_machines`, `state_machine_core`, `state_machine_crafted_snapshots`, `public_api_smoke`, and `mutation_kills`. R-Cl1 does not freeze AlbumSync CBOR or DTO field layout; that remains R-Cl2. R-Cl2 sync state-machine finalization is independent and must not reinterpret the upload CBOR keys added here. No R-Cl1 change may remove existing AlbumSync retry, rerun, cancel, page-apply, or failure coverage.
 
 ## Verification plan
 
-Rust reducer tests:
+| Test file | Required coverage |
+|---|---|
+| `upload_state_machine_locked.rs` | Phase numerics, golden canonical CBOR, c2/c3 byte regression, strict CBOR rejection, backoff table, ADR-022 recovery table, ADR-011 cleanup, effect-id idempotency, EffectAck replay-dedup split, failure_code persistence. |
+| `upload_state_machine_replay.rs` | Encode/decode post-state then re-apply same event/effect id and assert no effects/no revision bump. |
+| Existing `mosaic-client` tests | Compile against R-Cl1 DTOs and preserve AlbumSync behavior. |
+| Architecture script | Rust boundary remains clean and no forbidden cross-crate dependency is introduced. |
 
-- happy-path upload progression;
-- retry progression;
-- cancellation before finalize;
-- manifest-unknown recovery path;
-- sync request dedupe;
-- snapshot serialization contains no secret/plaintext fields.
-
-Phase B validation:
-
-- `cargo fmt --all --check`
-- `cargo test -p mosaic-client --locked`
-- if UniFFI changes: `cargo test -p mosaic-uniffi --locked`
-- web typecheck and focused upload/sync tests after web adapter work
-- Android shell tests after Kotlin bridge work

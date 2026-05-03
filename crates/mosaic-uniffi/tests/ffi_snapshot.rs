@@ -6,9 +6,9 @@ use mosaic_domain::{ShardEnvelopeHeader, ShardTier};
 use mosaic_uniffi::{
     AccountUnlockRequest, ClientCoreAlbumSyncEffect, ClientCoreAlbumSyncEvent,
     ClientCoreAlbumSyncRequest, ClientCoreAlbumSyncResult, ClientCoreAlbumSyncSnapshot,
-    ClientCoreAlbumSyncTransition, ClientCoreAlbumSyncTransitionResult, ClientCoreManifestReceipt,
-    ClientCoreUploadJobEffect, ClientCoreUploadJobEvent, ClientCoreUploadJobRequest,
-    ClientCoreUploadJobResult, ClientCoreUploadJobSnapshot, ClientCoreUploadJobTransition,
+    ClientCoreAlbumSyncTransition, ClientCoreAlbumSyncTransitionResult, ClientCoreUploadJobEffect,
+    ClientCoreUploadJobEvent, ClientCoreUploadJobRequest, ClientCoreUploadJobResult,
+    ClientCoreUploadJobSnapshot, ClientCoreUploadJobTransition,
     ClientCoreUploadJobTransitionResult, ClientCoreUploadShardRef, account_key_handle_is_open,
     advance_album_sync, advance_upload_job, android_progress_probe,
     canonical_media_metadata_sidecar_bytes, canonical_metadata_sidecar_bytes,
@@ -32,6 +32,13 @@ const ACCOUNT_SALT: [u8; 16] = [
     0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
 ];
 const MAX_PROGRESS_EVENTS: u32 = 10_000;
+const JOB_ID: &str = "018f0000-0000-7000-8000-000000000001";
+const ALBUM_ID: &str = "018f0000-0000-7000-8000-000000000002";
+const ASSET_ID: &str = "018f0000-0000-7000-8000-000000000003";
+const IDEMPOTENCY_KEY: &str = "018f0000-0000-7000-8000-000000000004";
+const EFFECT_ID: &str = "018f0000-0000-7000-8000-000000000005";
+const SHARD_ID: &str = "018f0000-0000-7000-8000-000000000006";
+
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 
 /// Late-v1 protocol freeze lock: the UniFFI API snapshot string is part of the
@@ -110,56 +117,12 @@ fn uniffi_facade_exposes_client_core_state_machine_surface() {
 
 #[test]
 fn uniffi_client_core_dtos_keep_persisted_records_privacy_safe() {
-    let upload_snapshot = ClientCoreUploadJobSnapshot {
-        schema_version: 1,
-        job_id: "job-local-123".to_owned(),
-        album_id: "album-local-456".to_owned(),
-        asset_id: "asset-local-789".to_owned(),
-        epoch_id: 7,
-        phase: "AwaitingSyncConfirmation".to_owned(),
-        active_tier: 2,
-        active_shard_index: 3,
-        completed_shards: vec![ClientCoreUploadShardRef {
-            tier: 2,
-            shard_index: 3,
-            shard_id: "shard-ref-3".to_owned(),
-            sha256: "sha256-safe-digest".to_owned(),
-            uploaded: true,
-        }],
-        has_manifest_receipt: true,
-        manifest_receipt: ClientCoreManifestReceipt {
-            manifest_id: "manifest-safe-id".to_owned(),
-            manifest_version: 4,
-        },
-        retry_count: 1,
-        max_retry_count: 5,
-        next_retry_unix_ms: 1_700_000_000_000,
-        last_error_code: 0,
-        last_error_stage: String::new(),
-        sync_confirmed: false,
-        updated_at_unix_ms: 1_700_000_000_001,
-    };
+    let upload_snapshot = upload_snapshot("AwaitingSyncConfirmation");
     let upload_transition = ClientCoreUploadJobTransition {
-        snapshot: upload_snapshot.clone(),
-        effects: vec![ClientCoreUploadJobEffect {
-            kind: "CreateManifest".to_owned(),
-            tier: 0,
-            shard_index: 0,
-        }],
+        next_snapshot: upload_snapshot.clone(),
+        effects: vec![upload_effect("CreateManifest")],
     };
-    let upload_event = ClientCoreUploadJobEvent {
-        kind: "ShardUploaded".to_owned(),
-        epoch_id: 7,
-        tier: 2,
-        shard_index: 3,
-        shard_id: "shard-ref-3".to_owned(),
-        sha256: "sha256-safe-digest".to_owned(),
-        manifest_id: String::new(),
-        manifest_version: 0,
-        observed_asset_id: String::new(),
-        retry_after_unix_ms: 0,
-        error_code: 0,
-    };
+    let upload_event = upload_event("ShardUploaded", 0, 3, 0);
     let sync_snapshot = ClientCoreAlbumSyncSnapshot {
         schema_version: 1,
         album_id: "album-local-456".to_owned(),
@@ -186,8 +149,9 @@ fn uniffi_client_core_dtos_keep_persisted_records_privacy_safe() {
         fetched_cursor: "cursor-safe".to_owned(),
         next_cursor: "cursor-next".to_owned(),
         applied_count: 2,
-        observed_asset_ids: vec!["asset-local-789".to_owned()],
+        observed_asset_ids: vec![ASSET_ID.to_owned()],
         retry_after_unix_ms: 0,
+        has_error_code: false,
         error_code: 0,
     };
 
@@ -204,76 +168,27 @@ fn uniffi_client_core_dtos_keep_persisted_records_privacy_safe() {
 }
 
 #[test]
-fn uniffi_upload_epoch_event_preserves_epoch_id_independently_of_shard_index() {
-    let initial = ClientCoreUploadJobSnapshot {
-        schema_version: 1,
-        job_id: "job-epoch-regression".to_owned(),
-        album_id: "album-epoch-regression".to_owned(),
-        asset_id: "asset-epoch-regression".to_owned(),
-        epoch_id: 0,
-        phase: "AwaitingEpochHandle".to_owned(),
-        active_tier: 3,
-        active_shard_index: 0,
-        completed_shards: Vec::new(),
-        has_manifest_receipt: false,
-        manifest_receipt: ClientCoreManifestReceipt {
-            manifest_id: String::new(),
-            manifest_version: 0,
-        },
-        retry_count: 0,
-        max_retry_count: 5,
-        next_retry_unix_ms: 0,
-        last_error_code: 0,
-        last_error_stage: String::new(),
-        sync_confirmed: false,
-        updated_at_unix_ms: 1_700_000_010_000,
-    };
+fn uniffi_upload_epoch_event_preserves_shard_cursor_independently_of_effect_id() {
+    let initial = upload_snapshot("AwaitingEpochHandle");
 
-    let epoch_ready = advance_upload_job(initial, upload_event("EpochHandleAcquired", 42, 0, 0));
+    let epoch_ready = advance_upload_job(initial, upload_event("EpochHandleAcquired", 0, 0, 0));
 
     assert_eq!(epoch_ready.code, 0);
-    assert_eq!(epoch_ready.transition.snapshot.epoch_id, 42);
-    assert_eq!(epoch_ready.transition.snapshot.active_shard_index, 0);
-    assert_eq!(epoch_ready.transition.snapshot.max_retry_count, 5);
+    assert_eq!(
+        epoch_ready.transition.next_snapshot.phase,
+        "EncryptingShard"
+    );
+    assert_eq!(epoch_ready.transition.next_snapshot.max_retry_count, 5);
 }
 
 #[test]
 fn uniffi_upload_retry_budget_survives_snapshot_round_trip() {
-    let retrying = ClientCoreUploadJobSnapshot {
-        schema_version: 1,
-        job_id: "job-retry-regression".to_owned(),
-        album_id: "album-retry-regression".to_owned(),
-        asset_id: "asset-retry-regression".to_owned(),
-        epoch_id: 42,
-        phase: "RetryWaiting".to_owned(),
-        active_tier: 3,
-        active_shard_index: 0,
-        completed_shards: vec![ClientCoreUploadShardRef {
-            tier: 3,
-            shard_index: 0,
-            shard_id: String::new(),
-            sha256: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-                .to_owned(),
-            uploaded: false,
-        }],
-        has_manifest_receipt: false,
-        manifest_receipt: ClientCoreManifestReceipt {
-            manifest_id: String::new(),
-            manifest_version: 0,
-        },
-        retry_count: 1,
-        max_retry_count: 5,
-        next_retry_unix_ms: 1_700_000_020_000,
-        last_error_code: ClientErrorCode::InvalidInputLength.as_u16(),
-        last_error_stage: "CreatingShardUpload".to_owned(),
-        sync_confirmed: false,
-        updated_at_unix_ms: 1_700_000_020_000,
-    };
+    let retrying = retry_waiting_upload_snapshot();
 
     let resumed = advance_upload_job(retrying, upload_event("RetryTimerElapsed", 0, 0, 0));
     assert_eq!(resumed.code, 0);
-    assert_eq!(resumed.transition.snapshot.retry_count, 1);
-    assert_eq!(resumed.transition.snapshot.max_retry_count, 5);
+    assert_eq!(resumed.transition.next_snapshot.retry_count, 1);
+    assert_eq!(resumed.transition.next_snapshot.max_retry_count, 5);
 }
 
 #[test]
@@ -287,15 +202,15 @@ fn uniffi_advance_upload_job_rejects_unknown_phase_string() {
         result.code,
         ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
     );
-    assert_eq!(result.transition.snapshot.schema_version, 0);
-    assert!(result.transition.snapshot.phase.is_empty());
+    assert_eq!(result.transition.next_snapshot.schema_version, 0);
+    assert!(result.transition.next_snapshot.phase.is_empty());
     assert!(result.transition.effects.is_empty());
 }
 
 #[test]
-fn uniffi_advance_upload_job_rejects_unknown_last_error_code() {
+fn uniffi_advance_upload_job_rejects_invalid_last_effect_id() {
     let mut snapshot = retry_waiting_upload_snapshot();
-    snapshot.last_error_code = 4242;
+    snapshot.last_applied_event_id = "not-a-uuid".to_owned();
 
     let result = advance_upload_job(snapshot, upload_event("RetryTimerElapsed", 0, 0, 0));
 
@@ -303,15 +218,16 @@ fn uniffi_advance_upload_job_rejects_unknown_last_error_code() {
         result.code,
         ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
     );
-    assert_eq!(result.transition.snapshot.schema_version, 0);
+    assert_eq!(result.transition.next_snapshot.schema_version, 0);
 }
 
 #[test]
-fn uniffi_advance_upload_job_rejects_unknown_last_error_stage() {
-    let mut snapshot = retry_waiting_upload_snapshot();
-    snapshot.last_error_stage = "NotAStage".to_owned();
+fn uniffi_advance_upload_job_rejects_unknown_retry_target_phase() {
+    let snapshot = retry_waiting_upload_snapshot();
+    let mut event = upload_event("RetryTimerElapsed", 0, 0, 0);
+    event.target_phase = "NotAStage".to_owned();
 
-    let result = advance_upload_job(snapshot, upload_event("RetryTimerElapsed", 0, 0, 0));
+    let result = advance_upload_job(snapshot, event);
 
     assert_eq!(
         result.code,
@@ -449,36 +365,69 @@ fn uniffi_metadata_sidecar_accepts_field_value_at_cap() {
     assert!(result.bytes.starts_with(b"Mosaic_Metadata_v1"));
 }
 
-fn retry_waiting_upload_snapshot() -> ClientCoreUploadJobSnapshot {
+fn upload_snapshot(phase: &str) -> ClientCoreUploadJobSnapshot {
     ClientCoreUploadJobSnapshot {
         schema_version: 1,
-        job_id: "job-validation".to_owned(),
-        album_id: "album-validation".to_owned(),
-        asset_id: "asset-validation".to_owned(),
-        epoch_id: 42,
-        phase: "RetryWaiting".to_owned(),
-        active_tier: 3,
-        active_shard_index: 0,
-        completed_shards: vec![ClientCoreUploadShardRef {
-            tier: 3,
-            shard_index: 0,
-            shard_id: String::new(),
-            sha256: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-                .to_owned(),
-            uploaded: false,
-        }],
-        has_manifest_receipt: false,
-        manifest_receipt: ClientCoreManifestReceipt {
-            manifest_id: String::new(),
-            manifest_version: 0,
-        },
-        retry_count: 1,
+        job_id: JOB_ID.to_owned(),
+        album_id: ALBUM_ID.to_owned(),
+        phase: phase.to_owned(),
+        retry_count: 0,
         max_retry_count: 5,
-        next_retry_unix_ms: 1_700_000_020_000,
-        last_error_code: ClientErrorCode::InvalidInputLength.as_u16(),
-        last_error_stage: "CreatingShardUpload".to_owned(),
-        sync_confirmed: false,
-        updated_at_unix_ms: 1_700_000_020_000,
+        next_retry_not_before_ms: 0,
+        has_next_retry_not_before_ms: false,
+        idempotency_key: IDEMPOTENCY_KEY.to_owned(),
+        tiered_shards: vec![upload_shard(false)],
+        shard_set_hash: vec![0x22; 32],
+        snapshot_revision: 0,
+        last_effect_id: String::new(),
+        last_acknowledged_effect_id: String::new(),
+        last_applied_event_id: String::new(),
+        failure_code: 0,
+    }
+}
+
+fn retry_waiting_upload_snapshot() -> ClientCoreUploadJobSnapshot {
+    ClientCoreUploadJobSnapshot {
+        phase: "RetryWaiting".to_owned(),
+        retry_count: 1,
+        next_retry_not_before_ms: 1_700_000_020_000,
+        has_next_retry_not_before_ms: true,
+        last_effect_id: EFFECT_ID.to_owned(),
+        last_applied_event_id: EFFECT_ID.to_owned(),
+        ..upload_snapshot("RetryWaiting")
+    }
+}
+
+fn upload_shard(uploaded: bool) -> ClientCoreUploadShardRef {
+    ClientCoreUploadShardRef {
+        tier: 3,
+        shard_index: 0,
+        shard_id: SHARD_ID.to_owned(),
+        sha256: vec![0x11; 32],
+        content_length: 1024,
+        envelope_version: 3,
+        uploaded,
+    }
+}
+
+fn upload_effect(kind: &str) -> ClientCoreUploadJobEffect {
+    ClientCoreUploadJobEffect {
+        kind: kind.to_owned(),
+        effect_id: EFFECT_ID.to_owned(),
+        tier: 0,
+        shard_index: 0,
+        shard_id: String::new(),
+        sha256: Vec::new(),
+        content_length: 0,
+        envelope_version: 0,
+        attempt: 0,
+        not_before_ms: 0,
+        target_phase: String::new(),
+        reason: String::new(),
+        asset_id: String::new(),
+        since_metadata_version: 0,
+        idempotency_key: String::new(),
+        shard_set_hash: Vec::new(),
     }
 }
 
@@ -507,6 +456,7 @@ fn album_sync_event(kind: &str, error_code: u16) -> ClientCoreAlbumSyncEvent {
         applied_count: 0,
         observed_asset_ids: Vec::new(),
         retry_after_unix_ms: 0,
+        has_error_code: error_code != 0,
         error_code,
     }
 }
@@ -989,23 +939,32 @@ fn uniffi_error_paths_return_zero_handles_and_empty_sensitive_outputs() {
 
 fn upload_event(
     kind: &str,
-    epoch_id: u32,
+    _epoch_id: u32,
     shard_index: u32,
     error_code: u16,
 ) -> ClientCoreUploadJobEvent {
     ClientCoreUploadJobEvent {
         kind: kind.to_owned(),
-        epoch_id,
+        effect_id: EFFECT_ID.to_owned(),
         tier: 3,
         shard_index,
-        shard_id: String::new(),
-        sha256: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-            .to_owned(),
-        manifest_id: String::new(),
-        manifest_version: 0,
-        observed_asset_id: String::new(),
-        retry_after_unix_ms: 0,
+        shard_id: SHARD_ID.to_owned(),
+        sha256: vec![0x11; 32],
+        content_length: 1024,
+        envelope_version: 3,
+        uploaded: kind == "ShardUploaded",
+        tiered_shards: Vec::new(),
+        shard_set_hash: vec![0x22; 32],
+        asset_id: ASSET_ID.to_owned(),
+        since_metadata_version: 0,
+        recovery_outcome: "Match".to_owned(),
+        now_ms: 1_700_000_020_000,
+        base_backoff_ms: 1_000,
+        server_retry_after_ms: 0,
+        has_server_retry_after_ms: false,
+        has_error_code: error_code != 0,
         error_code,
+        target_phase: "CreatingShardUpload".to_owned(),
     }
 }
 

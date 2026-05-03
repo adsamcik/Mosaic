@@ -16,6 +16,8 @@ use std::io::Cursor;
 
 use ciborium::value::{Integer, Value};
 
+use crate::state_machine::UploadJobSnapshot;
+
 /// Errors raised by snapshot encode/decode/migrate paths.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SnapshotMigrationError {
@@ -43,6 +45,7 @@ pub const CURRENT_SNAPSHOT_SCHEMA_VERSION: u16 = SNAPSHOT_SCHEMA_VERSION_V1;
 /// Canonical integer key for the `schema_version` field in every snapshot registry.
 pub const SCHEMA_VERSION_KEY: u32 = 0;
 const MAX_CBOR_DEPTH: usize = 64;
+const MAX_SNAPSHOT_CBOR_BYTES: usize = 1_500_000;
 
 /// Integer-key registry for upload-job snapshot fields.
 ///
@@ -59,14 +62,16 @@ pub mod upload_job_snapshot_keys {
     pub const TIERED_SHARDS: u32 = 8;
     pub const SHARD_SET_HASH: u32 = 9;
     pub const SNAPSHOT_REVISION: u32 = 10;
-    pub const LAST_EFFECT_ID: u32 = 11;
-    // 12-127 reserved for v1+ append-only growth.
+    pub const LAST_ACKNOWLEDGED_EFFECT_ID: u32 = 11;
+    pub const LAST_APPLIED_EVENT_ID: u32 = 12;
+    pub const FAILURE_CODE: u32 = 13;
+    // 14-127 reserved for v1+ append-only growth.
 
     /// Append-only registry of every `(name, value)` tuple in this module.
     ///
     /// Adding a new `pub const u32` requires adding a row here and updating
     /// `tests/snapshot_key_registry_lock.rs::expected_upload_job_keys()`.
-    /// The lock test asserts this slice exhaustively pins all 12 key consts.
+    /// The lock test asserts this slice exhaustively pins all 14 key consts.
     pub const KNOWN_UPLOAD_JOB_KEYS: &[(&str, u32)] = &[
         ("SCHEMA_VERSION", SCHEMA_VERSION),
         ("JOB_ID", JOB_ID),
@@ -79,7 +84,9 @@ pub mod upload_job_snapshot_keys {
         ("TIERED_SHARDS", TIERED_SHARDS),
         ("SHARD_SET_HASH", SHARD_SET_HASH),
         ("SNAPSHOT_REVISION", SNAPSHOT_REVISION),
-        ("LAST_EFFECT_ID", LAST_EFFECT_ID),
+        ("LAST_ACKNOWLEDGED_EFFECT_ID", LAST_ACKNOWLEDGED_EFFECT_ID),
+        ("LAST_APPLIED_EVENT_ID", LAST_APPLIED_EVENT_ID),
+        ("FAILURE_CODE", FAILURE_CODE),
     ];
 }
 
@@ -227,7 +234,7 @@ pub const FORBIDDEN_FIELD_NAMES: &[&str] = &[
 /// concrete v1 decode and migration steps.
 pub fn upgrade_upload_job_snapshot(
     bytes: &[u8],
-) -> Result<UploadJobSnapshotPlaceholder, SnapshotMigrationError> {
+) -> Result<UploadJobSnapshot, SnapshotMigrationError> {
     let schema_version = read_schema_version(bytes, upload_job_snapshot_keys::SCHEMA_VERSION)?;
     if schema_version > CURRENT_SNAPSHOT_SCHEMA_VERSION {
         return Err(SnapshotMigrationError::SchemaTooNew {
@@ -236,10 +243,13 @@ pub fn upgrade_upload_job_snapshot(
         });
     }
 
-    Err(SnapshotMigrationError::StepFailed {
-        from: schema_version,
-        to: CURRENT_SNAPSHOT_SCHEMA_VERSION,
-    })
+    match schema_version {
+        SNAPSHOT_SCHEMA_VERSION_V1 => UploadJobSnapshot::from_canonical_cbor(bytes),
+        _ => Err(SnapshotMigrationError::StepFailed {
+            from: schema_version,
+            to: CURRENT_SNAPSHOT_SCHEMA_VERSION,
+        }),
+    }
 }
 
 /// Migration entry point for album-sync snapshots.
@@ -264,26 +274,6 @@ pub fn upgrade_album_sync_snapshot(
     })
 }
 
-/// Placeholder type — R-Cl1 replaces with the real struct.
-#[derive(Clone, PartialEq, Eq)]
-pub struct UploadJobSnapshotPlaceholder {
-    pub schema_version: u16,
-    pub raw_cbor: Vec<u8>,
-}
-
-impl fmt::Debug for UploadJobSnapshotPlaceholder {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("UploadJobSnapshotPlaceholder")
-            .field("schema_version", &self.schema_version)
-            .field(
-                "raw_cbor",
-                &format_args!("<{} CBOR bytes>", self.raw_cbor.len()),
-            )
-            .finish()
-    }
-}
-
 /// Placeholder type — R-Cl2 replaces with the real struct.
 #[derive(Clone, PartialEq, Eq)]
 pub struct AlbumSyncSnapshotPlaceholder {
@@ -305,6 +295,9 @@ impl fmt::Debug for AlbumSyncSnapshotPlaceholder {
 }
 
 fn read_schema_version(bytes: &[u8], expected_key: u32) -> Result<u16, SnapshotMigrationError> {
+    if bytes.len() > MAX_SNAPSHOT_CBOR_BYTES {
+        return Err(SnapshotMigrationError::SchemaCorrupt);
+    }
     match cbor_contains_forbidden_bigint_tag(bytes) {
         Ok(true) => return Err(SnapshotMigrationError::SchemaCorrupt),
         Ok(false) => {}
@@ -366,9 +359,7 @@ fn validate_value(value: &Value, depth: usize) -> Result<(), SnapshotMigrationEr
     match value {
         Value::Integer(_) | Value::Bytes(_) | Value::Bool(_) | Value::Null => Ok(()),
         Value::Float(_) => Err(SnapshotMigrationError::SchemaCorrupt),
-        Value::Text(_) => Ok(()),
-        Value::Tag(tag, _) if *tag == 2 || *tag == 3 => Err(SnapshotMigrationError::SchemaCorrupt),
-        Value::Tag(_, tagged) => validate_value(tagged, depth + 1),
+        Value::Text(_) | Value::Tag(_, _) => Err(SnapshotMigrationError::SchemaCorrupt),
         Value::Array(items) => {
             for item in items {
                 validate_value(item, depth + 1)?;
@@ -556,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn current_version_placeholder_branch_is_explicit_step_failed() {
+    fn current_upload_version_requires_concrete_fields_and_album_placeholder_stays_step_failed() {
         let bytes = encode_value(&Value::Map(vec![(
             Value::Integer(upload_job_snapshot_keys::SCHEMA_VERSION.into()),
             Value::Integer(SNAPSHOT_SCHEMA_VERSION_V1.into()),
@@ -564,7 +555,7 @@ mod tests {
 
         assert_eq!(
             upgrade_upload_job_snapshot(&bytes),
-            Err(SnapshotMigrationError::StepFailed { from: 1, to: 1 })
+            Err(SnapshotMigrationError::SchemaCorrupt)
         );
         assert_eq!(
             upgrade_album_sync_snapshot(&bytes),
@@ -613,7 +604,7 @@ mod tests {
         );
         assert_eq!(
             upgrade_upload_job_snapshot(&wrong_type),
-            Err(SnapshotMigrationError::SchemaVersionMissing)
+            Err(SnapshotMigrationError::SchemaCorrupt)
         );
     }
 
@@ -750,18 +741,6 @@ mod tests {
             upgrade_upload_job_snapshot(&bytes),
             Err(SnapshotMigrationError::CborDecodeFailed)
         );
-    }
-
-    #[test]
-    fn placeholder_debug_redacts_raw_cbor() {
-        let placeholder = UploadJobSnapshotPlaceholder {
-            schema_version: 1,
-            raw_cbor: vec![1, 2, 3],
-        };
-
-        let debug = format!("{placeholder:?}");
-        assert!(debug.contains("<3 CBOR bytes>"));
-        assert!(!debug.contains("[1, 2, 3]"));
     }
 
     #[test]

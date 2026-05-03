@@ -15,22 +15,20 @@ class RustClientCoreUploadJobFfiRequest private constructor(
   val jobId: String,
   val albumId: String,
   val assetId: String,
-  val epochId: Int,
-  val nowUnixMs: Long,
+  val idempotencyKey: String,
   val maxRetryCount: Int,
 ) {
   init {
     require(jobId.isNotBlank()) { "upload job id is required" }
     require(albumId.isNotBlank()) { "album id is required" }
     require(assetId.isNotBlank()) { "asset id is required" }
-    require(epochId >= 0) { "epoch id must not be negative" }
-    require(nowUnixMs >= 0) { "timestamp must not be negative" }
+    require(idempotencyKey.isNotBlank()) { "idempotency key is required" }
     require(maxRetryCount >= 0) { "max retry count must not be negative" }
   }
 
   override fun toString(): String =
     "RustClientCoreUploadJobFfiRequest(jobId=<opaque>, albumId=<opaque>, assetId=<opaque>, " +
-      "epochId=$epochId, nowUnixMs=$nowUnixMs, maxRetryCount=$maxRetryCount)"
+      "idempotencyKey=<opaque>, maxRetryCount=$maxRetryCount)"
 
   companion object {
     fun from(
@@ -41,8 +39,7 @@ class RustClientCoreUploadJobFfiRequest private constructor(
       jobId = request.uploadJobId?.value ?: request.queueRecordId.value,
       albumId = request.albumId.value,
       assetId = request.assetId?.value ?: request.queueRecordId.value,
-      epochId = 0,
-      nowUnixMs = nowUnixMs,
+      idempotencyKey = request.queueRecordId.value,
       maxRetryCount = maxRetryCount,
     )
   }
@@ -52,71 +49,54 @@ data class RustClientCoreUploadShardRef(
   val tier: Int,
   val shardIndex: Int,
   val shardId: String,
-  val sha256: String,
+  val sha256: ByteArray,
+  val contentLength: Long,
+  val envelopeVersion: Int,
   val uploaded: Boolean,
 ) {
   override fun toString(): String =
     "RustClientCoreUploadShardRef(tier=$tier, shardIndex=$shardIndex, " +
-      "shardId=<opaque>, sha256=<redacted>, uploaded=$uploaded)"
-}
-
-data class RustClientCoreManifestReceipt(
-  val manifestId: String,
-  val manifestVersion: Long,
-) {
-  override fun toString(): String =
-    "RustClientCoreManifestReceipt(manifestId=<opaque>, manifestVersion=$manifestVersion)"
-
-  companion object {
-    val Empty: RustClientCoreManifestReceipt = RustClientCoreManifestReceipt(
-      manifestId = "",
-      manifestVersion = 0,
-    )
-  }
+      "shardId=<opaque>, sha256=<redacted-${sha256.size}-bytes>, " +
+      "contentLength=$contentLength, envelopeVersion=$envelopeVersion, uploaded=$uploaded)"
 }
 
 data class RustClientCoreUploadJobFfiSnapshot(
   val schemaVersion: Int,
   val jobId: String,
   val albumId: String,
-  val assetId: String,
-  val epochId: Int,
   val phase: String,
-  val activeTier: Int,
-  val activeShardIndex: Int,
-  val completedShards: List<RustClientCoreUploadShardRef>,
-  val hasManifestReceipt: Boolean,
-  val manifestReceipt: RustClientCoreManifestReceipt,
   val retryCount: Int,
-  val nextRetryUnixMs: Long,
-  val lastErrorCode: Int,
-  val lastErrorStage: String,
-  val syncConfirmed: Boolean,
-  val updatedAtUnixMs: Long,
+  val maxRetryCount: Int,
+  val nextRetryNotBeforeMs: Long,
+  val hasNextRetryNotBeforeMs: Boolean,
+  val idempotencyKey: String,
+  val tieredShards: List<RustClientCoreUploadShardRef>,
+  val shardSetHash: ByteArray,
+  val snapshotRevision: Long,
+  val lastEffectId: String,
+  val lastAcknowledgedEffectId: String,
+  val lastAppliedEventId: String,
+  val failureCode: Int,
 ) {
   init {
     require(schemaVersion >= 0) { "schema version must not be negative" }
     require(jobId.isNotBlank()) { "upload job id is required" }
     require(albumId.isNotBlank()) { "album id is required" }
-    require(assetId.isNotBlank()) { "asset id is required" }
-    require(epochId >= 0) { "epoch id must not be negative" }
     require(phase.isNotBlank()) { "upload phase is required" }
-    require(activeTier >= 0) { "active tier must not be negative" }
-    require(activeShardIndex >= 0) { "active shard index must not be negative" }
     require(retryCount >= 0) { "retry count must not be negative" }
-    require(nextRetryUnixMs >= 0) { "next retry timestamp must not be negative" }
-    require(lastErrorCode >= 0) { "last error code must not be negative" }
-    require(updatedAtUnixMs >= 0) { "updated timestamp must not be negative" }
+    require(maxRetryCount >= 0) { "max retry count must not be negative" }
+    require(idempotencyKey.isNotBlank()) { "idempotency key is required" }
+    require(snapshotRevision >= 0) { "snapshot revision must not be negative" }
   }
 
   override fun toString(): String =
     "RustClientCoreUploadJobFfiSnapshot(schemaVersion=$schemaVersion, jobId=<opaque>, " +
-      "albumId=<opaque>, assetId=<opaque>, epochId=$epochId, phase=$phase, " +
-      "activeTier=$activeTier, activeShardIndex=$activeShardIndex, " +
-      "completedShards=${completedShards.map { it.toString() }}, hasManifestReceipt=$hasManifestReceipt, " +
-      "manifestReceipt=$manifestReceipt, retryCount=$retryCount, " +
-      "nextRetryUnixMs=$nextRetryUnixMs, lastErrorCode=$lastErrorCode, " +
-      "lastErrorStage=$lastErrorStage, syncConfirmed=$syncConfirmed, updatedAtUnixMs=$updatedAtUnixMs)"
+      "albumId=<opaque>, phase=$phase, retryCount=$retryCount, maxRetryCount=$maxRetryCount, " +
+      "nextRetryNotBeforeMs=$nextRetryNotBeforeMs, hasNextRetryNotBeforeMs=$hasNextRetryNotBeforeMs, " +
+      "idempotencyKey=<opaque>, tieredShards=${tieredShards.map { it.toString() }}, " +
+      "shardSetHash=<redacted-${shardSetHash.size}-bytes>, snapshotRevision=$snapshotRevision, " +
+      "lastEffectId=<opaque>, lastAcknowledgedEffectId=<opaque>, " +
+      "lastAppliedEventId=<opaque>, failureCode=$failureCode)"
 
   companion object {
     fun initialFrom(request: RustClientCoreUploadJobFfiRequest): RustClientCoreUploadJobFfiSnapshot =
@@ -124,73 +104,105 @@ data class RustClientCoreUploadJobFfiSnapshot(
         schemaVersion = 1,
         jobId = request.jobId,
         albumId = request.albumId,
-        assetId = request.assetId,
-        epochId = request.epochId,
         phase = "Queued",
-        activeTier = 0,
-        activeShardIndex = 0,
-        completedShards = emptyList(),
-        hasManifestReceipt = false,
-        manifestReceipt = RustClientCoreManifestReceipt.Empty,
         retryCount = 0,
-        nextRetryUnixMs = 0,
-        lastErrorCode = 0,
-        lastErrorStage = "",
-        syncConfirmed = false,
-        updatedAtUnixMs = request.nowUnixMs,
+        maxRetryCount = request.maxRetryCount,
+        nextRetryNotBeforeMs = 0,
+        hasNextRetryNotBeforeMs = false,
+        idempotencyKey = request.idempotencyKey,
+        tieredShards = emptyList(),
+        shardSetHash = ByteArray(0),
+        snapshotRevision = 0,
+        lastEffectId = "",
+        lastAcknowledgedEffectId = "",
+        lastAppliedEventId = "",
+        failureCode = 0,
       )
   }
 }
 
 data class RustClientCoreUploadJobFfiEvent(
   val kind: String,
+  val effectId: String,
   val tier: Int,
   val shardIndex: Int,
   val shardId: String,
-  val sha256: String,
-  val manifestId: String,
-  val manifestVersion: Long,
-  val observedAssetId: String,
-  val retryAfterUnixMs: Long,
+  val sha256: ByteArray,
+  val contentLength: Long,
+  val envelopeVersion: Int,
+  val uploaded: Boolean,
+  val tieredShards: List<RustClientCoreUploadShardRef>,
+  val shardSetHash: ByteArray,
+  val assetId: String,
+  val sinceMetadataVersion: Long,
+  val recoveryOutcome: String,
+  val nowMs: Long,
+  val baseBackoffMs: Long,
+  val serverRetryAfterMs: Long,
+  val hasServerRetryAfterMs: Boolean,
+  val hasErrorCode: Boolean,
   val errorCode: Int,
+  val targetPhase: String,
 ) {
   init {
     require(kind.isNotBlank()) { "upload event kind is required" }
+    require(effectId.isNotBlank()) { "effect id is required" }
     require(tier >= 0) { "event tier must not be negative" }
     require(shardIndex >= 0) { "event shard index must not be negative" }
-    require(manifestVersion >= 0) { "manifest version must not be negative" }
-    require(retryAfterUnixMs >= 0) { "retry timestamp must not be negative" }
+    require(contentLength >= 0) { "content length must not be negative" }
+    require(envelopeVersion >= 0) { "envelope version must not be negative" }
+    require(sinceMetadataVersion >= 0) { "metadata version must not be negative" }
+    require(baseBackoffMs >= 0) { "base backoff must not be negative" }
+    require(serverRetryAfterMs >= 0) { "server retry after must not be negative" }
     require(errorCode >= 0) { "error code must not be negative" }
   }
 
   override fun toString(): String =
-    "RustClientCoreUploadJobFfiEvent(kind=$kind, tier=$tier, shardIndex=$shardIndex, " +
-      "shardId=<opaque>, sha256=<redacted>, manifestId=<opaque>, manifestVersion=$manifestVersion, " +
-      "observedAssetId=<opaque>, retryAfterUnixMs=$retryAfterUnixMs, errorCode=$errorCode)"
+    "RustClientCoreUploadJobFfiEvent(kind=$kind, effectId=<opaque>, tier=$tier, " +
+      "shardIndex=$shardIndex, shardId=<opaque>, sha256=<redacted-${sha256.size}-bytes>, " +
+      "contentLength=$contentLength, envelopeVersion=$envelopeVersion, uploaded=$uploaded, " +
+      "tieredShards=${tieredShards.map { it.toString() }}, shardSetHash=<redacted-${shardSetHash.size}-bytes>, " +
+      "assetId=<opaque>, sinceMetadataVersion=$sinceMetadataVersion, recoveryOutcome=$recoveryOutcome, " +
+      "nowMs=$nowMs, baseBackoffMs=$baseBackoffMs, serverRetryAfterMs=$serverRetryAfterMs, " +
+      "hasServerRetryAfterMs=$hasServerRetryAfterMs, hasErrorCode=$hasErrorCode, " +
+      "errorCode=$errorCode, targetPhase=$targetPhase)"
 
   companion object {
     fun startRequested(): RustClientCoreUploadJobFfiEvent = RustClientCoreUploadJobFfiEvent(
       kind = "StartRequested",
+      effectId = "start-requested",
       tier = 0,
       shardIndex = 0,
       shardId = "",
-      sha256 = "",
-      manifestId = "",
-      manifestVersion = 0,
-      observedAssetId = "",
-      retryAfterUnixMs = 0,
+      sha256 = ByteArray(0),
+      contentLength = 0,
+      envelopeVersion = 0,
+      uploaded = false,
+      tieredShards = emptyList(),
+      shardSetHash = ByteArray(0),
+      assetId = "",
+      sinceMetadataVersion = 0,
+      recoveryOutcome = "",
+      nowMs = 0,
+      baseBackoffMs = 0,
+      serverRetryAfterMs = 0,
+      hasServerRetryAfterMs = false,
+      hasErrorCode = false,
       errorCode = 0,
+      targetPhase = "",
     )
   }
 }
 
 data class RustClientCoreUploadJobFfiEffect(
   val kind: String,
+  val effectId: String,
   val tier: Int,
   val shardIndex: Int,
 ) {
   init {
     require(kind.isNotBlank()) { "upload effect kind is required" }
+    require(effectId.isNotBlank()) { "effect id is required" }
     require(tier >= 0) { "effect tier must not be negative" }
     require(shardIndex >= 0) { "effect shard index must not be negative" }
   }
@@ -198,6 +210,7 @@ data class RustClientCoreUploadJobFfiEffect(
   companion object {
     fun prepareMedia(): RustClientCoreUploadJobFfiEffect = RustClientCoreUploadJobFfiEffect(
       kind = "PrepareMedia",
+      effectId = "start-requested",
       tier = 0,
       shardIndex = 0,
     )
@@ -205,14 +218,14 @@ data class RustClientCoreUploadJobFfiEffect(
 }
 
 data class RustClientCoreUploadJobFfiTransition(
-  val snapshot: RustClientCoreUploadJobFfiSnapshot,
+  val nextSnapshot: RustClientCoreUploadJobFfiSnapshot,
   val effects: List<RustClientCoreUploadJobFfiEffect>,
 ) {
   companion object {
     fun awaitingPreparedMedia(
       snapshot: RustClientCoreUploadJobFfiSnapshot,
     ): RustClientCoreUploadJobFfiTransition = RustClientCoreUploadJobFfiTransition(
-      snapshot = snapshot.copy(phase = "AwaitingPreparedMedia"),
+      nextSnapshot = snapshot.copy(phase = "AwaitingPreparedMedia"),
       effects = listOf(RustClientCoreUploadJobFfiEffect.prepareMedia()),
     )
   }
@@ -288,10 +301,10 @@ class GeneratedRustUploadBridge(
 
     return ManualUploadClientCoreHandoffResult(
       status = ManualUploadClientCoreHandoffStatus.ACCEPTED,
-      uploadJobId = ManualUploadJobId(transitionResult.transition.snapshot.jobId),
+      uploadJobId = ManualUploadJobId(transitionResult.transition.nextSnapshot.jobId),
       acceptedByteCount = request.byteCount,
       stableCode = RustClientCoreUploadStableCode.OK,
-      clientCorePhase = transitionResult.transition.snapshot.phase,
+      clientCorePhase = transitionResult.transition.nextSnapshot.phase,
       clientCoreEffects = transitionResult.transition.effects.map { it.kind },
     )
   }

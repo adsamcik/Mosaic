@@ -34,10 +34,9 @@ pub mod snapshot_schema;
 pub mod state_machine;
 pub use snapshot_schema::{
     AlbumSyncSnapshotPlaceholder, CURRENT_SNAPSHOT_SCHEMA_VERSION, FORBIDDEN_FIELD_NAMES,
-    SCHEMA_VERSION_KEY, SNAPSHOT_SCHEMA_VERSION_V1, SnapshotMigrationError,
-    UploadJobSnapshotPlaceholder, album_sync_phase_codes, album_sync_snapshot_keys,
-    upgrade_album_sync_snapshot, upgrade_upload_job_snapshot, upload_job_phase_codes,
-    upload_job_snapshot_keys,
+    SCHEMA_VERSION_KEY, SNAPSHOT_SCHEMA_VERSION_V1, SnapshotMigrationError, album_sync_phase_codes,
+    album_sync_snapshot_keys, upgrade_album_sync_snapshot, upgrade_upload_job_snapshot,
+    upload_job_phase_codes, upload_job_snapshot_keys,
 };
 pub use state_machine::*;
 
@@ -151,6 +150,85 @@ impl ClientErrorCode {
     #[must_use]
     pub const fn as_u16(self) -> u16 {
         self as u16
+    }
+
+    /// Converts a stable numeric representation back to a client error code.
+    #[must_use]
+    pub const fn try_from_u16(value: u16) -> Option<Self> {
+        match value {
+            0 => Some(Self::Ok),
+            100 => Some(Self::InvalidHeaderLength),
+            101 => Some(Self::InvalidMagic),
+            102 => Some(Self::UnsupportedVersion),
+            103 => Some(Self::InvalidTier),
+            104 => Some(Self::NonZeroReservedByte),
+            200 => Some(Self::EmptyContext),
+            201 => Some(Self::InvalidKeyLength),
+            202 => Some(Self::InvalidInputLength),
+            203 => Some(Self::InvalidEnvelope),
+            204 => Some(Self::MissingCiphertext),
+            205 => Some(Self::AuthenticationFailed),
+            206 => Some(Self::RngFailure),
+            207 => Some(Self::WrappedKeyTooShort),
+            208 => Some(Self::KdfProfileTooWeak),
+            209 => Some(Self::InvalidSaltLength),
+            210 => Some(Self::KdfFailure),
+            211 => Some(Self::InvalidSignatureLength),
+            212 => Some(Self::InvalidPublicKey),
+            213 => Some(Self::InvalidUsername),
+            214 => Some(Self::KdfProfileTooCostly),
+            215 => Some(Self::LinkTierMismatch),
+            216 => Some(Self::BundleSignatureInvalid),
+            217 => Some(Self::BundleAlbumIdEmpty),
+            218 => Some(Self::BundleAlbumIdMismatch),
+            219 => Some(Self::BundleEpochTooOld),
+            220 => Some(Self::BundleRecipientMismatch),
+            221 => Some(Self::BundleJsonParse),
+            222 => Some(Self::BundleSealOpenFailed),
+            223 => Some(Self::ShardIntegrityFailed),
+            224 => Some(Self::LegacyRawKeyDecryptFallback),
+            225 => Some(Self::StreamingChunkOutOfOrder),
+            226 => Some(Self::StreamingTotalChunkMismatch),
+            227 => Some(Self::StreamingPlaintextDivergence),
+            300 => Some(Self::OperationCancelled),
+            400 => Some(Self::SecretHandleNotFound),
+            401 => Some(Self::IdentityHandleNotFound),
+            402 => Some(Self::HandleSpaceExhausted),
+            403 => Some(Self::EpochHandleNotFound),
+            500 => Some(Self::InternalStatePoisoned),
+            600 => Some(Self::UnsupportedMediaFormat),
+            601 => Some(Self::InvalidMediaContainer),
+            602 => Some(Self::InvalidMediaDimensions),
+            603 => Some(Self::MediaOutputTooLarge),
+            604 => Some(Self::MediaMetadataMismatch),
+            605 => Some(Self::InvalidMediaSidecar),
+            606 => Some(Self::MediaAdapterOutputMismatch),
+            607 => Some(Self::VideoContainerInvalid),
+            608 => Some(Self::MediaInspectFailed),
+            609 => Some(Self::MediaStripFailed),
+            610 => Some(Self::SidecarFieldOverflow),
+            611 => Some(Self::SidecarTagUnknown),
+            612 => Some(Self::MalformedSidecar),
+            613 => Some(Self::MakerNoteRejected),
+            614 => Some(Self::ExifTraversalLimitExceeded),
+            615 => Some(Self::VideoTooLargeForV1),
+            616 => Some(Self::VideoSourceUnreadable),
+            617 => Some(Self::VideoTierShapeRejected),
+            700 => Some(Self::ClientCoreInvalidTransition),
+            701 => Some(Self::ClientCoreMissingEventPayload),
+            702 => Some(Self::ClientCoreRetryBudgetExhausted),
+            703 => Some(Self::ClientCoreSyncPageDidNotAdvance),
+            704 => Some(Self::ClientCoreManifestOutcomeUnknown),
+            705 => Some(Self::ClientCoreUnsupportedSnapshotVersion),
+            706 => Some(Self::ClientCoreInvalidSnapshot),
+            707 => Some(Self::ManifestShapeRejected),
+            708 => Some(Self::IdempotencyExpired),
+            709 => Some(Self::ManifestSetConflict),
+            710 => Some(Self::BackendIdempotencyConflict),
+            711 => Some(Self::VideoPosterExtractionFailed),
+            800 => Some(Self::PinValidationFailed),
+            _ => None,
+        }
     }
 }
 

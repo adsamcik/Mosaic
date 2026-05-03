@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use mosaic_client::snapshot_schema::{self, album_sync_snapshot_keys, upload_job_snapshot_keys};
 
 const SNAPSHOT_SCHEMA_SOURCE: &str = include_str!("../src/snapshot_schema.rs");
-const EXPECTED_UPLOAD_JOB_KEY_COUNT: usize = 12;
+const EXPECTED_UPLOAD_JOB_KEY_COUNT: usize = 14;
 const EXPECTED_ALBUM_SYNC_KEY_COUNT: usize = 11;
 
 fn expected_upload_job_keys() -> Vec<(&'static str, u32)> {
@@ -24,7 +24,9 @@ fn expected_upload_job_keys() -> Vec<(&'static str, u32)> {
         ("TIERED_SHARDS", 8),
         ("SHARD_SET_HASH", 9),
         ("SNAPSHOT_REVISION", 10),
-        ("LAST_EFFECT_ID", 11),
+        ("LAST_ACKNOWLEDGED_EFFECT_ID", 11),
+        ("LAST_APPLIED_EVENT_ID", 12),
+        ("FAILURE_CODE", 13),
     ]
 }
 
@@ -47,7 +49,15 @@ fn live_upload_job_keys() -> Vec<(&'static str, u32)> {
             "SNAPSHOT_REVISION",
             upload_job_snapshot_keys::SNAPSHOT_REVISION,
         ),
-        ("LAST_EFFECT_ID", upload_job_snapshot_keys::LAST_EFFECT_ID),
+        (
+            "LAST_ACKNOWLEDGED_EFFECT_ID",
+            upload_job_snapshot_keys::LAST_ACKNOWLEDGED_EFFECT_ID,
+        ),
+        (
+            "LAST_APPLIED_EVENT_ID",
+            upload_job_snapshot_keys::LAST_APPLIED_EVENT_ID,
+        ),
+        ("FAILURE_CODE", upload_job_snapshot_keys::FAILURE_CODE),
     ]
 }
 

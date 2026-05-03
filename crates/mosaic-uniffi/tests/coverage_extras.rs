@@ -8,12 +8,12 @@ use mosaic_client::ClientErrorCode;
 use mosaic_crypto::{KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, derive_account_key};
 use mosaic_uniffi::{
     AccountUnlockRequest, ClientCoreAlbumSyncEvent, ClientCoreAlbumSyncRequest,
-    ClientCoreAlbumSyncSnapshot, ClientCoreManifestReceipt, ClientCoreUploadJobEvent,
-    ClientCoreUploadJobRequest, ClientCoreUploadJobSnapshot, ClientCoreUploadShardRef,
-    advance_album_sync, advance_upload_job, canonical_media_metadata_sidecar_bytes,
-    canonical_metadata_sidecar_bytes, close_account_key_handle, close_epoch_key_handle, crate_name,
-    create_epoch_key_handle, init_album_sync, init_upload_job, inspect_media_image,
-    parse_envelope_header, plan_media_tier_layout, unlock_account_key,
+    ClientCoreAlbumSyncSnapshot, ClientCoreUploadJobEvent, ClientCoreUploadJobRequest,
+    ClientCoreUploadJobSnapshot, ClientCoreUploadShardRef, advance_album_sync, advance_upload_job,
+    canonical_media_metadata_sidecar_bytes, canonical_metadata_sidecar_bytes,
+    close_account_key_handle, close_epoch_key_handle, crate_name, create_epoch_key_handle,
+    init_album_sync, init_upload_job, inspect_media_image, parse_envelope_header,
+    plan_media_tier_layout, unlock_account_key,
 };
 use zeroize::Zeroizing;
 
@@ -25,6 +25,12 @@ const ACCOUNT_SALT: [u8; 16] = [
     0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
 ];
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+const JOB_ID: &str = "018f0000-0000-7000-8000-000000000101";
+const ALBUM_ID: &str = "018f0000-0000-7000-8000-000000000102";
+const ASSET_ID: &str = "018f0000-0000-7000-8000-000000000103";
+const IDEMPOTENCY_KEY: &str = "018f0000-0000-7000-8000-000000000104";
+const EFFECT_ID: &str = "018f0000-0000-7000-8000-000000000105";
+const SHARD_ID: &str = "018f0000-0000-7000-8000-000000000106";
 
 // ---------------------------------------------------------------------------
 // crate_name() smoke test — non-uniffi const fn that exists for diagnostics.
@@ -117,29 +123,6 @@ fn uniffi_advance_album_sync_accepts_every_known_phase_string() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn uniffi_advance_upload_job_accepts_every_known_last_error_stage() {
-    for stage in [
-        "Queued",
-        "AwaitingPreparedMedia",
-        "AwaitingEpochHandle",
-        "EncryptingShard",
-        "CreatingShardUpload",
-        "UploadingShard",
-        "CreatingManifest",
-        "ManifestCommitUnknown",
-        "AwaitingSyncConfirmation",
-        "RetryWaiting",
-        "Confirmed",
-        "Cancelled",
-        "Failed",
-    ] {
-        let mut snapshot = retry_waiting_upload_snapshot();
-        stage.clone_into(&mut snapshot.last_error_stage);
-        let _ = advance_upload_job(snapshot, upload_event("RetryTimerElapsed", 0, 0, 0));
-    }
-}
-
-#[test]
 fn uniffi_advance_album_sync_accepts_every_known_last_error_stage() {
     for stage in [
         "Idle",
@@ -162,15 +145,6 @@ fn uniffi_advance_album_sync_accepts_every_known_last_error_stage() {
 // `last_error_code` field. As above, we exercise the lookup itself; the
 // SM is free to reject the synthetic snapshot afterwards.
 // ---------------------------------------------------------------------------
-
-#[test]
-fn uniffi_advance_upload_job_accepts_every_known_client_error_code() {
-    for code in known_client_error_codes() {
-        let mut snapshot = retry_waiting_upload_snapshot();
-        snapshot.last_error_code = *code;
-        let _ = advance_upload_job(snapshot, upload_event("RetryTimerElapsed", 0, 0, 0));
-    }
-}
 
 #[test]
 fn uniffi_advance_album_sync_accepts_every_known_client_error_code() {
@@ -211,19 +185,21 @@ fn uniffi_advance_upload_job_accepts_every_known_event_kind() {
         let mut event = upload_event(kind, 7, 0, 0);
         if kind == "RetryableFailure" || kind == "NonRetryableFailure" {
             event.error_code = ClientErrorCode::AuthenticationFailed.as_u16();
+            event.has_error_code = true;
         }
         let _ = advance_upload_job(snapshot, event);
     }
 }
 
 #[test]
-fn uniffi_advance_upload_job_unknown_event_kind_maps_to_invalid_transition() {
+fn uniffi_advance_upload_job_unknown_event_kind_returns_invalid_transition() {
     let snapshot = baseline_upload_snapshot();
-    // The wildcard arm in upload_event_to_client routes unknown kinds to
-    // NonRetryableFailure { code: ClientCoreInvalidTransition }, which the
-    // SM accepts from Queued. Exercising this arm is the goal; the exact
-    // resulting code is owned by the SM.
-    let _ = advance_upload_job(snapshot, upload_event("DefinitelyNotAKind", 0, 0, 0));
+    let result = advance_upload_job(snapshot, upload_event("DefinitelyNotAKind", 0, 0, 0));
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidTransition.as_u16()
+    );
+    assert!(result.transition.effects.is_empty());
 }
 
 #[test]
@@ -243,15 +219,21 @@ fn uniffi_advance_album_sync_accepts_every_known_event_kind() {
         let mut event = album_sync_event(kind, 0);
         if kind == "RetryableFailure" || kind == "NonRetryableFailure" {
             event.error_code = ClientErrorCode::AuthenticationFailed.as_u16();
+            event.has_error_code = true;
         }
         let _ = advance_album_sync(snapshot, event);
     }
 }
 
 #[test]
-fn uniffi_advance_album_sync_unknown_event_kind_maps_to_invalid_transition() {
+fn uniffi_advance_album_sync_unknown_event_kind_returns_invalid_transition() {
     let snapshot = baseline_album_sync_snapshot();
-    let _ = advance_album_sync(snapshot, album_sync_event("DefinitelyNotAKind", 0));
+    let result = advance_album_sync(snapshot, album_sync_event("DefinitelyNotAKind", 0));
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidTransition.as_u16()
+    );
+    assert!(result.transition.effects.is_empty());
 }
 
 #[test]
@@ -278,22 +260,60 @@ fn uniffi_advance_album_sync_page_fetched_with_non_empty_next_cursor() {
 }
 
 #[test]
-fn uniffi_advance_upload_job_retryable_failure_with_retry_after_unix_ms() {
-    // Drives the (`event.retry_after_unix_ms != 0`) branch on RetryableFailure.
-    let snapshot = baseline_upload_snapshot();
-    let mut event = upload_event("RetryableFailure", 0, 0, 0);
-    event.error_code = ClientErrorCode::AuthenticationFailed.as_u16();
-    event.retry_after_unix_ms = 1_700_000_999_000;
-    let _ = advance_upload_job(snapshot, event);
-}
-
-#[test]
 fn uniffi_advance_album_sync_retryable_failure_with_retry_after_unix_ms() {
     let snapshot = baseline_album_sync_snapshot();
     let mut event = album_sync_event("RetryableFailure", 0);
     event.error_code = ClientErrorCode::AuthenticationFailed.as_u16();
+    event.has_error_code = true;
     event.retry_after_unix_ms = 1_700_000_999_000;
     let _ = advance_album_sync(snapshot, event);
+}
+
+#[test]
+fn uniffi_upload_event_rejects_error_code_without_presence_flag() {
+    let snapshot = baseline_upload_snapshot();
+    let mut event = upload_event(
+        "NonRetryableFailure",
+        0,
+        0,
+        ClientErrorCode::AuthenticationFailed.as_u16(),
+    );
+    event.has_error_code = false;
+
+    let result = advance_upload_job(snapshot, event);
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+}
+
+#[test]
+fn uniffi_upload_failure_event_rejects_present_zero_error_code() {
+    let snapshot = baseline_upload_snapshot();
+    let mut event = upload_event("NonRetryableFailure", 0, 0, 0);
+    event.has_error_code = true;
+
+    let result = advance_upload_job(snapshot, event);
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidSnapshot.as_u16()
+    );
+}
+
+#[test]
+fn uniffi_upload_shard_event_rejects_uploaded_flag_kind_mismatch() {
+    let snapshot = baseline_upload_snapshot();
+    let mut event = upload_event("ShardEncrypted", 0, 0, 0);
+    event.uploaded = true;
+
+    let result = advance_upload_job(snapshot, event);
+
+    assert_eq!(
+        result.code,
+        ClientErrorCode::ClientCoreInvalidTransition.as_u16()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -304,106 +324,19 @@ fn uniffi_advance_album_sync_retryable_failure_with_retry_after_unix_ms() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn uniffi_upload_snapshot_round_trip_through_encrypting_shard_phase() {
-    let snapshot = ClientCoreUploadJobSnapshot {
-        schema_version: 1,
-        job_id: "job-encrypting".to_owned(),
-        album_id: "album-encrypting".to_owned(),
-        asset_id: "asset-encrypting".to_owned(),
-        epoch_id: 11,
-        phase: "EncryptingShard".to_owned(),
-        active_tier: 2,
-        active_shard_index: 0,
-        completed_shards: vec![
-            ClientCoreUploadShardRef {
-                tier: 2,
-                shard_index: 0,
-                shard_id: "shard-id-thumb".to_owned(),
-                sha256: "sha256:thumb".to_owned(),
-                uploaded: true,
-            },
-            ClientCoreUploadShardRef {
-                tier: 3,
-                shard_index: 1,
-                shard_id: "shard-id-original".to_owned(),
-                sha256: "sha256:original".to_owned(),
-                uploaded: true,
-            },
-        ],
-        has_manifest_receipt: false,
-        manifest_receipt: ClientCoreManifestReceipt {
-            manifest_id: String::new(),
-            manifest_version: 0,
-        },
-        retry_count: 0,
-        max_retry_count: 5,
-        next_retry_unix_ms: 0,
-        last_error_code: 0,
-        last_error_stage: String::new(),
-        sync_confirmed: false,
-        updated_at_unix_ms: 0,
-    };
-
-    // Whatever the SM ultimately decides, the FFI must have driven the
-    // EncryptingShard branch of upload_active_slot first.
-    let _ = advance_upload_job(snapshot, upload_event("CancelRequested", 0, 0, 0));
-}
-
-// ---------------------------------------------------------------------------
-// upload_planned_shards_from_dto active-tier-only branch — when there is no
-// pending shard but the snapshot reports an active tier, the planner injects
-// that synthetic slot.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn uniffi_upload_snapshot_active_tier_without_pending_shard_round_trips() {
-    let snapshot = ClientCoreUploadJobSnapshot {
-        schema_version: 1,
-        job_id: "job-active-tier".to_owned(),
-        album_id: "album-active-tier".to_owned(),
-        asset_id: "asset-active-tier".to_owned(),
-        epoch_id: 0,
-        phase: "AwaitingEpochHandle".to_owned(),
-        active_tier: 3,
-        active_shard_index: 0,
-        completed_shards: Vec::new(),
-        has_manifest_receipt: false,
-        manifest_receipt: ClientCoreManifestReceipt {
-            manifest_id: String::new(),
-            manifest_version: 0,
-        },
-        retry_count: 0,
-        max_retry_count: 5,
-        next_retry_unix_ms: 0,
-        last_error_code: 0,
-        last_error_stage: String::new(),
-        sync_confirmed: false,
-        updated_at_unix_ms: 0,
-    };
-
-    let _ = advance_upload_job(snapshot, upload_event("CancelRequested", 0, 0, 0));
-}
-
-// ---------------------------------------------------------------------------
-// init_upload_job / init_album_sync — the success and error paths of the
-// uniffi-level `Result` mapping.
-// ---------------------------------------------------------------------------
-
-#[test]
 fn uniffi_init_upload_job_returns_queued_snapshot_on_success() {
     let request = ClientCoreUploadJobRequest {
-        job_id: "job-init".to_owned(),
-        album_id: "album-init".to_owned(),
-        asset_id: "asset-init".to_owned(),
-        epoch_id: 0,
-        now_unix_ms: 1_700_000_000_000,
+        job_id: JOB_ID.to_owned(),
+        album_id: ALBUM_ID.to_owned(),
+        asset_id: ASSET_ID.to_owned(),
+        idempotency_key: IDEMPOTENCY_KEY.to_owned(),
         max_retry_count: 5,
     };
     let result = init_upload_job(request);
     assert_eq!(result.code, ClientErrorCode::Ok.as_u16());
-    assert_eq!(result.snapshot.job_id, "job-init");
-    assert_eq!(result.snapshot.album_id, "album-init");
-    assert_eq!(result.snapshot.asset_id, "asset-init");
+    assert_eq!(result.snapshot.job_id, JOB_ID);
+    assert_eq!(result.snapshot.album_id, ALBUM_ID);
+    assert_eq!(result.snapshot.idempotency_key, IDEMPOTENCY_KEY);
     assert_eq!(result.snapshot.phase, "Queued");
     assert_eq!(result.snapshot.max_retry_count, 5);
 }
@@ -441,15 +374,14 @@ fn uniffi_init_album_sync_carries_start_cursor_into_active_cursor() {
 #[test]
 fn uniffi_init_upload_job_rejects_empty_album_id_with_stable_code() {
     let request = ClientCoreUploadJobRequest {
-        job_id: "job-bad".to_owned(),
+        job_id: JOB_ID.to_owned(),
         album_id: String::new(),
-        asset_id: "asset-bad".to_owned(),
-        epoch_id: 0,
-        now_unix_ms: 0,
+        asset_id: ASSET_ID.to_owned(),
+        idempotency_key: IDEMPOTENCY_KEY.to_owned(),
         max_retry_count: 5,
     };
     let result = init_upload_job(request);
-    // The SM rejects empty album/asset/local_job_id with a stable client
+    // The SM rejects empty album/idempotency key with a stable client
     // error code; the FFI must surface that without panicking.
     assert_ne!(result.code, ClientErrorCode::Ok.as_u16());
     assert_eq!(result.snapshot.album_id, "");
@@ -462,196 +394,6 @@ fn uniffi_init_upload_job_rejects_empty_album_id_with_stable_code() {
 // `planned_shards`, we manually re-inject `active_tier` / `active_shard_index`
 // between transitions when needed; otherwise the round-trip would lose the
 // shard slot the SM expects to see.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn uniffi_advance_upload_job_emits_every_effect_kind_on_happy_path() {
-    let init = init_upload_job(ClientCoreUploadJobRequest {
-        job_id: "job-happy".to_owned(),
-        album_id: "album-happy".to_owned(),
-        asset_id: "asset-happy".to_owned(),
-        epoch_id: 0,
-        now_unix_ms: 1_700_000_000_000,
-        max_retry_count: 5,
-    });
-    assert_eq!(init.code, 0);
-
-    let mut snapshot = init.snapshot;
-    let mut effects_seen = Vec::<String>::new();
-
-    // StartRequested: Queued -> AwaitingPreparedMedia (effect: PrepareMedia).
-    let next = advance_upload_job(snapshot, upload_event("StartRequested", 0, 0, 0));
-    assert_eq!(next.code, 0);
-    record_effects(&next, &mut effects_seen);
-    snapshot = next.transition.snapshot;
-
-    // MediaPrepared: AwaitingPreparedMedia -> AwaitingEpochHandle
-    // (effect: AcquireEpochHandle).
-    let next = advance_upload_job(snapshot, upload_event("MediaPrepared", 0, 0, 0));
-    assert_eq!(next.code, 0);
-    record_effects(&next, &mut effects_seen);
-    snapshot = next.transition.snapshot;
-
-    // The DTO drops `planned_shards`; re-inject the synthetic slot via
-    // active_tier/active_shard_index so upload_planned_shards_from_dto
-    // reconstructs the planned slot for the next transition.
-    snapshot.active_tier = 3;
-    snapshot.active_shard_index = 0;
-
-    // EpochHandleAcquired: AwaitingEpochHandle -> EncryptingShard
-    // (effect: EncryptShard).
-    let next = advance_upload_job(snapshot, upload_event("EpochHandleAcquired", 9, 0, 0));
-    assert_eq!(next.code, 0);
-    record_effects(&next, &mut effects_seen);
-    snapshot = next.transition.snapshot;
-
-    // ShardEncrypted: EncryptingShard -> CreatingShardUpload
-    // (effect: CreateShardUpload). The SM compares the encrypted shard's
-    // (tier, index) against the next planned slot; we already injected it.
-    let next = advance_upload_job(snapshot, upload_event("ShardEncrypted", 9, 0, 0));
-    assert_eq!(next.code, 0);
-    record_effects(&next, &mut effects_seen);
-    snapshot = next.transition.snapshot;
-
-    // ShardUploadCreated: CreatingShardUpload -> UploadingShard
-    // (effect: UploadShard). The pending shard is preserved through the
-    // round trip via active_tier/active_shard_index.
-    let mut event = upload_event("ShardUploadCreated", 9, 0, 0);
-    "shard-id-happy".clone_into(&mut event.shard_id);
-    let next = advance_upload_job(snapshot, event);
-    assert_eq!(next.code, 0);
-    record_effects(&next, &mut effects_seen);
-    snapshot = next.transition.snapshot;
-
-    // ShardUploaded: UploadingShard -> CreatingManifest
-    // (effect: CreateManifest). Single-shard plan terminates here.
-    let mut event = upload_event("ShardUploaded", 9, 0, 0);
-    "shard-id-happy".clone_into(&mut event.shard_id);
-    let next = advance_upload_job(snapshot, event);
-    assert_eq!(next.code, 0);
-    record_effects(&next, &mut effects_seen);
-    snapshot = next.transition.snapshot;
-
-    // ManifestCreated: CreatingManifest -> AwaitingSyncConfirmation
-    // (effect: AwaitSyncConfirmation).
-    let mut event = upload_event("ManifestCreated", 9, 0, 0);
-    "manifest-id-happy".clone_into(&mut event.manifest_id);
-    event.manifest_version = 1;
-    let next = advance_upload_job(snapshot, event);
-    assert_eq!(next.code, 0);
-    record_effects(&next, &mut effects_seen);
-    snapshot = next.transition.snapshot;
-
-    // SyncConfirmed: AwaitingSyncConfirmation -> Confirmed (no effects).
-    let mut event = upload_event("SyncConfirmed", 9, 0, 0);
-    "asset-happy".clone_into(&mut event.observed_asset_id);
-    let next = advance_upload_job(snapshot, event);
-    assert_eq!(next.code, 0);
-    record_effects(&next, &mut effects_seen);
-    let final_snapshot = next.transition.snapshot;
-
-    for expected in [
-        "PrepareMedia",
-        "AcquireEpochHandle",
-        "EncryptShard",
-        "CreateShardUpload",
-        "UploadShard",
-        "CreateManifest",
-        "AwaitSyncConfirmation",
-    ] {
-        assert!(
-            effects_seen.iter().any(|kind| kind == expected),
-            "happy-path flow should emit {expected}, observed = {effects_seen:?}"
-        );
-    }
-    assert_eq!(final_snapshot.phase, "Confirmed");
-    assert!(final_snapshot.sync_confirmed);
-}
-
-#[test]
-fn uniffi_advance_upload_job_emits_recover_manifest_through_sync_effect() {
-    // Drive the upload job into ManifestOutcomeUnknown to provoke a
-    // RecoverManifestThroughSync effect.
-    let init = init_upload_job(ClientCoreUploadJobRequest {
-        job_id: "job-recover".to_owned(),
-        album_id: "album-recover".to_owned(),
-        asset_id: "asset-recover".to_owned(),
-        epoch_id: 0,
-        now_unix_ms: 1_700_000_000_000,
-        max_retry_count: 5,
-    });
-    let mut snapshot = init.snapshot;
-
-    snapshot = advance_or_panic(snapshot, upload_event("StartRequested", 0, 0, 0));
-    snapshot = advance_or_panic(snapshot, upload_event("MediaPrepared", 0, 0, 0));
-    // Re-inject planned shard slot before EpochHandleAcquired.
-    snapshot.active_tier = 3;
-    snapshot.active_shard_index = 0;
-    snapshot = advance_or_panic(snapshot, upload_event("EpochHandleAcquired", 9, 0, 0));
-    snapshot = advance_or_panic(snapshot, upload_event("ShardEncrypted", 9, 0, 0));
-    let mut event = upload_event("ShardUploadCreated", 9, 0, 0);
-    "shard-id-recover".clone_into(&mut event.shard_id);
-    snapshot = advance_or_panic(snapshot, event);
-    let mut event = upload_event("ShardUploaded", 9, 0, 0);
-    "shard-id-recover".clone_into(&mut event.shard_id);
-    snapshot = advance_or_panic(snapshot, event);
-    snapshot = advance_or_panic(snapshot, upload_event("ManifestOutcomeUnknown", 9, 0, 0));
-
-    // After ManifestOutcomeUnknown the SM should be in ManifestCommitUnknown
-    // and emit RecoverManifestThroughSync on the next transition trigger.
-    assert_eq!(snapshot.phase, "ManifestCommitUnknown");
-    let cancel = advance_upload_job(snapshot, upload_event("CancelRequested", 0, 0, 0));
-    let kinds: Vec<&str> = cancel
-        .transition
-        .effects
-        .iter()
-        .map(|effect| effect.kind.as_str())
-        .collect();
-    assert!(
-        kinds
-            .iter()
-            .any(|kind| kind == &"RecoverManifestThroughSync"),
-        "expected RecoverManifestThroughSync effect, observed = {kinds:?}"
-    );
-}
-
-#[test]
-fn uniffi_advance_upload_job_emits_schedule_retry_effect_on_retryable_failure() {
-    let init = init_upload_job(ClientCoreUploadJobRequest {
-        job_id: "job-retry".to_owned(),
-        album_id: "album-retry".to_owned(),
-        asset_id: "asset-retry".to_owned(),
-        epoch_id: 0,
-        now_unix_ms: 1_700_000_000_000,
-        max_retry_count: 5,
-    });
-    let mut snapshot = init.snapshot;
-    snapshot = advance_or_panic(snapshot, upload_event("StartRequested", 0, 0, 0));
-    snapshot = advance_or_panic(snapshot, upload_event("MediaPrepared", 0, 0, 0));
-
-    let mut event = upload_event("RetryableFailure", 0, 0, 0);
-    event.error_code = ClientErrorCode::AuthenticationFailed.as_u16();
-    event.retry_after_unix_ms = 1_700_000_010_000;
-    let result = advance_upload_job(snapshot, event);
-    assert_eq!(result.code, 0);
-    let kinds: Vec<&str> = result
-        .transition
-        .effects
-        .iter()
-        .map(|effect| effect.kind.as_str())
-        .collect();
-    assert!(
-        kinds.iter().any(|kind| kind.starts_with("ScheduleRetry:")),
-        "expected ScheduleRetry effect, observed = {kinds:?}"
-    );
-    assert_eq!(result.transition.snapshot.phase, "RetryWaiting");
-}
-
-// ---------------------------------------------------------------------------
-// Album sync state machine drives every variant of album_sync_effect_from_client:
-// FetchPage → ApplyPage and ScheduleRetry. We use direct DTO snapshots
-// because SyncRequested resets max_retry_count from the event (which is
-// always 0 in our DTO mapping), making chained retry tests impossible.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -712,6 +454,7 @@ fn uniffi_advance_album_sync_emits_schedule_retry_effect_on_retryable_failure() 
     };
     let mut event = album_sync_event("RetryableFailure", 0);
     event.error_code = ClientErrorCode::AuthenticationFailed.as_u16();
+    event.has_error_code = true;
     event.retry_after_unix_ms = 1_700_000_009_000;
     let result = advance_album_sync(snapshot, event);
     assert_eq!(result.code, 0);
@@ -872,15 +615,6 @@ fn known_client_error_codes() -> &'static [u16] {
     ]
 }
 
-fn record_effects(
-    result: &mosaic_uniffi::ClientCoreUploadJobTransitionResult,
-    out: &mut Vec<String>,
-) {
-    for effect in &result.transition.effects {
-        out.push(effect.kind.clone());
-    }
-}
-
 fn record_album_sync_effects(
     result: &mosaic_uniffi::ClientCoreAlbumSyncTransitionResult,
     out: &mut Vec<String>,
@@ -890,43 +624,24 @@ fn record_album_sync_effects(
     }
 }
 
-fn advance_or_panic(
-    snapshot: ClientCoreUploadJobSnapshot,
-    event: ClientCoreUploadJobEvent,
-) -> ClientCoreUploadJobSnapshot {
-    let kind = event.kind.clone();
-    let phase = snapshot.phase.clone();
-    let result = advance_upload_job(snapshot, event);
-    assert_eq!(
-        result.code, 0,
-        "transition {kind} from {phase} should succeed"
-    );
-    result.transition.snapshot
-}
-
 fn baseline_upload_snapshot() -> ClientCoreUploadJobSnapshot {
     ClientCoreUploadJobSnapshot {
         schema_version: 1,
-        job_id: "job-baseline".to_owned(),
-        album_id: "album-baseline".to_owned(),
-        asset_id: "asset-baseline".to_owned(),
-        epoch_id: 0,
+        job_id: JOB_ID.to_owned(),
+        album_id: ALBUM_ID.to_owned(),
         phase: "Queued".to_owned(),
-        active_tier: 0,
-        active_shard_index: 0,
-        completed_shards: Vec::new(),
-        has_manifest_receipt: false,
-        manifest_receipt: ClientCoreManifestReceipt {
-            manifest_id: String::new(),
-            manifest_version: 0,
-        },
         retry_count: 0,
         max_retry_count: 5,
-        next_retry_unix_ms: 0,
-        last_error_code: 0,
-        last_error_stage: String::new(),
-        sync_confirmed: false,
-        updated_at_unix_ms: 0,
+        next_retry_not_before_ms: 0,
+        has_next_retry_not_before_ms: false,
+        idempotency_key: IDEMPOTENCY_KEY.to_owned(),
+        tiered_shards: vec![upload_shard(false)],
+        shard_set_hash: vec![0x22; 32],
+        snapshot_revision: 0,
+        last_effect_id: String::new(),
+        last_acknowledged_effect_id: String::new(),
+        last_applied_event_id: String::new(),
+        failure_code: 0,
     }
 }
 
@@ -947,35 +662,15 @@ fn baseline_album_sync_snapshot() -> ClientCoreAlbumSyncSnapshot {
     }
 }
 
-fn retry_waiting_upload_snapshot() -> ClientCoreUploadJobSnapshot {
-    ClientCoreUploadJobSnapshot {
-        schema_version: 1,
-        job_id: "job-retry".to_owned(),
-        album_id: "album-retry".to_owned(),
-        asset_id: "asset-retry".to_owned(),
-        epoch_id: 42,
-        phase: "RetryWaiting".to_owned(),
-        active_tier: 3,
-        active_shard_index: 0,
-        completed_shards: vec![ClientCoreUploadShardRef {
-            tier: 3,
-            shard_index: 0,
-            shard_id: "shard-id-pending".to_owned(),
-            sha256: "sha256:pending".to_owned(),
-            uploaded: false,
-        }],
-        has_manifest_receipt: false,
-        manifest_receipt: ClientCoreManifestReceipt {
-            manifest_id: String::new(),
-            manifest_version: 0,
-        },
-        retry_count: 1,
-        max_retry_count: 5,
-        next_retry_unix_ms: 1_700_000_020_000,
-        last_error_code: ClientErrorCode::InvalidInputLength.as_u16(),
-        last_error_stage: "CreatingShardUpload".to_owned(),
-        sync_confirmed: false,
-        updated_at_unix_ms: 1_700_000_020_000,
+fn upload_shard(uploaded: bool) -> ClientCoreUploadShardRef {
+    ClientCoreUploadShardRef {
+        tier: 3,
+        shard_index: 0,
+        shard_id: SHARD_ID.to_owned(),
+        sha256: vec![0x11; 32],
+        content_length: 1024,
+        envelope_version: 3,
+        uploaded,
     }
 }
 
@@ -998,22 +693,32 @@ fn retry_waiting_album_sync_snapshot() -> ClientCoreAlbumSyncSnapshot {
 
 fn upload_event(
     kind: &str,
-    epoch_id: u32,
+    _epoch_id: u32,
     shard_index: u32,
     error_code: u16,
 ) -> ClientCoreUploadJobEvent {
     ClientCoreUploadJobEvent {
         kind: kind.to_owned(),
-        epoch_id,
+        effect_id: EFFECT_ID.to_owned(),
         tier: 3,
         shard_index,
-        shard_id: String::new(),
-        sha256: "sha256:00".to_owned(),
-        manifest_id: String::new(),
-        manifest_version: 0,
-        observed_asset_id: String::new(),
-        retry_after_unix_ms: 0,
+        shard_id: SHARD_ID.to_owned(),
+        sha256: vec![0x11; 32],
+        content_length: 1024,
+        envelope_version: 3,
+        uploaded: kind == "ShardUploaded",
+        tiered_shards: Vec::new(),
+        shard_set_hash: vec![0x22; 32],
+        asset_id: ASSET_ID.to_owned(),
+        since_metadata_version: 0,
+        recovery_outcome: "Match".to_owned(),
+        now_ms: 1_700_000_020_000,
+        base_backoff_ms: 1_000,
+        server_retry_after_ms: 0,
+        has_server_retry_after_ms: false,
+        has_error_code: error_code != 0,
         error_code,
+        target_phase: "CreatingShardUpload".to_owned(),
     }
 }
 
@@ -1025,6 +730,7 @@ fn album_sync_event(kind: &str, error_code: u16) -> ClientCoreAlbumSyncEvent {
         applied_count: 0,
         observed_asset_ids: Vec::new(),
         retry_after_unix_ms: 0,
+        has_error_code: error_code != 0,
         error_code,
     }
 }
