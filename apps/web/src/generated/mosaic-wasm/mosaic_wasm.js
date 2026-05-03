@@ -1589,18 +1589,6 @@ export function deriveAuthKeypairFromPassword(password, user_salt, kdf_memory_ki
 }
 
 /**
- * Derives the OPFS-snapshot DB session key from the L2 account key
- * referenced by `account_handle` through WASM. Caller MUST memzero the
- * returned bytes after use.
- * @param {bigint} account_handle
- * @returns {BytesResult}
- */
-export function deriveDbSessionKeyFromAccount(account_handle) {
-    const ret = wasm.deriveDbSessionKeyFromAccount(account_handle);
-    return BytesResult.__wrap(ret);
-}
-
-/**
  * Derives the (link_id, wrapping_key) pair from a share-link secret through WASM.
  * @param {Uint8Array} link_secret
  * @returns {LinkKeysResult}

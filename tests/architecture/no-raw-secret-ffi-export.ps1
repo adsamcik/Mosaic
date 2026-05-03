@@ -24,8 +24,6 @@ $allowlist = @{
   'crates/mosaic-wasm/src/lib.rs::wrapping_key' = 'ADR-006 compatibility debt for share-link vectors.'
   'crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link' = 'SPEC-WebRustCryptoCutover Slice 6 link-share raw tier-key debt.'
   'crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link_js' = 'WASM wrapper for Slice 6 link-share raw tier-key debt.'
-  'crates/mosaic-wasm/src/lib.rs::derive_db_session_key_from_account' = 'SPEC-WebRustCryptoCutover Slice 8 OPFS DB session-key compatibility debt.'
-  'crates/mosaic-wasm/src/lib.rs::derive_db_session_key_from_account_js' = 'WASM wrapper for Slice 8 DB session-key debt.'
   'crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret' = 'Cross-client vector driver only; returns wrapping_key for parity tests.'
   'crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed' = 'Cross-client vector driver only; OpenedBundleFfiResult carries epoch_seed.'
 }

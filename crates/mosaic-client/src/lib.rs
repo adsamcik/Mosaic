@@ -14,7 +14,7 @@ use mosaic_crypto::{
     ManifestSigningSecretKey, MosaicCryptoError, SealedBundle, SecretKey, WrappedTierKey,
     build_auth_challenge_transcript, decrypt_content, decrypt_shard,
     decrypt_shard_with_legacy_raw_key, derive_account_key, derive_auth_signing_keypair,
-    derive_content_key, derive_db_session_key, derive_epoch_key_material, derive_identity_keypair,
+    derive_content_key, derive_epoch_key_material, derive_identity_keypair,
     derive_link_keys as crypto_derive_link_keys, encrypt_content, encrypt_shard,
     generate_epoch_key_material, generate_identity_seed,
     generate_link_secret as crypto_generate_link_secret,
@@ -1281,27 +1281,6 @@ pub fn unwrap_with_account_handle(handle: u64, wrapped: &[u8]) -> BytesResult {
         Ok(bytes) => BytesResult {
             code: ClientErrorCode::Ok,
             bytes: bytes.to_vec(),
-        },
-        Err(error) => bytes_error_code(map_crypto_error(error)),
-    }
-}
-
-/// Derives the 32-byte OPFS-snapshot DB session key from the L2 account key
-/// referenced by `handle`.
-///
-/// Bootstrap material for the legacy DB worker (Slice 8 will replace it
-/// with an opaque encryption handle). Callers MUST memzero the returned
-/// bytes after use.
-#[must_use]
-pub fn derive_db_session_key_from_account_handle(handle: u64) -> BytesResult {
-    let account_key = match account_secret_key_from_handle(handle) {
-        Ok(value) => value,
-        Err(error) => return bytes_error(error),
-    };
-    match derive_db_session_key(&account_key) {
-        Ok(key) => BytesResult {
-            code: ClientErrorCode::Ok,
-            bytes: key.as_bytes().to_vec(),
         },
         Err(error) => bytes_error_code(map_crypto_error(error)),
     }

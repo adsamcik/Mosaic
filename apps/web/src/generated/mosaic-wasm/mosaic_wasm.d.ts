@@ -529,13 +529,6 @@ export function deriveAuthKeypairFromAccount(account_handle: bigint): AuthKeypai
 export function deriveAuthKeypairFromPassword(password: Uint8Array, user_salt: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number): AuthKeypairResult;
 
 /**
- * Derives the OPFS-snapshot DB session key from the L2 account key
- * referenced by `account_handle` through WASM. Caller MUST memzero the
- * returned bytes after use.
- */
-export function deriveDbSessionKeyFromAccount(account_handle: bigint): BytesResult;
-
-/**
  * Derives the (link_id, wrapping_key) pair from a share-link secret through WASM.
  */
 export function deriveLinkKeys(link_secret: Uint8Array): LinkKeysResult;
@@ -742,7 +735,6 @@ export interface InitOutput {
     readonly decryptShardWithLegacyRawKeyHandle: (a: bigint, b: number, c: number) => number;
     readonly deriveAuthKeypairFromAccount: (a: bigint) => number;
     readonly deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
-    readonly deriveDbSessionKeyFromAccount: (a: bigint) => number;
     readonly deriveLinkKeys: (a: number, b: number) => number;
     readonly encryptAlbumContent: (a: bigint, b: number, c: number) => number;
     readonly encryptMetadataSidecarWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;

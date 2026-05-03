@@ -51,7 +51,6 @@ export const decryptShardWithEpochHandle: (a: bigint, b: number, c: number) => n
 export const decryptShardWithLegacyRawKeyHandle: (a: bigint, b: number, c: number) => number;
 export const deriveAuthKeypairFromAccount: (a: bigint) => number;
 export const deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
-export const deriveDbSessionKeyFromAccount: (a: bigint) => number;
 export const deriveLinkKeys: (a: number, b: number) => number;
 export const encryptAlbumContent: (a: bigint, b: number, c: number) => number;
 export const encryptMetadataSidecarWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;

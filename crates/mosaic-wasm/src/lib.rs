@@ -1415,15 +1415,6 @@ pub fn unwrap_with_account_handle(account_handle: u64, wrapped: Vec<u8>) -> Byte
     bytes_result_from_client(result)
 }
 
-/// Derives the OPFS-snapshot DB session key from the L2 account key
-/// referenced by `account_handle`.
-#[must_use]
-pub fn derive_db_session_key_from_account(account_handle: u64) -> BytesResult {
-    bytes_result_from_client(mosaic_client::derive_db_session_key_from_account_handle(
-        account_handle,
-    ))
-}
-
 /// Builds the canonical LocalAuth challenge transcript byte string.
 ///
 /// `timestamp_ms_present == false` omits the timestamp segment to match
@@ -2545,15 +2536,6 @@ pub fn wrap_with_account_handle_js(account_handle: u64, plaintext: Vec<u8>) -> J
 #[must_use]
 pub fn unwrap_with_account_handle_js(account_handle: u64, wrapped: Vec<u8>) -> JsBytesResult {
     js_bytes_result_from_rust(unwrap_with_account_handle(account_handle, wrapped))
-}
-
-/// Derives the OPFS-snapshot DB session key from the L2 account key
-/// referenced by `account_handle` through WASM. Caller MUST memzero the
-/// returned bytes after use.
-#[wasm_bindgen(js_name = deriveDbSessionKeyFromAccount)]
-#[must_use]
-pub fn derive_db_session_key_from_account_js(account_handle: u64) -> JsBytesResult {
-    js_bytes_result_from_rust(derive_db_session_key_from_account(account_handle))
 }
 
 /// Builds the canonical LocalAuth challenge transcript through WASM.

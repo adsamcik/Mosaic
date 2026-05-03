@@ -28,8 +28,6 @@ allowlist = {
     "crates/mosaic-wasm/src/lib.rs::wrapping_key",
     "crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link",
     "crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link_js",
-    "crates/mosaic-wasm/src/lib.rs::derive_db_session_key_from_account",
-    "crates/mosaic-wasm/src/lib.rs::derive_db_session_key_from_account_js",
     "crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret",
     "crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed",
 }

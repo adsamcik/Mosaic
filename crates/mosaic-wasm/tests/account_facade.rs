@@ -1,6 +1,6 @@
 //! WASM facade tests for the Slice 2 account/session bootstrap exports
 //! (`createAccount`, `wrapWithAccountHandle`, `unwrapWithAccountHandle`,
-//! `deriveDbSessionKeyFromAccount`, `buildAuthChallengeTranscript`).
+//! `buildAuthChallengeTranscript`).
 //!
 //! Exercises round-trip wrap/unwrap, identity derivation chaining,
 //! transcript determinism, and rejection of bad handles.
@@ -9,10 +9,9 @@ use mosaic_client::ClientErrorCode;
 use mosaic_wasm::{
     AccountUnlockRequest, build_auth_challenge_transcript, close_account_key_handle,
     create_identity_handle, create_new_account, derive_auth_keypair_from_password,
-    derive_db_session_key_from_account, get_auth_public_key_from_account,
-    get_auth_public_key_from_password, sign_auth_challenge_with_account,
-    sign_auth_challenge_with_password, unlock_account_key, unwrap_with_account_handle,
-    wrap_with_account_handle,
+    get_auth_public_key_from_account, get_auth_public_key_from_password,
+    sign_auth_challenge_with_account, sign_auth_challenge_with_password, unlock_account_key,
+    unwrap_with_account_handle, wrap_with_account_handle,
 };
 
 const PASSWORD: &[u8] = b"correct horse battery staple";
@@ -77,36 +76,6 @@ fn wrapped_account_key_unlocks_back_to_an_open_handle() {
     assert_eq!(unlocked.code, 0);
     assert!(unlocked.handle != 0);
     assert_eq!(close_account_key_handle(unlocked.handle), 0);
-}
-
-#[test]
-fn account_handle_yields_identical_db_session_key_across_calls() {
-    let created = create_new_account(
-        PASSWORD.to_vec(),
-        USER_SALT.to_vec(),
-        ACCOUNT_SALT.to_vec(),
-        KDF_MEMORY_KIB,
-        KDF_ITERATIONS,
-        KDF_PARALLELISM,
-    );
-    assert_eq!(created.code, 0);
-
-    let key_a = derive_db_session_key_from_account(created.handle);
-    assert_eq!(key_a.code, 0);
-    assert_eq!(key_a.bytes.len(), 32);
-
-    let key_b = derive_db_session_key_from_account(created.handle);
-    assert_eq!(key_b.code, 0);
-    assert_eq!(key_a.bytes, key_b.bytes);
-
-    assert_eq!(close_account_key_handle(created.handle), 0);
-}
-
-#[test]
-fn db_session_key_rejects_invalid_handle() {
-    let result = derive_db_session_key_from_account(0);
-    assert_eq!(result.code, ClientErrorCode::SecretHandleNotFound.as_u16());
-    assert!(result.bytes.is_empty());
 }
 
 #[test]

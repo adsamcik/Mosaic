@@ -161,6 +161,52 @@ fn wasm_source_does_not_define_raw_bundle_seed_exports() {
     }
 }
 
+#[test]
+fn generated_wasm_typescript_declarations_do_not_export_raw_db_session_key_api() {
+    let generated_path = project_root()
+        .join("apps")
+        .join("web")
+        .join("src")
+        .join("generated")
+        .join("mosaic-wasm")
+        .join("mosaic_wasm.d.ts");
+    let generated = fs::read_to_string(&generated_path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read generated wasm-bindgen declarations at {}: {error}. \
+             Run scripts/build-rust-wasm.ps1 before this test.",
+            generated_path.display()
+        )
+    });
+
+    assert!(
+        !generated.contains("deriveDbSessionKeyFromAccount"),
+        "raw DB session key export must not be present in generated WASM declarations"
+    );
+}
+
+#[test]
+fn wasm_source_does_not_define_raw_db_session_key_exports() {
+    let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("lib.rs");
+    let source = fs::read_to_string(&source_path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read WASM source at {}: {error}",
+            source_path.display()
+        )
+    });
+
+    for forbidden_export in [
+        "pub fn derive_db_session_key_from_account",
+        "pub fn derive_db_session_key_from_account_js",
+    ] {
+        assert!(
+            !source.contains(forbidden_export),
+            "raw DB session key WASM source export must not be present: {forbidden_export}"
+        );
+    }
+}
+
 fn normalize_newlines(value: &str) -> String {
     value.replace("\r\n", "\n")
 }
