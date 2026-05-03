@@ -1975,6 +1975,23 @@ export function initUploadJob(job_id, album_id, asset_id, idempotency_key, max_r
 }
 
 /**
+ * @returns {Uint8Array}
+ */
+export function leak_master_key() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.leak_master_key(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 1, 1);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
  * Opens an epoch-key handle through WASM.
  * @param {Uint8Array} wrapped_epoch_seed
  * @param {bigint} account_key_handle

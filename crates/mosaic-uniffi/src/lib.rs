@@ -400,7 +400,11 @@ pub fn protocol_version() -> String {
     mosaic_client::protocol_version().to_owned()
 }
 
-/// Returns the stable UniFFI API snapshot for this FFI spike.
+/// Returns the historical UniFFI API changelog label for diagnostics.
+///
+/// This string is documentation only. The authoritative API-shape lock is
+/// `tests/api_shape_lock.rs`, which derives its golden from the exported
+/// UniFFI records and `#[uniffi::export]` functions in this crate.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
     "mosaic-uniffi ffi-spike:v10 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt)->EpochKeyHandleResult{code,handle,epoch_id,wrapped_epoch_seed,sign_public_key} metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"

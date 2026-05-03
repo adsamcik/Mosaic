@@ -194,14 +194,23 @@ jobs:
       - name: Run rust-no-secret-logs architecture guard
         run: bash ./tests/architecture/rust-no-secret-logs.sh
 
-      - name: Run no-raw-secret-ffi-export architecture guard
-        run: bash ./tests/architecture/no-raw-secret-ffi-export.sh
-
       - name: Install wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
 
       - name: Build Rust WASM package
         run: bash ./scripts/build-rust-wasm.sh
+
+      - name: Run UniFFI API-shape lock
+        run: cargo test -p mosaic-uniffi --test api_shape_lock --locked
+
+      - name: Run WASM API-shape lock
+        run: cargo test -p mosaic-wasm --test api_shape_lock --locked
+
+      - name: Run WASM debug-redaction lock
+        run: cargo test -p mosaic-wasm --test debug_redaction_lock --locked
+
+      - name: Run no-raw-secret-ffi-export architecture guard
+        run: bash ./tests/architecture/no-raw-secret-ffi-export.sh
 
       - name: Check Rust Android targets
         run: |

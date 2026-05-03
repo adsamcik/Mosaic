@@ -10,13 +10,25 @@ use zeroize::{Zeroize, Zeroizing};
 use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
 
 /// Rust-side WASM facade result for header parsing.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct HeaderResult {
     pub code: u16,
     pub epoch_id: u32,
     pub shard_index: u32,
     pub tier: u8,
     pub nonce: Vec<u8>,
+}
+
+impl fmt::Debug for HeaderResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HeaderResult")
+            .field("code", &self.code)
+            .field("epoch_id", &self.epoch_id)
+            .field("shard_index", &self.shard_index)
+            .field("tier", &self.tier)
+            .field("nonce_len", &self.nonce.len())
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade progress event.
@@ -154,6 +166,7 @@ impl fmt::Debug for EpochKeyHandleResult {
             .field("handle", &self.handle)
             .field("epoch_id", &self.epoch_id)
             .field("wrapped_epoch_seed_len", &self.wrapped_epoch_seed.len())
+            .field("sign_public_key_len", &self.sign_public_key.len())
             .finish()
     }
 }
@@ -185,16 +198,24 @@ impl fmt::Debug for EncryptedShardResult {
 
 /// Rust-side WASM facade decrypted shard result.
 ///
-/// This type carries client-local plaintext media bytes on success and
-/// intentionally does not implement `Debug`.
+/// This type carries client-local plaintext media bytes on success.
 #[derive(Clone, PartialEq, Eq)]
 pub struct DecryptedShardResult {
     pub code: u16,
     pub plaintext: Vec<u8>,
 }
 
+impl fmt::Debug for DecryptedShardResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DecryptedShardResult")
+            .field("code", &self.code)
+            .field("plaintext_len", &self.plaintext.len())
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade public crypto/domain golden-vector snapshot.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct CryptoDomainGoldenVectorSnapshot {
     pub code: u16,
     pub envelope_header: Vec<u8>,
@@ -209,8 +230,32 @@ pub struct CryptoDomainGoldenVectorSnapshot {
     pub identity_signature: Vec<u8>,
 }
 
+impl fmt::Debug for CryptoDomainGoldenVectorSnapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CryptoDomainGoldenVectorSnapshot")
+            .field("code", &self.code)
+            .field("envelope_header_len", &self.envelope_header.len())
+            .field("envelope_epoch_id", &self.envelope_epoch_id)
+            .field("envelope_shard_index", &self.envelope_shard_index)
+            .field("envelope_tier", &self.envelope_tier)
+            .field("envelope_nonce_len", &self.envelope_nonce.len())
+            .field("manifest_transcript_len", &self.manifest_transcript.len())
+            .field("identity_message_len", &self.identity_message.len())
+            .field(
+                "identity_signing_pubkey_len",
+                &self.identity_signing_pubkey.len(),
+            )
+            .field(
+                "identity_encryption_pubkey_len",
+                &self.identity_encryption_pubkey.len(),
+            )
+            .field("identity_signature_len", &self.identity_signature.len())
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade privacy-safe upload shard reference.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ClientCoreUploadShardRef {
     pub tier: u8,
     pub shard_index: u32,
@@ -219,6 +264,20 @@ pub struct ClientCoreUploadShardRef {
     pub content_length: u64,
     pub envelope_version: u8,
     pub uploaded: bool,
+}
+
+impl fmt::Debug for ClientCoreUploadShardRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClientCoreUploadShardRef")
+            .field("tier", &self.tier)
+            .field("shard_index", &self.shard_index)
+            .field("shard_id", &self.shard_id)
+            .field("sha256_len", &self.sha256.len())
+            .field("content_length", &self.content_length)
+            .field("envelope_version", &self.envelope_version)
+            .field("uploaded", &self.uploaded)
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade upload job initialization request.
@@ -232,7 +291,7 @@ pub struct ClientCoreUploadJobRequest {
 }
 
 /// Rust-side WASM facade persistence-safe upload job snapshot.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ClientCoreUploadJobSnapshot {
     pub schema_version: u32,
     pub job_id: String,
@@ -252,8 +311,37 @@ pub struct ClientCoreUploadJobSnapshot {
     pub failure_code: u16,
 }
 
+impl fmt::Debug for ClientCoreUploadJobSnapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClientCoreUploadJobSnapshot")
+            .field("schema_version", &self.schema_version)
+            .field("job_id", &self.job_id)
+            .field("album_id", &self.album_id)
+            .field("phase", &self.phase)
+            .field("retry_count", &self.retry_count)
+            .field("max_retry_count", &self.max_retry_count)
+            .field("next_retry_not_before_ms", &self.next_retry_not_before_ms)
+            .field(
+                "has_next_retry_not_before_ms",
+                &self.has_next_retry_not_before_ms,
+            )
+            .field("idempotency_key", &self.idempotency_key)
+            .field("tiered_shards", &self.tiered_shards)
+            .field("shard_set_hash_len", &self.shard_set_hash.len())
+            .field("snapshot_revision", &self.snapshot_revision)
+            .field("last_effect_id", &self.last_effect_id)
+            .field(
+                "last_acknowledged_effect_id",
+                &self.last_acknowledged_effect_id,
+            )
+            .field("last_applied_event_id", &self.last_applied_event_id)
+            .field("failure_code", &self.failure_code)
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade compact upload event.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ClientCoreUploadJobEvent {
     pub kind: String,
     pub effect_id: String,
@@ -278,8 +366,36 @@ pub struct ClientCoreUploadJobEvent {
     pub target_phase: String,
 }
 
+impl fmt::Debug for ClientCoreUploadJobEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClientCoreUploadJobEvent")
+            .field("kind", &self.kind)
+            .field("effect_id", &self.effect_id)
+            .field("tier", &self.tier)
+            .field("shard_index", &self.shard_index)
+            .field("shard_id", &self.shard_id)
+            .field("sha256_len", &self.sha256.len())
+            .field("content_length", &self.content_length)
+            .field("envelope_version", &self.envelope_version)
+            .field("uploaded", &self.uploaded)
+            .field("tiered_shards", &self.tiered_shards)
+            .field("shard_set_hash_len", &self.shard_set_hash.len())
+            .field("asset_id", &self.asset_id)
+            .field("since_metadata_version", &self.since_metadata_version)
+            .field("recovery_outcome", &self.recovery_outcome)
+            .field("now_ms", &self.now_ms)
+            .field("base_backoff_ms", &self.base_backoff_ms)
+            .field("server_retry_after_ms", &self.server_retry_after_ms)
+            .field("has_server_retry_after_ms", &self.has_server_retry_after_ms)
+            .field("has_error_code", &self.has_error_code)
+            .field("error_code", &self.error_code)
+            .field("target_phase", &self.target_phase)
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade compact upload effect.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ClientCoreUploadJobEffect {
     pub kind: String,
     pub effect_id: String,
@@ -297,6 +413,29 @@ pub struct ClientCoreUploadJobEffect {
     pub since_metadata_version: u64,
     pub idempotency_key: String,
     pub shard_set_hash: Vec<u8>,
+}
+
+impl fmt::Debug for ClientCoreUploadJobEffect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClientCoreUploadJobEffect")
+            .field("kind", &self.kind)
+            .field("effect_id", &self.effect_id)
+            .field("tier", &self.tier)
+            .field("shard_index", &self.shard_index)
+            .field("shard_id", &self.shard_id)
+            .field("sha256_len", &self.sha256.len())
+            .field("content_length", &self.content_length)
+            .field("envelope_version", &self.envelope_version)
+            .field("attempt", &self.attempt)
+            .field("not_before_ms", &self.not_before_ms)
+            .field("target_phase", &self.target_phase)
+            .field("reason", &self.reason)
+            .field("asset_id", &self.asset_id)
+            .field("since_metadata_version", &self.since_metadata_version)
+            .field("idempotency_key", &self.idempotency_key)
+            .field("shard_set_hash_len", &self.shard_set_hash.len())
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade upload transition.
@@ -472,8 +611,7 @@ impl fmt::Debug for SealedBundleResult {
 
 /// Rust-side WASM facade opened-bundle result.
 ///
-/// Carries client-local secret bytes (`epoch_seed`, `sign_secret_seed`) so
-/// it intentionally does not implement `Debug`.
+/// Carries client-local secret bytes (`epoch_seed`, `sign_secret_seed`).
 #[derive(Clone, PartialEq, Eq)]
 pub struct OpenedBundleResult {
     pub code: u16,
@@ -484,6 +622,21 @@ pub struct OpenedBundleResult {
     pub epoch_seed: Vec<u8>,
     pub sign_secret_seed: Vec<u8>,
     pub sign_public_key: Vec<u8>,
+}
+
+impl fmt::Debug for OpenedBundleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenedBundleResult")
+            .field("code", &self.code)
+            .field("version", &self.version)
+            .field("album_id", &self.album_id)
+            .field("epoch_id", &self.epoch_id)
+            .field("recipient_pubkey_len", &self.recipient_pubkey.len())
+            .field("epoch_seed_len", &self.epoch_seed.len())
+            .field("sign_secret_seed_len", &self.sign_secret_seed.len())
+            .field("sign_public_key_len", &self.sign_public_key.len())
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade encrypted album content result.
@@ -506,12 +659,20 @@ impl fmt::Debug for EncryptedContentResult {
 
 /// Rust-side WASM facade decrypted album content result.
 ///
-/// Carries client-local plaintext bytes on success and intentionally does
-/// not implement `Debug`.
+/// Carries client-local plaintext bytes on success.
 #[derive(Clone, PartialEq, Eq)]
 pub struct DecryptedContentResult {
     pub code: u16,
     pub plaintext: Vec<u8>,
+}
+
+impl fmt::Debug for DecryptedContentResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DecryptedContentResult")
+            .field("code", &self.code)
+            .field("plaintext_len", &self.plaintext.len())
+            .finish()
+    }
 }
 
 /// WASM-bindgen class for header parse results.
@@ -1264,7 +1425,11 @@ pub const fn protocol_version() -> &'static str {
     mosaic_client::protocol_version()
 }
 
-/// Returns the stable WASM API snapshot for this FFI spike.
+/// Returns the historical WASM API changelog label for diagnostics.
+///
+/// This string is documentation only. The authoritative API-shape lock is
+/// `tests/api_shape_lock.rs`, which compares the generated wasm-bindgen
+/// TypeScript declaration file against a golden file.
 #[must_use]
 pub const fn wasm_api_snapshot() -> &'static str {
     "mosaic-wasm ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)"
@@ -4176,13 +4341,13 @@ mod tests {
                 wrapped_epoch_seed: vec![221, 222, 223],
                 sign_public_key: vec![223; 32],
             },
-            &["wrapped_epoch_seed_len: 3"],
+            &["wrapped_epoch_seed_len: 3", "sign_public_key_len: 32"],
             &[
                 "221",
                 "222",
                 "223",
                 "wrapped_epoch_seed: [",
-                "sign_public_key",
+                "sign_public_key: [",
             ],
         );
 

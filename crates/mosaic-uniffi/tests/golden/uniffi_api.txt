@@ -1,0 +1,295 @@
+mosaic-uniffi-api-shape:v1
+record HeaderResult
+  code: u16
+  epoch_id: u32
+  shard_index: u32
+  tier: u8
+  nonce: Vec<u8>
+end
+record ProgressEvent
+  completed_steps: u32
+  total_steps: u32
+end
+record ProgressResult
+  code: u16
+  events: Vec<ProgressEvent>
+end
+record BytesResult
+  code: u16
+  bytes: Vec<u8>
+end
+record AccountUnlockRequest
+  user_salt: Vec<u8>
+  account_salt: Vec<u8>
+  wrapped_account_key: Vec<u8>
+  kdf_memory_kib: u32
+  kdf_iterations: u32
+  kdf_parallelism: u32
+end
+record AccountUnlockResult
+  code: u16
+  handle: u64
+end
+record AccountKeyHandleStatusResult
+  code: u16
+  is_open: bool
+end
+record IdentityHandleResult
+  code: u16
+  handle: u64
+  signing_pubkey: Vec<u8>
+  encryption_pubkey: Vec<u8>
+  wrapped_seed: Vec<u8>
+end
+record EpochKeyHandleResult
+  code: u16
+  handle: u64
+  epoch_id: u32
+  wrapped_epoch_seed: Vec<u8>
+  sign_public_key: Vec<u8>
+end
+record EpochKeyHandleStatusResult
+  code: u16
+  is_open: bool
+end
+record EncryptedShardResult
+  code: u16
+  envelope_bytes: Vec<u8>
+  sha256: String
+end
+record DecryptedShardResult
+  code: u16
+  plaintext: Vec<u8>
+end
+record CryptoDomainGoldenVectorSnapshot
+  code: u16
+  envelope_header: Vec<u8>
+  envelope_epoch_id: u32
+  envelope_shard_index: u32
+  envelope_tier: u8
+  envelope_nonce: Vec<u8>
+  manifest_transcript: Vec<u8>
+  identity_message: Vec<u8>
+  identity_signing_pubkey: Vec<u8>
+  identity_encryption_pubkey: Vec<u8>
+  identity_signature: Vec<u8>
+end
+record ClientCoreUploadShardRef
+  tier: u8
+  shard_index: u32
+  shard_id: String
+  sha256: Vec<u8>
+  content_length: u64
+  envelope_version: u8
+  uploaded: bool
+end
+record ClientCoreUploadJobRequest
+  job_id: String
+  album_id: String
+  asset_id: String
+  idempotency_key: String
+  max_retry_count: u8
+end
+record ClientCoreUploadJobSnapshot
+  schema_version: u32
+  job_id: String
+  album_id: String
+  phase: String
+  retry_count: u32
+  max_retry_count: u8
+  next_retry_not_before_ms: i64
+  has_next_retry_not_before_ms: bool
+  idempotency_key: String
+  tiered_shards: Vec<ClientCoreUploadShardRef>
+  shard_set_hash: Vec<u8>
+  snapshot_revision: u64
+  last_effect_id: String
+  last_acknowledged_effect_id: String
+  last_applied_event_id: String
+  failure_code: u16
+end
+record ClientCoreUploadJobEvent
+  kind: String
+  effect_id: String
+  tier: u8
+  shard_index: u32
+  shard_id: String
+  sha256: Vec<u8>
+  content_length: u64
+  envelope_version: u8
+  uploaded: bool
+  tiered_shards: Vec<ClientCoreUploadShardRef>
+  shard_set_hash: Vec<u8>
+  asset_id: String
+  since_metadata_version: u64
+  recovery_outcome: String
+  now_ms: i64
+  base_backoff_ms: u64
+  server_retry_after_ms: u64
+  has_server_retry_after_ms: bool
+  has_error_code: bool
+  error_code: u16
+  target_phase: String
+end
+record ClientCoreUploadJobEffect
+  kind: String
+  effect_id: String
+  tier: u8
+  shard_index: u32
+  shard_id: String
+  sha256: Vec<u8>
+  content_length: u64
+  envelope_version: u8
+  attempt: u32
+  not_before_ms: i64
+  target_phase: String
+  reason: String
+  asset_id: String
+  since_metadata_version: u64
+  idempotency_key: String
+  shard_set_hash: Vec<u8>
+end
+record ClientCoreUploadJobTransition
+  next_snapshot: ClientCoreUploadJobSnapshot
+  effects: Vec<ClientCoreUploadJobEffect>
+end
+record ClientCoreUploadJobResult
+  code: u16
+  snapshot: ClientCoreUploadJobSnapshot
+end
+record ClientCoreUploadJobTransitionResult
+  code: u16
+  transition: ClientCoreUploadJobTransition
+end
+record ClientCoreAlbumSyncRequest
+  album_id: String
+  request_id: String
+  start_cursor: String
+  now_unix_ms: u64
+  max_retry_count: u32
+end
+record ClientCoreAlbumSyncSnapshot
+  schema_version: u32
+  album_id: String
+  phase: String
+  active_cursor: String
+  pending_cursor: String
+  rerun_requested: bool
+  retry_count: u32
+  max_retry_count: u32
+  next_retry_unix_ms: u64
+  last_error_code: u16
+  last_error_stage: String
+  updated_at_unix_ms: u64
+end
+record ClientCoreAlbumSyncEvent
+  kind: String
+  fetched_cursor: String
+  next_cursor: String
+  applied_count: u32
+  observed_asset_ids: Vec<String>
+  retry_after_unix_ms: u64
+  has_error_code: bool
+  error_code: u16
+end
+record ClientCoreAlbumSyncEffect
+  kind: String
+  cursor: String
+end
+record ClientCoreAlbumSyncTransition
+  snapshot: ClientCoreAlbumSyncSnapshot
+  effects: Vec<ClientCoreAlbumSyncEffect>
+end
+record ClientCoreAlbumSyncResult
+  code: u16
+  snapshot: ClientCoreAlbumSyncSnapshot
+end
+record ClientCoreAlbumSyncTransitionResult
+  code: u16
+  transition: ClientCoreAlbumSyncTransition
+end
+record MediaMetadataResult
+  code: u16
+  format: String
+  mime_type: String
+  width: u32
+  height: u32
+  orientation: u8
+end
+record MediaTierDimensions
+  tier: u8
+  width: u32
+  height: u32
+end
+record MediaTierLayoutResult
+  code: u16
+  thumbnail: MediaTierDimensions
+  preview: MediaTierDimensions
+  original: MediaTierDimensions
+end
+export pub fn protocol_version() -> String
+export pub fn parse_envelope_header(bytes: Vec<u8>) -> HeaderResult
+export pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> ProgressResult
+export pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> AccountUnlockResult
+export pub fn account_key_handle_is_open(handle: u64) -> AccountKeyHandleStatusResult
+export pub fn close_account_key_handle(handle: u64) -> u16
+export pub fn create_identity_handle(account_key_handle: u64) -> IdentityHandleResult
+export pub fn open_identity_handle( wrapped_identity_seed: Vec<u8>, account_key_handle: u64, ) -> IdentityHandleResult
+export pub fn identity_signing_pubkey(handle: u64) -> BytesResult
+export pub fn identity_encryption_pubkey(handle: u64) -> BytesResult
+export pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: Vec<u8>) -> BytesResult
+export pub fn canonical_metadata_sidecar_bytes( album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, encoded_fields: Vec<u8>, ) -> BytesResult
+export pub fn encrypt_metadata_sidecar_with_epoch_handle( handle: u64, album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, encoded_fields: Vec<u8>, shard_index: u32, ) -> EncryptedShardResult
+export pub fn inspect_media_image(bytes: Vec<u8>) -> MediaMetadataResult
+export pub fn plan_media_tier_layout(width: u32, height: u32) -> MediaTierLayoutResult
+export pub fn canonical_media_metadata_sidecar_bytes( album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, media_bytes: Vec<u8>, ) -> BytesResult
+export pub fn encrypt_media_metadata_sidecar_with_epoch_handle( handle: u64, album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, media_bytes: Vec<u8>, shard_index: u32, ) -> EncryptedShardResult
+export pub fn close_identity_handle(handle: u64) -> u16
+export pub fn create_epoch_key_handle(account_key_handle: u64, epoch_id: u32) -> EpochKeyHandleResult
+export pub fn open_epoch_key_handle( wrapped_epoch_seed: Vec<u8>, account_key_handle: u64, epoch_id: u32, ) -> EpochKeyHandleResult
+export pub fn epoch_key_handle_is_open(handle: u64) -> EpochKeyHandleStatusResult
+export pub fn close_epoch_key_handle(handle: u64) -> u16
+export pub fn encrypt_shard_with_epoch_handle( handle: u64, plaintext: Vec<u8>, shard_index: u32, tier_byte: u8, ) -> EncryptedShardResult
+export pub fn decrypt_shard_with_epoch_handle( handle: u64, envelope_bytes: Vec<u8>, ) -> DecryptedShardResult
+export pub fn decrypt_shard_with_legacy_raw_key_handle( handle: u64, envelope_bytes: Vec<u8>, ) -> DecryptedShardResult
+export pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVectorSnapshot
+export pub fn client_core_state_machine_snapshot() -> String
+export pub fn init_upload_job(request: ClientCoreUploadJobRequest) -> ClientCoreUploadJobResult
+export pub fn advance_upload_job( snapshot: ClientCoreUploadJobSnapshot, event: ClientCoreUploadJobEvent, ) -> ClientCoreUploadJobTransitionResult
+export pub fn init_album_sync(request: ClientCoreAlbumSyncRequest) -> ClientCoreAlbumSyncResult
+export pub fn advance_album_sync( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransitionResult
+record LinkKeysFfiResult
+  code: u16
+  link_id: Vec<u8>
+  wrapping_key: Vec<u8>
+end
+record IdentityFromSeedFfiResult
+  code: u16
+  signing_pubkey: Vec<u8>
+  encryption_pubkey: Vec<u8>
+  signature: Vec<u8>
+end
+record AuthChallengeVerifyFfiResult
+  code: u16
+  valid: bool
+end
+record OpenedBundleFfiResult
+  code: u16
+  version: u32
+  album_id: String
+  epoch_id: u32
+  recipient_pubkey: Vec<u8>
+  epoch_seed: Vec<u8>
+  sign_public_key: Vec<u8>
+end
+record ContentDecryptFfiResult
+  code: u16
+  plaintext: Vec<u8>
+end
+export pub fn derive_link_keys_from_raw_secret(link_secret: Vec<u8>) -> LinkKeysFfiResult
+export pub fn derive_identity_from_raw_seed( identity_seed: Vec<u8>, message: Vec<u8>, ) -> IdentityFromSeedFfiResult
+export pub fn build_auth_challenge_transcript_bytes( username: String, timestamp_ms: i64, challenge: Vec<u8>, ) -> BytesResult
+export pub fn sign_auth_challenge_with_raw_seed( transcript_bytes: Vec<u8>, auth_signing_seed: Vec<u8>, ) -> BytesResult
+export pub fn verify_auth_challenge_signature( transcript_bytes: Vec<u8>, signature: Vec<u8>, auth_public_key: Vec<u8>, ) -> AuthChallengeVerifyFfiResult
+export pub fn verify_and_open_bundle_with_recipient_seed( recipient_identity_seed: Vec<u8>, sealed: Vec<u8>, signature: Vec<u8>, sharer_pubkey: Vec<u8>, expected_owner_pubkey: Vec<u8>, expected_album_id: String, expected_min_epoch_id: u32, allow_legacy_empty_album_id: bool, ) -> OpenedBundleFfiResult
+export pub fn decrypt_content_with_raw_key( content_key: Vec<u8>, nonce: Vec<u8>, ciphertext: Vec<u8>, epoch_id: u32, ) -> ContentDecryptFfiResult
