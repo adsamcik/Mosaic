@@ -1267,7 +1267,7 @@ pub const fn protocol_version() -> &'static str {
 /// Returns the stable WASM API snapshot for this FFI spike.
 #[must_use]
 pub const fn wasm_api_snapshot() -> &'static str {
-    "mosaic-wasm ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)"
+    "mosaic-wasm ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)"
 }
 
 const CLIENT_CORE_STATE_MACHINE_SURFACE: &str = "client-core-state-machines:v1 \
@@ -1603,6 +1603,24 @@ pub fn decrypt_shard_with_epoch_handle(
         handle,
         &envelope_bytes,
     ))
+}
+
+/// Decrypts a legacy raw-key shard envelope with a Rust-owned epoch-key handle.
+#[must_use]
+pub fn decrypt_shard_with_legacy_raw_key_handle(
+    handle: u64,
+    envelope_bytes: Vec<u8>,
+) -> DecryptedShardResult {
+    match mosaic_client::decrypt_shard_with_legacy_raw_key_handle(handle, &envelope_bytes) {
+        Ok(plaintext) => DecryptedShardResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            plaintext,
+        },
+        Err(error) => DecryptedShardResult {
+            code: error.code.as_u16(),
+            plaintext: Vec::new(),
+        },
+    }
 }
 
 /// Returns deterministic public crypto/domain golden vectors for Rust-side wrapper tests.
@@ -2345,6 +2363,19 @@ pub fn decrypt_shard_with_epoch_handle_js(
     envelope_bytes: Vec<u8>,
 ) -> JsDecryptedShardResult {
     js_decrypted_shard_result_from_rust(decrypt_shard_with_epoch_handle(handle, envelope_bytes))
+}
+
+/// Decrypts a legacy raw-key shard envelope with an epoch-key handle through WASM.
+#[wasm_bindgen(js_name = decryptShardWithLegacyRawKeyHandle)]
+#[must_use]
+pub fn decrypt_shard_with_legacy_raw_key_handle_js(
+    handle: u64,
+    envelope_bytes: Vec<u8>,
+) -> JsDecryptedShardResult {
+    js_decrypted_shard_result_from_rust(decrypt_shard_with_legacy_raw_key_handle(
+        handle,
+        envelope_bytes,
+    ))
 }
 
 /// Returns deterministic public crypto/domain golden vectors through WASM.

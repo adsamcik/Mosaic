@@ -12,9 +12,9 @@ use mosaic_crypto::{
     EpochKeyMaterial, IdentityKeypair, IdentitySignature, IdentitySigningPublicKey, KdfProfile,
     LinkKeys, ManifestSignature, ManifestSigningKeypair, ManifestSigningPublicKey,
     ManifestSigningSecretKey, MosaicCryptoError, SealedBundle, SecretKey, WrappedTierKey,
-    build_auth_challenge_transcript, decrypt_content, decrypt_shard, derive_account_key,
-    derive_auth_signing_keypair, derive_content_key, derive_db_session_key,
-    derive_epoch_key_material, derive_identity_keypair,
+    build_auth_challenge_transcript, decrypt_content, decrypt_shard,
+    decrypt_shard_with_legacy_raw_key, derive_account_key, derive_auth_signing_keypair,
+    derive_content_key, derive_db_session_key, derive_epoch_key_material, derive_identity_keypair,
     derive_link_keys as crypto_derive_link_keys, encrypt_content, encrypt_shard,
     generate_epoch_key_material, generate_identity_seed,
     generate_link_secret as crypto_generate_link_secret,
@@ -144,6 +144,9 @@ pub enum ClientErrorCode {
     /// Android TLS certificate pin validation failed for a configured Mosaic endpoint.
     PinValidationFailed = 800,
 }
+
+/// Opaque epoch-key handle identifier.
+pub type EpochHandleId = u64;
 
 impl ClientErrorCode {
     /// Returns the numeric representation used across generated bindings.
@@ -1424,6 +1427,46 @@ pub fn decrypt_shard_with_epoch_handle(handle: u64, envelope_bytes: &[u8]) -> De
     }
 }
 
+/// Handle-API wrapper for the legacy raw-key fallback. The handle resolves to
+/// an opaque epoch state inside the secret registry; the raw seed never
+/// crosses the FFI boundary.
+///
+/// **Telemetry side-effect:** on success, stages a counter increment for
+/// `ClientErrorCode::LegacyRawKeyDecryptFallback` (code 224) via a no-op hook.
+/// ADR-018's local ring-buffer telemetry port is not wired in this crate yet.
+///
+/// # Errors
+/// Returns `ClientError { code: EpochHandleNotFound }` if the handle is invalid.
+/// Returns `ClientError { code: AuthenticationFailed }` if the envelope is not
+/// a legacy ciphertext. Tier-key decryption MUST be tried first.
+pub fn decrypt_shard_with_legacy_raw_key_handle(
+    handle: EpochHandleId,
+    envelope_bytes: &[u8],
+) -> Result<Vec<u8>, ClientError> {
+    let registry = epoch_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "epoch registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::EpochHandleNotFound,
+                "epoch handle is not open",
+            )
+        })?;
+
+    let plaintext =
+        decrypt_shard_with_legacy_raw_key(record.key_material.epoch_seed(), envelope_bytes)
+            .map_err(client_error_from_crypto)?;
+    emit_telemetry_counter(ClientErrorCode::LegacyRawKeyDecryptFallback);
+    Ok(plaintext)
+}
+
 /// Returns whether an opaque identity handle is still open.
 pub fn identity_handle_is_open(handle: u64) -> Result<bool, ClientError> {
     let registry = identity_registry();
@@ -2579,6 +2622,24 @@ fn clone_epoch_seed_for_handle(handle: u64) -> Result<(u32, Zeroizing<Vec<u8>>),
     let mut bytes = Zeroizing::new(vec![0_u8; seed.as_bytes().len()]);
     bytes.copy_from_slice(seed.as_bytes());
     Ok((record.epoch_id, bytes))
+}
+
+/// Local telemetry hook for ADR-021 sunset-tracked client error codes.
+///
+/// Currently a no-op: ADR-018's local telemetry ring-buffer port is not yet
+/// wired into `mosaic-client` (tracked under follow-up ticket R-C3.1). Until
+/// the port lands, callsites such as
+/// `decrypt_shard_with_legacy_raw_key_handle` invoke this with
+/// [`ClientErrorCode::LegacyRawKeyDecryptFallback`] (224) on success, and
+/// emission is silently dropped — meaning the sunset metric ADR-021 was
+/// designed around does not actually fire yet. The hook exists so that
+/// production callers and tests already route through the right surface,
+/// and replacing the body is a single-file change once the ADR-018 port
+/// is available.
+fn emit_telemetry_counter(_code: ClientErrorCode) {
+    // TODO(ADR-018, R-C3.1): wire to the local telemetry ring buffer once
+    // its port surface lands. See `ClientErrorCode::LegacyRawKeyDecryptFallback`
+    // (= 224) for the canonical sunset-tracked code.
 }
 
 /// Resolves an account-key handle and constructs the deterministic LocalAuth

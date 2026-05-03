@@ -45,7 +45,7 @@ const SHARD_ID: &str = "018f0000-0000-7000-8000-000000000006";
 /// + update SPEC-LateV1ProtocolFreeze §Frozen now.
 #[test]
 fn wasm_facade_exposes_stable_ffi_spike_surface() {
-    const FROZEN_WASM_API_SNAPSHOT: &str = "mosaic-wasm ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)";
+    const FROZEN_WASM_API_SNAPSHOT: &str = "mosaic-wasm ffi-spike:v6 parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign/verify) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt) metadata(canonical/encrypt) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance)";
 
     assert_eq!(
         wasm_api_snapshot(),

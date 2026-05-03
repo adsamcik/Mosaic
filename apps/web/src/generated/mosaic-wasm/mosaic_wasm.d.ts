@@ -484,7 +484,7 @@ export function advanceAlbumSync(album_id: string, phase: string, active_cursor:
 /**
  * Advances a client-core upload job through a primitive WASM proof surface.
  */
-export function advanceUploadJob(job_id: string, album_id: string, asset_id: string, epoch_id: number, phase: string, active_tier: number, active_shard_index: number, retry_count: number, max_retry_count: number, next_retry_unix_ms: bigint, last_error_code: number, last_error_stage: string, sync_confirmed: boolean, updated_at_unix_ms: bigint, event_kind: string, event_epoch_id: number, event_tier: number, event_shard_index: number, event_shard_id: string, event_sha256: string, event_manifest_id: string, event_manifest_version: bigint, observed_asset_id: string, retry_after_unix_ms: bigint, event_error_code: number): string;
+export function advanceUploadJob(job_id: string, album_id: string, idempotency_key: string, phase: string, retry_count: number, max_retry_count: number, next_retry_not_before_ms: bigint, has_next_retry_not_before_ms: boolean, snapshot_revision: bigint, last_effect_id: string, event_kind: string, event_effect_id: string, event_tier: number, event_shard_index: number, event_shard_id: string, event_sha256: Uint8Array, event_content_length: bigint, event_envelope_version: number, event_asset_id: string, event_since_metadata_version: bigint, event_recovery_outcome: string, event_now_ms: bigint, event_base_backoff_ms: bigint, event_server_retry_after_ms: bigint, event_has_server_retry_after_ms: boolean, event_error_code: number, event_target_phase: string): string;
 
 /**
  * Builds the canonical LocalAuth challenge transcript through WASM.
@@ -549,6 +549,11 @@ export function decryptAlbumContent(epoch_handle: bigint, nonce: Uint8Array, cip
  * Decrypts shard envelope bytes with an epoch-key handle through WASM.
  */
 export function decryptShardWithEpochHandle(handle: bigint, envelope_bytes: Uint8Array): DecryptedShardResult;
+
+/**
+ * Decrypts a legacy raw-key shard envelope with an epoch-key handle through WASM.
+ */
+export function decryptShardWithLegacyRawKeyHandle(handle: bigint, envelope_bytes: Uint8Array): DecryptedShardResult;
 
 /**
  * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
@@ -647,7 +652,7 @@ export function initAlbumSync(album_id: string, request_id: string, start_cursor
 /**
  * Initializes a client-core upload job through a primitive WASM proof surface.
  */
-export function initUploadJob(job_id: string, album_id: string, asset_id: string, epoch_id: number, now_unix_ms: bigint, max_retry_count: number): string;
+export function initUploadJob(job_id: string, album_id: string, asset_id: string, idempotency_key: string, max_retry_count: number): string;
 
 /**
  * Opens an epoch-key handle through WASM.
@@ -779,7 +784,7 @@ export interface InitOutput {
     readonly accountunlockresult_code: (a: number) => number;
     readonly accountunlockresult_handle: (a: number) => bigint;
     readonly advanceAlbumSync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: bigint, n: number, o: number, p: number, q: bigint, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: bigint, z: number) => void;
-    readonly advanceUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: bigint, p: number, q: number, r: number, s: number, t: bigint, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: bigint, g1: number, h1: number, i1: bigint, j1: number) => void;
+    readonly advanceUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: bigint, m: number, n: bigint, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: bigint, b1: number, c1: number, d1: number, e1: bigint, f1: number, g1: number, h1: bigint, i1: bigint, j1: bigint, k1: number, l1: number, m1: number, n1: number) => void;
     readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
     readonly authkeypairresult_code: (a: number) => number;
     readonly buildAuthChallengeTranscript: (a: number, b: number, c: bigint, d: number, e: number, f: number) => number;
@@ -808,6 +813,7 @@ export interface InitOutput {
     readonly cryptodomaingoldenvectorsnapshot_manifestTranscript: (a: number, b: number) => void;
     readonly decryptAlbumContent: (a: bigint, b: number, c: number, d: number, e: number) => number;
     readonly decryptShardWithEpochHandle: (a: bigint, b: number, c: number) => number;
+    readonly decryptShardWithLegacyRawKeyHandle: (a: bigint, b: number, c: number) => number;
     readonly deriveAuthKeypairFromAccount: (a: bigint) => number;
     readonly deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly deriveContentKeyFromEpoch: (a: bigint) => number;
@@ -844,7 +850,7 @@ export interface InitOutput {
     readonly identityhandleresult_wrappedSeed: (a: number, b: number) => void;
     readonly importEpochKeyHandleFromBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
     readonly initAlbumSync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: number) => void;
-    readonly initUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: bigint, j: number) => void;
+    readonly initUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly openIdentityHandle: (a: number, b: number, c: bigint) => number;
     readonly openedbundleresult_albumId: (a: number, b: number) => void;
@@ -886,25 +892,25 @@ export interface InitOutput {
     readonly __wbg_linkkeysresult_free: (a: number, b: number) => void;
     readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
-    readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
     readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
     readonly epochkeyhandlestatusresult_code: (a: number) => number;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
     readonly linkkeysresult_linkId: (a: number, b: number) => void;
-    readonly linkkeysresult_code: (a: number) => number;
-    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
-    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
     readonly wrappedtierkeyresult_code: (a: number) => number;
     readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
-    readonly encryptedshardresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
+    readonly linkkeysresult_code: (a: number) => number;
     readonly linkkeysresult_wrappingKey: (a: number, b: number) => void;
+    readonly encryptedshardresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
     readonly bytesresult_bytes: (a: number, b: number) => void;
-    readonly bytesresult_code: (a: number) => number;
     readonly decryptedcontentresult_code: (a: number) => number;
+    readonly bytesresult_code: (a: number) => number;
     readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
-    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
     readonly decryptedshardresult_code: (a: number) => number;
+    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export2: (a: number, b: number) => number;

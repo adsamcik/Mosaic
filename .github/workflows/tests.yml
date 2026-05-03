@@ -194,6 +194,9 @@ jobs:
       - name: Run rust-no-secret-logs architecture guard
         run: bash ./tests/architecture/rust-no-secret-logs.sh
 
+      - name: Run no-raw-secret-ffi-export architecture guard
+        run: bash ./tests/architecture/no-raw-secret-ffi-export.sh
+
       - name: Install wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
 

@@ -1440,65 +1440,71 @@ export function advanceAlbumSync(album_id, phase, active_cursor, pending_cursor,
  * Advances a client-core upload job through a primitive WASM proof surface.
  * @param {string} job_id
  * @param {string} album_id
- * @param {string} asset_id
- * @param {number} epoch_id
+ * @param {string} idempotency_key
  * @param {string} phase
- * @param {number} active_tier
- * @param {number} active_shard_index
  * @param {number} retry_count
  * @param {number} max_retry_count
- * @param {bigint} next_retry_unix_ms
- * @param {number} last_error_code
- * @param {string} last_error_stage
- * @param {boolean} sync_confirmed
- * @param {bigint} updated_at_unix_ms
+ * @param {bigint} next_retry_not_before_ms
+ * @param {boolean} has_next_retry_not_before_ms
+ * @param {bigint} snapshot_revision
+ * @param {string} last_effect_id
  * @param {string} event_kind
- * @param {number} event_epoch_id
+ * @param {string} event_effect_id
  * @param {number} event_tier
  * @param {number} event_shard_index
  * @param {string} event_shard_id
- * @param {string} event_sha256
- * @param {string} event_manifest_id
- * @param {bigint} event_manifest_version
- * @param {string} observed_asset_id
- * @param {bigint} retry_after_unix_ms
+ * @param {Uint8Array} event_sha256
+ * @param {bigint} event_content_length
+ * @param {number} event_envelope_version
+ * @param {string} event_asset_id
+ * @param {bigint} event_since_metadata_version
+ * @param {string} event_recovery_outcome
+ * @param {bigint} event_now_ms
+ * @param {bigint} event_base_backoff_ms
+ * @param {bigint} event_server_retry_after_ms
+ * @param {boolean} event_has_server_retry_after_ms
  * @param {number} event_error_code
+ * @param {string} event_target_phase
  * @returns {string}
  */
-export function advanceUploadJob(job_id, album_id, asset_id, epoch_id, phase, active_tier, active_shard_index, retry_count, max_retry_count, next_retry_unix_ms, last_error_code, last_error_stage, sync_confirmed, updated_at_unix_ms, event_kind, event_epoch_id, event_tier, event_shard_index, event_shard_id, event_sha256, event_manifest_id, event_manifest_version, observed_asset_id, retry_after_unix_ms, event_error_code) {
-    let deferred11_0;
-    let deferred11_1;
+export function advanceUploadJob(job_id, album_id, idempotency_key, phase, retry_count, max_retry_count, next_retry_not_before_ms, has_next_retry_not_before_ms, snapshot_revision, last_effect_id, event_kind, event_effect_id, event_tier, event_shard_index, event_shard_id, event_sha256, event_content_length, event_envelope_version, event_asset_id, event_since_metadata_version, event_recovery_outcome, event_now_ms, event_base_backoff_ms, event_server_retry_after_ms, event_has_server_retry_after_ms, event_error_code, event_target_phase) {
+    let deferred13_0;
+    let deferred13_1;
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(job_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(asset_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const ptr2 = passStringToWasm0(idempotency_key, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
         const len2 = WASM_VECTOR_LEN;
         const ptr3 = passStringToWasm0(phase, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
         const len3 = WASM_VECTOR_LEN;
-        const ptr4 = passStringToWasm0(last_error_stage, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const ptr4 = passStringToWasm0(last_effect_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
         const len4 = WASM_VECTOR_LEN;
         const ptr5 = passStringToWasm0(event_kind, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
         const len5 = WASM_VECTOR_LEN;
-        const ptr6 = passStringToWasm0(event_shard_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const ptr6 = passStringToWasm0(event_effect_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
         const len6 = WASM_VECTOR_LEN;
-        const ptr7 = passStringToWasm0(event_sha256, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const ptr7 = passStringToWasm0(event_shard_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
         const len7 = WASM_VECTOR_LEN;
-        const ptr8 = passStringToWasm0(event_manifest_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const ptr8 = passArray8ToWasm0(event_sha256, wasm.__wbindgen_export2);
         const len8 = WASM_VECTOR_LEN;
-        const ptr9 = passStringToWasm0(observed_asset_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const ptr9 = passStringToWasm0(event_asset_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
         const len9 = WASM_VECTOR_LEN;
-        wasm.advanceUploadJob(retptr, ptr0, len0, ptr1, len1, ptr2, len2, epoch_id, ptr3, len3, active_tier, active_shard_index, retry_count, max_retry_count, next_retry_unix_ms, last_error_code, ptr4, len4, sync_confirmed, updated_at_unix_ms, ptr5, len5, event_epoch_id, event_tier, event_shard_index, ptr6, len6, ptr7, len7, ptr8, len8, event_manifest_version, ptr9, len9, retry_after_unix_ms, event_error_code);
+        const ptr10 = passStringToWasm0(event_recovery_outcome, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len10 = WASM_VECTOR_LEN;
+        const ptr11 = passStringToWasm0(event_target_phase, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len11 = WASM_VECTOR_LEN;
+        wasm.advanceUploadJob(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, retry_count, max_retry_count, next_retry_not_before_ms, has_next_retry_not_before_ms, snapshot_revision, ptr4, len4, ptr5, len5, ptr6, len6, event_tier, event_shard_index, ptr7, len7, ptr8, len8, event_content_length, event_envelope_version, ptr9, len9, event_since_metadata_version, ptr10, len10, event_now_ms, event_base_backoff_ms, event_server_retry_after_ms, event_has_server_retry_after_ms, event_error_code, ptr11, len11);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-        deferred11_0 = r0;
-        deferred11_1 = r1;
+        deferred13_0 = r0;
+        deferred13_1 = r1;
         return getStringFromWasm0(r0, r1);
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
-        wasm.__wbindgen_export4(deferred11_0, deferred11_1, 1);
+        wasm.__wbindgen_export4(deferred13_0, deferred13_1, 1);
     }
 }
 
@@ -1670,6 +1676,19 @@ export function decryptShardWithEpochHandle(handle, envelope_bytes) {
     const ptr0 = passArray8ToWasm0(envelope_bytes, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.decryptShardWithEpochHandle(handle, ptr0, len0);
+    return DecryptedShardResult.__wrap(ret);
+}
+
+/**
+ * Decrypts a legacy raw-key shard envelope with an epoch-key handle through WASM.
+ * @param {bigint} handle
+ * @param {Uint8Array} envelope_bytes
+ * @returns {DecryptedShardResult}
+ */
+export function decryptShardWithLegacyRawKeyHandle(handle, envelope_bytes) {
+    const ptr0 = passArray8ToWasm0(envelope_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decryptShardWithLegacyRawKeyHandle(handle, ptr0, len0);
     return DecryptedShardResult.__wrap(ret);
 }
 
@@ -1926,14 +1945,13 @@ export function initAlbumSync(album_id, request_id, start_cursor, now_unix_ms, m
  * @param {string} job_id
  * @param {string} album_id
  * @param {string} asset_id
- * @param {number} epoch_id
- * @param {bigint} now_unix_ms
+ * @param {string} idempotency_key
  * @param {number} max_retry_count
  * @returns {string}
  */
-export function initUploadJob(job_id, album_id, asset_id, epoch_id, now_unix_ms, max_retry_count) {
-    let deferred4_0;
-    let deferred4_1;
+export function initUploadJob(job_id, album_id, asset_id, idempotency_key, max_retry_count) {
+    let deferred5_0;
+    let deferred5_1;
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(job_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
@@ -1942,15 +1960,17 @@ export function initUploadJob(job_id, album_id, asset_id, epoch_id, now_unix_ms,
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passStringToWasm0(asset_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
         const len2 = WASM_VECTOR_LEN;
-        wasm.initUploadJob(retptr, ptr0, len0, ptr1, len1, ptr2, len2, epoch_id, now_unix_ms, max_retry_count);
+        const ptr3 = passStringToWasm0(idempotency_key, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len3 = WASM_VECTOR_LEN;
+        wasm.initUploadJob(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, max_retry_count);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-        deferred4_0 = r0;
-        deferred4_1 = r1;
+        deferred5_0 = r0;
+        deferred5_1 = r1;
         return getStringFromWasm0(r0, r1);
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
-        wasm.__wbindgen_export4(deferred4_0, deferred4_1, 1);
+        wasm.__wbindgen_export4(deferred5_0, deferred5_1, 1);
     }
 }
 

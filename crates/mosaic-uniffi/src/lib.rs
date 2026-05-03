@@ -401,7 +401,7 @@ pub fn protocol_version() -> String {
 /// Returns the stable UniFFI API snapshot for this FFI spike.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v9 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
+    "mosaic-uniffi ffi-spike:v9 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt) metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
 }
 
 const CLIENT_CORE_STATE_MACHINE_SURFACE: &str = "client-core-state-machines:v1 \
@@ -825,6 +825,30 @@ pub fn decrypt_shard_with_epoch_handle(
         handle,
         &envelope_bytes,
     ))
+}
+
+/// Decrypts a legacy raw-key shard envelope with a Rust-owned epoch-key handle.
+///
+/// `envelope_bytes` is wiped on every exit path for parity with
+/// `decrypt_shard_with_epoch_handle`. The raw epoch seed remains inside the
+/// client registry and never crosses UniFFI.
+#[uniffi::export]
+#[must_use]
+pub fn decrypt_shard_with_legacy_raw_key_handle(
+    handle: u64,
+    envelope_bytes: Vec<u8>,
+) -> DecryptedShardResult {
+    let envelope_bytes = Zeroizing::new(envelope_bytes);
+    match mosaic_client::decrypt_shard_with_legacy_raw_key_handle(handle, &envelope_bytes) {
+        Ok(plaintext) => DecryptedShardResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            plaintext,
+        },
+        Err(error) => DecryptedShardResult {
+            code: error.code.as_u16(),
+            plaintext: Vec::new(),
+        },
+    }
 }
 
 /// Returns deterministic public crypto/domain golden vectors through UniFFI.

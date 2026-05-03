@@ -1575,6 +1575,57 @@ pub fn decrypt_shard(
     Ok(Zeroizing::new(plaintext))
 }
 
+/// Decrypt a shard envelope using a legacy raw epoch seed.
+///
+/// **Use only for backward compatibility.** Pre-tier-key Mosaic ciphertexts
+/// (uploaded before tier-key canonicalization in `SPEC-RustEpochTierKeys.md`)
+/// used the epoch seed directly as the AEAD key rather than tier-derived keys.
+/// This function is intended to be called from handle-based secret registries
+/// so the seed never crosses an FFI boundary.
+///
+/// # Errors
+/// Returns `MosaicCryptoError::AuthenticationFailed` if the envelope was
+/// encrypted with tier keys (not a legacy ciphertext). Tier-key decryption
+/// MUST be tried first; this is the fallback.
+pub fn decrypt_shard_with_legacy_raw_key(
+    epoch_seed: &SecretKey,
+    envelope_bytes: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    if epoch_seed.as_bytes().len() != KEY_BYTES {
+        return Err(MosaicCryptoError::InvalidKeyLength {
+            actual: epoch_seed.as_bytes().len(),
+        });
+    }
+    if envelope_bytes.len() < SHARD_ENVELOPE_HEADER_LEN {
+        return Err(MosaicCryptoError::InvalidEnvelope);
+    }
+
+    let header_bytes = &envelope_bytes[..SHARD_ENVELOPE_HEADER_LEN];
+    let header =
+        ShardEnvelopeHeader::parse(header_bytes).map_err(|_| MosaicCryptoError::InvalidEnvelope)?;
+    let ciphertext_and_tag = &envelope_bytes[SHARD_ENVELOPE_HEADER_LEN..];
+    if ciphertext_and_tag.is_empty() {
+        return Err(MosaicCryptoError::MissingCiphertext);
+    }
+
+    let cipher = XChaCha20Poly1305::new_from_slice(epoch_seed.as_bytes()).map_err(|_| {
+        MosaicCryptoError::InvalidKeyLength {
+            actual: epoch_seed.as_bytes().len(),
+        }
+    })?;
+    let nonce = XNonce::from_slice(header.nonce());
+
+    cipher
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ciphertext_and_tag,
+                aad: header_bytes,
+            },
+        )
+        .map_err(|_| MosaicCryptoError::AuthenticationFailed)
+}
+
 /// Wraps `key_bytes` with the `wrapper` key using XChaCha20-Poly1305.
 ///
 /// Output format: `nonce(24) || ciphertext || tag(16)`.
