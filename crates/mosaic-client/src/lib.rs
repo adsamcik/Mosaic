@@ -1891,7 +1891,7 @@ pub fn unwrap_tier_key_from_link_bytes(
 /// wiped before this call returns.
 #[allow(clippy::too_many_arguments)]
 #[must_use]
-pub fn seal_and_sign_bundle_with_identity_handle(
+pub(crate) fn seal_and_sign_bundle_with_identity_handle(
     identity_handle: u64,
     recipient_pubkey: &[u8],
     album_id: String,
@@ -2344,7 +2344,7 @@ fn open_epoch_key_handle_result(
 ///   from `sign_secret_seed`.
 /// - `SecretHandleNotFound` if the account handle is closed.
 #[must_use]
-pub fn import_epoch_key_handle_from_bundle(
+pub(crate) fn import_epoch_key_handle_from_bundle(
     account_key_handle: u64,
     epoch_id: u32,
     epoch_seed_bytes: &[u8],

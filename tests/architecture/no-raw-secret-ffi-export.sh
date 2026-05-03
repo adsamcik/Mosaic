@@ -15,6 +15,12 @@ secret_result_types = re.compile(r"->\s*(Vec\s*<\s*u8\s*>|BytesResult|JsBytesRes
 secret_name_pattern = re.compile(r"(derive.*(key|keys|secret)|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)", re.IGNORECASE)
 secret_shaped_name = re.compile(r"(seed|secret|key)$", re.IGNORECASE)
 public_key_name = re.compile(r"(public_?key|pub_?key|PublicKey|PubKey|pubkey)", re.IGNORECASE)
+forbidden_raw_bundle_apis = {
+    "seal_and_sign_bundle",
+    "seal_and_sign_bundle_js",
+    "import_epoch_key_handle_from_bundle",
+    "import_epoch_key_handle_from_bundle_js",
+}
 allowlist = {
     "crates/mosaic-wasm/src/lib.rs::derive_link_keys",
     "crates/mosaic-wasm/src/lib.rs::derive_link_keys_js",
@@ -73,6 +79,8 @@ for path in ffi_files:
         if not match:
             continue
         name = match.group(1)
+        if name in forbidden_raw_bundle_apis:
+            violations.append(f"{path.as_posix()}:{index + 1}: forbidden raw bundle-secret FFI export '{name}'")
         if public_key_name.search(name):
             continue
         signature = line

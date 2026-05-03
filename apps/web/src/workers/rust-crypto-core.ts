@@ -604,33 +604,6 @@ export class RustHandleFacade {
     );
   }
 
-  // ---- Bundle sealing ----
-
-  sealAndSignBundle(
-    identityHandle: bigint,
-    recipientPubkey: Uint8Array,
-    albumId: string,
-    epochId: number,
-    epochSeed: Uint8Array,
-    signSecret: Uint8Array,
-    signPublic: Uint8Array,
-  ): { sealed: Uint8Array; signature: Uint8Array; sharerPubkey: Uint8Array } {
-    const result = rustWasm.sealAndSignBundle(
-      identityHandle,
-      recipientPubkey,
-      albumId,
-      epochId,
-      epochSeed,
-      signSecret,
-      signPublic,
-    );
-    return consumeResult(result, 'sealAndSignBundle', (r) => ({
-      sealed: copyBytes(r.sealed),
-      signature: copyBytes(r.signature),
-      sharerPubkey: copyBytes(r.sharerPubkey),
-    }));
-  }
-
   verifyAndImportEpochBundle(
     identityHandle: bigint,
     sealed: Uint8Array,

@@ -1,14 +1,12 @@
 //! Tests for the bundle-aware epoch handle APIs introduced by Slice 3 of the
 //! Rust crypto cutover: `create_epoch_key_handle` populates a per-epoch sign
-//! keypair, `import_epoch_key_handle_from_bundle` materialises a handle from
-//! cleartext bundle payload bytes, and `seal_bundle_with_epoch_handle` seals a
-//! bundle without ever exposing payload bytes to the caller.
+//! keypair and `seal_bundle_with_epoch_handle` seals a bundle without ever
+//! exposing payload bytes to the caller.
 
 use mosaic_client::{
     ClientErrorCode, close_account_key_handle, close_epoch_key_handle, close_identity_handle,
-    create_epoch_key_handle, create_identity_handle, import_epoch_key_handle_from_bundle,
-    open_epoch_key_handle, open_secret_handle, seal_and_sign_bundle_with_identity_handle,
-    seal_bundle_with_epoch_handle, verify_and_open_bundle_with_identity_handle,
+    create_epoch_key_handle, create_identity_handle, open_epoch_key_handle, open_secret_handle,
+    seal_bundle_with_epoch_handle, verify_and_import_epoch_bundle_with_identity_handle,
 };
 
 const ACCOUNT_KEY: [u8; 32] = [
@@ -56,10 +54,9 @@ fn create_epoch_key_handle_mints_distinct_sign_public_keys_per_handle() {
 #[test]
 fn seal_bundle_with_epoch_handle_round_trips_through_verify_and_import() {
     // End-to-end: create handle for the sender, seal to a recipient identity,
-    // verify+open from the recipient side, then import the resulting payload
-    // back into a Rust handle on the recipient side. The roundtrip never
-    // exposes raw bundle bytes anywhere a caller would have to handle them
-    // (in fact the seal path takes only the epoch handle).
+    // verify+import from the recipient side. The roundtrip never exposes raw
+    // bundle bytes anywhere a caller would have to handle them (in fact the
+    // seal path takes only the epoch handle).
     let sender_account = open_account();
     let recipient_account = open_account_with(&[0x99; 32]);
 
@@ -82,7 +79,7 @@ fn seal_bundle_with_epoch_handle_round_trips_through_verify_and_import() {
     assert_eq!(sealed.signature.len(), 64);
     assert_eq!(sealed.sharer_pubkey.len(), 32);
 
-    let opened = verify_and_open_bundle_with_identity_handle(
+    let imported = verify_and_import_epoch_bundle_with_identity_handle(
         recipient_identity.handle,
         &sealed.sealed,
         &sealed.signature,
@@ -91,21 +88,6 @@ fn seal_bundle_with_epoch_handle_round_trips_through_verify_and_import() {
         0,
         false,
     );
-    assert_eq!(opened.code, ClientErrorCode::Ok);
-    assert_eq!(opened.album_id, "album-roundtrip");
-    assert_eq!(opened.epoch_id, 3);
-    assert_eq!(opened.epoch_seed.len(), 32);
-    assert_eq!(opened.sign_secret_seed.len(), 32);
-    assert_eq!(opened.sign_public_key.len(), 32);
-    assert_eq!(opened.sign_public_key, epoch.sign_public_key);
-
-    let imported = import_epoch_key_handle_from_bundle(
-        recipient_account,
-        opened.epoch_id,
-        &opened.epoch_seed,
-        &opened.sign_secret_seed,
-        &opened.sign_public_key,
-    );
     assert_eq!(imported.code, ClientErrorCode::Ok);
     assert_eq!(imported.epoch_id, 3);
     assert_eq!(imported.sign_public_key, epoch.sign_public_key);
@@ -113,7 +95,7 @@ fn seal_bundle_with_epoch_handle_round_trips_through_verify_and_import() {
 
     // Sealing through the imported handle on the recipient side reproduces a
     // signature that the recipient (acting as the next sharer) can themselves
-    // verify-and-open, proving the per-epoch sign keypair survived the
+    // verify-and-import, proving the per-epoch sign keypair survived the
     // import without re-randomisation.
     let third_account = open_account_with(&[0xaa; 32]);
     let third_identity = create_identity_handle(third_account);
@@ -124,7 +106,7 @@ fn seal_bundle_with_epoch_handle_round_trips_through_verify_and_import() {
         "album-roundtrip".to_string(),
     );
     assert_eq!(resealed.code, ClientErrorCode::Ok);
-    let reopened = verify_and_open_bundle_with_identity_handle(
+    let reopened = verify_and_import_epoch_bundle_with_identity_handle(
         third_identity.handle,
         &resealed.sealed,
         &resealed.signature,
@@ -141,51 +123,10 @@ fn seal_bundle_with_epoch_handle_round_trips_through_verify_and_import() {
     close_identity(third_identity.handle);
     close_epoch(epoch.handle);
     close_epoch(imported.handle);
+    close_epoch(reopened.handle);
     close_account(sender_account);
     close_account(recipient_account);
     close_account(third_account);
-}
-
-#[test]
-fn import_epoch_key_handle_from_bundle_rejects_invalid_seed_length() {
-    let account_handle = open_account();
-    let result = import_epoch_key_handle_from_bundle(
-        account_handle,
-        7,
-        &[0_u8; 16], // too short
-        &[0_u8; 32],
-        &[0_u8; 32],
-    );
-    assert_eq!(result.code, ClientErrorCode::InvalidKeyLength);
-    assert!(result.wrapped_epoch_seed.is_empty());
-    assert!(result.sign_public_key.is_empty());
-    close_account(account_handle);
-}
-
-#[test]
-fn import_epoch_key_handle_from_bundle_rejects_mismatched_sign_public_key() {
-    let account_handle = open_account();
-    // Generate a real keypair so the secret-side parsing succeeds; we just
-    // need to cycle the registry once.
-    let real = create_epoch_key_handle(account_handle, 1);
-    assert_eq!(real.code, ClientErrorCode::Ok);
-    close_epoch(real.handle);
-
-    let bogus_public = [0xff_u8; 32];
-    let valid_seed = [0xaa_u8; 32];
-    let valid_sign_seed = [0xbb_u8; 32];
-
-    let result = import_epoch_key_handle_from_bundle(
-        account_handle,
-        1,
-        &valid_seed,
-        &valid_sign_seed,
-        &bogus_public,
-    );
-    assert_eq!(result.code, ClientErrorCode::InvalidPublicKey);
-    assert!(result.wrapped_epoch_seed.is_empty());
-    assert!(result.sign_public_key.is_empty());
-    close_account(account_handle);
 }
 
 #[test]
@@ -222,74 +163,6 @@ fn seal_bundle_with_epoch_handle_rejects_legacy_open_handle_without_sign_keypair
     close_epoch(reopened.handle);
     close_identity(identity.handle);
     close_account(account_handle);
-}
-
-#[test]
-fn seal_bundle_with_epoch_handle_with_legacy_path_matches_explicit_seal() {
-    // The explicit seal path (callers passing seed + sign material directly)
-    // and the handle-resolved seal path produce semantically equivalent
-    // bundles when given the same epoch material — both decrypt against the
-    // same recipient and yield the same album/epoch and sign_public.
-    let sender_account = open_account();
-    let recipient_account = open_account_with(&[0x77; 32]);
-    let sender_identity = create_identity_handle(sender_account);
-    let recipient_identity = create_identity_handle(recipient_account);
-    let epoch = create_epoch_key_handle(sender_account, 9);
-    assert_eq!(epoch.code, ClientErrorCode::Ok);
-
-    let handle_sealed = seal_bundle_with_epoch_handle(
-        sender_identity.handle,
-        epoch.handle,
-        &recipient_identity.signing_pubkey,
-        "album-equiv".to_string(),
-    );
-    assert_eq!(handle_sealed.code, ClientErrorCode::Ok);
-
-    let opened = verify_and_open_bundle_with_identity_handle(
-        recipient_identity.handle,
-        &handle_sealed.sealed,
-        &handle_sealed.signature,
-        &handle_sealed.sharer_pubkey,
-        "album-equiv".to_string(),
-        0,
-        false,
-    );
-    assert_eq!(opened.code, ClientErrorCode::Ok);
-    assert_eq!(opened.epoch_id, 9);
-    assert_eq!(opened.sign_public_key, epoch.sign_public_key);
-
-    // Now seal the same payload via the explicit path and confirm a parallel
-    // recipient bundle also opens cleanly and reports the same sign_public.
-    let explicit_seal = seal_and_sign_bundle_with_identity_handle(
-        sender_identity.handle,
-        &recipient_identity.signing_pubkey,
-        "album-equiv".to_string(),
-        opened.epoch_id,
-        &opened.epoch_seed,
-        &opened.sign_secret_seed,
-        &opened.sign_public_key,
-    );
-    assert_eq!(explicit_seal.code, ClientErrorCode::Ok);
-
-    let explicit_opened = verify_and_open_bundle_with_identity_handle(
-        recipient_identity.handle,
-        &explicit_seal.sealed,
-        &explicit_seal.signature,
-        &explicit_seal.sharer_pubkey,
-        "album-equiv".to_string(),
-        0,
-        false,
-    );
-    assert_eq!(explicit_opened.code, ClientErrorCode::Ok);
-    assert_eq!(explicit_opened.epoch_id, opened.epoch_id);
-    assert_eq!(explicit_opened.sign_public_key, opened.sign_public_key);
-    assert_eq!(explicit_opened.epoch_seed, opened.epoch_seed);
-
-    close_identity(sender_identity.handle);
-    close_identity(recipient_identity.handle);
-    close_epoch(epoch.handle);
-    close_account(sender_account);
-    close_account(recipient_account);
 }
 
 fn open_account() -> u64 {

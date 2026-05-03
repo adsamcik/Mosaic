@@ -1730,28 +1730,6 @@ export function identitySigningPubkey(handle) {
 }
 
 /**
- * Imports an epoch handle from cleartext bundle payload bytes through WASM.
- * Both the epoch seed and the manifest signing seed are zeroized inside
- * Rust on every path.
- * @param {bigint} account_key_handle
- * @param {number} epoch_id
- * @param {Uint8Array} epoch_seed
- * @param {Uint8Array} sign_secret_seed
- * @param {Uint8Array} sign_public
- * @returns {EpochKeyHandleResult}
- */
-export function importEpochKeyHandleFromBundle(account_key_handle, epoch_id, epoch_seed, sign_secret_seed, sign_public) {
-    const ptr0 = passArray8ToWasm0(epoch_seed, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(sign_secret_seed, wasm.__wbindgen_export2);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(sign_public, wasm.__wbindgen_export2);
-    const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.importEpochKeyHandleFromBundle(account_key_handle, epoch_id, ptr0, len0, ptr1, len1, ptr2, len2);
-    return EpochKeyHandleResult.__wrap(ret);
-}
-
-/**
  * Initializes an album sync coordinator through a primitive WASM proof surface.
  * @param {string} album_id
  * @param {string} request_id
@@ -1865,32 +1843,6 @@ export function parseEnvelopeHeader(bytes) {
 export function progressProbe(total_steps, cancel_after) {
     const ret = wasm.progressProbe(total_steps, cancel_after);
     return ProgressResult.__wrap(ret);
-}
-
-/**
- * Seals and signs an epoch key bundle through WASM.
- * @param {bigint} identity_handle
- * @param {Uint8Array} recipient_pubkey
- * @param {string} album_id
- * @param {number} epoch_id
- * @param {Uint8Array} epoch_seed
- * @param {Uint8Array} sign_secret
- * @param {Uint8Array} sign_public
- * @returns {SealedBundleResult}
- */
-export function sealAndSignBundle(identity_handle, recipient_pubkey, album_id, epoch_id, epoch_seed, sign_secret, sign_public) {
-    const ptr0 = passArray8ToWasm0(recipient_pubkey, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(epoch_seed, wasm.__wbindgen_export2);
-    const len2 = WASM_VECTOR_LEN;
-    const ptr3 = passArray8ToWasm0(sign_secret, wasm.__wbindgen_export2);
-    const len3 = WASM_VECTOR_LEN;
-    const ptr4 = passArray8ToWasm0(sign_public, wasm.__wbindgen_export2);
-    const len4 = WASM_VECTOR_LEN;
-    const ret = wasm.sealAndSignBundle(identity_handle, ptr0, len0, ptr1, len1, epoch_id, ptr2, len2, ptr3, len3, ptr4, len4);
-    return SealedBundleResult.__wrap(ret);
 }
 
 /**

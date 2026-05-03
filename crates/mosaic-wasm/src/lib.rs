@@ -1977,32 +1977,6 @@ pub fn unwrap_tier_key_from_link(
     ))
 }
 
-/// Seals an epoch key bundle for `recipient_pubkey` and signs it with the
-/// supplied identity handle.
-#[allow(clippy::too_many_arguments)]
-#[must_use]
-pub fn seal_and_sign_bundle(
-    identity_handle: u64,
-    recipient_pubkey: Vec<u8>,
-    album_id: String,
-    epoch_id: u32,
-    epoch_seed: Vec<u8>,
-    sign_secret: Vec<u8>,
-    sign_public: Vec<u8>,
-) -> SealedBundleResult {
-    let epoch_seed = Zeroizing::new(epoch_seed);
-    let sign_secret = Zeroizing::new(sign_secret);
-    sealed_bundle_result_from_client(mosaic_client::seal_and_sign_bundle_with_identity_handle(
-        identity_handle,
-        &recipient_pubkey,
-        album_id,
-        epoch_id,
-        &epoch_seed,
-        &sign_secret,
-        &sign_public,
-    ))
-}
-
 /// Verifies a sealed bundle's signature and imports the recovered epoch
 /// payload directly into the Rust epoch-handle registry.
 #[allow(clippy::too_many_arguments)]
@@ -2028,29 +2002,6 @@ pub fn verify_and_import_epoch_bundle(
             allow_legacy_empty,
         ),
     )
-}
-
-/// Imports an epoch handle from cleartext bundle payload bytes (epoch seed
-/// plus the per-epoch manifest signing keypair) returned by
-/// `verify_and_import_epoch_bundle` legacy raw-payload path. Both secret buffers are zeroized inside this
-/// function on every path.
-#[must_use]
-pub fn import_epoch_key_handle_from_bundle(
-    account_key_handle: u64,
-    epoch_id: u32,
-    epoch_seed: Vec<u8>,
-    sign_secret_seed: Vec<u8>,
-    sign_public: Vec<u8>,
-) -> EpochKeyHandleResult {
-    let epoch_seed = Zeroizing::new(epoch_seed);
-    let sign_secret_seed = Zeroizing::new(sign_secret_seed);
-    epoch_result_from_client(mosaic_client::import_epoch_key_handle_from_bundle(
-        account_key_handle,
-        epoch_id,
-        &epoch_seed,
-        &sign_secret_seed,
-        &sign_public,
-    ))
 }
 
 /// Atomically seals an epoch key bundle for `recipient_pubkey` using a
@@ -2762,30 +2713,6 @@ pub fn unwrap_tier_key_from_link_js(
     ))
 }
 
-/// Seals and signs an epoch key bundle through WASM.
-#[allow(clippy::too_many_arguments)]
-#[wasm_bindgen(js_name = sealAndSignBundle)]
-#[must_use]
-pub fn seal_and_sign_bundle_js(
-    identity_handle: u64,
-    recipient_pubkey: Vec<u8>,
-    album_id: String,
-    epoch_id: u32,
-    epoch_seed: Vec<u8>,
-    sign_secret: Vec<u8>,
-    sign_public: Vec<u8>,
-) -> JsSealedBundleResult {
-    js_sealed_bundle_result_from_rust(seal_and_sign_bundle(
-        identity_handle,
-        recipient_pubkey,
-        album_id,
-        epoch_id,
-        epoch_seed,
-        sign_secret,
-        sign_public,
-    ))
-}
-
 /// Verifies and imports a sealed epoch key bundle through WASM.
 #[allow(clippy::too_many_arguments)]
 #[wasm_bindgen(js_name = verifyAndImportEpochBundle)]
@@ -2807,27 +2734,6 @@ pub fn verify_and_import_epoch_bundle_js(
         expected_album_id,
         expected_min_epoch,
         allow_legacy_empty,
-    ))
-}
-
-/// Imports an epoch handle from cleartext bundle payload bytes through WASM.
-/// Both the epoch seed and the manifest signing seed are zeroized inside
-/// Rust on every path.
-#[wasm_bindgen(js_name = importEpochKeyHandleFromBundle)]
-#[must_use]
-pub fn import_epoch_key_handle_from_bundle_js(
-    account_key_handle: u64,
-    epoch_id: u32,
-    epoch_seed: Vec<u8>,
-    sign_secret_seed: Vec<u8>,
-    sign_public: Vec<u8>,
-) -> JsEpochKeyHandleResult {
-    js_epoch_result_from_rust(import_epoch_key_handle_from_bundle(
-        account_key_handle,
-        epoch_id,
-        epoch_seed,
-        sign_secret_seed,
-        sign_public,
     ))
 }
 

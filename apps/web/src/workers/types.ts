@@ -1115,24 +1115,6 @@ export interface CryptoWorkerApi {
   // `*WithEpoch` aliases were retired now that the legacy seed-bearing
   // methods have been deleted.
 
-  // ---- Bundle sealing (Slice 6) ----
-
-  /**
-   * Seal and sign an epoch key bundle for a recipient.
-   *
-   * The bundle protocol carries the per-epoch signing keypair inside the
-   * sealed payload. Recipients open it through the handle-based bundle flow,
-   * which imports payload secrets inside Rust without exposing them to JS.
-   */
-  sealAndSignBundle(
-    identityHandleId: IdentityHandleId,
-    recipientPubkey: Uint8Array,
-    albumId: string,
-    epochId: number,
-    epochSeed: Uint8Array,
-    signSecret: Uint8Array,
-    signPublic: Uint8Array,
-  ): Promise<{ sealed: Uint8Array; signature: Uint8Array; sharerPubkey: Uint8Array }>;
   // ---- Auth challenge (Slice 2) ----
 
   deriveAuthKeypairForAccount(

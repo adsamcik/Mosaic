@@ -111,6 +111,56 @@ fn generated_wasm_typescript_declarations_do_not_export_raw_wrap_keys() {
     }
 }
 
+#[test]
+fn generated_wasm_typescript_declarations_do_not_export_raw_bundle_seed_apis() {
+    let generated_path = project_root()
+        .join("apps")
+        .join("web")
+        .join("src")
+        .join("generated")
+        .join("mosaic-wasm")
+        .join("mosaic_wasm.d.ts");
+    let generated = fs::read_to_string(&generated_path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read generated wasm-bindgen declarations at {}: {error}. \
+             Run scripts/build-rust-wasm.ps1 before this test.",
+            generated_path.display()
+        )
+    });
+
+    for forbidden_export in ["sealAndSignBundle", "importEpochKeyHandleFromBundle"] {
+        assert!(
+            !generated.contains(forbidden_export),
+            "raw bundle-secret export must not be present in generated WASM declarations: {forbidden_export}"
+        );
+    }
+}
+
+#[test]
+fn wasm_source_does_not_define_raw_bundle_seed_exports() {
+    let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("lib.rs");
+    let source = fs::read_to_string(&source_path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read WASM source at {}: {error}",
+            source_path.display()
+        )
+    });
+
+    for forbidden_export in [
+        "pub fn seal_and_sign_bundle",
+        "pub fn seal_and_sign_bundle_js",
+        "pub fn import_epoch_key_handle_from_bundle",
+        "pub fn import_epoch_key_handle_from_bundle_js",
+    ] {
+        assert!(
+            !source.contains(forbidden_export),
+            "raw bundle-secret WASM source export must not be present: {forbidden_export}"
+        );
+    }
+}
+
 fn normalize_newlines(value: &str) -> String {
     value.replace("\r\n", "\n")
 }

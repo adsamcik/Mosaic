@@ -11,6 +11,12 @@ $secretResultTypes = '(Vec\s*<\s*u8\s*>|BytesResult|JsBytesResult|LinkKeysResult
 $secretNamePattern = '(derive.*(key|keys|secret)|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
 $secretShapedName = '(?i)(seed|secret|key)$'
 $publicKeyName = '(public_?key|pub_?key|PublicKey|PubKey|pubkey)'
+$forbiddenRawBundleApis = @(
+  'seal_and_sign_bundle',
+  'seal_and_sign_bundle_js',
+  'import_epoch_key_handle_from_bundle',
+  'import_epoch_key_handle_from_bundle_js'
+)
 $allowlist = @{
   'crates/mosaic-wasm/src/lib.rs::derive_link_keys' = 'SPEC-WebRustCryptoCutover Slice 6 share-link wrapping-key compatibility debt.'
   'crates/mosaic-wasm/src/lib.rs::derive_link_keys_js' = 'WASM wrapper for Slice 6 share-link compatibility debt.'
@@ -67,6 +73,9 @@ foreach ($path in $ffiFiles) {
 
     if ($lines[$i] -notmatch '^\s*pub\s+fn\s+([A-Za-z0-9_]+)') { continue }
     $name = $Matches[1]
+    if ($forbiddenRawBundleApis -contains $name) {
+      $violations.Add("$path`:$($i + 1): forbidden raw bundle-secret FFI export '$name'")
+    }
     if ($name -match $publicKeyName) { continue }
     $signature = $lines[$i]
     $j = $i

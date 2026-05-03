@@ -587,13 +587,6 @@ export function identityEncryptionPubkey(handle: bigint): BytesResult;
 export function identitySigningPubkey(handle: bigint): BytesResult;
 
 /**
- * Imports an epoch handle from cleartext bundle payload bytes through WASM.
- * Both the epoch seed and the manifest signing seed are zeroized inside
- * Rust on every path.
- */
-export function importEpochKeyHandleFromBundle(account_key_handle: bigint, epoch_id: number, epoch_seed: Uint8Array, sign_secret_seed: Uint8Array, sign_public: Uint8Array): EpochKeyHandleResult;
-
-/**
  * Initializes an album sync coordinator through a primitive WASM proof surface.
  */
 export function initAlbumSync(album_id: string, request_id: string, start_cursor: string, now_unix_ms: bigint, max_retry_count: number): string;
@@ -622,11 +615,6 @@ export function parseEnvelopeHeader(bytes: Uint8Array): HeaderResult;
  * Runs the progress probe through the generated WASM binding surface.
  */
 export function progressProbe(total_steps: number, cancel_after: bigint): ProgressResult;
-
-/**
- * Seals and signs an epoch key bundle through WASM.
- */
-export function sealAndSignBundle(identity_handle: bigint, recipient_pubkey: Uint8Array, album_id: string, epoch_id: number, epoch_seed: Uint8Array, sign_secret: Uint8Array, sign_public: Uint8Array): SealedBundleResult;
 
 /**
  * Atomically seals an epoch key bundle for `recipient_pubkey` using a
@@ -784,7 +772,6 @@ export interface InitOutput {
     readonly identityhandleresult_handle: (a: number) => bigint;
     readonly identityhandleresult_signingPubkey: (a: number, b: number) => void;
     readonly identityhandleresult_wrappedSeed: (a: number, b: number) => void;
-    readonly importEpochKeyHandleFromBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
     readonly initAlbumSync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: number) => void;
     readonly initUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
@@ -795,7 +782,6 @@ export interface InitOutput {
     readonly progressevent_totalSteps: (a: number) => number;
     readonly progressresult_code: (a: number) => number;
     readonly progressresult_eventPairs: (a: number, b: number) => void;
-    readonly sealAndSignBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => number;
     readonly sealBundleWithEpochHandle: (a: bigint, b: bigint, c: number, d: number, e: number, f: number) => number;
     readonly sealedbundleresult_code: (a: number) => number;
     readonly sealedbundleresult_sealed: (a: number, b: number) => void;

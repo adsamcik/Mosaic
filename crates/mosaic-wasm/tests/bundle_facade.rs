@@ -1,4 +1,4 @@
-//! WASM facade tests for sealed bundle exports (`sealAndSignBundle` /
+//! WASM facade tests for sealed bundle exports (`sealBundleWithEpochHandle` /
 //! `verifyAndImportEpochBundle`).
 //!
 //! Exercises round-trip sealing + opening, signature tampering, recipient
@@ -7,9 +7,10 @@
 use mosaic_client::ClientErrorCode;
 use mosaic_crypto::{KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, derive_account_key};
 use mosaic_wasm::{
-    AccountUnlockRequest, close_account_key_handle, close_identity_handle, create_identity_handle,
-    decrypt_shard_with_epoch_handle, encrypt_shard_with_epoch_handle, seal_and_sign_bundle,
-    unlock_account_key, verify_and_import_epoch_bundle,
+    AccountUnlockRequest, close_account_key_handle, close_epoch_key_handle, close_identity_handle,
+    create_epoch_key_handle, create_identity_handle, decrypt_shard_with_epoch_handle,
+    encrypt_shard_with_epoch_handle, seal_bundle_with_epoch_handle, unlock_account_key,
+    verify_and_import_epoch_bundle,
 };
 
 const PASSWORD: &[u8] = b"correct horse battery staple";
@@ -26,15 +27,6 @@ const ACCOUNT_SALT_RECIPIENT: [u8; 16] = [
 const ALBUM_ID: &str = "album-bundle-facade";
 const EPOCH_ID: u32 = 9;
 const MIN_EPOCH_ID: u32 = 5;
-const EPOCH_SEED: [u8; 32] = [
-    0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9,
-    0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9,
-];
-const SIGN_SECRET_SEED: [u8; 32] = [
-    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
-    0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30,
-];
-
 fn unlock_request(account_salt: [u8; 16], wrapped_account_key: Vec<u8>) -> AccountUnlockRequest {
     AccountUnlockRequest {
         user_salt: USER_SALT.to_vec(),
@@ -57,16 +49,6 @@ fn wrapped_account_key(account_salt: [u8; 16]) -> Vec<u8> {
             Err(error) => panic!("account key should derive: {error:?}"),
         };
     material.wrapped_account_key
-}
-
-fn sign_public_for_seed() -> [u8; 32] {
-    use mosaic_crypto::ManifestSigningSecretKey;
-    let mut seed = SIGN_SECRET_SEED;
-    let secret = match ManifestSigningSecretKey::from_seed(&mut seed) {
-        Ok(value) => value,
-        Err(error) => panic!("manifest signing seed must accept fixture: {error:?}"),
-    };
-    *secret.public_key().as_bytes()
 }
 
 fn unlock_owner_and_create_identity() -> (u64, u64, Vec<u8>) {
@@ -100,15 +82,13 @@ fn seal_and_open_round_trips_through_facade() {
     let (recipient_account, recipient_identity, recipient_pubkey) =
         unlock_recipient_and_create_identity();
 
-    let sign_public = sign_public_for_seed().to_vec();
-    let sealed = seal_and_sign_bundle(
+    let epoch = create_epoch_key_handle(owner_account, EPOCH_ID);
+    assert_eq!(epoch.code, 0);
+    let sealed = seal_bundle_with_epoch_handle(
         owner_identity,
+        epoch.handle,
         recipient_pubkey.clone(),
         ALBUM_ID.to_owned(),
-        EPOCH_ID,
-        EPOCH_SEED.to_vec(),
-        SIGN_SECRET_SEED.to_vec(),
-        sign_public.clone(),
     );
     assert_eq!(sealed.code, 0);
     assert!(!sealed.sealed.is_empty());
@@ -126,7 +106,7 @@ fn seal_and_open_round_trips_through_facade() {
     );
     assert_eq!(imported.code, 0);
     assert_eq!(imported.epoch_id, EPOCH_ID);
-    assert_eq!(imported.sign_public_key, sign_public);
+    assert_eq!(imported.sign_public_key, epoch.sign_public_key);
     assert!(!imported.wrapped_epoch_seed.is_empty());
 
     let encrypted = encrypt_shard_with_epoch_handle(
@@ -140,6 +120,7 @@ fn seal_and_open_round_trips_through_facade() {
     assert_eq!(decrypted.code, 0);
     assert_eq!(decrypted.plaintext, b"verify/import handle round trip");
 
+    assert_eq!(close_epoch_key_handle(epoch.handle), 0);
     assert_eq!(close_epoch_key_handle(imported.handle), 0);
     assert_eq!(close_identity_handle(owner_identity), 0);
     assert_eq!(close_identity_handle(recipient_identity), 0);
@@ -153,14 +134,13 @@ fn verify_and_open_rejects_tampered_signature() {
     let (recipient_account, recipient_identity, recipient_pubkey) =
         unlock_recipient_and_create_identity();
 
-    let sealed = seal_and_sign_bundle(
+    let epoch = create_epoch_key_handle(owner_account, EPOCH_ID);
+    assert_eq!(epoch.code, 0);
+    let sealed = seal_bundle_with_epoch_handle(
         owner_identity,
+        epoch.handle,
         recipient_pubkey,
         ALBUM_ID.to_owned(),
-        EPOCH_ID,
-        EPOCH_SEED.to_vec(),
-        SIGN_SECRET_SEED.to_vec(),
-        sign_public_for_seed().to_vec(),
     );
     assert_eq!(sealed.code, 0);
 
@@ -184,6 +164,7 @@ fn verify_and_open_rejects_tampered_signature() {
     assert!(opened.wrapped_epoch_seed.is_empty());
     assert!(opened.sign_public_key.is_empty());
 
+    assert_eq!(close_epoch_key_handle(epoch.handle), 0);
     assert_eq!(close_identity_handle(owner_identity), 0);
     assert_eq!(close_identity_handle(recipient_identity), 0);
     assert_eq!(close_account_key_handle(owner_account), 0);
@@ -196,14 +177,13 @@ fn verify_and_open_rejects_album_id_mismatch() {
     let (recipient_account, recipient_identity, recipient_pubkey) =
         unlock_recipient_and_create_identity();
 
-    let sealed = seal_and_sign_bundle(
+    let epoch = create_epoch_key_handle(owner_account, EPOCH_ID);
+    assert_eq!(epoch.code, 0);
+    let sealed = seal_bundle_with_epoch_handle(
         owner_identity,
+        epoch.handle,
         recipient_pubkey,
         ALBUM_ID.to_owned(),
-        EPOCH_ID,
-        EPOCH_SEED.to_vec(),
-        SIGN_SECRET_SEED.to_vec(),
-        sign_public_for_seed().to_vec(),
     );
     assert_eq!(sealed.code, 0);
 
@@ -218,6 +198,7 @@ fn verify_and_open_rejects_album_id_mismatch() {
     );
     assert_eq!(opened.code, ClientErrorCode::BundleAlbumIdMismatch.as_u16());
 
+    assert_eq!(close_epoch_key_handle(epoch.handle), 0);
     assert_eq!(close_identity_handle(owner_identity), 0);
     assert_eq!(close_identity_handle(recipient_identity), 0);
     assert_eq!(close_account_key_handle(owner_account), 0);
@@ -230,14 +211,13 @@ fn verify_and_open_rejects_old_epoch() {
     let (recipient_account, recipient_identity, recipient_pubkey) =
         unlock_recipient_and_create_identity();
 
-    let sealed = seal_and_sign_bundle(
+    let epoch = create_epoch_key_handle(owner_account, EPOCH_ID);
+    assert_eq!(epoch.code, 0);
+    let sealed = seal_bundle_with_epoch_handle(
         owner_identity,
+        epoch.handle,
         recipient_pubkey,
         ALBUM_ID.to_owned(),
-        EPOCH_ID,
-        EPOCH_SEED.to_vec(),
-        SIGN_SECRET_SEED.to_vec(),
-        sign_public_for_seed().to_vec(),
     );
     assert_eq!(sealed.code, 0);
 
@@ -252,6 +232,7 @@ fn verify_and_open_rejects_old_epoch() {
     );
     assert_eq!(opened.code, ClientErrorCode::BundleEpochTooOld.as_u16());
 
+    assert_eq!(close_epoch_key_handle(epoch.handle), 0);
     assert_eq!(close_identity_handle(owner_identity), 0);
     assert_eq!(close_identity_handle(recipient_identity), 0);
     assert_eq!(close_account_key_handle(owner_account), 0);
@@ -259,50 +240,35 @@ fn verify_and_open_rejects_old_epoch() {
 }
 
 #[test]
-fn seal_and_sign_rejects_invalid_handles_and_lengths() {
-    let result = seal_and_sign_bundle(
-        0,
-        vec![0_u8; 32],
-        ALBUM_ID.to_owned(),
-        EPOCH_ID,
-        EPOCH_SEED.to_vec(),
-        SIGN_SECRET_SEED.to_vec(),
-        sign_public_for_seed().to_vec(),
-    );
-    assert_eq!(
-        result.code,
-        ClientErrorCode::IdentityHandleNotFound.as_u16()
-    );
+fn seal_bundle_with_epoch_handle_rejects_invalid_handles_and_lengths() {
+    let result = seal_bundle_with_epoch_handle(0, 0, vec![0_u8; 32], ALBUM_ID.to_owned());
+    assert_eq!(result.code, ClientErrorCode::EpochHandleNotFound.as_u16());
 
     let (owner_account, owner_identity, _owner_pubkey) = unlock_owner_and_create_identity();
     let (recipient_account, recipient_identity, recipient_pubkey) =
         unlock_recipient_and_create_identity();
+    let epoch = create_epoch_key_handle(owner_account, EPOCH_ID);
+    assert_eq!(epoch.code, 0);
 
-    let bad_recipient = seal_and_sign_bundle(
+    let bad_recipient = seal_bundle_with_epoch_handle(
         owner_identity,
+        epoch.handle,
         vec![0_u8; 31],
         ALBUM_ID.to_owned(),
-        EPOCH_ID,
-        EPOCH_SEED.to_vec(),
-        SIGN_SECRET_SEED.to_vec(),
-        sign_public_for_seed().to_vec(),
     );
     assert_eq!(
         bad_recipient.code,
         ClientErrorCode::InvalidKeyLength.as_u16()
     );
 
-    let bad_seed = seal_and_sign_bundle(
-        owner_identity,
-        recipient_pubkey,
-        ALBUM_ID.to_owned(),
-        EPOCH_ID,
-        vec![0_u8; 31],
-        SIGN_SECRET_SEED.to_vec(),
-        sign_public_for_seed().to_vec(),
+    let bad_epoch =
+        seal_bundle_with_epoch_handle(owner_identity, 0, recipient_pubkey, ALBUM_ID.to_owned());
+    assert_eq!(
+        bad_epoch.code,
+        ClientErrorCode::EpochHandleNotFound.as_u16()
     );
-    assert_eq!(bad_seed.code, ClientErrorCode::InvalidKeyLength.as_u16());
 
+    assert_eq!(close_epoch_key_handle(epoch.handle), 0);
     assert_eq!(close_identity_handle(owner_identity), 0);
     assert_eq!(close_identity_handle(recipient_identity), 0);
     assert_eq!(close_account_key_handle(owner_account), 0);
@@ -346,15 +312,9 @@ fn verify_and_import_rejects_invalid_signature_length() {
 }
 
 // ---------------------------------------------------------------------------
-// Slice 3 — `importEpochKeyHandleFromBundle` + `sealBundleWithEpochHandle`
-// facade exports. These surface the bundle round-trip without exposing payload
-// bytes to the caller of `seal_bundle_with_epoch_handle`.
+// Slice 3/4 — `sealBundleWithEpochHandle` facade export. This surfaces the
+// bundle round-trip without exposing payload bytes to the caller.
 // ---------------------------------------------------------------------------
-
-use mosaic_wasm::{
-    close_epoch_key_handle, create_epoch_key_handle, import_epoch_key_handle_from_bundle,
-    seal_bundle_with_epoch_handle,
-};
 
 #[test]
 fn create_epoch_key_handle_facade_returns_sign_public_key() {
@@ -413,24 +373,4 @@ fn seal_bundle_with_epoch_handle_facade_round_trips_through_import() {
     assert_eq!(close_identity_handle(recipient_identity), 0);
     assert_eq!(close_account_key_handle(owner_account), 0);
     assert_eq!(close_account_key_handle(recipient_account), 0);
-}
-
-#[test]
-fn import_epoch_key_handle_from_bundle_facade_rejects_mismatched_sign_public_key() {
-    let (owner_account, owner_identity, _) = unlock_owner_and_create_identity();
-
-    let result = import_epoch_key_handle_from_bundle(
-        owner_account,
-        EPOCH_ID,
-        vec![0xaa_u8; 32],
-        SIGN_SECRET_SEED.to_vec(),
-        vec![0xff_u8; 32],
-    );
-    assert_eq!(result.code, ClientErrorCode::InvalidPublicKey.as_u16());
-    assert_eq!(result.handle, 0);
-    assert!(result.wrapped_epoch_seed.is_empty());
-    assert!(result.sign_public_key.is_empty());
-
-    assert_eq!(close_identity_handle(owner_identity), 0);
-    assert_eq!(close_account_key_handle(owner_account), 0);
 }

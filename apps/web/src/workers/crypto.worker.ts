@@ -1777,32 +1777,6 @@ class CryptoWorker implements CryptoWorkerApi {
   // `*WithEpoch` aliases were retired now that the legacy seed-bearing
   // methods have been deleted.
 
-  async sealAndSignBundle(
-    identityHandleId: IdentityHandleId,
-    recipientPubkey: Uint8Array,
-    albumId: string,
-    epochId: number,
-    epochSeed: Uint8Array,
-    signSecret: Uint8Array,
-    signPublic: Uint8Array,
-  ): Promise<{ sealed: Uint8Array; signature: Uint8Array; sharerPubkey: Uint8Array }> {
-    const facade = await getRustFacade();
-    return this.handleRegistry.withLease(
-      identityHandleId,
-      'identity',
-      (rustIdentity) =>
-        facade.sealAndSignBundle(
-          rustIdentity,
-          recipientPubkey,
-          albumId,
-          epochId,
-          epochSeed,
-          signSecret,
-          signPublic,
-        ),
-    );
-  }
-
   async deriveAuthKeypairForAccount(
     accountHandleId: AccountHandleId,
   ): Promise<{ authPublicKey: Uint8Array }> {
