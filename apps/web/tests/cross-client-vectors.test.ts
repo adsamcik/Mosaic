@@ -297,7 +297,7 @@ describe('cross-client golden vector corpus (Web WASM facade)', () => {
   );
 
   it.skip(
-    'epoch_derive.json — facade-gap:no-raw-key-binding (corpus locks SHA-256 of tier/content keys derived from a caller-provided 32-byte epochSeed; the facade only exposes getTierKeyFromEpoch / deriveContentKeyFromEpoch behind an opaque handle whose seed cannot be injected without a raw-seed binding)',
+    'epoch_derive.json — facade-gap:no-raw-key-binding (corpus locks SHA-256 of tier/content keys derived from a caller-provided 32-byte epochSeed; the handle facade intentionally exposes only encrypt/decrypt operations, and its seed cannot be injected without a raw-seed binding)',
     () => {},
   );
 

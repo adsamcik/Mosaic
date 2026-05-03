@@ -1589,16 +1589,6 @@ export function deriveAuthKeypairFromPassword(password, user_salt, kdf_memory_ki
 }
 
 /**
- * Derives the content key from an epoch handle through WASM.
- * @param {bigint} epoch_handle
- * @returns {BytesResult}
- */
-export function deriveContentKeyFromEpoch(epoch_handle) {
-    const ret = wasm.deriveContentKeyFromEpoch(epoch_handle);
-    return BytesResult.__wrap(ret);
-}
-
-/**
  * Derives the OPFS-snapshot DB session key from the L2 account key
  * referenced by `account_handle` through WASM. Caller MUST memzero the
  * returned bytes after use.
@@ -1716,17 +1706,6 @@ export function getAuthPublicKeyFromPassword(password, user_salt, kdf_memory_kib
     const ptr1 = passArray8ToWasm0(user_salt, wasm.__wbindgen_export2);
     const len1 = WASM_VECTOR_LEN;
     const ret = wasm.getAuthPublicKeyFromPassword(ptr0, len0, ptr1, len1, kdf_memory_kib, kdf_iterations, kdf_parallelism);
-    return BytesResult.__wrap(ret);
-}
-
-/**
- * Returns a tier key for an epoch handle through WASM.
- * @param {bigint} epoch_handle
- * @param {number} tier_byte
- * @returns {BytesResult}
- */
-export function getTierKeyFromEpoch(epoch_handle, tier_byte) {
-    const ret = wasm.getTierKeyFromEpoch(epoch_handle, tier_byte);
     return BytesResult.__wrap(ret);
 }
 

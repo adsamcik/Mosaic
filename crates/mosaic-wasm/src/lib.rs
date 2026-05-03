@@ -1819,28 +1819,6 @@ pub fn close_identity_handle(handle: u64) -> u16 {
     }
 }
 
-/// Returns the per-tier 32-byte key bytes for an open epoch-key handle.
-///
-/// Callers MUST memzero `BytesResult.bytes` after use; the returned vector
-/// is the raw HKDF tier key for the requested shard tier.
-#[must_use]
-pub fn get_tier_key_from_epoch(epoch_handle: u64, tier_byte: u8) -> BytesResult {
-    bytes_result_from_client(mosaic_client::get_tier_key_from_epoch_handle(
-        epoch_handle,
-        tier_byte,
-    ))
-}
-
-/// Derives the album content encryption key from an epoch-key handle.
-///
-/// Callers MUST memzero `BytesResult.bytes` after use.
-#[must_use]
-pub fn derive_content_key_from_epoch(epoch_handle: u64) -> BytesResult {
-    bytes_result_from_client(mosaic_client::derive_content_key_from_epoch_handle(
-        epoch_handle,
-    ))
-}
-
 /// Wraps `key_bytes` with the supplied 32-byte wrapper key.
 #[must_use]
 pub fn wrap_key(mut key_bytes: Vec<u8>, mut wrapper_key: Vec<u8>) -> BytesResult {
@@ -2623,20 +2601,6 @@ pub fn advance_album_sync_js(
 #[must_use]
 pub fn close_identity_handle_js(handle: u64) -> u16 {
     close_identity_handle(handle)
-}
-
-/// Returns a tier key for an epoch handle through WASM.
-#[wasm_bindgen(js_name = getTierKeyFromEpoch)]
-#[must_use]
-pub fn get_tier_key_from_epoch_js(epoch_handle: u64, tier_byte: u8) -> JsBytesResult {
-    js_bytes_result_from_rust(get_tier_key_from_epoch(epoch_handle, tier_byte))
-}
-
-/// Derives the content key from an epoch handle through WASM.
-#[wasm_bindgen(js_name = deriveContentKeyFromEpoch)]
-#[must_use]
-pub fn derive_content_key_from_epoch_js(epoch_handle: u64) -> JsBytesResult {
-    js_bytes_result_from_rust(derive_content_key_from_epoch(epoch_handle))
 }
 
 /// Wraps a key with a 32-byte wrapper key through WASM.

@@ -6,11 +6,12 @@
 
 use mosaic_client::ClientErrorCode;
 use mosaic_crypto::{KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, derive_account_key};
+use mosaic_crypto::{SecretKey, decrypt_shard};
 use mosaic_vectors::{load_vector, vectors::LinkKeysVector};
 use mosaic_wasm::{
     AccountUnlockRequest, close_account_key_handle, close_epoch_key_handle,
-    create_epoch_key_handle, derive_link_keys, generate_link_secret, get_tier_key_from_epoch,
-    unlock_account_key, unwrap_tier_key_from_link, wrap_tier_key_for_link,
+    create_epoch_key_handle, derive_link_keys, encrypt_shard_with_epoch_handle,
+    generate_link_secret, unlock_account_key, unwrap_tier_key_from_link, wrap_tier_key_for_link,
 };
 use std::path::PathBuf;
 
@@ -111,10 +112,6 @@ fn wrap_and_unwrap_tier_key_round_trips_through_handle() {
     let derived = derive_link_keys(secret.bytes.clone());
     assert_eq!(derived.code, 0);
 
-    let tier_key = get_tier_key_from_epoch(epoch.handle, 1);
-    assert_eq!(tier_key.code, 0);
-    assert_eq!(tier_key.bytes.len(), 32);
-
     let wrapped = wrap_tier_key_for_link(epoch.handle, 1, derived.wrapping_key.clone());
     assert_eq!(wrapped.code, 0);
     assert_eq!(wrapped.tier, 1);
@@ -128,7 +125,22 @@ fn wrap_and_unwrap_tier_key_round_trips_through_handle() {
         derived.wrapping_key.clone(),
     );
     assert_eq!(unwrapped.code, 0);
-    assert_eq!(unwrapped.bytes, tier_key.bytes);
+    assert_eq!(unwrapped.bytes.len(), 32);
+
+    let encrypted =
+        encrypt_shard_with_epoch_handle(epoch.handle, b"linked thumbnail".to_vec(), 7, 1);
+    assert_eq!(encrypted.code, 0);
+
+    let mut unwrapped_key_bytes = unwrapped.bytes.clone();
+    let unwrapped_key = match SecretKey::from_bytes(&mut unwrapped_key_bytes) {
+        Ok(value) => value,
+        Err(error) => panic!("unwrapped tier key should construct: {error:?}"),
+    };
+    let decrypted = match decrypt_shard(&encrypted.envelope_bytes, &unwrapped_key) {
+        Ok(value) => value,
+        Err(error) => panic!("unwrapped tier key should decrypt handle-encrypted shard: {error:?}"),
+    };
+    assert_eq!(decrypted.as_slice(), b"linked thumbnail");
 
     assert_eq!(close_epoch_key_handle(epoch.handle), 0);
     assert_eq!(close_account_key_handle(unlock.handle), 0);

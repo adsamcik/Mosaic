@@ -16,10 +16,6 @@ secret_name_pattern = re.compile(r"(derive.*(key|keys|secret)|get.*key|unwrap.*k
 secret_shaped_name = re.compile(r"(seed|secret|key)$", re.IGNORECASE)
 public_key_name = re.compile(r"(public_?key|pub_?key|PublicKey|PubKey|pubkey)", re.IGNORECASE)
 allowlist = {
-    "crates/mosaic-wasm/src/lib.rs::get_tier_key_from_epoch",
-    "crates/mosaic-wasm/src/lib.rs::get_tier_key_from_epoch_js",
-    "crates/mosaic-wasm/src/lib.rs::derive_content_key_from_epoch",
-    "crates/mosaic-wasm/src/lib.rs::derive_content_key_from_epoch_js",
     "crates/mosaic-wasm/src/lib.rs::derive_link_keys",
     "crates/mosaic-wasm/src/lib.rs::derive_link_keys_js",
     "crates/mosaic-wasm/src/lib.rs::unwrap_key",

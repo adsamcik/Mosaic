@@ -1635,50 +1635,6 @@ pub fn close_identity_handle(handle: u64) -> Result<(), ClientError> {
     }
 }
 
-/// Returns the per-tier 32-byte key bytes for an open epoch-key handle.
-///
-/// The returned bytes are the raw HKDF tier key. Callers MUST memzero the
-/// `BytesResult::bytes` buffer after use; the helper only ensures the in-Rust
-/// clone is wiped on drop.
-#[must_use]
-pub fn get_tier_key_from_epoch_handle(handle: u64, tier_byte: u8) -> BytesResult {
-    let tier = match ShardTier::try_from(tier_byte) {
-        Ok(value) => value,
-        Err(error) => return bytes_error_code(map_domain_error(error)),
-    };
-    match clone_tier_key_for_handle(handle, tier) {
-        Ok((_, key_bytes)) => BytesResult {
-            code: ClientErrorCode::Ok,
-            bytes: key_bytes.as_slice().to_vec(),
-        },
-        Err(error) => bytes_error(error),
-    }
-}
-
-/// Derives the album content encryption key from an epoch-key handle.
-///
-/// The 32-byte content key is HKDF-SHA256-derived from the epoch seed using
-/// the canonical Mosaic content label. Callers MUST memzero the returned
-/// bytes after use.
-#[must_use]
-pub fn derive_content_key_from_epoch_handle(handle: u64) -> BytesResult {
-    let mut seed_bytes = match clone_epoch_seed_for_handle(handle) {
-        Ok((_, bytes)) => bytes,
-        Err(error) => return bytes_error(error),
-    };
-    let epoch_seed = match SecretKey::from_bytes(seed_bytes.as_mut_slice()) {
-        Ok(value) => value,
-        Err(error) => return bytes_error_code(map_crypto_error(error)),
-    };
-    match derive_content_key(&epoch_seed) {
-        Ok(content_key) => BytesResult {
-            code: ClientErrorCode::Ok,
-            bytes: content_key.as_bytes().to_vec(),
-        },
-        Err(error) => bytes_error_code(map_crypto_error(error)),
-    }
-}
-
 /// Wraps `key_bytes` with a caller-supplied 32-byte wrapper key.
 ///
 /// Output layout: `nonce(24) || ciphertext_with_tag`. Internally builds a

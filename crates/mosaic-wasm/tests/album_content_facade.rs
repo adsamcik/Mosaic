@@ -9,8 +9,7 @@ use mosaic_crypto::{KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, derive_a
 use mosaic_vectors::{load_vector, vectors::ContentEncryptVector};
 use mosaic_wasm::{
     AccountUnlockRequest, close_account_key_handle, close_epoch_key_handle,
-    create_epoch_key_handle, decrypt_album_content, derive_content_key_from_epoch,
-    encrypt_album_content, unlock_account_key,
+    create_epoch_key_handle, decrypt_album_content, encrypt_album_content, unlock_account_key,
 };
 use std::path::PathBuf;
 
@@ -173,29 +172,4 @@ fn cross_epoch_decryption_fails() {
     assert_eq!(close_epoch_key_handle(epoch_a.handle), 0);
     assert_eq!(close_epoch_key_handle(epoch_b.handle), 0);
     assert_eq!(close_account_key_handle(unlock.handle), 0);
-}
-
-#[test]
-fn derive_content_key_returns_thirty_two_bytes() {
-    let unlock = unlock_account_key(PASSWORD.to_vec(), unlock_request(wrapped_account_key()));
-    let epoch = create_epoch_key_handle(unlock.handle, 21);
-
-    let result = derive_content_key_from_epoch(epoch.handle);
-    assert_eq!(result.code, 0);
-    assert_eq!(result.bytes.len(), 32);
-
-    // Same epoch handle must produce identical bytes deterministically.
-    let again = derive_content_key_from_epoch(epoch.handle);
-    assert_eq!(again.code, 0);
-    assert_eq!(again.bytes, result.bytes);
-
-    assert_eq!(close_epoch_key_handle(epoch.handle), 0);
-    assert_eq!(close_account_key_handle(unlock.handle), 0);
-}
-
-#[test]
-fn derive_content_key_rejects_invalid_handle() {
-    let result = derive_content_key_from_epoch(0);
-    assert_eq!(result.code, ClientErrorCode::EpochHandleNotFound.as_u16());
-    assert!(result.bytes.is_empty());
 }

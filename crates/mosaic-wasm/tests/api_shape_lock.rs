@@ -61,6 +61,31 @@ fn generated_wasm_typescript_declarations_match_golden() {
     );
 }
 
+#[test]
+fn generated_wasm_typescript_declarations_do_not_export_raw_epoch_keys() {
+    let generated_path = project_root()
+        .join("apps")
+        .join("web")
+        .join("src")
+        .join("generated")
+        .join("mosaic-wasm")
+        .join("mosaic_wasm.d.ts");
+    let generated = fs::read_to_string(&generated_path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read generated wasm-bindgen declarations at {}: {error}. \
+             Run scripts/build-rust-wasm.ps1 before this test.",
+            generated_path.display()
+        )
+    });
+
+    for forbidden_export in ["getTierKeyFromEpoch", "deriveContentKeyFromEpoch"] {
+        assert!(
+            !generated.contains(forbidden_export),
+            "raw epoch-key export must not be present in generated WASM declarations: {forbidden_export}"
+        );
+    }
+}
+
 fn normalize_newlines(value: &str) -> String {
     value.replace("\r\n", "\n")
 }
