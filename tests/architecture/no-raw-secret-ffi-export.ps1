@@ -1,16 +1,26 @@
 #requires -Version 7
 $ErrorActionPreference = 'Stop'
 
+# Architecture-guard regex maintenance protocol:
+# 1. Every regex extension MUST be accompanied by a negative-test fixture
+#    proving the new pattern catches what the old missed.
+# 2. Fixtures live inline in Invoke-NegativeFixtures below and run as part of CI.
+# 3. PR adding a new pattern without a fixture should be rejected at review.
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 Set-Location $ProjectRoot
 
 $ffiFiles = @('crates/mosaic-wasm/src/lib.rs', 'crates/mosaic-uniffi/src/lib.rs')
 $dtsFiles = @('apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts')
-$secretResultTypes = '(Vec\s*<\s*u8\s*>|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)'
+# JsValue is intentionally treated as secret-shaped for wasm exports. It is fuzzy
+# because serde_wasm_bindgen can smuggle byte arrays through JsValue; reviewers can
+# use the explicit allowlist when a non-secret JsValue API is justified.
+$secretResultTypes = '(Vec\s*<\s*u8\s*>|Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer|JsValue|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)'
 $secretNamePattern = '(derive.*(key|keys|secret)|generate.*secret|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
 $domainHandlePattern = '(?i)(^(wrap|unwrap)_.*(account|epoch|identity|link).*(handle|seed|key|secret)|^(seal|unseal)_.*(account|epoch|identity|link).*handle)'
 $genericBytesWrapPattern = '(?i)^(wrap|unwrap)(_|$)'
+$domainNounPattern = '(?i)(account|epoch|identity|link)'
 $secretShapedName = '(?i)(seed|secret|key)$'
 $publicKeyName = '(public_?key|pub_?key|PublicKey|PubKey|pubkey)'
 $forbiddenRawBundleApis = @(
@@ -25,8 +35,20 @@ $allowlist = @{
   'crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle' = 'R-C6 AAD-bound account-data unwrap; cannot decrypt seed domains.'
   'crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle_js' = 'R-C6 AAD-bound account-data wrapper; returns only ACCOUNT_DATA_AAD ciphertext.'
   'crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle_js' = 'R-C6 AAD-bound account-data unwrap; cannot decrypt seed domains.'
+  'crates/mosaic-wasm/src/lib.rs::wrapped_epoch_seed' = 'Getter for server-storable wrapped epoch seed ciphertext.'
+  'crates/mosaic-wasm/src/lib.rs::identity_message' = 'Golden-vector fixture message bytes, not secret key material.'
+  'crates/mosaic-wasm/src/lib.rs::identity_signature' = 'Golden-vector signature bytes, not secret key material.'
+  'crates/mosaic-wasm/src/lib.rs::link_id' = 'Opaque link identifier bytes, not link secret key material.'
+  'crates/mosaic-wasm/src/lib.rs::link_secret_for_url' = 'User-deliverable link secret for URL construction; reviewed existing API.'
+  'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_identity' = 'Returns a signature over a transcript, not raw identity key material.'
+  'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_epoch_handle' = 'Returns a signature over a transcript, not raw epoch key material.'
+  'crates/mosaic-wasm/src/lib.rs::sign_auth_challenge_with_account' = 'Returns an auth challenge signature, not raw account key material.'
+  'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_identity_js' = 'Returns a signature over a transcript, not raw identity key material.'
+  'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_epoch_handle_js' = 'Returns a signature over a transcript, not raw epoch key material.'
+  'crates/mosaic-wasm/src/lib.rs::sign_auth_challenge_with_account_js' = 'Returns an auth challenge signature, not raw account key material.'
   'crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret' = 'Cross-client vector driver only; returns wrapping_key for parity tests.'
   'crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed' = 'Cross-client vector driver only; OpenedBundleFfiResult carries epoch_seed.'
+  'crates/mosaic-uniffi/src/lib.rs::sign_manifest_with_identity' = 'Returns a signature over a transcript, not raw identity key material.'
 }
 $structFieldAllowlist = @{
   'crates/mosaic-wasm/src/lib.rs::AccountUnlockRequest.wrapped_account_key' = 'Wrapped input for account unlock.'
@@ -53,6 +75,46 @@ function Test-SecretName([string]$Name) {
   return ($Name -match $secretShapedName) -and ($Name -notmatch $publicKeyName)
 }
 
+function Assert-NegativeFixtureCaught([string]$Name, [string]$Source, [string]$ExpectedSymbol) {
+  $fixturePath = "tests/architecture/negative-fixtures/$Name.rs"
+  $fixtureLines = $Source -split "`r?`n"
+  $fixtureViolations = New-Object System.Collections.Generic.List[string]
+
+  for ($i = 0; $i -lt $fixtureLines.Count; $i++) {
+    if ($fixtureLines[$i] -notmatch '^\s*pub\s+(?:async\s+)?fn\s+([A-Za-z0-9_]+)') { continue }
+    $name = $Matches[1]
+    $signature = $fixtureLines[$i]
+    $j = $i
+    while ($signature -notmatch '\{' -and $j + 1 -lt $fixtureLines.Count) {
+      $j++
+      $signature += ' ' + $fixtureLines[$j].Trim()
+    }
+
+    $isSecretShapedExport = (($name -match $secretNamePattern) -or
+      ($name -match $domainHandlePattern) -or
+      (($name -match $genericBytesWrapPattern) -and ($signature -match '->\s*(BytesResult|JsBytesResult)')) -or
+      ($name -match $domainNounPattern))
+    if (($name -notmatch $publicKeyName) -and $isSecretShapedExport -and $signature -match "->\s*$secretResultTypes") {
+      $fixtureViolations.Add("$fixturePath`:$($i + 1): forbidden raw-secret-shaped FFI export '$name' -> $($signature.Trim())")
+    }
+  }
+
+  if (-not ($fixtureViolations | Where-Object { $_ -match [regex]::Escape($ExpectedSymbol) })) {
+    throw "negative fixture '$Name' did not catch expected symbol '$ExpectedSymbol'. Violations: $($fixtureViolations -join '; ')"
+  }
+}
+
+function Invoke-NegativeFixtures {
+  Assert-NegativeFixtureCaught 'cousin-verb-export-account-seed' 'pub fn export_account_seed() -> BytesResult { unimplemented!() }' 'export_account_seed'
+  Assert-NegativeFixtureCaught 'exotic-return-box-u8' 'pub fn get_epoch_key() -> Box<[u8]> { unimplemented!() }' 'get_epoch_key'
+  Assert-NegativeFixtureCaught 'exotic-return-cow-u8' "pub fn get_identity_key() -> Cow<'static, [u8]> { unimplemented!() }" 'get_identity_key'
+  Assert-NegativeFixtureCaught 'exotic-return-uint8array' 'pub fn get_link_key() -> js_sys::Uint8Array { unimplemented!() }' 'get_link_key'
+  Assert-NegativeFixtureCaught 'exotic-return-arraybuffer' 'pub fn get_account_key() -> js_sys::ArrayBuffer { unimplemented!() }' 'get_account_key'
+  Assert-NegativeFixtureCaught 'exotic-return-jsvalue' 'pub fn get_identity_key() -> JsValue { unimplemented!() }' 'get_identity_key'
+}
+
+Invoke-NegativeFixtures
+
 $violations = New-Object System.Collections.Generic.List[string]
 foreach ($path in $ffiFiles) {
   $lines = Get-Content -Path $path -ErrorAction Stop
@@ -70,7 +132,7 @@ foreach ($path in $ffiFiles) {
       }
     }
 
-    if ($lines[$i] -notmatch '^\s*pub\s+fn\s+([A-Za-z0-9_]+)') { continue }
+    if ($lines[$i] -notmatch '^\s*pub\s+(?:async\s+)?fn\s+([A-Za-z0-9_]+)') { continue }
     $name = $Matches[1]
     if ($forbiddenRawBundleApis -contains $name) {
       $violations.Add("$path`:$($i + 1): forbidden raw bundle-secret FFI export '$name'")
@@ -84,7 +146,8 @@ foreach ($path in $ffiFiles) {
     }
     $isSecretShapedExport = (($name -match $secretNamePattern) -or
       ($name -match $domainHandlePattern) -or
-      (($name -match $genericBytesWrapPattern) -and ($signature -match '->\s*(BytesResult|JsBytesResult)')))
+      (($name -match $genericBytesWrapPattern) -and ($signature -match '->\s*(BytesResult|JsBytesResult)')) -or
+      ($name -match $domainNounPattern))
     if ($isSecretShapedExport -and $signature -match "->\s*$secretResultTypes") {
       $key = "$path`::$name"
       if (-not $allowlist.ContainsKey($key)) {

@@ -137,7 +137,7 @@ fn parse_exported_function(lines: &[&str], start: usize) -> Option<(usize, Strin
             index += 1;
             continue;
         }
-        if line.starts_with("pub fn ") {
+        if line.starts_with("pub fn ") || line.starts_with("pub async fn ") {
             let mut signature = String::new();
             while index < lines.len() {
                 signature.push(' ');
@@ -164,12 +164,29 @@ fn normalize_field(field: &str) -> String {
 #[test]
 fn uniffi_export_attribute_detection_accepts_format_variants() {
     assert!(is_uniffi_export_attr("#[uniffi::export]"));
+    assert!(is_uniffi_export_attr("#[::uniffi::export]"));
     assert!(is_uniffi_export_attr("# [uniffi::export]"));
     assert!(is_uniffi_export_attr(r#"#[uniffi::export(name = "x")]"#));
+    assert!(is_uniffi_export_attr(r#"#[::uniffi::export(name = "x")]"#));
     assert!(is_uniffi_export_attr(
         "#[\n    uniffi :: export(\n        name = \"x\"\n    )\n]"
     ));
     assert!(!is_uniffi_export_attr("#[uniffi::Record]"));
+}
+
+#[test]
+fn exported_api_parser_keeps_async_functions_in_shape_lock() {
+    let source = r#"
+        #[uniffi::export]
+        pub async fn leak_seed() -> Vec<u8> {
+            Vec::new()
+        }
+    "#;
+
+    assert!(
+        canonical_uniffi_api_shape(source).contains("export pub async fn leak_seed() -> Vec<u8>"),
+        "negative fixture: #[uniffi::export] pub async fn must be locked instead of dropped"
+    );
 }
 
 #[test]
@@ -212,8 +229,8 @@ fn uniffi_enum_and_object_canary_detection_accepts_derive_format_variants() {
 
 fn is_uniffi_export_attr(line: &str) -> bool {
     let compact = compact_attr(line);
-    compact == "#[uniffi::export]"
-        || compact.starts_with("#[uniffi::export(") && compact.ends_with(']')
+    (compact.starts_with("#[uniffi::export") || compact.starts_with("#[::uniffi::export"))
+        && compact.ends_with(']')
 }
 
 fn attr_has_uniffi_marker(attr: &str, marker: &str) -> bool {

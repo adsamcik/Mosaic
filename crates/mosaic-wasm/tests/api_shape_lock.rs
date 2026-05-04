@@ -1,6 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
 const GOLDEN: &str = include_str!("golden/mosaic_wasm.d.ts");
+const SKIP_TYPESCRIPT_ALLOWLIST: &[(&str, &str)] = &[];
 
 /// Locks the actual wasm-bindgen export surface by comparing the generated
 /// TypeScript declaration file against a reviewed golden.
@@ -268,6 +269,149 @@ fn wasm_source_does_not_define_raw_link_share_key_exports() {
             "raw link-share key WASM source export must not be present: {forbidden_export}"
         );
     }
+}
+
+#[test]
+fn skip_typescript_exports_require_explicit_allowlist() {
+    let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("lib.rs");
+    let source = fs::read_to_string(&source_path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read WASM source at {}: {error}",
+            source_path.display()
+        )
+    });
+
+    assert_allowed_skip_typescript_exports(&source);
+}
+
+#[test]
+fn skip_typescript_export_negative_fixture_is_rejected() {
+    let source = r#"
+        #[wasm_bindgen(skip_typescript)]
+        pub fn leak_account_seed() -> Vec<u8> {
+            Vec::new()
+        }
+    "#;
+
+    let skipped = skip_typescript_exports(source);
+    assert_eq!(
+        skipped,
+        vec!["leak_account_seed".to_owned()],
+        "negative fixture: #[wasm_bindgen(skip_typescript)] must not bypass the .d.ts golden lock"
+    );
+}
+
+fn assert_allowed_skip_typescript_exports(source: &str) {
+    let skipped_exports = skip_typescript_exports(source);
+    for skipped_export in skipped_exports {
+        let Some((_, rationale)) = SKIP_TYPESCRIPT_ALLOWLIST
+            .iter()
+            .find(|(name, _)| *name == skipped_export)
+        else {
+            panic!(
+                "WASM export `{skipped_export}` uses #[wasm_bindgen(skip_typescript)] \
+                 and is omitted from the generated .d.ts lock. Add it to \
+                 SKIP_TYPESCRIPT_ALLOWLIST with a security rationale before accepting."
+            );
+        };
+        assert!(
+            !rationale.trim().is_empty(),
+            "skip_typescript allowlist entry `{skipped_export}` must document its security rationale"
+        );
+    }
+}
+
+fn skip_typescript_exports(source: &str) -> Vec<String> {
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut skipped_exports = Vec::new();
+    let mut index = 0;
+    let mut saw_skip_typescript_attr = false;
+
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if starts_attribute(line) {
+            let (next_index, attr) = collect_attribute(&lines, index);
+            let compact = compact_attr(&attr);
+            if compact.contains("wasm_bindgen") && compact.contains("skip_typescript") {
+                saw_skip_typescript_attr = true;
+            }
+            index = next_index;
+            continue;
+        }
+
+        if saw_skip_typescript_attr {
+            if line.starts_with("///") || line.starts_with("//") || line.is_empty() {
+                index += 1;
+                continue;
+            }
+            if let Some(name) = exported_item_name(line) {
+                skipped_exports.push(name.to_owned());
+            } else {
+                skipped_exports.push(format!("<unparsed item at source line {}>", index + 1));
+            }
+            saw_skip_typescript_attr = false;
+        }
+
+        index += 1;
+    }
+
+    skipped_exports
+}
+
+fn exported_item_name(line: &str) -> Option<&str> {
+    line.strip_prefix("pub fn ")
+        .or_else(|| line.strip_prefix("pub async fn "))
+        .or_else(|| line.strip_prefix("pub struct "))
+        .and_then(|rest| {
+            rest.split(|character: char| {
+                character == '(' || character == '{' || character.is_whitespace()
+            })
+            .next()
+        })
+        .filter(|name| !name.is_empty())
+}
+
+fn starts_attribute(line: &str) -> bool {
+    compact_attr(line).starts_with("#[")
+}
+
+fn compact_attr(attr: &str) -> String {
+    attr.split_whitespace().collect::<String>()
+}
+
+fn collect_attribute(lines: &[&str], start: usize) -> (usize, String) {
+    let mut attr = String::new();
+    let mut bracket_depth = 0_i32;
+    let mut saw_open = false;
+    let mut index = start;
+
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if !attr.is_empty() {
+            attr.push('\n');
+        }
+        attr.push_str(line);
+
+        for character in line.chars() {
+            match character {
+                '[' => {
+                    bracket_depth += 1;
+                    saw_open = true;
+                }
+                ']' => bracket_depth -= 1,
+                _ => {}
+            }
+        }
+
+        index += 1;
+        if saw_open && bracket_depth <= 0 {
+            break;
+        }
+    }
+
+    (index, attr)
 }
 
 fn normalize_newlines(value: &str) -> String {

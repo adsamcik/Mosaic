@@ -291,6 +291,24 @@ fn struct_parser_associates_multiline_attrs_with_following_struct() {
 }
 
 #[test]
+fn struct_parser_associates_stacked_attrs_with_following_struct() {
+    let source = r#"
+        #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+        #[serde(rename_all = "camelCase")]
+        pub struct StackedAttributeRecord {
+            pub schema_version: u32,
+            pub payload_bytes: Vec<u8>,
+        }
+    "#;
+
+    let records = parse_uniffi_records(source);
+    assert_eq!(
+        records["StackedAttributeRecord"].fields,
+        fields_from_pairs(&[("schema_version", "u32"), ("payload_bytes", "Vec<u8>")])
+    );
+}
+
+#[test]
 #[should_panic(
     expected = "FFI DTO `ClientCoreUploadJobSnapshot` drifted between UniFFI and WASM wrappers"
 )]
