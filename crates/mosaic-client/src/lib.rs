@@ -30,8 +30,10 @@ use mosaic_crypto::{
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
 use zeroize::{Zeroize, Zeroizing};
 
+pub mod download;
 pub mod snapshot_schema;
 pub mod state_machine;
+pub use download::*;
 pub use snapshot_schema::{
     AlbumSyncSnapshotPlaceholder, CURRENT_SNAPSHOT_SCHEMA_VERSION, FORBIDDEN_FIELD_NAMES,
     SCHEMA_VERSION_KEY, SNAPSHOT_SCHEMA_VERSION_V1, SnapshotMigrationError, album_sync_phase_codes,
@@ -143,6 +145,12 @@ pub enum ClientErrorCode {
     BackendIdempotencyConflict = 710,
     /// Video poster extraction failed; emitted as an event code without failing the upload.
     VideoPosterExtractionFailed = 711,
+    DownloadInvalidPlan = 720,
+    DownloadIllegalTransition = 721,
+    DownloadSnapshotMigration = 722,
+    DownloadSnapshotCorrupt = 723,
+    DownloadSnapshotChecksumMismatch = 724,
+    DownloadSnapshotTorn = 725,
     /// Android TLS certificate pin validation failed for a configured Mosaic endpoint.
     PinValidationFailed = 800,
 }
@@ -236,6 +244,12 @@ impl ClientErrorCode {
             709 => Some(Self::ManifestSetConflict),
             710 => Some(Self::BackendIdempotencyConflict),
             711 => Some(Self::VideoPosterExtractionFailed),
+            720 => Some(Self::DownloadInvalidPlan),
+            721 => Some(Self::DownloadIllegalTransition),
+            722 => Some(Self::DownloadSnapshotMigration),
+            723 => Some(Self::DownloadSnapshotCorrupt),
+            724 => Some(Self::DownloadSnapshotChecksumMismatch),
+            725 => Some(Self::DownloadSnapshotTorn),
             800 => Some(Self::PinValidationFailed),
             _ => None,
         }
