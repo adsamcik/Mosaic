@@ -293,3 +293,54 @@ export pub fn sign_auth_challenge_with_raw_seed( transcript_bytes: Vec<u8>, auth
 export pub fn verify_auth_challenge_signature( transcript_bytes: Vec<u8>, signature: Vec<u8>, auth_public_key: Vec<u8>, ) -> AuthChallengeVerifyFfiResult
 export pub fn verify_and_open_bundle_with_recipient_seed( recipient_identity_seed: Vec<u8>, sealed: Vec<u8>, signature: Vec<u8>, sharer_pubkey: Vec<u8>, expected_owner_pubkey: Vec<u8>, expected_album_id: String, expected_min_epoch_id: u32, allow_legacy_empty_album_id: bool, ) -> OpenedBundleFfiResult
 export pub fn decrypt_content_with_raw_key( content_key: Vec<u8>, nonce: Vec<u8>, ciphertext: Vec<u8>, epoch_id: u32, ) -> ContentDecryptFfiResult
+record DownloadPlanShardInput
+  shard_id: Vec<u8>
+  epoch_id: u32
+  tier: u8
+  expected_hash: Vec<u8>
+  declared_size: u64
+end
+record DownloadPlanEntryInput
+  photo_id: String
+  filename: String
+  shards: Vec<DownloadPlanShardInput>
+end
+record DownloadPlanInput
+  album_id: Vec<u8>
+  entries: Vec<DownloadPlanEntryInput>
+end
+record DownloadPlanResult
+  code: u16
+  plan_cbor: Vec<u8>
+  error_detail: Option<String>
+end
+record DownloadInitInput
+  job_id: Vec<u8>
+  album_id: Vec<u8>
+  plan_cbor: Vec<u8>
+  now_ms: u64
+end
+record SnapshotBytesResult
+  code: u16
+  body: Vec<u8>
+  checksum: Vec<u8>
+end
+record ApplyEventResult
+  code: u16
+  new_state_cbor: Vec<u8>
+end
+record LoadSnapshotResult
+  code: u16
+  snapshot_cbor: Vec<u8>
+  schema_version_loaded: u32
+end
+record VerifySnapshotResult
+  code: u16
+  valid: bool
+end
+export pub fn build_download_plan(input: DownloadPlanInput) -> DownloadPlanResult
+export pub fn init_download_job(input: DownloadInitInput) -> SnapshotBytesResult
+export pub fn apply_download_event(state_cbor: Vec<u8>, event_cbor: Vec<u8>) -> ApplyEventResult
+export pub fn load_download_snapshot(snapshot_cbor: Vec<u8>, checksum: Vec<u8>) -> LoadSnapshotResult
+export pub fn commit_download_snapshot(snapshot_cbor: Vec<u8>) -> SnapshotBytesResult
+export pub fn verify_download_snapshot( snapshot_cbor: Vec<u8>, checksum: Vec<u8>, ) -> VerifySnapshotResult
