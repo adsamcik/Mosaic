@@ -1,7 +1,7 @@
 use mosaic_domain::{
-    EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MetadataSidecar,
-    MetadataSidecarError, MetadataSidecarField, ShardTier, canonical_manifest_transcript_bytes,
-    canonical_metadata_sidecar_bytes, metadata_field_tags,
+    EncryptedMetadataEnvelope, MAX_SIDECAR_TOTAL_BYTES, ManifestShardRef, ManifestTranscript,
+    MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier,
+    canonical_manifest_transcript_bytes, canonical_metadata_sidecar_bytes, metadata_field_tags,
 };
 
 const ALBUM_ID: [u8; 16] = [
@@ -59,6 +59,31 @@ fn metadata_sidecar_serializes_to_fixed_canonical_golden_bytes() {
         hex(&bytes),
         "4d6f736169635f4d657461646174615f763101000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f04030201030000000100020000000600030008000000c00f0000d00b000004000a000000696d6167652f6a706567"
     );
+}
+
+#[test]
+fn mime_override_preserves_non_nfc_bytes_exactly() {
+    let decomposed_mime = "image/x-mosaic-e\u{301}".as_bytes();
+    let fields = [MetadataSidecarField::new(
+        metadata_field_tags::MIME_OVERRIDE,
+        decomposed_mime,
+    )];
+    let bytes = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
+        ALBUM_ID,
+        PHOTO_ID,
+        0x0102_0304,
+        &fields,
+    )) {
+        Ok(value) => value,
+        Err(error) => panic!("non-NFC MIME override bytes should serialize: {error:?}"),
+    };
+
+    let value_start = 59 + 2 + 4;
+    assert_eq!(
+        &bytes[value_start..value_start + decomposed_mime.len()],
+        decomposed_mime
+    );
+    assert!(!contains_subsequence(&bytes, "image/x-mosaic-é".as_bytes()));
 }
 
 #[test]
@@ -198,6 +223,39 @@ fn encoder_rejects_filename_tag_6_reserved() {
     assert_eq!(
         canonical_metadata_sidecar_bytes(&MetadataSidecar::new(ALBUM_ID, PHOTO_ID, 1, &fields)),
         Err(MetadataSidecarError::ReservedTagNotPromoted { tag: 6 })
+    );
+}
+
+#[test]
+fn encoder_rejects_empty_reserved_tag_before_empty_value() {
+    let fields = [MetadataSidecarField::new(6, b"")];
+    assert_eq!(
+        canonical_metadata_sidecar_bytes(&MetadataSidecar::new(ALBUM_ID, PHOTO_ID, 1, &fields)),
+        Err(MetadataSidecarError::ReservedTagNotPromoted { tag: 6 })
+    );
+}
+
+#[test]
+fn encoder_rejects_sidecar_total_bytes_above_cap() {
+    let oversized_value = vec![0x61; MAX_SIDECAR_TOTAL_BYTES];
+    let fields = [MetadataSidecarField::new(
+        metadata_field_tags::MIME_OVERRIDE,
+        &oversized_value,
+    )];
+
+    let error = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
+        ALBUM_ID, PHOTO_ID, 1, &fields,
+    )) {
+        Ok(_) => panic!("sidecar above total cap should fail"),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_total_bytes",
+            actual: 59 + 2 + 4 + MAX_SIDECAR_TOTAL_BYTES
+        }
     );
 }
 #[test]

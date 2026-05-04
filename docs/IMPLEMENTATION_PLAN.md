@@ -19,6 +19,7 @@
 8. [Timeline](#implementation-timeline)
 9. [Security Documentation](#security-documentation)
 10. [Design Decisions](#design-decisions-preserved)
+15. [R-M5.2 Sidecar Decoder Tracking](#15-r-m52-sidecar-decoder-tracking)
 
 ---
 
@@ -1470,6 +1471,21 @@ Create `docs/SECURITY.md` with:
      ANY future key could potentially derive backward to keys they shouldn't have
    - Fresh randomness ensures each epoch is cryptographically independent
    - The only link between epochs is the explicit wrapping stored in epoch_keys
+
+---
+
+## 15. R-M5.2 Sidecar Decoder Tracking
+
+R-M5.2 tracks sidecar decoder implementation if sidecar decoding becomes a v1
+requirement. Until it lands, ADR-017 decode-validation rules are forward-looking
+design specifications rather than enforceable runtime invariants.
+
+| Work item | Scope | Status |
+|-----------|-------|--------|
+| Decoder | Implement TLV decoder for `Mosaic_Metadata_v1`, including active/reserved/unknown tag handling. | Deferred |
+| Fuzz harness | Add fuzz-green coverage for decoder inputs per ADR-020 before accepting decoder behavior as a v1 invariant. | Deferred |
+| Forbidden payload defense | Reject forbidden field-name patterns, especially tag 6 `filename`, as defense in depth. | Deferred |
+| Cross-platform parity | Include decoder error semantics and sidecar byte equality in Q-final-1 when decoder lands. | Deferred |
 
 ---
 

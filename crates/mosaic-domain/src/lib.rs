@@ -30,6 +30,9 @@ pub const METADATA_SIDECAR_CONTEXT: &[u8] = b"Mosaic_Metadata_v1";
 /// Current canonical metadata sidecar format version.
 pub const METADATA_SIDECAR_VERSION: u8 = 1;
 
+/// Defense-in-depth cap for the complete canonical metadata sidecar byte buffer.
+pub const MAX_SIDECAR_TOTAL_BYTES: usize = 1_500_000;
+
 /// Client-local plaintext sensitivity class for a sidecar tag.
 ///
 /// All sidecar TLV plaintext is encrypted before server transit. This class is
@@ -49,6 +52,9 @@ pub enum SidecarTagPrivacyClass {
 pub enum SidecarTagStatus {
     Active,
     ReservedNumberPending,
+    /// Permanently forbidden by ADR-017 §"Registry rules" item 5.
+    /// Encoder MUST reject this tag.
+    Forbidden,
 }
 
 /// One entry in the canonical sidecar tag registry.
@@ -144,7 +150,7 @@ pub mod metadata_field_tags {
         SidecarTagRegistryEntry::new(
             6,
             "filename",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Forbidden,
             SidecarTagPrivacyClass::UserContent,
         ),
         SidecarTagRegistryEntry::new(
@@ -534,10 +540,12 @@ impl<'a> ManifestTranscript<'a> {
 /// # Errors
 /// Returns [`MetadataSidecarError::LengthTooLarge`] when the field count or any
 /// field value length cannot fit in `u32`, [`MetadataSidecarError::ZeroFieldTag`]
-/// for tag zero, [`MetadataSidecarError::EmptyFieldValue`] for present fields
-/// without values, [`MetadataSidecarError::DuplicateFieldTag`] for repeated tags,
-/// or [`MetadataSidecarError::UnsortedFieldTag`] when fields are not supplied in
-/// strictly ascending tag order.
+/// for tag zero, [`MetadataSidecarError::ReservedTagNotPromoted`] or
+/// [`MetadataSidecarError::UnknownTag`] when the registry does not allow
+/// encoding a tag, [`MetadataSidecarError::EmptyFieldValue`] for present fields
+/// without values, [`MetadataSidecarError::DuplicateFieldTag`] for repeated
+/// tags, or [`MetadataSidecarError::UnsortedFieldTag`] when fields are not
+/// supplied in strictly ascending tag order.
 pub fn canonical_metadata_sidecar_bytes(
     sidecar: &MetadataSidecar<'_>,
 ) -> Result<Vec<u8>, MetadataSidecarError> {
@@ -571,19 +579,37 @@ fn canonical_metadata_sidecar_bytes_inner(
                 });
             }
         }
-        if field.value().is_empty() {
-            return Err(MetadataSidecarError::EmptyFieldValue { tag: field.tag() });
-        }
         if enforce_active_tags {
             match metadata_field_tags::status(field.tag()) {
                 Some(SidecarTagStatus::Active) => {}
                 Some(SidecarTagStatus::ReservedNumberPending) => {
                     return Err(MetadataSidecarError::ReservedTagNotPromoted { tag: field.tag() });
                 }
+                Some(SidecarTagStatus::Forbidden) => {
+                    return Err(MetadataSidecarError::ReservedTagNotPromoted { tag: field.tag() });
+                }
                 None => return Err(MetadataSidecarError::UnknownTag { tag: field.tag() }),
             }
         }
+        if field.value().is_empty() {
+            return Err(MetadataSidecarError::EmptyFieldValue { tag: field.tag() });
+        }
         let value_len = checked_metadata_sidecar_len("field_value", field.value().len())?;
+        let projected_len = bytes
+            .len()
+            .checked_add(2)
+            .and_then(|len| len.checked_add(4))
+            .and_then(|len| len.checked_add(field.value().len()))
+            .ok_or(MetadataSidecarError::LengthTooLarge {
+                field: "sidecar_total_bytes",
+                actual: usize::MAX,
+            })?;
+        if projected_len > MAX_SIDECAR_TOTAL_BYTES {
+            return Err(MetadataSidecarError::LengthTooLarge {
+                field: "sidecar_total_bytes",
+                actual: projected_len,
+            });
+        }
         bytes.extend_from_slice(&field.tag().to_le_bytes());
         bytes.extend_from_slice(&value_len.to_le_bytes());
         bytes.extend_from_slice(field.value());

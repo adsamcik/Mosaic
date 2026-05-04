@@ -8,6 +8,13 @@ schema is bound into the media pipeline via `5bfdf5b` (`feat(media): integrate
 metadata sidecars`) and exposed across UniFFI/WASM by `65ba9d6` (`feat(uniffi):
 expose metadata sidecar encryption`).
 
+**Superseded for tag registry:** this SPEC remains authoritative for the
+`Mosaic_Metadata_v1` envelope and TLV byte shape only. The authoritative
+append-only tag registry, tag status vocabulary, privacy classes, reserved
+ranges, and tag-specific layout commitments are now
+[`SPEC-CanonicalSidecarTags.md`](SPEC-CanonicalSidecarTags.md). If the tag table
+below conflicts with the canonical registry, the canonical registry wins.
+
 ## Scope
 
 This slice adds a dependency-free Rust domain schema for deterministic canonical
@@ -67,8 +74,11 @@ construct that wrapper after encrypting canonical sidecar bytes.
 ## ZK invariants
 
 - The Rust domain sidecar schema has no crypto in this slice.
-- Canonical sidecar bytes may contain plaintext filenames, dimensions, captions,
-  preserved EXIF/IPTC/XMP/GPS-derived values, and related photo metadata.
+- Canonical sidecar bytes may contain plaintext dimensions, MIME hints, captions
+  only after a future ADR promotes tag 5, preserved EXIF/IPTC/XMP/GPS-derived
+  values only after their reserved tags are promoted, and related photo metadata.
+  Filenames are forbidden payloads; tag 6 is reserved only and producers must
+  not emit it.
 - Canonical sidecar bytes remain client-local and are encrypted before upload,
   manifest signing, or backend storage.
 - The backend/server only sees encrypted/opaque sidecar envelope bytes and
@@ -105,21 +115,23 @@ cannot be confused with manifest signing transcripts.
 
 ## Field tags
 
-Known field tags are stable protocol constants. Values are generic TLV payloads
-so higher layers can evolve typed encoders without changing the canonical
-container:
+Known field tags are stable protocol constants, but current tag status and
+tag-specific payload rules are governed by
+[`SPEC-CanonicalSidecarTags.md`](SPEC-CanonicalSidecarTags.md). Values are
+generic TLV payloads so higher layers can evolve typed encoders without changing
+the canonical container:
 
-| Tag | Name | Value encoding |
-|-----|------|----------------|
-| 1 | orientation | little-endian `u16` |
-| 2 | device timestamp ms | little-endian Unix epoch milliseconds `i64` |
-| 3 | original dimensions | little-endian width `u32`, height `u32` |
-| 4 | MIME override | UTF-8 bytes |
-| 5 | caption | UTF-8 bytes |
-| 6 | filename | UTF-8 bytes |
-| 7 | camera make | UTF-8 bytes |
-| 8 | camera model | UTF-8 bytes |
-| 9 | GPS | client metadata layer payload |
+| Tag | Name | Current status | Value encoding / registry note |
+|-----|------|----------------|-------------------------------|
+| 1 | orientation | Active | little-endian `u16` |
+| 2 | device timestamp ms | ReservedNumberPending | layout pending R-M4; producers must not emit |
+| 3 | original dimensions | Active | little-endian width `u32`, height `u32` |
+| 4 | MIME override | Active | byte-exact UTF-8 bytes; no NFC normalization or tag-specific byte cap |
+| 5 | caption | ReservedNumberPending | reserved for future ADR; producers must not emit |
+| 6 | filename | ReservedNumberPending | FORBIDDEN — see ADR-017 §"Registry rules" item 5; producers must not emit |
+| 7 | camera make | ReservedNumberPending | layout pending R-M4; producers must not emit |
+| 8 | camera model | ReservedNumberPending | layout pending R-M4; producers must not emit |
+| 9 | GPS | ReservedNumberPending | layout pending R-M3; producers must not emit |
 
 ## Validation
 
@@ -132,6 +144,11 @@ container:
 - Duplicate tags are rejected.
 - Unsorted input is rejected rather than silently sorted, preserving explicit
   canonical transcript strictness.
+- Production encoding rejects `ReservedNumberPending` and unknown tags before
+  checking empty field values, so reserved-tag telemetry is not bypassed by an
+  empty payload.
+- The complete canonical sidecar byte buffer is capped by
+  `MAX_SIDECAR_TOTAL_BYTES` as a defense-in-depth allocation bound.
 
 ## Component tree
 

@@ -40,8 +40,8 @@ Sidecar tag numbers are governed by an **append-only, lock-tested, ADR-changeabl
 1. **Append-only allocation.** Every new tag gets the next available `u16` value. Existing tags' (number, name, layout) tuples are immutable.
 2. **No re-use.** A removed tag is **deprecated, not deleted**: the registry retains an entry marked `Deprecated { since_version, replacement?: u16 }`. The `u16` value is permanently reserved.
 3. **Layout is part of the contract.** Every tag entry specifies: TLV body byte layout (with endianness), value range / validity rules, presence semantics (optional, conditional, required), encoding format (UTF-8 NFC, fixed binary, etc.), max byte length cap.
-4. **No tag may carry plaintext content** that is not already part of the v1 sidecar privacy classes (orientation, dimensions, MIME, GPS, timestamps, camera identity, video codec). All sidecar TLV bytes are encrypted before server transit; per-tag privacy classes classify client-local plaintext sensitivity for redaction, logging, and platform handling. New privacy classes require a separate ADR amending `SPEC-LateV1ProtocolFreeze.md` §"Frozen now" item 5.
-5. **No tag may carry secret material** (keys, password hashes, biometric data, account identifiers, raw URIs, file names). Tag 6 remains numerically reserved as `filename`, but filenames are forbidden payloads and producers must not emit that tag. Defense-in-depth check at decode validates against a forbidden-name list.
+4. **No tag may carry plaintext content** that is not already part of the v1 sidecar privacy classes (orientation, dimensions, MIME, GPS, timestamps, camera identity, video codec). All sidecar TLV bytes are encrypted before server transit; per-tag privacy classes are registry metadata describing client-local plaintext sensitivity for future redaction, logging, and platform handling. They are not currently a runtime-enforced redaction hook. New privacy classes require a separate ADR amending `SPEC-LateV1ProtocolFreeze.md` §"Frozen now" item 5.
+5. **No tag may carry secret material** (keys, password hashes, biometric data, account identifiers, raw URIs, file names). Tag 6 remains numerically reserved as `filename`, but filenames are forbidden payloads and producers must not emit that tag. The R-M5.2 decoder target includes a defense-in-depth forbidden-name check before any decoder becomes a v1 invariant.
 6. **Cross-implementation consistency.** Native Rust, WASM (P-W2), and UniFFI (P-U1) all consume the same numeric registry; cross-wrapper byte-equality tests (Q-final-1) include sidecar bytes for every supported tag combination.
 
 ### Lock test (`sidecar_tag_table.rs`)
@@ -49,16 +49,18 @@ Sidecar tag numbers are governed by an **append-only, lock-tested, ADR-changeabl
 ```rust
 const REGISTRY_V1: &[(u16, &str, TagLayout, TagStatus)] = &[
     (1, "orientation", TagLayout::U16Le { range: 1..=8 }, TagStatus::Active),
-    (2, "device_timestamp", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M4")),
+    (2, "device_timestamp_ms", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
     (3, "original_dimensions", TagLayout::DimensionsLe, TagStatus::Active),
-    (4, "mime_override", TagLayout::Utf8Nfc { max_bytes: 64 }, TagStatus::Active),
-    (7, "camera_make", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M4")),
-    (8, "camera_model", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M4")),
-    (9, "gps", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M3")),
-    (10, "codec_fourcc", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M7")),
-    (11, "duration_ms", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M7")),
-    (12, "frame_rate_x100", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M7")),
-    (13, "video_orientation", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending("R-M7")),
+    (4, "mime_override", TagLayout::Utf8BytesNoRegistryCapU32Length { byte_exact: true }, TagStatus::Active),
+    (5, "caption", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
+    (6, "filename", TagLayout::ForbiddenReservedPayload, TagStatus::ReservedNumberPending),
+    (7, "camera_make", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
+    (8, "camera_model", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
+    (9, "gps", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
+    (10, "codec_fourcc", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
+    (11, "duration_ms", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
+    (12, "frame_rate_x100", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
+    (13, "video_orientation", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
 ];
 
 #[test]
@@ -68,7 +70,7 @@ fn registry_is_append_only() {
 }
 ```
 
-Tag *numbers* are locked by this ADR and by `sidecar_tag_table.rs`; *byte layouts* for tags marked `ReservedNumberPending<TicketId>` are finalized by their corresponding R-M ticket and are not normative until that ticket merges with golden vectors. Until then, `ReservedAwaitingLayout` means the number is allocated, but producers must not emit the tag and decoders must not treat a concrete layout as frozen.
+Tag *numbers* are locked by this ADR and by `sidecar_tag_table.rs`; *byte layouts* for tags marked `ReservedNumberPending` are finalized by their corresponding R-M ticket and are not normative until that ticket merges with golden vectors. Until then, `ReservedAwaitingLayout` means the number is allocated, but producers must not emit the tag and decoders must not treat a concrete layout as frozen. The corresponding ticket remains documented in the canonical SPEC row notes.
 
 ### Reserved tag-number ranges
 
@@ -87,6 +89,8 @@ The two reserved ranges (4096–32767 and 32768–65535) were inadvertently over
 
 ### Decode validation (defense in depth)
 
+These rules describe target decoder behavior. Until R-M5.2 implements a decoder, the rules are forward-looking design specifications, not enforceable invariants. Encoders still enforce the active/reserved registry status before writing sidecar bytes.
+
 Sidecar decoders must:
 
 1. Reject TLV records whose tag is **unknown to the running client**, *unless* the tag's high bit (`tag & 0x8000 != 0`) marks it as "skippable optional" — reserved for future evolution; never used in v1. Skippable-optional decode policy is "skip TLV record, continue parsing, do not raise an error"; this contrasts with the hard rejection for any unknown numeric tag below 32768.
@@ -98,6 +102,8 @@ Sidecar decoders must:
 ### UTF-8 length cap behavior
 
 UTF-8 fields (`Utf8Nfc { max_bytes: 64 }` style) reject inputs whose UTF-8 byte length **strictly exceeds** the cap with `SidecarFieldOverflow`. The producer side must truncate **at character boundaries** before encoding, never at byte boundaries (avoids producing invalid UTF-8 mid-multi-byte). Truncation policy is producer-side; the encoder fails-closed if the producer hands it invalid UTF-8.
+
+Tag 4 (`mime_override`) is the active v1 exception: R-M5.2 locks the shipped byte-exact layout as `Utf8BytesNoRegistryCapU32Length`, with no retroactive NFC normalization or 64-byte cap. Cross-platform encoders must preserve tag 4 bytes exactly.
 
 ### ADR amendment workflow
 
@@ -143,7 +149,7 @@ Deprecating a tag requires:
 
 - New SPEC `docs/specs/SPEC-CanonicalSidecarTags.md` documents the registry, layouts, and reserved ranges.
 - New lock test `crates/mosaic-domain/tests/sidecar_tag_table.rs` mirrors `error_code_table.rs`.
-- R-M3, R-M4, R-M7 each convert their `ReservedNumberPending<TicketId>` entries into active layouts with a lock-test update and golden vectors.
+- R-M3, R-M4, R-M7 each convert their `ReservedNumberPending` entries into active layouts with a lock-test update and golden vectors.
 - The decode validator returns `SidecarFieldOverflow`, `MalformedSidecar`, or `SidecarTagUnknown` for the failure classes above (allocated under R-C1).
 - ADR-022 (manifest finalization) references this ADR for the encrypted-meta-sidecar opaque-bytes contract.
 - WASM (P-W2) and UniFFI (P-U1) sidecar exports surface the same numeric tags by reference to this registry.

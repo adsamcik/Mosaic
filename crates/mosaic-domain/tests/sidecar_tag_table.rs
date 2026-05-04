@@ -1,5 +1,36 @@
 use mosaic_domain::{SidecarTagPrivacyClass, SidecarTagStatus, metadata_field_tags};
 
+fn pub_u16_consts(source: &str) -> Vec<(u16, String)> {
+    let regex = match regex::Regex::new(
+        r"(?m)^\s*pub\s+const\s+([A-Z_][A-Z0-9_]*)\s*:\s*u16\s*=\s*((?:0x[0-9A-Fa-f_]+|\d[\d_]*)(?:_?u16)?)\s*;",
+    ) {
+        Ok(regex) => regex,
+        Err(error) => panic!("regex compiles: {error}"),
+    };
+
+    regex
+        .captures_iter(source)
+        .map(|cap| {
+            let literal = cap[2]
+                .trim_end_matches("u16")
+                .trim_end_matches('_')
+                .replace('_', "");
+            let value = if let Some(hex) = literal.strip_prefix("0x") {
+                match u16::from_str_radix(hex, 16) {
+                    Ok(value) => value,
+                    Err(error) => panic!("hex tag parses: {error}"),
+                }
+            } else {
+                match literal.parse::<u16>() {
+                    Ok(value) => value,
+                    Err(error) => panic!("decimal tag parses: {error}"),
+                }
+            };
+            (value, cap[1].to_ascii_lowercase())
+        })
+        .collect()
+}
+
 #[test]
 fn expected_and_live_tables_agree() {
     let live: Vec<(u16, &str, SidecarTagStatus)> = metadata_field_tags::KNOWN_FIELD_TAGS
@@ -18,7 +49,7 @@ fn expected_and_live_tables_agree() {
             (3, "original_dimensions", SidecarTagStatus::Active),
             (4, "mime_override", SidecarTagStatus::Active),
             (5, "caption", SidecarTagStatus::ReservedNumberPending),
-            (6, "filename", SidecarTagStatus::ReservedNumberPending),
+            (6, "filename", SidecarTagStatus::Forbidden),
             (7, "camera_make", SidecarTagStatus::ReservedNumberPending),
             (8, "camera_model", SidecarTagStatus::ReservedNumberPending),
             (9, "gps", SidecarTagStatus::ReservedNumberPending),
@@ -40,29 +71,35 @@ fn expected_and_live_tables_agree() {
 
 #[test]
 fn known_field_tags_list_every_pub_const_in_metadata_field_tags() {
-    let regex =
-        match regex::Regex::new(r"(?m)^\s*pub\s+const\s+([A-Z_]+)\s*:\s*u16\s*=\s*(\d+)\s*;") {
-            Ok(regex) => regex,
-            Err(error) => panic!("regex compiles: {error}"),
-        };
     let known: std::collections::BTreeSet<_> = metadata_field_tags::KNOWN_FIELD_TAGS
         .iter()
         .map(|entry| (entry.tag_number(), entry.tag_name().to_owned()))
         .collect();
-    let missing: Vec<_> = regex
-        .captures_iter(include_str!("../src/lib.rs"))
-        .map(|cap| {
-            (
-                match cap[2].parse::<u16>() {
-                    Ok(value) => value,
-                    Err(error) => panic!("tag parses: {error}"),
-                },
-                cap[1].to_ascii_lowercase(),
-            )
-        })
+    let missing: Vec<_> = pub_u16_consts(include_str!("../src/lib.rs"))
+        .into_iter()
         .filter(|entry| !known.contains(entry))
         .collect();
     assert!(missing.is_empty(), "missing constants: {missing:?}");
+}
+
+#[test]
+fn pub_u16_const_parser_handles_hex_and_typed_suffix_literals() {
+    let source = r"
+        pub const HEX_TAG: u16 = 0x0E;
+        pub const TYPED_TAG: u16 = 14u16;
+        pub const UNDERSCORED_TYPED_TAG: u16 = 14_u16;
+        pub const DECIMAL_WITH_SEPARATOR: u16 = 1_024;
+    ";
+
+    assert_eq!(
+        pub_u16_consts(source),
+        vec![
+            (14, "hex_tag".to_owned()),
+            (14, "typed_tag".to_owned()),
+            (14, "underscored_typed_tag".to_owned()),
+            (1024, "decimal_with_separator".to_owned()),
+        ]
+    );
 }
 
 #[test]
