@@ -22,6 +22,8 @@ export interface PhotoPipelineDeps {
   readonly writePhotoChunk: (jobId: string, photoId: string, offset: number, bytes: Uint8Array) => Promise<void>;
   readonly truncatePhoto: (jobId: string, photoId: string, length: number) => Promise<void>;
   readonly getPhotoFileLength: (jobId: string, photoId: string) => Promise<number | null>;
+  /** Report cumulative bytes written for this photo; coordinator owns persistence rate-limiting. */
+  readonly reportBytesWritten?: (jobId: string, photoId: string, bytesWritten: number) => void;
 }
 
 /** Stable reasons for non-fatal per-photo skips. */
@@ -53,6 +55,7 @@ export async function executePhotoTask(input: PhotoTaskInput, deps: PhotoPipelin
 
     if (input.entry.totalBytes === 0 && input.entry.shardIds.length === 0) {
       await deps.writePhotoChunk(input.jobId, input.entry.photoId, 0, new Uint8Array());
+      deps.reportBytesWritten?.(input.jobId, input.entry.photoId, 0);
       return { kind: 'done', bytesWritten: 0 };
     }
 
@@ -68,6 +71,7 @@ export async function executePhotoTask(input: PhotoTaskInput, deps: PhotoPipelin
           return verifyOutcome;
         }
         await deps.writePhotoChunk(input.jobId, input.entry.photoId, 0, verifyOutcome.bytes);
+        deps.reportBytesWritten?.(input.jobId, input.entry.photoId, verifyOutcome.bytes.byteLength);
         return { kind: 'done', bytesWritten: verifyOutcome.bytes.byteLength };
       } catch (error) {
         const classified = classifyPipelineError(error);

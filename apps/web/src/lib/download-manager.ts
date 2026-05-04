@@ -1,6 +1,6 @@
 import * as Comlink from 'comlink';
 import { createLogger } from './logger';
-import type { CoordinatorWorkerApi } from '../workers/types';
+import type { AlbumDiff, CoordinatorWorkerApi, CurrentAlbumManifest, ResumableJobSummary } from '../workers/types';
 
 const log = createLogger('DownloadManager');
 
@@ -15,6 +15,18 @@ export async function getDownloadManager(): Promise<CoordinatorWorkerApi> {
   }
   initPromise ??= createDownloadManager();
   return initPromise;
+}
+
+/** List locally resumable jobs through the singleton coordinator worker. */
+export async function listResumableJobs(): Promise<ResumableJobSummary[]> {
+  const manager = await getDownloadManager();
+  return manager.listResumableJobs();
+}
+
+/** Compute an album diff through the singleton coordinator worker. */
+export async function computeAlbumDiff(jobId: string, current: CurrentAlbumManifest): Promise<AlbumDiff> {
+  const manager = await getDownloadManager();
+  return manager.computeAlbumDiff(jobId, current);
 }
 
 /** Tear down the singleton worker proxy for tests and hot-reload cleanup. */

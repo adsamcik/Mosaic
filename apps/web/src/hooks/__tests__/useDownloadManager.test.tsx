@@ -1,7 +1,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CoordinatorWorkerApi, DownloadPhase, JobProgressEvent, JobSummary } from '../../workers/types';
+import type { CoordinatorWorkerApi, DownloadPhase, JobProgressEvent, JobSummary, ResumableJobSummary } from '../../workers/types';
 import { useDownloadManager, type UseDownloadManagerResult } from '../useDownloadManager';
 
 const managerMocks = vi.hoisted(() => ({
@@ -36,6 +36,7 @@ interface MockChannelRecord {
 const channels: MockChannelRecord[] = [];
 const mountedHooks: RenderedHook[] = [];
 let jobs: JobSummary[] = [];
+let resumableJobs: ResumableJobSummary[] = [];
 const subscribers = new Map<string, Set<(event: JobProgressEvent) => void>>();
 
 const baseJob: JobSummary = {
@@ -60,6 +61,8 @@ const api: CoordinatorWorkerApi = {
   resumeJob: vi.fn(() => phaseResult('Running')),
   cancelJob: vi.fn(() => phaseResult('Cancelled')),
   listJobs: vi.fn(async () => jobs),
+  listResumableJobs: vi.fn(async () => resumableJobs),
+  computeAlbumDiff: vi.fn(async () => ({ removed: [], added: [], rekeyed: [], unchanged: [], shardChanged: [] })),
   getJob: vi.fn(async (jobId: string) => jobs.find((job) => job.jobId === jobId) ?? null),
   subscribe: vi.fn(async (jobId: string, callback: (event: JobProgressEvent) => void) => {
     let callbacks = subscribers.get(jobId);
@@ -180,6 +183,7 @@ async function emitProgress(job: JobSummary): Promise<void> {
 
 beforeEach(() => {
   jobs = [];
+  resumableJobs = [];
   subscribers.clear();
   channels.length = 0;
   managerMocks.getDownloadManager.mockReset();
@@ -235,4 +239,25 @@ describe('useDownloadManager', () => {
     });
     expect(hook.result().jobs).toEqual([running]);
   });
+
+
+  it('updates resumableJobs when download broadcasts arrive', async () => {
+    const hook = await renderHook();
+    const resumable: ResumableJobSummary = {
+      ...baseJob,
+      phase: 'Paused',
+      photoCounts: { pending: 1, inflight: 0, done: 1, failed: 0, skipped: 0 },
+      photosDone: 1,
+      photosTotal: 2,
+      bytesWritten: 123,
+      lastUpdatedAtMs: 2,
+    };
+    resumableJobs = [resumable];
+    await act(async () => {
+      emitBroadcast({ kind: 'job-changed', jobId: resumable.jobId, phase: 'Paused', lastUpdatedAtMs: 2 });
+      await flushMicrotasks();
+    });
+    expect(hook.result().resumableJobs).toEqual([resumable]);
+  });
 });
+

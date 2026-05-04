@@ -34,6 +34,7 @@ function makeDeps(): PhotoPipelineDeps {
     writePhotoChunk: vi.fn(async (): Promise<void> => undefined),
     truncatePhoto: vi.fn(async (): Promise<void> => undefined),
     getPhotoFileLength: vi.fn(async (): Promise<number | null> => null),
+    reportBytesWritten: vi.fn(),
   };
 }
 
@@ -53,6 +54,7 @@ describe('executePhotoTask', () => {
     expect(deps.pool.verifyShard).toHaveBeenCalledTimes(2);
     expect(deps.pool.decryptShard).toHaveBeenCalledTimes(2);
     expect(deps.writePhotoChunk).toHaveBeenCalledWith('job', 'photo-1', 0, new Uint8Array([1, 2, 3, 4, 5, 6]));
+    expect(deps.reportBytesWritten).toHaveBeenCalledWith('job', 'photo-1', 6);
   });
 
   it.each([
@@ -141,5 +143,27 @@ describe('executePhotoTask', () => {
     await expect(executePhotoTask({ jobId: 'job', albumId: 'album', entry: zero, signal: signal() }, deps))
       .resolves.toEqual({ kind: 'done', bytesWritten: 0 });
     expect(deps.fetchShards).not.toHaveBeenCalled();
+  });
+
+
+  it('reports final bytes written on successful photo writes', async () => {
+    const deps = makeDeps();
+    await executePhotoTask({ jobId: 'job', albumId: 'album', entry, signal: signal() }, deps);
+    expect(deps.reportBytesWritten).toHaveBeenCalledTimes(1);
+    expect(deps.reportBytesWritten).toHaveBeenCalledWith('job', 'photo-1', 6);
+  });
+
+  it('does not report bytes for failed or skipped outcomes', async () => {
+    const failedDeps = makeDeps();
+    vi.mocked(failedDeps.pool.decryptShard).mockRejectedValue(new DownloadError('Decrypt', 'bad tag'));
+    await expect(executePhotoTask({ jobId: 'job', albumId: 'album', entry, signal: signal() }, failedDeps))
+      .resolves.toEqual({ kind: 'failed', code: 'Decrypt' });
+    expect(failedDeps.reportBytesWritten).not.toHaveBeenCalled();
+
+    const skippedDeps = makeDeps();
+    vi.mocked(skippedDeps.fetchShards).mockRejectedValue(new HttpError(404));
+    await expect(executePhotoTask({ jobId: 'job', albumId: 'album', entry, signal: signal() }, skippedDeps))
+      .resolves.toEqual({ kind: 'skipped', reason: 'NotFound' });
+    expect(skippedDeps.reportBytesWritten).not.toHaveBeenCalled();
   });
 });

@@ -6,6 +6,7 @@ import type {
   CoordinatorWorkerApi,
   DownloadJobsBroadcastMessage,
   JobSummary,
+  ResumableJobSummary,
 } from '../workers/types';
 
 const log = createLogger('useDownloadManager');
@@ -15,6 +16,7 @@ const CHANNEL_NAME = 'mosaic-download-jobs';
 export interface UseDownloadManagerResult {
   readonly ready: boolean;
   readonly jobs: ReadonlyArray<JobSummary>;
+  readonly resumableJobs: ReadonlyArray<ResumableJobSummary>;
   readonly api: CoordinatorWorkerApi | null;
   readonly error: Error | null;
   /** Subscribe to a specific job and refresh jobs on progress; returns a cleanup callback. */
@@ -30,6 +32,7 @@ export interface UseDownloadManagerResult {
 export function useDownloadManager(): UseDownloadManagerResult {
   const [ready, setReady] = useState(false);
   const [jobs, setJobs] = useState<ReadonlyArray<JobSummary>>([]);
+  const [resumableJobs, setResumableJobs] = useState<ReadonlyArray<ResumableJobSummary>>([]);
   const [api, setApi] = useState<CoordinatorWorkerApi | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const apiRef = useRef<CoordinatorWorkerApi | null>(null);
@@ -39,8 +42,12 @@ export function useDownloadManager(): UseDownloadManagerResult {
     if (!currentApi) {
       return;
     }
-    const nextJobs = await currentApi.listJobs();
+    const [nextJobs, nextResumableJobs] = await Promise.all([
+      currentApi.listJobs(),
+      currentApi.listResumableJobs(),
+    ]);
     setJobs(nextJobs);
+    setResumableJobs(nextResumableJobs);
   }, []);
 
   useEffect(() => {
@@ -53,7 +60,12 @@ export function useDownloadManager(): UseDownloadManagerResult {
         }
         apiRef.current = manager;
         setApi(manager);
-        setJobs(await manager.listJobs());
+        const [initialJobs, initialResumableJobs] = await Promise.all([
+          manager.listJobs(),
+          manager.listResumableJobs(),
+        ]);
+        setJobs(initialJobs);
+        setResumableJobs(initialResumableJobs);
         setReady(true);
         setError(null);
       } catch (caught) {
@@ -117,7 +129,7 @@ export function useDownloadManager(): UseDownloadManagerResult {
     };
   }, [refreshJobs]);
 
-  return { ready, jobs, api, error, subscribe };
+  return { ready, jobs, resumableJobs, api, error, subscribe };
 }
 
 function isDownloadJobsBroadcastMessage(value: unknown): value is DownloadJobsBroadcastMessage {

@@ -1285,6 +1285,33 @@ export interface JobSummary {
   readonly lastUpdatedAtMs: number;
 }
 
+/** Job summary useful for resuming a partially completed non-terminal download. */
+export interface ResumableJobSummary extends JobSummary {
+  readonly photosDone: number;
+  readonly photosTotal: number;
+  readonly bytesWritten: number;
+  readonly lastUpdatedAtMs: number;
+}
+
+/** Freshly decrypted current album manifest supplied by the caller for local diffing. */
+export interface CurrentAlbumManifest {
+  readonly albumId: string;
+  readonly photos: ReadonlyArray<{
+    readonly photoId: string;
+    readonly epochId: number;
+    readonly tier3ShardIds: ReadonlyArray<string>;
+  }>;
+}
+
+/** Local comparison between a persisted download plan and the current album manifest. */
+export interface AlbumDiff {
+  readonly removed: ReadonlyArray<string>;
+  readonly added: ReadonlyArray<string>;
+  readonly rekeyed: ReadonlyArray<string>;
+  readonly unchanged: ReadonlyArray<string>;
+  readonly shardChanged: ReadonlyArray<string>;
+}
+
 /** Observe-only progress event delivered through worker subscriptions. */
 export interface JobProgressEvent {
   readonly jobId: string;
@@ -1318,6 +1345,10 @@ export interface CoordinatorWorkerApi {
   cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }>;
   /** List all known in-memory jobs. */
   listJobs(): Promise<JobSummary[]>;
+  /** List non-terminal jobs with at least one completed photo for resume prompts. */
+  listResumableJobs(): Promise<ResumableJobSummary[]>;
+  /** Compute a local diff between a persisted plan and a freshly decrypted manifest. */
+  computeAlbumDiff(jobId: string, current: CurrentAlbumManifest): Promise<AlbumDiff>;
   /** Return an in-memory job summary without re-reading OPFS. */
   getJob(jobId: string): Promise<JobSummary | null>;
   /** Subscribe to progress events for one job. Caller must unsubscribe. */

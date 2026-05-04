@@ -29,6 +29,9 @@ import type {
   DownloadPhotoStateView,
   JobProgressEvent,
   JobSummary,
+  ResumableJobSummary,
+  CurrentAlbumManifest,
+  AlbumDiff,
   StartJobInput,
 } from './types';
 
@@ -36,6 +39,17 @@ const log = createLogger('CoordinatorWorker');
 const CHANNEL_NAME = 'mosaic-download-jobs';
 const JOB_ID_HEX_BYTES = 16;
 const CHECKSUM_BYTES = 32;
+const DEFAULT_BYTE_PROGRESS_RATE_LIMIT_MS = 2_000;
+
+interface CoordinatorWorkerOptions {
+  readonly byteProgressRateLimitMs?: number;
+}
+
+interface ByteProgressTimer {
+  readonly jobId: string;
+  lastWriteAtMs: number;
+  pendingWrite: ReturnType<typeof setTimeout> | null;
+}
 
 let getCryptoPoolForCoordinator = getCryptoPool;
 let executePhotoTaskForCoordinator = executePhotoTask;
@@ -131,9 +145,12 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private readonly jobMutations = new Map<string, Promise<void>>();
   private readonly jobAborts = new Map<string, AbortController>();
   private readonly jobDrivers = new Map<string, Promise<void>>();
+  private readonly byteProgressTimers = new Map<string, ByteProgressTimer>();
+  private readonly byteProgressRateLimitMs: number;
   private readonly channel: BroadcastChannel | null;
 
-  constructor() {
+  constructor(opts: CoordinatorWorkerOptions = {}) {
+    this.byteProgressRateLimitMs = opts.byteProgressRateLimitMs ?? DEFAULT_BYTE_PROGRESS_RATE_LIMIT_MS;
     this.channel = createBroadcastChannel();
     this.channel?.addEventListener('message', (event: MessageEvent<unknown>) => {
       this.handleBroadcastMessage(event.data);
@@ -181,14 +198,16 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   }
 
   /** Apply a Rust download event, persist the updated snapshot, and emit progress. */
-  sendEvent(jobId: string, event: DownloadEventInput): Promise<{ phase: DownloadPhase }> {
+  async sendEvent(jobId: string, event: DownloadEventInput): Promise<{ phase: DownloadPhase }> {
     this.assertInitialized();
+    await this.flushByteProgress(jobId);
     return this.withJobLock(jobId, () => this.sendEventLocked(jobId, event));
   }
 
   private async sendEventLocked(jobId: string, event: DownloadEventInput): Promise<{ phase: DownloadPhase }> {
     const job = this.requireJob(jobId);
     if (isIdempotentEvent(job.state.phase, event)) {
+      this.emitJobChanged(job);
       return { phase: job.state.phase };
     }
     const currentState = extractStateValue(job.snapshotBytes);
@@ -199,6 +218,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
     const updated = createInMemoryJob(updatedBody, committed.checksum);
     this.jobs.set(jobId, updated);
+    this.markByteProgressPersisted(jobId);
     if (event.kind === 'PauseRequested' || event.kind === 'CancelRequested') {
       this.jobAborts.get(jobId)?.abort();
     }
@@ -240,6 +260,29 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     this.assertInitialized();
     await this.reconcilePersistedJobs();
     return [...this.jobs.values()].map(toJobSummary).sort((a, b) => a.jobId.localeCompare(b.jobId));
+  }
+
+  /** List non-terminal jobs with useful completed work for resuming. */
+  async listResumableJobs(): Promise<ResumableJobSummary[]> {
+    this.assertInitialized();
+    await this.reconcilePersistedJobs();
+    return [...this.jobs.values()]
+      .filter(isResumableJob)
+      .map(toResumableJobSummary)
+      .sort((a, b) => a.jobId.localeCompare(b.jobId));
+  }
+
+  /** Compute a local album diff from the persisted plan and current manifest. */
+  async computeAlbumDiff(jobId: string, current: CurrentAlbumManifest): Promise<AlbumDiff> {
+    this.assertInitialized();
+    let job = this.jobs.get(jobId);
+    if (!job) {
+      job = await this.refreshPersistedJob(jobId);
+    }
+    if (!job) {
+      job = this.requireJob(jobId);
+    }
+    return computeAlbumDiffFromPlan(job.plan, current);
   }
 
   /** Return an in-memory job summary without re-reading OPFS. */
@@ -374,6 +417,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       writePhotoChunk: opfsStaging.writePhotoChunk,
       truncatePhoto: opfsStaging.truncatePhotoTo,
       getPhotoFileLength: opfsStaging.getPhotoFileLength,
+      reportBytesWritten: (jobId: string, photoId: string, bytesWritten: number): void => {
+        this.handleBytesWritten(jobId, photoId, bytesWritten);
+      },
     };
   }
 
@@ -408,8 +454,85 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       await opfsStaging.writeSnapshot(jobId, updatedBody, committed.checksum);
       const updated = createInMemoryJob(updatedBody, committed.checksum);
       this.jobs.set(jobId, updated);
+      this.markByteProgressPersisted(jobId);
       this.emitJobChanged(updated);
     });
+  }
+
+  private handleBytesWritten(jobId: string, photoId: string, bytesWritten: number): void {
+    const job = this.jobs.get(jobId);
+    if (!job || bytesWritten < 0 || !Number.isFinite(bytesWritten)) {
+      return;
+    }
+    const photo = job.photos.find((candidate) => candidate.photoId === photoId);
+    if (!photo || photo.status === 'done' || photo.status === 'failed' || photo.status === 'skipped') {
+      return;
+    }
+    const normalizedBytesWritten = Math.floor(bytesWritten);
+    if (normalizedBytesWritten === photo.bytesWritten) {
+      return;
+    }
+    const updatedBody = patchSnapshotPhotoBytes(job.snapshotBytes, photoId, normalizedBytesWritten, job.lastUpdatedAtMs);
+    this.jobs.set(jobId, createInMemoryJob(updatedBody, job.snapshotChecksum));
+
+    const nowMs = Date.now();
+    const timer = this.byteProgressTimers.get(jobId) ?? { jobId, lastWriteAtMs: 0, pendingWrite: null };
+    const delayMs = timer.lastWriteAtMs === 0 || nowMs - timer.lastWriteAtMs >= this.byteProgressRateLimitMs
+      ? 0
+      : Math.max(0, timer.lastWriteAtMs + this.byteProgressRateLimitMs - nowMs);
+    if (timer.pendingWrite) {
+      clearTimeout(timer.pendingWrite);
+    }
+    timer.pendingWrite = setTimeout(() => {
+      timer.pendingWrite = null;
+      void this.flushByteProgress(jobId).catch((error: unknown) => {
+        log.warn('Byte-progress snapshot flush failed', {
+          jobId: shortId(jobId),
+          errorName: error instanceof Error ? error.name : 'Unknown',
+        });
+      });
+    }, delayMs);
+    this.byteProgressTimers.set(jobId, timer);
+  }
+
+  private async flushByteProgress(jobId: string): Promise<void> {
+    const timer = this.byteProgressTimers.get(jobId);
+    if (!timer) {
+      return;
+    }
+    if (timer.pendingWrite) {
+      clearTimeout(timer.pendingWrite);
+      timer.pendingWrite = null;
+    }
+    await this.withJobLock(jobId, async () => {
+      const job = this.jobs.get(jobId);
+      if (!job) {
+        this.byteProgressTimers.delete(jobId);
+        return;
+      }
+      const nowMs = Date.now();
+      const updatedBody = patchSnapshotLastUpdatedAtMs(job.snapshotBytes, nowMs);
+      const committed = await rustCommitDownloadSnapshot(updatedBody);
+      await opfsStaging.writeSnapshot(jobId, updatedBody, committed.checksum);
+      const updated = createInMemoryJob(updatedBody, committed.checksum);
+      this.jobs.set(jobId, updated);
+      timer.lastWriteAtMs = nowMs;
+      this.byteProgressTimers.set(jobId, timer);
+      this.emitJobChanged(updated);
+    });
+  }
+
+  private markByteProgressPersisted(jobId: string): void {
+    const timer = this.byteProgressTimers.get(jobId);
+    if (!timer) {
+      return;
+    }
+    if (timer.pendingWrite) {
+      clearTimeout(timer.pendingWrite);
+      timer.pendingWrite = null;
+    }
+    timer.lastWriteAtMs = Date.now();
+    this.byteProgressTimers.set(jobId, timer);
   }
 
   private async initializeOnce(): Promise<{ reconstructedJobs: number }> {
@@ -607,6 +730,65 @@ function toJobSummary(job: InMemoryJob): JobSummary {
   };
 }
 
+function toResumableJobSummary(job: InMemoryJob): ResumableJobSummary {
+  const summary = toJobSummary(job);
+  return {
+    ...summary,
+    photosDone: summary.photoCounts.done,
+    photosTotal: job.photos.length,
+    bytesWritten: job.photos.reduce((total, photo) => total + photo.bytesWritten, 0),
+    lastUpdatedAtMs: job.lastUpdatedAtMs,
+  };
+}
+
+function isResumableJob(job: InMemoryJob): boolean {
+  return (job.state.phase === 'Preparing' || job.state.phase === 'Running' || job.state.phase === 'Paused')
+    && job.photos.some((photo) => photo.status === 'done');
+}
+
+function computeAlbumDiffFromPlan(plan: readonly DownloadPlanEntry[], current: CurrentAlbumManifest): AlbumDiff {
+  const plannedByPhotoId = new Map(plan.map((entry) => [entry.photoId, entry]));
+  const currentByPhotoId = new Map(current.photos.map((photo) => [photo.photoId, photo]));
+  const removed: string[] = [];
+  const added: string[] = [];
+  const rekeyed: string[] = [];
+  const unchanged: string[] = [];
+  const shardChanged: string[] = [];
+
+  for (const entry of plan) {
+    if (!currentByPhotoId.has(entry.photoId)) {
+      removed.push(entry.photoId);
+    }
+  }
+
+  for (const photo of current.photos) {
+    const planned = plannedByPhotoId.get(photo.photoId);
+    if (!planned) {
+      added.push(photo.photoId);
+      continue;
+    }
+    if (planned.epochId !== photo.epochId) {
+      rekeyed.push(photo.photoId);
+      continue;
+    }
+    if (sameStringSet(planned.shardIds, photo.tier3ShardIds)) {
+      unchanged.push(photo.photoId);
+    } else {
+      shardChanged.push(photo.photoId);
+    }
+  }
+
+  return { removed, added, rekeyed, unchanged, shardChanged };
+}
+
+function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
+}
+
 function summaryToProgress(job: InMemoryJob): JobProgressEvent {
   return {
     jobId: job.jobId,
@@ -644,6 +826,45 @@ function parseSnapshotView(bytes: Uint8Array): ParsedSnapshotView {
 
 function extractStateValue(snapshotBytes: Uint8Array): CborValue {
   return requiredMapValue(expectMap(parseCbor(snapshotBytes)), 5);
+}
+
+function patchSnapshotLastUpdatedAtMs(snapshotBytes: Uint8Array, nowMs: number): Uint8Array {
+  const root = parseCbor(snapshotBytes);
+  const entries = expectMap(root).map((entry) => {
+    const key = expectUint(entry.key);
+    return key === 4 ? { key: entry.key, value: uintValue(nowMs) } : entry;
+  });
+  return encodeCbor({ kind: 'map', value: entries });
+}
+
+function patchSnapshotPhotoBytes(snapshotBytes: Uint8Array, photoId: string, bytesWritten: number, lastUpdatedAtMs: number): Uint8Array {
+  const root = parseCbor(snapshotBytes);
+  const entries = expectMap(root).map((entry) => {
+    const key = expectUint(entry.key);
+    if (key === 4) {
+      return { key: entry.key, value: uintValue(lastUpdatedAtMs) };
+    }
+    if (key === 7) {
+      const photos = expectArray(entry.value).map((photoValue) => patchPhotoBytesValue(photoValue, photoId, bytesWritten));
+      return { key: entry.key, value: { kind: 'array', value: photos } as CborValue };
+    }
+    return entry;
+  });
+  return encodeCbor({ kind: 'map', value: entries });
+}
+
+function patchPhotoBytesValue(value: CborValue, photoId: string, bytesWritten: number): CborValue {
+  const fields = expectMap(value);
+  if (expectText(requiredMapValue(fields, 0)) !== photoId) {
+    return value;
+  }
+  return {
+    kind: 'map',
+    value: fields.map((entry) => {
+      const key = expectUint(entry.key);
+      return key === 2 ? { key: entry.key, value: uintValue(bytesWritten) } : entry;
+    }),
+  };
 }
 
 function patchSnapshotState(snapshotBytes: Uint8Array, newStateBytes: Uint8Array, nowMs: number): Uint8Array {
@@ -754,7 +975,7 @@ function patchPhotoValue(value: CborValue, photoId: string, patch: PhotoStatusPa
         return { key: entry.key, value: photoStatusValue(patch) };
       }
       if (key === 2) {
-        return { key: entry.key, value: uintValue(patch.kind === 'done' ? patch.bytesWritten : patch.kind === 'pending' ? 0 : expectUint(entry.value)) };
+        return { key: entry.key, value: uintValue(patch.kind === 'done' ? patch.bytesWritten : expectUint(entry.value)) };
       }
       if (key === 3 && patch.kind === 'inflight') {
         return { key: entry.key, value: uintValue(nowMs) };

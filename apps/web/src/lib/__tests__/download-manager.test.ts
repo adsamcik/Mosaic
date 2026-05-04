@@ -48,6 +48,8 @@ function createApi(): CoordinatorWorkerApi & { [releaseProxy]: () => void } {
     resumeJob: vi.fn(() => phaseResult('Running')),
     cancelJob: vi.fn(() => phaseResult('Cancelled')),
     listJobs: vi.fn(async () => []),
+    listResumableJobs: vi.fn(async () => []),
+    computeAlbumDiff: vi.fn(async () => ({ removed: [], added: [], rekeyed: [], unchanged: [], shardChanged: [] })),
     getJob: vi.fn(async () => null),
     subscribe: vi.fn(async () => ({ unsubscribe: vi.fn() })),
     gc: vi.fn(async () => ({ purged: [] })),
@@ -94,5 +96,24 @@ describe('download-manager', () => {
     expect(firstApi[releaseProxy]).toHaveBeenCalledTimes(1);
     expect(terminateMock).toHaveBeenCalledTimes(1);
     expect(workerConstructCount).toBe(2);
+  });
+
+
+  it('exposes resumable-job and album-diff helper functions', async () => {
+    const api = createApi();
+    comlinkMocks.wrap.mockReturnValue(api);
+    const { computeAlbumDiff, listResumableJobs } = await import('../download-manager');
+
+    await expect(listResumableJobs()).resolves.toEqual([]);
+    await expect(computeAlbumDiff('job', { albumId: 'album', photos: [] })).resolves.toEqual({
+      removed: [],
+      added: [],
+      rekeyed: [],
+      unchanged: [],
+      shardChanged: [],
+    });
+
+    expect(api.listResumableJobs).toHaveBeenCalledTimes(1);
+    expect(api.computeAlbumDiff).toHaveBeenCalledWith('job', { albumId: 'album', photos: [] });
   });
 });

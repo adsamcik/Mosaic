@@ -18,7 +18,7 @@ const opfsState = vi.hoisted(() => ({
 }));
 
 const pipelineMocks = vi.hoisted(() => ({
-  executePhotoTask: vi.fn<(input: { readonly signal: AbortSignal }) => Promise<{ kind: 'done'; bytesWritten: number } | { kind: 'failed'; code: 'Cancelled' | 'Integrity' | 'AccessRevoked' }>>(),
+  executePhotoTask: vi.fn<(input: { readonly signal: AbortSignal }, deps?: { readonly reportBytesWritten?: (jobId: string, photoId: string, bytesWritten: number) => void }) => Promise<{ kind: 'done'; bytesWritten: number } | { kind: 'failed'; code: 'Cancelled' | 'Integrity' | 'AccessRevoked' }>>(),
 }));
 
 const cryptoPoolMocks = vi.hoisted(() => {
@@ -234,13 +234,27 @@ function stateValue(phase: DownloadPhase): CborValue {
   return map([mapEntry(0, uint(phaseCode(phase)))]);
 }
 
+type TestPhotoStatus = 'pending' | 'inflight' | 'done' | 'failed' | 'skipped';
+
+interface SnapshotPhotoSpec {
+  readonly photoId: string;
+  readonly status?: TestPhotoStatus;
+  readonly bytesWritten?: number;
+  readonly epochId?: number;
+  readonly shardIds?: readonly Uint8Array[];
+}
+
 function snapshotBody(opts: {
   readonly jobIdBytes: Uint8Array;
   readonly phase: DownloadPhase;
   readonly createdAtMs: number;
   readonly lastUpdatedAtMs: number;
   readonly photoCount: number;
+  readonly photos?: readonly SnapshotPhotoSpec[];
 }): Uint8Array {
+  const photos = opts.photos ?? Array.from({ length: opts.photoCount }, (): SnapshotPhotoSpec => ({
+    photoId: '018f0000-0000-7000-8000-000000000101',
+  }));
   return encode(map([
     mapEntry(0, uint(1)),
     mapEntry(1, { kind: 'bytes', value: opts.jobIdBytes }),
@@ -248,25 +262,38 @@ function snapshotBody(opts: {
     mapEntry(3, uint(opts.createdAtMs)),
     mapEntry(4, uint(opts.lastUpdatedAtMs)),
     mapEntry(5, stateValue(opts.phase)),
-    mapEntry(6, { kind: 'array', value: Array.from({ length: opts.photoCount }, () => map([
-      mapEntry(0, { kind: 'text', value: '018f0000-0000-7000-8000-000000000101' }),
-      mapEntry(1, uint(7)),
+    mapEntry(6, { kind: 'array', value: photos.map((photo) => map([
+      mapEntry(0, { kind: 'text', value: photo.photoId }),
+      mapEntry(1, uint(photo.epochId ?? 7)),
       mapEntry(2, uint(3)),
-      mapEntry(3, { kind: 'array', value: [{ kind: 'bytes', value: new Uint8Array(16).fill(3) }] }),
+      mapEntry(3, { kind: 'array', value: [...(photo.shardIds ?? [new Uint8Array(16).fill(3)])].map((shardId) => ({ kind: 'bytes', value: shardId })) }),
       mapEntry(4, { kind: 'array', value: [{ kind: 'bytes', value: new Uint8Array(32).fill(4) }] }),
       mapEntry(5, { kind: 'text', value: 'image-1.jpg' }),
       mapEntry(6, uint(123)),
     ])) }),
-    mapEntry(7, { kind: 'array', value: Array.from({ length: opts.photoCount }, () => map([
-      mapEntry(0, { kind: 'text', value: '018f0000-0000-7000-8000-000000000101' }),
-      mapEntry(1, map([mapEntry(0, uint(0))])),
-      mapEntry(2, uint(0)),
+    mapEntry(7, { kind: 'array', value: photos.map((photo) => map([
+      mapEntry(0, { kind: 'text', value: photo.photoId }),
+      mapEntry(1, photoStatusValue(photo.status ?? 'pending')),
+      mapEntry(2, uint(photo.bytesWritten ?? 0)),
       mapEntry(3, { kind: 'null' }),
       mapEntry(4, uint(0)),
     ])) }),
     mapEntry(8, { kind: 'array', value: [] }),
     mapEntry(9, { kind: 'null' }),
   ]));
+}
+
+function photoStatusValue(status: TestPhotoStatus): CborValue {
+  const codeByStatus: Record<TestPhotoStatus, number> = { pending: 0, inflight: 1, done: 2, failed: 3, skipped: 4 };
+  return map([mapEntry(0, uint(codeByStatus[status]))]);
+}
+
+function readPhotoBytesWritten(body: Uint8Array, photoId: string): number {
+  const photos = requiredMapValue(parse(body), 7);
+  if (photos.kind !== 'array') throw new Error('expected photos array');
+  const photo = photos.value.find((candidate) => requiredMapValue(candidate, 0).kind === 'text' && requiredMapValue(candidate, 0).value === photoId);
+  if (!photo) throw new Error('photo not found');
+  return expectUint(requiredMapValue(photo, 2));
 }
 
 function checksum(seed = 9): Uint8Array {
@@ -306,6 +333,40 @@ function transition(from: DownloadPhase, eventBytes: Uint8Array): DownloadPhase 
 async function startPreparingJob(worker: CoordinatorWorker): Promise<string> {
   const started = await worker.startJob(validInput());
   return started.jobId;
+}
+
+function hex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function testJobIdBytes(seed: number): Uint8Array {
+  return new Uint8Array(16).fill(seed);
+}
+
+function photoSpecs(doneCount: number, totalCount: number): SnapshotPhotoSpec[] {
+  return Array.from({ length: totalCount }, (_, index): SnapshotPhotoSpec => ({
+    photoId: `photo-${index.toString().padStart(2, '0')}`,
+    status: index < doneCount ? 'done' : 'pending',
+    bytesWritten: index < doneCount ? 100 + index : 0,
+  }));
+}
+
+function persistSnapshotJob(seed: number, phase: DownloadPhase, photos: readonly SnapshotPhotoSpec[]): string {
+  const jobIdBytes = testJobIdBytes(seed);
+  const jobId = hex(jobIdBytes);
+  opfsState.dirs.add(jobId);
+  opfsState.snapshots.set(jobId, {
+    body: snapshotBody({
+      jobIdBytes,
+      phase,
+      createdAtMs: nowMs - seed,
+      lastUpdatedAtMs: nowMs + seed,
+      photoCount: photos.length,
+      photos,
+    }),
+    checksum: checksum(seed),
+  });
+  return jobId;
 }
 
 beforeEach(() => {
@@ -560,6 +621,117 @@ describe('CoordinatorWorker', () => {
     });
     await expect(worker.gc({ nowMs, maxAgeMs: 7 * 24 * 60 * 60 * 1000 })).resolves.toEqual({ purged: [jobId] });
     await expect(opfsStaging.jobExists(jobId)).resolves.toBe(false);
+  });
+
+
+  it('rate-limits byte-progress snapshot persistence', async () => {
+    let report: ((jobId: string, photoId: string, bytesWritten: number) => void) | null = null;
+    pipelineMocks.executePhotoTask.mockImplementation(async (input, deps) => {
+      report = deps?.reportBytesWritten ?? null;
+      await new Promise<void>((resolve) => input.signal.addEventListener('abort', () => resolve(), { once: true }));
+      return { kind: 'failed', code: 'Cancelled' };
+    });
+    const worker = new CoordinatorWorker({ byteProgressRateLimitMs: 50 });
+    await worker.initialize({ nowMs });
+    const jobId = await startPreparingJob(worker);
+    await vi.waitFor(async () => expect((await worker.getJob(jobId))?.photoCounts.inflight).toBe(1));
+    const baselineWrites = vi.mocked(opfsStaging.writeSnapshot).mock.calls.length;
+
+    for (let index = 1; index <= 10; index += 1) {
+      vi.setSystemTime(nowMs + index * 5);
+      report?.(jobId, '018f0000-0000-7000-8000-000000000101', index * 10);
+      await vi.advanceTimersByTimeAsync(5);
+    }
+    await vi.advanceTimersByTimeAsync(60);
+
+    const byteProgressWrites = vi.mocked(opfsStaging.writeSnapshot).mock.calls.length - baselineWrites;
+    expect(byteProgressWrites).toBeLessThanOrEqual(3);
+    const persisted = opfsState.snapshots.get(jobId);
+    if (!persisted) throw new Error('expected snapshot');
+    expect(readPhotoBytesWritten(persisted.body, '018f0000-0000-7000-8000-000000000101')).toBe(100);
+    await worker.cancelJob(jobId, { soft: true });
+  });
+
+  it('pause flushes pending byte progress immediately', async () => {
+    let report: ((jobId: string, photoId: string, bytesWritten: number) => void) | null = null;
+    pipelineMocks.executePhotoTask.mockImplementation(async (input, deps) => {
+      report = deps?.reportBytesWritten ?? null;
+      await new Promise<void>((resolve) => input.signal.addEventListener('abort', () => resolve(), { once: true }));
+      return { kind: 'failed', code: 'Cancelled' };
+    });
+    const worker = new CoordinatorWorker({ byteProgressRateLimitMs: 50 });
+    await worker.initialize({ nowMs });
+    const jobId = await startPreparingJob(worker);
+    await vi.waitFor(async () => expect((await worker.getJob(jobId))?.photoCounts.inflight).toBe(1));
+
+    report?.(jobId, '018f0000-0000-7000-8000-000000000101', 77);
+    await worker.pauseJob(jobId);
+
+    const persisted = opfsState.snapshots.get(jobId);
+    if (!persisted) throw new Error('expected snapshot');
+    expect(readPhotoBytesWritten(persisted.body, '018f0000-0000-7000-8000-000000000101')).toBe(77);
+  });
+
+  it('lists only useful non-terminal resumable jobs', async () => {
+    const jobA = persistSnapshotJob(1, 'Running', photoSpecs(5, 10));
+    persistSnapshotJob(2, 'Done', photoSpecs(5, 10));
+    persistSnapshotJob(3, 'Errored', photoSpecs(0, 10));
+    const jobD = persistSnapshotJob(4, 'Paused', photoSpecs(3, 10));
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+
+    const resumable = await worker.listResumableJobs();
+
+    expect(resumable.map((job) => job.jobId).sort()).toEqual([jobA, jobD].sort());
+    expect(resumable.find((job) => job.jobId === jobA)).toMatchObject({ photosDone: 5, photosTotal: 10 });
+    expect(resumable.find((job) => job.jobId === jobD)).toMatchObject({ photosDone: 3, photosTotal: 10 });
+  });
+
+  it('computes added removed rekeyed and unchanged album diff buckets', async () => {
+    const shardA = new Uint8Array(16).fill(10);
+    const shardB = new Uint8Array(16).fill(11);
+    const shardC = new Uint8Array(16).fill(12);
+    const jobId = persistSnapshotJob(5, 'Paused', [
+      { photoId: 'a', epochId: 1, shardIds: [shardA] },
+      { photoId: 'b', epochId: 1, shardIds: [shardB] },
+      { photoId: 'c', epochId: 1, shardIds: [shardC] },
+    ]);
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+
+    await expect(worker.computeAlbumDiff(jobId, {
+      albumId,
+      photos: [
+        { photoId: 'a', epochId: 1, tier3ShardIds: [hex(shardA)] },
+        { photoId: 'b', epochId: 2, tier3ShardIds: [hex(shardB)] },
+        { photoId: 'd', epochId: 1, tier3ShardIds: [hex(new Uint8Array(16).fill(13))] },
+      ],
+    })).resolves.toEqual({
+      removed: ['c'],
+      added: ['d'],
+      rekeyed: ['b'],
+      unchanged: ['a'],
+      shardChanged: [],
+    });
+  });
+
+  it('computes shardChanged when epoch is unchanged but tier-3 shards differ', async () => {
+    const jobId = persistSnapshotJob(6, 'Paused', [
+      { photoId: 'a', epochId: 1, shardIds: [new Uint8Array(16).fill(14)] },
+    ]);
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+
+    await expect(worker.computeAlbumDiff(jobId, {
+      albumId,
+      photos: [{ photoId: 'a', epochId: 1, tier3ShardIds: [hex(new Uint8Array(16).fill(15))] }],
+    })).resolves.toEqual({
+      removed: [],
+      added: [],
+      rekeyed: [],
+      unchanged: [],
+      shardChanged: ['a'],
+    });
   });
 });
 
