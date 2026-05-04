@@ -1,6 +1,6 @@
 import { createLogger } from '../../lib/logger';
 import type { JobId, PhotoId } from '../../lib/opfs-staging';
-import type { PerFileStrategy } from '../types';
+import type { DownloadErrorReason, PerFileStrategy } from '../types';
 
 const log = createLogger('PerFileFinalizer');
 
@@ -35,7 +35,7 @@ export interface PerFileFinalizerDeps {
   getPhotoFileLength: (jobId: JobId, photoId: PhotoId) => Promise<number | null>;
   openPerFileSaveTarget: (strategy: PerFileStrategy, photos: ReadonlyArray<PerFilePhotoPlanEntry>) => Promise<PerFileSaveSink>;
   /** Record a per-photo export failure in the coordinator failure log. */
-  recordPhotoFailure?: (jobId: JobId, photoId: PhotoId) => Promise<void>;
+  recordPhotoFailure?: (jobId: JobId, photoId: PhotoId, reason: DownloadErrorReason) => Promise<void>;
 }
 
 export async function runPerFileFinalizer(
@@ -67,7 +67,11 @@ export async function runPerFileFinalizer(
         if (signal.aborted || isAbortError(err)) {
           throw new DOMException('Finalizer aborted', 'AbortError');
         }
-        await recordPhotoFailure(job.jobId, photo.photoId, deps);
+        // Best-effort export-failure categorization. Per-file write failures
+        // are not in any of the source-side categories (network / decrypt /
+        // integrity etc.); IllegalState is the closest non-misleading code
+        // and avoids the previous bug of marking everything as Cancelled.
+        await recordPhotoFailure(job.jobId, photo.photoId, 'IllegalState', deps);
         log.warn('Per-file photo export failed', {
           jobId: shortId(job.jobId),
           photoId: shortId(photo.photoId),
@@ -113,10 +117,10 @@ async function buildPhotoPlan(
   return photos;
 }
 
-async function recordPhotoFailure(jobId: JobId, photoId: PhotoId, deps: PerFileFinalizerDeps): Promise<void> {
+async function recordPhotoFailure(jobId: JobId, photoId: PhotoId, reason: DownloadErrorReason, deps: PerFileFinalizerDeps): Promise<void> {
   if (!deps.recordPhotoFailure) return;
   try {
-    await deps.recordPhotoFailure(jobId, photoId);
+    await deps.recordPhotoFailure(jobId, photoId, reason);
   } catch (err) {
     log.warn('Per-file failure-log update failed', {
       jobId: shortId(jobId),

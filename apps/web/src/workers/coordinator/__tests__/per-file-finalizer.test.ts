@@ -79,7 +79,7 @@ describe('runPerFileFinalizer', () => {
     await runPerFileFinalizer({ jobId: 'job-1', entries }, 'fsAccessPerFile', deps, new AbortController().signal);
     expect(sink.writeOne).toHaveBeenCalledTimes(3);
     expect(sink.finalize).toHaveBeenCalledTimes(1);
-    expect(deps.recordPhotoFailure).toHaveBeenCalledWith('job-1', 'photo-02');
+    expect(deps.recordPhotoFailure).toHaveBeenCalledWith('job-1', 'photo-02', 'IllegalState');
     expect(loggerMocks.warn).toHaveBeenCalledWith('Per-file photo export failed', expect.objectContaining({
       jobId: 'job-1',
       photoId: 'photo-02',
