@@ -88,6 +88,12 @@ fn expected_table() -> Vec<(&'static str, u16)> {
         ("ManifestSetConflict", 709),
         ("BackendIdempotencyConflict", 710),
         ("VideoPosterExtractionFailed", 711),
+        ("DownloadInvalidPlan", 720),
+        ("DownloadIllegalTransition", 721),
+        ("DownloadSnapshotMigration", 722),
+        ("DownloadSnapshotCorrupt", 723),
+        ("DownloadSnapshotChecksumMismatch", 724),
+        ("DownloadSnapshotTorn", 725),
         ("PinValidationFailed", 800),
     ]
 }
@@ -351,6 +357,12 @@ fn live_table() -> Vec<(&'static str, u16)> {
             "VideoPosterExtractionFailed",
             ClientErrorCode::VideoPosterExtractionFailed.as_u16(),
         ),
+        ("DownloadInvalidPlan", ClientErrorCode::DownloadInvalidPlan.as_u16()),
+        ("DownloadIllegalTransition", ClientErrorCode::DownloadIllegalTransition.as_u16()),
+        ("DownloadSnapshotMigration", ClientErrorCode::DownloadSnapshotMigration.as_u16()),
+        ("DownloadSnapshotCorrupt", ClientErrorCode::DownloadSnapshotCorrupt.as_u16()),
+        ("DownloadSnapshotChecksumMismatch", ClientErrorCode::DownloadSnapshotChecksumMismatch.as_u16()),
+        ("DownloadSnapshotTorn", ClientErrorCode::DownloadSnapshotTorn.as_u16()),
         (
             "PinValidationFailed",
             ClientErrorCode::PinValidationFailed.as_u16(),
