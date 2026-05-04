@@ -165,7 +165,7 @@ fn no_duplicate_numbers() {
 
 #[test]
 fn max_sidecar_total_bytes_is_frozen() {
-    assert_eq!(MAX_SIDECAR_TOTAL_BYTES, 1_500_000);
+    assert_eq!(MAX_SIDECAR_TOTAL_BYTES, 65_536);
 }
 
 #[test]

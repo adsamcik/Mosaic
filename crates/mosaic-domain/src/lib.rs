@@ -30,14 +30,24 @@ pub const METADATA_SIDECAR_CONTEXT: &[u8] = b"Mosaic_Metadata_v1";
 /// Current canonical metadata sidecar format version.
 pub const METADATA_SIDECAR_VERSION: u8 = 1;
 
-/// Defense-in-depth cap for the complete canonical metadata sidecar byte buffer.
+/// Maximum total encoded byte length of a canonical metadata sidecar.
 ///
-/// The 1.5 MB limit is roughly 30× larger than the largest currently plausible
-/// legitimate sidecar and exists to bound allocation/DoS surface. Revisit this
-/// before v1 freeze: based on planned active-tag layouts, a tighter cap such as
-/// 64 KiB may be sufficient, but the protocol-visible value is lock-tested until
-/// an explicit ADR changes it.
-pub const MAX_SIDECAR_TOTAL_BYTES: usize = 1_500_000;
+/// Locked at 64 KiB for v1: this is approximately 50-100× the worst-case
+/// legitimate sidecar, which provides ample headroom for future active tags
+/// while constraining the DoS allocation surface to a tight bound. Tightening
+/// after v1 freeze would be a protocol-visible breaking change (some valid v1
+/// sidecars would be retroactively rejected on decode), so the value is locked
+/// at 64 KiB before v1 ships.
+///
+/// Original R-M5.2.1 value was 1_500_000 (1.5 MB); tightened in R-M5.2.2.
+// Maintenance protocol:
+// - The cap is locked AT v1 freeze. Tightening or relaxing it after v1
+//   would be a protocol-visible breaking change.
+// - If a future Active tag would push the worst-case legitimate sidecar
+//   above this cap, EITHER the new tag must be designed to fit within the
+//   cap, OR the cap must be relaxed and the change documented as a v2
+//   protocol breaking change with corresponding migration handlers.
+pub const MAX_SIDECAR_TOTAL_BYTES: usize = 65_536;
 
 /// Client-local plaintext sensitivity class for a sidecar tag.
 ///

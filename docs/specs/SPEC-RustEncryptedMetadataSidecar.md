@@ -148,7 +148,11 @@ the canonical container:
   tags before checking empty field values, so tag-status telemetry is not
   bypassed by an empty payload.
 - The complete canonical sidecar byte buffer is capped by
-  `MAX_SIDECAR_TOTAL_BYTES` as a defense-in-depth allocation bound.
+  `MAX_SIDECAR_TOTAL_BYTES = 65_536` (64 KiB) as a defense-in-depth
+  allocation bound. R-M5.2.2 tightened the provisional R-M5.2.1
+  `1_500_000` byte (1.5 MB) value before v1 freeze after confirming the
+  current worst-case legitimate active-tag sidecar is 97 bytes
+  (`59 + (3 * 6) + 2 + 8 + 10`).
 
 ## Component tree
 
