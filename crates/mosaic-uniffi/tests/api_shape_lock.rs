@@ -191,6 +191,35 @@ fn default_api_shape_excludes_cross_client_vector_seed_verifier() {
     );
 }
 
+/// Verifies that the production UniFFI build (default features) does NOT export
+/// the cross-client-vectors gated symbols. This is the counterpart to the
+/// Gradle invariant: if this assertion holds and Gradle forbids mixed
+/// production/test task graphs, corpus driver symbols cannot enter a production
+/// APK through the Android wiring.
+#[test]
+#[cfg_attr(
+    feature = "cross-client-vectors",
+    should_panic(
+        expected = "cross-client-vectors feature is enabled in this build — production APK would leak corpus drivers"
+    )
+)]
+fn production_uniffi_bindings_do_not_expose_corpus_drivers() {
+    #[cfg(not(feature = "cross-client-vectors"))]
+    {
+        let actual = canonical_uniffi_api_shape_for_features(SOURCE, false);
+        assert!(!actual.contains("verify_and_open_bundle_with_recipient_seed"));
+        assert!(!actual.contains("derive_link_keys_from_raw_secret"));
+        assert!(!actual.contains("derive_identity_from_raw_seed"));
+    }
+
+    #[cfg(feature = "cross-client-vectors")]
+    {
+        panic!(
+            "cross-client-vectors feature is enabled in this build — production APK would leak corpus drivers"
+        );
+    }
+}
+
 #[test]
 fn feature_enabled_api_shape_includes_cross_client_vector_seed_verifier() {
     let actual = canonical_uniffi_api_shape_for_features(SOURCE, true);

@@ -2,6 +2,9 @@
 
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Exec
+import org.gradle.api.GradleException
+import org.gradle.api.execution.TaskExecutionGraph
+import org.gradle.api.Action
 import java.io.File
 import java.util.Locale
 
@@ -27,15 +30,58 @@ val rustAndroidArtifactsDir: File = repoRoot.resolve("target/android")
 val rustHostReleaseDir: File = repoRoot.resolve("target/release")
 val generatedKotlinDir: File = layout.buildDirectory.dir("generated/source/uniffi/main/kotlin").get().asFile
 val generatedJniLibsDir: File = layout.buildDirectory.dir("generated/jniLibs").get().asFile
-val rustUniffiCargoFeatures: String =
-  if (gradle.startParameter.taskNames.any { taskName ->
-      taskName.contains("testDebugUnitTest", ignoreCase = true) ||
-        taskName.contains("compileDebugUnitTest", ignoreCase = true)
-    }) {
-    "cross-client-vectors"
-  } else {
-    ""
-  }
+val crossClientVectorsFeature = "cross-client-vectors"
+var rustUniffiCargoFeatures: String = ""
+
+gradle.taskGraph.whenReady(
+  object : Action<TaskExecutionGraph> {
+    override fun execute(taskGraph: TaskExecutionGraph) {
+      val hasTestTask = taskGraph.allTasks.any { task ->
+        task.path.startsWith(":apps:android-main:") &&
+          (
+            task.name == "testDebugUnitTest" ||
+              task.name == "compileDebugUnitTest" ||
+              (task.name.endsWith("UnitTest") && task.path.startsWith(":apps:android-main:"))
+          )
+      }
+      val hasProductionTask = taskGraph.allTasks.any { task ->
+        task.path.startsWith(":apps:android-main:") &&
+          (
+            task.name == "assembleDebug" ||
+              task.name == "assembleRelease" ||
+              task.name.endsWith("Apk") ||
+              task.name.endsWith("Aar")
+          )
+      }
+
+      if (hasTestTask && hasProductionTask) {
+        throw GradleException(
+          "R-C5.5 invariant violation: cannot schedule both test and production tasks in same Gradle invocation. " +
+            "Test tasks require '--features cross-client-vectors' which exports corpus-only UniFFI symbols " +
+            "(verify_and_open_bundle_with_recipient_seed, derive_link_keys_from_raw_secret, derive_identity_from_raw_seed). " +
+            "Running them together would either leak corpus symbols into the production APK or fail tests. " +
+            "Run separately: './gradlew assembleDebug' THEN './gradlew testDebugUnitTest'.",
+        )
+      }
+
+      // R-C5.5 Gradle hotfix invariant: production and cross-client-vector test builds
+      // require different UniFFI symbol surfaces. Until the Rust Android build script
+      // supports feature-specific artifact directories, fail fast on mixed graphs and
+      // enable the corpus-only feature only for resolved JVM unit-test task graphs.
+      rustUniffiCargoFeatures = if (hasTestTask) crossClientVectorsFeature else ""
+      extra.set("rustUniffiCargoFeatures", rustUniffiCargoFeatures)
+      if (rustUniffiCargoFeatures.isNotBlank()) {
+        val existingRustFlags = System.getenv("RUSTFLAGS")?.takeIf { it.isNotBlank() }
+        tasks.named("buildRustUniffiArtifacts", Exec::class).configure {
+          environment(
+            "RUSTFLAGS",
+            listOfNotNull(existingRustFlags, "--cfg feature=\"$rustUniffiCargoFeatures\"").joinToString(" "),
+          )
+        }
+      }
+    }
+  },
+)
 
 /**
  * Resolves the host-built `mosaic_uniffi` shared library path for JVM unit
@@ -170,20 +216,12 @@ val buildRustUniffiArtifacts by tasks.registering(Exec::class) {
   } else {
     commandLine("bash", script)
   }
-  if (rustUniffiCargoFeatures.isNotBlank()) {
-    val existingRustFlags = System.getenv("RUSTFLAGS")?.takeIf { it.isNotBlank() }
-    environment(
-      "RUSTFLAGS",
-      listOfNotNull(existingRustFlags, "--cfg feature=\"$rustUniffiCargoFeatures\"").joinToString(" "),
-    )
-  }
-
   inputs.dir(repoRoot.resolve("crates/mosaic-uniffi/src"))
   inputs.file(repoRoot.resolve("crates/mosaic-uniffi/Cargo.toml"))
   inputs.file(repoRoot.resolve("Cargo.toml"))
   inputs.file(repoRoot.resolve("Cargo.lock"))
   inputs.file(repoRoot.resolve("rust-toolchain.toml"))
-  inputs.property("rustUniffiCargoFeatures", rustUniffiCargoFeatures)
+  outputs.upToDateWhen { false }
 
   outputs.dir(rustAndroidArtifactsDir)
   outputs.file(rustAndroidArtifactsDir.resolve("kotlin/uniffi/mosaic_uniffi/mosaic_uniffi.kt"))

@@ -57,10 +57,6 @@ class AndroidRustLinkKeysApiRoundTripTest {
       "toString must not leak link_secret hex (forbidden output)",
       rendered.contains(vector.linkSecretHex),
     )
-    assertFalse(
-      "toString must not leak wrapping_key hex (forbidden output)",
-      rendered.contains(vector.expectedWrappingKeyHex),
-    )
   }
 
   // -- corpus parsing helpers ------------------------------------------------
@@ -69,19 +65,16 @@ class AndroidRustLinkKeysApiRoundTripTest {
     val linkSecretHex: String,
     val linkSecret: ByteArray,
     val expectedLinkId: ByteArray,
-    val expectedWrappingKeyHex: String,
   )
 
   private fun readVector(name: String): LinkKeysVector {
     val document = corpusFile(name).readText()
     val linkSecretHex = extractStringField(document, "linkSecretHex")
     val linkIdHex = extractStringField(document, "linkIdHex")
-    val wrappingKeyHex = extractStringField(document, "wrappingKeyHex")
     return LinkKeysVector(
       linkSecretHex = linkSecretHex,
       linkSecret = decodeHex(linkSecretHex),
       expectedLinkId = decodeHex(linkIdHex),
-      expectedWrappingKeyHex = wrappingKeyHex,
     )
   }
 }

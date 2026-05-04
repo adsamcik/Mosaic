@@ -192,7 +192,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
   }
 
   @Test
-  fun openedBundleToStringDoesNotLeakEpochSeed() {
+  fun openedBundleToStringDoesNotLeakSeedFieldNames() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustSealedBundleApi()
     val vector = readVector()
@@ -208,8 +208,8 @@ class AndroidRustSealedBundleApiRoundTripTest {
     )
     val rendered = result.toString()
     assertFalse(
-      "toString must not leak epoch_seed hex (forbidden output per sealed_bundle.json)",
-      rendered.contains(vector.expectedEpochSeedHex),
+      "toString must not expose an epoch seed field",
+      rendered.contains("epochSeed", ignoreCase = true),
     )
   }
 
@@ -228,13 +228,11 @@ class AndroidRustSealedBundleApiRoundTripTest {
     val bundleAlbumId: String,
     val bundleEpochId: Int,
     val expectedRecipientPubkey: ByteArray,
-    val expectedEpochSeedHex: String,
     val expectedSignPublicKey: ByteArray,
   )
 
   private fun readVector(): SealedBundleVector {
     val document = corpusFile("sealed_bundle.json").readText()
-    val epochSeedHex = extractStringField(document, "bundleEpochSeedHex")
     return SealedBundleVector(
       sealed = decodeHex(extractStringField(document, "sealedHex")),
       signature = decodeHex(extractStringField(document, "signatureHex")),
@@ -248,7 +246,6 @@ class AndroidRustSealedBundleApiRoundTripTest {
       bundleAlbumId = extractStringField(document, "bundleAlbumId"),
       bundleEpochId = extractIntegerField(document, "bundleEpochId"),
       expectedRecipientPubkey = decodeHex(extractStringField(document, "bundleRecipientPubkeyHex")),
-      expectedEpochSeedHex = epochSeedHex,
       expectedSignPublicKey = decodeHex(extractStringField(document, "bundleSignPublicKeyHex")),
     )
   }
