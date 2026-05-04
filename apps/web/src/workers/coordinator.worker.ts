@@ -119,6 +119,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private initializePromise: Promise<{ reconstructedJobs: number }> | null = null;
   private readonly jobs = new Map<string, InMemoryJob>();
   private readonly subscribers = new Map<string, Set<SubscriptionCallback>>();
+  private readonly jobMutations = new Map<string, Promise<void>>();
   private readonly channel: BroadcastChannel | null;
 
   constructor() {
@@ -167,9 +168,16 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   }
 
   /** Apply a Rust download event, persist the updated snapshot, and emit progress. */
-  async sendEvent(jobId: string, event: DownloadEventInput): Promise<{ phase: DownloadPhase }> {
+  sendEvent(jobId: string, event: DownloadEventInput): Promise<{ phase: DownloadPhase }> {
     this.assertInitialized();
+    return this.withJobLock(jobId, () => this.sendEventLocked(jobId, event));
+  }
+
+  private async sendEventLocked(jobId: string, event: DownloadEventInput): Promise<{ phase: DownloadPhase }> {
     const job = this.requireJob(jobId);
+    if (isIdempotentEvent(job.state.phase, event)) {
+      return { phase: job.state.phase };
+    }
     const currentState = extractStateValue(job.snapshotBytes);
     const applied = await rustApplyDownloadEvent(encodeCbor(currentState), encodeEvent(event));
     const updatedBody = patchSnapshotState(job.snapshotBytes, applied.newStateBytes, Date.now());
@@ -287,26 +295,50 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     if (this.jobs.has(jobId)) {
       return false;
     }
+    return (await this.refreshPersistedJob(jobId)) !== null;
+  }
+
+  private async refreshPersistedJob(jobId: string): Promise<InMemoryJob | null> {
     try {
       const persisted = await opfsStaging.readSnapshot(jobId);
       if (!persisted || persisted.checksum.byteLength !== CHECKSUM_BYTES) {
-        return false;
+        return null;
       }
       const verified = await rustVerifyDownloadSnapshot(persisted.body, persisted.checksum);
       if (!verified.valid) {
         log.warn('Skipping unverifiable download snapshot', { jobId: shortId(jobId) });
-        return false;
+        return null;
       }
       const loaded = await rustLoadDownloadSnapshot(persisted.body, persisted.checksum);
       const job = createInMemoryJob(loaded.snapshotBytes, persisted.checksum);
       this.jobs.set(job.jobId, job);
-      return true;
+      return job;
     } catch (error) {
       log.warn('Skipping corrupt download snapshot', {
         jobId: shortId(jobId),
         errorName: error instanceof Error ? error.name : 'Unknown',
       });
-      return false;
+      return null;
+    }
+  }
+
+  private async withJobLock<T>(jobId: string, op: () => Promise<T>): Promise<T> {
+    const previous = this.jobMutations.get(jobId) ?? Promise.resolve();
+    let release = (): void => {};
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const chained = previous.then(() => current);
+    this.jobMutations.set(jobId, chained);
+
+    try {
+      await previous;
+      return await op();
+    } finally {
+      release();
+      if (this.jobMutations.get(jobId) === chained) {
+        this.jobMutations.delete(jobId);
+      }
     }
   }
 
@@ -360,8 +392,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       return;
     }
     void (async (): Promise<void> => {
-      await this.reconstructPersistedJob(data.jobId);
-      const localJob = this.jobs.get(data.jobId);
+      const localJob = await this.refreshPersistedJob(data.jobId);
       if (localJob) {
         this.emitProgress(summaryToProgress(localJob));
       }
@@ -374,6 +405,12 @@ function createBroadcastChannel(): BroadcastChannel | null {
     return null;
   }
   return new BroadcastChannel(CHANNEL_NAME);
+}
+
+function isIdempotentEvent(phase: DownloadPhase, event: DownloadEventInput): boolean {
+  return (event.kind === 'PauseRequested' && phase === 'Paused')
+    || (event.kind === 'ResumeRequested' && phase === 'Running')
+    || (event.kind === 'CancelRequested' && event.soft === true && phase === 'Cancelled');
 }
 
 function isDownloadJobsBroadcastMessage(value: unknown): value is DownloadJobsBroadcastMessage {

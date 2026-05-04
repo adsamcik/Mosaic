@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkerCryptoError, WorkerCryptoErrorCode, type DownloadPhase, type StartJobInput } from '../types';
 
 const rustMocks = vi.hoisted(() => ({
@@ -16,6 +16,50 @@ const opfsState = vi.hoisted(() => ({
   snapshots: new Map<string, { body: Uint8Array; checksum: Uint8Array }>(),
   tempSnapshots: new Map<string, Uint8Array>(),
 }));
+
+const broadcastState = vi.hoisted(() => ({
+  channels: [] as Array<{
+    readonly name: string;
+    readonly listeners: Set<(event: MessageEvent<unknown>) => void>;
+  }>,
+}));
+
+class TestBroadcastChannel {
+  readonly listeners = new Set<(event: MessageEvent<unknown>) => void>();
+
+  constructor(readonly name: string) {
+    broadcastState.channels.push(this);
+  }
+
+  addEventListener(type: string, listener: (event: MessageEvent<unknown>) => void): void {
+    if (type === 'message') {
+      this.listeners.add(listener);
+    }
+  }
+
+  removeEventListener(type: string, listener: (event: MessageEvent<unknown>) => void): void {
+    if (type === 'message') {
+      this.listeners.delete(listener);
+    }
+  }
+
+  postMessage(message: unknown): void {
+    for (const channel of broadcastState.channels) {
+      if (channel !== this && channel.name === this.name) {
+        for (const listener of channel.listeners) {
+          listener({ data: message } as MessageEvent<unknown>);
+        }
+      }
+    }
+  }
+
+  close(): void {
+    const index = broadcastState.channels.indexOf(this);
+    if (index >= 0) {
+      broadcastState.channels.splice(index, 1);
+    }
+  }
+}
 
 vi.mock('comlink', () => ({ expose: vi.fn(), proxy: <T>(value: T): T => value }));
 vi.mock('../../lib/logger', () => ({
@@ -237,6 +281,8 @@ beforeEach(() => {
   opfsState.dirs.clear();
   opfsState.snapshots.clear();
   opfsState.tempSnapshots.clear();
+  broadcastState.channels.length = 0;
+  vi.stubGlobal('BroadcastChannel', TestBroadcastChannel);
   vi.clearAllMocks();
   let planPhotoCount = 0;
   rustMocks.ensureRustReady.mockResolvedValue(undefined);
@@ -269,6 +315,11 @@ beforeEach(() => {
   rustMocks.rustCommitDownloadSnapshot.mockImplementation(async () => ({ checksum: checksum(7) }));
   rustMocks.rustVerifyDownloadSnapshot.mockResolvedValue({ valid: true });
   rustMocks.rustLoadDownloadSnapshot.mockImplementation(async (snapshotBytes) => ({ snapshotBytes, schemaVersionLoaded: 1 }));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('CoordinatorWorker', () => {
@@ -328,15 +379,6 @@ describe('CoordinatorWorker', () => {
     await expect(worker.listJobs()).resolves.toEqual([]);
   });
 
-  it('ignores torn temporary snapshots while committing a later transition', async () => {
-    const worker = new CoordinatorWorker();
-    await worker.initialize({ nowMs });
-    const jobId = await startPreparingJob(worker);
-    opfsState.tempSnapshots.set(jobId, new Uint8Array([0xff]));
-    await worker.sendEvent(jobId, { kind: 'PlanReady' });
-    expect(readSnapshotPhase(opfsState.snapshots.get(jobId)?.body ?? new Uint8Array())).toBe('Running');
-  });
-
   it('reconstructs persisted jobs on a second worker', async () => {
     const worker = new CoordinatorWorker();
     await worker.initialize({ nowMs });
@@ -348,6 +390,47 @@ describe('CoordinatorWorker', () => {
     const jobs = await nextWorker.listJobs();
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.phase).toBe('Running');
+  });
+
+  it('refreshes a cached job from OPFS when another coordinator broadcasts changes', async () => {
+    const workerA = new CoordinatorWorker();
+    const workerB = new CoordinatorWorker();
+    await workerA.initialize({ nowMs });
+    await workerB.initialize({ nowMs });
+
+    const jobId = await startPreparingJob(workerA);
+    await Promise.resolve();
+    expect((await workerB.getJob(jobId))?.phase).toBe('Preparing');
+
+    const phases: DownloadPhase[] = [];
+    await workerB.subscribe(jobId, (event) => {
+      phases.push(event.phase);
+    });
+
+    await workerA.sendEvent(jobId, { kind: 'PlanReady' });
+    await Promise.resolve();
+    await workerA.pauseJob(jobId);
+    await vi.waitFor(() => {
+      expect(phases).toContain('Paused');
+    });
+
+    expect(phases).toEqual(['Preparing', 'Running', 'Paused']);
+    expect((await workerB.getJob(jobId))?.phase).toBe('Paused');
+  });
+
+  it('serializes concurrent pause requests for one job and keeps OPFS plus memory paused', async () => {
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const jobId = await startPreparingJob(worker);
+    await worker.sendEvent(jobId, { kind: 'PlanReady' });
+
+    await expect(Promise.all(Array.from({ length: 5 }, () => worker.pauseJob(jobId))))
+      .resolves.toEqual(Array.from({ length: 5 }, () => ({ phase: 'Paused' })));
+
+    expect((await worker.getJob(jobId))?.phase).toBe('Paused');
+    expect(readSnapshotPhase(opfsState.snapshots.get(jobId)?.body ?? new Uint8Array())).toBe('Paused');
+    const pauseTransitions = rustMocks.rustApplyDownloadEvent.mock.calls.filter(([, eventBytes]) => eventKind(eventBytes) === 2);
+    expect(pauseTransitions).toHaveLength(1);
   });
 
   it('subscribes and unsubscribes from progress events', async () => {

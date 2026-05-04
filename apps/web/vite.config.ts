@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': resolve(__dirname, './src'),
         '@mosaic/crypto': resolve(__dirname, '../../libs/crypto/src/index.ts'),
+        'libsodium-wrappers-sumo': resolve(__dirname, './node_modules/libsodium-wrappers-sumo'),
       },
     },
 
