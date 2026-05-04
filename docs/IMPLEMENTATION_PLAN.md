@@ -1544,7 +1544,7 @@ than enforceable runtime invariants.
 | G0.6 | KDF/auth byte-pin lock tests + §13/§15 refresh | Done | `7f60545` |
 | R-C6 | ADR-006 compositional closure (AAD domain separation) | Done | `88c443e` |
 | R-M5.2.1 | Sidecar amendment (tag 6 Forbidden + ForbiddenTag variant + cap lock) | Done | `3361039` |
-| G0.7 | Restore §11 register + un-consolidate lock tests + #[deprecated] | Done | `1917d80` |
+| G0.7 | Restore §11 register + un-consolidate lock tests + #[deprecated] | Done | `b66801b` |
 | R-Cl1.2 follow-up phase-list drift | Phase array → discriminant-exhaustive iteration | Pending | — |
 | R-Cl1.2 follow-up legacy snapshot migration | Migrate stuck RetryWaiting+ManifestCommitUnknown | Pending | — |
 | R-C5.3 | Lock-test infra hardening | In progress | — |
