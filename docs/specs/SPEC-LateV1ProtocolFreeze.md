@@ -55,7 +55,7 @@ for Band 8. This spec defines the gates Band 8 must enforce.
 | Backend album content JSON | Backend album-content owner | `GET/PUT /api/albums/{albumId}/content`; encrypted content bytes, 24-byte nonce, epoch ID, optimistic version. | Explicitly open for final story-block document schema and Band 5/6 content work. |
 | Backend photo/manifest API JSON | Backend manifest/API owner | `POST /api/manifests`, `PATCH /api/manifests/{manifestId}/metadata`, `GET/DELETE /api/manifests/{manifestId}`; current create accepts `encryptedMeta`, `signature`, `signerPubkey`, legacy `shardIds`, optional `tier`, and newer `tieredShards`; responses expose IDs/version and manifest reads expose encrypted opaque metadata plus shard links. | Explicitly open until Android upload and manifest canonical transcript cutover finish; legacy and tiered fields must not be removed without compatibility gates. |
 | Backend Tus/shard transport | Backend upload/storage owner | Tus endpoint `POST/PATCH/HEAD/DELETE /api/files`; Tus metadata currently includes `albumId` and optional `sha256`; completed uploads become pending opaque shards; `GET /api/shards/{shardId}` streams encrypted bytes with `X-Content-SHA256`; `/meta` exposes server-visible size/status/hash. | Freeze candidate for transport semantics; open for Android upload metadata names only if final Android upload proves a needed additive field. |
-| Rust opaque blob formats | Rust domain/protocol owner | `PROTOCOL_VERSION = "mosaic-v1"`; shard envelope magic `SGzk`, version `0x03`, 64-byte header, 24-byte nonce, tier `1/2/3`, reserved bytes zero; manifest transcript context `Mosaic_Manifest_v1`, version `1`; metadata sidecar context `Mosaic_Metadata_v1`, version `1`. | Frozen once late-v1 gate is declared; any byte-layout change requires a new version and vectors. |
+| Rust opaque blob formats | Rust domain/protocol owner | `PROTOCOL_VERSION = "mosaic-v1"`; shard envelope magic `SGzk`, version `0x03`, 64-byte header, 24-byte nonce, tier `1/2/3`, reserved bytes zero; manifest transcript context `Mosaic_Manifest_v1`, version `1`; metadata sidecar context `Mosaic_Metadata_v1`, version `1`; KDF/auth/bundle labels locked by constant-name tests. | Frozen once late-v1 gate is declared; any byte-layout or domain-label change requires a new version and vectors. |
 | Rust client-core and stable error codes | Rust client-core owner | `ClientErrorCode` numeric codes; account, identity, epoch handle APIs; encrypted shard results; upload/sync state-machine snapshots/events/effects; schema version `1`. | Freeze candidate for numeric codes and non-secret DTO names; upload/sync DTOs remain open until Bands 5/6 complete final reducer semantics. |
 | Rust WASM facade DTOs | Web/Rust boundary owner | `mosaic-wasm` exports header parsing, progress, account/identity/epoch handles, shard encrypt/decrypt, metadata helpers, golden-vector snapshots, client-core upload/sync init/advance, and JS classes with camelCase getters. | Freeze candidate after generated binding snapshot is regenerated from final Rust facade. |
 | Rust UniFFI DTOs | Android/Rust boundary owner | `mosaic-uniffi` records mirror public/non-secret Rust results, stable codes, account/identity/epoch handles, media inspection/planning, metadata encryption, and client-core upload/sync DTOs. | Freeze candidate; Android upload final handoff may require additive fields before freeze. |
@@ -93,7 +93,8 @@ These constraints are already release-blocking:
 - Tus transport behavior for encrypted shard upload/resume/delete and `albumId`
   plus `sha256` metadata.
 - Rust domain constants (`mosaic-v1`, envelope v3, manifest transcript v1,
-  metadata sidecar v1) and stable error code numeric meanings.
+  metadata sidecar v1, KDF/auth/bundle labels) and stable error code numeric
+  meanings.
 - Existing WASM/UniFFI record names, public fields, stable error codes, and
   handle-based secret boundary.
 - Web adapter default id and privacy-safe selector behavior.
@@ -154,6 +155,8 @@ These constraints are already release-blocking:
 - Manifest transcript and metadata sidecar contexts/versions are byte-level
   frozen at the late-v1 gate. Field order, integer widths, sort order, and length
   encodings are part of the contract.
+- KDF/auth/bundle domain labels are byte-level frozen at the late-v1 gate and
+  pinned by `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::*_label_is_frozen`.
 - Any byte-format change after freeze requires a new explicit version byte or
   context label, new positive and negative vectors, dual-reader compatibility or
   migration plan, and proof that old clients fail safely.

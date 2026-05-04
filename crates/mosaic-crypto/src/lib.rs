@@ -114,7 +114,7 @@ const SIGNATURE_BYTES: usize = 64;
 pub(crate) const SALT_BYTES: usize = 16;
 
 /// HKDF-SHA256 domain separation label for deriving L1 root keys from L0.
-const ROOT_KEY_INFO: &[u8] = b"mosaic:root-key:v1";
+pub const ROOT_KEY_INFO: &[u8] = b"mosaic:root-key:v1";
 
 /// LocalAuth challenge transcript context. Must match the backend verifier.
 pub const AUTH_CHALLENGE_CONTEXT: &[u8] = b"Mosaic_Auth_Challenge_v1";
@@ -129,19 +129,19 @@ pub const BUNDLE_SIGN_CONTEXT: &[u8] = b"Mosaic_EpochBundle_v1";
 pub const AUTH_CHALLENGE_BYTES: usize = 32;
 
 /// HKDF-SHA256 domain separation label for password-rooted auth signing seeds.
-const AUTH_SIGNING_KEY_INFO: &[u8] = b"mosaic:auth-signing:v1";
+pub const AUTH_SIGNING_KEY_INFO: &[u8] = b"mosaic:auth-signing:v1";
 
 /// BLAKE2b-keyed domain separation label for thumbnail shard keys.
-const THUMB_KEY_INFO: &[u8] = b"mosaic:tier:thumb:v1";
+pub const THUMB_KEY_INFO: &[u8] = b"mosaic:tier:thumb:v1";
 
 /// BLAKE2b-keyed domain separation label for preview shard keys.
-const PREVIEW_KEY_INFO: &[u8] = b"mosaic:tier:preview:v1";
+pub const PREVIEW_KEY_INFO: &[u8] = b"mosaic:tier:preview:v1";
 
 /// BLAKE2b-keyed domain separation label for original shard keys.
-const FULL_KEY_INFO: &[u8] = b"mosaic:tier:full:v1";
+pub const FULL_KEY_INFO: &[u8] = b"mosaic:tier:full:v1";
 
 /// BLAKE2b-keyed domain separation label for album content keys.
-const CONTENT_KEY_INFO: &[u8] = b"mosaic:tier:content:v1";
+pub const CONTENT_KEY_INFO: &[u8] = b"mosaic:tier:content:v1";
 
 /// HKDF-SHA256 domain separation label for the OPFS-snapshot encryption key
 /// derivable from the L2 account key.
@@ -160,7 +160,7 @@ const CONTENT_KEY_INFO: &[u8] = b"mosaic:tier:content:v1";
 ///
 /// Do not delete this constant. See plan §13 KDF-labels row + Opus P-W7.5/P-W7.8
 /// review notes for rationale.
-const DB_SESSION_KEY_INFO: &[u8] = b"mosaic:db-session-key:v1";
+pub const DB_SESSION_KEY_INFO: &[u8] = b"mosaic:db-session-key:v1";
 
 /// Crypto crate errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
