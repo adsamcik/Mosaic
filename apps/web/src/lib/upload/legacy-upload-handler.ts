@@ -31,11 +31,11 @@ export async function processLegacyUpload(
     task.currentAction = 'encrypting';
     ctx.onProgress?.(task);
 
-    const encrypted = await crypto.encryptShard(
+    const encrypted = await crypto.encryptShardWithEpoch(
+      task.epochHandleId,
       new Uint8Array(chunk),
-      task.readKey,
-      task.epochId,
       i,
+      3,
     );
 
     // Upload via Tus resumable protocol
@@ -43,7 +43,7 @@ export async function processLegacyUpload(
     ctx.onProgress?.(task);
     const shardId = await ctx.tusUpload(
       task.albumId,
-      encrypted.ciphertext,
+      encrypted.envelopeBytes,
       encrypted.sha256,
       i,
     );

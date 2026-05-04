@@ -99,7 +99,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
         // Sync to pull the newly created manifest into local DB
         log.info(`Upload complete, syncing album ${task.albumId}`);
         try {
-          await syncEngine.sync(task.albumId, epochKey.epochSeed);
+          await syncEngine.sync(task.albumId, epochKey.epochHandleId);
           log.info(`Post-upload sync complete for album ${task.albumId}`);
         } catch (syncErr) {
           // Non-fatal: photo was uploaded, sync will happen later
@@ -194,7 +194,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
         file,
         albumId,
         epochKey.epochId,
-        epochKey.epochSeed,
+        epochKey.epochHandleId,
       );
       log.info(`File added to upload queue: ${file.name}`);
     } catch (err) {

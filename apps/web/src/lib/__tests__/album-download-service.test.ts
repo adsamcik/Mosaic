@@ -83,9 +83,8 @@ function createMockPhoto(overrides: Partial<PhotoMeta> = {}): PhotoMeta {
 function makeEpochBundle(epochId = 1) {
   return {
     epochId,
-    epochHandleId: `epch_test-${String(epochId)}`,
+    epochHandleId: `epch_test-${String(epochId)}` as never,
     signPublicKey: new Uint8Array(32),
-    epochSeed: new Uint8Array(32),
     signKeypair: {
       publicKey: new Uint8Array(32),
       secretKey: new Uint8Array(64),

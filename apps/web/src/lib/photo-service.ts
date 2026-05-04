@@ -17,6 +17,7 @@ import { createDisplayableUrl } from './image-decoder';
 import { downloadShards, type ProgressCallback } from './shard-service';
 import { base64ToUint8Array } from './thumbnail-generator';
 import { createLogger } from './logger';
+import type { EpochHandleId } from '../workers/types';
 
 const log = createLogger('PhotoService');
 
@@ -256,7 +257,7 @@ export class ShardIntegrityError extends Error {
  *
  * @param photoId - Unique photo identifier
  * @param shardIds - Array of shard IDs that make up the photo
- * @param epochReadKey - The epoch read key for decryption
+ * @param epochReadKey - Opaque epoch handle id for decryption
  * @param mimeType - The photo's MIME type (e.g., 'image/jpeg')
  * @param options - Loading options
  * @param shardHashes - Optional array of expected SHA256 hashes for integrity verification
@@ -267,7 +268,7 @@ export class ShardIntegrityError extends Error {
 export async function loadPhoto(
   photoId: string,
   shardIds: string[],
-  epochReadKey: Uint8Array,
+  epochReadKey: EpochHandleId,
   mimeType: string,
   options: PhotoLoadOptions = {},
   shardHashes?: string[],
@@ -317,7 +318,10 @@ export async function loadPhoto(
           }
         }
 
-        const plaintext = await crypto.decryptShard(shard, epochReadKey);
+        const plaintext = await crypto.decryptShardWithEpoch(
+          epochReadKey,
+          shard,
+        );
         decryptedChunks.push(plaintext);
       }
 
@@ -437,11 +441,11 @@ export function getCacheStats(): {
  * Useful for preloading visible photos in a virtualized list
  *
  * @param photos - Array of photo info to preload
- * @param epochReadKey - Epoch read key for decryption
+ * @param epochReadKey - Opaque epoch handle id for decryption
  */
 export async function preloadPhotos(
   photos: Array<{ id: string; shardIds: string[]; mimeType: string }>,
-  epochReadKey: Uint8Array,
+  epochReadKey: EpochHandleId,
 ): Promise<void> {
   // Load in parallel but don't wait for all
   const loads = photos.map(async (photo) => {

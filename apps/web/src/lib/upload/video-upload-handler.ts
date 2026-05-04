@@ -95,11 +95,7 @@ export async function processVideoUpload(
   task.thumbhash = frameResult.thumbhash;
 
   try {
-    // Import crypto library for direct shard encryption with tier keys
-    const { deriveTierKeys, encryptShard, ShardTier } = await import('@mosaic/crypto');
-
-    // Derive tier keys from epochSeed (stored as readKey)
-    const tierKeys = deriveTierKeys(task.readKey);
+    const crypto = await getCryptoClient();
 
     // Step 2: Encrypt and upload thumbnail shard (10-20% progress)
     task.currentAction = 'encrypting';
@@ -114,12 +110,11 @@ export async function processVideoUpload(
       ...taskIdentity(task),
       thumbBytes: thumbData.byteLength,
     });
-    const thumbEncrypted = await encryptShard(
+    const thumbEncrypted = await crypto.encryptShardWithEpoch(
+      task.epochHandleId,
       thumbData,
-      tierKeys.thumbKey,
-      task.epochId,
       0,
-      ShardTier.THUMB,
+      1,
     );
 
     task.currentAction = 'uploading';
@@ -128,7 +123,7 @@ export async function processVideoUpload(
 
     const thumbShardId = await ctx.tusUpload(
       task.albumId,
-      thumbEncrypted.ciphertext,
+      thumbEncrypted.envelopeBytes,
       thumbEncrypted.sha256,
       0,
     );
@@ -160,12 +155,11 @@ export async function processVideoUpload(
       task.currentAction = 'encrypting';
       ctx.onProgress?.(task);
 
-      const chunkEncrypted = await encryptShard(
+      const chunkEncrypted = await crypto.encryptShardWithEpoch(
+        task.epochHandleId,
         new Uint8Array(chunk),
-        tierKeys.fullKey,
-        task.epochId,
         i,
-        ShardTier.ORIGINAL,
+        3,
       );
 
       // Upload via Tus
@@ -174,7 +168,7 @@ export async function processVideoUpload(
 
       const chunkShardId = await ctx.tusUpload(
         task.albumId,
-        chunkEncrypted.ciphertext,
+        chunkEncrypted.envelopeBytes,
         chunkEncrypted.sha256,
         i,
       );

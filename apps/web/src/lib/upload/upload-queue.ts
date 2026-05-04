@@ -16,6 +16,7 @@ import type {
   ErrorCallback,
   UploadHandlerContext,
 } from './types';
+import type { EpochHandleId } from '../../workers/types';
 import {
   CHUNK_SIZE,
   MAX_RETRIES,
@@ -60,7 +61,7 @@ class UploadQueue {
     file: File,
     albumId: string,
     epochId: number,
-    readKey: Uint8Array,
+    epochHandleId: EpochHandleId,
   ): Promise<string> {
     log.info('UploadQueue.add called', {
       ...fileIdentity(file),
@@ -97,7 +98,7 @@ class UploadQueue {
       file,
       albumId,
       epochId,
-      readKey,
+      epochHandleId,
       status: 'queued',
       currentAction: 'pending',
       progress: 0,
@@ -325,12 +326,12 @@ class UploadQueue {
    * Retry a permanently failed task (resets retry count)
    * @param taskId - ID of the task to retry
    * @param file - The file to upload (must be re-provided as File objects aren't persisted)
-   * @param readKey - The encryption key (must be re-provided as keys aren't persisted)
+   * @param epochHandleId - The epoch handle id (must be re-provided as handles aren't persisted)
    */
   async retryPermanentlyFailed(
     taskId: string,
     file: File,
-    readKey: Uint8Array,
+    epochHandleId: EpochHandleId,
   ): Promise<void> {
     if (!this.persistence.isInitialized) {
       throw new Error('Upload queue not initialized');
@@ -357,7 +358,7 @@ class UploadQueue {
       file,
       albumId: persisted.albumId,
       epochId: persisted.epochId,
-      readKey,
+      epochHandleId,
       status: 'queued',
       currentAction: 'pending',
       progress: persisted.completedShards.length / persisted.totalChunks,

@@ -1026,13 +1026,13 @@ export interface CryptoWorkerApi {
 
   /**
    * Encrypt a single shard using the epoch handle's tier sub-key.
-   * `tier`: 0=thumb, 1=preview, 2=original (matches the WASM contract).
+   * `tier`: 1=thumb, 2=preview, 3=original (matches the WASM contract).
    */
   encryptShardWithEpoch(
     epochHandleId: EpochHandleId,
     plaintext: Uint8Array,
     shardIndex: number,
-    tier: 0 | 1 | 2,
+    tier: 1 | 2 | 3,
   ): Promise<{ envelopeBytes: Uint8Array; sha256: string }>;
 
   /**

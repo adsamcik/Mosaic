@@ -1,4 +1,4 @@
-import type { TieredShardIds } from '../../workers/types';
+import type { EpochHandleId, TieredShardIds } from '../../workers/types';
 
 /** Chunk size for splitting files (6MB) */
 export const CHUNK_SIZE = 6 * 1024 * 1024;
@@ -91,7 +91,7 @@ export interface UploadTask {
   file: File;
   albumId: string;
   epochId: number;
-  readKey: Uint8Array;
+  epochHandleId: EpochHandleId;
   status: UploadStatus;
   currentAction: UploadAction;
   progress: number;

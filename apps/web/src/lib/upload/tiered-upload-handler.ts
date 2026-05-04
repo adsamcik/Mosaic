@@ -5,11 +5,8 @@ import {
   shouldStoreOriginalsAsAvif,
   shouldStripExifFromOriginals,
 } from '../settings-service';
-import {
-  generateThumbnail,
-  generateTieredImages,
-  encryptTieredImages,
-} from '../thumbnail-generator';
+import { getCryptoClient } from '../crypto-client';
+import { generateThumbnail, generateTieredImages } from '../thumbnail-generator';
 import { taskIdentity } from '../upload-errors';
 import type { TieredShardIds } from '../../workers/types';
 import type {
@@ -79,27 +76,7 @@ export async function processTieredUpload(
 ): Promise<void> {
   log.info('processTieredUpload started', taskIdentity(task));
   try {
-    // Import deriveTierKeys to construct full EpochKey
-    const { deriveTierKeys } = await import('@mosaic/crypto');
-    log.info('deriveTierKeys imported successfully', taskIdentity(task));
-
-    // Derive tier keys from epochSeed (stored as readKey)
-    const tierKeys = deriveTierKeys(task.readKey);
-    log.info('Tier keys derived successfully', taskIdentity(task));
-
-    // Construct full EpochKey for encryption
-    const epochKey = {
-      epochId: task.epochId,
-      epochSeed: task.readKey,
-      thumbKey: tierKeys.thumbKey,
-      previewKey: tierKeys.previewKey,
-      fullKey: tierKeys.fullKey,
-      // signKeypair not needed for encryption, provide empty placeholder
-      signKeypair: {
-        publicKey: new Uint8Array(32),
-        secretKey: new Uint8Array(64),
-      },
-    };
+    const crypto = await getCryptoClient();
 
     const stripOriginalMetadata = shouldStripExifFromOriginals();
     const storeOriginalAsAvif = shouldStoreOriginalsAsAvif();
@@ -162,15 +139,35 @@ export async function processTieredUpload(
     ctx.onProgress?.(task);
 
     log.info('Starting encryption', taskIdentity(task));
-    const tieredResult = await encryptTieredImages(tieredImages, epochKey, 0);
+    const [thumbnailEncrypted, previewEncrypted, originalEncrypted] =
+      await Promise.all([
+        crypto.encryptShardWithEpoch(
+          task.epochHandleId,
+          tieredImages.thumbnail.data,
+          0,
+          1,
+        ),
+        crypto.encryptShardWithEpoch(
+          task.epochHandleId,
+          tieredImages.preview.data,
+          0,
+          2,
+        ),
+        crypto.encryptShardWithEpoch(
+          task.epochHandleId,
+          tieredImages.original.data,
+          0,
+          3,
+        ),
+      ]);
     log.info('Tiered shards encrypted successfully', taskIdentity(task));
 
     // Extract dimensions and thumbnail for manifest
     log.info('Extracting dimensions for manifest', taskIdentity(task));
-    task.originalWidth = tieredResult.originalWidth;
-    task.originalHeight = tieredResult.originalHeight;
-    task.thumbWidth = tieredResult.thumbnail.width;
-    task.thumbHeight = tieredResult.thumbnail.height;
+    task.originalWidth = tieredImages.originalWidth;
+    task.originalHeight = tieredImages.originalHeight;
+    task.thumbWidth = tieredImages.thumbnail.width;
+    task.thumbHeight = tieredImages.thumbnail.height;
 
     // Generate base64 thumbnail for embedded manifest preview
     // Use the thumbnail data before encryption for fast gallery loading
@@ -198,8 +195,8 @@ export async function processTieredUpload(
     log.info('Starting TUS upload', taskIdentity(task));
     const thumbShardId = await ctx.tusUpload(
       task.albumId,
-      tieredResult.thumbnail.encrypted.ciphertext,
-      tieredResult.thumbnail.encrypted.sha256,
+      thumbnailEncrypted.envelopeBytes,
+      thumbnailEncrypted.sha256,
       0,
     );
     log.info('Thumbnail shard uploaded', {
@@ -209,7 +206,7 @@ export async function processTieredUpload(
     task.completedShards.push({
       index: 0,
       shardId: thumbShardId,
-      sha256: tieredResult.thumbnail.encrypted.sha256,
+      sha256: thumbnailEncrypted.sha256,
       tier: 1,
     });
     task.progress = 0.33;
@@ -219,14 +216,14 @@ export async function processTieredUpload(
     log.debug('Uploading preview shard', taskIdentity(task));
     const previewShardId = await ctx.tusUpload(
       task.albumId,
-      tieredResult.preview.encrypted.ciphertext,
-      tieredResult.preview.encrypted.sha256,
+      previewEncrypted.envelopeBytes,
+      previewEncrypted.sha256,
       0,
     );
     task.completedShards.push({
       index: 0,
       shardId: previewShardId,
-      sha256: tieredResult.preview.encrypted.sha256,
+      sha256: previewEncrypted.sha256,
       tier: 2,
     });
     task.progress = 0.66;
@@ -236,14 +233,14 @@ export async function processTieredUpload(
     log.debug('Uploading original shard', taskIdentity(task));
     const originalShardId = await ctx.tusUpload(
       task.albumId,
-      tieredResult.original.encrypted.ciphertext,
-      tieredResult.original.encrypted.sha256,
+      originalEncrypted.envelopeBytes,
+      originalEncrypted.sha256,
       0,
     );
     task.completedShards.push({
       index: 0,
       shardId: originalShardId,
-      sha256: tieredResult.original.encrypted.sha256,
+      sha256: originalEncrypted.sha256,
       tier: 3,
     });
     task.progress = 1;
@@ -253,16 +250,16 @@ export async function processTieredUpload(
     const tieredShards: TieredShardIds = {
       thumbnail: {
         shardId: thumbShardId,
-        sha256: tieredResult.thumbnail.encrypted.sha256,
+        sha256: thumbnailEncrypted.sha256,
       },
       preview: {
         shardId: previewShardId,
-        sha256: tieredResult.preview.encrypted.sha256,
+        sha256: previewEncrypted.sha256,
       },
       original: [
         {
           shardId: originalShardId,
-          sha256: tieredResult.original.encrypted.sha256,
+          sha256: originalEncrypted.sha256,
         },
       ],
     };

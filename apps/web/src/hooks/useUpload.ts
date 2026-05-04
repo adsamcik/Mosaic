@@ -84,7 +84,7 @@ export function useUpload() {
         file,
         albumId,
         epochKey.epochId,
-        epochKey.epochSeed,
+        epochKey.epochHandleId,
       );
     } catch (err) {
       // Only handle errors not already handled above

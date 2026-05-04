@@ -1748,7 +1748,7 @@ class CryptoWorker implements CryptoWorkerApi {
     epochHandleId: EpochHandleId,
     plaintext: Uint8Array,
     shardIndex: number,
-    tier: 0 | 1 | 2,
+    tier: 1 | 2 | 3,
   ): Promise<{ envelopeBytes: Uint8Array; sha256: string }> {
     const facade = await getRustFacade();
     return this.handleRegistry.withLease(

@@ -137,8 +137,8 @@ describe('Epoch Key Service', () => {
       expect(cached?.epochId).toBe(1);
       expect(typeof cached?.epochHandleId).toBe('string');
       expect(cached!.epochHandleId.length).toBeGreaterThan(0);
-      // Slice 3 boundary — the cache must NOT carry the raw seed/sign secret.
-      expect(cached?.epochSeed.length).toBe(0);
+      expect(() => (cached as unknown as { epochSeed: Uint8Array }).epochSeed)
+        .toThrow('epochSeed is removed; use epochHandleId');
       expect(cached?.signKeypair.secretKey.length).toBe(0);
     });
 
