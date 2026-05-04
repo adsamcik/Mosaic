@@ -51,6 +51,14 @@ pub const IDENTITY_SEED_AAD: &[u8] = b"mosaic:l3-identity-seed:v1";
 /// AEAD AAD label for generic account-scoped data wrapped by an account key.
 pub const ACCOUNT_DATA_AAD: &[u8] = b"mosaic:account-wrapped-data:v1";
 
+/// AAD for L2 account-key wraps under L1 root-key.
+/// Used by `derive_account_key`, `wrap_account_key`, `unwrap_account_key`.
+pub const ACCOUNT_KEY_WRAP_AAD: &[u8] = b"mosaic:l2-account-key:v1";
+
+/// AAD for L3 link-tier-key wraps under per-link BLAKE2b-derived wrapping key.
+/// Used by `wrap_tier_key_for_link` / `unwrap_tier_key_from_link`.
+pub const LINK_TIER_KEY_AAD: &[u8] = b"mosaic:l3-link-tier-key:v1";
+
 /// Backend LocalAuth username length limit.
 const MAX_AUTH_USERNAME_BYTES: usize = 256;
 

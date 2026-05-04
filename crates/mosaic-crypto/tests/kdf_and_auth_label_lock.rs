@@ -16,9 +16,9 @@
 //! restored the per-label structure.
 
 use mosaic_crypto::{
-    ACCOUNT_DATA_AAD, AUTH_CHALLENGE_CONTEXT, AUTH_SIGNING_KEY_INFO, BUNDLE_SIGN_CONTEXT,
-    CONTENT_KEY_INFO, DB_SESSION_KEY_INFO, EPOCH_SEED_AAD, FULL_KEY_INFO, IDENTITY_SEED_AAD,
-    PREVIEW_KEY_INFO, ROOT_KEY_INFO, THUMB_KEY_INFO,
+    ACCOUNT_DATA_AAD, ACCOUNT_KEY_WRAP_AAD, AUTH_CHALLENGE_CONTEXT, AUTH_SIGNING_KEY_INFO,
+    BUNDLE_SIGN_CONTEXT, CONTENT_KEY_INFO, DB_SESSION_KEY_INFO, EPOCH_SEED_AAD, FULL_KEY_INFO,
+    IDENTITY_SEED_AAD, LINK_TIER_KEY_AAD, PREVIEW_KEY_INFO, ROOT_KEY_INFO, THUMB_KEY_INFO,
 };
 
 const FREEZE_HINT: &str = "domain label changed after late-v1 freeze; update the ADR/spec and add migration vectors before changing this byte string.";
@@ -97,6 +97,22 @@ fn identity_seed_aad_label_is_frozen() {
 fn account_data_aad_label_is_frozen() {
     assert_eq!(
         ACCOUNT_DATA_AAD, b"mosaic:account-wrapped-data:v1",
+        "{FREEZE_HINT}"
+    );
+}
+
+#[test]
+fn account_key_wrap_aad_label_is_frozen() {
+    assert_eq!(
+        ACCOUNT_KEY_WRAP_AAD, b"mosaic:l2-account-key:v1",
+        "{FREEZE_HINT}"
+    );
+}
+
+#[test]
+fn link_tier_key_aad_label_is_frozen() {
+    assert_eq!(
+        LINK_TIER_KEY_AAD, b"mosaic:l3-link-tier-key:v1",
         "{FREEZE_HINT}"
     );
 }
