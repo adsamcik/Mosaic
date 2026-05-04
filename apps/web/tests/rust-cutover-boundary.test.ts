@@ -270,10 +270,10 @@ describe('web Rust crypto cutover boundaries', () => {
     ).toEqual(['lib/exif-stripper.ts', 'workers/rust-crypto-core.ts']);
   });
 
-  it('keeps the Rust crypto facade behind the Comlink crypto worker', () => {
+  it('keeps the Rust crypto facade behind Comlink workers', () => {
     expect(
       importersMatching(/from\s+['"][^'"]*rust-crypto-core['"]/),
-    ).toEqual(['workers/crypto.worker.ts']);
+    ).toEqual(['workers/coordinator.worker.ts', 'workers/crypto.worker.ts']);
   });
 
   it('classifies every production @mosaic/crypto import as compatibility debt', () => {

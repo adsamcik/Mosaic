@@ -113,6 +113,8 @@ export enum WorkerCryptoErrorCode {
   ClosedHandle = 1003,
   /** Worker has not been bootstrapped or has been cleared via clear(). */
   WorkerNotInitialized = 1004,
+  /** Download job id is not known to the coordinator worker. */
+  JobNotFound = 1005,
 }
 
 /**
@@ -1171,4 +1173,147 @@ export interface GeoWorkerApi {
    * Get leaf points for a cluster
    */
   getLeaves(clusterId: number, limit: number, offset: number): GeoFeature[];
+}
+
+// =============================================================================
+// Download coordinator worker contract
+// =============================================================================
+
+/** Download orchestrator phase surfaced to UI consumers. */
+export type DownloadPhase =
+  | 'Idle'
+  | 'Preparing'
+  | 'Running'
+  | 'Paused'
+  | 'Finalizing'
+  | 'Done'
+  | 'Errored'
+  | 'Cancelled';
+
+/** Photo status buckets used for aggregate progress reporting. */
+export interface DownloadPhotoCounts {
+  readonly pending: number;
+  readonly inflight: number;
+  readonly done: number;
+  readonly failed: number;
+  readonly skipped: number;
+}
+
+/** TS-side mirror of the minimal Rust job-state data needed by the UI. */
+export interface DownloadJobStateView {
+  readonly phase: DownloadPhase;
+}
+
+/** TS-side mirror of the minimal Rust per-photo state needed by progress summaries. */
+export interface DownloadPhotoStateView {
+  readonly status: keyof DownloadPhotoCounts;
+}
+
+/** TS-side mirror of a Rust failure-log entry; intentionally omits photo ids. */
+export interface DownloadFailureView {
+  readonly atMs: number;
+}
+
+/** Stable download error reasons accepted by the Phase 1 coordinator event API. */
+export type DownloadErrorReason =
+  | 'TransientNetwork'
+  | 'Integrity'
+  | 'Decrypt'
+  | 'NotFound'
+  | 'AccessRevoked'
+  | 'AuthorizationChanged'
+  | 'Quota'
+  | 'Cancelled'
+  | 'IllegalState';
+
+/** Per-shard input for Rust's download-plan builder. */
+export interface DownloadBuildPlanShardInput {
+  readonly shardId: Uint8Array;
+  readonly epochId: number;
+  readonly tier: number;
+  readonly expectedHash: Uint8Array;
+  readonly declaredSize: number | bigint;
+}
+
+/** Per-photo input for Rust's download-plan builder. */
+export interface DownloadBuildPlanPhotoInput {
+  readonly photoId: string;
+  readonly filename: string;
+  readonly shards: readonly DownloadBuildPlanShardInput[];
+}
+
+/** Raw input accepted by Rust's download-plan builder. */
+export interface DownloadBuildPlanInput {
+  readonly photos: readonly DownloadBuildPlanPhotoInput[];
+}
+
+/** Raw input accepted by Rust's `DownloadPlanBuilder`, plus the owning album id. */
+export interface StartJobInput extends DownloadBuildPlanInput {
+  readonly albumId: string;
+}
+
+/** Stable JS event shape for the Rust `DownloadJobEvent` transition table. */
+export type DownloadEventInput =
+  | { readonly kind: 'PlanReady' }
+  | { readonly kind: 'PauseRequested' }
+  | { readonly kind: 'ResumeRequested' }
+  | { readonly kind: 'CancelRequested'; readonly soft: boolean }
+  | { readonly kind: 'ErrorEncountered'; readonly reason: DownloadErrorReason }
+  | { readonly kind: 'AllPhotosDone' }
+  | { readonly kind: 'FinalizationDone' };
+
+/** Aggregate job summary returned by the coordinator worker. */
+export interface JobSummary {
+  readonly jobId: string;
+  readonly albumId: string;
+  readonly phase: DownloadPhase;
+  readonly photoCounts: DownloadPhotoCounts;
+  readonly failureCount: number;
+  readonly createdAtMs: number;
+  readonly lastUpdatedAtMs: number;
+}
+
+/** Observe-only progress event delivered through worker subscriptions. */
+export interface JobProgressEvent {
+  readonly jobId: string;
+  readonly phase: DownloadPhase;
+  readonly photoCounts: DownloadPhotoCounts;
+  readonly failureCount: number;
+  readonly lastUpdatedAtMs: number;
+}
+
+/** Cross-tab broadcast message contract for observe-only Phase 1 coordination. */
+export type DownloadJobsBroadcastMessage = {
+  readonly kind: 'job-changed';
+  readonly jobId: string;
+  readonly phase: DownloadPhase;
+  readonly lastUpdatedAtMs: number;
+};
+
+/** Public Comlink API exposed by `coordinator.worker.ts`. */
+export interface CoordinatorWorkerApi {
+  /** Initialize WASM and reconstruct persisted OPFS jobs. Idempotent. */
+  initialize(opts: { readonly nowMs: number }): Promise<{ reconstructedJobs: number }>;
+  /** Build a Rust download plan and create a new persisted job. */
+  startJob(input: StartJobInput): Promise<{ jobId: string }>;
+  /** Apply a Rust download event, persist the updated snapshot, and emit progress. */
+  sendEvent(jobId: string, event: DownloadEventInput): Promise<{ phase: DownloadPhase }>;
+  /** Pause a running job. */
+  pauseJob(jobId: string): Promise<{ phase: DownloadPhase }>;
+  /** Resume a paused job. */
+  resumeJob(jobId: string): Promise<{ phase: DownloadPhase }>;
+  /** Cancel a job; hard cancel also purges OPFS staging. */
+  cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }>;
+  /** List all known in-memory jobs. */
+  listJobs(): Promise<JobSummary[]>;
+  /** Return an in-memory job summary without re-reading OPFS. */
+  getJob(jobId: string): Promise<JobSummary | null>;
+  /** Subscribe to progress events for one job. Caller must unsubscribe. */
+  subscribe(jobId: string, callback: (event: JobProgressEvent) => void): Promise<{ unsubscribe: () => void }>;
+  /** Garbage-collect stale OPFS jobs. */
+  gc(opts: {
+    readonly nowMs: number;
+    readonly maxAgeMs: number;
+    readonly preserveJobIds?: ReadonlyArray<string>;
+  }): Promise<{ purged: string[] }>;
 }
