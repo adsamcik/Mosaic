@@ -1,4 +1,9 @@
-import type { DecryptedManifest, EpochHandleId, PhotoMeta } from '../workers/types';
+import {
+  WorkerCryptoErrorCode,
+  type DecryptedManifest,
+  type EpochHandleId,
+  type PhotoMeta,
+} from '../workers/types';
 import { fromBase64, getApi } from './api';
 import { getCryptoClient } from './crypto-client';
 import { getDbClient } from './db-client';
@@ -50,6 +55,16 @@ function keysMatch(left: Uint8Array, right: Uint8Array): boolean {
 
 function hasValidSigningKey(pubkey: Uint8Array): boolean {
   return pubkey.length === 32 && pubkey.some((byte) => byte !== 0);
+}
+
+function isHandleLifecycleError(error: unknown): boolean {
+  const code = (error as { code?: unknown }).code;
+  return (
+    code === WorkerCryptoErrorCode.StaleHandle ||
+    code === WorkerCryptoErrorCode.HandleNotFound ||
+    code === WorkerCryptoErrorCode.ClosedHandle ||
+    code === WorkerCryptoErrorCode.EpochHandleNotFound
+  );
 }
 
 function createDeletedManifestTombstone(manifest: {
@@ -305,6 +320,10 @@ class SyncEngine extends EventTarget {
               shardIds: manifest.shardIds,
             });
           } catch (decryptErr) {
+            if (isHandleLifecycleError(decryptErr)) {
+              throw decryptErr;
+            }
+
             log.warn(`Failed to process manifest ${manifest.id}`, {
               error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
             });

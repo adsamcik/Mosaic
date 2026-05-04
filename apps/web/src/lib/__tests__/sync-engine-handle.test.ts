@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EpochHandleId } from '../../workers/types';
+import { WorkerCryptoErrorCode, type EpochHandleId } from '../../workers/types';
 
 const mocks = vi.hoisted(() => ({
   api: {
@@ -13,8 +13,19 @@ const mocks = vi.hoisted(() => ({
   crypto: {
     verifyManifest: vi.fn(),
     decryptManifestWithEpoch: vi.fn(),
+    decryptShard: vi.fn(),
+    encryptShard: vi.fn(),
+    encryptManifestWithEpoch: vi.fn(),
+    encryptShardWithEpoch: vi.fn(),
+    decryptShardWithEpoch: vi.fn(),
   },
   getOrFetchEpochKey: vi.fn(),
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 vi.mock('../api', () => ({
@@ -43,13 +54,30 @@ vi.mock('../local-purge', () => ({
 }));
 
 vi.mock('../logger', () => ({
-  createLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
+  createLogger: () => mocks.logger,
 }));
+
+function expectNoRawSeedBytesThroughWorkerCalls(): void {
+  const rawSeedSlots: Array<[string, number]> = [
+    ['decryptManifestWithEpoch', 0],
+    ['encryptManifestWithEpoch', 0],
+    ['decryptShardWithEpoch', 0],
+    ['encryptShardWithEpoch', 0],
+    ['decryptShard', 1],
+    ['encryptShard', 1],
+  ];
+
+  for (const [methodName, seedSlot] of rawSeedSlots) {
+    const method = mocks.crypto[methodName as keyof typeof mocks.crypto];
+    for (const call of method.mock.calls) {
+      const candidate = call[seedSlot];
+      expect(
+        candidate instanceof Uint8Array && candidate.length === 32,
+        `${methodName} arg ${seedSlot} must not receive a raw 32-byte epoch seed`,
+      ).toBe(false);
+    }
+  }
+}
 
 describe('syncEngine handle-based manifest decryption', () => {
   beforeEach(() => {
@@ -114,5 +142,38 @@ describe('syncEngine handle-based manifest decryption', () => {
       expect.any(Uint8Array),
     );
     expect(mocks.db.insertManifests).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces stale-handle errors without falling back to seed read', async () => {
+    const staleHandleError = Object.assign(new Error('stale epoch handle'), {
+      code: WorkerCryptoErrorCode.StaleHandle,
+    });
+    mocks.crypto.decryptManifestWithEpoch.mockRejectedValueOnce(
+      staleHandleError,
+    );
+    const { syncEngine } = await import('../sync-engine');
+
+    await expect(
+      syncEngine.sync('album-1', 'epoch-handle-7' as EpochHandleId),
+    ).rejects.toBe(staleHandleError);
+
+    expect(mocks.logger.warn).not.toHaveBeenCalled();
+    expect(mocks.crypto.decryptManifestWithEpoch).toHaveBeenCalledWith(
+      'epoch-handle-7',
+      expect.any(Uint8Array),
+    );
+    expectNoRawSeedBytesThroughWorkerCalls();
+  });
+
+  it('never passes raw seed bytes through any worker call', async () => {
+    const { syncEngine } = await import('../sync-engine');
+
+    await syncEngine.sync('album-1', 'epoch-handle-7' as EpochHandleId);
+
+    expect(mocks.crypto.decryptManifestWithEpoch).toHaveBeenCalledWith(
+      'epoch-handle-7',
+      expect.any(Uint8Array),
+    );
+    expectNoRawSeedBytesThroughWorkerCalls();
   });
 });

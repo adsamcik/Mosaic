@@ -678,7 +678,7 @@ async function assertHandleIsClosed(
         return await api.signManifestWithIdentity(handleId as any, new Uint8Array(8));
       case 'epoch':
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return await api.encryptShardWithEpoch(handleId as any, new Uint8Array(8), 0, 0);
+        return await api.encryptShardWithEpoch(handleId as any, new Uint8Array(8), 0, 1);
     }
   };
 
