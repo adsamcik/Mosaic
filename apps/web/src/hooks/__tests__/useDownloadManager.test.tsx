@@ -78,6 +78,7 @@ const api: CoordinatorWorkerApi = {
     };
   }),
   gc: vi.fn(async () => ({ purged: [] })),
+  setSaveTargetProvider: vi.fn(async () => undefined),
 };
 
 class MockBroadcastChannel {
