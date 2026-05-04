@@ -8,6 +8,13 @@ import type { EpochHandleId, PhotoMeta } from '../workers/types';
 
 const log = createLogger('AlbumDownloadService');
 
+/**
+ * ZIP64 note: current photo downloads pass Uint8Array inputs, so client-zip can
+ * infer each file's byteLength. If a future change switches this service to
+ * streaming inputs, declare `size: number` on each file descriptor so client-zip
+ * can emit per-file ZIP64 extra fields for files larger than 4 GiB.
+ */
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
