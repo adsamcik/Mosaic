@@ -6,8 +6,8 @@ use std::fmt;
 use std::io::Cursor;
 
 use blake2::{
-    digest::{Update, VariableOutput},
     Blake2bVar,
+    digest::{Update, VariableOutput},
 };
 use ciborium::value::{Integer, Value};
 

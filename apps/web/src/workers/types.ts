@@ -100,6 +100,15 @@ export enum WorkerCryptoErrorCode {
   DownloadSnapshotCorrupt = 723,
   DownloadSnapshotChecksumMismatch = 724,
   DownloadSnapshotTorn = 725,
+  DownloadTransientNetwork = 726,
+  DownloadIntegrity = 727,
+  DownloadDecrypt = 728,
+  DownloadNotFound = 729,
+  DownloadQuota = 730,
+  DownloadCancelled = 731,
+  DownloadAccessRevoked = 732,
+  DownloadAuthorizationChanged = 733,
+  DownloadIllegalState = 734,
   PinValidationFailed = 800,
 
   // Worker-only error codes start at 1000.
