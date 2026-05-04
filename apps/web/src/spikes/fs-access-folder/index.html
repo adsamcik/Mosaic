@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mosaic spike: File System Access folder output</title>
+    <style>
+      :root { color-scheme: light dark; font-family: Inter, system-ui, sans-serif; }
+      body { margin: 0; padding: 24px; max-width: 1120px; }
+      h1 { margin-top: 0; }
+      button { margin: 4px 8px 4px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid #8886; cursor: pointer; }
+      button:disabled { cursor: not-allowed; opacity: 0.55; }
+      .panel { border: 1px solid #8885; border-radius: 12px; padding: 16px; margin: 16px 0; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+      .muted { opacity: 0.75; }
+      .ok { color: #167a2f; }
+      .warn { color: #b26a00; }
+      .bad { color: #b00020; }
+      #log { white-space: pre-wrap; overflow: auto; max-height: 55vh; background: #111; color: #e8e8e8; padding: 12px; border-radius: 8px; }
+      code { background: #8882; padding: 1px 4px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>Spike: <code>showDirectoryPicker()</code> as album download output</h1>
+    <p class="muted">
+      Throwaway POC for branch <code>spike/fs-access-folder</code>. It writes only synthetic bytes to a
+      folder you choose. Do not point it at important data unless you understand the overwrite tests.
+    </p>
+
+    <div class="panel">
+      <div id="support"></div>
+      <button id="pick">Pick a folder</button>
+      <button id="loadStored">Load stored handle from IndexedDB</button>
+      <button id="queryPerm">Query permission</button>
+      <button id="requestPerm">Request read/write permission</button>
+      <button id="copy">Copy results</button>
+      <button id="clear">Clear log</button>
+      <p id="current" class="muted">No folder picked yet.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Question scenarios</h2>
+      <div class="grid">
+        <button data-test="q1">Q1: persisted handle permission after reload</button>
+        <button data-test="q2">Q2: write 100 synthetic files</button>
+        <button data-test="q3">Q3: collision behavior for IMG_0001.jpg</button>
+        <button data-test="q4">Q4: enumerate unrelated files</button>
+        <button data-test="q5">Q5: permission/read request during slow write</button>
+        <button data-test="q6">Q6: write after OS rename/move</button>
+        <button data-test="q7">Q7: .tmp then promote/rename capability</button>
+        <button data-test="q8">Q8: create nested subdirectories</button>
+        <button data-test="q9">Q9: support matrix feature detect</button>
+        <button data-test="q10">Q10: storage estimate before/after external write</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Log</h2>
+      <pre id="log"></pre>
+    </div>
+
+    <script>
+      const DB_NAME = 'mosaic-fs-access-folder-spike';
+      const STORE = 'handles';
+      const HANDLE_KEY = 'picked-directory';
+      const logEl = document.getElementById('log');
+      const supportEl = document.getElementById('support');
+      const currentEl = document.getElementById('current');
+      let currentHandle = null;
+
+      function stamp() { return new Date().toISOString(); }
+      function log(message, data) {
+        const suffix = data === undefined ? '' : ` ${safeJson(data)}`;
+        logEl.textContent += `[${stamp()}] ${message}${suffix}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+        console.log(message, data ?? '');
+      }
+      function safeJson(value) {
+        try { return JSON.stringify(value, null, 2); } catch (error) { return String(value); }
+      }
+      function errorInfo(error) {
+        return { name: error?.name, message: error?.message, stack: error?.stack?.split('\n').slice(0, 2).join('\n') };
+      }
+      function setCurrent(handle) {
+        currentHandle = handle;
+        currentEl.textContent = handle ? `Current folder handle: ${handle.name}` : 'No folder picked yet.';
+      }
+      function supported() { return typeof window.showDirectoryPicker === 'function'; }
+      function renderSupport() {
+        const ok = supported();
+        supportEl.innerHTML = ok
+          ? '<strong class="ok">Supported:</strong> <code>window.showDirectoryPicker</code> is available in this browser.'
+          : '<strong class="bad">Not supported:</strong> <code>window.showDirectoryPicker</code> is not available. Firefox/Safari should show this path.';
+        document.querySelectorAll('button[data-test], #pick, #queryPerm, #requestPerm').forEach((button) => { button.disabled = !ok; });
+      }
+      function openDb() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(DB_NAME, 1);
+          request.onupgradeneeded = () => request.result.createObjectStore(STORE);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+      async function putStoredHandle(handle) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE, 'readwrite');
+          tx.objectStore(STORE).put(handle, HANDLE_KEY);
+          tx.oncomplete = () => { db.close(); resolve(); };
+          tx.onerror = () => { db.close(); reject(tx.error); };
+          tx.onabort = () => { db.close(); reject(tx.error); };
+        });
+      }
+      async function getStoredHandle() {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE, 'readonly');
+          const request = tx.objectStore(STORE).get(HANDLE_KEY);
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => reject(request.error);
+          tx.oncomplete = () => db.close();
+          tx.onerror = () => { db.close(); reject(tx.error); };
+        });
+      }
+      async function requireHandle() {
+        if (currentHandle) return currentHandle;
+        const stored = await getStoredHandle();
+        if (stored) { setCurrent(stored); return stored; }
+        throw new Error('Pick a folder first.');
+      }
+      async function query(mode = 'readwrite') {
+        const handle = await requireHandle();
+        if (!handle.queryPermission) return 'queryPermission unavailable';
+        return handle.queryPermission({ mode });
+      }
+      function fillRandom(bytes) {
+        for (let offset = 0; offset < bytes.length; offset += 65536) {
+          crypto.getRandomValues(bytes.subarray(offset, Math.min(offset + 65536, bytes.length)));
+        }
+        return bytes;
+      }
+      async function writeFile(dir, name, bytesOrText) {
+        const file = await dir.getFileHandle(name, { create: true });
+        const writable = await file.createWritable();
+        await writable.write(bytesOrText);
+        await writable.close();
+        return file;
+      }
+      async function ensureReadWrite(handle) {
+        const state = await handle.queryPermission?.({ mode: 'readwrite' });
+        if (state === 'granted') return state;
+        return handle.requestPermission?.({ mode: 'readwrite' });
+      }
+      async function run(name, fn) {
+        log(`--- ${name} started ---`);
+        try {
+          const result = await fn();
+          log(`--- ${name} completed ---`, result);
+        } catch (error) {
+          log(`--- ${name} failed ---`, errorInfo(error));
+        }
+      }
+
+      document.getElementById('pick').addEventListener('click', async () => run('Pick folder', async () => {
+        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        setCurrent(handle);
+        const beforeStorePermission = await handle.queryPermission?.({ mode: 'readwrite' });
+        await putStoredHandle(handle);
+        return { name: handle.name, beforeStorePermission, storedInIndexedDB: true };
+      }));
+      document.getElementById('loadStored').addEventListener('click', async () => run('Load stored handle', async () => {
+        const handle = await getStoredHandle();
+        setCurrent(handle);
+        return handle ? { name: handle.name, read: await handle.queryPermission?.({ mode: 'read' }), readwrite: await handle.queryPermission?.({ mode: 'readwrite' }) } : { found: false };
+      }));
+      document.getElementById('queryPerm').addEventListener('click', async () => run('Query permission', async () => ({ read: await query('read'), readwrite: await query('readwrite') })));
+      document.getElementById('requestPerm').addEventListener('click', async () => run('Request read/write permission', async () => {
+        const handle = await requireHandle();
+        return { result: await handle.requestPermission?.({ mode: 'readwrite' }), after: await handle.queryPermission?.({ mode: 'readwrite' }) };
+      }));
+      document.getElementById('copy').addEventListener('click', async () => navigator.clipboard.writeText(logEl.textContent));
+      document.getElementById('clear').addEventListener('click', () => { logEl.textContent = ''; });
+
+      const tests = {
+        async q1() {
+          const handle = await requireHandle();
+          await putStoredHandle(handle);
+          return {
+            instructions: 'Reload the page, click "Load stored handle", then click "Query permission" and "Request read/write permission" from a user gesture.',
+            storedName: handle.name,
+            queryRead: await handle.queryPermission?.({ mode: 'read' }),
+            queryReadWrite: await handle.queryPermission?.({ mode: 'readwrite' }),
+          };
+        },
+        async q2() {
+          const dir = await requireHandle();
+          const permission = await ensureReadWrite(dir);
+          if (permission !== 'granted') throw new Error(`readwrite permission not granted: ${permission}`);
+          const count = 100;
+          const fileSize = 256 * 1024;
+          const bytes = fillRandom(new Uint8Array(fileSize));
+          const prefix = `mosaic-spike-q2-${Date.now()}`;
+          const start = performance.now();
+          for (let i = 0; i < count; i += 1) {
+            await writeFile(dir, `${prefix}-${String(i + 1).padStart(3, '0')}.bin`, bytes);
+          }
+          const elapsedMs = performance.now() - start;
+          const mb = (count * fileSize) / (1024 * 1024);
+          return { files: count, totalMiB: mb, elapsedMs, throughputMiBs: mb / (elapsedMs / 1000), promptedDuringLoop: 'observe browser UI; API does not expose prompt count' };
+        },
+        async q3() {
+          const dir = await requireHandle();
+          const name = 'IMG_0001.jpg';
+          const before = {};
+          try {
+            const existing = await dir.getFileHandle(name, { create: false });
+            before.createFalse = { exists: true, kind: existing.kind, name: existing.name };
+          } catch (error) { before.createFalse = { exists: false, error: errorInfo(error) }; }
+          try {
+            const noOptions = await dir.getFileHandle(name);
+            before.noOptions = { exists: true, kind: noOptions.kind, name: noOptions.name };
+          } catch (error) { before.noOptions = { exists: false, error: errorInfo(error) }; }
+          const marker = `mosaic collision marker ${new Date().toISOString()}\n`;
+          await writeFile(dir, name, marker);
+          const after = await (await dir.getFileHandle(name, { create: false })).getFile();
+          return { precondition: 'Place IMG_0001.jpg in the selected folder before running to observe overwrite of an existing file.', before, afterWrite: { name: after.name, size: after.size, lastModified: after.lastModified } };
+        },
+        async q4() {
+          const dir = await requireHandle();
+          const entries = [];
+          for await (const entry of dir.values()) {
+            entries.push({ name: entry.name, kind: entry.kind });
+            if (entries.length >= 50) break;
+          }
+          return { countSampled: entries.length, entries, canWarnIfNonEmpty: entries.length > 0 };
+        },
+        async q5() {
+          const dir = await requireHandle();
+          const file = await dir.getFileHandle(`mosaic-spike-q5-slow-${Date.now()}.bin`, { create: true });
+          const writable = await file.createWritable();
+          const chunk = fillRandom(new Uint8Array(1024 * 1024));
+          const observations = [];
+          await writable.write(chunk);
+          observations.push('wrote first 1 MiB chunk');
+          const readRequest = await dir.requestPermission?.({ mode: 'read' });
+          observations.push(`requestPermission({mode:'read'}) returned ${readRequest}`);
+          for (let i = 0; i < 4; i += 1) await writable.write(chunk);
+          await writable.close();
+          const finalFile = await file.getFile();
+          return { observations, finalSize: finalFile.size, note: 'To test tab close, rerun and close/reload before close(); then inspect folder for final or temp remnants.' };
+        },
+        async q6() {
+          const dir = await requireHandle();
+          const permission = await dir.queryPermission?.({ mode: 'readwrite' });
+          const name = `mosaic-spike-q6-after-rename-${Date.now()}.txt`;
+          await writeFile(dir, name, 'If this writes after an Explorer rename/move, the handle survived.\n');
+          return { instructions: 'Pick/store a folder, rename or move it in Explorer, then run this. A NotFoundError means stale path.', permissionBeforeWrite: permission, wrote: name };
+        },
+        async q7() {
+          const dir = await requireHandle();
+          const tmpName = `photo-${Date.now()}.jpg.tmp`;
+          const finalName = tmpName.replace('.jpg.tmp', '.jpg');
+          const tmpHandle = await writeFile(dir, tmpName, fillRandom(new Uint8Array(128 * 1024)));
+          const result = { tmpName, finalName, hasHandleMove: typeof tmpHandle.move === 'function', hasDirectoryMove: typeof dir.move === 'function' };
+          if (typeof tmpHandle.move === 'function') {
+            try { await tmpHandle.move(finalName); result.moveAttempt = 'succeeded'; }
+            catch (error) { result.moveAttempt = errorInfo(error); }
+          } else {
+            const tmpFile = await tmpHandle.getFile();
+            await writeFile(dir, finalName, await tmpFile.arrayBuffer());
+            await dir.removeEntry(tmpName);
+            result.fallback = 'copied tmp bytes to final via createWritable(), then removed tmp; this is not atomic';
+          }
+          return result;
+        },
+        async q8() {
+          const dir = await requireHandle();
+          let cursor = dir;
+          const created = [];
+          for (const part of ['Iceland-2024', 'day-01', `nested-${Date.now()}`]) {
+            cursor = await cursor.getDirectoryHandle(part, { create: true });
+            created.push(cursor.name);
+          }
+          await writeFile(cursor, 'IMG_0001.txt', 'synthetic nested album output\n');
+          return { created, permission: await dir.queryPermission?.({ mode: 'readwrite' }) };
+        },
+        async q9() {
+          return {
+            userAgent: navigator.userAgent,
+            secureContext: window.isSecureContext,
+            showDirectoryPickerInWindow: 'showDirectoryPicker' in window,
+            showDirectoryPickerType: typeof window.showDirectoryPicker,
+            recommendedPredicate: typeof window.showDirectoryPicker === 'function',
+            related: {
+              showOpenFilePicker: typeof window.showOpenFilePicker,
+              showSaveFilePicker: typeof window.showSaveFilePicker,
+              storageEstimate: typeof navigator.storage?.estimate,
+              opfsDirectory: typeof navigator.storage?.getDirectory,
+            },
+          };
+        },
+        async q10() {
+          const dir = await requireHandle();
+          const before = await navigator.storage?.estimate?.();
+          await writeFile(dir, `mosaic-spike-q10-quota-${Date.now()}.bin`, fillRandom(new Uint8Array(5 * 1024 * 1024)));
+          const afterExternal = await navigator.storage?.estimate?.();
+          let afterOpfs = null;
+          if (navigator.storage?.getDirectory) {
+            const opfs = await navigator.storage.getDirectory();
+            await writeFile(opfs, `mosaic-spike-q10-opfs-${Date.now()}.bin`, fillRandom(new Uint8Array(1024 * 1024)));
+            afterOpfs = await navigator.storage.estimate();
+          }
+          return { before, afterExternal, afterOpfs, note: 'External picked-folder write should not materially increase origin usage; OPFS write should.' };
+        },
+      };
+
+      document.querySelectorAll('button[data-test]').forEach((button) => {
+        button.addEventListener('click', () => run(button.dataset.test.toUpperCase(), tests[button.dataset.test]));
+      });
+
+      renderSupport();
+      getStoredHandle().then((handle) => {
+        if (handle) {
+          setCurrent(handle);
+          log('Loaded stored handle on page load', { name: handle.name });
+        }
+      }).catch((error) => log('No stored handle loaded', errorInfo(error)));
+      log('POC loaded', { url: location.href, supported: supported(), userAgent: navigator.userAgent });
+    </script>
+  </body>
+</html>
