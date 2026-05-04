@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { DownloadOutputMode } from '../../workers/types';
+import type { DownloadOutputMode, PerFileStrategy } from '../../workers/types';
 import type { PhotoMeta } from '../../workers/types';
-import { supportsStreamingSave } from '../../lib/save-target';
+import { BLOB_ANCHOR_PHOTO_LIMIT, detectPerFileStrategy, supportsStreamingSave } from '../../lib/save-target';
 
 const LAST_MODE_STORAGE_KEY = 'mosaic.download.lastMode';
 
@@ -31,7 +31,7 @@ export interface DownloadModePickerProps {
  *
  * - **Save as ZIP**             one .zip file via the streaming finalizer
  * - **Make available offline**  no file emitted; bytes stay in OPFS
- * - **Save individual files**   placeholder, gated until `p2-per-file-mode`
+ * - **Save individual files**   one file per photo, strategy-selected per browser
  */
 export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element | null {
   const { t } = useTranslation();
@@ -42,14 +42,26 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
     setSelected(loadLastMode());
   }, [props.open]);
 
+  const translate = (key: string, opts?: Record<string, unknown>): string => (opts === undefined ? t(key) : t(key, opts));
   const isMobile = useIsMobile();
   const sizeEstimate = useMemo(() => estimateSize(props.photos), [props.photos]);
+  const perFileStrategy = detectPerFileStrategy();
+  const perFileRefusal = perFileStrategy === 'blobAnchor' && props.photos.length > BLOB_ANCHOR_PHOTO_LIMIT
+    ? t('download.modePicker.perFileBlobAnchorRefusal', { count: props.photos.length })
+    : null;
+  const perFileDisabled = perFileStrategy === null;
+  const perFileSub = getPerFileSubLabel(translate, perFileStrategy, props.photos.length);
 
   if (!props.open) return null;
 
   const handleConfirm = async (): Promise<void> => {
+    if (selected === 'perFile') {
+      if (perFileStrategy === null || perFileRefusal !== null) return;
+      persistLastMode(selected);
+      await props.onConfirm({ kind: 'perFile', strategy: perFileStrategy });
+      return;
+    }
     persistLastMode(selected);
-    if (selected === 'perFile') return; // disabled, defensive
     const mode: DownloadOutputMode = selected === 'zip'
       ? { kind: 'zip', fileName: ensureZipExtension(props.suggestedFileName) }
       : { kind: 'keepOffline' };
@@ -98,11 +110,14 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
             kind="perFile"
             selected={selected}
             onSelect={setSelected}
-            label={t('download.modePicker.perFile.label')}
-            sub={t('download.modePicker.perFile.sub')}
-            disabled
+            label={perFileStrategy === null ? t('download.modePicker.perFile.label') : getPerFileLabel(translate, perFileStrategy, props.photos.length)}
+            sub={perFileSub}
+            disabled={perFileDisabled}
           />
         </fieldset>
+        {selected === 'perFile' && perFileRefusal !== null ? (
+          <p className="download-mode-picker-status" role="alert">{perFileRefusal}</p>
+        ) : null}
         <StatusRow />
         <div className="download-mode-picker-actions">
           <button type="button" className="download-mode-picker-button" onClick={props.onClose}>
@@ -112,7 +127,7 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
             type="button"
             className="download-mode-picker-button download-mode-picker-button--primary"
             onClick={(): void => { void handleConfirm(); }}
-            disabled={selected === 'perFile'}
+            disabled={selected === 'perFile' && (perFileDisabled || perFileRefusal !== null)}
             data-testid="download-mode-picker-start"
           >
             {t('download.modePicker.start')}
@@ -152,6 +167,31 @@ function ModeOption(p: ModeOptionProps): JSX.Element {
       </span>
     </label>
   );
+}
+
+function getPerFileLabel(t: (key: string, opts?: Record<string, unknown>) => string, strategy: PerFileStrategy, count: number): string {
+  switch (strategy) {
+    case 'webShare':
+      return t('download.modePicker.perFileWebShare');
+    case 'fsAccessPerFile':
+      return t('download.modePicker.perFileFsAccess', { count });
+    case 'blobAnchor':
+      return t('download.modePicker.perFileBlobAnchor');
+    default: {
+      const _exhaustive: never = strategy;
+      return _exhaustive;
+    }
+  }
+}
+
+function getPerFileSubLabel(t: (key: string, opts?: Record<string, unknown>) => string, strategy: PerFileStrategy | null, count: number): string {
+  if (strategy === null) {
+    return t('download.modePicker.perFileNotSupported');
+  }
+  if (strategy === 'webShare') {
+    return t('download.modePicker.perFilePromptCountOne');
+  }
+  return t('download.modePicker.perFilePromptCountMany', { count });
 }
 
 function StatusRow(): JSX.Element | null {
@@ -205,7 +245,7 @@ function loadLastMode(): PickerKind {
   if (typeof window === 'undefined') return 'zip';
   try {
     const raw = window.localStorage.getItem(LAST_MODE_STORAGE_KEY);
-    if (raw === 'zip' || raw === 'keepOffline') return raw;
+    if (raw === 'zip' || raw === 'keepOffline' || raw === 'perFile') return raw;
   } catch {
     // ignore
   }
@@ -214,7 +254,6 @@ function loadLastMode(): PickerKind {
 
 function persistLastMode(kind: PickerKind): void {
   if (typeof window === 'undefined') return;
-  if (kind === 'perFile') return;
   try {
     window.localStorage.setItem(LAST_MODE_STORAGE_KEY, kind);
   } catch {

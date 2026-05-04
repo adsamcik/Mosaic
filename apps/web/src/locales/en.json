@@ -364,7 +364,14 @@
       "perFile": {
         "label": "Save individual files",
         "sub": "Coming soon"
-      }
+      },
+      "perFileWebShare": "Save individual files (via Share menu)",
+      "perFileFsAccess": "Save individual files ({{count}} prompts)",
+      "perFileBlobAnchor": "Save individual files (browser may warn)",
+      "perFileBlobAnchorRefusal": "Too many photos ({{count}}) for individual downloads in this browser. Try Save as ZIP.",
+      "perFileNotSupported": "Per-file save not supported in this browser",
+      "perFilePromptCountOne": "1 prompt",
+      "perFilePromptCountMany": "{{count}} prompts"
     }
   },
   "lightbox": {

@@ -375,7 +375,14 @@
       "perFile": {
         "label": "Ulo?it jednotliv? soubory",
         "sub": "Ji? brzy"
-      }
+      },
+      "perFileWebShare": "Uložit jednotlivé soubory (přes nabídku sdílení)",
+      "perFileFsAccess": "Uložit jednotlivé soubory ({{count}} výzev)",
+      "perFileBlobAnchor": "Uložit jednotlivé soubory (prohlížeč může varovat)",
+      "perFileBlobAnchorRefusal": "Příliš mnoho fotek ({{count}}) pro jednotlivá stažení v tomto prohlížeči. Zkuste uložit jako ZIP.",
+      "perFileNotSupported": "Ukládání po jednotlivých souborech není v tomto prohlížeči podporováno",
+      "perFilePromptCountOne": "1 výzva",
+      "perFilePromptCountMany": "{{count}} výzev"
     }
   },
   "lightbox": {
