@@ -13,7 +13,7 @@
 # Kotlin guard's src/main-only semantics.
 #
 # Allowlist audit checkpoint:
-# Last full audit: R-C5.5 at 5bc477d
+# Last full audit: R-C5.5 at 2d17c47
 # Each allowlist entry below MUST carry a SPECIFIC cryptographic safety
 # argument as its rationale comment. "Reviewed existing API" / "Internal
 # use" / "Not a secret" are NOT acceptable rationales. Audits should be
