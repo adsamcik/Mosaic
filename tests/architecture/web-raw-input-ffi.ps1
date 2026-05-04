@@ -19,6 +19,9 @@
 # use" / "Not a secret" are NOT acceptable rationales. Audits should be
 # repeated whenever an entry is added; v1 freeze checkpoint should re-run
 # this audit.
+# R-C5.5.1 mechanical enforcement: rationales shorter than 40 chars or
+# matching banned phrases ('reviewed existing api', 'internal use', etc.)
+# fail at script execution time. See R-C5.5 audit checkpoint above.
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -50,17 +53,68 @@ $ImportPattern = '(?ms)import\s+(?:type\s+)?(?<clause>.*?)\s+from\s+[''"](?<modu
 $TargetModulePattern = '^(?:@mosaic/wasm|mosaic-wasm)$|(?:^|/)generated/mosaic-wasm/mosaic_wasm(?:\.js)?$'
 $NamespaceImportPattern = '\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\b'
 
-$AllowlistedFiles = @(
+$AllowlistedFiles = @{
   # Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.
-  'apps/web/tests/cross-client-vectors.test.ts'
+  'apps/web/tests/cross-client-vectors.test.ts' = 'Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.'
+}
+
+
+$BannedRationalePhrases = @(
+  'reviewed existing api',
+  'internal use',
+  'not a secret',
+  'todo',
+  'trust me',
+  'fixme',
+  'tbd'
 )
+$MinRationaleLength = 40
+$RationaleFixSuggestion = 'Replace with a sentence stating the SPECIFIC bytes returned and why an attacker gains no advantage.'
+
+function Get-AllowlistRationaleErrors([hashtable[]]$AllowlistTables) {
+  $rationaleErrors = New-Object System.Collections.Generic.List[string]
+  foreach ($table in $AllowlistTables) {
+    foreach ($entry in $table.GetEnumerator()) {
+      $rationale = ($entry.Value ?? '').Trim()
+      if ($rationale.Length -lt $MinRationaleLength) {
+        $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed length check: `"$rationale`" ($RationaleFixSuggestion)")
+      }
+      foreach ($phrase in $BannedRationalePhrases) {
+        if ($rationale.ToLowerInvariant().Contains($phrase)) {
+          $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed banned phrase check ('$phrase'): `"$rationale`" ($RationaleFixSuggestion)")
+        }
+      }
+    }
+  }
+  return $rationaleErrors
+}
+
+function Assert-RationaleQualityFixtureCaught([string]$Name, [string]$Rationale, [string]$ExpectedCheck) {
+  $fixture = @{ "tests/architecture/negative-fixtures/$Name" = $Rationale }
+  $fixtureErrors = Get-AllowlistRationaleErrors @($fixture)
+  if (-not ($fixtureErrors | Where-Object { $_ -match [regex]::Escape($ExpectedCheck) })) {
+    throw "rationale negative fixture '$Name' did not catch expected check '$ExpectedCheck'. Errors: $($fixtureErrors -join '; ')"
+  }
+}
+
+function Invoke-AllowlistRationaleQualityCheck([hashtable[]]$AllowlistTables) {
+  $rationaleErrors = Get-AllowlistRationaleErrors $AllowlistTables
+  if ($rationaleErrors.Count -gt 0) {
+    Write-Host 'Allowlist rationale quality check FAILED:' -ForegroundColor Red
+    foreach ($rationaleError in $rationaleErrors) { Write-Host "  $rationaleError" -ForegroundColor Red }
+    Write-Host ''
+    Write-Host 'Each rationale MUST state the SPECIFIC bytes returned and why an attacker gains no advantage.'
+    Write-Host 'See R-C5.5 audit checkpoint comment block for the standard.'
+    exit 1
+  }
+}
 
 function Convert-ToRepoPath([string]$Path) {
   return [System.IO.Path]::GetRelativePath($ProjectRoot, $Path).Replace('\', '/')
 }
 
 function Test-IsAllowed([string]$RepoPath) {
-  return $AllowlistedFiles -contains $RepoPath
+  return $AllowlistedFiles.ContainsKey($RepoPath)
 }
 
 function Test-IsProductionSource([string]$RepoPath) {
@@ -78,6 +132,16 @@ function Find-WebTypeScriptFiles {
     Get-ChildItem -Path $root -Recurse -File -Include '*.ts', '*.tsx' -ErrorAction SilentlyContinue
   }
 }
+
+Assert-RationaleQualityFixtureCaught 'rationale-reviewed-existing-api' 'reviewed existing api' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-internal-use' 'internal use' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-not-a-secret' 'not a secret' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-todo' 'todo' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-trust-me' 'trust me' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-fixme' 'fixme' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-tbd' 'tbd' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-short' 'short' 'length check'
+Invoke-AllowlistRationaleQualityCheck @($AllowlistedFiles)
 
 $violations = New-Object System.Collections.Generic.List[string]
 

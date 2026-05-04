@@ -19,6 +19,9 @@
 # use" / "Not a secret" are NOT acceptable rationales. Audits should be
 # repeated whenever an entry is added; v1 freeze checkpoint should re-run
 # this audit.
+# R-C5.5.1 mechanical enforcement: rationales shorter than 40 chars or
+# matching banned phrases ('reviewed existing api', 'internal use', etc.)
+# fail at script execution time. See R-C5.5 audit checkpoint above.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,8 +59,52 @@ namespace_import_pattern = re.compile(r"\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\b")
 
 allowlisted_files = {
     # Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.
-    "apps/web/tests/cross-client-vectors.test.ts",
+    "apps/web/tests/cross-client-vectors.test.ts": "Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.",
 }
+
+banned_rationale_phrases = [
+    "reviewed existing api",
+    "internal use",
+    "not a secret",
+    "todo",
+    "trust me",
+    "fixme",
+    "tbd",
+]
+min_rationale_length = 40
+rationale_fix_suggestion = "Replace with a sentence stating the SPECIFIC bytes returned and why an attacker gains no advantage."
+
+def get_allowlist_rationale_errors(*allowlist_tables):
+    rationale_errors = []
+    for table in allowlist_tables:
+        for name, rationale_value in table.items():
+            rationale = (rationale_value or "").strip()
+            if len(rationale) < min_rationale_length:
+                rationale_errors.append(f"Allowlist entry '{name}' failed length check: \"{rationale}\" ({rationale_fix_suggestion})")
+            lowered = rationale.lower()
+            for phrase in banned_rationale_phrases:
+                if phrase in lowered:
+                    rationale_errors.append(f"Allowlist entry '{name}' failed banned phrase check ('{phrase}'): \"{rationale}\" ({rationale_fix_suggestion})")
+    return rationale_errors
+
+def assert_rationale_quality_fixture_caught(name, rationale, expected_check):
+    fixture_errors = get_allowlist_rationale_errors({f"tests/architecture/negative-fixtures/{name}": rationale})
+    if not any(expected_check in error for error in fixture_errors):
+        raise AssertionError(
+            f"rationale negative fixture {name!r} did not catch expected check {expected_check!r}. "
+            f"Errors: {fixture_errors!r}"
+        )
+
+def invoke_allowlist_rationale_quality_check(*allowlist_tables):
+    rationale_errors = get_allowlist_rationale_errors(*allowlist_tables)
+    if rationale_errors:
+        print("Allowlist rationale quality check FAILED:")
+        for rationale_error in rationale_errors:
+            print(f"  {rationale_error}")
+        print()
+        print("Each rationale MUST state the SPECIFIC bytes returned and why an attacker gains no advantage.")
+        print("See R-C5.5 audit checkpoint comment block for the standard.")
+        raise SystemExit(1)
 
 def is_production_source(repo_path: str) -> bool:
     if not repo_path.startswith("apps/web/src/"):
@@ -76,6 +123,16 @@ def iter_web_typescript_files():
             continue
         for pattern in ("*.ts", "*.tsx"):
             yield from root.rglob(pattern)
+
+assert_rationale_quality_fixture_caught("rationale-reviewed-existing-api", "reviewed existing api", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-internal-use", "internal use", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-not-a-secret", "not a secret", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-todo", "todo", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-trust-me", "trust me", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-fixme", "fixme", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-tbd", "tbd", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-short", "short", "length check")
+invoke_allowlist_rationale_quality_check(allowlisted_files)
 
 violations = []
 for path in iter_web_typescript_files():
