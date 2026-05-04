@@ -1499,7 +1499,13 @@ These elements from the original design remain unchanged:
 
 | Surface | Frozen bytes / values | Lock citation | Status |
 |---------|-----------------------|---------------|--------|
-| AEAD domain-separation labels | `mosaic:l3-epoch-seed:v1`, `mosaic:l3-identity-seed:v1`, `mosaic:account-wrapped-data:v1`; bound into XChaCha20-Poly1305 AAD so cross-domain unwrap MUST fail | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::aead_wrap_domain_labels_are_frozen`; `crates/mosaic-crypto/tests/envelope_crypto.rs::aad_secret_wrap_round_trips_only_with_matching_domain`; `crates/mosaic-client/tests/adr006_compositional_attack_blocked.rs::{adr006_unwrap_with_account_cannot_recover_epoch_seed,adr006_unwrap_with_account_cannot_recover_identity_seed,account_data_wrap_unwrap_round_trip}` | Frozen by R-C6 |
+| AEAD domain-separation labels | `mosaic:l3-epoch-seed:v1`, `mosaic:l3-identity-seed:v1`, `mosaic:account-wrapped-data:v1`; bound into XChaCha20-Poly1305 AAD so cross-domain unwrap MUST fail | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::epoch_seed_aad_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::identity_seed_aad_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::account_data_aad_label_is_frozen`; `crates/mosaic-crypto/tests/envelope_crypto.rs::aad_secret_wrap_round_trips_only_with_matching_domain`; `crates/mosaic-client/tests/adr006_compositional_attack_blocked.rs::{adr006_unwrap_with_account_cannot_recover_epoch_seed,adr006_unwrap_with_account_cannot_recover_identity_seed,account_data_wrap_unwrap_round_trip}` | Frozen by R-C6 |
+| Shard envelope wire format | Magic `SGzk`; version `0x03`; 64-byte header layout; reserved bytes zero | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_envelope_magic_is_frozen_at_sgzk_four_bytes`; `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_envelope_version_is_frozen_at_0x03`; `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_envelope_header_total_length_is_frozen_at_64_bytes`; `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_envelope_reserved_bytes_are_zero_on_encode`; `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_envelope_reserved_bytes_are_zero_checked_on_decode`; `crates/mosaic-domain/tests/envelope_header.rs::shard_header_serializes_to_protocol_bytes`; `crates/mosaic-domain/tests/envelope_header.rs::shard_header_rejects_every_reserved_byte_offset` | Frozen by R-C5.x or earlier |
+| `ShardTier` discriminants | `thumb=1`, `preview=2`, `full=3` (`u8` values; Rust names `Thumbnail`, `Preview`, `Original`) | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_tier_byte_discriminants_locked`; `crates/mosaic-domain/tests/envelope_header.rs::shard_tier_accepts_only_defined_protocol_values` | Frozen by R-C5.2 |
+| Manifest transcript context | `Mosaic_Manifest_v1` | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::manifest_transcript_context_is_frozen_at_mosaic_manifest_v1`; `crates/mosaic-domain/tests/manifest_transcript.rs::manifest_transcript_serializes_to_fixed_binary_vector` | Frozen by R-C5.2 / earlier |
+| Metadata sidecar context | `Mosaic_Metadata_v1` | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::metadata_sidecar_context_is_frozen_at_mosaic_metadata_v1`; `crates/mosaic-domain/tests/metadata_sidecar.rs::metadata_sidecar_serializes_to_fixed_canonical_golden_bytes` | Frozen by R-C5.2 / earlier |
+| KDF labels | `mosaic:root-key:v1`, `mosaic:auth-signing:v1`, `mosaic:tier:thumb:v1`, `mosaic:tier:preview:v1`, `mosaic:tier:full:v1`, `mosaic:tier:content:v1`, `mosaic:db-session-key:v1` | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::root_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::auth_signing_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::thumb_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::preview_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::full_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::content_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::db_session_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::auth_challenge_context_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::bundle_sign_context_label_is_frozen` | Frozen by G0.6, restored by G0.7 |
+| Auth & bundle contexts | `Mosaic_Auth_Challenge_v1`, `Mosaic_EpochBundle_v1` | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::auth_challenge_context_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::bundle_sign_context_label_is_frozen` | Frozen by G0.6, restored by G0.7 |
 | Metadata sidecar total byte cap | `MAX_SIDECAR_TOTAL_BYTES = 1_500_000` for complete canonical sidecar buffers | `crates/mosaic-domain/tests/sidecar_tag_table.rs::max_sidecar_total_bytes_is_frozen` | Frozen by R-M5.2.1 |
 | Forbidden sidecar tag error contract | `SidecarTagStatus::Forbidden` dispatches to `MetadataSidecarError::ForbiddenTag`, not `ReservedTagNotPromoted` | `crates/mosaic-domain/tests/sidecar_tag_table.rs::lock_test_for_every_forbidden_tag` | Frozen by R-M5.2.1 |
 
@@ -1512,6 +1518,43 @@ R-M5.3 tracks the deferred sidecar decoder, fuzz harness, and forbidden-name
 defense if sidecar decoding becomes a v1 requirement. Until R-M5.3 lands,
 ADR-017 decode-validation rules are forward-looking design specifications rather
 than enforceable runtime invariants.
+
+### 12.1 Ticket Ledger
+
+| Ticket | Title | Status | Commit |
+|--------|-------|--------|--------|
+| G0.5 | Pre-lock audit doc reconciliation | Done | `923d819` |
+| R-Cl1.1 | EffectAck dedup + AlbumSync phase guards | Done | `94628b9` |
+| R-C5.2 | UniFFI/WASM type symmetry pass | Done | `d178242` |
+| R-C1.1 | Cross-platform ClientErrorCode parity | Done | `ca822bf` |
+| R-M5.1 | Sidecar registry correctness pass | Done | `0cb58d6` |
+| R-C3 | Handle-based legacy raw-key fallback + producer guard | Done | `8f5f8e0` |
+| P-W7.1 | verify_and_open_bundle → verify_and_import_epoch_bundle | Done | `e334a66` |
+| P-W7.2 | tier/content raw-key exports removed | Done | `4a0ef58` |
+| P-W7.3 | wrap/unwrap_key → handle-based account wrap | Done | `07f5910` |
+| P-W7.4 | seal_and_sign_bundle → handle-based seal | Done | `184c201` |
+| P-W7.5 | derive_db_session_key_from_account removed | Done | `3945a16` |
+| P-W7.6 | link-share raw-key exports → handle-based | Done | `f89f86b` |
+| P-W7.7 | web-raw-input-ffi consumer guard | Done | `95ec0c8` |
+| P-W7.6.1 | TS test mock cleanup | Done | `a397541` |
+| P-W7.8 | :db: HKDF label §13-frozen annotation | Done | `704f4b6` |
+| R-C5.1 | Introspection-based FFI lock-test infra | Done | `5c60275` |
+| R-M5.2 | Sidecar registry follow-up gaps | Done | `5d42e5a` |
+| R-Cl1.2 | ManifestCommitUnknown retry trap + AlbumSync exhaustion | Done | `059e247` |
+| G0.6 | KDF/auth byte-pin lock tests + §13/§15 refresh | Done | `7f60545` |
+| R-C6 | ADR-006 compositional closure (AAD domain separation) | Done | `88c443e` |
+| R-M5.2.1 | Sidecar amendment (tag 6 Forbidden + ForbiddenTag variant + cap lock) | Done | `3361039` |
+| G0.7 | Restore §11 register + un-consolidate lock tests + #[deprecated] | Done | `1917d80` |
+| R-Cl1.2 follow-up phase-list drift | Phase array → discriminant-exhaustive iteration | Pending | — |
+| R-Cl1.2 follow-up legacy snapshot migration | Migrate stuck RetryWaiting+ManifestCommitUnknown | Pending | — |
+| R-C5.3 | Lock-test infra hardening | In progress | — |
+| R-C5.4 | UniFFI async fn + WASM skip_typescript + negative-test protocol | Pending | — |
+| R-C7 | Android bridge + CI repair | In progress | — |
+| R-C6.1 | epoch-key-store epochSeed → epochHandleId migration | Pending | — |
+| R-C6.2 | Architecture guard cousin-verb regex coverage | Pending | — |
+| R-C6.3 | link_sharing + wrap_account_key empty-AAD migration | Pending | — |
+| M0 | Web/Android metadata stripping parity | In progress | — |
+| R-M5.3 | Sidecar decoder + fuzz + forbidden-name defense | Pending | — |
 
 | Work item | Scope | Status |
 |-----------|-------|--------|

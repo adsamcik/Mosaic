@@ -29,6 +29,7 @@ use mosaic_domain::ShardTier;
 use std::fmt;
 use zeroize::Zeroizing;
 
+#[allow(deprecated)]
 use crate::{
     KEY_BYTES, LINK_ID_BYTES, LINK_SECRET_BYTES, MosaicCryptoError, SecretKey, unwrap_key, wrap_key,
 };
@@ -154,6 +155,8 @@ pub fn wrap_tier_key_for_link(
         });
     }
 
+    // TODO(R-C6.3): migrate to wrap_secret_with_aad with LINK_TIER_KEY_AAD on top of the per-link BLAKE2b wrapping key.
+    #[allow(deprecated)]
     let wrapped = wrap_key(tier_key, wrapping_key)?;
 
     // wrap_key always returns nonce(24) || ciphertext_with_tag(>=17). The
@@ -202,6 +205,8 @@ pub fn unwrap_tier_key_from_link(
     full_wrapped.extend_from_slice(&wrapped.nonce);
     full_wrapped.extend_from_slice(&wrapped.encrypted_key);
 
+    // TODO(R-C6.3): migrate to unwrap_secret_with_aad with LINK_TIER_KEY_AAD on top of the per-link BLAKE2b wrapping key.
+    #[allow(deprecated)]
     unwrap_key(&full_wrapped, wrapping_key)
 }
 

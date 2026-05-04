@@ -1016,6 +1016,8 @@ pub fn derive_account_key(
     let mut account_key_bytes = Zeroizing::new(vec![0_u8; KEY_BYTES]);
     getrandom::fill(account_key_bytes.as_mut_slice()).map_err(|_| MosaicCryptoError::RngFailure)?;
     let account_key = SecretKey::from_bytes(account_key_bytes.as_mut_slice())?;
+    // TODO(R-C6.3): migrate to wrap_secret_with_aad with ACCOUNT_KEY_WRAP_AAD constant.
+    #[allow(deprecated)]
     let wrapped_account_key = wrap_key(account_key.as_bytes(), &root_key)?;
 
     Ok(AccountKeyMaterial {
@@ -1036,6 +1038,8 @@ pub fn unwrap_account_key(
     profile: KdfProfile,
 ) -> Result<SecretKey, MosaicCryptoError> {
     let root_key = derive_root_key(password, user_salt, account_salt, profile)?;
+    // TODO(R-C6.3): migrate to unwrap_secret_with_aad with ACCOUNT_KEY_WRAP_AAD constant.
+    #[allow(deprecated)]
     let mut account_key_bytes = unwrap_key(wrapped_account_key, &root_key)?;
 
     if account_key_bytes.len() != KEY_BYTES {
@@ -1471,6 +1475,8 @@ pub fn wrap_account_key(
     profile: KdfProfile,
 ) -> Result<Vec<u8>, MosaicCryptoError> {
     let root_key = derive_root_key(password, user_salt, account_salt, profile)?;
+    // TODO(R-C6.3): migrate to wrap_secret_with_aad with ACCOUNT_KEY_WRAP_AAD constant.
+    #[allow(deprecated)]
     wrap_key(account_key.as_bytes(), &root_key)
 }
 
@@ -1664,6 +1670,17 @@ pub fn decrypt_shard_with_legacy_raw_key(
 /// - `InvalidInputLength` if `key_bytes` is empty or exceeds 100 MiB.
 /// - `RngFailure` if the OS CSPRNG is unavailable.
 /// - `AuthenticationFailed` if the AEAD cipher reports an unexpected error.
+#[cfg_attr(
+    not(debug_assertions),
+    deprecated(
+        since = "R-C6",
+        note = "Use wrap_secret_with_aad / unwrap_secret_with_aad with an explicit \
+                domain AAD label. Empty-AAD wraps are a compositional hazard \
+                (see ADR-006 F-1 attack chain). The shim exists only for \
+                backward-compatible reads of pre-v4 OPFS snapshots and the \
+                internal callers tracked under R-C6.3."
+    )
+)]
 pub fn wrap_key(key_bytes: &[u8], wrapper: &SecretKey) -> Result<Vec<u8>, MosaicCryptoError> {
     wrap_secret_with_aad(key_bytes, wrapper, &[])
 }
@@ -1720,6 +1737,17 @@ pub fn wrap_secret_with_aad(
 /// # Errors
 /// - `WrappedKeyTooShort` if `wrapped` is shorter than 41 bytes (24 nonce + 16 tag + 1 payload).
 /// - `AuthenticationFailed` if AEAD verification fails.
+#[cfg_attr(
+    not(debug_assertions),
+    deprecated(
+        since = "R-C6",
+        note = "Use wrap_secret_with_aad / unwrap_secret_with_aad with an explicit \
+                domain AAD label. Empty-AAD wraps are a compositional hazard \
+                (see ADR-006 F-1 attack chain). The shim exists only for \
+                backward-compatible reads of pre-v4 OPFS snapshots and the \
+                internal callers tracked under R-C6.3."
+    )
+)]
 pub fn unwrap_key(
     wrapped: &[u8],
     wrapper: &SecretKey,
