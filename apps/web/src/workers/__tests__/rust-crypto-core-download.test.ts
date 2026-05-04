@@ -9,6 +9,8 @@ const wasmMocks = vi.hoisted(() => ({
   downloadInitSnapshotV1: vi.fn(),
   downloadLoadSnapshotV1: vi.fn(),
   downloadVerifySnapshotV1: vi.fn(),
+  decryptShardWithSeedV1: vi.fn(),
+  verifyShardIntegrityV1: vi.fn(),
 }));
 
 vi.mock('../../generated/mosaic-wasm/mosaic_wasm.js', () => ({
@@ -19,6 +21,8 @@ vi.mock('../../generated/mosaic-wasm/mosaic_wasm.js', () => ({
   downloadInitSnapshotV1: wasmMocks.downloadInitSnapshotV1,
   downloadLoadSnapshotV1: wasmMocks.downloadLoadSnapshotV1,
   downloadVerifySnapshotV1: wasmMocks.downloadVerifySnapshotV1,
+  decryptShardWithSeedV1: wasmMocks.decryptShardWithSeedV1,
+  verifyShardIntegrityV1: wasmMocks.verifyShardIntegrityV1,
 }));
 
 import {
@@ -28,6 +32,8 @@ import {
   rustInitDownloadSnapshot,
   rustLoadDownloadSnapshot,
   rustVerifyDownloadSnapshot,
+  rustDecryptShardWithSeed,
+  rustVerifyShardIntegrity,
   type DownloadBuildPlanInput,
 } from '../rust-crypto-core';
 
@@ -74,6 +80,8 @@ describe('rust download facade wrappers', () => {
     wasmMocks.downloadInitSnapshotV1.mockReset();
     wasmMocks.downloadLoadSnapshotV1.mockReset();
     wasmMocks.downloadVerifySnapshotV1.mockReset();
+    wasmMocks.decryptShardWithSeedV1.mockReset();
+    wasmMocks.verifyShardIntegrityV1.mockReset();
   });
 
   it('applies a valid download event through WASM', async () => {
@@ -170,5 +178,43 @@ describe('rust download facade wrappers', () => {
     await expect(
       rustVerifyDownloadSnapshot(new Uint8Array([1]), new Uint8Array(32)),
     ).resolves.toEqual({ valid: false });
+  });
+
+  it('decrypts a shard with a stateless seed through WASM', async () => {
+    const plaintext = new Uint8Array([0x70, 0x74]);
+    const wasmResult = result({ code: 0, plaintext });
+    const envelope = new Uint8Array([0x65, 0x6e, 0x76]);
+    const seed = new Uint8Array(32).fill(0x42);
+    wasmMocks.decryptShardWithSeedV1.mockReturnValue(wasmResult);
+
+    await expect(rustDecryptShardWithSeed(envelope, seed)).resolves.toEqual(plaintext);
+    expect(wasmMocks.decryptShardWithSeedV1).toHaveBeenCalledWith(envelope, seed);
+    expect(wasmResult.free).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces wrong-key shard decrypt as a typed download decrypt error', async () => {
+    const wasmResult = result({ code: 728, plaintext: new Uint8Array() });
+    wasmMocks.decryptShardWithSeedV1.mockReturnValue(wasmResult);
+
+    await expect(
+      rustDecryptShardWithSeed(new Uint8Array([1]), new Uint8Array(32).fill(2)),
+    ).rejects.toSatisfy((error: unknown) => {
+      expectWorkerCode(error, WorkerCryptoErrorCode.DownloadDecrypt);
+      return true;
+    });
+    expect(wasmResult.free).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces tampered shard envelopes as typed download integrity errors', async () => {
+    const wasmResult = result({ code: 727 });
+    wasmMocks.verifyShardIntegrityV1.mockReturnValue(wasmResult);
+
+    await expect(
+      rustVerifyShardIntegrity(new Uint8Array([1]), new Uint8Array(32).fill(2)),
+    ).rejects.toSatisfy((error: unknown) => {
+      expectWorkerCode(error, WorkerCryptoErrorCode.DownloadIntegrity);
+      return true;
+    });
+    expect(wasmResult.free).toHaveBeenCalledTimes(1);
   });
 });

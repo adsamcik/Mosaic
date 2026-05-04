@@ -1,7 +1,8 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
-import { decryptShard as cryptoDecryptShard, deriveTierKeys, memzero } from '@mosaic/crypto';
+import { deriveTierKeys, memzero } from '@mosaic/crypto';
 import { DownloadError } from './crypto-pool';
+import { rustDecryptShardWithSeed, rustVerifyShardIntegrity } from './rust-crypto-core';
 import type { LinkDecryptionKey } from './types';
 
 interface CryptoPoolMemberApi {
@@ -12,9 +13,10 @@ interface CryptoPoolMemberApi {
 
 const memberApi: CryptoPoolMemberApi = {
   async verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void> {
-    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', copyToArrayBuffer(shardBytes)));
-    if (!constantTimeEqual(digest, expectedHash)) {
-      throw new DownloadError('Integrity', 'Shard SHA256 mismatch');
+    try {
+      await rustVerifyShardIntegrity(shardBytes, expectedHash);
+    } catch (error) {
+      throw new DownloadError('Integrity', 'Shard SHA256 mismatch', { cause: error });
     }
   },
 
@@ -22,9 +24,9 @@ const memberApi: CryptoPoolMemberApi = {
     const { fullKey, previewKey, thumbKey } = deriveTierKeys(epochSeed);
     try {
       try {
-        return await cryptoDecryptShard(shardBytes, fullKey);
+        return await rustDecryptShardWithSeed(shardBytes, fullKey);
       } catch {
-        return await cryptoDecryptShard(shardBytes, epochSeed);
+        return await rustDecryptShardWithSeed(shardBytes, epochSeed);
       }
     } catch (error) {
       throw new DownloadError('Decrypt', 'Shard AEAD decrypt failed', { cause: error });
@@ -40,29 +42,13 @@ const memberApi: CryptoPoolMemberApi = {
       throw new DownloadError('IllegalState', 'Link tier handles are not available inside pool-member workers');
     }
     try {
-      return await cryptoDecryptShard(shardBytes, tierKey);
+      return await rustDecryptShardWithSeed(shardBytes, tierKey);
     } catch (error) {
       throw new DownloadError('Decrypt', 'Shard AEAD decrypt failed', { cause: error });
     }
   },
 };
 
-function copyToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(bytes.byteLength);
-  copy.set(bytes);
-  return copy.buffer;
-}
-
-function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) {
-    return false;
-  }
-  let diff = 0;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    diff |= (left[index] ?? 0) ^ (right[index] ?? 0);
-  }
-  return diff === 0;
-}
 
 Comlink.expose(memberApi);
 

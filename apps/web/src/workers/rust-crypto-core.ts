@@ -889,6 +889,34 @@ export async function rustVerifyDownloadSnapshot(
 ): Promise<{ valid: boolean }> {
   return (await getRustFacade()).verifyDownloadSnapshot(snapshotBytes, checksum);
 }
+
+/**
+ * Stateless seed-based shard decrypt for the crypto worker pool.
+ * Returns the decrypted plaintext on success.
+ * Throws WorkerCryptoError on Decrypt/Integrity/InvalidEnvelope errors.
+ *
+ * Caller is responsible for zeroizing the returned Uint8Array after use.
+ */
+export async function rustDecryptShardWithSeed(
+  envelope: Uint8Array,
+  seed: Uint8Array,
+): Promise<Uint8Array> {
+  await ensureRustReady();
+  const result = rustWasm.decryptShardWithSeedV1(envelope, seed);
+  return consumeResult(result, 'decryptShardWithSeedV1', (r) =>
+    copyBytes(r.plaintext),
+  );
+}
+
+/** Verify a shard envelope SHA-256 against the manifest-bound expected hash. */
+export async function rustVerifyShardIntegrity(
+  envelope: Uint8Array,
+  expectedHash: Uint8Array,
+): Promise<void> {
+  await ensureRustReady();
+  const result = rustWasm.verifyShardIntegrityV1(envelope, expectedHash);
+  consumeResult(result, 'verifyShardIntegrityV1', () => undefined);
+}
 // ---------------------------------------------------------------------------
 // Legacy compatibility surface — used by Slice 0 wiring and the existing
 // rust-crypto-core unit tests. Slices 2-9 will replace each caller; for now
