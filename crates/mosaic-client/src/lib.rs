@@ -147,8 +147,12 @@ pub enum ClientErrorCode {
     PinValidationFailed = 800,
 }
 
+/// Opaque secret handle identifier.
+pub type SecretHandleId = u64;
 /// Opaque epoch-key handle identifier.
 pub type EpochHandleId = u64;
+/// Opaque derived share-link wrapping-key handle identifier.
+pub type LinkHandleId = SecretHandleId;
 /// Opaque share-link wrapping-state handle identifier.
 pub type LinkShareHandleId = u64;
 /// Opaque imported share-link tier-key handle identifier.
@@ -337,7 +341,7 @@ impl AccountUnlockResult {
         }
     }
 
-    const fn error(code: ClientErrorCode) -> Self {
+    fn error(code: ClientErrorCode) -> Self {
         Self { code, handle: 0 }
     }
 }
@@ -615,31 +619,31 @@ impl AuthKeypairResult {
 /// FFI-safe link-key derivation result.
 ///
 /// The 16-byte `link_id` is server-visible by design (it is the lookup
-/// token). The 32-byte `wrapping_key` stays client-side; the `Drop` impl
-/// proactively zeroes it so dropped results do not leak the wrapping key.
-///
-/// Intentionally does not derive `Debug` to avoid accidental logging of
-/// `wrapping_key`. Callers that need a privacy-safe log line should format
-/// only `code` and the length of `link_id`.
+/// token). The derived 32-byte wrapping key stays inside Rust behind
+/// `link_handle_id` and never crosses FFI.
 #[derive(Clone, PartialEq, Eq)]
 pub struct LinkKeysResult {
     pub code: ClientErrorCode,
     pub link_id: Vec<u8>,
-    pub wrapping_key: Vec<u8>,
+    pub link_handle_id: LinkHandleId,
 }
 
-impl Drop for LinkKeysResult {
-    fn drop(&mut self) {
-        self.wrapping_key.zeroize();
+impl fmt::Debug for LinkKeysResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkKeysResult")
+            .field("code", &self.code)
+            .field("link_id_len", &self.link_id.len())
+            .field("link_handle_id", &self.link_handle_id)
+            .finish()
     }
 }
 
 impl LinkKeysResult {
-    fn ok(link_id: Vec<u8>, wrapping_key: Vec<u8>) -> Self {
+    fn ok(link_id: Vec<u8>, link_handle_id: LinkHandleId) -> Self {
         Self {
             code: ClientErrorCode::Ok,
             link_id,
-            wrapping_key,
+            link_handle_id,
         }
     }
 
@@ -647,7 +651,7 @@ impl LinkKeysResult {
         Self {
             code,
             link_id: Vec::new(),
-            wrapping_key: Vec::new(),
+            link_handle_id: 0,
         }
     }
 }
@@ -1340,6 +1344,28 @@ pub fn close_secret_handle(handle: u64) -> Result<(), ClientError> {
     Ok(())
 }
 
+fn clone_secret_bytes_for_handle(
+    handle: SecretHandleId,
+) -> Result<Zeroizing<Vec<u8>>, ClientError> {
+    let registry = secret_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "secret registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::SecretHandleNotFound,
+                "secret handle is not open",
+            )
+        })?;
+    Ok(Zeroizing::new(record.bytes.to_vec()))
+}
+
 fn unlock_account_key_result(request: AccountUnlockRequest<'_>) -> Result<u64, ClientError> {
     let AccountUnlockRequest {
         password,
@@ -1924,18 +1950,62 @@ pub fn generate_link_secret() -> BytesResult {
     }
 }
 
-/// Derives the `(link_id, wrapping_key)` pair from a 32-byte share-link
-/// secret.
+/// Derives the public link identifier and stores the derived wrapping key
+/// behind a Rust-owned handle.
 ///
-/// `link_id` is server-visible; `wrapping_key` MUST stay client-side.
+/// `link_id` is server-visible; the wrapping key never crosses FFI.
 #[must_use]
 pub fn derive_link_keys(link_secret: &[u8]) -> LinkKeysResult {
-    match crypto_derive_link_keys(link_secret) {
-        Ok(LinkKeys {
-            link_id,
-            wrapping_key,
-        }) => LinkKeysResult::ok(link_id.to_vec(), wrapping_key.as_bytes().to_vec()),
-        Err(error) => LinkKeysResult::error(map_crypto_error(error)),
+    match derive_link_keys_result(link_secret) {
+        Ok(result) => result,
+        Err(error) => LinkKeysResult::error(error.code),
+    }
+}
+
+fn derive_link_keys_result(link_secret: &[u8]) -> Result<LinkKeysResult, ClientError> {
+    let LinkKeys {
+        link_id,
+        wrapping_key,
+    } = crypto_derive_link_keys(link_secret).map_err(client_error_from_crypto)?;
+    let link_handle_id = open_secret_handle(wrapping_key.as_bytes())?;
+    Ok(LinkKeysResult::ok(link_id.to_vec(), link_handle_id))
+}
+
+/// Wraps a caller-provided tier-key handle for a derived share-link handle.
+///
+/// Both handles resolve through the Rust secret registry. The link wrapping
+/// key and tier key are cloned only into short-lived zeroizing buffers for the
+/// AEAD operation, and neither secret crosses FFI.
+#[must_use]
+pub fn wrap_tier_key_for_link_handle(
+    link_handle_id: LinkHandleId,
+    tier_key_handle: SecretHandleId,
+    tier_byte: u8,
+) -> WrappedTierKeyResult {
+    let tier = match ShardTier::try_from(tier_byte) {
+        Ok(value) => value,
+        Err(error) => return WrappedTierKeyResult::error(map_domain_error(error)),
+    };
+    let mut tier_key_bytes = match clone_secret_bytes_for_handle(tier_key_handle) {
+        Ok(value) => value,
+        Err(error) => return WrappedTierKeyResult::error(error.code),
+    };
+    let mut wrapping_key_bytes = match clone_secret_bytes_for_handle(link_handle_id) {
+        Ok(value) => value,
+        Err(error) => return WrappedTierKeyResult::error(error.code),
+    };
+    let wrapping_key = match SecretKey::from_bytes(wrapping_key_bytes.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return WrappedTierKeyResult::error(map_crypto_error(error)),
+    };
+
+    match crypto_wrap_tier_key_for_link(tier_key_bytes.as_mut_slice(), tier, &wrapping_key) {
+        Ok(WrappedTierKey {
+            tier,
+            nonce,
+            encrypted_key,
+        }) => WrappedTierKeyResult::ok(tier.to_byte(), nonce.to_vec(), encrypted_key),
+        Err(error) => WrappedTierKeyResult::error(map_crypto_error(error)),
     }
 }
 
@@ -2793,6 +2863,32 @@ fn open_epoch_key_handle_result(
     insert_epoch_key_handle(account_key_handle, key_material, None, Vec::new())
 }
 
+/// Imports an epoch handle from a verified raw-recipient bundle without
+/// returning the recovered epoch seed across FFI.
+///
+/// This legacy cross-client-vector path has no account handle available, so the
+/// resulting handle is intentionally non-persistable (`wrapped_epoch_seed` is
+/// empty) but can exercise handle-based consumers in the same process.
+#[must_use]
+pub fn import_unwrapped_epoch_bundle_handle(
+    epoch_id: u32,
+    epoch_seed_bytes: &[u8],
+    sign_secret_seed: &[u8],
+    sign_public_bytes: &[u8],
+) -> EpochKeyHandleResult {
+    match import_epoch_key_handle_from_bundle_material(
+        0,
+        epoch_id,
+        epoch_seed_bytes,
+        sign_secret_seed,
+        sign_public_bytes,
+        Vec::new(),
+    ) {
+        Ok(value) => value,
+        Err(error) => EpochKeyHandleResult::error(error.code),
+    }
+}
+
 /// Imports an epoch handle from the cleartext bundle payload that comes out of
 /// `verify_and_open_bundle_with_identity_handle`. The caller-provided seed
 /// material is wrapped under the account key for callers that want to persist
@@ -2859,6 +2955,60 @@ fn import_epoch_key_handle_from_bundle_result(
     let wrapped_epoch_seed = wrap_secret_with_aad(epoch_seed_bytes, &account_key, EPOCH_SEED_AAD)
         .map_err(client_error_from_crypto)?;
 
+    insert_epoch_key_handle_from_bundle_material(
+        account_key_handle,
+        epoch_id,
+        epoch_seed_bytes,
+        sign_keypair,
+        wrapped_epoch_seed,
+    )
+}
+
+fn import_epoch_key_handle_from_bundle_material(
+    account_handle: u64,
+    epoch_id: u32,
+    epoch_seed_bytes: &[u8],
+    sign_secret_seed: &[u8],
+    sign_public_bytes: &[u8],
+    wrapped_epoch_seed: Vec<u8>,
+) -> Result<EpochKeyHandleResult, ClientError> {
+    if epoch_seed_bytes.len() != 32 {
+        return Err(ClientError::new(
+            ClientErrorCode::InvalidKeyLength,
+            "epoch_seed must be exactly 32 bytes",
+        ));
+    }
+
+    let mut sign_seed_buf = Zeroizing::new(sign_secret_seed.to_vec());
+    let sign_secret_key = ManifestSigningSecretKey::from_seed(sign_seed_buf.as_mut_slice())
+        .map_err(client_error_from_crypto)?;
+    let derived_public = sign_secret_key.public_key();
+    let provided_public = ManifestSigningPublicKey::from_bytes(sign_public_bytes)
+        .map_err(client_error_from_crypto)?;
+    if derived_public.as_bytes() != provided_public.as_bytes() {
+        return Err(ClientError::new(
+            ClientErrorCode::InvalidPublicKey,
+            "sign_public_bytes does not match the public key derived from sign_secret_seed",
+        ));
+    }
+    let sign_keypair = ManifestSigningKeypair::from_parts(sign_secret_key, provided_public);
+
+    insert_epoch_key_handle_from_bundle_material(
+        account_handle,
+        epoch_id,
+        epoch_seed_bytes,
+        sign_keypair,
+        wrapped_epoch_seed,
+    )
+}
+
+fn insert_epoch_key_handle_from_bundle_material(
+    account_handle: u64,
+    epoch_id: u32,
+    epoch_seed_bytes: &[u8],
+    sign_keypair: ManifestSigningKeypair,
+    wrapped_epoch_seed: Vec<u8>,
+) -> Result<EpochKeyHandleResult, ClientError> {
     // `derive_epoch_key_material` zeroizes its input — copy first so we leave
     // the caller-provided slice untouched (the caller is expected to wipe it
     // on their side as well).
@@ -2867,7 +3017,7 @@ fn import_epoch_key_handle_from_bundle_result(
         .map_err(client_error_from_crypto)?;
 
     insert_epoch_key_handle(
-        account_key_handle,
+        account_handle,
         key_material,
         Some(sign_keypair),
         wrapped_epoch_seed,

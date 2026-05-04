@@ -106,10 +106,6 @@ struct_field_allowlist = {
     "crates/mosaic-uniffi/src/lib.rs::IdentityHandleResult.wrapped_seed": "Field stores identity seed encrypted by account L2; opening requires matching account handle.",
     # Field stores epoch seed encrypted by account L2; opening requires matching account handle.
     "crates/mosaic-uniffi/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed": "Field stores epoch seed encrypted by account L2; opening requires matching account handle.",
-    # MIGRATION-PENDING: see r-c5-5-migrate-linkkeysffiresult-wrapping-key; raw link wrapping key.
-    "crates/mosaic-uniffi/src/lib.rs::LinkKeysFfiResult.wrapping_key": "MIGRATION-PENDING: see r-c5-5-migrate-linkkeysffiresult-wrapping-key; raw link wrapping key.",
-    # MIGRATION-PENDING: see r-c5-5-migrate-openedbundleffiresult-epoch-seed; raw epoch seed.
-    "crates/mosaic-uniffi/src/lib.rs::OpenedBundleFfiResult.epoch_seed": "MIGRATION-PENDING: see r-c5-5-migrate-openedbundleffiresult-epoch-seed; raw epoch seed.",
 }
 dts_allowlist = {
     # Type exposes L2 encrypted under password-derived L1; plaintext L2 is not typed as JS output.

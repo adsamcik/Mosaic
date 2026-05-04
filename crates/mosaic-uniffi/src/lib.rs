@@ -2058,16 +2058,28 @@ fn map_crypto_error_uniffi(error: mosaic_crypto::MosaicCryptoError) -> u16 {
 // commit `fb26573` (M5) discipline.
 // ---------------------------------------------------------------------------
 
-/// UniFFI record for raw-secret link-key derivation results.
+// UniFFI migration graveyard (pre-v1 R-C5.5 audit).
+//
+// Removed raw-secret FFI surfaces:
+// - `LinkKeysFfiResult.wrapping_key` — removal commit: this R-C5.5 commit;
+//   reason: returned raw derived link wrapping key; replacement:
+//   `LinkKeysFfiResult.link_handle_id` + `wrap_tier_key_for_link_handle`.
+// - `OpenedBundleFfiResult.epoch_seed` — removal commit: this R-C5.5 commit;
+//   reason: returned raw recovered L3 epoch seed; replacement:
+//   `OpenedBundleFfiResult.epoch_handle_id`.
+//
+// Keep this graveyard close to the legacy vector-only FFI block so future
+// audit passes can identify intentionally removed pre-v1 raw-secret fields.
+
+/// UniFFI record for link-key derivation results.
 ///
-/// `link_id` is server-visible (16 bytes); `wrapping_key` is
-/// secret-equivalent (32 bytes) and the cross-client vector requires
-/// byte-equality on it.
+/// `link_id` is server-visible (16 bytes); the derived wrapping key is retained
+/// inside Rust behind `link_handle_id`.
 #[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct LinkKeysFfiResult {
     pub code: u16,
     pub link_id: Vec<u8>,
-    pub wrapping_key: Vec<u8>,
+    pub link_handle_id: u64,
 }
 
 impl fmt::Debug for LinkKeysFfiResult {
@@ -2075,7 +2087,27 @@ impl fmt::Debug for LinkKeysFfiResult {
         f.debug_struct("LinkKeysFfiResult")
             .field("code", &self.code)
             .field("link_id_len", &self.link_id.len())
-            .field("wrapping_key_len", &self.wrapping_key.len())
+            .field("link_handle_id", &self.link_handle_id)
+            .finish()
+    }
+}
+
+/// UniFFI record for link-share wrapped tier keys.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct WrappedTierKeyFfiResult {
+    pub code: u16,
+    pub tier: u8,
+    pub nonce: Vec<u8>,
+    pub ciphertext: Vec<u8>,
+}
+
+impl fmt::Debug for WrappedTierKeyFfiResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WrappedTierKeyFfiResult")
+            .field("code", &self.code)
+            .field("tier", &self.tier)
+            .field("nonce_len", &self.nonce.len())
+            .field("ciphertext_len", &self.ciphertext.len())
             .finish()
     }
 }
@@ -2124,8 +2156,8 @@ impl fmt::Debug for AuthChallengeVerifyFfiResult {
 /// Mirrors `mosaic_client::OpenedBundleResult` but intentionally omits
 /// `sign_secret_seed` — production sealed-sharing flows use the handle-based
 /// `verify_and_open_bundle_with_identity_handle` so the per-epoch manifest
-/// signing secret stays inside the registry. `epoch_seed` is
-/// secret-equivalent and the cross-client vector asserts byte-equality on it.
+/// signing secret stays inside the registry. The recovered epoch seed is
+/// imported into Rust and exposed only as `epoch_handle_id`.
 #[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct OpenedBundleFfiResult {
     pub code: u16,
@@ -2133,7 +2165,7 @@ pub struct OpenedBundleFfiResult {
     pub album_id: String,
     pub epoch_id: u32,
     pub recipient_pubkey: Vec<u8>,
-    pub epoch_seed: Vec<u8>,
+    pub epoch_handle_id: u64,
     pub sign_public_key: Vec<u8>,
 }
 
@@ -2145,7 +2177,7 @@ impl fmt::Debug for OpenedBundleFfiResult {
             .field("album_id_len", &self.album_id.len())
             .field("epoch_id", &self.epoch_id)
             .field("recipient_pubkey_len", &self.recipient_pubkey.len())
-            .field("epoch_seed_len", &self.epoch_seed.len())
+            .field("epoch_handle_id", &self.epoch_handle_id)
             .field("sign_public_key_len", &self.sign_public_key.len())
             .finish()
     }
@@ -2170,35 +2202,45 @@ impl fmt::Debug for ContentDecryptFfiResult {
     }
 }
 
-/// Derives the `(link_id, wrapping_key)` pair from a 32-byte share-link
-/// secret.
+/// Derives the link identifier from a 32-byte share-link secret and stores the
+/// derived wrapping key behind a Rust-owned handle.
 ///
 /// Used by the cross-client `link_keys.json` corpus driver. Production code
 /// should use the higher-level link-sharing helpers, not this raw-input
 /// surface.
 ///
-/// SECURITY: The caller-provided link secret is wiped on the Rust side
-/// before this function returns. `wrapping_key` in the result is
-/// secret-equivalent — Kotlin callers MUST wipe the byte array after use.
+/// SECURITY: The caller-provided link secret is wiped on the Rust side before
+/// this function returns. The derived wrapping key never crosses FFI.
 #[uniffi::export]
 #[must_use]
 pub fn derive_link_keys_from_raw_secret(link_secret: Vec<u8>) -> LinkKeysFfiResult {
     let mut secret_buf = link_secret;
-    let result = match mosaic_crypto::derive_link_keys(&secret_buf) {
-        Ok(keys) => LinkKeysFfiResult {
-            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
-            link_id: keys.link_id.to_vec(),
-            wrapping_key: keys.wrapping_key.as_bytes().to_vec(),
-        },
-        Err(error) => LinkKeysFfiResult {
-            code: map_crypto_error_uniffi(error),
-            link_id: Vec::new(),
-            wrapping_key: Vec::new(),
-        },
+    let derived = mosaic_client::derive_link_keys(&secret_buf);
+    let result = LinkKeysFfiResult {
+        code: derived.code.as_u16(),
+        link_id: derived.link_id,
+        link_handle_id: derived.link_handle_id,
     };
     use zeroize::Zeroize;
     secret_buf.zeroize();
     result
+}
+
+/// Wraps a tier key handle for a derived link wrapping-key handle.
+#[uniffi::export]
+#[must_use]
+pub fn wrap_tier_key_for_link_handle(
+    handle_id: u64,
+    tier_key_handle: u64,
+    tier: u8,
+) -> WrappedTierKeyFfiResult {
+    let wrapped = mosaic_client::wrap_tier_key_for_link_handle(handle_id, tier_key_handle, tier);
+    WrappedTierKeyFfiResult {
+        code: wrapped.code.as_u16(),
+        tier: wrapped.tier,
+        nonce: wrapped.nonce,
+        ciphertext: wrapped.encrypted_key,
+    }
 }
 
 /// Derives identity public keys + a deterministic Ed25519 detached
@@ -2375,11 +2417,11 @@ pub fn verify_auth_challenge_signature(
 /// Production code should use the handle-based
 /// `verify_and_open_bundle_with_identity_handle`.
 ///
-/// SECURITY: `epoch_seed` in the result is secret-equivalent. Kotlin
-/// callers MUST wipe the byte array after use. The recipient seed is wiped
-/// on the Rust side before return. `sign_secret_seed` (the per-epoch
-/// manifest signing secret carried by `mosaic_client::OpenedBundleResult`)
-/// is intentionally NOT exposed across this FFI surface.
+/// SECURITY: The recovered `epoch_seed` is imported into a Rust-owned epoch
+/// handle before return. The recipient seed is wiped on the Rust side before
+/// return. `sign_secret_seed` (the per-epoch manifest signing secret carried by
+/// `mosaic_client::OpenedBundleResult`) is intentionally NOT exposed across
+/// this FFI surface.
 #[uniffi::export]
 #[must_use]
 #[allow(clippy::too_many_arguments)]
@@ -2400,7 +2442,7 @@ pub fn verify_and_open_bundle_with_recipient_seed(
         album_id: String::new(),
         epoch_id: 0,
         recipient_pubkey: Vec::new(),
-        epoch_seed: Vec::new(),
+        epoch_handle_id: 0,
         sign_public_key: Vec::new(),
     };
 
@@ -2452,15 +2494,23 @@ pub fn verify_and_open_bundle_with_recipient_seed(
     match outcome {
         Ok(bundle) => {
             let recipient_pubkey = bundle.recipient_pubkey.to_vec();
-            let epoch_seed = bundle.epoch_seed.as_bytes().to_vec();
             let sign_public_key = bundle.sign_public_key.as_bytes().to_vec();
+            let epoch_handle = mosaic_client::import_unwrapped_epoch_bundle_handle(
+                bundle.epoch_id,
+                bundle.epoch_seed.as_bytes(),
+                bundle.sign_secret_key.expose_seed_bytes(),
+                bundle.sign_public_key.as_bytes(),
+            );
+            if epoch_handle.code != mosaic_client::ClientErrorCode::Ok {
+                return empty_result(epoch_handle.code.as_u16());
+            }
             OpenedBundleFfiResult {
                 code: mosaic_client::ClientErrorCode::Ok.as_u16(),
                 version: bundle.version,
                 album_id: bundle.album_id,
                 epoch_id: bundle.epoch_id,
                 recipient_pubkey,
-                epoch_seed,
+                epoch_handle_id: epoch_handle.handle,
                 sign_public_key,
             }
         }
