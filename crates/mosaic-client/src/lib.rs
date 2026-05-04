@@ -701,14 +701,14 @@ impl WrappedTierKeyResult {
 
 /// FFI-safe result for creating a link-share handle and its first wrapped tier.
 ///
-/// `link_secret_for_url` is the protocol-mandated URL fragment seed. It is not
-/// the derived wrapping key and must only be placed in the share URL fragment.
+/// `link_url_token` is a bearer URL fragment token by design. It is not
+/// derived wrapping key material; anyone with the URL fragment has access.
 #[derive(Clone, PartialEq, Eq)]
 pub struct CreateLinkShareHandleResult {
     pub code: ClientErrorCode,
     pub handle: LinkShareHandleId,
     pub link_id: Vec<u8>,
-    pub link_secret_for_url: Vec<u8>,
+    pub link_url_token: Vec<u8>,
     pub tier: u8,
     pub nonce: Vec<u8>,
     pub encrypted_key: Vec<u8>,
@@ -720,7 +720,7 @@ impl fmt::Debug for CreateLinkShareHandleResult {
             .field("code", &self.code)
             .field("handle", &self.handle)
             .field("link_id_len", &self.link_id.len())
-            .field("link_secret_for_url_len", &self.link_secret_for_url.len())
+            .field("link_url_token_len", &self.link_url_token.len())
             .field("tier", &self.tier)
             .field("nonce_len", &self.nonce.len())
             .field("encrypted_key_len", &self.encrypted_key.len())
@@ -732,14 +732,14 @@ impl CreateLinkShareHandleResult {
     fn ok(
         handle: LinkShareHandleId,
         link_id: Vec<u8>,
-        link_secret_for_url: Vec<u8>,
+        link_url_token: Vec<u8>,
         wrapped: WrappedTierKeyResult,
     ) -> Self {
         Self {
             code: ClientErrorCode::Ok,
             handle,
             link_id,
-            link_secret_for_url,
+            link_url_token,
             tier: wrapped.tier,
             nonce: wrapped.nonce,
             encrypted_key: wrapped.encrypted_key,
@@ -751,7 +751,7 @@ impl CreateLinkShareHandleResult {
             code,
             handle: 0,
             link_id: Vec::new(),
-            link_secret_for_url: Vec::new(),
+            link_url_token: Vec::new(),
             tier: 0,
             nonce: Vec::new(),
             encrypted_key: Vec::new(),
@@ -1102,14 +1102,14 @@ static NEXT_EPOCH_HANDLE: AtomicU64 = AtomicU64::new(1);
 static EPOCH_REGISTRY: OnceLock<Mutex<HashMap<u64, EpochRecord>>> = OnceLock::new();
 
 struct LinkShareRecord {
-    link_secret_for_url: Zeroizing<Vec<u8>>,
+    link_url_token: Zeroizing<Vec<u8>>,
     link_wrap_bytes: Zeroizing<Vec<u8>>,
     open: bool,
 }
 
 impl LinkShareRecord {
     fn close(&mut self) {
-        self.link_secret_for_url.zeroize();
+        self.link_url_token.zeroize();
         self.link_wrap_bytes.zeroize();
         self.open = false;
     }
@@ -2092,9 +2092,9 @@ pub fn unwrap_tier_key_from_link_bytes(
 /// Creates a share-link handle and wraps the first tier key without exposing
 /// the derived per-link wrapping key across FFI.
 ///
-/// `link_secret_for_url` in the result is the protocol-mandated URL fragment
-/// seed. It is intentionally returned so the creator can build the URL; it is
-/// not the derived wrapping key used to seal tier keys.
+/// `link_url_token` in the result is a bearer URL fragment token by design.
+/// It is intentionally returned so the creator can build the URL; it is not
+/// the derived wrapping key used to seal tier keys.
 #[must_use]
 pub fn create_link_share_handle(
     _album_id: String,
@@ -2110,8 +2110,8 @@ pub fn create_link_share_handle(
 /// Imports an existing URL fragment seed into a share-link handle for wrapping
 /// additional epoch tier keys without exposing the derived wrapping key.
 #[must_use]
-pub fn import_link_share_handle(link_secret_for_url: &[u8]) -> LinkTierHandleResult {
-    match import_link_share_handle_result(link_secret_for_url) {
+pub fn import_link_share_handle(link_url_token: &[u8]) -> LinkTierHandleResult {
+    match import_link_share_handle_result(link_url_token) {
         Ok((handle, link_id)) => LinkTierHandleResult::ok(handle, link_id, 0),
         Err(error) => LinkTierHandleResult::error(error.code),
     }
@@ -2133,14 +2133,14 @@ pub fn wrap_link_tier_handle(
 /// Imports a share-link wrapped tier key into an opaque tier handle.
 #[must_use]
 pub fn import_link_tier_handle(
-    link_secret_for_url: &[u8],
+    link_url_token: &[u8],
     wrapped_nonce: &[u8],
     encrypted_key: &[u8],
     album_id: String,
     tier_byte: u8,
 ) -> LinkTierHandleResult {
     match import_link_tier_handle_result(
-        link_secret_for_url,
+        link_url_token,
         wrapped_nonce,
         encrypted_key,
         album_id,
@@ -2180,34 +2180,34 @@ fn create_link_share_handle_result(
     tier_byte: u8,
 ) -> Result<CreateLinkShareHandleResult, ClientError> {
     let secret = crypto_generate_link_secret().map_err(client_error_from_crypto)?;
-    let link_secret_for_url = secret.as_slice().to_vec();
+    let link_url_token = secret.as_slice().to_vec();
     let LinkKeys {
         link_id,
         wrapping_key,
     } = crypto_derive_link_keys(secret.as_slice()).map_err(client_error_from_crypto)?;
-    let handle = insert_link_share_handle(link_secret_for_url.clone(), wrapping_key.as_bytes())?;
+    let handle = insert_link_share_handle(link_url_token.clone(), wrapping_key.as_bytes())?;
     let wrapped = wrap_link_tier_handle_result(handle, epoch_handle, tier_byte)?;
     Ok(CreateLinkShareHandleResult::ok(
         handle,
         link_id.to_vec(),
-        link_secret_for_url,
+        link_url_token,
         wrapped,
     ))
 }
 
 fn import_link_share_handle_result(
-    link_secret_for_url: &[u8],
+    link_url_token: &[u8],
 ) -> Result<(LinkShareHandleId, Vec<u8>), ClientError> {
     let LinkKeys {
         link_id,
         wrapping_key,
-    } = crypto_derive_link_keys(link_secret_for_url).map_err(client_error_from_crypto)?;
-    let handle = insert_link_share_handle(link_secret_for_url.to_vec(), wrapping_key.as_bytes())?;
+    } = crypto_derive_link_keys(link_url_token).map_err(client_error_from_crypto)?;
+    let handle = insert_link_share_handle(link_url_token.to_vec(), wrapping_key.as_bytes())?;
     Ok((handle, link_id.to_vec()))
 }
 
 fn insert_link_share_handle(
-    link_secret_for_url: Vec<u8>,
+    link_url_token: Vec<u8>,
     link_wrap_bytes: &[u8],
 ) -> Result<LinkShareHandleId, ClientError> {
     let handle = allocate_handle(&NEXT_LINK_SHARE_HANDLE)?;
@@ -2227,7 +2227,7 @@ fn insert_link_share_handle(
     guard.insert(
         handle,
         LinkShareRecord {
-            link_secret_for_url: Zeroizing::new(link_secret_for_url),
+            link_url_token: Zeroizing::new(link_url_token),
             link_wrap_bytes: Zeroizing::new(link_wrap_bytes.to_vec()),
             open: true,
         },
@@ -2274,7 +2274,7 @@ fn wrap_link_tier_handle_result(
 }
 
 fn import_link_tier_handle_result(
-    link_secret_for_url: &[u8],
+    link_url_token: &[u8],
     wrapped_nonce: &[u8],
     encrypted_key: &[u8],
     album_id: String,
@@ -2284,7 +2284,7 @@ fn import_link_tier_handle_result(
     let LinkKeys {
         link_id,
         wrapping_key,
-    } = crypto_derive_link_keys(link_secret_for_url).map_err(client_error_from_crypto)?;
+    } = crypto_derive_link_keys(link_url_token).map_err(client_error_from_crypto)?;
     if wrapped_nonce.len() != 24 {
         return Err(ClientError::new(
             ClientErrorCode::InvalidInputLength,

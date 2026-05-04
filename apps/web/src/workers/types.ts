@@ -970,14 +970,14 @@ export interface CryptoWorkerApi {
   ): Promise<{
     linkShareHandleId: LinkShareHandleId;
     linkId: Uint8Array;
-    linkSecretForUrl: Uint8Array;
+    linkUrlToken: Uint8Array;
     tier: number;
     nonce: Uint8Array;
     encryptedKey: Uint8Array;
   }>;
 
   importLinkShareHandle(
-    linkSecretForUrl: Uint8Array,
+    linkUrlToken: Uint8Array,
   ): Promise<{
     linkShareHandleId: LinkShareHandleId;
     linkId: Uint8Array;
@@ -990,7 +990,7 @@ export interface CryptoWorkerApi {
   ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
 
   importLinkTierHandle(
-    linkSecretForUrl: Uint8Array,
+    linkUrlToken: Uint8Array,
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     albumId: string,

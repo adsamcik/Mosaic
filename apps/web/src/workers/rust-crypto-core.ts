@@ -535,7 +535,7 @@ export class RustHandleFacade {
   ): {
     handle: bigint;
     linkId: Uint8Array;
-    linkSecretForUrl: Uint8Array;
+    linkUrlToken: Uint8Array;
     tier: number;
     nonce: Uint8Array;
     encryptedKey: Uint8Array;
@@ -544,19 +544,19 @@ export class RustHandleFacade {
     return consumeResult(result, 'createLinkShareHandle', (r) => ({
       handle: r.handle,
       linkId: copyBytes(r.linkId),
-      linkSecretForUrl: copyBytes(r.linkSecretForUrl),
+      linkUrlToken: copyBytes(r.linkUrlToken),
       tier: r.tier,
       nonce: copyBytes(r.nonce),
       encryptedKey: copyBytes(r.encryptedKey),
     }));
   }
 
-  importLinkShareHandle(linkSecretForUrl: Uint8Array): {
+  importLinkShareHandle(linkUrlToken: Uint8Array): {
     handle: bigint;
     linkId: Uint8Array;
     tier: number;
   } {
-    const result = rustWasm.importLinkShareHandle(linkSecretForUrl);
+    const result = rustWasm.importLinkShareHandle(linkUrlToken);
     return consumeResult(result, 'importLinkShareHandle', (r) => ({
       handle: r.handle,
       linkId: copyBytes(r.linkId),
@@ -582,14 +582,14 @@ export class RustHandleFacade {
   }
 
   importLinkTierHandle(
-    linkSecretForUrl: Uint8Array,
+    linkUrlToken: Uint8Array,
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     albumId: string,
     tierByte: number,
   ): { handle: bigint; linkId: Uint8Array; tier: number } {
     const result = rustWasm.importLinkTierHandle(
-      linkSecretForUrl,
+      linkUrlToken,
       nonce,
       encryptedKey,
       albumId,

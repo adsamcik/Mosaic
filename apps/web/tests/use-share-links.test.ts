@@ -114,7 +114,7 @@ function HookHarness({ albumId, onResult }: HookHarnessProps) {
 }
 
 const linkShareHandleId = 'lnks_test-handle-id';
-const linkSecretForUrl = new Uint8Array(32).fill(4);
+const linkUrlToken = new Uint8Array(32).fill(4);
 const linkIdBytes = new Uint8Array(16).fill(5);
 const ownerEncryptedSecret = new Uint8Array(48).fill(6);
 
@@ -146,7 +146,7 @@ describe('useShareLinks', () => {
     mockCryptoClient.wrapWithAccountKey.mockResolvedValue(ownerEncryptedSecret);
     mockCryptoClient.createLinkShareHandle.mockResolvedValue({
       linkShareHandleId,
-      linkSecretForUrl,
+      linkUrlToken,
       linkId: linkIdBytes,
       ...wrappedTier(1),
     });
@@ -243,7 +243,7 @@ describe('useShareLinks', () => {
         'epch_test-handle-id',
         2,
       );
-      expect(mockCryptoClient.wrapWithAccountKey).toHaveBeenCalledWith(linkSecretForUrl);
+      expect(mockCryptoClient.wrapWithAccountKey).toHaveBeenCalledWith(linkUrlToken);
       expect(mockApi.createShareLink).toHaveBeenCalledWith('album-1', {
         accessTier: 2,
         linkId: toTestBase64(linkIdBytes),
@@ -264,7 +264,7 @@ describe('useShareLinks', () => {
         ],
       });
       expect(mockEncodeLinkId).toHaveBeenCalledWith(linkIdBytes);
-      expect(mockEncodeLinkSecret).toHaveBeenCalledWith(linkSecretForUrl);
+      expect(mockEncodeLinkSecret).toHaveBeenCalledWith(linkUrlToken);
       expect(mockCryptoClient.closeLinkShareHandle).toHaveBeenCalledWith(linkShareHandleId);
     });
 

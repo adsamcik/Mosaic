@@ -304,13 +304,13 @@ export class CreateLinkShareHandleResult {
         }
     }
     /**
-     * URL fragment seed allowed by the link-share protocol; not a derived key.
+     * Bearer URL fragment token allowed by the link-share protocol.
      * @returns {Uint8Array}
      */
-    get linkSecretForUrl() {
+    get linkUrlToken() {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.createlinksharehandleresult_linkSecretForUrl(retptr, this.__wbg_ptr);
+            wasm.createlinksharehandleresult_linkUrlToken(retptr, this.__wbg_ptr);
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
@@ -1907,11 +1907,11 @@ export function identitySigningPubkey(handle) {
 
 /**
  * Imports a URL fragment seed into a share-link handle through WASM.
- * @param {Uint8Array} link_secret_for_url
+ * @param {Uint8Array} link_url_token
  * @returns {LinkTierHandleResult}
  */
-export function importLinkShareHandle(link_secret_for_url) {
-    const ptr0 = passArray8ToWasm0(link_secret_for_url, wasm.__wbindgen_export2);
+export function importLinkShareHandle(link_url_token) {
+    const ptr0 = passArray8ToWasm0(link_url_token, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.importLinkShareHandle(ptr0, len0);
     return LinkTierHandleResult.__wrap(ret);
@@ -1919,15 +1919,15 @@ export function importLinkShareHandle(link_secret_for_url) {
 
 /**
  * Imports a wrapped tier key into a link-tier handle through WASM.
- * @param {Uint8Array} link_secret_for_url
+ * @param {Uint8Array} link_url_token
  * @param {Uint8Array} nonce
  * @param {Uint8Array} encrypted_key
  * @param {string} album_id
  * @param {number} tier_byte
  * @returns {LinkTierHandleResult}
  */
-export function importLinkTierHandle(link_secret_for_url, nonce, encrypted_key, album_id, tier_byte) {
-    const ptr0 = passArray8ToWasm0(link_secret_for_url, wasm.__wbindgen_export2);
+export function importLinkTierHandle(link_url_token, nonce, encrypted_key, album_id, tier_byte) {
+    const ptr0 = passArray8ToWasm0(link_url_token, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(nonce, wasm.__wbindgen_export2);
     const len1 = WASM_VECTOR_LEN;

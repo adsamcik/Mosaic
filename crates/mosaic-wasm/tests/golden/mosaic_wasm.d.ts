@@ -103,9 +103,9 @@ export class CreateLinkShareHandleResult {
     readonly handle: bigint;
     readonly linkId: Uint8Array;
     /**
-     * URL fragment seed allowed by the link-share protocol; not a derived key.
+     * Bearer URL fragment token allowed by the link-share protocol.
      */
-    readonly linkSecretForUrl: Uint8Array;
+    readonly linkUrlToken: Uint8Array;
     readonly nonce: Uint8Array;
     readonly tier: number;
 }
@@ -624,12 +624,12 @@ export function identitySigningPubkey(handle: bigint): BytesResult;
 /**
  * Imports a URL fragment seed into a share-link handle through WASM.
  */
-export function importLinkShareHandle(link_secret_for_url: Uint8Array): LinkTierHandleResult;
+export function importLinkShareHandle(link_url_token: Uint8Array): LinkTierHandleResult;
 
 /**
  * Imports a wrapped tier key into a link-tier handle through WASM.
  */
-export function importLinkTierHandle(link_secret_for_url: Uint8Array, nonce: Uint8Array, encrypted_key: Uint8Array, album_id: string, tier_byte: number): LinkTierHandleResult;
+export function importLinkTierHandle(link_url_token: Uint8Array, nonce: Uint8Array, encrypted_key: Uint8Array, album_id: string, tier_byte: number): LinkTierHandleResult;
 
 /**
  * Initializes an album sync coordinator through a primitive WASM proof surface.
@@ -789,7 +789,7 @@ export interface InitOutput {
     readonly createlinksharehandleresult_encryptedKey: (a: number, b: number) => void;
     readonly createlinksharehandleresult_handle: (a: number) => bigint;
     readonly createlinksharehandleresult_linkId: (a: number, b: number) => void;
-    readonly createlinksharehandleresult_linkSecretForUrl: (a: number, b: number) => void;
+    readonly createlinksharehandleresult_linkUrlToken: (a: number, b: number) => void;
     readonly createlinksharehandleresult_nonce: (a: number, b: number) => void;
     readonly createlinksharehandleresult_tier: (a: number) => number;
     readonly cryptoDomainGoldenVectorSnapshot: () => number;

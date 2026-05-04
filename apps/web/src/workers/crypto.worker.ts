@@ -1806,7 +1806,7 @@ class CryptoWorker implements CryptoWorkerApi {
   ): Promise<{
     linkShareHandleId: LinkShareHandleId;
     linkId: Uint8Array;
-    linkSecretForUrl: Uint8Array;
+    linkUrlToken: Uint8Array;
     tier: number;
     nonce: Uint8Array;
     encryptedKey: Uint8Array;
@@ -1818,7 +1818,7 @@ class CryptoWorker implements CryptoWorkerApi {
       return {
         linkShareHandleId: handle.id as LinkShareHandleId,
         linkId: created.linkId,
-        linkSecretForUrl: created.linkSecretForUrl,
+        linkUrlToken: created.linkUrlToken,
         tier: created.tier,
         nonce: created.nonce,
         encryptedKey: created.encryptedKey,
@@ -1827,10 +1827,10 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   async importLinkShareHandle(
-    linkSecretForUrl: Uint8Array,
+    linkUrlToken: Uint8Array,
   ): Promise<{ linkShareHandleId: LinkShareHandleId; linkId: Uint8Array }> {
     const facade = await getRustFacade();
-    const imported = facade.importLinkShareHandle(linkSecretForUrl);
+    const imported = facade.importLinkShareHandle(linkUrlToken);
     const handle = this.handleRegistry.registerLinkShare(imported.handle);
     return {
       linkShareHandleId: handle.id as LinkShareHandleId,
@@ -1852,7 +1852,7 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   async importLinkTierHandle(
-    linkSecretForUrl: Uint8Array,
+    linkUrlToken: Uint8Array,
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     albumId: string,
@@ -1860,7 +1860,7 @@ class CryptoWorker implements CryptoWorkerApi {
   ): Promise<{ linkTierHandleId: LinkTierHandleId; linkId: Uint8Array; tier: number }> {
     const facade = await getRustFacade();
     const imported = facade.importLinkTierHandle(
-      linkSecretForUrl,
+      linkUrlToken,
       nonce,
       encryptedKey,
       albumId,

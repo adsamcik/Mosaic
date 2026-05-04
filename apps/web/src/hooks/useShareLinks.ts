@@ -236,7 +236,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
         }
 
         // Step 2: Create a Rust-owned link-share handle. The returned
-        // linkSecretForUrl is the protocol URL fragment seed, not a wrapping key.
+        // linkUrlToken is a bearer URL fragment token, not a wrapping key.
         let linkSecret: Uint8Array | undefined;
         let linkId: Uint8Array | undefined;
 
@@ -257,7 +257,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           if (!linkShareHandleId) {
             const created = await cryptoClient.createLinkShareHandle(albumId, epochHandleId, 1);
             linkShareHandleId = created.linkShareHandleId;
-            linkSecret = created.linkSecretForUrl;
+            linkSecret = created.linkUrlToken;
             linkId = created.linkId;
             wrappedThumb = created;
           } else {
