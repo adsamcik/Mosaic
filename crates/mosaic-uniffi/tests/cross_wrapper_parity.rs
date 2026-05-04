@@ -28,15 +28,48 @@ const REQUIRED_SHARED_DTOS: &[&str] = &[
     "BytesResult",
     "HeaderResult",
     "CryptoDomainGoldenVectorSnapshot",
+    "ApplyEventResult",
+    "LoadSnapshotResult",
+    "VerifySnapshotResult",
 ];
 
-const EXPECTED_DIVERGENCES: &[ExpectedDivergence] = &[ExpectedDivergence {
-    // WASM flattens progress events into integer pairs for wasm-bindgen
-    // marshalling while UniFFI exposes the nested ProgressEvent record.
-    name: "ProgressResult",
-    uniffi_fields: &[("code", "u16"), ("events", "Vec<ProgressEvent>")],
-    wasm_fields: &[("code", "u16"), ("event_pairs", "Vec<u32>")],
-}];
+const EXPECTED_DIVERGENCES: &[ExpectedDivergence] = &[
+    ExpectedDivergence {
+        // WASM flattens progress events into integer pairs for wasm-bindgen
+        // marshalling while UniFFI exposes the nested ProgressEvent record.
+        name: "ProgressResult",
+        uniffi_fields: &[("code", "u16"), ("events", "Vec<ProgressEvent>")],
+        wasm_fields: &[("code", "u16"), ("event_pairs", "Vec<u32>")],
+    },
+    // UniFFI uses `u16` codes everywhere for symmetry with the rest of the
+    // UniFFI surface; WASM uses `u32` for the download facade because
+    // wasm-bindgen marshals all integers as JS `number` and the larger type
+    // costs nothing on the JS side. Both wrappers project the same numeric
+    // `ClientErrorCode` value.
+    ExpectedDivergence {
+        name: "ApplyEventResult",
+        uniffi_fields: &[("code", "u16"), ("new_state_cbor", "Vec<u8>")],
+        wasm_fields: &[("code", "u32"), ("new_state_cbor", "Vec<u8>")],
+    },
+    ExpectedDivergence {
+        name: "LoadSnapshotResult",
+        uniffi_fields: &[
+            ("code", "u16"),
+            ("snapshot_cbor", "Vec<u8>"),
+            ("schema_version_loaded", "u32"),
+        ],
+        wasm_fields: &[
+            ("code", "u32"),
+            ("snapshot_cbor", "Vec<u8>"),
+            ("schema_version_loaded", "u32"),
+        ],
+    },
+    ExpectedDivergence {
+        name: "VerifySnapshotResult",
+        uniffi_fields: &[("code", "u16"), ("valid", "bool")],
+        wasm_fields: &[("code", "u32"), ("valid", "bool")],
+    },
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct StructShape {

@@ -1065,3 +1065,351 @@ fn png_bytes(width: u32, height: u32) -> Vec<u8> {
     bytes.extend_from_slice(&[0, 0, 0, 0]);
     bytes
 }
+
+// =============================================================================
+// Download orchestrator UniFFI round-trip tests (Phase 4 / commit a4337db).
+//
+// These tests exercise the download bindings end-to-end through the UniFFI
+// surface and assert byte-identity round-trips and snapshot validation
+// behavior. They intentionally do not call into mosaic-wasm; the canonical
+// CBOR byte format is locked across wrappers via
+// `tests/parser_equivalence.rs::duplicated_download_codec_helpers_are_source_equivalent`.
+// =============================================================================
+
+mod download_round_trip {
+    use mosaic_client::ClientErrorCode;
+    use mosaic_domain::ShardTier;
+    use mosaic_uniffi::{
+        DownloadInitInput, DownloadPlanEntryInput, DownloadPlanInput, DownloadPlanShardInput,
+        apply_download_event, build_download_plan, commit_download_snapshot, init_download_job,
+        load_download_snapshot, verify_download_snapshot,
+    };
+
+    const JOB_ID: [u8; 16] = [0x1a; 16];
+    const ALBUM_ID: [u8; 16] = [0x2b; 16];
+    const SHARD_ID: [u8; 16] = [0x3c; 16];
+    const EXPECTED_HASH: [u8; 32] = [0x4d; 32];
+
+    fn sample_plan_input() -> DownloadPlanInput {
+        DownloadPlanInput {
+            album_id: ALBUM_ID.to_vec(),
+            entries: vec![DownloadPlanEntryInput {
+                photo_id: "photo-001".to_owned(),
+                filename: "vacation.jpg".to_owned(),
+                shards: vec![DownloadPlanShardInput {
+                    shard_id: SHARD_ID.to_vec(),
+                    epoch_id: 7,
+                    tier: ShardTier::Original.to_byte(),
+                    expected_hash: EXPECTED_HASH.to_vec(),
+                    declared_size: 4096,
+                }],
+            }],
+        }
+    }
+
+    fn sample_init_input(plan_cbor: Vec<u8>) -> DownloadInitInput {
+        DownloadInitInput {
+            job_id: JOB_ID.to_vec(),
+            album_id: ALBUM_ID.to_vec(),
+            plan_cbor,
+            now_ms: 1_700_000_000_000,
+        }
+    }
+
+    #[test]
+    fn build_plan_then_init_commit_verify_load_round_trips_byte_identically() {
+        let plan = build_download_plan(sample_plan_input());
+        assert_eq!(plan.code, ClientErrorCode::Ok.as_u16());
+        assert!(plan.error_detail.is_none());
+        assert!(!plan.plan_cbor.is_empty());
+
+        let init = init_download_job(sample_init_input(plan.plan_cbor.clone()));
+        assert_eq!(init.code, ClientErrorCode::Ok.as_u16());
+        assert_eq!(init.checksum.len(), 32);
+        assert!(!init.body.is_empty());
+
+        // commit_download_snapshot re-encodes the canonical body and recomputes
+        // the checksum. For a freshly-prepared snapshot the bytes must match.
+        let commit = commit_download_snapshot(init.body.clone());
+        assert_eq!(commit.code, ClientErrorCode::Ok.as_u16());
+        assert_eq!(commit.body, init.body);
+        assert_eq!(commit.checksum, init.checksum);
+
+        // verify_download_snapshot returns valid=true for matching checksum,
+        // valid=false for mismatched, and never branches on the raw bytes.
+        let verify = verify_download_snapshot(init.body.clone(), init.checksum.clone());
+        assert_eq!(verify.code, ClientErrorCode::Ok.as_u16());
+        assert!(verify.valid);
+
+        let mut bad_checksum = init.checksum.clone();
+        bad_checksum[0] ^= 0xff;
+        let verify_bad = verify_download_snapshot(init.body.clone(), bad_checksum);
+        assert_eq!(verify_bad.code, ClientErrorCode::Ok.as_u16());
+        assert!(!verify_bad.valid);
+
+        // load_download_snapshot validates the checksum, decodes, and returns a
+        // canonical re-encoding equal to the input body.
+        let loaded = load_download_snapshot(init.body.clone(), init.checksum.clone());
+        assert_eq!(loaded.code, ClientErrorCode::Ok.as_u16());
+        assert_eq!(loaded.snapshot_cbor, init.body);
+        assert_eq!(loaded.schema_version_loaded, 1);
+    }
+
+    #[test]
+    fn load_download_snapshot_rejects_corrupt_checksum() {
+        let plan = build_download_plan(sample_plan_input());
+        let init = init_download_job(sample_init_input(plan.plan_cbor));
+        let mut bad_checksum = init.checksum.clone();
+        bad_checksum[31] ^= 0x01;
+
+        let loaded = load_download_snapshot(init.body, bad_checksum);
+        assert_eq!(
+            loaded.code,
+            ClientErrorCode::DownloadSnapshotChecksumMismatch.as_u16()
+        );
+        assert!(loaded.snapshot_cbor.is_empty());
+        assert_eq!(loaded.schema_version_loaded, 0);
+    }
+
+    #[test]
+    fn load_download_snapshot_rejects_short_checksum() {
+        let plan = build_download_plan(sample_plan_input());
+        let init = init_download_job(sample_init_input(plan.plan_cbor));
+
+        let loaded = load_download_snapshot(init.body, vec![0_u8; 16]);
+        assert_eq!(
+            loaded.code,
+            ClientErrorCode::DownloadSnapshotCorrupt.as_u16()
+        );
+    }
+
+    #[test]
+    fn verify_download_snapshot_rejects_short_checksum_without_panicking() {
+        let plan = build_download_plan(sample_plan_input());
+        let init = init_download_job(sample_init_input(plan.plan_cbor));
+
+        let verify = verify_download_snapshot(init.body, vec![0_u8; 16]);
+        assert_eq!(verify.code, ClientErrorCode::Ok.as_u16());
+        assert!(!verify.valid);
+    }
+
+    #[test]
+    fn build_download_plan_rejects_non_original_tier_with_disallowed_tier_detail() {
+        let mut input = sample_plan_input();
+        input.entries[0].shards[0].tier = ShardTier::Thumbnail.to_byte();
+
+        let plan = build_download_plan(input);
+        assert_eq!(plan.code, ClientErrorCode::DownloadInvalidPlan.as_u16());
+        let detail = plan.error_detail.unwrap_or_default();
+        assert!(
+            detail.starts_with("DisallowedTier:"),
+            "expected DisallowedTier detail, got {detail:?}"
+        );
+        assert!(plan.plan_cbor.is_empty());
+    }
+
+    #[test]
+    fn build_download_plan_rejects_multi_epoch_photo() {
+        let mut input = sample_plan_input();
+        input.entries[0].shards.push(DownloadPlanShardInput {
+            shard_id: vec![0x77_u8; 16],
+            epoch_id: 99,
+            tier: ShardTier::Original.to_byte(),
+            expected_hash: vec![0x88_u8; 32],
+            declared_size: 1,
+        });
+
+        let plan = build_download_plan(input);
+        assert_eq!(plan.code, ClientErrorCode::DownloadInvalidPlan.as_u16());
+        let detail = plan.error_detail.unwrap_or_default();
+        assert!(
+            detail.starts_with("MultiEpochPhoto:"),
+            "expected MultiEpochPhoto detail, got {detail:?}"
+        );
+    }
+
+    #[test]
+    fn build_download_plan_rejects_unknown_tier_byte() {
+        let mut input = sample_plan_input();
+        input.entries[0].shards[0].tier = 99;
+
+        let plan = build_download_plan(input);
+        assert_eq!(plan.code, ClientErrorCode::DownloadInvalidPlan.as_u16());
+        assert!(plan.plan_cbor.is_empty());
+    }
+
+    #[test]
+    fn build_download_plan_rejects_short_shard_id() {
+        let mut input = sample_plan_input();
+        input.entries[0].shards[0].shard_id = vec![0_u8; 8];
+
+        let plan = build_download_plan(input);
+        assert_eq!(plan.code, ClientErrorCode::InvalidInputLength.as_u16());
+    }
+
+    #[test]
+    fn build_download_plan_rejects_short_expected_hash() {
+        let mut input = sample_plan_input();
+        input.entries[0].shards[0].expected_hash = vec![0_u8; 16];
+
+        let plan = build_download_plan(input);
+        assert_eq!(plan.code, ClientErrorCode::InvalidInputLength.as_u16());
+    }
+
+    #[test]
+    fn build_download_plan_normalizes_filenames_for_windows_reserved_names() {
+        let mut input = sample_plan_input();
+        input.entries[0].filename = "CON.JPG".to_owned();
+        let plan = build_download_plan(input);
+        assert_eq!(plan.code, ClientErrorCode::Ok.as_u16());
+        // Decode the plan CBOR and confirm filename was disambiguated.
+        let value: ciborium::value::Value =
+            match ciborium::de::from_reader::<ciborium::value::Value, _>(std::io::Cursor::new(&plan.plan_cbor)) {
+                Ok(value) => value,
+                Err(_) => panic!("plan_cbor must be valid CBOR"),
+            };
+        let entries = match &value {
+            ciborium::value::Value::Array(items) => items,
+            _ => panic!("plan_cbor must be a CBOR array"),
+        };
+        let fields = match &entries[0] {
+            ciborium::value::Value::Map(fields) => fields,
+            _ => panic!("plan entry must be a CBOR map"),
+        };
+        let filename = fields
+            .iter()
+            .find_map(|(k, v)| {
+                let key = k.as_integer().and_then(|i| u32::try_from(i).ok())?;
+                if key == 5 {
+                    match v {
+                        ciborium::value::Value::Text(text) => Some(text.clone()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| panic!("plan entry must have a filename field"));
+        assert_ne!(filename, "CON.JPG", "Windows-reserved name must be disambiguated");
+        assert!(filename.to_uppercase().starts_with("CON_"));
+    }
+
+    #[test]
+    fn init_download_job_rejects_short_job_id() {
+        let plan = build_download_plan(sample_plan_input());
+        let init = init_download_job(DownloadInitInput {
+            job_id: vec![0_u8; 8],
+            album_id: ALBUM_ID.to_vec(),
+            plan_cbor: plan.plan_cbor,
+            now_ms: 0,
+        });
+        assert_eq!(init.code, ClientErrorCode::InvalidInputLength.as_u16());
+    }
+
+    #[test]
+    fn init_download_job_rejects_corrupt_plan_cbor() {
+        let init = init_download_job(DownloadInitInput {
+            job_id: JOB_ID.to_vec(),
+            album_id: ALBUM_ID.to_vec(),
+            plan_cbor: vec![0xff_u8, 0x00, 0x42],
+            now_ms: 0,
+        });
+        assert_eq!(
+            init.code,
+            ClientErrorCode::DownloadSnapshotCorrupt.as_u16()
+        );
+        assert!(init.body.is_empty());
+        assert!(init.checksum.is_empty());
+    }
+
+    #[test]
+    fn apply_download_event_idle_to_preparing_round_trip() {
+        // Encode the Idle state and a StartRequested event using ciborium with
+        // the same canonical layout the wrappers use, then assert the new
+        // state CBOR is a valid `Preparing` encoding.
+        use ciborium::value::{Integer, Value};
+        let idle_state = Value::Map(vec![(
+            Value::Integer(Integer::from(0_u32)),
+            Value::Integer(Integer::from(0_u32)),
+        )]);
+        let mut idle_bytes = Vec::new();
+        ciborium::ser::into_writer(&idle_state, &mut idle_bytes).unwrap_or_else(|_| {
+            panic!("ciborium serialization of canonical Idle state must succeed")
+        });
+
+        let start_event = Value::Map(vec![
+            (
+                Value::Integer(Integer::from(0_u32)),
+                Value::Integer(Integer::from(0_u32)),
+            ),
+            (
+                Value::Integer(Integer::from(1_u32)),
+                Value::Bytes(JOB_ID.to_vec()),
+            ),
+            (
+                Value::Integer(Integer::from(2_u32)),
+                Value::Bytes(ALBUM_ID.to_vec()),
+            ),
+        ]);
+        let mut event_bytes = Vec::new();
+        ciborium::ser::into_writer(&start_event, &mut event_bytes).unwrap_or_else(|_| {
+            panic!("ciborium serialization of canonical StartRequested event must succeed")
+        });
+
+        let result = apply_download_event(idle_bytes, event_bytes);
+        assert_eq!(result.code, ClientErrorCode::Ok.as_u16());
+        assert!(!result.new_state_cbor.is_empty());
+
+        // Decode the result and confirm the state code is PREPARING (=1).
+        let decoded: Value =
+            match ciborium::de::from_reader::<Value, _>(std::io::Cursor::new(&result.new_state_cbor)) {
+                Ok(value) => value,
+                Err(_) => panic!("new_state_cbor must be valid CBOR"),
+            };
+        let entries = match decoded {
+            Value::Map(entries) => entries,
+            _ => panic!("state must be a CBOR map"),
+        };
+        let code = entries
+            .into_iter()
+            .find_map(|(k, v)| {
+                k.as_integer()
+                    .and_then(|i| u32::try_from(i).ok())
+                    .filter(|key| *key == 0)
+                    .and_then(|_| v.as_integer())
+                    .and_then(|i| u8::try_from(i).ok())
+            })
+            .unwrap_or_else(|| panic!("state map must have key 0"));
+        assert_eq!(code, 1, "Idle + StartRequested must transition to Preparing (=1)");
+    }
+
+    #[test]
+    fn apply_download_event_rejects_illegal_transition() {
+        use ciborium::value::{Integer, Value};
+        // Done state (=5) + ResumeRequested event (=3) is illegal.
+        let done_state = Value::Map(vec![(
+            Value::Integer(Integer::from(0_u32)),
+            Value::Integer(Integer::from(5_u32)),
+        )]);
+        let mut state_bytes = Vec::new();
+        if ciborium::ser::into_writer(&done_state, &mut state_bytes).is_err() {
+            panic!("encode state");
+        }
+
+        let resume_event = Value::Map(vec![(
+            Value::Integer(Integer::from(0_u32)),
+            Value::Integer(Integer::from(3_u32)),
+        )]);
+        let mut event_bytes = Vec::new();
+        if ciborium::ser::into_writer(&resume_event, &mut event_bytes).is_err() {
+            panic!("encode event");
+        }
+
+        let result = apply_download_event(state_bytes, event_bytes);
+        assert_eq!(
+            result.code,
+            ClientErrorCode::DownloadIllegalTransition.as_u16()
+        );
+        assert!(result.new_state_cbor.is_empty());
+    }
+}
