@@ -212,6 +212,12 @@ jobs:
       - name: Run no-raw-secret-ffi-export architecture guard
         run: bash ./tests/architecture/no-raw-secret-ffi-export.sh
 
+      - name: Run web-raw-input-ffi PowerShell architecture guard
+        run: pwsh ./tests/architecture/web-raw-input-ffi.ps1
+
+      - name: Run web-raw-input-ffi Bash architecture guard
+        run: bash ./tests/architecture/web-raw-input-ffi.sh
+
       - name: Check Rust Android targets
         run: |
           cargo check -p mosaic-uniffi --target aarch64-linux-android --locked
