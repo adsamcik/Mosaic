@@ -189,6 +189,23 @@ export class CryptoDomainGoldenVectorSnapshot {
 }
 
 /**
+ * WASM-bindgen class for stateless seed-based decrypted shard results.
+ */
+export class DecryptShardResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Client-local plaintext bytes on successful decryption.
+     */
+    readonly plaintext: Uint8Array;
+}
+
+/**
  * WASM-bindgen class for decrypted album content results.
  */
 export class DecryptedContentResult {
@@ -480,6 +497,19 @@ export class StripResult {
     readonly strippedBytes: Uint8Array;
 }
 
+/**
+ * WASM-bindgen class for stateless shard integrity verification results.
+ */
+export class VerifyShardResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+}
+
 export class VerifySnapshotResult {
     private constructor();
     free(): void;
@@ -616,6 +646,11 @@ export function decryptShardWithLegacyRawKeyHandle(handle: bigint, envelope_byte
  * Decrypts a shard using a link-tier handle through WASM.
  */
 export function decryptShardWithLinkTierHandle(link_tier_handle: bigint, envelope_bytes: Uint8Array): DecryptedShardResult;
+
+/**
+ * Stateless seed-based shard decrypt through WASM.
+ */
+export function decryptShardWithSeedV1(envelope: Uint8Array, key: Uint8Array): DecryptShardResult;
 
 /**
  * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
@@ -814,6 +849,11 @@ export function verifyManifestWithEpoch(transcript_bytes: Uint8Array, signature:
 export function verifyManifestWithIdentity(transcript_bytes: Uint8Array, signature: Uint8Array, public_key: Uint8Array): number;
 
 /**
+ * Stateless shard integrity verification through WASM.
+ */
+export function verifyShardIntegrityV1(envelope: Uint8Array, expected_hash: Uint8Array): VerifyShardResult;
+
+/**
  * Wraps an epoch tier for an existing share-link handle through WASM.
  */
 export function wrapLinkTierHandle(link_share_handle: bigint, epoch_handle: bigint, tier_byte: number): WrappedTierKeyResult;
@@ -835,6 +875,7 @@ export interface InitOutput {
     readonly __wbg_createaccountresult_free: (a: number, b: number) => void;
     readonly __wbg_createlinksharehandleresult_free: (a: number, b: number) => void;
     readonly __wbg_cryptodomaingoldenvectorsnapshot_free: (a: number, b: number) => void;
+    readonly __wbg_decryptshardresult_free: (a: number, b: number) => void;
     readonly __wbg_epochkeyhandleresult_free: (a: number, b: number) => void;
     readonly __wbg_headerresult_free: (a: number, b: number) => void;
     readonly __wbg_identityhandleresult_free: (a: number, b: number) => void;
@@ -842,6 +883,7 @@ export interface InitOutput {
     readonly __wbg_progressevent_free: (a: number, b: number) => void;
     readonly __wbg_progressresult_free: (a: number, b: number) => void;
     readonly __wbg_sealedbundleresult_free: (a: number, b: number) => void;
+    readonly __wbg_verifyshardresult_free: (a: number, b: number) => void;
     readonly __wbg_verifysnapshotresult_free: (a: number, b: number) => void;
     readonly accountKeyHandleIsOpen: (a: bigint) => number;
     readonly accountkeyhandlestatusresult_code: (a: number) => number;
@@ -894,6 +936,9 @@ export interface InitOutput {
     readonly decryptShardWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithLegacyRawKeyHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithLinkTierHandle: (a: bigint, b: number, c: number) => number;
+    readonly decryptShardWithSeedV1: (a: number, b: number, c: number, d: number) => number;
+    readonly decryptshardresult_code: (a: number) => number;
+    readonly decryptshardresult_plaintext: (a: number, b: number) => void;
     readonly deriveAuthKeypairFromAccount: (a: bigint) => number;
     readonly deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly downloadApplyEventV1: (a: number, b: number, c: number, d: number) => number;
@@ -961,6 +1006,8 @@ export interface InitOutput {
     readonly verifyAndImportEpochBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly verifyManifestWithEpoch: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly verifyManifestWithIdentity: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly verifyShardIntegrityV1: (a: number, b: number, c: number, d: number) => number;
+    readonly verifyshardresult_code: (a: number) => number;
     readonly verifysnapshotresult_valid: (a: number) => number;
     readonly wrapLinkTierHandle: (a: bigint, b: bigint, c: number) => number;
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
@@ -978,32 +1025,32 @@ export interface InitOutput {
     readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_authkeypairresult_free: (a: number, b: number) => void;
     readonly verifysnapshotresult_code: (a: number) => number;
-    readonly epochkeyhandlestatusresult_code: (a: number) => number;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
+    readonly epochkeyhandlestatusresult_code: (a: number) => number;
     readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
+    readonly encryptedcontentresult_nonce: (a: number, b: number) => void;
     readonly wrappedtierkeyresult_code: (a: number) => number;
-    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
     readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
     readonly serializesnapshotresult_checksum: (a: number, b: number) => void;
-    readonly serializesnapshotresult_body: (a: number, b: number) => void;
     readonly serializesnapshotresult_code: (a: number) => number;
-    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly serializesnapshotresult_body: (a: number, b: number) => void;
     readonly decryptedshardresult_code: (a: number) => number;
+    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
     readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
     readonly decryptedcontentresult_code: (a: number) => number;
     readonly commitsnapshotresult_checksum: (a: number, b: number) => void;
-    readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
+    readonly bytesresult_bytes: (a: number, b: number) => void;
     readonly bytesresult_code: (a: number) => number;
     readonly linktierhandleresult_handle: (a: number) => bigint;
     readonly linktierhandleresult_linkId: (a: number, b: number) => void;
     readonly linktierhandleresult_code: (a: number) => number;
-    readonly stripresult_strippedBytes: (a: number, b: number) => void;
     readonly stripresult_removedMetadataCount: (a: number) => number;
-    readonly encryptedshardresult_sha256: (a: number, b: number) => void;
+    readonly stripresult_strippedBytes: (a: number, b: number) => void;
     readonly encryptedshardresult_code: (a: number) => number;
-    readonly encryptedcontentresult_nonce: (a: number, b: number) => void;
+    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
+    readonly encryptedshardresult_sha256: (a: number, b: number) => void;
+    readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
     readonly commitsnapshotresult_code: (a: number) => number;
-    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export2: (a: number, b: number) => number;
