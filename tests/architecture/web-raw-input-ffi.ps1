@@ -11,6 +11,14 @@
 # raw-input bridges. Production files in apps/web/src/ are never allowlisted;
 # src-local test files are excluded from the production scan, mirroring the
 # Kotlin guard's src/main-only semantics.
+#
+# Allowlist audit checkpoint:
+# Last full audit: R-C5.5 at 5bc477d
+# Each allowlist entry below MUST carry a SPECIFIC cryptographic safety
+# argument as its rationale comment. "Reviewed existing API" / "Internal
+# use" / "Not a secret" are NOT acceptable rationales. Audits should be
+# repeated whenever an entry is added; v1 freeze checkpoint should re-run
+# this audit.
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -43,6 +51,7 @@ $TargetModulePattern = '^(?:@mosaic/wasm|mosaic-wasm)$|(?:^|/)generated/mosaic-w
 $NamespaceImportPattern = '\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\b'
 
 $AllowlistedFiles = @(
+  # Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.
   'apps/web/tests/cross-client-vectors.test.ts'
 )
 
@@ -78,6 +87,7 @@ foreach ($fileInfo in Find-WebTypeScriptFiles) {
   if (-not (Test-IsProductionSource $repoPath) -and $repoPath -notmatch '^apps/web/tests/') { continue }
 
   $contents = Get-Content -Path $fileInfo.FullName -Raw -ErrorAction Stop
+  if ($null -eq $contents) { $contents = '' }
   $matches = [regex]::Matches($contents, $ImportPattern)
   foreach ($match in $matches) {
     $module = $match.Groups['module'].Value

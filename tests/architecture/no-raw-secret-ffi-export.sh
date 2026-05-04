@@ -8,6 +8,14 @@ set -euo pipefail
 # 3. PR adding a new pattern without a fixture should be rejected at review.
 # 4. Option B: mosaic-wasm producer exports with exotic byte-array returns
 #    (Cow<[u8]>, Box<[u8]>, Uint8Array, ArrayBuffer) are name-agnostic.
+#
+# Allowlist audit checkpoint:
+# Last full audit: R-C5.5 at 5bc477d
+# Each allowlist entry below MUST carry a SPECIFIC cryptographic safety
+# argument as its rationale comment. "Reviewed existing API" / "Internal
+# use" / "Not a secret" are NOT acceptable rationales. Audits should be
+# repeated whenever an entry is added; v1 freeze checkpoint should re-run
+# this audit.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -37,44 +45,79 @@ forbidden_raw_bundle_apis = {
     "import_epoch_key_handle_from_bundle_js",
 }
 allowlist = {
+    # Returns L2 account key encrypted under password-derived L1; unwrap requires password and account salt.
     "crates/mosaic-wasm/src/lib.rs::wrapped_account_key",
+    # Returns ACCOUNT_DATA_AAD AEAD ciphertext; L2 account key remains inside Rust handle registry.
     "crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle",
+    # Decrypts only ACCOUNT_DATA_AAD blobs via an open handle; does not expose L2 or seed-domain key material.
     "crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle",
+    # Returns ACCOUNT_DATA_AAD AEAD ciphertext to JS; L2 account key remains inside Rust handle registry.
     "crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle_js",
+    # Decrypts only ACCOUNT_DATA_AAD blobs via JS handle; does not expose L2 or seed-domain key material.
     "crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle_js",
+    # Returns epoch seed encrypted under the account handle wrap key; plaintext seed requires matching L2.
     "crates/mosaic-wasm/src/lib.rs::wrapped_epoch_seed",
+    # Returns fixed golden-vector message bytes for signature verification; contains no key material.
     "crates/mosaic-wasm/src/lib.rs::identity_message",
+    # Returns Ed25519 detached signature bytes; verifier gains no private signing key material.
     "crates/mosaic-wasm/src/lib.rs::identity_signature",
+    # Returns public link identifier derived from link secret; cannot recover wrapping key from identifier alone.
     "crates/mosaic-wasm/src/lib.rs::link_id",
+    # MIGRATION-PENDING: see r-c5-5-migrate-link-secret-for-url; returns bearer URL fragment seed bytes.
     "crates/mosaic-wasm/src/lib.rs::link_secret_for_url",
+    # Returns a 64-byte Ed25519 manifest signature; identity signing key remains inside Rust handle.
     "crates/mosaic-wasm/src/lib.rs::sign_manifest_with_identity",
+    # Returns a 64-byte Ed25519 manifest signature; epoch signing seed remains inside Rust handle.
     "crates/mosaic-wasm/src/lib.rs::sign_manifest_with_epoch_handle",
+    # Returns a 64-byte Ed25519 auth signature; account-derived signing secret is not exported.
     "crates/mosaic-wasm/src/lib.rs::sign_auth_challenge_with_account",
+    # Returns JS-visible Ed25519 manifest signature bytes; identity signing key remains inside Rust handle.
     "crates/mosaic-wasm/src/lib.rs::sign_manifest_with_identity_js",
+    # Returns JS-visible Ed25519 manifest signature bytes; epoch signing seed remains inside Rust handle.
     "crates/mosaic-wasm/src/lib.rs::sign_manifest_with_epoch_handle_js",
+    # Returns JS-visible Ed25519 auth signature bytes; account-derived signing secret is not exported.
     "crates/mosaic-wasm/src/lib.rs::sign_auth_challenge_with_account_js",
+    # MIGRATION-PENDING: see r-c5-5-migrate-derive-link-keys-from-raw-secret; returns raw link wrapping key.
     "crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret",
+    # MIGRATION-PENDING: see r-c5-5-migrate-verify-and-open-bundle-with-recipient-seed; returns raw epoch seed.
     "crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed",
+    # Returns a 64-byte Ed25519 manifest signature; identity signing key remains inside Rust handle.
     "crates/mosaic-uniffi/src/lib.rs::sign_manifest_with_identity",
 }
 struct_field_allowlist = {
+    # Input is L2 encrypted under password-derived L1; unlock still requires the password-derived wrap key.
     "crates/mosaic-wasm/src/lib.rs::AccountUnlockRequest.wrapped_account_key",
+    # Field stores L2 encrypted under password-derived L1; plaintext L2 never crosses FFI.
     "crates/mosaic-wasm/src/lib.rs::CreateAccountResult.wrapped_account_key",
+    # Field stores identity seed encrypted by account L2; opening requires matching account handle.
     "crates/mosaic-wasm/src/lib.rs::IdentityHandleResult.wrapped_seed",
+    # Field stores epoch seed encrypted by account L2; opening requires matching account handle.
     "crates/mosaic-wasm/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed",
+    # Field is AEAD ciphertext of tier key under link wrapping key; plaintext tier key is not exported.
     "crates/mosaic-wasm/src/lib.rs::CreateLinkShareHandleResult.encrypted_key",
+    # Field is AEAD ciphertext of tier key under link wrapping key; plaintext tier key is not exported.
     "crates/mosaic-wasm/src/lib.rs::WrappedTierKeyResult.encrypted_key",
+    # Input is L2 encrypted under password-derived L1; unlock still requires the password-derived wrap key.
     "crates/mosaic-uniffi/src/lib.rs::AccountUnlockRequest.wrapped_account_key",
+    # Field stores identity seed encrypted by account L2; opening requires matching account handle.
     "crates/mosaic-uniffi/src/lib.rs::IdentityHandleResult.wrapped_seed",
+    # Field stores epoch seed encrypted by account L2; opening requires matching account handle.
     "crates/mosaic-uniffi/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed",
+    # MIGRATION-PENDING: see r-c5-5-migrate-linkkeysffiresult-wrapping-key; raw link wrapping key.
     "crates/mosaic-uniffi/src/lib.rs::LinkKeysFfiResult.wrapping_key",
+    # MIGRATION-PENDING: see r-c5-5-migrate-openedbundleffiresult-epoch-seed; raw epoch seed.
     "crates/mosaic-uniffi/src/lib.rs::OpenedBundleFfiResult.epoch_seed",
 }
 dts_allowlist = {
+    # Type exposes L2 encrypted under password-derived L1; plaintext L2 is not typed as JS output.
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::CreateAccountResult.wrappedAccountKey",
+    # Type exposes epoch seed encrypted by account L2; opening requires matching account handle.
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::EpochKeyHandleResult.wrappedEpochSeed",
+    # Type exposes identity seed encrypted by account L2; opening requires matching account handle.
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::IdentityHandleResult.wrappedSeed",
+    # Type exposes AEAD tier-key ciphertext under link wrapping key; plaintext tier key is absent.
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::CreateLinkShareHandleResult.encryptedKey",
+    # Type exposes AEAD tier-key ciphertext under link wrapping key; plaintext tier key is absent.
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::WrappedTierKeyResult.encryptedKey",
 }
 
