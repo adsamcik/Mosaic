@@ -181,6 +181,14 @@ fn default_api_shape_excludes_cross_client_vector_seed_verifier() {
         !actual.contains("verify_and_open_bundle_with_recipient_seed"),
         "default UniFFI API shape must not expose the raw recipient-seed corpus driver"
     );
+    assert!(
+        !actual.contains("derive_link_keys_from_raw_secret"),
+        "default UniFFI API shape must not expose the raw link-secret corpus driver"
+    );
+    assert!(
+        !actual.contains("derive_identity_from_raw_seed"),
+        "default UniFFI API shape must not expose the raw identity-seed corpus driver"
+    );
 }
 
 #[test]
@@ -190,6 +198,14 @@ fn feature_enabled_api_shape_includes_cross_client_vector_seed_verifier() {
     assert!(
         actual.contains("export pub fn verify_and_open_bundle_with_recipient_seed("),
         "cross-client-vectors shape must retain the sealed_bundle.json corpus driver"
+    );
+    assert!(
+        actual.contains("export pub fn derive_link_keys_from_raw_secret("),
+        "cross-client-vectors shape must retain the link_keys.json corpus driver"
+    );
+    assert!(
+        actual.contains("export pub fn derive_identity_from_raw_seed("),
+        "cross-client-vectors shape must retain the identity.json corpus driver"
     );
 }
 

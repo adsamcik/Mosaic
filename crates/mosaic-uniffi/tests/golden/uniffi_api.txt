@@ -292,9 +292,7 @@ record ContentDecryptFfiResult
   code: u16
   plaintext: Vec<u8>
 end
-export pub fn derive_link_keys_from_raw_secret(link_secret: Vec<u8>) -> LinkKeysFfiResult
 export pub fn wrap_tier_key_for_link_handle( handle_id: u64, tier_key_handle: u64, tier: u8, ) -> WrappedTierKeyFfiResult
-export pub fn derive_identity_from_raw_seed( identity_seed: Vec<u8>, message: Vec<u8>, ) -> IdentityFromSeedFfiResult
 export pub fn build_auth_challenge_transcript_bytes( username: String, timestamp_ms: i64, challenge: Vec<u8>, ) -> BytesResult
 export pub fn sign_auth_challenge_with_raw_seed( transcript_bytes: Vec<u8>, auth_signing_seed: Vec<u8>, ) -> BytesResult
 export pub fn verify_auth_challenge_signature( transcript_bytes: Vec<u8>, signature: Vec<u8>, auth_public_key: Vec<u8>, ) -> AuthChallengeVerifyFfiResult

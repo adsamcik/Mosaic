@@ -9,10 +9,9 @@ import uniffi.mosaic_uniffi.deriveIdentityFromRawSeed as rustDeriveIdentityFromR
  * UniFFI core. Delegates to `mosaic_uniffi.derive_identity_from_raw_seed`.
  *
  * SECURITY: This adapter exposes a raw-seed cross-client crypto path.
- * Production code paths must use the handle-based identity bridge
- * (`AndroidRustIdentityApi.createIdentityHandle` /
- * `openIdentityHandle`) — only Slice 0C round-trip tests are permitted to
- * reference this class.
+ * This class lives in the test source set and exists only for Slice 0C
+ * round-trip tests. Production builds exclude the raw-seed UniFFI symbol via
+ * the `cross-client-vectors` Cargo feature gate.
  */
 class AndroidRustIdentitySeedApi : GeneratedRustIdentitySeedApi {
 

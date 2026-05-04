@@ -60,7 +60,8 @@ $allowlist = @{
   'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_identity_js' = 'Returns JS-visible Ed25519 manifest signature bytes; identity signing key remains inside Rust handle.'
   'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_epoch_handle_js' = 'Returns JS-visible Ed25519 manifest signature bytes; epoch signing seed remains inside Rust handle.'
   'crates/mosaic-wasm/src/lib.rs::sign_auth_challenge_with_account_js' = 'Returns JS-visible Ed25519 auth signature bytes; account-derived signing secret is not exported.'
-  'crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret' = 'MIGRATION-PENDING: see r-c5-5-migrate-derive-link-keys-from-raw-secret; returns raw link wrapping key.'
+  'crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret' = "CORPUS-DRIVER-ONLY: gated by feature='cross-client-vectors'; production builds do not expose this symbol. See SPEC-R-C5.5-MigrationDesign.md §3 and crates/mosaic-uniffi/Cargo.toml. The raw-secret input is consumed by the cross-client link_keys.json corpus parity test."
+  'crates/mosaic-uniffi/src/lib.rs::derive_identity_from_raw_seed' = "CORPUS-DRIVER-ONLY: gated by feature='cross-client-vectors'; production builds do not expose this symbol. See SPEC-R-C5.5-MigrationDesign.md §3 and crates/mosaic-uniffi/Cargo.toml. The raw-seed input is consumed by the cross-client identity.json corpus parity test."
   'crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed' = "CORPUS-DRIVER-ONLY: gated by feature='cross-client-vectors'; production builds do not expose this symbol. See SPEC-R-C5.5-MigrationDesign.md section 4 and crates/mosaic-uniffi/Cargo.toml. The raw-seed input is consumed by the cross-client sealed_bundle.json corpus parity test."
   'crates/mosaic-uniffi/src/lib.rs::sign_manifest_with_identity' = 'Returns a 64-byte Ed25519 manifest signature; identity signing key remains inside Rust handle.'
 }

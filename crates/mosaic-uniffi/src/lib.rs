@@ -2211,6 +2211,7 @@ impl fmt::Debug for ContentDecryptFfiResult {
 ///
 /// SECURITY: The caller-provided link secret is wiped on the Rust side before
 /// this function returns. The derived wrapping key never crosses FFI.
+#[cfg(feature = "cross-client-vectors")]
 #[uniffi::export]
 #[must_use]
 pub fn derive_link_keys_from_raw_secret(link_secret: Vec<u8>) -> LinkKeysFfiResult {
@@ -2252,6 +2253,7 @@ pub fn wrap_tier_key_for_link_handle(
 ///
 /// SECURITY: The caller-provided seed is wiped on the Rust side before
 /// this function returns. The result does not contain the seed.
+#[cfg(feature = "cross-client-vectors")]
 #[uniffi::export]
 #[must_use]
 pub fn derive_identity_from_raw_seed(

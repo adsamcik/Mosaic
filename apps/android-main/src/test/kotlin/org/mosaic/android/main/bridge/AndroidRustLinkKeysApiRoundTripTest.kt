@@ -14,7 +14,7 @@ import java.nio.file.Paths
 /**
  * Slice 0C round-trip test for `tests/vectors/link_keys.json`.
  *
- * Drives the production [AndroidRustLinkKeysApi] adapter through JNA into
+ * Drives the test-only [AndroidRustLinkKeysApi] adapter through JNA into
  * the host-built `mosaic_uniffi` cdylib and asserts the public link ID plus
  * the opaque Rust link-handle contract.
  */

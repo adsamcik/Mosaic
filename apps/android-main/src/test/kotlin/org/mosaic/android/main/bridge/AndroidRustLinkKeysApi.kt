@@ -9,11 +9,9 @@ import uniffi.mosaic_uniffi.deriveLinkKeysFromRawSecret as rustDeriveLinkKeys
  * UniFFI core. Delegates to `mosaic_uniffi.derive_link_keys_from_raw_secret`.
  *
  * SECURITY: This adapter exposes a raw-input cross-client crypto path.
- * Production code paths must NOT instantiate or use this class — only the
- * Slice 0C round-trip tests under `apps/android-main/src/test/.../bridge`
- * are permitted to reference it. Enforcement: the architecture-guard at
- * `tests/architecture/kotlin-raw-input-ffi.{ps1,sh}` fails CI on any
- * non-test caller.
+ * This class lives in the test source set and exists only for Slice 0C
+ * round-trip tests. Production builds exclude the raw-input UniFFI symbol via
+ * the `cross-client-vectors` Cargo feature gate.
  */
 class AndroidRustLinkKeysApi : GeneratedRustLinkKeysApi {
 
