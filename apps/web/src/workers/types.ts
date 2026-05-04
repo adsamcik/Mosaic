@@ -94,6 +94,12 @@ export enum WorkerCryptoErrorCode {
   ManifestSetConflict = 709,
   BackendIdempotencyConflict = 710,
   VideoPosterExtractionFailed = 711,
+  DownloadInvalidPlan = 720,
+  DownloadIllegalTransition = 721,
+  DownloadSnapshotMigration = 722,
+  DownloadSnapshotCorrupt = 723,
+  DownloadSnapshotChecksumMismatch = 724,
+  DownloadSnapshotTorn = 725,
   PinValidationFailed = 800,
 
   // Worker-only error codes start at 1000.
