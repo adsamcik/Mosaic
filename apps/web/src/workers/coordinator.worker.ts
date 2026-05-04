@@ -2,10 +2,12 @@
 /**
  * Phase 2 caveat: a job's `DownloadOutputMode` is held in-memory ONLY on the
  * coordinator. It is intentionally NOT persisted into the Rust snapshot to
- * avoid a schema bump. If the worker restarts mid-job (tab reload, crash) the
- * resumed job defaults to `keepOffline` (staged bytes are preserved) and the
- * UI is expected to re-prompt the user via the mode picker. Persisting output
- * mode is tracked for Phase 3.
+ * avoid a schema bump. If the worker restarts mid-job (tab reload, crash):
+ *   - `initializeOnce` does NOT auto-spin drivers for reconstructed jobs.
+ *   - The reconstructed jobs surface via `listResumableJobs()`.
+ *   - The UI must call `resumeJob(jobId, { mode })` to re-register the user's
+ *     chosen output mode before the driver / finalizer is started.
+ * Persisting output mode in the snapshot is tracked for Phase 3.
  */
 import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
@@ -167,6 +169,13 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private readonly channel: BroadcastChannel | null;
   /** Per-job output mode, kept in-memory only (Phase 2). See file header. */
   private readonly jobOutputModes = new Map<string, DownloadOutputMode>();
+  /**
+   * Per-job, per-photo export-side failure reasons (Phase 2 in-memory only).
+   * Tracks per-file finalizer write failures WITHOUT mutating the source-side
+   * photo status (which tracks staging, not export). Cleared on worker
+   * restart; partially mitigated by the resume-prompt re-confirmation.
+   */
+  private readonly jobExportFailures = new Map<string, Map<string, DownloadErrorReason>>();
   /** Main-thread provider for opening writable byte sinks during finalize. */
   private saveTargetProvider: RemoteSaveTargetProvider | null = null;
 
@@ -253,6 +262,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       await opfsStaging.purgeJob(jobId);
       this.jobs.delete(jobId);
       this.jobOutputModes.delete(jobId);
+      this.jobExportFailures.delete(jobId);
       this.emitProgress(summaryToProgress(updated));
       this.broadcast(updated);
       return { phase: updated.state.phase };
@@ -268,8 +278,31 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     return this.sendEvent(jobId, { kind: 'PauseRequested' });
   }
 
-  /** Resume a paused job. */
-  resumeJob(jobId: string): Promise<{ phase: DownloadPhase }> {
+  /** Resume a paused, reconstructed-running, or finalizing job. */
+  async resumeJob(jobId: string, opts?: { readonly mode?: DownloadOutputMode }): Promise<{ phase: DownloadPhase }> {
+    this.assertInitialized();
+    if (opts?.mode) {
+      this.jobOutputModes.set(jobId, opts.mode);
+    }
+    const job = this.jobs.get(jobId);
+    if (!job) {
+      // Falls through to sendEvent which throws JobNotFound for missing jobs.
+      return this.sendEvent(jobId, { kind: 'ResumeRequested' });
+    }
+    const phase = job.state.phase;
+    if (phase === 'Running') {
+      // Reconstructed Running with no live driver: spin one now (using whatever
+      // mode was just registered, or keepOffline if none).
+      this.scheduleJobDriver(jobId);
+      return { phase: 'Running' };
+    }
+    if (phase === 'Finalizing') {
+      // Rust state machine forbids Finalizing -> Paused/Running. We re-run
+      // the finalizer over already-staged photos and let it transition via
+      // FinalizationDone (or ErrorEncountered on failure).
+      this.scheduleFinalizingResume(jobId);
+      return { phase: 'Finalizing' };
+    }
     return this.sendEvent(jobId, { kind: 'ResumeRequested' });
   }
 
@@ -286,14 +319,32 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     return [...this.jobs.values()].map(toJobSummary).sort((a, b) => a.jobId.localeCompare(b.jobId));
   }
 
-  /** List non-terminal jobs with useful completed work for resuming. */
+  /** List non-terminal jobs that should surface in the resume prompt. */
   async listResumableJobs(): Promise<ResumableJobSummary[]> {
     this.assertInitialized();
     await this.reconcilePersistedJobs();
     return [...this.jobs.values()]
-      .filter(isResumableJob)
+      .filter((job) => this.isJobResumable(job))
       .map(toResumableJobSummary)
       .sort((a, b) => a.jobId.localeCompare(b.jobId));
+  }
+
+  /**
+   * Predicate: should this job appear in the resume prompt?
+   *
+   * - Finalizing always surfaces (worker may have crashed mid-finalize).
+   * - Running surfaces ONLY when the job has no in-memory output mode, i.e.
+   *   was reconstructed from OPFS (live drivers always have a mode entry).
+   * - Paused/Preparing surface when at least one photo is done.
+   */
+  private isJobResumable(job: InMemoryJob): boolean {
+    const phase = job.state.phase;
+    if (phase === 'Finalizing') return true;
+    if (phase === 'Running') return !this.jobOutputModes.has(job.jobId);
+    if (phase === 'Paused' || phase === 'Preparing') {
+      return job.photos.some((photo) => photo.status === 'done');
+    }
+    return false;
   }
 
   /** Compute a local album diff from the persisted plan and current manifest. */
@@ -358,6 +409,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     for (const jobId of result.purged) {
       this.jobs.delete(jobId);
       this.jobOutputModes.delete(jobId);
+      this.jobExportFailures.delete(jobId);
     }
     return { purged: result.purged };
   }
@@ -429,8 +481,20 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
           },
         };
       },
-      recordPhotoFailure: async (_recordJobId, photoId): Promise<void> => {
-        await this.transitionPhoto(jobId, photoId, { kind: 'failed', reason: 'Cancelled' });
+      recordPhotoFailure: async (_recordJobId, photoId, reason): Promise<void> => {
+        // Track export-side failure in-memory so failureCount surfaces it
+        // without mutating per-photo source/staging status. Successfully
+        // staged photos must remain done so OPFS bytes can be reused.
+        const map = this.jobExportFailures.get(jobId) ?? new Map<string, DownloadErrorReason>();
+        map.set(photoId, reason);
+        this.jobExportFailures.set(jobId, map);
+        const job = this.jobs.get(jobId);
+        const photo = job?.photos.find((candidate) => candidate.photoId === photoId);
+        if (!photo || photo.status === 'done' || photo.status === 'skipped') {
+          if (job) this.emitJobChanged(job);
+          return;
+        }
+        await this.transitionPhoto(jobId, photoId, { kind: 'failed', reason });
       },
     };
     await runPerFileFinalizerForCoordinator({ jobId, entries }, strategy, deps, signal);
@@ -644,13 +708,60 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     await ensureRustReady();
     const reconstructedJobs = await this.reconcilePersistedJobs();
     this.initialized = true;
-    for (const job of this.jobs.values()) {
-      if (job.state.phase === 'Running') {
-        this.scheduleJobDriver(job.jobId);
-      }
-    }
+    // Intentionally NOT auto-spinning drivers for reconstructed jobs:
+    // the Rust snapshot does not persist the user's chosen output mode, so
+    // resuming silently would discard the user's pick and finalize as
+    // keepOffline. Reconstructed jobs surface via listResumableJobs() and
+    // the UI must call resumeJob({ mode }) once the user re-picks.
     log.info('Coordinator initialized', { reconstructedJobs });
     return { reconstructedJobs };
+  }
+
+  private scheduleFinalizingResume(jobId: string): void {
+    if (this.jobDrivers.has(jobId)) return;
+    const driver = this.runFinalizingResume(jobId)
+      .catch((error: unknown) => {
+        log.warn('Finalizing-resume driver stopped unexpectedly', {
+          jobId: shortId(jobId),
+          errorName: error instanceof Error ? error.name : 'Unknown',
+        });
+      })
+      .finally(() => {
+        if (this.jobDrivers.get(jobId) === driver) {
+          this.jobDrivers.delete(jobId);
+        }
+      });
+    this.jobDrivers.set(jobId, driver);
+  }
+
+  /**
+   * Re-run the finalizer for a job left in Finalizing (e.g. after a worker
+   * crash). The Rust state machine forbids Finalizing -> Paused/Running, so
+   * we do not transition the state here; we re-execute the finalizer over
+   * already-staged photos and emit FinalizationDone on success.
+   */
+  private async runFinalizingResume(jobId: string): Promise<void> {
+    const job = this.jobs.get(jobId);
+    if (!job || job.state.phase !== 'Finalizing') {
+      return;
+    }
+    const abortController = new AbortController();
+    this.jobAborts.set(jobId, abortController);
+    try {
+      const mode = this.jobOutputModes.get(jobId) ?? { kind: 'keepOffline' };
+      await this.runFinalizer(jobId, mode, abortController.signal);
+      await this.sendEvent(jobId, { kind: 'FinalizationDone' });
+    } catch (err) {
+      log.warn('Finalizing-resume failed', {
+        jobId: shortId(jobId),
+        errorName: err instanceof Error ? err.name : 'Unknown',
+      });
+      await this.sendEvent(jobId, { kind: 'ErrorEncountered', reason: 'IllegalState' });
+    } finally {
+      if (this.jobAborts.get(jobId) === abortController) {
+        this.jobAborts.delete(jobId);
+      }
+    }
   }
 
   private async reconcilePersistedJobs(): Promise<number> {
@@ -844,11 +955,6 @@ function toResumableJobSummary(job: InMemoryJob): ResumableJobSummary {
     bytesWritten: job.photos.reduce((total, photo) => total + photo.bytesWritten, 0),
     lastUpdatedAtMs: job.lastUpdatedAtMs,
   };
-}
-
-function isResumableJob(job: InMemoryJob): boolean {
-  return (job.state.phase === 'Preparing' || job.state.phase === 'Running' || job.state.phase === 'Paused')
-    && job.photos.some((photo) => photo.status === 'done');
 }
 
 function computeAlbumDiffFromPlan(plan: readonly DownloadPlanEntry[], current: CurrentAlbumManifest): AlbumDiff {

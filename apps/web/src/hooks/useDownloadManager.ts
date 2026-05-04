@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import { getDownloadManager } from '../lib/download-manager';
+import { defaultSaveTargetProvider } from '../lib/save-target-bridge';
 import type {
   AlbumDiff,
   CoordinatorWorkerApi,
   CurrentAlbumManifest,
   DownloadJobsBroadcastMessage,
+  DownloadOutputMode,
   DownloadPhase,
   JobSummary,
   ResumableJobSummary,
@@ -26,8 +28,12 @@ export interface UseDownloadManagerResult {
   subscribe(jobId: string): () => void;
   /** Pause a running job through the coordinator. */
   pauseJob(jobId: string): Promise<{ phase: DownloadPhase }>;
-  /** Resume a paused job through the coordinator. */
-  resumeJob(jobId: string): Promise<{ phase: DownloadPhase }>;
+  /**
+   * Resume a job through the coordinator. For reconstructed (post-restart)
+   * jobs the caller must pass `mode` so the worker can rebuild the
+   * in-memory output mode that was lost on restart.
+   */
+  resumeJob(jobId: string, opts?: { readonly mode?: DownloadOutputMode }): Promise<{ phase: DownloadPhase }>;
   /** Cancel a job through the coordinator; hard cancel discards persisted progress. */
   cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }>;
   /** Compute a local manifest diff for a persisted download plan. */
@@ -70,6 +76,18 @@ export function useDownloadManager(): UseDownloadManagerResult {
           return;
         }
         apiRef.current = manager;
+        // Register a single, app-shell-scoped save-target provider for the
+        // whole tab. Previously this was done per-mount inside
+        // useAlbumDownload, which let one Gallery unmount kill an in-flight
+        // finalizer's provider proxy. The DownloadManager singleton owns
+        // exactly one provider registration for its lifetime.
+        try {
+          await manager.setSaveTargetProvider(Comlink.proxy(defaultSaveTargetProvider));
+        } catch (caught) {
+          log.warn('Save-target provider registration failed', {
+            errorName: caught instanceof Error ? caught.name : 'Unknown',
+          });
+        }
         setApi(manager);
         const [initialJobs, initialResumableJobs] = await Promise.all([
           manager.listJobs(),
@@ -155,8 +173,8 @@ export function useDownloadManager(): UseDownloadManagerResult {
     return result;
   }, [refreshJobs, requireApi]);
 
-  const resumeJob = useCallback(async (jobId: string): Promise<{ phase: DownloadPhase }> => {
-    const result = await requireApi().resumeJob(jobId);
+  const resumeJob = useCallback(async (jobId: string, opts?: { readonly mode?: DownloadOutputMode }): Promise<{ phase: DownloadPhase }> => {
+    const result = opts === undefined ? await requireApi().resumeJob(jobId) : await requireApi().resumeJob(jobId, opts);
     await refreshJobs();
     return result;
   }, [refreshJobs, requireApi]);

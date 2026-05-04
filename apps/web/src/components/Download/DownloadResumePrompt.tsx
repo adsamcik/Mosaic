@@ -1,7 +1,8 @@
 import { useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDownloadManager } from '../../hooks/useDownloadManager';
-import type { AlbumDiff, CurrentAlbumManifest, ResumableJobSummary } from '../../workers/types';
+import type { AlbumDiff, CurrentAlbumManifest, DownloadOutputMode, PhotoMeta, ResumableJobSummary } from '../../workers/types';
+import { DownloadModePicker } from './DownloadModePicker';
 import { shortId } from './DownloadJobRow';
 
 export interface DownloadResumePromptProps {
@@ -9,8 +10,12 @@ export interface DownloadResumePromptProps {
   readonly getCurrentManifest: (albumId: string) => Promise<CurrentAlbumManifest>;
   /** Optional externally supplied resumable jobs, primarily for tests and host flows. */
   readonly resumableJobs?: ReadonlyArray<ResumableJobSummary>;
-  /** Called after a resume request is accepted. Defaults to coordinator resumeJob. */
-  readonly onResume?: (jobId: string) => void;
+  /**
+   * Called after the user picks a mode and confirms resume. Defaults to
+   * coordinator resumeJob({ mode }), which is required because reconstructed
+   * jobs lose their in-memory output mode on restart and must be re-prompted.
+   */
+  readonly onResume?: (jobId: string, mode: DownloadOutputMode) => void;
   /** Called after progress is discarded. Defaults to coordinator hard cancel. */
   readonly onDiscard?: (jobId: string) => void;
   /** Controls prompt visibility when the caller wants to defer showing it. */
@@ -31,6 +36,8 @@ export function DownloadResumePrompt({
   const [diffByJobId, setDiffByJobId] = useState<Record<string, AlbumDiff>>({});
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** When non-null, render the mode-picker step for this resumable job. */
+  const [pickerJobId, setPickerJobId] = useState<string | null>(null);
 
   if (!open || jobs.length === 0) {
     return null;
@@ -43,16 +50,28 @@ export function DownloadResumePrompt({
       .then((manifest) => manager.computeAlbumDiff(job.jobId, manifest))
       .then((diff) => {
         setDiffByJobId((current) => ({ ...current, [job.jobId]: diff }));
-        if (onResume) {
-          onResume(job.jobId);
-        } else {
-          void manager.resumeJob(job.jobId);
-        }
+        // Open the mode-picker step. Final resume is dispatched in handlePickerConfirm.
+        setPickerJobId(job.jobId);
       })
       .catch((caught: unknown) => {
         setError(caught instanceof Error ? caught.message : String(caught));
       })
       .finally(() => setBusyJobId(null));
+  };
+
+  const handlePickerConfirm = (jobId: string, mode: DownloadOutputMode): void => {
+    setPickerJobId(null);
+    if (onResume) {
+      onResume(jobId, mode);
+    } else {
+      void manager.resumeJob(jobId, { mode }).catch((caught: unknown) => {
+        setError(caught instanceof Error ? caught.message : String(caught));
+      });
+    }
+  };
+
+  const handlePickerCancel = (): void => {
+    setPickerJobId(null);
   };
 
   const handleDiscard = (jobId: string): void => {
@@ -92,6 +111,23 @@ export function DownloadResumePrompt({
           })}
         </ul>
       </section>
+      {pickerJobId !== null && (() => {
+        const job = jobs.find((candidate) => candidate.jobId === pickerJobId);
+        if (!job) return null;
+        return (
+          <DownloadModePicker
+            open
+            albumId={job.albumId}
+            suggestedFileName={shortId(job.albumId)}
+            // No PhotoMeta available at this layer; the picker only uses
+            // the array length for capability hints, so an empty array is
+            // acceptable here.
+            photos={[] as ReadonlyArray<PhotoMeta>}
+            onConfirm={(mode) => handlePickerConfirm(job.jobId, mode)}
+            onClose={handlePickerCancel}
+          />
+        );
+      })()}
     </div>
   );
 }

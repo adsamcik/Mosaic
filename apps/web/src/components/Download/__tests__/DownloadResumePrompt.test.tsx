@@ -78,7 +78,29 @@ describe('DownloadResumePrompt', () => {
     await rendered.unmount();
   });
 
-  it('discard button calls cancelJob with soft false', async () => {
+  it('after Resume, opens the mode picker and resumeJob is called with the chosen mode', async () => {
+    const onResume = vi.fn();
+    const rendered = await render(<DownloadResumePrompt resumableJobs={[resumableJob]} getCurrentManifest={async () => manifest} onResume={onResume} />);
+    // Click the first Resume button to advance through diff stage to picker.
+    const resumeButton = requireElement(Array.from(rendered.container.querySelectorAll('button')).find((b) => b.textContent === 'Resume') ?? null);
+    await click(resumeButton);
+    await flushMicrotasks();
+
+    // Picker should now be in the document (rendered as part of the prompt).
+    // It is portalled into the same document.body, so look there.
+    const picker = document.querySelector('[data-testid="download-mode-picker-start"]');
+    expect(picker).not.toBeNull();
+    // Choose keepOffline (no FS Access fallbacks needed) and click Start.
+    const keepRadio = document.querySelector('[data-testid="download-mode-radio-keepOffline"]');
+    if (keepRadio) await click(keepRadio);
+    if (picker) await click(picker);
+
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(onResume).toHaveBeenCalledWith(resumableJob.jobId, { kind: 'keepOffline' });
+    await rendered.unmount();
+  });
+
+    it('discard button calls cancelJob with soft false', async () => {
     const rendered = await render(<DownloadResumePrompt resumableJobs={[resumableJob]} getCurrentManifest={async () => manifest} />);
     const discard = requireElement(Array.from(rendered.container.querySelectorAll('button')).find((button) => button.textContent === 'Discard progress') ?? null);
     await click(discard);

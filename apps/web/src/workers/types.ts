@@ -1398,8 +1398,13 @@ export interface CoordinatorWorkerApi {
   sendEvent(jobId: string, event: DownloadEventInput): Promise<{ phase: DownloadPhase }>;
   /** Pause a running job. */
   pauseJob(jobId: string): Promise<{ phase: DownloadPhase }>;
-  /** Resume a paused job. */
-  resumeJob(jobId: string): Promise<{ phase: DownloadPhase }>;
+  /**
+   * Resume a job. Pass `mode` for reconstructed (post-restart) jobs whose
+   * in-memory output mode was lost; the coordinator registers it before
+   * scheduling the driver / re-running the finalizer. For Paused jobs whose
+   * mode is already in-memory, `opts` may be omitted.
+   */
+  resumeJob(jobId: string, opts?: { readonly mode?: DownloadOutputMode }): Promise<{ phase: DownloadPhase }>;
   /** Cancel a job; hard cancel also purges OPFS staging. */
   cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }>;
   /** List all known in-memory jobs. */

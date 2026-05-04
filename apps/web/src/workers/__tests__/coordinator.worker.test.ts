@@ -810,7 +810,112 @@ describe('CoordinatorWorker', () => {
     expect((await worker.getJob(jobId))?.phase).toBe('Errored');
   });
 
-  it('computes shardChanged when epoch is unchanged but tier-3 shards differ', async () => {
+  // ----- C2/C3: reconstructed-resume + Finalizing-recovery -----
+  it('does NOT auto-spin drivers for reconstructed Running or Paused jobs and surfaces them via listResumableJobs', async () => {
+    const runningJob = persistSnapshotJob(11, 'Running', photoSpecs(2, 5));
+    const pausedJob = persistSnapshotJob(12, 'Paused', photoSpecs(3, 5));
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    // No driver was scheduled: any executePhotoTask invocation would prove
+    // we silently auto-resumed.
+    expect(pipelineMocks.executePhotoTask).not.toHaveBeenCalled();
+    const resumable = await worker.listResumableJobs();
+    expect(resumable.map((job) => job.jobId).sort()).toEqual([runningJob, pausedJob].sort());
+  });
+
+  it('resumeJob({ mode }) registers the user-chosen mode for reconstructed Running jobs and dispatches the matching finalizer', async () => {
+    const zipFinalizer = vi.fn(async () => undefined);
+    cbor.setRunZipFinalizer(zipFinalizer as unknown as Parameters<typeof cbor.setRunZipFinalizer>[0]);
+    pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'done', bytesWritten: 123 });
+    const provider = {
+      openZipSaveTarget: vi.fn(async () => ({ write: vi.fn(async () => undefined), close: vi.fn(async () => undefined), abort: vi.fn(async () => undefined) })),
+      openPerFileSaveTarget: vi.fn(),
+    };
+    const jobId = persistSnapshotJob(21, 'Running', photoSpecs(0, 1));
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    await worker.setSaveTargetProvider(provider);
+    // Without explicit resumeJob({mode}) the job stays idle.
+    expect(pipelineMocks.executePhotoTask).not.toHaveBeenCalled();
+
+    await worker.resumeJob(jobId, { mode: { kind: 'zip', fileName: 'restored.zip' } });
+    await cbor.awaitScheduledDriver(worker, jobId);
+
+    expect((await worker.getJob(jobId))?.phase).toBe('Done');
+    expect(zipFinalizer).toHaveBeenCalledTimes(1);
+    const calls = zipFinalizer.mock.calls as unknown as ReadonlyArray<readonly [unknown, string, ...unknown[]]>;
+    expect(calls[0]?.[1]).toBe('restored.zip');
+  });
+
+  it('listResumableJobs includes Finalizing jobs (worker-crash recovery)', async () => {
+    const jobId = persistSnapshotJob(31, 'Finalizing', photoSpecs(5, 5));
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const resumable = await worker.listResumableJobs();
+    expect(resumable.map((job) => job.jobId)).toEqual([jobId]);
+  });
+
+  it('resumeJob({ mode }) on a Finalizing job re-runs the finalizer and emits FinalizationDone', async () => {
+    const perFileFinalizer = vi.fn(async () => undefined);
+    cbor.setRunPerFileFinalizer(perFileFinalizer as unknown as Parameters<typeof cbor.setRunPerFileFinalizer>[0]);
+    const provider = {
+      openZipSaveTarget: vi.fn(),
+      openPerFileSaveTarget: vi.fn(async () => ({
+        openOne: vi.fn(async () => ({ write: vi.fn(async () => undefined), close: vi.fn(async () => undefined), abort: vi.fn(async () => undefined) })),
+        finalize: vi.fn(async () => undefined),
+        abort: vi.fn(async () => undefined),
+      })),
+    };
+    const jobId = persistSnapshotJob(41, 'Finalizing', photoSpecs(3, 3));
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    await worker.setSaveTargetProvider(provider);
+
+    await worker.resumeJob(jobId, { mode: { kind: 'perFile', strategy: 'fsAccessPerFile' } });
+    await cbor.awaitScheduledDriver(worker, jobId);
+
+    expect(perFileFinalizer).toHaveBeenCalledTimes(1);
+    expect((await worker.getJob(jobId))?.phase).toBe('Done');
+  });
+
+  // ----- S5: per-file export failure does not clobber done photo state -----
+  it('recordPhotoFailure preserves done source state and does NOT mark the photo Cancelled', async () => {
+    // Drive a startJob through to Finalizing-equivalent and then exercise the
+    // per-file finalizer dependency directly.
+    pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'done', bytesWritten: 50 });
+    let capturedDeps: { readonly recordPhotoFailure?: (jobId: string, photoId: string, reason: string) => Promise<void> } | null = null;
+    cbor.setRunPerFileFinalizer((async (_job: unknown, _strategy: unknown, deps: unknown): Promise<void> => {
+      capturedDeps = deps as typeof capturedDeps;
+    }) as unknown as Parameters<typeof cbor.setRunPerFileFinalizer>[0]);
+    const provider = {
+      openZipSaveTarget: vi.fn(),
+      openPerFileSaveTarget: vi.fn(async () => ({
+        openOne: vi.fn(),
+        finalize: vi.fn(async () => undefined),
+        abort: vi.fn(async () => undefined),
+      })),
+    };
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    await worker.setSaveTargetProvider(provider);
+    const { jobId } = await worker.startJob({ ...validInput(), outputMode: { kind: 'perFile', strategy: 'fsAccessPerFile' } });
+    await cbor.awaitScheduledDriver(worker, jobId);
+
+    expect(capturedDeps).not.toBeNull();
+    const deps = capturedDeps as unknown as { readonly recordPhotoFailure: (jobId: string, photoId: string, reason: string) => Promise<void> };
+    const before = await worker.getJob(jobId);
+    expect(before?.photoCounts.done).toBe(1);
+
+    // Simulate an export-side failure for an already-staged photo.
+    await deps.recordPhotoFailure(jobId, '018f0000-0000-7000-8000-000000000101', 'IllegalState');
+
+    const after = await worker.getJob(jobId);
+    // Source-state photo MUST remain done — staged bytes are still good.
+    expect(after?.photoCounts.done).toBe(1);
+    expect(after?.photoCounts.failed).toBe(0);
+  });
+
+    it('computes shardChanged when epoch is unchanged but tier-3 shards differ', async () => {
     const jobId = persistSnapshotJob(6, 'Paused', [
       { photoId: 'a', epochId: 1, shardIds: [new Uint8Array(16).fill(14)] },
     ]);
