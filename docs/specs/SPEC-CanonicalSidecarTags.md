@@ -72,7 +72,7 @@ All sidecar tags are encrypted before any server transit and are therefore not s
 
 - `Active`: tag number, name, layout class, and layout detail are finalized and immutable.
 - `ReservedNumberPending`: tag number and name are reserved; a future ADR/ticket must finalize layout details before production encoding expands to that field.
-- `Forbidden`: tag number and name are permanently blocked by policy. Encoders reject the tag with the same runtime error class used for reserved, unpromoted tags.
+- `Forbidden`: tag number and name are permanently blocked by policy. Encoders reject the tag with `MetadataSidecarError::ForbiddenTag`, distinct from `ReservedTagNotPromoted` for `ReservedNumberPending` tags, so telemetry can distinguish permanent policy rejection from "awaiting ADR promotion."
 
 Tag `0` is not a registry entry and is not represented by `SidecarTagStatus`; it is a permanently rejected sentinel documented only in the reserved range table.
 
@@ -83,7 +83,7 @@ Tag `0` is not a registry entry and is not represented by `SidecarTagStatus`; it
 | 3 | original_dimensions | Active | Width `u32` little-endian followed by height `u32` little-endian. Both dimensions must be non-zero. Presence optional; expected for supported media when known. | `RenderingOnly` | ADR-017 Â§"Lock test (`sidecar_tag_table.rs`)"; `metadata_field_tags::ORIGINAL_DIMENSIONS` | Layout detail pinned as `U32LeWidthThenHeightNonZero`. |
 | 4 | mime_override | Active | Byte-exact UTF-8 bytes emitted/consumed by v1 as the trusted MIME override. Encoders must not apply NFC normalization to this active tag; cross-platform encoders must preserve caller-supplied bytes exactly. The shipped `mosaic-domain` sidecar builder applies no tag-specific `max_bytes` cap; the body is bounded only by `MAX_SIDECAR_TOTAL_BYTES`, the TLV `length: u32` field, and the non-empty field rule. The v1 media producer emits canonical ASCII `MediaFormat` MIME strings such as `image/jpeg`, `image/png`, and `image/webp`. | `ContainerTechnical` | ADR-017 Â§"Lock test (`sidecar_tag_table.rs`)"; `metadata_field_tags::MIME_OVERRIDE`; `canonical_metadata_sidecar_bytes` | Layout detail pinned as `Utf8BytesNoRegistryCapU32Length`; no stricter cap or normalization step is retroactively introduced by this SPEC. |
 | 5 | caption | ReservedNumberPending | Layout finalized by future ADR. Currently reserved for user caption UTF-8 bytes. Presence optional; omit when absent. | `UserContent` | ADR-017 Â§"Reserved tag-number ranges"; `metadata_field_tags::CAPTION` | Numeric constant exists as a reserved-name placeholder; layout not yet locked. |
-| 6 | filename | Forbidden | FORBIDDEN — see ADR-017 §"Registry rules" item 5. ADR-017 forbids filenames as sidecar payloads; no production encoder may serialize this tag. | `UserContent` | ADR-017 §"Registry rules" item 5; `sidecar_tag_table.rs::expected_and_live_tables_agree` | No `metadata_field_tags::FILENAME` public constant is exposed; tag number remains permanently forbidden. |
+| 6 | filename | Forbidden | FORBIDDEN — see ADR-017 §"Registry rules" item 5. ADR-017 forbids filenames as sidecar payloads; no production encoder may serialize this tag. | `UserContent` | ADR-017 §"Registry rules" item 5; `sidecar_tag_table.rs::expected_and_live_tables_agree`; `sidecar_tag_table.rs::lock_test_for_every_forbidden_tag` | No `metadata_field_tags::FILENAME` public constant is exposed; tag number remains permanently forbidden and encoder dispatch is locked to `MetadataSidecarError::ForbiddenTag`. |
 | 7 | camera_make | ReservedNumberPending | Layout finalized by R-M4 / future ADR. Planned layout from R-M4: UTF-8, NFC, explicit byte cap 64, non-UTF-8 rejected. Presence optional; omit when absent. | `DeviceFingerprint` | ADR-017 Â§"Context"; plan Â§3.2 R-M4 | R-M4 promotes this row to `Active` when layout tests land. |
 | 8 | camera_model | ReservedNumberPending | Layout finalized by R-M4 / future ADR. Planned layout from R-M4: UTF-8, NFC, explicit byte cap 64, non-UTF-8 rejected. Presence optional; omit when absent. | `DeviceFingerprint` | ADR-017 Â§"Context"; plan Â§3.2 R-M4 | R-M4 promotes this row to `Active` when layout tests land. |
 | 9 | gps | ReservedNumberPending | Layout finalized by R-M3 / future ADR. Planned layout from R-M3: `f64 LE lat; f64 LE lon; f64 LE alt_m; i64 LE timestamp_unix_ms; u8 presence_bitmap`, absent fields zeroed and ignored; reject NaN/Inf, latitude outside `[-90,90]`, longitude outside `[-180,180]`. Presence optional; omit when no GPS metadata is preserved. | `SensitiveLocation` | ADR-017 §"Context"; plan §3.2 R-M3 | R-M3 promotes this row to `Active` when layout tests land. |
@@ -98,7 +98,7 @@ Tag `0` is not a registry entry and is not represented by `SidecarTagStatus`; it
 |---|---|---|---|
 | `0` | Reserved sentinel | Never allocated; rejected before registry lookup as `ZeroFieldTag`. | ADR-017 Â§"Reserved tag-number ranges" |
 | `1..=4` | Active | Existing v1 image-class tags. Existing active tuples immutable. | ADR-017 Â§"Reserved tag-number ranges" |
-| `5..=6` | Reserved allocation range | Caption / filename slots; concrete allocated rows use `ReservedNumberPending` until a future ADR promotes them to `Active`. | ADR-017 Â§"Reserved tag-number ranges" |
+| `5..=6` | Reserved allocation range | Caption remains `ReservedNumberPending`; filename/tag 6 is permanently `Forbidden` and cannot be promoted without a future ADR explicitly replacing that policy. | ADR-017 Â§"Reserved tag-number ranges"; ADR-017 §"Registry rules" item 5 |
 | `7..=9` | Reserved allocation range | R-M3 / R-M4 image-extension allocations; concrete allocated rows use `ReservedNumberPending`. | ADR-017 Â§"Reserved tag-number ranges" |
 | `10..=13` | Reserved allocation range | Video-class allocation: codec, duration, frame rate, video orientation; concrete allocated rows use `ReservedNumberPending`. | ADR-017 Â§"Reserved tag-number ranges"; ADR-024 Â§"Sidecar contents (R-M7)" |
 | `14..=127` | Unallocated reserved range | Media-class extensions: image, video, audio if added. | ADR-017 Â§"Reserved tag-number ranges" |
@@ -113,7 +113,7 @@ The `4096..=32767` and `32768..=65535` ranges are deliberately disjoint. ADR-017
 
 The decode validation rules below apply to the future sidecar decoder ticket (post-R-M5.1). Until that ticket lands, Mosaic does not implement a sidecar decoder; encoded sidecars are produced by Rust on the client side and consumed only by the encrypted-envelope wrap step. Cross-platform decode parity, fuzz-green gate inclusion (per ADR-020), and decoder error semantics are deferred.
 
-Decoder + fuzz harness are tracked as R-M5.2 in plan §15 if and when sidecar decoding becomes a v1 requirement.
+R-M5.2 is complete at `5d42e5a` for registry correctness follow-ups. Decoder + fuzz harness + forbidden-name defense are tracked separately as R-M5.3 in plan §12 if and when sidecar decoding becomes a v1 requirement.
 
 ## UTF-8 length cap behavior
 

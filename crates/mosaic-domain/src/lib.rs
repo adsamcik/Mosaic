@@ -31,6 +31,12 @@ pub const METADATA_SIDECAR_CONTEXT: &[u8] = b"Mosaic_Metadata_v1";
 pub const METADATA_SIDECAR_VERSION: u8 = 1;
 
 /// Defense-in-depth cap for the complete canonical metadata sidecar byte buffer.
+///
+/// The 1.5 MB limit is roughly 30× larger than the largest currently plausible
+/// legitimate sidecar and exists to bound allocation/DoS surface. Revisit this
+/// before v1 freeze: based on planned active-tag layouts, a tighter cap such as
+/// 64 KiB may be sufficient, but the protocol-visible value is lock-tested until
+/// an explicit ADR changes it.
 pub const MAX_SIDECAR_TOTAL_BYTES: usize = 1_500_000;
 
 /// Client-local plaintext sensitivity class for a sidecar tag.
@@ -256,6 +262,8 @@ pub enum MetadataSidecarError {
     UnsortedFieldTag { previous: u16, actual: u16 },
     /// The tag number is known but its byte layout has not been promoted.
     ReservedTagNotPromoted { tag: u16 },
+    /// The tag number is permanently forbidden by policy.
+    ForbiddenTag { tag: u16 },
     /// The tag number is outside the append-only sidecar registry.
     UnknownTag { tag: u16 },
 }
@@ -540,12 +548,13 @@ impl<'a> ManifestTranscript<'a> {
 /// # Errors
 /// Returns [`MetadataSidecarError::LengthTooLarge`] when the field count or any
 /// field value length cannot fit in `u32`, [`MetadataSidecarError::ZeroFieldTag`]
-/// for tag zero, [`MetadataSidecarError::ReservedTagNotPromoted`] or
-/// [`MetadataSidecarError::UnknownTag`] when the registry does not allow
-/// encoding a tag, [`MetadataSidecarError::EmptyFieldValue`] for present fields
-/// without values, [`MetadataSidecarError::DuplicateFieldTag`] for repeated
-/// tags, or [`MetadataSidecarError::UnsortedFieldTag`] when fields are not
-/// supplied in strictly ascending tag order.
+/// for tag zero, [`MetadataSidecarError::ReservedTagNotPromoted`],
+/// [`MetadataSidecarError::ForbiddenTag`], or [`MetadataSidecarError::UnknownTag`]
+/// when the registry does not allow encoding a tag,
+/// [`MetadataSidecarError::EmptyFieldValue`] for present fields without values,
+/// [`MetadataSidecarError::DuplicateFieldTag`] for repeated tags, or
+/// [`MetadataSidecarError::UnsortedFieldTag`] when fields are not supplied in
+/// strictly ascending tag order.
 pub fn canonical_metadata_sidecar_bytes(
     sidecar: &MetadataSidecar<'_>,
 ) -> Result<Vec<u8>, MetadataSidecarError> {
@@ -586,7 +595,7 @@ fn canonical_metadata_sidecar_bytes_inner(
                     return Err(MetadataSidecarError::ReservedTagNotPromoted { tag: field.tag() });
                 }
                 Some(SidecarTagStatus::Forbidden) => {
-                    return Err(MetadataSidecarError::ReservedTagNotPromoted { tag: field.tag() });
+                    return Err(MetadataSidecarError::ForbiddenTag { tag: field.tag() });
                 }
                 None => return Err(MetadataSidecarError::UnknownTag { tag: field.tag() }),
             }

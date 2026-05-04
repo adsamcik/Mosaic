@@ -19,8 +19,8 @@
 8. [Timeline](#implementation-timeline)
 9. [Security Documentation](#security-documentation)
 10. [Design Decisions](#design-decisions-preserved)
-13. [Late-v1 Irreversibility Register](#13-late-v1-irreversibility-register)
-15. [R-M5.2 Sidecar Decoder Tracking](#15-r-m52-sidecar-decoder-tracking)
+11. [Late-v1 Irreversibility Register](#11-late-v1-irreversibility-register)
+12. [R-M5.3 Sidecar Decoder Tracking](#12-r-m53-sidecar-decoder-tracking)
 
 ---
 
@@ -1475,45 +1475,6 @@ Create `docs/SECURITY.md` with:
 
 ---
 
-## 13. Late-v1 Irreversibility Register
-
-| Surface | Frozen bytes / values | Lock citation | Status |
-|---------|-----------------------|---------------|--------|
-| AEAD domain-separation labels | `mosaic:l3-epoch-seed:v1`, `mosaic:l3-identity-seed:v1`, `mosaic:account-wrapped-data:v1`; bound into XChaCha20-Poly1305 AAD so cross-domain unwrap MUST fail | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::aead_wrap_domain_labels_are_frozen`; `crates/mosaic-crypto/tests/envelope_crypto.rs::aad_secret_wrap_round_trips_only_with_matching_domain`; `crates/mosaic-client/tests/adr006_compositional_attack_blocked.rs::{adr006_unwrap_with_account_cannot_recover_epoch_seed,adr006_unwrap_with_account_cannot_recover_identity_seed,account_data_wrap_unwrap_round_trip}` | Frozen by R-C6 |
-
----
-
-## 15. R-M5.2 Sidecar Decoder Tracking
-
-R-M5.2 tracks sidecar decoder implementation if sidecar decoding becomes a v1
-requirement. Until it lands, ADR-017 decode-validation rules are forward-looking
-design specifications rather than enforceable runtime invariants.
-
-| Work item | Scope | Status |
-|-----------|-------|--------|
-| Decoder | Implement TLV decoder for `Mosaic_Metadata_v1`, including active/reserved/unknown tag handling. | Deferred |
-| Fuzz harness | Add fuzz-green coverage for decoder inputs per ADR-020 before accepting decoder behavior as a v1 invariant. | Deferred |
-| Forbidden payload defense | Reject forbidden field-name patterns, especially tag 6 `filename`, as defense in depth. | Deferred |
-| Cross-platform parity | Include decoder error semantics and sidecar byte equality in Q-final-1 when decoder lands. | Deferred |
-
-### R-C6 ADR-006 compositional closure
-
-R-C6 closes the binary-confirmed ADR-006 violation discovered after P-W7.3:
-generic account-data unwraps can no longer decrypt L3 epoch or identity seed
-wraps because each domain is authenticated with a distinct AEAD AAD label.
-`wrapWithAccountHandle`/`unwrapWithAccountHandle` are now scoped to
-`mosaic:account-wrapped-data:v1`, while persisted epoch and identity seed wraps
-use `mosaic:l3-epoch-seed:v1` and `mosaic:l3-identity-seed:v1`.
-
-The OPFS snapshot envelope version is bumped from v3 to v4 so v3 snapshots
-created before the AAD label was added are invalidated and rehydrated from the
-server rather than decrypted under the new domain. The production photo
-decrypt-path migration is tracked as R-C6.1: remaining `epochSeed` placeholder
-consumers must be replaced by `epochHandleId` calls (`decryptShardWithEpoch`,
-manifest/content handle methods) before the placeholder field is removed.
-
----
-
 ## Design Decisions Preserved
 
 These elements from the original design remain unchanged:
@@ -1531,3 +1492,46 @@ These elements from the original design remain unchanged:
 | PostgreSQL | Right tool for the job |
 | Single version scalar per album | Sufficient at small scale |
 | Last-Writer-Wins conflict resolution | Simple, predictable, sufficient at small scale |
+
+---
+
+## 11. Late-v1 Irreversibility Register
+
+| Surface | Frozen bytes / values | Lock citation | Status |
+|---------|-----------------------|---------------|--------|
+| AEAD domain-separation labels | `mosaic:l3-epoch-seed:v1`, `mosaic:l3-identity-seed:v1`, `mosaic:account-wrapped-data:v1`; bound into XChaCha20-Poly1305 AAD so cross-domain unwrap MUST fail | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::aead_wrap_domain_labels_are_frozen`; `crates/mosaic-crypto/tests/envelope_crypto.rs::aad_secret_wrap_round_trips_only_with_matching_domain`; `crates/mosaic-client/tests/adr006_compositional_attack_blocked.rs::{adr006_unwrap_with_account_cannot_recover_epoch_seed,adr006_unwrap_with_account_cannot_recover_identity_seed,account_data_wrap_unwrap_round_trip}` | Frozen by R-C6 |
+| Metadata sidecar total byte cap | `MAX_SIDECAR_TOTAL_BYTES = 1_500_000` for complete canonical sidecar buffers | `crates/mosaic-domain/tests/sidecar_tag_table.rs::max_sidecar_total_bytes_is_frozen` | Frozen by R-M5.2.1 |
+| Forbidden sidecar tag error contract | `SidecarTagStatus::Forbidden` dispatches to `MetadataSidecarError::ForbiddenTag`, not `ReservedTagNotPromoted` | `crates/mosaic-domain/tests/sidecar_tag_table.rs::lock_test_for_every_forbidden_tag` | Frozen by R-M5.2.1 |
+
+---
+
+## 12. R-M5.3 Sidecar Decoder Tracking
+
+R-M5.2 is Done at `5d42e5a` for sidecar registry correctness follow-ups.
+R-M5.3 tracks the deferred sidecar decoder, fuzz harness, and forbidden-name
+defense if sidecar decoding becomes a v1 requirement. Until R-M5.3 lands,
+ADR-017 decode-validation rules are forward-looking design specifications rather
+than enforceable runtime invariants.
+
+| Work item | Scope | Status |
+|-----------|-------|--------|
+| Decoder | Implement TLV decoder for `Mosaic_Metadata_v1`, including active/reserved/forbidden/unknown tag handling. | Deferred to R-M5.3 |
+| Fuzz harness | Add fuzz-green coverage for decoder inputs per ADR-020 before accepting decoder behavior as a v1 invariant. | Deferred to R-M5.3 |
+| Forbidden payload defense | Reject forbidden field-name patterns, especially tag 6 `filename`, as defense in depth. | Deferred to R-M5.3 |
+| Cross-platform parity | Include decoder error semantics and sidecar byte equality in Q-final-1 when decoder lands. | Deferred to R-M5.3 |
+
+### R-C6 ADR-006 compositional closure
+
+R-C6 closes the binary-confirmed ADR-006 violation discovered after P-W7.3:
+generic account-data unwraps can no longer decrypt L3 epoch or identity seed
+wraps because each domain is authenticated with a distinct AEAD AAD label.
+`wrapWithAccountHandle`/`unwrapWithAccountHandle` are now scoped to
+`mosaic:account-wrapped-data:v1`, while persisted epoch and identity seed wraps
+use `mosaic:l3-epoch-seed:v1` and `mosaic:l3-identity-seed:v1`.
+
+The OPFS snapshot envelope version is bumped from v3 to v4 so v3 snapshots
+created before the AAD label was added are invalidated and rehydrated from the
+server rather than decrypted under the new domain. The production photo
+decrypt-path migration is tracked as R-C6.1: remaining `epochSeed` placeholder
+consumers must be replaced by `epochHandleId` calls (`decryptShardWithEpoch`,
+manifest/content handle methods) before the placeholder field is removed.

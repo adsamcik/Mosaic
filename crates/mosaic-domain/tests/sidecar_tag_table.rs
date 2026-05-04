@@ -1,4 +1,11 @@
-use mosaic_domain::{SidecarTagPrivacyClass, SidecarTagStatus, metadata_field_tags};
+use mosaic_domain::{
+    MAX_SIDECAR_TOTAL_BYTES, MetadataSidecar, MetadataSidecarError, MetadataSidecarField,
+    SidecarTagPrivacyClass, SidecarTagStatus, canonical_metadata_sidecar_bytes,
+    metadata_field_tags,
+};
+
+const ALBUM_ID: [u8; 16] = [0x11; 16];
+const PHOTO_ID: [u8; 16] = [0x22; 16];
 
 fn pub_u16_consts(source: &str) -> Vec<(u16, String)> {
     let regex = match regex::Regex::new(
@@ -89,6 +96,10 @@ fn pub_u16_const_parser_handles_hex_and_typed_suffix_literals() {
         pub const TYPED_TAG: u16 = 14u16;
         pub const UNDERSCORED_TYPED_TAG: u16 = 14_u16;
         pub const DECIMAL_WITH_SEPARATOR: u16 = 1_024;
+        pub const LOWER_HEX: u16 = 0xa6;
+        pub const UPPER_HEX: u16 = 0xA6;
+        pub const HEX_TYPED: u16 = 0x10u16;
+        pub const HEX_UNDERSCORE_TYPED: u16 = 0x10_u16;
     ";
 
     assert_eq!(
@@ -98,6 +109,10 @@ fn pub_u16_const_parser_handles_hex_and_typed_suffix_literals() {
             (14, "typed_tag".to_owned()),
             (14, "underscored_typed_tag".to_owned()),
             (1024, "decimal_with_separator".to_owned()),
+            (166, "lower_hex".to_owned()),
+            (166, "upper_hex".to_owned()),
+            (16, "hex_typed".to_owned()),
+            (16, "hex_underscore_typed".to_owned()),
         ]
     );
 }
@@ -145,5 +160,29 @@ fn no_duplicate_numbers() {
     let mut seen = std::collections::BTreeSet::new();
     for entry in metadata_field_tags::KNOWN_FIELD_TAGS {
         assert!(seen.insert(entry.tag_number()));
+    }
+}
+
+#[test]
+fn max_sidecar_total_bytes_is_frozen() {
+    assert_eq!(MAX_SIDECAR_TOTAL_BYTES, 1_500_000);
+}
+
+#[test]
+fn lock_test_for_every_forbidden_tag() {
+    let forbidden_tags: Vec<_> = metadata_field_tags::KNOWN_FIELD_TAGS
+        .iter()
+        .filter(|entry| entry.status() == SidecarTagStatus::Forbidden)
+        .map(|entry| entry.tag_number())
+        .collect();
+
+    assert_eq!(forbidden_tags, vec![6]);
+
+    for tag in forbidden_tags {
+        let fields = [MetadataSidecarField::new(tag, b"forbidden")];
+        assert_eq!(
+            canonical_metadata_sidecar_bytes(&MetadataSidecar::new(ALBUM_ID, PHOTO_ID, 1, &fields)),
+            Err(MetadataSidecarError::ForbiddenTag { tag })
+        );
     }
 }

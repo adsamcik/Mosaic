@@ -41,7 +41,7 @@ Sidecar tag numbers are governed by an **append-only, lock-tested, ADR-changeabl
 2. **No re-use.** A removed tag is **deprecated, not deleted**: the registry retains an entry marked `Deprecated { since_version, replacement?: u16 }`. The `u16` value is permanently reserved.
 3. **Layout is part of the contract.** Every tag entry specifies: TLV body byte layout (with endianness), value range / validity rules, presence semantics (optional, conditional, required), encoding format (UTF-8 NFC, fixed binary, etc.), max byte length cap.
 4. **No tag may carry plaintext content** that is not already part of the v1 sidecar privacy classes (orientation, dimensions, MIME, GPS, timestamps, camera identity, video codec). All sidecar TLV bytes are encrypted before server transit; per-tag privacy classes are registry metadata describing client-local plaintext sensitivity for future redaction, logging, and platform handling. They are not currently a runtime-enforced redaction hook. New privacy classes require a separate ADR amending `SPEC-LateV1ProtocolFreeze.md` §"Frozen now" item 5.
-5. **No tag may carry secret material** (keys, password hashes, biometric data, account identifiers, raw URIs, file names). Tag 6 remains numerically reserved as `filename`, but filenames are forbidden payloads and producers must not emit that tag. The R-M5.2 decoder target includes a defense-in-depth forbidden-name check before any decoder becomes a v1 invariant.
+5. **No tag may carry secret material** (keys, password hashes, biometric data, account identifiers, raw URIs, file names). Tag 6 remains numerically reserved as `filename`, but filenames are forbidden payloads and producers must not emit that tag. Encoders reject `Forbidden` tags with `MetadataSidecarError::ForbiddenTag`, distinct from `ReservedNumberPending` tags rejected as `ReservedTagNotPromoted`. The R-M5.3 decoder target includes a defense-in-depth forbidden-name check before any decoder becomes a v1 invariant.
 6. **Cross-implementation consistency.** Native Rust, WASM (P-W2), and UniFFI (P-U1) all consume the same numeric registry; cross-wrapper byte-equality tests (Q-final-1) include sidecar bytes for every supported tag combination.
 
 ### Lock test (`sidecar_tag_table.rs`)
@@ -53,7 +53,7 @@ const REGISTRY_V1: &[(u16, &str, TagLayout, TagStatus)] = &[
     (3, "original_dimensions", TagLayout::DimensionsLe, TagStatus::Active),
     (4, "mime_override", TagLayout::Utf8BytesNoRegistryCapU32Length { byte_exact: true }, TagStatus::Active),
     (5, "caption", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
-    (6, "filename", TagLayout::ForbiddenReservedPayload, TagStatus::ReservedNumberPending),
+    (6, "filename", TagLayout::ForbiddenReservedPayload, TagStatus::Forbidden),
     (7, "camera_make", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
     (8, "camera_model", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
     (9, "gps", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
@@ -70,7 +70,7 @@ fn registry_is_append_only() {
 }
 ```
 
-Tag *numbers* are locked by this ADR and by `sidecar_tag_table.rs`; *byte layouts* for tags marked `ReservedNumberPending` are finalized by their corresponding R-M ticket and are not normative until that ticket merges with golden vectors. Until then, `ReservedAwaitingLayout` means the number is allocated, but producers must not emit the tag and decoders must not treat a concrete layout as frozen. The corresponding ticket remains documented in the canonical SPEC row notes.
+Tag *numbers* are locked by this ADR and by `sidecar_tag_table.rs`; *byte layouts* for tags marked `ReservedNumberPending` are finalized by their corresponding R-M ticket and are not normative until that ticket merges with golden vectors. Until then, `ReservedAwaitingLayout` means the number is allocated, but producers must not emit the tag and decoders must not treat a concrete layout as frozen. Tags marked `Forbidden` are permanently blocked by policy; production encoders report `ForbiddenTag` rather than `ReservedTagNotPromoted` so telemetry can distinguish permanent rejection from "awaiting ADR promotion." The corresponding ticket remains documented in the canonical SPEC row notes.
 
 ### Reserved tag-number ranges
 
@@ -89,7 +89,7 @@ The two reserved ranges (4096–32767 and 32768–65535) were inadvertently over
 
 ### Decode validation (defense in depth)
 
-These rules describe target decoder behavior. Until R-M5.2 implements a decoder, the rules are forward-looking design specifications, not enforceable invariants. Encoders still enforce the active/reserved registry status before writing sidecar bytes.
+These rules describe target decoder behavior. R-M5.2 shipped registry correctness follow-ups in `5d42e5a`; the deferred decoder and fuzz harness are now tracked separately as R-M5.3. Until R-M5.3 implements a decoder, the rules are forward-looking design specifications, not enforceable invariants. Encoders still enforce the active/reserved/forbidden registry status before writing sidecar bytes.
 
 Sidecar decoders must:
 

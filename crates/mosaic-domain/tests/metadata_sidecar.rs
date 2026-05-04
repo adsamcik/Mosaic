@@ -222,7 +222,7 @@ fn encoder_rejects_filename_tag_6_reserved() {
     let fields = [MetadataSidecarField::new(6, b"img.jpg")];
     assert_eq!(
         canonical_metadata_sidecar_bytes(&MetadataSidecar::new(ALBUM_ID, PHOTO_ID, 1, &fields)),
-        Err(MetadataSidecarError::ReservedTagNotPromoted { tag: 6 })
+        Err(MetadataSidecarError::ForbiddenTag { tag: 6 })
     );
 }
 
@@ -231,7 +231,7 @@ fn encoder_rejects_empty_reserved_tag_before_empty_value() {
     let fields = [MetadataSidecarField::new(6, b"")];
     assert_eq!(
         canonical_metadata_sidecar_bytes(&MetadataSidecar::new(ALBUM_ID, PHOTO_ID, 1, &fields)),
-        Err(MetadataSidecarError::ReservedTagNotPromoted { tag: 6 })
+        Err(MetadataSidecarError::ForbiddenTag { tag: 6 })
     );
 }
 
@@ -258,6 +258,57 @@ fn encoder_rejects_sidecar_total_bytes_above_cap() {
         }
     );
 }
+
+#[test]
+fn encoder_accepts_sidecar_at_exact_cap_boundary() {
+    let fixed_header_bytes = 59;
+    let tlv_record_header_bytes = 2 + 4;
+    let largest_legal_value_len =
+        MAX_SIDECAR_TOTAL_BYTES - fixed_header_bytes - tlv_record_header_bytes;
+    let boundary_value = vec![0x61; largest_legal_value_len];
+    let fields = [MetadataSidecarField::new(
+        metadata_field_tags::MIME_OVERRIDE,
+        &boundary_value,
+    )];
+
+    let bytes = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
+        ALBUM_ID, PHOTO_ID, 1, &fields,
+    )) {
+        Ok(bytes) => bytes,
+        Err(error) => panic!("sidecar at exact total cap should serialize: {error:?}"),
+    };
+
+    assert_eq!(bytes.len(), MAX_SIDECAR_TOTAL_BYTES);
+}
+
+#[test]
+fn encoder_rejects_sidecar_one_byte_over_cap() {
+    let fixed_header_bytes = 59;
+    let tlv_record_header_bytes = 2 + 4;
+    let one_byte_too_large_value_len =
+        MAX_SIDECAR_TOTAL_BYTES - fixed_header_bytes - tlv_record_header_bytes + 1;
+    let over_boundary_value = vec![0x61; one_byte_too_large_value_len];
+    let fields = [MetadataSidecarField::new(
+        metadata_field_tags::MIME_OVERRIDE,
+        &over_boundary_value,
+    )];
+
+    let error = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
+        ALBUM_ID, PHOTO_ID, 1, &fields,
+    )) {
+        Ok(_) => panic!("sidecar one byte above total cap should fail"),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_total_bytes",
+            actual: MAX_SIDECAR_TOTAL_BYTES + 1
+        }
+    );
+}
+
 #[test]
 fn encoder_rejects_vendor_range_tag_4096() {
     let fields = [MetadataSidecarField::new(4096, b"vendor")];

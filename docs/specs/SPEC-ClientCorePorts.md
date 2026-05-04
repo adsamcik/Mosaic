@@ -1201,7 +1201,7 @@ pub struct DiagnosticEvent {
 
 **Async behavior:** Async local I/O. Best-effort: telemetry failure must never
 change reducer state or retry behavior. `schema_version: u16` is a forever-
-frozen append-only diagnostic-event registry surface per plan §13; the registry
+frozen append-only diagnostic-event registry surface per plan §11; the registry
 and lock test are a follow-up ticket before telemetry adapter implementation. No
 server delivery occurs in this port; ADR-018's opted-in aggregate upload is a
 separate out-of-band diagnostics port.

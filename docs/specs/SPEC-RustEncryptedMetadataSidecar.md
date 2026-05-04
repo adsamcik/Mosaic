@@ -128,7 +128,7 @@ the canonical container:
 | 3 | original dimensions | Active | little-endian width `u32`, height `u32` |
 | 4 | MIME override | Active | byte-exact UTF-8 bytes; no NFC normalization or tag-specific byte cap |
 | 5 | caption | ReservedNumberPending | reserved for future ADR; producers must not emit |
-| 6 | filename | ReservedNumberPending | FORBIDDEN — see ADR-017 §"Registry rules" item 5; producers must not emit |
+| 6 | filename | Forbidden | FORBIDDEN — see ADR-017 §"Registry rules" item 5; producers must not emit |
 | 7 | camera make | ReservedNumberPending | layout pending R-M4; producers must not emit |
 | 8 | camera model | ReservedNumberPending | layout pending R-M4; producers must not emit |
 | 9 | GPS | ReservedNumberPending | layout pending R-M3; producers must not emit |
@@ -144,9 +144,9 @@ the canonical container:
 - Duplicate tags are rejected.
 - Unsorted input is rejected rather than silently sorted, preserving explicit
   canonical transcript strictness.
-- Production encoding rejects `ReservedNumberPending` and unknown tags before
-  checking empty field values, so reserved-tag telemetry is not bypassed by an
-  empty payload.
+- Production encoding rejects `ReservedNumberPending`, `Forbidden`, and unknown
+  tags before checking empty field values, so tag-status telemetry is not
+  bypassed by an empty payload.
 - The complete canonical sidecar byte buffer is capped by
   `MAX_SIDECAR_TOTAL_BYTES` as a defense-in-depth allocation bound.
 
