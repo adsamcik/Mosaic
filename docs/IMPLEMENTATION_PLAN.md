@@ -1568,7 +1568,7 @@ than enforceable runtime invariants.
 | R-C5.4 follow-up Cow bare-name gap | Bare-name `Cow<[u8]>` not caught by producer guard | Pending | — |
 | R-Cl1.2 follow-up phase-list drift | Phase array → discriminant-exhaustive iteration | Pending | — |
 | R-Cl1.2 follow-up legacy snapshot migration | Migrate stuck RetryWaiting+ManifestCommitUnknown | Pending | — |
-| Ledger sweep Wave 2 | This commit: §11 cap tightening + AAD label expansion; §12.1 Wave 2 entries | Done | `<this commit hash>` |
+| Ledger sweep Wave 2 | This commit: §11 cap tightening + AAD label expansion; §12.1 Wave 2 entries | Done | `d7bc035` |
 
 | Work item | Scope | Status |
 |-----------|-------|--------|
