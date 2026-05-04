@@ -21,6 +21,54 @@ import { uint8ArrayToBase64 } from './types';
 
 const log = createLogger('TieredUploadHandler');
 
+const FAIL_CLOSED_STRIP_REASONS = new Set([
+  'unsupported-heic',
+  'unsupported-avif',
+  'unsupported-video',
+  'unsupported-mime',
+  'wasm-strip-failed',
+  'malformed-jpeg',
+  'malformed-png',
+  'malformed-webp',
+]);
+
+function unsupportedStripReasonForMimeType(mimeType: string): string | null {
+  if (mimeType === 'image/heic' || mimeType === 'image/heif') return 'unsupported-heic';
+  if (mimeType === 'image/avif') return 'unsupported-avif';
+  if (mimeType.startsWith('video/')) return 'unsupported-video';
+  if (
+    mimeType !== 'image/jpeg'
+    && mimeType !== 'image/jpg'
+    && mimeType !== 'image/pjpeg'
+    && mimeType !== 'image/png'
+    && mimeType !== 'image/webp'
+  ) {
+    return 'unsupported-mime';
+  }
+  return null;
+}
+
+function stripRejectionMessage(reason: string, mimeType: string): string {
+  switch (reason) {
+    case 'unsupported-heic':
+      return 'Upload rejected: HEIC original metadata stripping is not available until R-M1.';
+    case 'unsupported-avif':
+      return 'Upload rejected: AVIF original metadata stripping is not available until R-M2.';
+    case 'unsupported-video':
+      return 'Upload rejected: video metadata stripping is not available until R-M6.';
+    case 'unsupported-mime':
+      return `Upload rejected: metadata stripping is unsupported for ${mimeType} originals.`;
+    case 'wasm-strip-failed':
+      return 'Upload rejected: metadata stripping failed before encryption.';
+    case 'malformed-jpeg':
+    case 'malformed-png':
+    case 'malformed-webp':
+      return `Upload rejected: malformed ${mimeType} original cannot be safely stripped.`;
+    default:
+      return `Upload rejected: metadata stripping did not complete for ${mimeType} originals.`;
+  }
+}
+
 /**
  * Process tiered upload for image files.
  * Generates and uploads thumb, preview, and original shards.
@@ -53,6 +101,17 @@ export async function processTieredUpload(
       },
     };
 
+    const stripOriginalMetadata = shouldStripExifFromOriginals();
+    const storeOriginalAsAvif = shouldStoreOriginalsAsAvif();
+    const sourceMimeType = (task.file.type || 'application/octet-stream').trim().toLowerCase();
+
+    if (stripOriginalMetadata && !storeOriginalAsAvif) {
+      const unsupportedReason = unsupportedStripReasonForMimeType(sourceMimeType);
+      if (unsupportedReason !== null) {
+        throw new Error(stripRejectionMessage(unsupportedReason, sourceMimeType));
+      }
+    }
+
     // Step 1: Convert image to tiered formats (thumb, preview, original)
     task.currentAction = 'converting';
     ctx.onProgress?.(task);
@@ -69,21 +128,10 @@ export async function processTieredUpload(
       originalHeight: tieredImages.originalHeight,
     });
 
-    // H5: Strip EXIF / IPTC metadata from the original-tier bytes before
-    // encryption. The thumbnail and preview tiers are always re-encoded
-    // through canvas (AVIF), which sheds EXIF naturally. The original tier
-    // can be JPEG passthrough (when the user prefers `preserve` format),
-    // which would otherwise leak GPS, device serial, and timestamps to
-    // anyone with a share link. Stripping is opt-out via settings.
-    //
-    // Format-coverage gap: only JPEG is stripped today. HEIC, PNG, WebP,
-    // and AVIF originals are passed through unchanged (the stripper marks
-    // them with skippedReason='unsupported-mime'). See exif-stripper.ts
-    // for the full rationale and follow-up plan.
-    if (shouldStripExifFromOriginals()) {
-      const originalMimeType = shouldStoreOriginalsAsAvif()
-        ? 'image/avif'
-        : task.file.type || 'application/octet-stream';
+    // Strip metadata only when preserving the source original. Canvas-generated
+    // AVIF originals are freshly encoded and do not carry source metadata.
+    if (stripOriginalMetadata && !storeOriginalAsAvif) {
+      const originalMimeType = sourceMimeType;
       const sizeBefore = tieredImages.original.data.byteLength;
       const stripResult = await stripExifFromBlob(
         new Blob([new Uint8Array(tieredImages.original.data)]),
@@ -97,10 +145,14 @@ export async function processTieredUpload(
           sizeAfter: stripResult.bytes.byteLength,
         });
       } else {
+        const skippedReason = stripResult.skippedReason ?? 'no-metadata-found';
+        if (FAIL_CLOSED_STRIP_REASONS.has(skippedReason)) {
+          throw new Error(stripRejectionMessage(skippedReason, originalMimeType));
+        }
         log.info('EXIF stripping skipped for original tier', {
           mimeType: originalMimeType,
           sizeBefore,
-          reason: stripResult.skippedReason ?? 'no-metadata-found',
+          reason: skippedReason,
         });
       }
     }

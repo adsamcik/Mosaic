@@ -536,6 +536,29 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 
 ---
 
+### Web Metadata Strip Parity (M0)
+
+**Purpose:** Web uploads use the same Rust metadata stripping surface as native clients before encryption.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Rust media | `crates/mosaic-media/src/lib.rs` |
+| WASM facade | `crates/mosaic-wasm/src/lib.rs` |
+| Frontend | `apps/web/src/lib/exif-stripper.ts` |
+| Upload handling | `apps/web/src/lib/upload/tiered-upload-handler.ts` |
+
+**Features:**
+- JPEG, PNG, and WebP metadata stripping delegates to `mosaic-media` through WASM.
+- HEIC/AVIF/video source-preserved originals fail closed until parser support lands.
+- Shared Rust/Web golden corpus enforces byte-identical post-strip output.
+
+**Tests:**
+- Rust: `crates/mosaic-media/tests/strip_corpus.rs`
+- Frontend: `apps/web/src/lib/__tests__/exif-stripper.test.ts`, `apps/web/src/lib/upload/__tests__/tiered-upload-handler-metadata.test.ts`, `apps/web/tests/strip-parity.test.ts`
+
+---
+
 ## Sync & Offline
 
 ### Local Database (SQLite-WASM)
@@ -918,6 +941,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-05-04 | Web Metadata Strip Parity (M0) | Added | Web JPEG/PNG/WebP stripping now delegates to Rust `mosaic-media` WASM; HEIC/AVIF/video source originals reject until parser support lands |
 | 2026-04-30 | Cross-client cryptographic vector parity (Android, Slice 0C) | Added | 7 new raw-input UniFFI exports + 5 Generated*Bridge contracts + 5 AndroidRust*Api adapters + 30 round-trip tests; closes 5 `TODO Slice 0C:` markers in `CrossClientVectorTest.kt`; new `kotlin-raw-input-ffi` architecture guard; new `error_code_table.rs` snapshot test |
 | 2026-04-30 | TS-Canonical Cryptographic Primitives | Added | `mosaic-crypto::ts_canonical` module: BLAKE2b-keyed link IDs, BLAKE2b auth-key + L1 derivation, XSalsa20-Poly1305 (`crypto_secretbox`) wrap/unwrap; reproduces TS reference byte-exact for `auth_keypair.json`, `account_unlock.json`, `link_keys.json` corpora |
 | 2026-04-29 | Sync Conflict Resolution     | Added    | Lane B: deterministic three-way block merge with LWW fallback for album content; expanded rust-cutover boundary guard to per-symbol classification |

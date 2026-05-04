@@ -1268,6 +1268,63 @@ export class SealedBundleResult {
 if (Symbol.dispose) SealedBundleResult.prototype[Symbol.dispose] = SealedBundleResult.prototype.free;
 
 /**
+ * WASM-bindgen class for metadata stripping results.
+ */
+export class StripResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(StripResult.prototype);
+        obj.__wbg_ptr = ptr;
+        StripResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StripResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_stripresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.stripresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Number of metadata container segments removed.
+     * @returns {number}
+     */
+    get removedMetadataCount() {
+        const ret = wasm.stripresult_removedMetadataCount(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Image bytes after metadata stripping.
+     * @returns {Uint8Array}
+     */
+    get strippedBytes() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.stripresult_strippedBytes(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) StripResult.prototype[Symbol.dispose] = StripResult.prototype.free;
+
+/**
  * WASM-bindgen class for wrapped tier key results.
  */
 export class WrappedTierKeyResult {
@@ -2080,6 +2137,42 @@ export function signManifestWithIdentity(handle, transcript_bytes) {
 }
 
 /**
+ * Strips JPEG metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {StripResult}
+ */
+export function stripJpegMetadata(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.stripJpegMetadata(ptr0, len0);
+    return StripResult.__wrap(ret);
+}
+
+/**
+ * Strips PNG metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {StripResult}
+ */
+export function stripPngMetadata(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.stripPngMetadata(ptr0, len0);
+    return StripResult.__wrap(ret);
+}
+
+/**
+ * Strips WebP metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {StripResult}
+ */
+export function stripWebpMetadata(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.stripWebpMetadata(ptr0, len0);
+    return StripResult.__wrap(ret);
+}
+
+/**
  * Unwraps an account key through the generated WASM binding surface.
  * @param {Uint8Array} password
  * @param {Uint8Array} user_salt
@@ -2279,6 +2372,9 @@ const ProgressResultFinalization = (typeof FinalizationRegistry === 'undefined')
 const SealedBundleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_sealedbundleresult_free(ptr >>> 0, 1));
+const StripResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_stripresult_free(ptr >>> 0, 1));
 const WrappedTierKeyResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wrappedtierkeyresult_free(ptr >>> 0, 1));

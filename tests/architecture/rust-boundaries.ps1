@@ -34,7 +34,7 @@ try {
         "mosaic-crypto" = @("mosaic-domain")
         "mosaic-client" = @("mosaic-domain", "mosaic-crypto")
         "mosaic-media" = @("mosaic-domain")
-        "mosaic-wasm" = @("mosaic-domain", "mosaic-crypto", "mosaic-client", "mosaic-vectors")
+        "mosaic-wasm" = @("mosaic-domain", "mosaic-crypto", "mosaic-client", "mosaic-media", "mosaic-vectors")
         "mosaic-uniffi" = @("mosaic-domain", "mosaic-crypto", "mosaic-client", "mosaic-media", "mosaic-vectors")
         "mosaic-vectors" = @("mosaic-domain", "mosaic-crypto")
     }

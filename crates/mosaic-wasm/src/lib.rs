@@ -61,6 +61,24 @@ impl fmt::Debug for BytesResult {
     }
 }
 
+/// Rust-side WASM facade result for metadata stripping.
+#[derive(Clone, PartialEq, Eq)]
+pub struct StripResult {
+    pub code: u16,
+    pub stripped_bytes: Vec<u8>,
+    pub removed_metadata_count: u32,
+}
+
+impl fmt::Debug for StripResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StripResult")
+            .field("code", &self.code)
+            .field("stripped_bytes_len", &self.stripped_bytes.len())
+            .field("removed_metadata_count", &self.removed_metadata_count)
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade account unlock parameters.
 #[derive(Clone, PartialEq, Eq)]
 pub struct AccountUnlockRequest {
@@ -793,6 +811,38 @@ impl JsBytesResult {
     #[must_use]
     pub fn bytes(&self) -> Vec<u8> {
         self.bytes.clone()
+    }
+}
+
+/// WASM-bindgen class for metadata stripping results.
+#[wasm_bindgen(js_name = StripResult)]
+pub struct JsStripResult {
+    code: u16,
+    stripped_bytes: Vec<u8>,
+    removed_metadata_count: u32,
+}
+
+#[wasm_bindgen(js_class = StripResult)]
+impl JsStripResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Image bytes after metadata stripping.
+    #[wasm_bindgen(getter, js_name = strippedBytes)]
+    #[must_use]
+    pub fn stripped_bytes(&self) -> Vec<u8> {
+        self.stripped_bytes.clone()
+    }
+
+    /// Number of metadata container segments removed.
+    #[wasm_bindgen(getter, js_name = removedMetadataCount)]
+    #[must_use]
+    pub fn removed_metadata_count(&self) -> u32 {
+        self.removed_metadata_count
     }
 }
 
@@ -2201,6 +2251,72 @@ pub fn wasm_progress_probe_js(total_steps: u32, cancel_after: i64) -> JsProgress
         code: result.code.as_u16(),
         event_pairs,
     }
+}
+
+fn media_error_code(error: mosaic_media::MosaicMediaError) -> u16 {
+    match error {
+        mosaic_media::MosaicMediaError::InvalidJpeg => 601,
+        mosaic_media::MosaicMediaError::InvalidPng => 602,
+        mosaic_media::MosaicMediaError::InvalidWebP => 603,
+        mosaic_media::MosaicMediaError::OutputTooLarge => 604,
+        _ => 699,
+    }
+}
+
+fn strip_metadata(format: mosaic_media::MediaFormat, input_bytes: Vec<u8>) -> StripResult {
+    match mosaic_media::strip_known_metadata(format, &input_bytes) {
+        Ok(stripped) => {
+            let removed_metadata_count = match u32::try_from(stripped.removed.len()) {
+                Ok(value) => value,
+                Err(_) => {
+                    return StripResult {
+                        code: 604,
+                        stripped_bytes: Vec::new(),
+                        removed_metadata_count: 0,
+                    };
+                }
+            };
+            StripResult {
+                code: 0,
+                stripped_bytes: stripped.bytes,
+                removed_metadata_count,
+            }
+        }
+        Err(error) => StripResult {
+            code: media_error_code(error),
+            stripped_bytes: Vec::new(),
+            removed_metadata_count: 0,
+        },
+    }
+}
+
+fn js_strip_result_from_rust(result: StripResult) -> JsStripResult {
+    JsStripResult {
+        code: result.code,
+        stripped_bytes: result.stripped_bytes,
+        removed_metadata_count: result.removed_metadata_count,
+    }
+}
+
+/// Strips JPEG metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = stripJpegMetadata)]
+#[must_use]
+pub fn strip_jpeg_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
+    js_strip_result_from_rust(strip_metadata(mosaic_media::MediaFormat::Jpeg, input_bytes))
+}
+
+/// Strips PNG metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = stripPngMetadata)]
+#[must_use]
+pub fn strip_png_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
+    js_strip_result_from_rust(strip_metadata(mosaic_media::MediaFormat::Png, input_bytes))
+}
+
+/// Strips WebP metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = stripWebpMetadata)]
+#[must_use]
+pub fn strip_webp_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
+    js_strip_result_from_rust(strip_metadata(mosaic_media::MediaFormat::WebP, input_bytes))
 }
 
 /// Unwraps an account key through the generated WASM binding surface.

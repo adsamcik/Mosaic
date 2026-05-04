@@ -260,7 +260,7 @@ describe('web Rust crypto cutover boundaries', () => {
       importersMatching(
         /from\s+['"][^'"]*generated\/mosaic-wasm\/mosaic_wasm\.js['"]/,
       ),
-    ).toEqual(['workers/rust-crypto-core.ts']);
+    ).toEqual(['lib/exif-stripper.ts', 'workers/rust-crypto-core.ts']);
   });
 
   it('keeps the Rust crypto facade behind the Comlink crypto worker', () => {

@@ -102,6 +102,13 @@ vi.mock('../src/lib/settings-service', () => ({
   shouldStoreOriginalsAsAvif: vi.fn().mockReturnValue(false),
 }));
 
+vi.mock('../src/lib/exif-stripper', () => ({
+  stripExifFromBlob: vi.fn().mockResolvedValue({
+    bytes: new Uint8Array([1, 2, 3]),
+    stripped: false,
+  }),
+}));
+
 vi.mock('@mosaic/crypto', () => ({
   deriveTierKeys: (...args: unknown[]) => mockDeriveTierKeys(...args),
   encryptShard: (...args: unknown[]) => mockEncryptShardCrypto(...args),

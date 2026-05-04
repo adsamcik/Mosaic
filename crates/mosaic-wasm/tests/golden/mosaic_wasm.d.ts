@@ -417,6 +417,27 @@ export class SealedBundleResult {
 }
 
 /**
+ * WASM-bindgen class for metadata stripping results.
+ */
+export class StripResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Number of metadata container segments removed.
+     */
+    readonly removedMetadataCount: number;
+    /**
+     * Image bytes after metadata stripping.
+     */
+    readonly strippedBytes: Uint8Array;
+}
+
+/**
  * WASM-bindgen class for wrapped tier key results.
  */
 export class WrappedTierKeyResult {
@@ -670,6 +691,21 @@ export function signManifestWithEpochHandle(handle: bigint, transcript_bytes: Ui
 export function signManifestWithIdentity(handle: bigint, transcript_bytes: Uint8Array): BytesResult;
 
 /**
+ * Strips JPEG metadata through the shared Rust media parser.
+ */
+export function stripJpegMetadata(input_bytes: Uint8Array): StripResult;
+
+/**
+ * Strips PNG metadata through the shared Rust media parser.
+ */
+export function stripPngMetadata(input_bytes: Uint8Array): StripResult;
+
+/**
+ * Strips WebP metadata through the shared Rust media parser.
+ */
+export function stripWebpMetadata(input_bytes: Uint8Array): StripResult;
+
+/**
  * Unwraps an account key through the generated WASM binding surface.
  */
 export function unlockAccountKey(password: Uint8Array, user_salt: Uint8Array, account_salt: Uint8Array, wrapped_account_key: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number): AccountUnlockResult;
@@ -724,6 +760,7 @@ export interface InitOutput {
     readonly __wbg_progressevent_free: (a: number, b: number) => void;
     readonly __wbg_progressresult_free: (a: number, b: number) => void;
     readonly __wbg_sealedbundleresult_free: (a: number, b: number) => void;
+    readonly __wbg_stripresult_free: (a: number, b: number) => void;
     readonly accountKeyHandleIsOpen: (a: bigint) => number;
     readonly accountkeyhandlestatusresult_code: (a: number) => number;
     readonly accountkeyhandlestatusresult_isOpen: (a: number) => number;
@@ -822,6 +859,12 @@ export interface InitOutput {
     readonly signAuthChallengeWithPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly signManifestWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly signManifestWithIdentity: (a: bigint, b: number, c: number) => number;
+    readonly stripJpegMetadata: (a: number, b: number) => number;
+    readonly stripPngMetadata: (a: number, b: number) => number;
+    readonly stripWebpMetadata: (a: number, b: number) => number;
+    readonly stripresult_code: (a: number) => number;
+    readonly stripresult_removedMetadataCount: (a: number) => number;
+    readonly stripresult_strippedBytes: (a: number, b: number) => void;
     readonly unlockAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly unwrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly verifyAndImportEpochBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
@@ -832,27 +875,27 @@ export interface InitOutput {
     readonly wrappedtierkeyresult_tier: (a: number) => number;
     readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
     readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
-    readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
-    readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
-    readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
-    readonly epochkeyhandlestatusresult_code: (a: number) => number;
+    readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
-    readonly wrappedtierkeyresult_code: (a: number) => number;
+    readonly epochkeyhandlestatusresult_code: (a: number) => number;
     readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
-    readonly decryptedcontentresult_code: (a: number) => number;
-    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
-    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
-    readonly linktierhandleresult_code: (a: number) => number;
-    readonly linktierhandleresult_handle: (a: number) => bigint;
-    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
-    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
     readonly encryptedshardresult_code: (a: number) => number;
-    readonly bytesresult_bytes: (a: number, b: number) => void;
-    readonly bytesresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
+    readonly wrappedtierkeyresult_code: (a: number) => number;
+    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
+    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
     readonly decryptedshardresult_code: (a: number) => number;
     readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedcontentresult_code: (a: number) => number;
+    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly bytesresult_code: (a: number) => number;
+    readonly linktierhandleresult_handle: (a: number) => bigint;
+    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
+    readonly linktierhandleresult_code: (a: number) => number;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export2: (a: number, b: number) => number;
