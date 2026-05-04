@@ -9,6 +9,8 @@ $ffiFiles = @('crates/mosaic-wasm/src/lib.rs', 'crates/mosaic-uniffi/src/lib.rs'
 $dtsFiles = @('apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts')
 $secretResultTypes = '(Vec\s*<\s*u8\s*>|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)'
 $secretNamePattern = '(derive.*(key|keys|secret)|generate.*secret|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
+$domainHandlePattern = '(?i)(^(wrap|unwrap)_.*(account|epoch|identity|link).*(handle|seed|key|secret)|^(seal|unseal)_.*(account|epoch|identity|link).*handle)'
+$genericBytesWrapPattern = '(?i)^(wrap|unwrap)(_|$)'
 $secretShapedName = '(?i)(seed|secret|key)$'
 $publicKeyName = '(public_?key|pub_?key|PublicKey|PubKey|pubkey)'
 $forbiddenRawBundleApis = @(
@@ -19,6 +21,10 @@ $forbiddenRawBundleApis = @(
 )
 $allowlist = @{
   'crates/mosaic-wasm/src/lib.rs::wrapped_account_key' = 'Getter for server-storable wrapped account key.'
+  'crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle' = 'R-C6 AAD-bound account-data wrapper; returns only ACCOUNT_DATA_AAD ciphertext.'
+  'crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle' = 'R-C6 AAD-bound account-data unwrap; cannot decrypt seed domains.'
+  'crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle_js' = 'R-C6 AAD-bound account-data wrapper; returns only ACCOUNT_DATA_AAD ciphertext.'
+  'crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle_js' = 'R-C6 AAD-bound account-data unwrap; cannot decrypt seed domains.'
   'crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret' = 'Cross-client vector driver only; returns wrapping_key for parity tests.'
   'crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed' = 'Cross-client vector driver only; OpenedBundleFfiResult carries epoch_seed.'
 }
@@ -76,7 +82,10 @@ foreach ($path in $ffiFiles) {
       $j++
       $signature += ' ' + $lines[$j].Trim()
     }
-    if ($name -match $secretNamePattern -and $signature -match "->\s*$secretResultTypes") {
+    $isSecretShapedExport = (($name -match $secretNamePattern) -or
+      ($name -match $domainHandlePattern) -or
+      (($name -match $genericBytesWrapPattern) -and ($signature -match '->\s*(BytesResult|JsBytesResult)')))
+    if ($isSecretShapedExport -and $signature -match "->\s*$secretResultTypes") {
       $key = "$path`::$name"
       if (-not $allowlist.ContainsKey($key)) {
         $violations.Add("$path`:$($i + 1): forbidden raw-secret-shaped FFI export '$name' -> $($signature.Trim())")

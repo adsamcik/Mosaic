@@ -16,7 +16,9 @@ use mosaic_client::{
     open_epoch_key_handle, open_identity_handle, open_secret_handle, protocol_version,
     upload_snapshot_schema_version, verify_manifest_with_identity,
 };
-use mosaic_crypto::{IdentitySigningPublicKey, wrap_key};
+use mosaic_crypto::{
+    EPOCH_SEED_AAD, IDENTITY_SEED_AAD, IdentitySigningPublicKey, wrap_secret_with_aad,
+};
 use mosaic_domain::{ShardEnvelopeHeader, ShardTier};
 
 const ACCOUNT_KEY: [u8; 32] = [
@@ -107,8 +109,8 @@ fn open_identity_handle_rejects_seed_decrypting_to_wrong_length() {
 
     // Wrap a 31-byte payload — the unwrap path will succeed but the seed length
     // check inside `derive_identity_keypair` will reject the resulting bytes.
-    let wrapped_short_seed =
-        wrap_key(&[0xab_u8; 31], &secret_key).expect("wrap_key should accept non-empty input");
+    let wrapped_short_seed = wrap_secret_with_aad(&[0xab_u8; 31], &secret_key, IDENTITY_SEED_AAD)
+        .expect("wrap_secret_with_aad should accept non-empty input");
     let result = open_identity_handle(&wrapped_short_seed, account_handle);
     assert_eq!(result.code, ClientErrorCode::InvalidKeyLength);
     assert_eq!(result.handle, 0);
@@ -116,8 +118,8 @@ fn open_identity_handle_rejects_seed_decrypting_to_wrong_length() {
 
     // The wrapped seed itself decrypts to 33 bytes instead of 32 — same client-
     // visible error code.
-    let wrapped_long_seed =
-        wrap_key(&[0xcd_u8; 33], &secret_key).expect("wrap_key should accept long input");
+    let wrapped_long_seed = wrap_secret_with_aad(&[0xcd_u8; 33], &secret_key, IDENTITY_SEED_AAD)
+        .expect("wrap_secret_with_aad should accept long input");
     let too_long = open_identity_handle(&wrapped_long_seed, account_handle);
     assert_eq!(too_long.code, ClientErrorCode::InvalidKeyLength);
 
@@ -131,8 +133,8 @@ fn open_epoch_key_handle_rejects_wrapped_seed_with_wrong_decoded_length() {
     let secret_key = mosaic_crypto::SecretKey::from_bytes(&mut ACCOUNT_KEY.to_vec())
         .expect("account key bytes should form a SecretKey");
 
-    let wrapped_short = wrap_key(&[0x11_u8; 16], &secret_key)
-        .expect("wrap_key should accept a non-empty short payload");
+    let wrapped_short = wrap_secret_with_aad(&[0x11_u8; 16], &secret_key, EPOCH_SEED_AAD)
+        .expect("wrap_secret_with_aad should accept a non-empty short payload");
     let result = open_epoch_key_handle(&wrapped_short, account_handle, 7);
     assert_eq!(result.code, ClientErrorCode::InvalidKeyLength);
     assert_eq!(result.handle, 0);

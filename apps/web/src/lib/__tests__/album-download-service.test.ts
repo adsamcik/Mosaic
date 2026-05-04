@@ -58,7 +58,7 @@ const mockDownloadShards = vi.mocked(downloadShards);
 // ---------------------------------------------------------------------------
 
 const mockCryptoClient = {
-  decryptShard: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3, 4])),
+  decryptShardWithEpoch: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3, 4])),
   verifyShard: vi.fn().mockResolvedValue(true),
 };
 
@@ -160,7 +160,7 @@ describe('album-download-service', () => {
     it('downloads and decrypts a single photo into the ZIP', async () => {
       const photo = createMockPhoto({ filename: 'sunset.jpg' });
       const decryptedData = new Uint8Array([255, 254, 253]);
-      mockCryptoClient.decryptShard.mockResolvedValue(decryptedData);
+      mockCryptoClient.decryptShardWithEpoch.mockResolvedValue(decryptedData);
 
       await downloadAlbumAsZip({
         albumName: 'Vacation',
@@ -172,6 +172,10 @@ describe('album-download-service', () => {
       expect(capturedFiles).toHaveLength(1);
       expect(capturedFiles[0]!.name).toBe('sunset.jpg');
       expect(capturedFiles[0]!.input).toEqual(decryptedData);
+      expect(mockCryptoClient.decryptShardWithEpoch).toHaveBeenCalledWith(
+        'epch_test-1',
+        expect.any(Uint8Array),
+      );
     });
 
     it('reports progress through preparing → downloading → complete phases', async () => {
@@ -278,7 +282,7 @@ describe('album-download-service', () => {
         new Uint8Array([0xAA]),
         new Uint8Array([0xBB]),
       ]);
-      mockCryptoClient.decryptShard
+      mockCryptoClient.decryptShardWithEpoch
         .mockResolvedValueOnce(chunk1)
         .mockResolvedValueOnce(chunk2);
 

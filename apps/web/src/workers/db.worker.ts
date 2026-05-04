@@ -24,6 +24,12 @@ type DatabaseType = import('sql.js').Database;
  *
  * Layout: `[u8 SNAPSHOT_VERSION][...account-handle wrap blob (nonce(24) || ciphertext_with_tag(16))...]`.
  *
+ * R-C6 hard cutover: bumped from the Slice 8 v3 account-handle wrap
+ * envelope to v4 because `wrapWithAccountHandle`/`unwrapWithAccountHandle`
+ * now bind OPFS data to the `mosaic:account-wrapped-data:v1` AEAD AAD label.
+ * v3 snapshots were encrypted with the same wire bytes but no AAD, so they
+ * must be discarded instead of decrypted under the new domain.
+ *
  * Slice 8 hard cutover: bumped from the legacy un-prefixed
  * `[nonce(24) || ciphertext]` libsodium-secretbox layout to a versioned
  * envelope wrapped via Rust `wrapWithAccountHandle`. Snapshots whose
@@ -36,7 +42,7 @@ type DatabaseType = import('sql.js').Database;
  * snapshot is a local cache that the sync engine repopulates from the
  * server, so there is no data-loss concern.
  */
-export const SNAPSHOT_VERSION = 3 as const;
+export const SNAPSHOT_VERSION = 4 as const;
 
 export enum DbWorkerErrorCode {
   NOT_INITIALIZED = 'NOT_INITIALIZED',

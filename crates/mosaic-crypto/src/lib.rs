@@ -42,6 +42,15 @@ const MAX_SHARD_BYTES: usize = 100 * 1024 * 1024;
 /// Minimum valid wrapped key length: 24-byte nonce + 16-byte AEAD tag + 1-byte payload.
 const MIN_WRAPPED_KEY_BYTES: usize = 24 + 16 + 1;
 
+/// AEAD AAD label for L3 epoch seeds wrapped by an account key.
+pub const EPOCH_SEED_AAD: &[u8] = b"mosaic:l3-epoch-seed:v1";
+
+/// AEAD AAD label for L3 identity seeds wrapped by an account key.
+pub const IDENTITY_SEED_AAD: &[u8] = b"mosaic:l3-identity-seed:v1";
+
+/// AEAD AAD label for generic account-scoped data wrapped by an account key.
+pub const ACCOUNT_DATA_AAD: &[u8] = b"mosaic:account-wrapped-data:v1";
+
 /// Backend LocalAuth username length limit.
 const MAX_AUTH_USERNAME_BYTES: usize = 256;
 
@@ -1656,24 +1665,48 @@ pub fn decrypt_shard_with_legacy_raw_key(
 /// - `RngFailure` if the OS CSPRNG is unavailable.
 /// - `AuthenticationFailed` if the AEAD cipher reports an unexpected error.
 pub fn wrap_key(key_bytes: &[u8], wrapper: &SecretKey) -> Result<Vec<u8>, MosaicCryptoError> {
-    if key_bytes.is_empty() || key_bytes.len() > MAX_SHARD_BYTES {
+    wrap_secret_with_aad(key_bytes, wrapper, &[])
+}
+
+/// Wraps key material with explicit domain separation.
+///
+/// Output format: `nonce(24) || ciphertext || tag(16)`. The `aad` bytes are
+/// authenticated but not encrypted; callers must pass a stable non-secret
+/// domain label so ciphertext from one protocol use cannot decrypt in another.
+///
+/// # Errors
+/// - `InvalidInputLength` if `plaintext` is empty or exceeds 100 MiB.
+/// - `RngFailure` if the OS CSPRNG is unavailable.
+/// - `AuthenticationFailed` if the AEAD cipher reports an unexpected error.
+pub fn wrap_secret_with_aad(
+    plaintext: &[u8],
+    key: &SecretKey,
+    aad: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    if plaintext.is_empty() || plaintext.len() > MAX_SHARD_BYTES {
         return Err(MosaicCryptoError::InvalidInputLength {
-            actual: key_bytes.len(),
+            actual: plaintext.len(),
         });
     }
 
     let mut nonce_bytes = [0u8; 24];
     getrandom::fill(&mut nonce_bytes).map_err(|_| MosaicCryptoError::RngFailure)?;
 
-    let cipher = XChaCha20Poly1305::new_from_slice(wrapper.as_bytes()).map_err(|_| {
+    let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes()).map_err(|_| {
         MosaicCryptoError::InvalidKeyLength {
-            actual: wrapper.as_bytes().len(),
+            actual: key.as_bytes().len(),
         }
     })?;
     let nonce = XNonce::from_slice(&nonce_bytes);
 
     let ciphertext_and_tag = cipher
-        .encrypt(nonce, key_bytes)
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|_| MosaicCryptoError::AuthenticationFailed)?;
 
     let mut output = Vec::with_capacity(24 + ciphertext_and_tag.len());
@@ -1691,23 +1724,43 @@ pub fn unwrap_key(
     wrapped: &[u8],
     wrapper: &SecretKey,
 ) -> Result<Zeroizing<Vec<u8>>, MosaicCryptoError> {
-    if wrapped.len() < MIN_WRAPPED_KEY_BYTES {
+    unwrap_secret_with_aad(wrapped, wrapper, &[])
+}
+
+/// Unwraps key material previously produced by [`wrap_secret_with_aad`].
+///
+/// # Errors
+/// - `WrappedKeyTooShort` if `ciphertext` is shorter than 41 bytes.
+/// - `AuthenticationFailed` if AEAD verification fails, including when the
+///   caller supplies a different AAD label than the wrapping domain.
+pub fn unwrap_secret_with_aad(
+    ciphertext: &[u8],
+    key: &SecretKey,
+    aad: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, MosaicCryptoError> {
+    if ciphertext.len() < MIN_WRAPPED_KEY_BYTES {
         return Err(MosaicCryptoError::WrappedKeyTooShort {
-            actual: wrapped.len(),
+            actual: ciphertext.len(),
         });
     }
 
-    let nonce = XNonce::from_slice(&wrapped[..24]);
-    let ciphertext_and_tag = &wrapped[24..];
+    let nonce = XNonce::from_slice(&ciphertext[..24]);
+    let ciphertext_and_tag = &ciphertext[24..];
 
-    let cipher = XChaCha20Poly1305::new_from_slice(wrapper.as_bytes()).map_err(|_| {
+    let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes()).map_err(|_| {
         MosaicCryptoError::InvalidKeyLength {
-            actual: wrapper.as_bytes().len(),
+            actual: key.as_bytes().len(),
         }
     })?;
 
     let plaintext = cipher
-        .decrypt(nonce, ciphertext_and_tag)
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ciphertext_and_tag,
+                aad,
+            },
+        )
         .map_err(|_| MosaicCryptoError::AuthenticationFailed)?;
 
     Ok(Zeroizing::new(plaintext))

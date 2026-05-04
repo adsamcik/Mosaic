@@ -1,6 +1,7 @@
 use mosaic_crypto::{
-    AuthSigningSecretKey, IdentitySigningSecretKey, ManifestSigningSecretKey, MosaicCryptoError,
-    SecretKey, decrypt_shard, encrypt_shard, sha256_bytes, unwrap_key, wrap_key,
+    ACCOUNT_DATA_AAD, AuthSigningSecretKey, EPOCH_SEED_AAD, IdentitySigningSecretKey,
+    ManifestSigningSecretKey, MosaicCryptoError, SecretKey, decrypt_shard, encrypt_shard,
+    sha256_bytes, unwrap_key, unwrap_secret_with_aad, wrap_key, wrap_secret_with_aad,
 };
 use mosaic_domain::{SHARD_ENVELOPE_HEADER_LEN, ShardEnvelopeHeader, ShardTier};
 
@@ -311,6 +312,32 @@ fn key_wrap_round_trips_and_rejects_tampering() {
         Err(error) => error,
     };
     assert_eq!(error, MosaicCryptoError::AuthenticationFailed);
+}
+
+#[test]
+fn aad_secret_wrap_round_trips_only_with_matching_domain() {
+    let payload = [0x42_u8; 32];
+    let wrapper = secret_key_from(WRONG_KEY_BYTES);
+
+    let wrapped = match wrap_secret_with_aad(&payload, &wrapper, EPOCH_SEED_AAD) {
+        Ok(value) => value,
+        Err(error) => panic!("AAD-bound secret should wrap: {error:?}"),
+    };
+
+    let unwrapped = match unwrap_secret_with_aad(&wrapped, &wrapper, EPOCH_SEED_AAD) {
+        Ok(value) => value,
+        Err(error) => panic!("matching AAD should unwrap: {error:?}"),
+    };
+    assert_eq!(unwrapped.as_slice(), payload.as_slice());
+
+    assert_eq!(
+        unwrap_secret_with_aad(&wrapped, &wrapper, ACCOUNT_DATA_AAD),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+    assert_eq!(
+        unwrap_key(&wrapped, &wrapper),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
 }
 
 #[test]

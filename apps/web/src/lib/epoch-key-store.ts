@@ -25,7 +25,10 @@ const log = createLogger('EpochKeyStore');
  * `signKeypair` fields are kept as zero-filled transitional placeholders
  * so Slice 4-7 callers (manifest, sync, share links, album content, upload)
  * still typecheck during the multi-slice cutover; those slices migrate the
- * call sites to use `epochHandleId` and remove the placeholders. Reading
+   * call sites to use `epochHandleId` and remove the placeholders. TODO(R-C6.1):
+   * finish the M0/Slice-5 production decrypt migration so photo thumbnails,
+   * lightbox, album ZIP, upload-triggered sync, and manual sync never read
+   * `epochSeed` and instead call handle-based worker APIs. Reading
  * the placeholder bytes will produce garbage and is treated as a Slice
  * 4-7 migration bug, not a runtime expectation.
  */

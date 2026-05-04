@@ -3,7 +3,8 @@ use mosaic_client::{
     decrypt_shard_with_legacy_raw_key_handle, open_secret_handle,
 };
 use mosaic_crypto::{
-    SecretKey, derive_epoch_key_material, encrypt_shard, get_tier_key, unwrap_key,
+    EPOCH_SEED_AAD, SecretKey, derive_epoch_key_material, encrypt_shard, get_tier_key,
+    unwrap_secret_with_aad,
 };
 use mosaic_domain::ShardTier;
 
@@ -25,7 +26,7 @@ fn secret_key_from(mut bytes: [u8; 32]) -> SecretKey {
 
 fn epoch_seed_from_wrapped(wrapped_epoch_seed: &[u8]) -> [u8; 32] {
     let account_key = secret_key_from(ACCOUNT_KEY);
-    let unwrapped = unwrap_key(wrapped_epoch_seed, &account_key)
+    let unwrapped = unwrap_secret_with_aad(wrapped_epoch_seed, &account_key, EPOCH_SEED_AAD)
         .unwrap_or_else(|error| panic!("wrapped epoch seed should unwrap: {error:?}"));
     let mut seed = [0_u8; 32];
     seed.copy_from_slice(unwrapped.as_slice());

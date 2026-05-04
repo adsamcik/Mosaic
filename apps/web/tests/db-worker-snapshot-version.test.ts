@@ -6,7 +6,7 @@
  *      `@mosaic/crypto`. Encryption is delegated to the supplied
  *      `DbCryptoBridge` (which in production routes through the crypto
  *      worker's Rust-backed `wrapDbBlob` / `unwrapDbBlob`).
- *   2. `init(bridge)` round-trips a v3 snapshot through the bridge:
+ *   2. `init(bridge)` round-trips a v4 snapshot through the bridge:
  *      `[u8 SNAPSHOT_VERSION][...account-handle wrap blob...]`.
  *   3. A snapshot whose leading version byte does not match
  *      `SNAPSHOT_VERSION` is silently discarded and the DB worker
@@ -90,8 +90,8 @@ describe('DbWorker — Slice 8 source-level invariants', () => {
     expect(source).not.toMatch(/from\s+['"]@mosaic\/crypto['"]/);
   });
 
-  it('exports SNAPSHOT_VERSION = 3 (P-W7.3 account-handle wrap envelope)', () => {
-    expect(SNAPSHOT_VERSION).toBe(3);
+  it('exports SNAPSHOT_VERSION = 4 (R-C6 AAD-bound account-data envelope)', () => {
+    expect(SNAPSHOT_VERSION).toBe(4);
   });
 });
 
@@ -125,7 +125,7 @@ describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
     expect(bridge.wrap).not.toHaveBeenCalled();
   });
 
-  it('round-trips a v3 snapshot through the crypto bridge on encryptBlob/decryptBlob', async () => {
+  it('round-trips a v4 snapshot through the crypto bridge on encryptBlob/decryptBlob', async () => {
     const worker = new DbWorker();
     const internal = worker as unknown as {
       loadFromOPFS: () => Promise<Uint8Array | null>;

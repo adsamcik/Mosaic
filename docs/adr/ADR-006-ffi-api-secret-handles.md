@@ -31,6 +31,37 @@ Rules:
 - Long-running calls expose cancellation and progress through wrapper-specific APIs.
 - Wrapper API snapshots are tested for both generated TypeScript declarations and UniFFI Kotlin signatures.
 
+## Compositional violation discovered post-P-W7
+
+R-C6 records a post-P-W7 blocker found by three independent reviewers and
+confirmed with an adversarial binary probe: the generic account-data FFI unwrap
+entry point could decrypt persisted L3 epoch and identity seed wraps because all
+three ciphertext classes used the same `nonce || ciphertext || tag` primitive
+with no AEAD AAD/domain separation.
+
+The blocked attack shape was:
+
+```rust
+let account_handle = open_secret_handle(&ACCOUNT_KEY).unwrap();
+let eph = create_epoch_key_handle(account_handle, 7);
+let unwrapped = unwrap_with_account_handle(account_handle, &eph.wrapped_epoch_seed);
+// Before R-C6, unwrapped.bytes contained the raw 32-byte L3 epoch seed.
+```
+
+R-C6 makes every account-key wrap domain explicit:
+
+- L3 epoch seed wraps use `mosaic:l3-epoch-seed:v1`.
+- L3 identity seed wraps use `mosaic:l3-identity-seed:v1`.
+- Generic account-data wraps exposed through
+  `wrapWithAccountHandle`/`unwrapWithAccountHandle` use
+  `mosaic:account-wrapped-data:v1`.
+
+These labels are passed as XChaCha20-Poly1305 AAD. A ciphertext wrapped in one
+domain must fail authentication in every other domain, and the error path must
+return no plaintext bytes. OPFS snapshots created by the old empty-AAD generic
+account wrapper are invalidated by the web snapshot version bump from v3 to v4
+and rehydrated from the server.
+
 ## Options Considered
 
 ### Pass raw keys through FFI and let platform shells cache them

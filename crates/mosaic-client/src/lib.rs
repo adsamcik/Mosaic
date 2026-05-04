@@ -8,23 +8,23 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use mosaic_crypto::{
-    AuthSigningSecretKey, BundleValidationContext, EncryptedContent, EpochKeyBundle,
-    EpochKeyMaterial, IdentityKeypair, IdentitySignature, IdentitySigningPublicKey, KdfProfile,
-    LinkKeys, ManifestSignature, ManifestSigningKeypair, ManifestSigningPublicKey,
-    ManifestSigningSecretKey, MosaicCryptoError, SealedBundle, SecretKey, WrappedTierKey,
-    build_auth_challenge_transcript, decrypt_content, decrypt_shard,
-    decrypt_shard_with_legacy_raw_key, derive_account_key, derive_auth_signing_keypair,
-    derive_content_key, derive_epoch_key_material, derive_identity_keypair,
-    derive_link_keys as crypto_derive_link_keys, encrypt_content, encrypt_shard,
-    generate_epoch_key_material, generate_identity_seed,
+    ACCOUNT_DATA_AAD, AuthSigningSecretKey, BundleValidationContext, EPOCH_SEED_AAD,
+    EncryptedContent, EpochKeyBundle, EpochKeyMaterial, IDENTITY_SEED_AAD, IdentityKeypair,
+    IdentitySignature, IdentitySigningPublicKey, KdfProfile, LinkKeys, ManifestSignature,
+    ManifestSigningKeypair, ManifestSigningPublicKey, ManifestSigningSecretKey, MosaicCryptoError,
+    SealedBundle, SecretKey, WrappedTierKey, build_auth_challenge_transcript, decrypt_content,
+    decrypt_shard, decrypt_shard_with_legacy_raw_key, derive_account_key,
+    derive_auth_signing_keypair, derive_content_key, derive_epoch_key_material,
+    derive_identity_keypair, derive_link_keys as crypto_derive_link_keys, encrypt_content,
+    encrypt_shard, generate_epoch_key_material, generate_identity_seed,
     generate_link_secret as crypto_generate_link_secret,
     generate_manifest_signing_keypair as crypto_generate_manifest_signing_keypair, get_tier_key,
     seal_and_sign_bundle as crypto_seal_and_sign_bundle, sign_auth_challenge,
     sign_manifest_transcript as crypto_sign_manifest_transcript,
     sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_account_key,
-    unwrap_key, unwrap_tier_key_from_link as crypto_unwrap_tier_key_from_link,
+    unwrap_secret_with_aad, unwrap_tier_key_from_link as crypto_unwrap_tier_key_from_link,
     verify_and_open_bundle as crypto_verify_and_open_bundle, verify_manifest_identity_signature,
-    verify_manifest_transcript as crypto_verify_manifest_transcript, wrap_key,
+    verify_manifest_transcript as crypto_verify_manifest_transcript, wrap_secret_with_aad,
     wrap_tier_key_for_link as crypto_wrap_tier_key_for_link,
 };
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
@@ -1418,7 +1418,7 @@ pub fn wrap_with_account_handle(handle: u64, plaintext: &[u8]) -> BytesResult {
         Ok(value) => value,
         Err(error) => return bytes_error(error),
     };
-    match wrap_key(plaintext, &account_key) {
+    match wrap_secret_with_aad(plaintext, &account_key, ACCOUNT_DATA_AAD) {
         Ok(bytes) => BytesResult {
             code: ClientErrorCode::Ok,
             bytes,
@@ -1434,7 +1434,7 @@ pub fn unwrap_with_account_handle(handle: u64, wrapped: &[u8]) -> BytesResult {
         Ok(value) => value,
         Err(error) => return bytes_error(error),
     };
-    match unwrap_key(wrapped, &account_key) {
+    match unwrap_secret_with_aad(wrapped, &account_key, ACCOUNT_DATA_AAD) {
         Ok(bytes) => BytesResult {
             code: ClientErrorCode::Ok,
             bytes: bytes.to_vec(),
@@ -2697,7 +2697,8 @@ fn create_identity_handle_result(
     let account_key = account_secret_key_from_handle(account_key_handle)?;
     let mut identity_seed = generate_identity_seed().map_err(client_error_from_crypto)?;
     let wrapped_seed =
-        wrap_key(identity_seed.as_slice(), &account_key).map_err(client_error_from_crypto)?;
+        wrap_secret_with_aad(identity_seed.as_slice(), &account_key, IDENTITY_SEED_AAD)
+            .map_err(client_error_from_crypto)?;
     insert_identity_handle(
         account_key_handle,
         identity_seed.as_mut_slice(),
@@ -2711,7 +2712,8 @@ fn open_identity_handle_result(
 ) -> Result<IdentityHandleResult, ClientError> {
     let account_key = account_secret_key_from_handle(account_key_handle)?;
     let mut identity_seed =
-        unwrap_key(wrapped_identity_seed, &account_key).map_err(client_error_from_crypto)?;
+        unwrap_secret_with_aad(wrapped_identity_seed, &account_key, IDENTITY_SEED_AAD)
+            .map_err(client_error_from_crypto)?;
     insert_identity_handle(account_key_handle, identity_seed.as_mut_slice(), Vec::new())
 }
 
@@ -2755,8 +2757,12 @@ fn create_epoch_key_handle_result(
 ) -> Result<EpochKeyHandleResult, ClientError> {
     let account_key = account_secret_key_from_handle(account_key_handle)?;
     let key_material = generate_epoch_key_material(epoch_id).map_err(client_error_from_crypto)?;
-    let wrapped_epoch_seed = wrap_key(key_material.epoch_seed().as_bytes(), &account_key)
-        .map_err(client_error_from_crypto)?;
+    let wrapped_epoch_seed = wrap_secret_with_aad(
+        key_material.epoch_seed().as_bytes(),
+        &account_key,
+        EPOCH_SEED_AAD,
+    )
+    .map_err(client_error_from_crypto)?;
     let sign_keypair =
         crypto_generate_manifest_signing_keypair().map_err(client_error_from_crypto)?;
 
@@ -2774,8 +2780,8 @@ fn open_epoch_key_handle_result(
     epoch_id: u32,
 ) -> Result<EpochKeyHandleResult, ClientError> {
     let account_key = account_secret_key_from_handle(account_key_handle)?;
-    let mut epoch_seed =
-        unwrap_key(wrapped_epoch_seed, &account_key).map_err(client_error_from_crypto)?;
+    let mut epoch_seed = unwrap_secret_with_aad(wrapped_epoch_seed, &account_key, EPOCH_SEED_AAD)
+        .map_err(client_error_from_crypto)?;
     let key_material = derive_epoch_key_material(epoch_id, epoch_seed.as_mut_slice())
         .map_err(client_error_from_crypto)?;
 
@@ -2850,8 +2856,8 @@ fn import_epoch_key_handle_from_bundle_result(
     let sign_keypair = ManifestSigningKeypair::from_parts(sign_secret_key, provided_public);
 
     let account_key = account_secret_key_from_handle(account_key_handle)?;
-    let wrapped_epoch_seed =
-        wrap_key(epoch_seed_bytes, &account_key).map_err(client_error_from_crypto)?;
+    let wrapped_epoch_seed = wrap_secret_with_aad(epoch_seed_bytes, &account_key, EPOCH_SEED_AAD)
+        .map_err(client_error_from_crypto)?;
 
     // `derive_epoch_key_material` zeroizes its input — copy first so we leave
     // the caller-provided slice untouched (the caller is expected to wipe it

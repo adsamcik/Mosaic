@@ -13,6 +13,8 @@ ffi_files = [Path("crates/mosaic-wasm/src/lib.rs"), Path("crates/mosaic-uniffi/s
 dts_files = [Path("apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts")]
 secret_result_types = re.compile(r"->\s*(Vec\s*<\s*u8\s*>|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)")
 secret_name_pattern = re.compile(r"(derive.*(key|keys|secret)|generate.*secret|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)", re.IGNORECASE)
+domain_handle_pattern = re.compile(r"(^(wrap|unwrap)_.*(account|epoch|identity|link).*(handle|seed|key|secret)|^(seal|unseal)_.*(account|epoch|identity|link).*handle)", re.IGNORECASE)
+generic_bytes_wrap_pattern = re.compile(r"^(wrap|unwrap)(_|$)", re.IGNORECASE)
 secret_shaped_name = re.compile(r"(seed|secret|key)$", re.IGNORECASE)
 public_key_name = re.compile(r"(public_?key|pub_?key|PublicKey|PubKey|pubkey)", re.IGNORECASE)
 forbidden_raw_bundle_apis = {
@@ -23,6 +25,10 @@ forbidden_raw_bundle_apis = {
 }
 allowlist = {
     "crates/mosaic-wasm/src/lib.rs::wrapped_account_key",
+    "crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle",
+    "crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle",
+    "crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle_js",
+    "crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle_js",
     "crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret",
     "crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed",
 }
@@ -82,7 +88,15 @@ for path in ffi_files:
             cursor += 1
             signature += " " + lines[cursor].strip()
         key = f"{path.as_posix()}::{name}"
-        if secret_name_pattern.search(name) and secret_result_types.search(signature) and key not in allowlist:
+        is_secret_shaped_export = (
+            secret_name_pattern.search(name)
+            or domain_handle_pattern.search(name)
+            or (
+                generic_bytes_wrap_pattern.search(name)
+                and re.search(r"->\s*(BytesResult|JsBytesResult)", signature)
+            )
+        )
+        if is_secret_shaped_export and secret_result_types.search(signature) and key not in allowlist:
             violations.append(f"{path.as_posix()}:{index + 1}: forbidden raw-secret-shaped FFI export '{name}' -> {signature.strip()}")
 
 for path in dts_files:

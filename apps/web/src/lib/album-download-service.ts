@@ -4,7 +4,7 @@ import { getCryptoClient } from './crypto-client';
 import { getOrFetchEpochKey } from './epoch-key-service';
 import { createLogger } from './logger';
 import { downloadShards } from './shard-service';
-import type { PhotoMeta } from '../workers/types';
+import type { EpochHandleId, PhotoMeta } from '../workers/types';
 
 const log = createLogger('AlbumDownloadService');
 
@@ -175,7 +175,7 @@ export async function downloadAlbumAsZip(options: AlbumDownloadOptions): Promise
   });
   const filenames = deduplicateFilenames(photos);
 
-  // Default resolver: authenticated user flow (epoch seed + private shard
+  // Default resolver: authenticated user flow (epoch handle + private shard
   // endpoint). The crypto client is resolved lazily but cached so we only
   // pay the worker handshake cost once per download even with many photos.
   let cryptoClientPromise: ReturnType<typeof getCryptoClient> | null = null;
@@ -204,7 +204,10 @@ export async function downloadAlbumAsZip(options: AlbumDownloadOptions): Promise
         }
       }
 
-      const plaintext = await crypto.decryptShard(shard, bundle.epochSeed);
+      const plaintext = await crypto.decryptShardWithEpoch(
+        bundle.epochHandleId as EpochHandleId,
+        shard,
+      );
       decryptedChunks.push(plaintext);
     }
 

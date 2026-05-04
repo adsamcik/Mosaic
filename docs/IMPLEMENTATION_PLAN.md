@@ -19,6 +19,7 @@
 8. [Timeline](#implementation-timeline)
 9. [Security Documentation](#security-documentation)
 10. [Design Decisions](#design-decisions-preserved)
+13. [Late-v1 Irreversibility Register](#13-late-v1-irreversibility-register)
 15. [R-M5.2 Sidecar Decoder Tracking](#15-r-m52-sidecar-decoder-tracking)
 
 ---
@@ -1476,65 +1477,40 @@ Create `docs/SECURITY.md` with:
 
 ## 13. Late-v1 Irreversibility Register
 
-The following protocol bytes are frozen for v1. Citations prefer lock-test names
-over source-line ranges so refactors cannot make the register stale.
-
 | Surface | Frozen bytes / values | Lock citation | Status |
 |---------|-----------------------|---------------|--------|
-| Shard envelope magic/version/header/reserved bytes | `SGzk`, `0x03`, 64-byte header, reserved offsets `38..64` all zero | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::{shard_envelope_magic_is_frozen_at_sgzk_four_bytes,shard_envelope_version_is_frozen_at_0x03,shard_envelope_header_total_length_is_frozen_at_64_bytes,shard_envelope_reserved_bytes_are_zero_on_encode,shard_envelope_reserved_bytes_are_zero_checked_on_decode}` | Frozen |
-| `ShardTier` discriminants | thumbnail `1`, preview `2`, original `3`; `0` and `4` rejected | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_tier_byte_discriminants_locked` (R-C5.2) | Explicit lock test active |
-| Manifest transcript context | `Mosaic_Manifest_v1`, version `1` | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::manifest_transcript_context_is_frozen_at_mosaic_manifest_v1` | Frozen |
-| Metadata sidecar context | `Mosaic_Metadata_v1`, version `1` | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::metadata_sidecar_context_is_frozen_at_mosaic_metadata_v1` | Frozen |
-| KDF labels | `mosaic:root-key:v1`, `mosaic:auth-signing:v1`, `mosaic:tier:thumb:v1`, `mosaic:tier:preview:v1`, `mosaic:tier:full:v1`, `mosaic:tier:content:v1`, `mosaic:db-session-key:v1` | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::{root_key_info_label_is_frozen,auth_signing_key_info_label_is_frozen,thumb_key_info_label_is_frozen,preview_key_info_label_is_frozen,full_key_info_label_is_frozen,content_key_info_label_is_frozen,db_session_key_info_label_is_frozen}` | Frozen |
-| Auth/bundle signing contexts | `Mosaic_Auth_Challenge_v1`, `Mosaic_EpochBundle_v1` | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::{auth_challenge_context_label_is_frozen,bundle_sign_context_label_is_frozen}` | Frozen |
-
-The KDF labels above use colon separators and the auth/bundle contexts use
-`Mosaic_*_v1` underscore-separated byte strings. Earlier dotted wording such as
-`mosaic.root-key.v1` is non-normative; the code bytes and lock tests are the
-source of truth.
+| AEAD domain-separation labels | `mosaic:l3-epoch-seed:v1`, `mosaic:l3-identity-seed:v1`, `mosaic:account-wrapped-data:v1`; bound into XChaCha20-Poly1305 AAD so cross-domain unwrap MUST fail | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::aead_wrap_domain_labels_are_frozen`; `crates/mosaic-crypto/tests/envelope_crypto.rs::aad_secret_wrap_round_trips_only_with_matching_domain`; `crates/mosaic-client/tests/adr006_compositional_attack_blocked.rs::{adr006_unwrap_with_account_cannot_recover_epoch_seed,adr006_unwrap_with_account_cannot_recover_identity_seed,account_data_wrap_unwrap_round_trip}` | Frozen by R-C6 |
 
 ---
 
-## 15. Programme Cohesion Bookkeeping
+## 15. R-M5.2 Sidecar Decoder Tracking
 
-### 15.1 Ticket status ledger
-
-| Ticket | Scope | Status | Merged at |
-|--------|-------|--------|-----------|
-| R-Cl1.1 | Client-core baseline cohesion remediation | Done | `94628b9` |
-| R-C1.1 | Crypto/domain cohesion remediation | Done | `ca822bf` |
-| R-C5.1 | Protocol freeze lock coverage | Done | `5c60275` |
-| R-C5.2 | Domain protocol lock-test expansion, including `ShardTier` discriminants | Done | `d178242` |
-| R-M5.1 | Canonical sidecar registry and encoder governance | Done | `0cb58d6` |
-| P-W7 | Web encrypted local cache programme | Done | See sub-slices below |
-| P-W7.1 | Web cache slice 1 | Done | `e334a66` |
-| P-W7.2 | Web cache slice 2 | Done | `4a0ef58` |
-| P-W7.3 | Web cache slice 3 | Done | `07f5910` |
-| P-W7.4 | Web cache slice 4 | Done | `184c201` |
-| P-W7.5 | Web cache slice 5 | Done | `3945a16` |
-| P-W7.6 | Web cache slice 6 | Done | `f89f86b` |
-| P-W7.6.1 | Web cache slice 6 follow-up | Done | `a397541` |
-| P-W7.7 | Web cache slice 7 | Done | `95ec0c8` |
-| P-W7.8 | DB-session HKDF label documentation | Done | `704f4b6` |
-| R-Cl1.2 | Client-core state-machine integrity follow-up | In progress | — |
-| R-M5.2 | Sidecar correctness / decoder tracking follow-up | In progress | — |
-| R-C6 | ADR-006 compositional follow-up | In progress | — |
-| R-C7 | Android + CI emergency follow-up | In progress | — |
-| R-C5.3 | Lock-test infrastructure hardening follow-up | In progress | — |
-
-### 15.2 R-M5.2 Sidecar Decoder Tracking
-
-R-M5.2 is the tracked follow-up for sidecar decoder implementation if sidecar
-decoding becomes a v1 requirement. Until it lands, ADR-017 decode-validation
-rules are forward-looking design specifications rather than enforceable runtime
-invariants.
+R-M5.2 tracks sidecar decoder implementation if sidecar decoding becomes a v1
+requirement. Until it lands, ADR-017 decode-validation rules are forward-looking
+design specifications rather than enforceable runtime invariants.
 
 | Work item | Scope | Status |
 |-----------|-------|--------|
 | Decoder | Implement TLV decoder for `Mosaic_Metadata_v1`, including active/reserved/unknown tag handling. | Deferred |
 | Fuzz harness | Add fuzz-green coverage for decoder inputs per ADR-020 before accepting decoder behavior as a v1 invariant. | Deferred |
-| Forbidden payload defense | Reject forbidden field-name patterns, especially tag 6 `filename`, as defense in depth. | In progress |
+| Forbidden payload defense | Reject forbidden field-name patterns, especially tag 6 `filename`, as defense in depth. | Deferred |
 | Cross-platform parity | Include decoder error semantics and sidecar byte equality in Q-final-1 when decoder lands. | Deferred |
+
+### R-C6 ADR-006 compositional closure
+
+R-C6 closes the binary-confirmed ADR-006 violation discovered after P-W7.3:
+generic account-data unwraps can no longer decrypt L3 epoch or identity seed
+wraps because each domain is authenticated with a distinct AEAD AAD label.
+`wrapWithAccountHandle`/`unwrapWithAccountHandle` are now scoped to
+`mosaic:account-wrapped-data:v1`, while persisted epoch and identity seed wraps
+use `mosaic:l3-epoch-seed:v1` and `mosaic:l3-identity-seed:v1`.
+
+The OPFS snapshot envelope version is bumped from v3 to v4 so v3 snapshots
+created before the AAD label was added are invalidated and rehydrated from the
+server rather than decrypted under the new domain. The production photo
+decrypt-path migration is tracked as R-C6.1: remaining `epochSeed` placeholder
+consumers must be replaced by `epochHandleId` calls (`decryptShardWithEpoch`,
+manifest/content handle methods) before the placeholder field is removed.
 
 ---
 
