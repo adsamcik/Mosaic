@@ -363,7 +363,9 @@ fn uniffi_metadata_sidecar_rejects_oversized_field_value_length() {
 
 #[test]
 fn uniffi_metadata_sidecar_accepts_field_value_at_cap() {
-    let cap: usize = 64 * 1024;
+    // After R-M5.2.2 tightened MAX_SIDECAR_TOTAL_BYTES from 1.5 MB to 64 KiB,
+    // the largest legal value-len is cap - header(59) - tlv_overhead(6) = 65_471.
+    let cap: usize = 65_471;
     let mut encoded = Vec::with_capacity(6 + cap);
     encoded.extend_from_slice(&4_u16.to_le_bytes());
     let cap_u32 = match u32::try_from(cap) {
