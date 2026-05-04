@@ -1,14 +1,10 @@
 import * as Comlink from 'comlink';
-import type { RemoteByteSink, RemoteSaveTargetProvider } from '../workers/types';
-import { openZipSaveTarget } from './save-target';
+import type { PerFilePhotoMeta, PerFileStrategy, RemoteByteSink, RemotePerFileSaveSink, RemoteSaveTargetProvider } from '../workers/types';
+import { openPerFileSaveTarget, openZipSaveTarget } from './save-target';
 
 /**
  * Adapt a main-thread `WritableStream<Uint8Array>` into a Comlink-friendly
  * {@link RemoteByteSink} the coordinator worker can drive across the boundary.
- *
- * Each chunk is structured-cloned across the worker boundary; large archives
- * therefore copy chunk-by-chunk (typical client-zip chunk sizes are small,
- * so total RAM overhead is bounded by the chunk size, not the archive size).
  */
 export function makeRemoteByteSink(stream: WritableStream<Uint8Array>): RemoteByteSink {
   const writer = stream.getWriter();
@@ -30,13 +26,29 @@ export function makeRemoteByteSink(stream: WritableStream<Uint8Array>): RemoteBy
   };
 }
 
-/**
- * Default save-target provider used by `useAlbumDownload`. Wraps
- * `openZipSaveTarget` and adapts its `WritableStream` into a
- * {@link RemoteByteSink} so the coordinator can write across the worker
- * boundary via Comlink.
- */
-export const defaultSaveTargetProvider: RemoteSaveTargetProvider = async (fileName: string) => {
-  const stream = await openZipSaveTarget(fileName);
-  return Comlink.proxy(makeRemoteByteSink(stream));
+/** Default save-target provider used by `useAlbumDownload`. */
+export const defaultSaveTargetProvider: RemoteSaveTargetProvider = {
+  async openZipSaveTarget(fileName: string): Promise<RemoteByteSink> {
+    const stream = await openZipSaveTarget(fileName);
+    return Comlink.proxy(makeRemoteByteSink(stream));
+  },
+
+  async openPerFileSaveTarget(
+    strategy: PerFileStrategy,
+    photos: ReadonlyArray<PerFilePhotoMeta>,
+  ): Promise<RemotePerFileSaveSink> {
+    const target = await openPerFileSaveTarget(strategy, photos);
+    return Comlink.proxy({
+      async openOne(_photoId: string, filename: string, sizeBytes: number): Promise<RemoteByteSink> {
+        const stream = await target.openOne(filename, sizeBytes);
+        return Comlink.proxy(makeRemoteByteSink(stream));
+      },
+      async finalize(): Promise<void> {
+        await target.finalize();
+      },
+      async abort(): Promise<void> {
+        await target.abort();
+      },
+    });
+  },
 };
