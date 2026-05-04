@@ -1260,6 +1260,19 @@ export interface DownloadBuildPlanInput {
 }
 
 
+/** Per-file save strategy selected by browser capability detection. */
+export type PerFileStrategy =
+  | 'webShare'
+  | 'fsAccessPerFile'
+  | 'blobAnchor';
+
+/** Metadata the main thread needs before opening per-file save targets. */
+export interface PerFilePhotoMeta {
+  readonly photoId: string;
+  readonly filename: string;
+  readonly sizeBytes: number;
+}
+
 /**
  * Output mode for a download job. Determines what (if anything) the
  * coordinator does with OPFS-staged photo bytes once all photo tasks complete.
@@ -1267,12 +1280,12 @@ export interface DownloadBuildPlanInput {
  * - `zip`         emit a streaming ZIP archive to a user-provided save target
  * - `keepOffline` no file output; bytes stay in OPFS so future browse-time
  *                 viewers can stream from local storage
- *
- * Future variants (perFile, directory) will be added behind their own flags.
+ * - `perFile`     emit one file per staged photo using a capability-detected strategy
  */
 export type DownloadOutputMode =
   | { readonly kind: 'zip'; readonly fileName: string }
-  | { readonly kind: 'keepOffline' };
+  | { readonly kind: 'keepOffline' }
+  | { readonly kind: 'perFile'; readonly strategy: PerFileStrategy };
 
 /**
  * Worker-friendly byte sink the coordinator writes streamed finalizer output
@@ -1285,8 +1298,19 @@ export interface RemoteByteSink {
   abort(reason?: string): Promise<void>;
 }
 
+/** Main-thread per-file save target factory proxied to the coordinator worker. */
+export interface RemotePerFileSaveSink {
+  openOne(photoId: string, filename: string, sizeBytes: number): Promise<RemoteByteSink>;
+  finalize(): Promise<void>;
+  abort(): Promise<void>;
+}
+
 /** Main-thread save-target factory proxied to the coordinator worker. */
-export type RemoteSaveTargetProvider = (fileName: string) => Promise<RemoteByteSink>;
+export interface RemoteSaveTargetProvider {
+  openZipSaveTarget(fileName: string): Promise<RemoteByteSink>;
+  openPerFileSaveTarget(strategy: PerFileStrategy, photos: ReadonlyArray<PerFilePhotoMeta>): Promise<RemotePerFileSaveSink>;
+}
+
 
 /** Raw input accepted by Rust's `DownloadPlanBuilder`, plus the owning album id. */
 export interface StartJobInput extends DownloadBuildPlanInput {
@@ -1397,7 +1421,7 @@ export interface CoordinatorWorkerApi {
   /**
    * Register/clear the main-thread save-target factory used by the ZIP finalizer.
    * The factory must be registered before `startJob` is called with
-   * `outputMode.kind === 'zip'`; otherwise finalization fails with IllegalState.
+   * `outputMode.kind === 'zip'` or `perFile`; otherwise finalization fails with IllegalState.
    */
   setSaveTargetProvider(provider: RemoteSaveTargetProvider | null): Promise<void>;
 }

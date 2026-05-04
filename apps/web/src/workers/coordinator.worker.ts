@@ -33,6 +33,7 @@ import type {
   DownloadJobStateView,
   DownloadJobsBroadcastMessage,
   DownloadOutputMode,
+  PerFileStrategy,
   DownloadPhase,
   DownloadPhotoCounts,
   DownloadPhotoStateView,
@@ -46,6 +47,8 @@ import type {
   StartJobInput,
 } from './types';
 import { runZipFinalizer as defaultRunZipFinalizer, type ZipFinalizerDeps } from './coordinator/zip-finalizer';
+import { runPerFileFinalizer as defaultRunPerFileFinalizer, type PerFileFinalizerDeps } from './coordinator/per-file-finalizer';
+
 
 const log = createLogger('CoordinatorWorker');
 const CHANNEL_NAME = 'mosaic-download-jobs';
@@ -66,6 +69,7 @@ interface ByteProgressTimer {
 let getCryptoPoolForCoordinator = getCryptoPool;
 let executePhotoTaskForCoordinator = executePhotoTask;
 let runZipFinalizerForCoordinator: typeof defaultRunZipFinalizer = defaultRunZipFinalizer;
+let runPerFileFinalizerForCoordinator: typeof defaultRunPerFileFinalizer = defaultRunPerFileFinalizer;
 
 interface InMemoryJob {
   readonly jobId: string;
@@ -295,7 +299,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   /** Compute a local album diff from the persisted plan and current manifest. */
   async computeAlbumDiff(jobId: string, current: CurrentAlbumManifest): Promise<AlbumDiff> {
     this.assertInitialized();
-    let job = this.jobs.get(jobId);
+    let job: InMemoryJob | null | undefined = this.jobs.get(jobId);
     if (!job) {
       job = await this.refreshPersistedJob(jobId);
     }
@@ -372,6 +376,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       case 'zip':
         await this.runZipFinalizer(jobId, mode.fileName, signal);
         return;
+      case 'perFile':
+        await this.runPerFileFinalizer(jobId, mode.strategy, signal);
+        return;
       default: {
         const _exhaustive: never = mode;
         throw new Error(`Unknown output mode: ${String(_exhaustive)}`);
@@ -390,11 +397,40 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       readPhotoStream: opfsStaging.readPhotoStream,
       getPhotoFileLength: opfsStaging.getPhotoFileLength,
       openSaveTarget: async (name: string): Promise<WritableStream<Uint8Array>> => {
-        const sink = await provider(name);
+        const sink = await provider.openZipSaveTarget(name);
         return sinkToWritableStream(sink);
       },
     };
     await runZipFinalizerForCoordinator({ jobId, entries }, fileName, deps, signal);
+  }
+
+  private async runPerFileFinalizer(jobId: string, strategy: PerFileStrategy, signal: AbortSignal): Promise<void> {
+    const provider = this.saveTargetProvider;
+    if (!provider) {
+      throw new Error('No save-target provider registered for per-file finalizer');
+    }
+    const job = this.requireJob(jobId);
+    const entries = job.plan.map((entry) => ({ photoId: entry.photoId, filename: entry.filename }));
+    const deps: PerFileFinalizerDeps = {
+      readPhotoStream: opfsStaging.readPhotoStream,
+      getPhotoFileLength: opfsStaging.getPhotoFileLength,
+      openPerFileSaveTarget: async (selectedStrategy, photos) => {
+        const remote = await provider.openPerFileSaveTarget(selectedStrategy, photos);
+        return {
+          async writeOne(photoId, filename, sizeBytes, stream, perPhotoSignal): Promise<void> {
+            const sink = await remote.openOne(photoId, filename, sizeBytes);
+            await stream.pipeTo(sinkToWritableStream(sink), { signal: perPhotoSignal });
+          },
+          async finalize(): Promise<void> {
+            await remote.finalize();
+          },
+          async abort(): Promise<void> {
+            await remote.abort();
+          },
+        };
+      },
+    };
+    await runPerFileFinalizerForCoordinator({ jobId, entries }, strategy, deps, signal);
   }
 
   private scheduleJobDriver(jobId: string): void {
@@ -1409,6 +1445,9 @@ export const __coordinatorWorkerTestUtils = {
   setRunZipFinalizer(fn: typeof defaultRunZipFinalizer): void {
     runZipFinalizerForCoordinator = fn;
   },
+  setRunPerFileFinalizer(fn: typeof defaultRunPerFileFinalizer): void {
+    runPerFileFinalizerForCoordinator = fn;
+  },
   runJobDriver(worker: CoordinatorWorker, jobId: string): Promise<void> {
     return worker.runJobDriver(jobId);
   },
@@ -1418,9 +1457,3 @@ export const __coordinatorWorkerTestUtils = {
     return map.get(jobId) ?? Promise.resolve();
   },
 };
-
-
-
-
-
-

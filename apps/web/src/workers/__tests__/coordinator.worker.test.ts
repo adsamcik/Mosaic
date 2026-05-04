@@ -292,7 +292,10 @@ function photoStatusValue(status: TestPhotoStatus): CborValue {
 function readPhotoBytesWritten(body: Uint8Array, photoId: string): number {
   const photos = requiredMapValue(parse(body), 7);
   if (photos.kind !== 'array') throw new Error('expected photos array');
-  const photo = photos.value.find((candidate) => requiredMapValue(candidate, 0).kind === 'text' && requiredMapValue(candidate, 0).value === photoId);
+  const photo = photos.value.find((candidate) => {
+    const idValue = requiredMapValue(candidate, 0);
+    return idValue.kind === 'text' && idValue.value === photoId;
+  });
   if (!photo) throw new Error('photo not found');
   return expectUint(requiredMapValue(photo, 2));
 }
@@ -626,9 +629,9 @@ describe('CoordinatorWorker', () => {
 
 
   it('rate-limits byte-progress snapshot persistence', async () => {
-    let report: ((jobId: string, photoId: string, bytesWritten: number) => void) | null = null;
+    let report: (jobId: string, photoId: string, bytesWritten: number) => void = () => { throw new Error('expected byte-progress reporter'); };
     pipelineMocks.executePhotoTask.mockImplementation(async (input, deps) => {
-      report = deps?.reportBytesWritten ?? null;
+      report = deps?.reportBytesWritten ?? report;
       await new Promise<void>((resolve) => input.signal.addEventListener('abort', () => resolve(), { once: true }));
       return { kind: 'failed', code: 'Cancelled' };
     });
@@ -640,7 +643,7 @@ describe('CoordinatorWorker', () => {
 
     for (let index = 1; index <= 10; index += 1) {
       vi.setSystemTime(nowMs + index * 5);
-      report?.(jobId, '018f0000-0000-7000-8000-000000000101', index * 10);
+      report(jobId, '018f0000-0000-7000-8000-000000000101', index * 10);
       await vi.advanceTimersByTimeAsync(5);
     }
     await vi.advanceTimersByTimeAsync(60);
@@ -654,9 +657,9 @@ describe('CoordinatorWorker', () => {
   });
 
   it('pause flushes pending byte progress immediately', async () => {
-    let report: ((jobId: string, photoId: string, bytesWritten: number) => void) | null = null;
+    let report: (jobId: string, photoId: string, bytesWritten: number) => void = () => { throw new Error('expected byte-progress reporter'); };
     pipelineMocks.executePhotoTask.mockImplementation(async (input, deps) => {
-      report = deps?.reportBytesWritten ?? null;
+      report = deps?.reportBytesWritten ?? report;
       await new Promise<void>((resolve) => input.signal.addEventListener('abort', () => resolve(), { once: true }));
       return { kind: 'failed', code: 'Cancelled' };
     });
@@ -665,7 +668,7 @@ describe('CoordinatorWorker', () => {
     const jobId = await startPreparingJob(worker);
     await vi.waitFor(async () => expect((await worker.getJob(jobId))?.photoCounts.inflight).toBe(1));
 
-    report?.(jobId, '018f0000-0000-7000-8000-000000000101', 77);
+    report(jobId, '018f0000-0000-7000-8000-000000000101', 77);
     await worker.pauseJob(jobId);
 
     const persisted = opfsState.snapshots.get(jobId);
@@ -719,11 +722,19 @@ describe('CoordinatorWorker', () => {
   it('startJob accepts an outputMode and dispatches the matching finalizer', async () => {
     const zipFinalizer = vi.fn(async () => undefined);
     cbor.setRunZipFinalizer(zipFinalizer as unknown as Parameters<typeof cbor.setRunZipFinalizer>[0]);
-    const provider = vi.fn(async () => ({
+    const openZipSaveTarget = vi.fn(async () => ({
       write: vi.fn(async () => undefined),
       close: vi.fn(async () => undefined),
       abort: vi.fn(async () => undefined),
     }));
+    const provider = {
+      openZipSaveTarget,
+      openPerFileSaveTarget: vi.fn(async () => ({
+        openOne: vi.fn(async () => ({ write: vi.fn(async () => undefined), close: vi.fn(async () => undefined), abort: vi.fn(async () => undefined) })),
+        finalize: vi.fn(async () => undefined),
+        abort: vi.fn(async () => undefined),
+      })),
+    };
     const worker = new CoordinatorWorker();
     await worker.initialize({ nowMs });
     await worker.setSaveTargetProvider(provider);
@@ -736,27 +747,61 @@ describe('CoordinatorWorker', () => {
     expect(calls[0]?.[1]).toBe('album.zip');
   });
 
+
+  it.each(['webShare', 'fsAccessPerFile', 'blobAnchor'] as const)('dispatches perFile finalizer for %s strategy', async (strategy) => {
+    const perFileFinalizer = vi.fn(async () => undefined);
+    cbor.setRunPerFileFinalizer(perFileFinalizer as unknown as Parameters<typeof cbor.setRunPerFileFinalizer>[0]);
+    const provider = {
+      openZipSaveTarget: vi.fn(async () => ({ write: vi.fn(async () => undefined), close: vi.fn(async () => undefined), abort: vi.fn(async () => undefined) })),
+      openPerFileSaveTarget: vi.fn(async () => ({
+        openOne: vi.fn(async () => ({ write: vi.fn(async () => undefined), close: vi.fn(async () => undefined), abort: vi.fn(async () => undefined) })),
+        finalize: vi.fn(async () => undefined),
+        abort: vi.fn(async () => undefined),
+      })),
+    };
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    await worker.setSaveTargetProvider(provider);
+    const { jobId } = await worker.startJob({ ...validInput(), outputMode: { kind: 'perFile', strategy } });
+    await cbor.awaitScheduledDriver(worker, jobId);
+    expect((await worker.getJob(jobId))?.phase).toBe('Done');
+    expect(perFileFinalizer).toHaveBeenCalledTimes(1);
+    const calls = perFileFinalizer.mock.calls as unknown as ReadonlyArray<readonly [unknown, typeof strategy, ...unknown[]]>;
+    expect(calls[0]?.[1]).toBe(strategy);
+  });
+
   it('keepOffline (default) finalizer is a no-op and does not call save-target provider', async () => {
     const zipFinalizer = vi.fn(async () => undefined);
     cbor.setRunZipFinalizer(zipFinalizer as unknown as Parameters<typeof cbor.setRunZipFinalizer>[0]);
-    const provider = vi.fn();
+    const provider = {
+      openZipSaveTarget: vi.fn(),
+      openPerFileSaveTarget: vi.fn(),
+    };
     const worker = new CoordinatorWorker();
     await worker.initialize({ nowMs });
-    await worker.setSaveTargetProvider(provider as unknown as Parameters<typeof worker.setSaveTargetProvider>[0]);
+    await worker.setSaveTargetProvider(provider);
     const { jobId } = await worker.startJob({ ...validInput(), outputMode: { kind: 'keepOffline' } });
     await cbor.awaitScheduledDriver(worker, jobId);
     expect((await worker.getJob(jobId))?.phase).toBe('Done');
     expect(zipFinalizer).not.toHaveBeenCalled();
-    expect(provider).not.toHaveBeenCalled();
+    expect(provider.openZipSaveTarget).not.toHaveBeenCalled();
+    expect(provider.openPerFileSaveTarget).not.toHaveBeenCalled();
   });
 
   it('zip finalizer failure transitions the job to Errored', async () => {
     cbor.setRunZipFinalizer(((async (): Promise<void> => { throw new Error('boom'); }) as unknown) as Parameters<typeof cbor.setRunZipFinalizer>[0]);
-    const provider = vi.fn(async () => ({
-      write: vi.fn(async () => undefined),
-      close: vi.fn(async () => undefined),
-      abort: vi.fn(async () => undefined),
-    }));
+    const provider = {
+      openZipSaveTarget: vi.fn(async () => ({
+        write: vi.fn(async () => undefined),
+        close: vi.fn(async () => undefined),
+        abort: vi.fn(async () => undefined),
+      })),
+      openPerFileSaveTarget: vi.fn(async () => ({
+        openOne: vi.fn(async () => ({ write: vi.fn(async () => undefined), close: vi.fn(async () => undefined), abort: vi.fn(async () => undefined) })),
+        finalize: vi.fn(async () => undefined),
+        abort: vi.fn(async () => undefined),
+      })),
+    };
     const worker = new CoordinatorWorker();
     await worker.initialize({ nowMs });
     await worker.setSaveTargetProvider(provider);
