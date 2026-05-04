@@ -565,6 +565,7 @@ dependencies = [
  "mosaic-client",
  "mosaic-crypto",
  "mosaic-domain",
+ "mosaic-media",
  "mosaic-vectors",
  "strum",
  "wasm-bindgen",

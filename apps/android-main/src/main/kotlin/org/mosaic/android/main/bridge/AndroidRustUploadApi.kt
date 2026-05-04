@@ -1,16 +1,14 @@
 package org.mosaic.android.main.bridge
 
 import org.mosaic.android.foundation.GeneratedRustUploadApi
-import org.mosaic.android.foundation.RustClientCoreManifestReceipt
+import org.mosaic.android.foundation.RustClientCoreUploadJobFfiEffect
 import org.mosaic.android.foundation.RustClientCoreUploadJobFfiEvent
 import org.mosaic.android.foundation.RustClientCoreUploadJobFfiRequest
 import org.mosaic.android.foundation.RustClientCoreUploadJobFfiResult
 import org.mosaic.android.foundation.RustClientCoreUploadJobFfiSnapshot
 import org.mosaic.android.foundation.RustClientCoreUploadJobFfiTransition
-import org.mosaic.android.foundation.RustClientCoreUploadJobFfiEffect
 import org.mosaic.android.foundation.RustClientCoreUploadJobTransitionFfiResult
 import org.mosaic.android.foundation.RustClientCoreUploadShardRef
-import uniffi.mosaic_uniffi.ClientCoreManifestReceipt as RustClientCoreManifestReceiptUniFfi
 import uniffi.mosaic_uniffi.ClientCoreUploadJobEffect as RustClientCoreUploadJobEffectUniFfi
 import uniffi.mosaic_uniffi.ClientCoreUploadJobEvent as RustClientCoreUploadJobEventUniFfi
 import uniffi.mosaic_uniffi.ClientCoreUploadJobRequest as RustClientCoreUploadJobRequestUniFfi
@@ -22,11 +20,8 @@ import uniffi.mosaic_uniffi.initUploadJob as rustInitUploadJob
 /**
  * Real implementation of [GeneratedRustUploadApi] backed by the Rust UniFFI core.
  *
- * Note on `maxRetryCount`: the shell's `RustClientCoreUploadJobFfiSnapshot`
- * does not yet carry `maxRetryCount` (only the `RustClientCoreUploadJobFfiRequest`
- * does). The UniFFI snapshot does. When translating shell snapshot → UniFFI,
- * this adapter therefore defaults `maxRetryCount` to `0`. Once the shell schema
- * is extended to carry it, replace the default with the snapshot field.
+ * Keeps the Android shell DTOs aligned with the UniFFI client-core upload schema
+ * while preserving the shell-facing names consumed by view models.
  */
 class AndroidRustUploadApi : GeneratedRustUploadApi {
 
@@ -39,9 +34,8 @@ class AndroidRustUploadApi : GeneratedRustUploadApi {
       jobId = request.jobId,
       albumId = request.albumId,
       assetId = request.assetId,
-      epochId = request.epochId.toUInt(),
-      nowUnixMs = request.nowUnixMs.toULong(),
-      maxRetryCount = request.maxRetryCount.toUInt(),
+      idempotencyKey = request.idempotencyKey,
+      maxRetryCount = request.maxRetryCount.toUByte(),
     )
     val uniResult = rustInitUploadJob(uniRequest)
     val rustCode = uniResult.code.toInt()
@@ -51,28 +45,25 @@ class AndroidRustUploadApi : GeneratedRustUploadApi {
         snapshot = uniResult.snapshot.toShellSnapshot(),
       )
     } else {
-      // Synthesize a stub snapshot from the request so the shell DTO
-      // construction does not throw on empty/default Rust output.
       RustClientCoreUploadJobFfiResult(
         code = rustCode,
         snapshot = RustClientCoreUploadJobFfiSnapshot(
           schemaVersion = 1,
           jobId = request.jobId,
           albumId = request.albumId,
-          assetId = request.assetId,
-          epochId = request.epochId,
           phase = "Rejected",
-          activeTier = 0,
-          activeShardIndex = 0,
-          completedShards = emptyList(),
-          hasManifestReceipt = false,
-          manifestReceipt = RustClientCoreManifestReceipt(manifestId = "", manifestVersion = 0),
           retryCount = 0,
-          nextRetryUnixMs = 0,
-          lastErrorCode = rustCode,
-          lastErrorStage = "init",
-          syncConfirmed = false,
-          updatedAtUnixMs = request.nowUnixMs,
+          maxRetryCount = request.maxRetryCount,
+          nextRetryNotBeforeMs = 0,
+          hasNextRetryNotBeforeMs = false,
+          idempotencyKey = request.idempotencyKey,
+          tieredShards = emptyList(),
+          shardSetHash = ByteArray(0),
+          snapshotRevision = 0,
+          lastEffectId = "",
+          lastAcknowledgedEffectId = "",
+          lastAppliedEventId = "",
+          failureCode = rustCode,
         ),
       )
     }
@@ -86,15 +77,11 @@ class AndroidRustUploadApi : GeneratedRustUploadApi {
     val uniEvent = event.toUniFfiEvent()
     val uniResult = rustAdvanceUploadJob(uniSnapshot, uniEvent)
     val rustCode = uniResult.code.toInt()
-    // When the Rust core rejects the transition (non-zero code), the returned
-    // snapshot may carry default/empty strings that the shell DTO's `init`
-    // block would reject. Pass the *input* snapshot through unchanged in that
-    // case so callers receive a valid shape and can route on `code` alone.
     return if (rustCode == 0) {
       RustClientCoreUploadJobTransitionFfiResult(
         code = rustCode,
         transition = RustClientCoreUploadJobFfiTransition(
-          snapshot = uniResult.transition.snapshot.toShellSnapshot(),
+          nextSnapshot = uniResult.transition.nextSnapshot.toShellSnapshot(),
           effects = uniResult.transition.effects.map { it.toShellEffect() },
         ),
       )
@@ -102,99 +89,104 @@ class AndroidRustUploadApi : GeneratedRustUploadApi {
       RustClientCoreUploadJobTransitionFfiResult(
         code = rustCode,
         transition = RustClientCoreUploadJobFfiTransition(
-          snapshot = snapshot,
+          nextSnapshot = snapshot,
           effects = emptyList(),
         ),
       )
     }
   }
 
-  // -------- shell <-> UniFFI conversions --------
-
-  private fun RustClientCoreUploadJobSnapshotUniFfi.toShellSnapshot(): RustClientCoreUploadJobFfiSnapshot =
+  internal fun RustClientCoreUploadJobSnapshotUniFfi.toShellSnapshot(): RustClientCoreUploadJobFfiSnapshot =
     RustClientCoreUploadJobFfiSnapshot(
       schemaVersion = schemaVersion.toInt(),
       jobId = jobId,
       albumId = albumId,
-      assetId = assetId,
-      epochId = epochId.toInt(),
       phase = phase,
-      activeTier = activeTier.toInt(),
-      activeShardIndex = activeShardIndex.toInt(),
-      completedShards = completedShards.map {
+      retryCount = retryCount.toInt(),
+      maxRetryCount = maxRetryCount.toInt(),
+      nextRetryNotBeforeMs = nextRetryNotBeforeMs,
+      hasNextRetryNotBeforeMs = hasNextRetryNotBeforeMs,
+      idempotencyKey = idempotencyKey,
+      tieredShards = tieredShards.map {
         RustClientCoreUploadShardRef(
           tier = it.tier.toInt(),
           shardIndex = it.shardIndex.toInt(),
           shardId = it.shardId,
           sha256 = it.sha256,
+          contentLength = it.contentLength.toLong(),
+          envelopeVersion = it.envelopeVersion.toInt(),
           uploaded = it.uploaded,
         )
       },
-      hasManifestReceipt = hasManifestReceipt,
-      manifestReceipt = RustClientCoreManifestReceipt(
-        manifestId = manifestReceipt.manifestId,
-        manifestVersion = manifestReceipt.manifestVersion.toLong(),
-      ),
-      retryCount = retryCount.toInt(),
-      nextRetryUnixMs = nextRetryUnixMs.toLong(),
-      lastErrorCode = lastErrorCode.toInt(),
-      lastErrorStage = lastErrorStage,
-      syncConfirmed = syncConfirmed,
-      updatedAtUnixMs = updatedAtUnixMs.toLong(),
+      shardSetHash = shardSetHash,
+      snapshotRevision = snapshotRevision.toLong(),
+      lastEffectId = lastEffectId,
+      lastAcknowledgedEffectId = lastAcknowledgedEffectId,
+      lastAppliedEventId = lastAppliedEventId,
+      failureCode = failureCode.toInt(),
     )
 
-  private fun RustClientCoreUploadJobFfiSnapshot.toUniFfiSnapshot(): RustClientCoreUploadJobSnapshotUniFfi =
+  internal fun RustClientCoreUploadJobFfiSnapshot.toUniFfiSnapshot(): RustClientCoreUploadJobSnapshotUniFfi =
     RustClientCoreUploadJobSnapshotUniFfi(
       schemaVersion = schemaVersion.toUInt(),
       jobId = jobId,
       albumId = albumId,
-      assetId = assetId,
-      epochId = epochId.toUInt(),
       phase = phase,
-      activeTier = activeTier.toUByte(),
-      activeShardIndex = activeShardIndex.toUInt(),
-      completedShards = completedShards.map {
-        RustClientCoreUploadShardRefUniFfi(
-          tier = it.tier.toUByte(),
-          shardIndex = it.shardIndex.toUInt(),
-          shardId = it.shardId,
-          sha256 = it.sha256,
-          uploaded = it.uploaded,
-        )
-      },
-      hasManifestReceipt = hasManifestReceipt,
-      manifestReceipt = RustClientCoreManifestReceiptUniFfi(
-        manifestId = manifestReceipt.manifestId,
-        manifestVersion = manifestReceipt.manifestVersion.toULong(),
-      ),
       retryCount = retryCount.toUInt(),
-      maxRetryCount = 0u,
-      nextRetryUnixMs = nextRetryUnixMs.toULong(),
-      lastErrorCode = lastErrorCode.toUShort(),
-      lastErrorStage = lastErrorStage,
-      syncConfirmed = syncConfirmed,
-      updatedAtUnixMs = updatedAtUnixMs.toULong(),
+      maxRetryCount = maxRetryCount.toUByte(),
+      nextRetryNotBeforeMs = nextRetryNotBeforeMs,
+      hasNextRetryNotBeforeMs = hasNextRetryNotBeforeMs,
+      idempotencyKey = idempotencyKey,
+      tieredShards = tieredShards.map { it.toUniFfiShardRef() },
+      shardSetHash = shardSetHash,
+      snapshotRevision = snapshotRevision.toULong(),
+      lastEffectId = lastEffectId,
+      lastAcknowledgedEffectId = lastAcknowledgedEffectId,
+      lastAppliedEventId = lastAppliedEventId,
+      failureCode = failureCode.toUShort(),
     )
 
-  private fun RustClientCoreUploadJobFfiEvent.toUniFfiEvent(): RustClientCoreUploadJobEventUniFfi =
+  internal fun RustClientCoreUploadJobFfiEvent.toUniFfiEvent(): RustClientCoreUploadJobEventUniFfi =
     RustClientCoreUploadJobEventUniFfi(
       kind = kind,
-      epochId = 0u,
+      effectId = effectId,
       tier = tier.toUByte(),
       shardIndex = shardIndex.toUInt(),
       shardId = shardId,
       sha256 = sha256,
-      manifestId = manifestId,
-      manifestVersion = manifestVersion.toULong(),
-      observedAssetId = observedAssetId,
-      retryAfterUnixMs = retryAfterUnixMs.toULong(),
+      contentLength = contentLength.toULong(),
+      envelopeVersion = envelopeVersion.toUByte(),
+      uploaded = uploaded,
+      tieredShards = tieredShards.map { it.toUniFfiShardRef() },
+      shardSetHash = shardSetHash,
+      assetId = assetId,
+      sinceMetadataVersion = sinceMetadataVersion.toULong(),
+      recoveryOutcome = recoveryOutcome,
+      nowMs = nowMs,
+      baseBackoffMs = baseBackoffMs.toULong(),
+      serverRetryAfterMs = serverRetryAfterMs.toULong(),
+      hasServerRetryAfterMs = hasServerRetryAfterMs,
+      hasErrorCode = hasErrorCode,
       errorCode = errorCode.toUShort(),
+      targetPhase = targetPhase,
     )
 
-  private fun RustClientCoreUploadJobEffectUniFfi.toShellEffect(): RustClientCoreUploadJobFfiEffect =
+  internal fun RustClientCoreUploadJobEffectUniFfi.toShellEffect(): RustClientCoreUploadJobFfiEffect =
     RustClientCoreUploadJobFfiEffect(
       kind = kind,
+      effectId = effectId,
       tier = tier.toInt(),
       shardIndex = shardIndex.toInt(),
+    )
+
+  private fun RustClientCoreUploadShardRef.toUniFfiShardRef(): RustClientCoreUploadShardRefUniFfi =
+    RustClientCoreUploadShardRefUniFfi(
+      tier = tier.toUByte(),
+      shardIndex = shardIndex.toUInt(),
+      shardId = shardId,
+      sha256 = sha256,
+      contentLength = contentLength.toULong(),
+      envelopeVersion = envelopeVersion.toUByte(),
+      uploaded = uploaded,
     )
 }

@@ -102,6 +102,7 @@ data class RustEpochHandleFfiResult(
   val handle: Long,
   val epochId: Int,
   val wrappedEpochSeed: ByteArray,
+  val signPublicKey: ByteArray = ByteArray(0),
 ) {
   init {
     require(code >= 0) { "epoch code must not be negative" }
@@ -111,10 +112,11 @@ data class RustEpochHandleFfiResult(
 
   fun wipe() {
     wrappedEpochSeed.fill(0)
+    signPublicKey.fill(0)
   }
 
   override fun toString(): String =
-    "RustEpochHandleFfiResult(code=$code, handle=<redacted>, epochId=$epochId, wrappedEpochSeed=<redacted>)"
+    "RustEpochHandleFfiResult(code=$code, handle=<redacted>, epochId=$epochId, wrappedEpochSeed=<redacted>, signPublicKey=<redacted>)"
 
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
@@ -122,7 +124,8 @@ data class RustEpochHandleFfiResult(
     return code == other.code &&
       handle == other.handle &&
       epochId == other.epochId &&
-      wrappedEpochSeed.contentEquals(other.wrappedEpochSeed)
+      wrappedEpochSeed.contentEquals(other.wrappedEpochSeed) &&
+      signPublicKey.contentEquals(other.signPublicKey)
   }
 
   override fun hashCode(): Int {
@@ -130,6 +133,7 @@ data class RustEpochHandleFfiResult(
     result = 31 * result + handle.hashCode()
     result = 31 * result + epochId
     result = 31 * result + wrappedEpochSeed.contentHashCode()
+    result = 31 * result + signPublicKey.contentHashCode()
     return result
   }
 }

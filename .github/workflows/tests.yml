@@ -247,7 +247,9 @@ jobs:
     name: Android Shell (JVM)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: build-check
+    # Android shell is intentionally self-contained: do not depend on
+    # build-check's cargo-deny / WASM api-shape gates, which are orthogonal to
+    # Kotlin foundation compilation and previously hid Android regressions.
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -277,7 +279,11 @@ jobs:
     name: Android Main (Gradle)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: build-check
+    # We deliberately do NOT depend on build-check (cargo-deny + WASM
+    # api-shape lock) because the Android bridge requires only Rust-core
+    # compilation and UniFFI binding generation, both of which are exercised by
+    # `cargo test --workspace` in unit-tests. Coupling them caused a 3-month
+    # invisibility window in 2026-Q1.
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

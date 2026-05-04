@@ -164,6 +164,7 @@ data class RustClientCoreAlbumSyncFfiEvent(
   val observedAssetIds: List<String>,
   val retryAfterUnixMs: Long,
   val errorCode: Int,
+  val hasErrorCode: Boolean = false,
 ) {
   init {
     require(kind.isNotBlank()) { "event kind is required" }
@@ -175,7 +176,7 @@ data class RustClientCoreAlbumSyncFfiEvent(
   override fun toString(): String =
     "RustClientCoreAlbumSyncFfiEvent(kind=$kind, fetchedCursor=<redacted>, nextCursor=<redacted>, " +
       "appliedCount=$appliedCount, observedAssetIds=<redacted>, " +
-      "retryAfterUnixMs=$retryAfterUnixMs, errorCode=$errorCode)"
+      "retryAfterUnixMs=$retryAfterUnixMs, hasErrorCode=$hasErrorCode, errorCode=$errorCode)"
 
   companion object {
     fun startRequested(): RustClientCoreAlbumSyncFfiEvent = RustClientCoreAlbumSyncFfiEvent(
@@ -186,6 +187,7 @@ data class RustClientCoreAlbumSyncFfiEvent(
       observedAssetIds = emptyList(),
       retryAfterUnixMs = 0,
       errorCode = 0,
+      hasErrorCode = false,
     )
   }
 }

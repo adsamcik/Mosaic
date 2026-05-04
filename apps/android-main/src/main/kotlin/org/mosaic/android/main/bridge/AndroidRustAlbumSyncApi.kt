@@ -140,6 +140,7 @@ class AndroidRustAlbumSyncApi : GeneratedRustAlbumSyncApi {
       appliedCount = appliedCount.toUInt(),
       observedAssetIds = observedAssetIds,
       retryAfterUnixMs = retryAfterUnixMs.toULong(),
+      hasErrorCode = hasErrorCode,
       errorCode = errorCode.toUShort(),
     )
 

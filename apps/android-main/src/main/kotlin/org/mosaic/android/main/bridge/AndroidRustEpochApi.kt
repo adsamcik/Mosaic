@@ -23,6 +23,7 @@ class AndroidRustEpochApi : GeneratedRustEpochApi {
       handle = result.handle.toLong(),
       epochId = result.epochId.toInt(),
       wrappedEpochSeed = result.wrappedEpochSeed,
+      signPublicKey = result.signPublicKey,
     )
   }
 
@@ -38,6 +39,7 @@ class AndroidRustEpochApi : GeneratedRustEpochApi {
       handle = result.handle.toLong(),
       epochId = result.epochId.toInt(),
       wrappedEpochSeed = result.wrappedEpochSeed,
+      signPublicKey = result.signPublicKey,
     )
   }
 

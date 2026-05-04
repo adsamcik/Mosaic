@@ -30,6 +30,9 @@ wildcards = "deny"
 allow-build-scripts = [
   "anyhow",
   "camino",
+  # `crunchy` is pulled by `half` via `ciborium` for client-core CBOR
+  # snapshot serialization; its build script emits constant-evaluation cfgs.
+  "crunchy",
   "curve25519-dalek",
   "fs-err",
   "generic-array",
@@ -45,6 +48,9 @@ allow-build-scripts = [
   "wasm-bindgen",
   "wasm-bindgen-shared",
   "wit-bindgen",
+  # `zerocopy` is pulled by `half` via `ciborium` for client-core CBOR
+  # snapshot serialization; its build script is limited to target cfg probing.
+  "zerocopy",
   "zmij",
 ]
 
