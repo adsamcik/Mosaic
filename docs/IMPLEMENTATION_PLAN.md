@@ -1556,6 +1556,17 @@ than enforceable runtime invariants.
 | R-M5.2.2 | Tighten MAX_SIDECAR_TOTAL_BYTES 1.5 MB → 64 KiB before v1 freeze | Done | `ee63ed2` |
 | R-M5.2.2 collateral | uniffi/wasm sidecar boundary tests update for new cap | Done | `2319a71` |
 | M0 | Web/Android metadata stripping parity | Done | `101fe12` |
+| R-C5.5 | Architecture-guard allowlist audit (36 entries: 31 SAFE, 5 MIGRATE, 0 RENAME) | Done | `2d17c47` |
+| R-C5.5 hash record | Audit checkpoint hash recorded | Done | `b81a0ea` |
+| R-C5.5.1 | Mechanical rationale-quality CI guard (40-char floor, 7 banned phrases) | Done | `4ce5b22` |
+| R-C5.5 design memo | Opus-authored migration design SPEC for 3 design-dependent migrations | Done | `5356d20` |
+| R-C5.5 migrate-bundle (#4 + #5) | LinkKeysFfiResult.wrapping_key + OpenedBundleFfiResult.epoch_seed → handles | Done | `cbec1a6` |
+| R-C7-3 | Generate TS WorkerCryptoErrorCode from Rust enum (CI drift detection) | Done | `b196656` |
+| R-C5.5 Android hotfix + Migration #3 | Android compile fix (cbec1a6 collateral) + verify_and_open_bundle feature-gate | Done | `20d924f` |
+| R-C5.5 Migration #2 + bonus | derive_link_keys_from_raw_secret + derive_identity_from_raw_seed feature-gate | Done | `6701059` |
+| R-C5.5 Migration #1 | link_secret_for_url → link_url_token (BEARER-TOKEN-PERMITTED reclassification) | Done | `8558261` |
+| R-C5.5 Gradle hotfix | Task-graph fail-fast invariant against mixed test+production gradle invocations | Done | `1b66b19` |
+| Wave 2 ledger sweep | §11 cap tightening + AAD label expansion; §12.1 Wave 2 entries | Done | `d7bc035` |
 | R-M5.3 | Sidecar decoder + fuzz + forbidden-name defense | Pending | — |
 | R-C6.3-v2 | Migrate empty-AAD wraps to AAD-bound (v2 protocol break: snapshot version bump + LinkShareRecord migration) | Pending | — |
 | R-C5.5 | Audit architecture-guard allowlist rationales before v1 | Pending | — |
