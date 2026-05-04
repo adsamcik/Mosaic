@@ -3,10 +3,10 @@
  *
  * Drives the Rust core through the WASM facade (`apps/web/src/workers/rust-crypto-core.ts`)
  * so any drift between the Rust crate and the bytes captured from the TS reference
- * surfaces here too. Slice 0C wired up the WASM surface (`deriveLinkKeys`,
- * `generateLinkSecret`, `verifyManifestWithIdentity`, etc.), so every vector
- * whose canonical bytes are reachable through the facade is now locked
- * byte-exact below. The remaining `it.skip` blocks are split into two narrow
+ * surfaces here too. Handle-based link-share APIs replaced the old raw
+ * link-key/link-secret facade exports, so only canonical bytes still reachable
+ * through supported facade entry points are locked byte-exact below. The
+ * remaining `it.skip` blocks are split into two narrow
  * categories with explicit rationale:
  *
  *   1. `deviation:<id>` — `tests/vectors/deviations.md` still flags these as
@@ -167,62 +167,12 @@ describe('cross-client golden vector corpus (Web WASM facade)', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Slice 0C closures: byte-exact assertions against the corpus go through
-  // the WASM facade entry points listed below. Each `it.skip` either
-  //   - flipped to an active byte-exact `it()` (binding present, no deviation),
-  //   - stays skipped with a `deviation:<id>` reason (open deviation —
-  //     `tests/vectors/deviations.md`), or
-  //   - stays skipped with a `facade-gap:no-raw-key-binding` reason (corpus
-  //     locks bytes that require raw-key/raw-seed injection the facade does
-  //     not currently expose).
+  // Byte-exact assertions against the corpus go through currently supported
+  // WASM facade entry points. Skipped tests are limited to `deviation:<id>`
+  // cases tracked in `tests/vectors/deviations.md` and
+  // `facade-gap:no-raw-key-binding` cases where the corpus locks bytes that
+  // require raw-key/raw-seed injection the handle-based facade does not expose.
   // -------------------------------------------------------------------------
-
-  it.skip('link_keys.json — deriveLinkKeys produces byte-exact (linkId, wrappingKey)', () => {
-    const v = loadVector('link_keys.json');
-    const inputs = v.inputs as { linkSecretHex: string };
-    const expected = v.expected as { linkIdHex: string; wrappingKeyHex: string };
-
-    const linkSecret = fromHex(inputs.linkSecretHex);
-    const result = rustWasm.deriveLinkKeys(linkSecret);
-    try {
-      expect(result.code).toBe(0);
-      expect(bytesEqual(result.linkId, fromHex(expected.linkIdHex))).toBe(true);
-      expect(bytesEqual(result.wrappingKey, fromHex(expected.wrappingKeyHex))).toBe(true);
-    } finally {
-      result.free();
-    }
-
-    // Negative: the corpus declares INVALID_KEY_LENGTH for a 31-byte secret.
-    const truncated = linkSecret.slice(0, 31);
-    const failure = rustWasm.deriveLinkKeys(truncated);
-    try {
-      expect(failure.code).not.toBe(0);
-    } finally {
-      failure.free();
-    }
-  });
-
-  it.skip('link_secret.json — generateLinkSecret returns 32 fresh CSPRNG bytes', () => {
-    const v = loadVector('link_secret.json');
-    const expected = v.expected as { lengthBytes: number };
-    expect(expected.lengthBytes).toBe(32);
-
-    const a = rustWasm.generateLinkSecret();
-    const b = rustWasm.generateLinkSecret();
-    try {
-      expect(a.code).toBe(0);
-      expect(b.code).toBe(0);
-      expect(a.bytes.length).toBe(expected.lengthBytes);
-      expect(b.bytes.length).toBe(expected.lengthBytes);
-      // Two consecutive draws must differ; corpus only locks length, but the
-      // CSPRNG contract is meaningless if successive calls return the same
-      // bytes, so assert it here as a smoke guard.
-      expect(bytesEqual(a.bytes, b.bytes)).toBe(false);
-    } finally {
-      a.free();
-      b.free();
-    }
-  });
 
   it.skip(
     'tier_key_wrap.json — deviation:tier-key-wrap (Rust core uses XChaCha20-Poly1305; corpus locks libsodium crypto_secretbox / XSalsa20-Poly1305 bytes — see tests/vectors/deviations.md)',
