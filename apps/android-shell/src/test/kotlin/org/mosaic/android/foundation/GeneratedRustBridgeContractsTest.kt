@@ -57,7 +57,7 @@ fun main() {
     // Slice 0C raw-input bridge DTO redaction (SPEC-CrossPlatformHardening,
     // Android shell checklist: "DTO toString methods redact staged sources,
     // handles, plan IDs, and request salts/wrapped keys.").
-    BridgeTestCase("RustLinkKeysFfiResult redacts linkId and wrappingKey", ::rustLinkKeysFfiResultRedactsBytes),
+    BridgeTestCase("RustLinkKeysFfiResult redacts linkId and link handle", ::rustLinkKeysFfiResultRedactsBytes),
     BridgeTestCase("RustIdentitySeedFfiResult redacts pubkeys and signature", ::rustIdentitySeedFfiResultRedactsBytes),
     BridgeTestCase("RustContentDecryptFfiResult redacts plaintext", ::rustContentDecryptFfiResultRedactsPlaintext),
     BridgeTestCase("AuthChallenge transcript / sign result strings redact secret-equivalent bytes", ::authChallengeResultsRedactBytes),
@@ -818,27 +818,26 @@ private fun publicBridgeDtosAvoidPrivacyForbiddenText() {
 // region slice-0c DTO redaction (SPEC-CrossPlatformHardening Android shell)
 
 private fun rustLinkKeysFfiResultRedactsBytes() {
-  // Use real-shaped bytes (16 + 32) so the size suffix is meaningful but the
-  // raw values must not appear in toString output.
+  // Use real-shaped link ID bytes so the size suffix is meaningful, while the
+  // opaque handle value must not appear in toString output.
   val linkId = ByteArray(16) { 0x11 }
-  val wrappingKey = ByteArray(32) { 0x22 }
   val ffi = RustLinkKeysFfiResult(
     code = RustLinkKeysStableCode.OK,
     linkId = linkId,
-    wrappingKey = wrappingKey,
+    linkHandleId = 42UL,
   )
   val s = ffi.toString()
   bridgeAssertTrue("linkId=<redacted" in s)
-  bridgeAssertTrue("wrappingKey=<redacted" in s)
+  bridgeAssertTrue("linkHandleId=<redacted" in s)
   // The high-level LinkKeysResult must also redact.
   val high = LinkKeysResult(
     code = LinkKeysCode.SUCCESS,
     linkId = linkId,
-    wrappingKey = wrappingKey,
+    linkHandleId = 42UL,
   )
   val highStr = high.toString()
   bridgeAssertTrue("linkId=<redacted" in highStr)
-  bridgeAssertTrue("wrappingKey=<redacted" in highStr)
+  bridgeAssertTrue("linkHandleId=<redacted" in highStr)
   // No raw byte-pattern (0x11 / 0x22) leaks as text — search for typical hex
   // / decimal renderings that a default toString could have produced.
   for (forbidden in listOf("[17,", "17, 17", "[34,", "34, 34", "[B@")) {
@@ -933,7 +932,6 @@ private fun rustOpenedBundleFfiResultRedactsAllSensitiveFields() {
   // Album id is a string but is also a privacy-noisy identifier — redacted
   // as `<redacted-${length}-chars>`.
   val recipient = ByteArray(32) { 0x99.toByte() }
-  val epochSeed = ByteArray(32) { 0xAA.toByte() }
   val signPub = ByteArray(32) { 0xBB.toByte() }
   val ffi = RustOpenedBundleFfiResult(
     code = RustSealedBundleStableCode.OK,
@@ -941,24 +939,23 @@ private fun rustOpenedBundleFfiResultRedactsAllSensitiveFields() {
     albumId = "album-id-with-leakable-chars",
     epochId = 7,
     recipientPubkey = recipient,
-    epochSeed = epochSeed,
+    epochHandleId = 77UL,
     signPublicKey = signPub,
   )
   val s = ffi.toString()
   bridgeAssertTrue("albumId=<redacted" in s)
   bridgeAssertTrue("recipientPubkey=<redacted" in s)
-  bridgeAssertTrue("epochSeed=<redacted" in s)
+  bridgeAssertTrue("epochHandleId=<redacted" in s)
   bridgeAssertTrue("signPublicKey=<redacted" in s)
   // The literal albumId text must not appear:
   bridgeAssertFalse(s.contains("album-id-with-leakable-chars"))
-  for (forbidden in listOf("[153,", "153, 153", "[170,", "170, 170", "[187,", "187, 187", "[B@")) {
+  for (forbidden in listOf("[153,", "153, 153", "77", "[187,", "187, 187", "[B@")) {
     bridgeAssertFalse(s.contains(forbidden))
   }
 }
 
 private fun openedBundleResultRedactsBytes() {
   val recipient = ByteArray(32) { 0xCC.toByte() }
-  val epochSeed = ByteArray(32) { 0xDD.toByte() }
   val signPub = ByteArray(32) { 0xEE.toByte() }
   val high = OpenedBundleResult(
     code = OpenedBundleCode.SUCCESS,
@@ -966,16 +963,16 @@ private fun openedBundleResultRedactsBytes() {
     albumId = "secret-album-name",
     epochId = 3,
     recipientPubkey = recipient,
-    epochSeed = epochSeed,
+    epochHandleId = 88UL,
     signPublicKey = signPub,
   )
   val s = high.toString()
   bridgeAssertTrue("albumId=<redacted" in s)
   bridgeAssertTrue("recipientPubkey=<redacted" in s)
-  bridgeAssertTrue("epochSeed=<redacted" in s)
+  bridgeAssertTrue("epochHandleId=<redacted" in s)
   bridgeAssertTrue("signPublicKey=<redacted" in s)
   bridgeAssertFalse(s.contains("secret-album-name"))
-  for (forbidden in listOf("[204,", "204, 204", "[221,", "221, 221", "[238,", "238, 238", "[B@")) {
+  for (forbidden in listOf("[204,", "204, 204", "88", "[238,", "238, 238", "[B@")) {
     bridgeAssertFalse(s.contains(forbidden))
   }
 }

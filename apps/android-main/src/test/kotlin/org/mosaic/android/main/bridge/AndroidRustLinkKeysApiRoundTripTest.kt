@@ -15,25 +15,23 @@ import java.nio.file.Paths
  * Slice 0C round-trip test for `tests/vectors/link_keys.json`.
  *
  * Drives the production [AndroidRustLinkKeysApi] adapter through JNA into
- * the host-built `mosaic_uniffi` cdylib and asserts byte-equality against
- * the captured vector outputs.
+ * the host-built `mosaic_uniffi` cdylib and asserts the public link ID plus
+ * the opaque Rust link-handle contract.
  */
 class AndroidRustLinkKeysApiRoundTripTest {
 
   @Test
-  fun deriveLinkKeysFromVectorMatchesExpectedBytes() {
+  fun deriveLinkKeysFromVectorMatchesExpectedPublicFieldsAndHandle() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustLinkKeysApi()
     val vector = readVector("link_keys.json")
     val linkSecret = vector.linkSecret
     val expectedLinkId = vector.expectedLinkId
-    val expectedWrappingKey = vector.expectedWrappingKey
-
     val result = api.deriveLinkKeysFromRawSecret(linkSecret)
 
     assertEquals("expected SUCCESS code 0", 0, result.code)
     assertArrayEquals(expectedLinkId, result.linkId)
-    assertArrayEquals(expectedWrappingKey, result.wrappingKey)
+    assertNotEquals("successful derivation must return an opaque link handle", 0UL, result.linkHandleId)
   }
 
   @Test
@@ -45,7 +43,7 @@ class AndroidRustLinkKeysApiRoundTripTest {
     val result = api.deriveLinkKeysFromRawSecret(truncated)
     assertEquals("expected code 201 for short link secret", 201, result.code)
     assertEquals(0, result.linkId.size)
-    assertEquals(0, result.wrappingKey.size)
+    assertEquals(0UL, result.linkHandleId)
   }
 
   @Test
@@ -72,7 +70,6 @@ class AndroidRustLinkKeysApiRoundTripTest {
     val linkSecret: ByteArray,
     val expectedLinkId: ByteArray,
     val expectedWrappingKeyHex: String,
-    val expectedWrappingKey: ByteArray,
   )
 
   private fun readVector(name: String): LinkKeysVector {
@@ -85,7 +82,6 @@ class AndroidRustLinkKeysApiRoundTripTest {
       linkSecret = decodeHex(linkSecretHex),
       expectedLinkId = decodeHex(linkIdHex),
       expectedWrappingKeyHex = wrappingKeyHex,
-      expectedWrappingKey = decodeHex(wrappingKeyHex),
     )
   }
 }

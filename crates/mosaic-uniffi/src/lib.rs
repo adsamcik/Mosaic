@@ -2422,6 +2422,7 @@ pub fn verify_auth_challenge_signature(
 /// return. `sign_secret_seed` (the per-epoch manifest signing secret carried by
 /// `mosaic_client::OpenedBundleResult`) is intentionally NOT exposed across
 /// this FFI surface.
+#[cfg(feature = "cross-client-vectors")]
 #[uniffi::export]
 #[must_use]
 #[allow(clippy::too_many_arguments)]

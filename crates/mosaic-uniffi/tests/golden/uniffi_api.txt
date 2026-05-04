@@ -298,5 +298,4 @@ export pub fn derive_identity_from_raw_seed( identity_seed: Vec<u8>, message: Ve
 export pub fn build_auth_challenge_transcript_bytes( username: String, timestamp_ms: i64, challenge: Vec<u8>, ) -> BytesResult
 export pub fn sign_auth_challenge_with_raw_seed( transcript_bytes: Vec<u8>, auth_signing_seed: Vec<u8>, ) -> BytesResult
 export pub fn verify_auth_challenge_signature( transcript_bytes: Vec<u8>, signature: Vec<u8>, auth_public_key: Vec<u8>, ) -> AuthChallengeVerifyFfiResult
-export pub fn verify_and_open_bundle_with_recipient_seed( recipient_identity_seed: Vec<u8>, sealed: Vec<u8>, signature: Vec<u8>, sharer_pubkey: Vec<u8>, expected_owner_pubkey: Vec<u8>, expected_album_id: String, expected_min_epoch_id: u32, allow_legacy_empty_album_id: bool, ) -> OpenedBundleFfiResult
 export pub fn decrypt_content_with_raw_key( content_key: Vec<u8>, nonce: Vec<u8>, ciphertext: Vec<u8>, epoch_id: u32, ) -> ContentDecryptFfiResult

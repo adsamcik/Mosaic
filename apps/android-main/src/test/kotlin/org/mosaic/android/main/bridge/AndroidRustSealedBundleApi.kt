@@ -5,7 +5,7 @@ import org.mosaic.android.foundation.RustOpenedBundleFfiResult
 import uniffi.mosaic_uniffi.verifyAndOpenBundleWithRecipientSeed as rustVerifyAndOpen
 
 /**
- * Real implementation of [GeneratedRustSealedBundleApi] backed by the Rust
+ * Test-only implementation of [GeneratedRustSealedBundleApi] backed by the Rust
  * UniFFI core. Delegates to
  * `mosaic_uniffi.verify_and_open_bundle_with_recipient_seed`.
  *
@@ -65,7 +65,7 @@ class AndroidRustSealedBundleApi : GeneratedRustSealedBundleApi {
       albumId = result.albumId,
       epochId = result.epochId.toInt(),
       recipientPubkey = result.recipientPubkey,
-      epochSeed = result.epochSeed,
+      epochHandleId = result.epochHandleId,
       signPublicKey = result.signPublicKey,
     )
   }

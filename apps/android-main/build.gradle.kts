@@ -27,6 +27,15 @@ val rustAndroidArtifactsDir: File = repoRoot.resolve("target/android")
 val rustHostReleaseDir: File = repoRoot.resolve("target/release")
 val generatedKotlinDir: File = layout.buildDirectory.dir("generated/source/uniffi/main/kotlin").get().asFile
 val generatedJniLibsDir: File = layout.buildDirectory.dir("generated/jniLibs").get().asFile
+val rustUniffiCargoFeatures: String =
+  if (gradle.startParameter.taskNames.any { taskName ->
+      taskName.contains("testDebugUnitTest", ignoreCase = true) ||
+        taskName.contains("compileDebugUnitTest", ignoreCase = true)
+    }) {
+    "cross-client-vectors"
+  } else {
+    ""
+  }
 
 /**
  * Resolves the host-built `mosaic_uniffi` shared library path for JVM unit
@@ -161,12 +170,20 @@ val buildRustUniffiArtifacts by tasks.registering(Exec::class) {
   } else {
     commandLine("bash", script)
   }
+  if (rustUniffiCargoFeatures.isNotBlank()) {
+    val existingRustFlags = System.getenv("RUSTFLAGS")?.takeIf { it.isNotBlank() }
+    environment(
+      "RUSTFLAGS",
+      listOfNotNull(existingRustFlags, "--cfg feature=\"$rustUniffiCargoFeatures\"").joinToString(" "),
+    )
+  }
 
   inputs.dir(repoRoot.resolve("crates/mosaic-uniffi/src"))
   inputs.file(repoRoot.resolve("crates/mosaic-uniffi/Cargo.toml"))
   inputs.file(repoRoot.resolve("Cargo.toml"))
   inputs.file(repoRoot.resolve("Cargo.lock"))
   inputs.file(repoRoot.resolve("rust-toolchain.toml"))
+  inputs.property("rustUniffiCargoFeatures", rustUniffiCargoFeatures)
 
   outputs.dir(rustAndroidArtifactsDir)
   outputs.file(rustAndroidArtifactsDir.resolve("kotlin/uniffi/mosaic_uniffi/mosaic_uniffi.kt"))

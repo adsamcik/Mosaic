@@ -29,7 +29,7 @@ class AndroidRustLinkKeysApi : GeneratedRustLinkKeysApi {
     return RustLinkKeysFfiResult(
       code = result.code.toInt(),
       linkId = result.linkId,
-      wrappingKey = result.wrappingKey,
+      linkHandleId = result.linkHandleId,
     )
   }
 

@@ -5,15 +5,16 @@ import org.junit.Test
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import java.nio.file.Files
 import kotlin.io.path.readText
 
 /**
  * Slice 0C round-trip test for `tests/vectors/sealed_bundle.json`.
  *
- * Drives the production [AndroidRustSealedBundleApi] adapter through JNA
- * into the host-built `mosaic_uniffi` cdylib and asserts byte-equality
- * + every vector negative case + four edge cases enforced by
+ * Drives the test-only [AndroidRustSealedBundleApi] adapter through JNA
+ * into the host-built `mosaic_uniffi` cdylib and asserts public vector fields
+ * + opaque epoch-handle creation + every vector negative case + four edge cases enforced by
  * `mosaic-crypto/sharing.rs` that aren't in the JSON.
  */
 class AndroidRustSealedBundleApiRoundTripTest {
@@ -38,7 +39,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
     assertEquals(vector.bundleAlbumId, result.albumId)
     assertEquals(vector.bundleEpochId, result.epochId)
     assertArrayEquals(vector.expectedRecipientPubkey, result.recipientPubkey)
-    assertArrayEquals(vector.expectedEpochSeed, result.epochSeed)
+    assertNotEquals("successful bundle open must return an opaque epoch handle", 0UL, result.epochHandleId)
     assertArrayEquals(vector.expectedSignPublicKey, result.signPublicKey)
   }
 
@@ -228,7 +229,6 @@ class AndroidRustSealedBundleApiRoundTripTest {
     val bundleEpochId: Int,
     val expectedRecipientPubkey: ByteArray,
     val expectedEpochSeedHex: String,
-    val expectedEpochSeed: ByteArray,
     val expectedSignPublicKey: ByteArray,
   )
 
@@ -249,7 +249,6 @@ class AndroidRustSealedBundleApiRoundTripTest {
       bundleEpochId = extractIntegerField(document, "bundleEpochId"),
       expectedRecipientPubkey = decodeHex(extractStringField(document, "bundleRecipientPubkeyHex")),
       expectedEpochSeedHex = epochSeedHex,
-      expectedEpochSeed = decodeHex(epochSeedHex),
       expectedSignPublicKey = decodeHex(extractStringField(document, "bundleSignPublicKeyHex")),
     )
   }
