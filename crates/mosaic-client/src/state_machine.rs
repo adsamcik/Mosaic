@@ -15,6 +15,8 @@ const MIN_RETRY_DELAY_MS: u64 = 1_000;
 const MAX_RETRY_DELAY_MS: u64 = 300_000;
 const MAX_TIERED_SHARDS: usize = 10_000;
 const MAX_UPLOAD_SNAPSHOT_CBOR_BYTES: usize = 1_500_000;
+// R-Cl1.1 legacy snapshots used reserved key 14 for upload retry targets.
+const LEGACY_UPLOAD_RETRY_TARGET_PHASE_KEY: u32 = 14;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Uuid([u8; 16]);
@@ -873,11 +875,11 @@ impl UploadJobSnapshot {
         let value: Value = ciborium::de::from_reader(std::io::Cursor::new(bytes))
             .map_err(|_| SnapshotMigrationError::CborDecodeFailed)?;
         validate_cbor_value(&value, 0)?;
-        let snapshot = decode_upload_snapshot_value(&value)?;
-        if snapshot.to_canonical_cbor() != bytes {
+        let decoded = decode_upload_snapshot_value(&value)?;
+        if decoded.snapshot.to_canonical_cbor() != bytes && !decoded.migrated_legacy_retry_target {
             return Err(SnapshotMigrationError::SchemaCorrupt);
         }
-        Ok(snapshot)
+        Ok(decoded.snapshot)
     }
 }
 
@@ -1380,9 +1382,14 @@ fn shard_value(shard: &UploadShardRef) -> Value {
     ])
 }
 
+struct DecodedUploadSnapshot {
+    snapshot: UploadJobSnapshot,
+    migrated_legacy_retry_target: bool,
+}
+
 fn decode_upload_snapshot_value(
     value: &Value,
-) -> Result<UploadJobSnapshot, SnapshotMigrationError> {
+) -> Result<DecodedUploadSnapshot, SnapshotMigrationError> {
     let Value::Map(entries) = value else {
         return Err(SnapshotMigrationError::SchemaVersionMissing);
     };
@@ -1397,7 +1404,14 @@ fn decode_upload_snapshot_value(
     let expected_keys =
         upload_job_snapshot_keys::upload_job_keys_for_schema_version(schema_version)
             .ok_or(SnapshotMigrationError::SchemaCorrupt)?;
-    validate_exact_keys(entries, expected_keys.iter().copied())?;
+    let legacy_retry_target_phase = legacy_upload_retry_target_phase(entries)?;
+    if legacy_retry_target_phase.is_some() {
+        let mut expected_keys = expected_keys.to_vec();
+        expected_keys.push(LEGACY_UPLOAD_RETRY_TARGET_PHASE_KEY);
+        validate_exact_keys(entries, expected_keys)?;
+    } else {
+        validate_exact_keys(entries, expected_keys.iter().copied())?;
+    }
     if schema_version != SNAPSHOT_SCHEMA_VERSION_V1 {
         return Err(SnapshotMigrationError::StepFailed {
             from: schema_version,
@@ -1411,7 +1425,7 @@ fn decode_upload_snapshot_value(
         .ok_or(SnapshotMigrationError::SchemaCorrupt)?;
     let max_retry_count = required_u8(entries, upload_job_snapshot_keys::MAX_RETRY_COUNT)
         .ok_or(SnapshotMigrationError::SchemaCorrupt)?;
-    let snapshot = UploadJobSnapshot {
+    let mut snapshot = UploadJobSnapshot {
         schema_version,
         job_id: required_uuid(entries, upload_job_snapshot_keys::JOB_ID)?,
         album_id: required_uuid(entries, upload_job_snapshot_keys::ALBUM_ID)?,
@@ -1437,8 +1451,50 @@ fn decode_upload_snapshot_value(
         )?,
         failure_code: optional_client_error_code(entries, upload_job_snapshot_keys::FAILURE_CODE)?,
     };
+    let migrated_legacy_retry_target =
+        migrate_legacy_upload_retry_target_phase(&mut snapshot, legacy_retry_target_phase)?;
     validate_decoded_upload_snapshot(&snapshot)?;
-    Ok(snapshot)
+    Ok(DecodedUploadSnapshot {
+        snapshot,
+        migrated_legacy_retry_target,
+    })
+}
+
+fn legacy_upload_retry_target_phase(
+    entries: &[(Value, Value)],
+) -> Result<Option<UploadJobPhase>, SnapshotMigrationError> {
+    let Some(value) = entry(entries, LEGACY_UPLOAD_RETRY_TARGET_PHASE_KEY) else {
+        return Ok(None);
+    };
+    let Value::Integer(integer) = value else {
+        return Err(SnapshotMigrationError::SchemaCorrupt);
+    };
+    let phase = integer_to_u8(*integer)
+        .and_then(UploadJobPhase::try_from_u8)
+        .ok_or(SnapshotMigrationError::SchemaCorrupt)?;
+    Ok(Some(phase))
+}
+
+fn migrate_legacy_upload_retry_target_phase(
+    snapshot: &mut UploadJobSnapshot,
+    legacy_retry_target_phase: Option<UploadJobPhase>,
+) -> Result<bool, SnapshotMigrationError> {
+    match (snapshot.phase, legacy_retry_target_phase) {
+        (UploadJobPhase::RetryWaiting, Some(UploadJobPhase::ManifestCommitUnknown)) => {
+            snapshot.phase = UploadJobPhase::ManifestCommitUnknown;
+            emit_upload_snapshot_migration_telemetry(snapshot);
+            Ok(true)
+        }
+        (_, Some(_)) => Err(SnapshotMigrationError::SchemaCorrupt),
+        (_, None) => Ok(false),
+    }
+}
+
+fn emit_upload_snapshot_migration_telemetry(snapshot: &UploadJobSnapshot) {
+    eprintln!(
+        "level=warn event=legacy_upload_retry_waiting_manifest_commit_unknown_migrated schema_version={} retry_count={} max_retry_count={}",
+        snapshot.schema_version, snapshot.retry_count, snapshot.max_retry_count,
+    );
 }
 
 fn validate_decoded_upload_snapshot(
