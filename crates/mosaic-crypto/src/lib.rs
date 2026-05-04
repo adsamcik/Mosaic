@@ -155,19 +155,19 @@ pub const CONTENT_KEY_INFO: &[u8] = b"mosaic:tier:content:v1";
 /// HKDF-SHA256 domain separation label for the OPFS-snapshot encryption key
 /// derivable from the L2 account key.
 ///
-/// **§13 Irreversibility Register status:** this label is enumerated in the
+/// **§11 Irreversibility Register status:** this label is enumerated in the
 /// programme's KDF-labels freeze row and therefore cannot be deleted, renamed,
-/// or repurposed without an ADR amendment + §13 update + new lock test.
+/// or repurposed without an ADR amendment + §11 update + new lock test.
 ///
 /// **Production usage status (post-P-W7.3):** the OPFS DB worker now wraps
 /// snapshots through `wrap_with_account_handle` / `unwrap_with_account_handle`,
 /// which encrypt with the L2 account key directly. As a result, this label
 /// has no production callsites today. The constant is intentionally retained
-/// to preserve the §13 protocol commitment: re-introducing domain separation
+/// to preserve the §11 protocol commitment: re-introducing domain separation
 /// later (via `wrap_with_account_handle` deriving through this label first)
 /// is a transparent change that preserves the v1 protocol surface.
 ///
-/// Do not delete this constant. See plan §13 KDF-labels row + Opus P-W7.5/P-W7.8
+/// Do not delete this constant. See plan §11 KDF-labels row + Opus P-W7.5/P-W7.8
 /// review notes for rationale.
 pub const DB_SESSION_KEY_INFO: &[u8] = b"mosaic:db-session-key:v1";
 
@@ -1437,14 +1437,14 @@ pub fn derive_content_key(epoch_seed: &SecretKey) -> Result<SecretKey, MosaicCry
 /// material is domain-separated from every other epoch/tier/content key. The
 /// returned `SecretKey` zeroizes on drop.
 ///
-/// **§13 Irreversibility Register status:** the `mosaic:db-session-key:v1`
+/// **§11 Irreversibility Register status:** the `mosaic:db-session-key:v1`
 /// HKDF label is a frozen v1 protocol surface. This function and its label
 /// constant must be preserved.
 ///
 /// **Production usage status (post-P-W7.3):** no production callsites today;
 /// the OPFS DB worker uses `wrap_with_account_handle` directly. This function
 /// is exercised only by `mosaic-crypto/tests/account_creation.rs` to ensure
-/// the §13-frozen label remains derivable should domain separation be
+/// the §11-frozen label remains derivable should domain separation be
 /// re-introduced (e.g., by routing `wrap_with_account_handle` through this
 /// label first; that is a transparent in-protocol refinement).
 ///
@@ -1670,16 +1670,14 @@ pub fn decrypt_shard_with_legacy_raw_key(
 /// - `InvalidInputLength` if `key_bytes` is empty or exceeds 100 MiB.
 /// - `RngFailure` if the OS CSPRNG is unavailable.
 /// - `AuthenticationFailed` if the AEAD cipher reports an unexpected error.
-#[cfg_attr(
-    not(debug_assertions),
-    deprecated(
-        since = "R-C6",
-        note = "Use wrap_secret_with_aad / unwrap_secret_with_aad with an explicit \
-                domain AAD label. Empty-AAD wraps are a compositional hazard \
-                (see ADR-006 F-1 attack chain). The shim exists only for \
-                backward-compatible reads of pre-v4 OPFS snapshots and the \
-                internal callers tracked under R-C6.3."
-    )
+#[allow(clippy::deprecated_semver)]
+#[deprecated(
+    since = "R-C6",
+    note = "Use wrap_secret_with_aad / unwrap_secret_with_aad with an explicit \
+            domain AAD label. Empty-AAD wraps are a compositional hazard \
+            (see ADR-006 F-1 attack chain). The shim exists only for \
+            backward-compatible reads of pre-v4 OPFS snapshots and the \
+            internal callers tracked under R-C6.3."
 )]
 pub fn wrap_key(key_bytes: &[u8], wrapper: &SecretKey) -> Result<Vec<u8>, MosaicCryptoError> {
     wrap_secret_with_aad(key_bytes, wrapper, &[])
@@ -1737,16 +1735,14 @@ pub fn wrap_secret_with_aad(
 /// # Errors
 /// - `WrappedKeyTooShort` if `wrapped` is shorter than 41 bytes (24 nonce + 16 tag + 1 payload).
 /// - `AuthenticationFailed` if AEAD verification fails.
-#[cfg_attr(
-    not(debug_assertions),
-    deprecated(
-        since = "R-C6",
-        note = "Use wrap_secret_with_aad / unwrap_secret_with_aad with an explicit \
-                domain AAD label. Empty-AAD wraps are a compositional hazard \
-                (see ADR-006 F-1 attack chain). The shim exists only for \
-                backward-compatible reads of pre-v4 OPFS snapshots and the \
-                internal callers tracked under R-C6.3."
-    )
+#[allow(clippy::deprecated_semver)]
+#[deprecated(
+    since = "R-C6",
+    note = "Use wrap_secret_with_aad / unwrap_secret_with_aad with an explicit \
+            domain AAD label. Empty-AAD wraps are a compositional hazard \
+            (see ADR-006 F-1 attack chain). The shim exists only for \
+            backward-compatible reads of pre-v4 OPFS snapshots and the \
+            internal callers tracked under R-C6.3."
 )]
 pub fn unwrap_key(
     wrapped: &[u8],

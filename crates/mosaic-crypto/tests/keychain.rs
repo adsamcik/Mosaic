@@ -1,3 +1,6 @@
+// TODO(R-C6.3): migrate legacy empty-AAD wrap_key test coverage.
+#![allow(deprecated)]
+
 use mosaic_crypto::{
     KdfProfile, MAX_KDF_ITERATIONS, MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM, MIN_KDF_ITERATIONS,
     MIN_KDF_MEMORY_KIB, MosaicCryptoError, derive_account_key, derive_root_key, unwrap_account_key,

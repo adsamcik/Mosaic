@@ -5,6 +5,9 @@
 //! properties so a single-character source mutation observably changes the
 //! result.
 
+// TODO(R-C6.3): migrate legacy empty-AAD wrap_key mutation tests.
+#![allow(deprecated)]
+
 use mosaic_crypto::{
     AUTH_CHALLENGE_CONTEXT, BundleValidationContext, EpochKeyBundle, IdentityKeypair, KdfProfile,
     MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, ManifestSigningPublicKey, ManifestSigningSecretKey,

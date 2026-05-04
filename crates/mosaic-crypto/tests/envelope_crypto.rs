@@ -1,3 +1,6 @@
+// TODO(R-C6.3): migrate legacy empty-AAD wrap/unwrap_key test coverage.
+#![allow(deprecated)]
+
 use mosaic_crypto::{
     ACCOUNT_DATA_AAD, AuthSigningSecretKey, EPOCH_SEED_AAD, IdentitySigningSecretKey,
     ManifestSigningSecretKey, MosaicCryptoError, SecretKey, decrypt_shard, encrypt_shard,
