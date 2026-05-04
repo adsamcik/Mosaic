@@ -14,7 +14,7 @@ import {
   type JustifiedRow,
 } from '../../lib/justified-layout';
 import { formatDateHeader, groupPhotosByDate } from '../../lib/photo-date-utils';
-import type { PhotoMeta } from '../../workers/types';
+import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
 import { SharedPhotoLightbox } from './SharedPhotoLightbox';
 import { SharedPhotoThumbnail } from './SharedPhotoThumbnail';
 
@@ -40,7 +40,7 @@ interface SharedPhotoGridProps {
   /** Short-lived grant token for limited-use links */
   grantToken?: string | null | undefined;
   /** Get the tier key for an epoch */
-  getTierKey: (epochId: number, tier: AccessTierType) => Uint8Array | undefined;
+  getTierKey: (epochId: number, tier: AccessTierType) => LinkDecryptionKey | undefined;
   /** Get sign pubkey for manifest verification */
   getSignPubkey?: (epochId: number) => Uint8Array | undefined;
   /** Whether keys are loading */

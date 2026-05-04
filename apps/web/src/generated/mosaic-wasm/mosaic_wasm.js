@@ -237,6 +237,116 @@ export class CreateAccountResult {
 if (Symbol.dispose) CreateAccountResult.prototype[Symbol.dispose] = CreateAccountResult.prototype.free;
 
 /**
+ * WASM-bindgen class for link-share handle creation results.
+ */
+export class CreateLinkShareHandleResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(CreateLinkShareHandleResult.prototype);
+        obj.__wbg_ptr = ptr;
+        CreateLinkShareHandleResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        CreateLinkShareHandleResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_createlinksharehandleresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.createlinksharehandleresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get encryptedKey() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.createlinksharehandleresult_encryptedKey(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {bigint}
+     */
+    get handle() {
+        const ret = wasm.createlinksharehandleresult_handle(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get linkId() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.createlinksharehandleresult_linkId(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * URL fragment seed allowed by the link-share protocol; not a derived key.
+     * @returns {Uint8Array}
+     */
+    get linkSecretForUrl() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.createlinksharehandleresult_linkSecretForUrl(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get nonce() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.createlinksharehandleresult_nonce(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {number}
+     */
+    get tier() {
+        const ret = wasm.createlinksharehandleresult_tier(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) CreateLinkShareHandleResult.prototype[Symbol.dispose] = CreateLinkShareHandleResult.prototype.free;
+
+/**
  * WASM-bindgen class for public crypto/domain golden-vector snapshots.
  */
 export class CryptoDomainGoldenVectorSnapshot {
@@ -932,42 +1042,47 @@ export class IdentityHandleResult {
 if (Symbol.dispose) IdentityHandleResult.prototype[Symbol.dispose] = IdentityHandleResult.prototype.free;
 
 /**
- * WASM-bindgen class for share-link key derivation results.
+ * WASM-bindgen class for imported link-tier handle results.
  */
-export class LinkKeysResult {
+export class LinkTierHandleResult {
     static __wrap(ptr) {
         ptr = ptr >>> 0;
-        const obj = Object.create(LinkKeysResult.prototype);
+        const obj = Object.create(LinkTierHandleResult.prototype);
         obj.__wbg_ptr = ptr;
-        LinkKeysResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        LinkTierHandleResultFinalization.register(obj, obj.__wbg_ptr, obj);
         return obj;
     }
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
-        LinkKeysResultFinalization.unregister(this);
+        LinkTierHandleResultFinalization.unregister(this);
         return ptr;
     }
     free() {
         const ptr = this.__destroy_into_raw();
-        wasm.__wbg_linkkeysresult_free(ptr, 0);
+        wasm.__wbg_linktierhandleresult_free(ptr, 0);
     }
     /**
-     * Stable error code. Zero means success.
      * @returns {number}
      */
     get code() {
-        const ret = wasm.linkkeysresult_code(this.__wbg_ptr);
+        const ret = wasm.linktierhandleresult_code(this.__wbg_ptr);
         return ret;
     }
     /**
-     * 16-byte server-visible share-link lookup ID.
+     * @returns {bigint}
+     */
+    get handle() {
+        const ret = wasm.linktierhandleresult_handle(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
      * @returns {Uint8Array}
      */
     get linkId() {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.linkkeysresult_linkId(retptr, this.__wbg_ptr);
+            wasm.linktierhandleresult_linkId(retptr, this.__wbg_ptr);
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
@@ -978,24 +1093,14 @@ export class LinkKeysResult {
         }
     }
     /**
-     * 32-byte client-side wrapping key. Callers MUST memzero after use.
-     * @returns {Uint8Array}
+     * @returns {number}
      */
-    get wrappingKey() {
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.linkkeysresult_wrappingKey(retptr, this.__wbg_ptr);
-            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-            var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export4(r0, r1 * 1, 1);
-            return v1;
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
-        }
+    get tier() {
+        const ret = wasm.linktierhandleresult_tier(this.__wbg_ptr);
+        return ret;
     }
 }
-if (Symbol.dispose) LinkKeysResult.prototype[Symbol.dispose] = LinkKeysResult.prototype.free;
+if (Symbol.dispose) LinkTierHandleResult.prototype[Symbol.dispose] = LinkTierHandleResult.prototype.free;
 
 /**
  * WASM-bindgen class for progress events.
@@ -1462,6 +1567,26 @@ export function closeIdentityHandle(handle) {
 }
 
 /**
+ * Closes a share-link handle through WASM.
+ * @param {bigint} handle
+ * @returns {number}
+ */
+export function closeLinkShareHandle(handle) {
+    const ret = wasm.closeLinkShareHandle(handle);
+    return ret;
+}
+
+/**
+ * Closes a link-tier handle through WASM.
+ * @param {bigint} handle
+ * @returns {number}
+ */
+export function closeLinkTierHandle(handle) {
+    const ret = wasm.closeLinkTierHandle(handle);
+    return ret;
+}
+
+/**
  * Creates a fresh account-key handle through the generated WASM binding
  * surface. Returns the opaque handle plus the wrapped account key the
  * caller must persist on the server for future logins.
@@ -1503,6 +1628,20 @@ export function createEpochKeyHandle(account_key_handle, epoch_id) {
 export function createIdentityHandle(account_key_handle) {
     const ret = wasm.createIdentityHandle(account_key_handle);
     return IdentityHandleResult.__wrap(ret);
+}
+
+/**
+ * Creates a share-link handle and first wrapped tier through WASM.
+ * @param {string} album_id
+ * @param {bigint} epoch_handle
+ * @param {number} tier_byte
+ * @returns {CreateLinkShareHandleResult}
+ */
+export function createLinkShareHandle(album_id, epoch_handle, tier_byte) {
+    const ptr0 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.createLinkShareHandle(ptr0, len0, epoch_handle, tier_byte);
+    return CreateLinkShareHandleResult.__wrap(ret);
 }
 
 /**
@@ -1557,6 +1696,19 @@ export function decryptShardWithLegacyRawKeyHandle(handle, envelope_bytes) {
 }
 
 /**
+ * Decrypts a shard using a link-tier handle through WASM.
+ * @param {bigint} link_tier_handle
+ * @param {Uint8Array} envelope_bytes
+ * @returns {DecryptedShardResult}
+ */
+export function decryptShardWithLinkTierHandle(link_tier_handle, envelope_bytes) {
+    const ptr0 = passArray8ToWasm0(envelope_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decryptShardWithLinkTierHandle(link_tier_handle, ptr0, len0);
+    return DecryptedShardResult.__wrap(ret);
+}
+
+/**
  * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
  * @param {bigint} account_handle
  * @returns {AuthKeypairResult}
@@ -1586,18 +1738,6 @@ export function deriveAuthKeypairFromPassword(password, user_salt, kdf_memory_ki
     const len1 = WASM_VECTOR_LEN;
     const ret = wasm.deriveAuthKeypairFromPassword(ptr0, len0, ptr1, len1, kdf_memory_kib, kdf_iterations, kdf_parallelism);
     return AuthKeypairResult.__wrap(ret);
-}
-
-/**
- * Derives the (link_id, wrapping_key) pair from a share-link secret through WASM.
- * @param {Uint8Array} link_secret
- * @returns {LinkKeysResult}
- */
-export function deriveLinkKeys(link_secret) {
-    const ptr0 = passArray8ToWasm0(link_secret, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.deriveLinkKeys(ptr0, len0);
-    return LinkKeysResult.__wrap(ret);
 }
 
 /**
@@ -1660,15 +1800,6 @@ export function epochKeyHandleIsOpen(handle) {
 }
 
 /**
- * Generates a fresh share-link secret through WASM.
- * @returns {BytesResult}
- */
-export function generateLinkSecret() {
-    const ret = wasm.generateLinkSecret();
-    return BytesResult.__wrap(ret);
-}
-
-/**
  * Returns the LocalAuth Ed25519 public key for an account-key handle through WASM.
  * @param {bigint} account_handle
  * @returns {BytesResult}
@@ -1715,6 +1846,40 @@ export function identityEncryptionPubkey(handle) {
 export function identitySigningPubkey(handle) {
     const ret = wasm.identitySigningPubkey(handle);
     return BytesResult.__wrap(ret);
+}
+
+/**
+ * Imports a URL fragment seed into a share-link handle through WASM.
+ * @param {Uint8Array} link_secret_for_url
+ * @returns {LinkTierHandleResult}
+ */
+export function importLinkShareHandle(link_secret_for_url) {
+    const ptr0 = passArray8ToWasm0(link_secret_for_url, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.importLinkShareHandle(ptr0, len0);
+    return LinkTierHandleResult.__wrap(ret);
+}
+
+/**
+ * Imports a wrapped tier key into a link-tier handle through WASM.
+ * @param {Uint8Array} link_secret_for_url
+ * @param {Uint8Array} nonce
+ * @param {Uint8Array} encrypted_key
+ * @param {string} album_id
+ * @param {number} tier_byte
+ * @returns {LinkTierHandleResult}
+ */
+export function importLinkTierHandle(link_secret_for_url, nonce, encrypted_key, album_id, tier_byte) {
+    const ptr0 = passArray8ToWasm0(link_secret_for_url, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(nonce, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(encrypted_key, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.importLinkTierHandle(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, tier_byte);
+    return LinkTierHandleResult.__wrap(ret);
 }
 
 /**
@@ -1939,25 +2104,6 @@ export function unlockAccountKey(password, user_salt, account_salt, wrapped_acco
 }
 
 /**
- * Unwraps a tier key from a share-link record through WASM.
- * @param {Uint8Array} nonce
- * @param {Uint8Array} encrypted_key
- * @param {number} tier_byte
- * @param {Uint8Array} wrapping_key
- * @returns {BytesResult}
- */
-export function unwrapTierKeyFromLink(nonce, encrypted_key, tier_byte, wrapping_key) {
-    const ptr0 = passArray8ToWasm0(nonce, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(encrypted_key, wasm.__wbindgen_export2);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(wrapping_key, wasm.__wbindgen_export2);
-    const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.unwrapTierKeyFromLink(ptr0, len0, ptr1, len1, tier_byte, ptr2, len2);
-    return BytesResult.__wrap(ret);
-}
-
-/**
  * Unwraps `wrapped` with the L2 account key referenced by `account_handle`
  * through WASM.
  * @param {bigint} account_handle
@@ -2033,16 +2179,14 @@ export function verifyManifestWithIdentity(transcript_bytes, signature, public_k
 }
 
 /**
- * Wraps a tier key for share-link distribution through WASM.
+ * Wraps an epoch tier for an existing share-link handle through WASM.
+ * @param {bigint} link_share_handle
  * @param {bigint} epoch_handle
  * @param {number} tier_byte
- * @param {Uint8Array} wrapping_key
  * @returns {WrappedTierKeyResult}
  */
-export function wrapTierKeyForLink(epoch_handle, tier_byte, wrapping_key) {
-    const ptr0 = passArray8ToWasm0(wrapping_key, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.wrapTierKeyForLink(epoch_handle, tier_byte, ptr0, len0);
+export function wrapLinkTierHandle(link_share_handle, epoch_handle, tier_byte) {
+    const ret = wasm.wrapLinkTierHandle(link_share_handle, epoch_handle, tier_byte);
     return WrappedTierKeyResult.__wrap(ret);
 }
 
@@ -2093,6 +2237,9 @@ const BytesResultFinalization = (typeof FinalizationRegistry === 'undefined')
 const CreateAccountResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_createaccountresult_free(ptr >>> 0, 1));
+const CreateLinkShareHandleResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_createlinksharehandleresult_free(ptr >>> 0, 1));
 const CryptoDomainGoldenVectorSnapshotFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_cryptodomaingoldenvectorsnapshot_free(ptr >>> 0, 1));
@@ -2120,9 +2267,9 @@ const HeaderResultFinalization = (typeof FinalizationRegistry === 'undefined')
 const IdentityHandleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_identityhandleresult_free(ptr >>> 0, 1));
-const LinkKeysResultFinalization = (typeof FinalizationRegistry === 'undefined')
+const LinkTierHandleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_linkkeysresult_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_linktierhandleresult_free(ptr >>> 0, 1));
 const ProgressEventFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_progressevent_free(ptr >>> 0, 1));

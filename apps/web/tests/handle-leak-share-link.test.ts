@@ -1,5 +1,5 @@
 /**
- * Slice 6 boundary guard — share-link key-wrapping methods MUST take an
+ * P-W7.6 boundary guard — share-link key-wrapping methods MUST take an
  * opaque `EpochHandleId` as input, not a raw tier-key buffer.
  *
  * The Slice 6 cutover replaced the legacy `wrapTierKeyForLink(tierKey,
@@ -55,11 +55,12 @@ function extractMethodSignature(
   return null;
 }
 
-const SLICE_6_METHODS = [
-  'generateLinkSecret',
-  'deriveLinkKeys',
-  'wrapTierKeyForLink',
-  'unwrapTierKeyFromLink',
+const LINK_HANDLE_METHODS = [
+  'createLinkShareHandle',
+  'importLinkShareHandle',
+  'wrapLinkTierHandle',
+  'importLinkTierHandle',
+  'decryptShardWithLinkTierHandle',
 ] as const;
 
 const FORBIDDEN_TIER_KEY_FIELDS = [
@@ -69,8 +70,8 @@ const FORBIDDEN_TIER_KEY_FIELDS = [
   'fullKey:',
 ] as const;
 
-describe('Slice 6 boundary guard — share-link key wrapping', () => {
-  for (const methodName of SLICE_6_METHODS) {
+describe('P-W7.6 boundary guard — share-link key wrapping', () => {
+  for (const methodName of LINK_HANDLE_METHODS) {
     it(`${methodName} is declared on the worker contract`, () => {
       const sig = extractMethodSignature(typesSource, methodName);
       expect(sig, `${methodName} not found in workers/types.ts`).not.toBeNull();
@@ -88,32 +89,27 @@ describe('Slice 6 boundary guard — share-link key wrapping', () => {
     });
   }
 
-  it('wrapTierKeyForLink takes an opaque EpochHandleId, not raw tier-key bytes', () => {
-    const sig = extractMethodSignature(typesSource, 'wrapTierKeyForLink');
+  it('wrapLinkTierHandle takes opaque handles, not raw tier-key bytes', () => {
+    const sig = extractMethodSignature(typesSource, 'wrapLinkTierHandle');
     expect(sig).not.toBeNull();
     // Authoritative input: an EpochHandleId-typed parameter.
+    expect(sig).toMatch(/linkShareHandleId\s*:\s*LinkShareHandleId/);
     expect(sig).toMatch(/epochHandleId\s*:\s*EpochHandleId/);
     // The pre-Slice-6 signature took `tierKey: Uint8Array` directly. That
     // shape must not be present anymore.
     expect(sig).not.toMatch(/tierKey\s*:\s*Uint8Array/);
   });
 
-  it('wrapTierKeyForLink uses a 0-indexed tier byte (0 | 1 | 2)', () => {
-    const sig = extractMethodSignature(typesSource, 'wrapTierKeyForLink');
+  it('link handle wrapping uses protocol tier bytes (1 | 2 | 3)', () => {
+    const sig = extractMethodSignature(typesSource, 'wrapLinkTierHandle');
     expect(sig).not.toBeNull();
-    expect(sig).toMatch(/tier\s*:\s*0\s*\|\s*1\s*\|\s*2/);
-  });
-
-  it('unwrapTierKeyFromLink uses a 0-indexed tier byte (0 | 1 | 2)', () => {
-    const sig = extractMethodSignature(typesSource, 'unwrapTierKeyFromLink');
-    expect(sig).not.toBeNull();
-    expect(sig).toMatch(/tier\s*:\s*0\s*\|\s*1\s*\|\s*2/);
+    expect(sig).toMatch(/tier\s*:\s*1\s*\|\s*2\s*\|\s*3/);
   });
 
   it('share-link contract has no `*Rust`-suffixed legacy methods left', () => {
-    expect(typesSource).not.toMatch(/generateLinkSecretRust\s*\(/);
-    expect(typesSource).not.toMatch(/deriveLinkKeysRust\s*\(/);
-    expect(typesSource).not.toMatch(/wrapTierKeyForLinkRust\s*\(/);
-    expect(typesSource).not.toMatch(/unwrapTierKeyFromLinkRust\s*\(/);
+    expect(typesSource).not.toMatch(/generateLinkSecret\s*\(/);
+    expect(typesSource).not.toMatch(/deriveLinkKeys\s*\(/);
+    expect(typesSource).not.toMatch(/wrapTierKeyForLink\s*\(/);
+    expect(typesSource).not.toMatch(/unwrapTierKeyFromLink\s*\(/);
   });
 });

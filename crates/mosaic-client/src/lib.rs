@@ -149,6 +149,10 @@ pub enum ClientErrorCode {
 
 /// Opaque epoch-key handle identifier.
 pub type EpochHandleId = u64;
+/// Opaque share-link wrapping-state handle identifier.
+pub type LinkShareHandleId = u64;
+/// Opaque imported share-link tier-key handle identifier.
+pub type LinkTierHandleId = u64;
 
 impl ClientErrorCode {
     /// Returns the numeric representation used across generated bindings.
@@ -691,6 +695,106 @@ impl WrappedTierKeyResult {
     }
 }
 
+/// FFI-safe result for creating a link-share handle and its first wrapped tier.
+///
+/// `link_secret_for_url` is the protocol-mandated URL fragment seed. It is not
+/// the derived wrapping key and must only be placed in the share URL fragment.
+#[derive(Clone, PartialEq, Eq)]
+pub struct CreateLinkShareHandleResult {
+    pub code: ClientErrorCode,
+    pub handle: LinkShareHandleId,
+    pub link_id: Vec<u8>,
+    pub link_secret_for_url: Vec<u8>,
+    pub tier: u8,
+    pub nonce: Vec<u8>,
+    pub encrypted_key: Vec<u8>,
+}
+
+impl fmt::Debug for CreateLinkShareHandleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CreateLinkShareHandleResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("link_id_len", &self.link_id.len())
+            .field("link_secret_for_url_len", &self.link_secret_for_url.len())
+            .field("tier", &self.tier)
+            .field("nonce_len", &self.nonce.len())
+            .field("encrypted_key_len", &self.encrypted_key.len())
+            .finish()
+    }
+}
+
+impl CreateLinkShareHandleResult {
+    fn ok(
+        handle: LinkShareHandleId,
+        link_id: Vec<u8>,
+        link_secret_for_url: Vec<u8>,
+        wrapped: WrappedTierKeyResult,
+    ) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            handle,
+            link_id,
+            link_secret_for_url,
+            tier: wrapped.tier,
+            nonce: wrapped.nonce,
+            encrypted_key: wrapped.encrypted_key,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            handle: 0,
+            link_id: Vec::new(),
+            link_secret_for_url: Vec::new(),
+            tier: 0,
+            nonce: Vec::new(),
+            encrypted_key: Vec::new(),
+        }
+    }
+}
+
+/// FFI-safe result for importing a share-link tier key into an opaque handle.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LinkTierHandleResult {
+    pub code: ClientErrorCode,
+    pub handle: LinkTierHandleId,
+    pub link_id: Vec<u8>,
+    pub tier: u8,
+}
+
+impl fmt::Debug for LinkTierHandleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkTierHandleResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("link_id_len", &self.link_id.len())
+            .field("tier", &self.tier)
+            .finish()
+    }
+}
+
+impl LinkTierHandleResult {
+    fn ok(handle: LinkTierHandleId, link_id: Vec<u8>, tier: u8) -> Self {
+        Self {
+            code: ClientErrorCode::Ok,
+            handle,
+            link_id,
+            tier,
+        }
+    }
+
+    fn error(code: ClientErrorCode) -> Self {
+        Self {
+            code,
+            handle: 0,
+            link_id: Vec::new(),
+            tier: 0,
+        }
+    }
+}
+
 /// FFI-safe sealed bundle result returned by `seal_and_sign_bundle_with_identity_handle`.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SealedBundleResult {
@@ -993,6 +1097,51 @@ impl Drop for EpochRecord {
 static NEXT_EPOCH_HANDLE: AtomicU64 = AtomicU64::new(1);
 static EPOCH_REGISTRY: OnceLock<Mutex<HashMap<u64, EpochRecord>>> = OnceLock::new();
 
+struct LinkShareRecord {
+    link_secret_for_url: Zeroizing<Vec<u8>>,
+    link_wrap_bytes: Zeroizing<Vec<u8>>,
+    open: bool,
+}
+
+impl LinkShareRecord {
+    fn close(&mut self) {
+        self.link_secret_for_url.zeroize();
+        self.link_wrap_bytes.zeroize();
+        self.open = false;
+    }
+}
+
+impl Drop for LinkShareRecord {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+struct LinkTierRecord {
+    album_id: String,
+    tier: ShardTier,
+    key_bytes: Zeroizing<Vec<u8>>,
+    open: bool,
+}
+
+impl LinkTierRecord {
+    fn close(&mut self) {
+        self.key_bytes.zeroize();
+        self.open = false;
+    }
+}
+
+impl Drop for LinkTierRecord {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+static NEXT_LINK_SHARE_HANDLE: AtomicU64 = AtomicU64::new(1);
+static LINK_SHARE_REGISTRY: OnceLock<Mutex<HashMap<u64, LinkShareRecord>>> = OnceLock::new();
+static NEXT_LINK_TIER_HANDLE: AtomicU64 = AtomicU64::new(1);
+static LINK_TIER_REGISTRY: OnceLock<Mutex<HashMap<u64, LinkTierRecord>>> = OnceLock::new();
+
 fn secret_registry() -> &'static Mutex<HashMap<u64, SecretRecord>> {
     SECRET_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -1003,6 +1152,14 @@ fn identity_registry() -> &'static Mutex<HashMap<u64, IdentityRecord>> {
 
 fn epoch_registry() -> &'static Mutex<HashMap<u64, EpochRecord>> {
     EPOCH_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn link_share_registry() -> &'static Mutex<HashMap<u64, LinkShareRecord>> {
+    LINK_SHARE_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn link_tier_registry() -> &'static Mutex<HashMap<u64, LinkTierRecord>> {
+    LINK_TIER_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Returns the crate name for smoke tests and FFI wrapper diagnostics.
@@ -1860,6 +2017,326 @@ pub fn unwrap_tier_key_from_link_bytes(
         },
         Err(error) => bytes_error_code(map_crypto_error(error)),
     }
+}
+
+/// Creates a share-link handle and wraps the first tier key without exposing
+/// the derived per-link wrapping key across FFI.
+///
+/// `link_secret_for_url` in the result is the protocol-mandated URL fragment
+/// seed. It is intentionally returned so the creator can build the URL; it is
+/// not the derived wrapping key used to seal tier keys.
+#[must_use]
+pub fn create_link_share_handle(
+    _album_id: String,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> CreateLinkShareHandleResult {
+    match create_link_share_handle_result(epoch_handle, tier_byte) {
+        Ok(result) => result,
+        Err(error) => CreateLinkShareHandleResult::error(error.code),
+    }
+}
+
+/// Imports an existing URL fragment seed into a share-link handle for wrapping
+/// additional epoch tier keys without exposing the derived wrapping key.
+#[must_use]
+pub fn import_link_share_handle(link_secret_for_url: &[u8]) -> LinkTierHandleResult {
+    match import_link_share_handle_result(link_secret_for_url) {
+        Ok((handle, link_id)) => LinkTierHandleResult::ok(handle, link_id, 0),
+        Err(error) => LinkTierHandleResult::error(error.code),
+    }
+}
+
+/// Wraps a tier key for an existing share-link handle.
+#[must_use]
+pub fn wrap_link_tier_handle(
+    link_share_handle: u64,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> WrappedTierKeyResult {
+    match wrap_link_tier_handle_result(link_share_handle, epoch_handle, tier_byte) {
+        Ok(result) => result,
+        Err(error) => WrappedTierKeyResult::error(error.code),
+    }
+}
+
+/// Imports a share-link wrapped tier key into an opaque tier handle.
+#[must_use]
+pub fn import_link_tier_handle(
+    link_secret_for_url: &[u8],
+    wrapped_nonce: &[u8],
+    encrypted_key: &[u8],
+    album_id: String,
+    tier_byte: u8,
+) -> LinkTierHandleResult {
+    match import_link_tier_handle_result(
+        link_secret_for_url,
+        wrapped_nonce,
+        encrypted_key,
+        album_id,
+        tier_byte,
+    ) {
+        Ok(result) => result,
+        Err(error) => LinkTierHandleResult::error(error.code),
+    }
+}
+
+/// Decrypts a shard with an imported share-link tier handle.
+#[must_use]
+pub fn decrypt_shard_with_link_tier_handle(
+    link_tier_handle: u64,
+    envelope_bytes: &[u8],
+) -> DecryptedShardResult {
+    match decrypt_shard_with_link_tier_handle_result(link_tier_handle, envelope_bytes) {
+        Ok(result) => result,
+        Err(error) => DecryptedShardResult::error(error.code),
+    }
+}
+
+/// Closes and wipes a share-link wrapping handle.
+#[must_use]
+pub fn close_link_share_handle(handle: u64) -> u16 {
+    close_link_share_handle_result(handle).as_u16()
+}
+
+/// Closes and wipes an imported share-link tier handle.
+#[must_use]
+pub fn close_link_tier_handle(handle: u64) -> u16 {
+    close_link_tier_handle_result(handle).as_u16()
+}
+
+fn create_link_share_handle_result(
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> Result<CreateLinkShareHandleResult, ClientError> {
+    let secret = crypto_generate_link_secret().map_err(client_error_from_crypto)?;
+    let link_secret_for_url = secret.as_slice().to_vec();
+    let LinkKeys {
+        link_id,
+        wrapping_key,
+    } = crypto_derive_link_keys(secret.as_slice()).map_err(client_error_from_crypto)?;
+    let handle = insert_link_share_handle(link_secret_for_url.clone(), wrapping_key.as_bytes())?;
+    let wrapped = wrap_link_tier_handle_result(handle, epoch_handle, tier_byte)?;
+    Ok(CreateLinkShareHandleResult::ok(
+        handle,
+        link_id.to_vec(),
+        link_secret_for_url,
+        wrapped,
+    ))
+}
+
+fn import_link_share_handle_result(
+    link_secret_for_url: &[u8],
+) -> Result<(LinkShareHandleId, Vec<u8>), ClientError> {
+    let LinkKeys {
+        link_id,
+        wrapping_key,
+    } = crypto_derive_link_keys(link_secret_for_url).map_err(client_error_from_crypto)?;
+    let handle = insert_link_share_handle(link_secret_for_url.to_vec(), wrapping_key.as_bytes())?;
+    Ok((handle, link_id.to_vec()))
+}
+
+fn insert_link_share_handle(
+    link_secret_for_url: Vec<u8>,
+    link_wrap_bytes: &[u8],
+) -> Result<LinkShareHandleId, ClientError> {
+    let handle = allocate_handle(&NEXT_LINK_SHARE_HANDLE)?;
+    let registry = link_share_registry();
+    let mut guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "link share registry lock was poisoned",
+        )
+    })?;
+    if guard.contains_key(&handle) {
+        return Err(ClientError::new(
+            ClientErrorCode::HandleSpaceExhausted,
+            "link share handle space is exhausted",
+        ));
+    }
+    guard.insert(
+        handle,
+        LinkShareRecord {
+            link_secret_for_url: Zeroizing::new(link_secret_for_url),
+            link_wrap_bytes: Zeroizing::new(link_wrap_bytes.to_vec()),
+            open: true,
+        },
+    );
+    Ok(handle)
+}
+
+fn clone_link_wrap_bytes_for_handle(handle: u64) -> Result<Zeroizing<Vec<u8>>, ClientError> {
+    let registry = link_share_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "link share registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::SecretHandleNotFound,
+                "link share handle is not open",
+            )
+        })?;
+    Ok(Zeroizing::new(record.link_wrap_bytes.to_vec()))
+}
+
+fn wrap_link_tier_handle_result(
+    link_share_handle: u64,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> Result<WrappedTierKeyResult, ClientError> {
+    let mut link_wrap_bytes = clone_link_wrap_bytes_for_handle(link_share_handle)?;
+    let result = wrap_tier_key_for_link_with_epoch_handle(
+        epoch_handle,
+        tier_byte,
+        link_wrap_bytes.as_mut_slice(),
+    );
+    if result.code == ClientErrorCode::Ok {
+        Ok(result)
+    } else {
+        Err(ClientError::new(result.code, "failed to wrap link tier"))
+    }
+}
+
+fn import_link_tier_handle_result(
+    link_secret_for_url: &[u8],
+    wrapped_nonce: &[u8],
+    encrypted_key: &[u8],
+    album_id: String,
+    tier_byte: u8,
+) -> Result<LinkTierHandleResult, ClientError> {
+    let tier = ShardTier::try_from(tier_byte).map_err(client_error_from_domain)?;
+    let LinkKeys {
+        link_id,
+        wrapping_key,
+    } = crypto_derive_link_keys(link_secret_for_url).map_err(client_error_from_crypto)?;
+    if wrapped_nonce.len() != 24 {
+        return Err(ClientError::new(
+            ClientErrorCode::InvalidInputLength,
+            "link tier nonce must be 24 bytes",
+        ));
+    }
+    let mut nonce = [0_u8; 24];
+    nonce.copy_from_slice(wrapped_nonce);
+    let wrapped = WrappedTierKey {
+        tier,
+        nonce,
+        encrypted_key: encrypted_key.to_vec(),
+    };
+    let key_bytes = crypto_unwrap_tier_key_from_link(&wrapped, tier, &wrapping_key)
+        .map_err(client_error_from_crypto)?;
+    let handle = insert_link_tier_handle(album_id, tier, key_bytes.as_slice())?;
+    Ok(LinkTierHandleResult::ok(
+        handle,
+        link_id.to_vec(),
+        tier.to_byte(),
+    ))
+}
+
+fn insert_link_tier_handle(
+    album_id: String,
+    tier: ShardTier,
+    key_bytes: &[u8],
+) -> Result<LinkTierHandleId, ClientError> {
+    let handle = allocate_handle(&NEXT_LINK_TIER_HANDLE)?;
+    let registry = link_tier_registry();
+    let mut guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "link tier registry lock was poisoned",
+        )
+    })?;
+    if guard.contains_key(&handle) {
+        return Err(ClientError::new(
+            ClientErrorCode::HandleSpaceExhausted,
+            "link tier handle space is exhausted",
+        ));
+    }
+    guard.insert(
+        handle,
+        LinkTierRecord {
+            album_id,
+            tier,
+            key_bytes: Zeroizing::new(key_bytes.to_vec()),
+            open: true,
+        },
+    );
+    Ok(handle)
+}
+
+fn decrypt_shard_with_link_tier_handle_result(
+    link_tier_handle: u64,
+    envelope_bytes: &[u8],
+) -> Result<DecryptedShardResult, ClientError> {
+    let (tier, mut key_bytes) = clone_link_tier_key_for_handle(link_tier_handle)?;
+    let header_bytes = if envelope_bytes.len() >= mosaic_domain::SHARD_ENVELOPE_HEADER_LEN {
+        &envelope_bytes[..mosaic_domain::SHARD_ENVELOPE_HEADER_LEN]
+    } else {
+        envelope_bytes
+    };
+    let header = ShardEnvelopeHeader::parse(header_bytes).map_err(client_error_from_domain)?;
+    if header.tier() != tier {
+        return Err(ClientError::new(
+            ClientErrorCode::LinkTierMismatch,
+            "link tier handle does not match envelope tier",
+        ));
+    }
+    let tier_key =
+        SecretKey::from_bytes(key_bytes.as_mut_slice()).map_err(client_error_from_crypto)?;
+    let plaintext = decrypt_shard(envelope_bytes, &tier_key).map_err(client_error_from_crypto)?;
+    Ok(DecryptedShardResult::ok(plaintext.to_vec()))
+}
+
+fn clone_link_tier_key_for_handle(
+    handle: u64,
+) -> Result<(ShardTier, Zeroizing<Vec<u8>>), ClientError> {
+    let registry = link_tier_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "link tier registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::SecretHandleNotFound,
+                "link tier handle is not open",
+            )
+        })?;
+    let _album_id_len = record.album_id.len();
+    Ok((record.tier, Zeroizing::new(record.key_bytes.to_vec())))
+}
+
+fn close_link_share_handle_result(handle: u64) -> ClientErrorCode {
+    let registry = link_share_registry();
+    let Ok(mut guard) = registry.lock() else {
+        return ClientErrorCode::InternalStatePoisoned;
+    };
+    if let Some(record) = guard.get_mut(&handle) {
+        record.close();
+        guard.remove(&handle);
+    }
+    ClientErrorCode::Ok
+}
+
+fn close_link_tier_handle_result(handle: u64) -> ClientErrorCode {
+    let registry = link_tier_registry();
+    let Ok(mut guard) = registry.lock() else {
+        return ClientErrorCode::InternalStatePoisoned;
+    };
+    if let Some(record) = guard.get_mut(&handle) {
+        record.close();
+        guard.remove(&handle);
+    }
+    ClientErrorCode::Ok
 }
 
 /// Seals an `EpochKeyBundle` for `recipient_pubkey` and signs the sealed

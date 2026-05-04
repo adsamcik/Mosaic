@@ -3,7 +3,7 @@ import type { AlbumDownloadResolver } from './album-download-service';
 import { getCryptoClient } from './crypto-client';
 import { createLogger } from './logger';
 import { downloadShardViaShareLink } from './shard-service';
-import type { PhotoMeta } from '../workers/types';
+import type { LinkDecryptionKey, PhotoMeta } from '../workers/types';
 
 const log = createLogger('SharedAlbumDownload');
 
@@ -17,7 +17,7 @@ export interface SharedAlbumDownloadStrategyOptions {
   getTierKey: (
     epochId: number,
     tier: AccessTierType,
-  ) => Uint8Array | undefined;
+  ) => LinkDecryptionKey | undefined;
 }
 
 /**

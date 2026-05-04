@@ -528,56 +528,101 @@ export class RustHandleFacade {
 
   // ---- Link sharing ----
 
-  generateLinkSecret(): Uint8Array {
-    const result = rustWasm.generateLinkSecret();
-    return consumeResult(result, 'generateLinkSecret', (r) =>
-      copyBytes(r.bytes),
-    );
-  }
-
-  deriveLinkKeys(linkSecret: Uint8Array): {
-    linkId: Uint8Array;
-    wrappingKey: Uint8Array;
-  } {
-    const result = rustWasm.deriveLinkKeys(linkSecret);
-    return consumeResult(result, 'deriveLinkKeys', (r) => ({
-      linkId: copyBytes(r.linkId),
-      wrappingKey: copyBytes(r.wrappingKey),
-    }));
-  }
-
-  wrapTierKeyForLink(
+  createLinkShareHandle(
+    albumId: string,
     epochHandle: bigint,
     tierByte: number,
-    wrappingKey: Uint8Array,
-  ): { tier: number; nonce: Uint8Array; encryptedKey: Uint8Array } {
-    const result = rustWasm.wrapTierKeyForLink(
-      epochHandle,
-      tierByte,
-      wrappingKey,
-    );
-    return consumeResult(result, 'wrapTierKeyForLink', (r) => ({
+  ): {
+    handle: bigint;
+    linkId: Uint8Array;
+    linkSecretForUrl: Uint8Array;
+    tier: number;
+    nonce: Uint8Array;
+    encryptedKey: Uint8Array;
+  } {
+    const result = rustWasm.createLinkShareHandle(albumId, epochHandle, tierByte);
+    return consumeResult(result, 'createLinkShareHandle', (r) => ({
+      handle: r.handle,
+      linkId: copyBytes(r.linkId),
+      linkSecretForUrl: copyBytes(r.linkSecretForUrl),
       tier: r.tier,
       nonce: copyBytes(r.nonce),
       encryptedKey: copyBytes(r.encryptedKey),
     }));
   }
 
-  unwrapTierKeyFromLink(
+  importLinkShareHandle(linkSecretForUrl: Uint8Array): {
+    handle: bigint;
+    linkId: Uint8Array;
+    tier: number;
+  } {
+    const result = rustWasm.importLinkShareHandle(linkSecretForUrl);
+    return consumeResult(result, 'importLinkShareHandle', (r) => ({
+      handle: r.handle,
+      linkId: copyBytes(r.linkId),
+      tier: r.tier,
+    }));
+  }
+
+  wrapLinkTierHandle(
+    linkShareHandle: bigint,
+    epochHandle: bigint,
+    tierByte: number,
+  ): { tier: number; nonce: Uint8Array; encryptedKey: Uint8Array } {
+    const result = rustWasm.wrapLinkTierHandle(
+      linkShareHandle,
+      epochHandle,
+      tierByte,
+    );
+    return consumeResult(result, 'wrapLinkTierHandle', (r) => ({
+      tier: r.tier,
+      nonce: copyBytes(r.nonce),
+      encryptedKey: copyBytes(r.encryptedKey),
+    }));
+  }
+
+  importLinkTierHandle(
+    linkSecretForUrl: Uint8Array,
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
+    albumId: string,
     tierByte: number,
-    wrappingKey: Uint8Array,
-  ): Uint8Array {
-    const result = rustWasm.unwrapTierKeyFromLink(
+  ): { handle: bigint; linkId: Uint8Array; tier: number } {
+    const result = rustWasm.importLinkTierHandle(
+      linkSecretForUrl,
       nonce,
       encryptedKey,
+      albumId,
       tierByte,
-      wrappingKey,
     );
-    return consumeResult(result, 'unwrapTierKeyFromLink', (r) =>
-      copyBytes(r.bytes),
+    return consumeResult(result, 'importLinkTierHandle', (r) => ({
+      handle: r.handle,
+      linkId: copyBytes(r.linkId),
+      tier: r.tier,
+    }));
+  }
+
+  decryptShardWithLinkTierHandle(
+    linkTierHandle: bigint,
+    envelopeBytes: Uint8Array,
+  ): Uint8Array {
+    const result = rustWasm.decryptShardWithLinkTierHandle(
+      linkTierHandle,
+      envelopeBytes,
     );
+    return consumeResult(result, 'decryptShardWithLinkTierHandle', (r) =>
+      copyBytes(r.plaintext),
+    );
+  }
+
+  closeLinkShareHandle(handle: bigint): void {
+    const code = rustWasm.closeLinkShareHandle(handle);
+    throwIfErrorCode(code, 'closeLinkShareHandle');
+  }
+
+  closeLinkTierHandle(handle: bigint): void {
+    const code = rustWasm.closeLinkTierHandle(handle);
+    throwIfErrorCode(code, 'closeLinkTierHandle');
   }
 
   // ---- Album content ----

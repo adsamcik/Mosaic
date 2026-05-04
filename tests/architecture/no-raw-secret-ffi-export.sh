@@ -12,7 +12,7 @@ from pathlib import Path
 ffi_files = [Path("crates/mosaic-wasm/src/lib.rs"), Path("crates/mosaic-uniffi/src/lib.rs")]
 dts_files = [Path("apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts")]
 secret_result_types = re.compile(r"->\s*(Vec\s*<\s*u8\s*>|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)")
-secret_name_pattern = re.compile(r"(derive.*(key|keys|secret)|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)", re.IGNORECASE)
+secret_name_pattern = re.compile(r"(derive.*(key|keys|secret)|generate.*secret|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)", re.IGNORECASE)
 secret_shaped_name = re.compile(r"(seed|secret|key)$", re.IGNORECASE)
 public_key_name = re.compile(r"(public_?key|pub_?key|PublicKey|PubKey|pubkey)", re.IGNORECASE)
 forbidden_raw_bundle_apis = {
@@ -22,12 +22,7 @@ forbidden_raw_bundle_apis = {
     "import_epoch_key_handle_from_bundle_js",
 }
 allowlist = {
-    "crates/mosaic-wasm/src/lib.rs::derive_link_keys",
-    "crates/mosaic-wasm/src/lib.rs::derive_link_keys_js",
     "crates/mosaic-wasm/src/lib.rs::wrapped_account_key",
-    "crates/mosaic-wasm/src/lib.rs::wrapping_key",
-    "crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link",
-    "crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link_js",
     "crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret",
     "crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed",
 }
@@ -36,7 +31,7 @@ struct_field_allowlist = {
     "crates/mosaic-wasm/src/lib.rs::CreateAccountResult.wrapped_account_key",
     "crates/mosaic-wasm/src/lib.rs::IdentityHandleResult.wrapped_seed",
     "crates/mosaic-wasm/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed",
-    "crates/mosaic-wasm/src/lib.rs::LinkKeysResult.wrapping_key",
+    "crates/mosaic-wasm/src/lib.rs::CreateLinkShareHandleResult.encrypted_key",
     "crates/mosaic-wasm/src/lib.rs::WrappedTierKeyResult.encrypted_key",
     "crates/mosaic-uniffi/src/lib.rs::AccountUnlockRequest.wrapped_account_key",
     "crates/mosaic-uniffi/src/lib.rs::IdentityHandleResult.wrapped_seed",
@@ -48,7 +43,7 @@ dts_allowlist = {
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::CreateAccountResult.wrappedAccountKey",
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::EpochKeyHandleResult.wrappedEpochSeed",
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::IdentityHandleResult.wrappedSeed",
-    "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::LinkKeysResult.wrappingKey",
+    "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::CreateLinkShareHandleResult.encryptedKey",
     "apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::WrappedTierKeyResult.encryptedKey",
 }
 

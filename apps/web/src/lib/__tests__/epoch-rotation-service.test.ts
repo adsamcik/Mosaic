@@ -1,26 +1,16 @@
 /**
- * Epoch Rotation Service - Security Tests (M1)
+ * Epoch Rotation Service - Security Tests (P-W7.6)
  *
- * Slice 6 — share-link rewrap is fully worker-driven now. The previous
- * `@mosaic/crypto` mock for `deriveLinkKeys`/`memzero` is gone; the
- * worker mock supplies the wrapping key (intercepted so we can assert it
- * gets wiped after the per-link iteration). Per-iteration `linkSecret`
- * and `wrappingKey` zeroing assertions still apply because both buffers
- * cross the worker boundary as plain bytes.
+ * Share-link rewrap imports Rust-owned link-share handles from URL fragment
+ * seeds. Derived wrapping keys never cross into JavaScript.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ShareLinkWithSecretResponse } from '../api-types';
 
-interface CapturedLinkKeys {
-  linkId: Uint8Array;
-  wrappingKey: Uint8Array;
-}
-
 const captured: {
   linkSecrets: Uint8Array[];
-  linkKeys: CapturedLinkKeys[];
-} = { linkSecrets: [], linkKeys: [] };
+} = { linkSecrets: [] };
 
 function nonZero(size: number, fill: number): Uint8Array {
   const buf = new Uint8Array(size);
@@ -92,7 +82,6 @@ function makeShareLink(
 
 beforeEach(() => {
   captured.linkSecrets = [];
-  captured.linkKeys = [];
   vi.clearAllMocks();
 
   mockGetCryptoClient.mockResolvedValue({
@@ -101,24 +90,16 @@ beforeEach(() => {
       captured.linkSecrets.push(secret);
       return secret;
     }),
-    // Slice 6 — wrapping key derivation moved into the worker. Capture the
-    // returned buffer so we can verify it gets wiped after each iteration.
-    deriveLinkKeys: vi.fn(async () => {
-      const keys: CapturedLinkKeys = {
-        linkId: nonZero(16, 0xb1),
-        wrappingKey: nonZero(32, 0xb2),
-      };
-      captured.linkKeys.push(keys);
-      return keys;
-    }),
-    // Tier-key wrapping happens entirely inside the worker; tier keys are
-    // never materialised in JS. The mock returns sentinel bytes so callers
-    // can verify wrap-by-tier behaviour.
-    wrapTierKeyForLink: vi.fn(async (_handle: string, tier: number) => ({
+    importLinkShareHandle: vi.fn(async () => ({
+      linkShareHandleId: 'lnks_test-handle-id',
+      linkId: nonZero(16, 0xb1),
+    })),
+    wrapLinkTierHandle: vi.fn(async (_linkHandle: string, _epochHandle: string, tier: number) => ({
       tier,
       nonce: new Uint8Array(24).fill(tier),
       encryptedKey: new Uint8Array(48).fill(tier),
     })),
+    closeLinkShareHandle: vi.fn(async () => undefined),
   } as never);
 });
 
@@ -130,8 +111,8 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('wrapKeysForShareLinks (M1: zeroize per-link material)', () => {
-  it('zeros per-link linkSecret and wrappingKey after successful wrapping', async () => {
+describe('wrapKeysForShareLinks (P-W7.6 handle material)', () => {
+  it('zeros per-link URL fragment seed after successful wrapping', async () => {
     const links = [makeShareLink({ id: 'link-a', accessTier: 3 })];
 
     const results = await wrapKeysForShareLinks(links, TEST_EPOCH_HANDLE_ID);
@@ -139,8 +120,6 @@ describe('wrapKeysForShareLinks (M1: zeroize per-link material)', () => {
     expect(results).toHaveLength(1);
     expect(captured.linkSecrets).toHaveLength(1);
     expect(captured.linkSecrets[0]!.every((b) => b === 0)).toBe(true);
-    expect(captured.linkKeys).toHaveLength(1);
-    expect(captured.linkKeys[0]!.wrappingKey.every((b) => b === 0)).toBe(true);
   });
 
   it('routes tier-key wrapping through the worker handle (no JS-side tier keys)', async () => {
@@ -150,9 +129,9 @@ describe('wrapKeysForShareLinks (M1: zeroize per-link material)', () => {
     const results = await wrapKeysForShareLinks(links, TEST_EPOCH_HANDLE_ID);
 
     expect(results).toHaveLength(1);
-    // Three calls = thumb (tier 0) + preview (tier 1) + full (tier 2).
+    // Three calls = thumb (tier 1) + preview (tier 2) + full (tier 3).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((crypto as any).wrapTierKeyForLink).toHaveBeenCalledTimes(3);
+    expect((crypto as any).wrapLinkTierHandle).toHaveBeenCalledTimes(3);
   });
 });
 

@@ -8,7 +8,7 @@ Set-Location $ProjectRoot
 $ffiFiles = @('crates/mosaic-wasm/src/lib.rs', 'crates/mosaic-uniffi/src/lib.rs')
 $dtsFiles = @('apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts')
 $secretResultTypes = '(Vec\s*<\s*u8\s*>|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)'
-$secretNamePattern = '(derive.*(key|keys|secret)|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
+$secretNamePattern = '(derive.*(key|keys|secret)|generate.*secret|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
 $secretShapedName = '(?i)(seed|secret|key)$'
 $publicKeyName = '(public_?key|pub_?key|PublicKey|PubKey|pubkey)'
 $forbiddenRawBundleApis = @(
@@ -18,12 +18,7 @@ $forbiddenRawBundleApis = @(
   'import_epoch_key_handle_from_bundle_js'
 )
 $allowlist = @{
-  'crates/mosaic-wasm/src/lib.rs::derive_link_keys' = 'SPEC-WebRustCryptoCutover Slice 6 share-link wrapping-key compatibility debt.'
-  'crates/mosaic-wasm/src/lib.rs::derive_link_keys_js' = 'WASM wrapper for Slice 6 share-link compatibility debt.'
   'crates/mosaic-wasm/src/lib.rs::wrapped_account_key' = 'Getter for server-storable wrapped account key.'
-  'crates/mosaic-wasm/src/lib.rs::wrapping_key' = 'ADR-006 compatibility debt for share-link vectors.'
-  'crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link' = 'SPEC-WebRustCryptoCutover Slice 6 link-share raw tier-key debt.'
-  'crates/mosaic-wasm/src/lib.rs::unwrap_tier_key_from_link_js' = 'WASM wrapper for Slice 6 link-share raw tier-key debt.'
   'crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret' = 'Cross-client vector driver only; returns wrapping_key for parity tests.'
   'crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed' = 'Cross-client vector driver only; OpenedBundleFfiResult carries epoch_seed.'
 }
@@ -32,7 +27,7 @@ $structFieldAllowlist = @{
   'crates/mosaic-wasm/src/lib.rs::CreateAccountResult.wrapped_account_key' = 'Server-storable wrapped account key.'
   'crates/mosaic-wasm/src/lib.rs::IdentityHandleResult.wrapped_seed' = 'Server-storable wrapped identity seed.'
   'crates/mosaic-wasm/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed' = 'Server-storable wrapped epoch seed.'
-  'crates/mosaic-wasm/src/lib.rs::LinkKeysResult.wrapping_key' = 'ADR-006 compatibility debt for share-link vectors.'
+  'crates/mosaic-wasm/src/lib.rs::CreateLinkShareHandleResult.encrypted_key' = 'Encrypted tier key ciphertext.'
   'crates/mosaic-wasm/src/lib.rs::WrappedTierKeyResult.encrypted_key' = 'Encrypted tier key ciphertext.'
   'crates/mosaic-uniffi/src/lib.rs::AccountUnlockRequest.wrapped_account_key' = 'Wrapped input for account unlock.'
   'crates/mosaic-uniffi/src/lib.rs::IdentityHandleResult.wrapped_seed' = 'Server-storable wrapped identity seed.'
@@ -44,7 +39,7 @@ $dtsAllowlist = @{
   'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::CreateAccountResult.wrappedAccountKey' = 'Server-storable wrapped account key.'
   'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::EpochKeyHandleResult.wrappedEpochSeed' = 'Server-storable wrapped epoch seed.'
   'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::IdentityHandleResult.wrappedSeed' = 'Server-storable wrapped identity seed.'
-  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::LinkKeysResult.wrappingKey' = 'ADR-006 compatibility debt for share-link vectors.'
+  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::CreateLinkShareHandleResult.encryptedKey' = 'Encrypted tier key ciphertext.'
   'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::WrappedTierKeyResult.encryptedKey' = 'Encrypted tier key ciphertext.'
 }
 

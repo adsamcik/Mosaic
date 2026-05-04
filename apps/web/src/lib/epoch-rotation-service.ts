@@ -317,15 +317,11 @@ export async function rotateEpoch(
  *
  * For each share link with a stored owner-encrypted secret:
  * 1. Decrypt the owner-encrypted secret to get the link secret (worker).
- * 2. Derive the per-link wrapping key from the link secret (worker).
- * 3. Wrap each tier key (up to the link's access tier) with the wrapping
- *    key using the new epoch handle (worker; tier keys never leave the
- *    worker).
+ * 2. Import a Rust-owned link-share handle from the URL fragment seed.
+ * 3. Wrap each tier key (up to the link's access tier) with that handle.
  *
- * Slice 6 — drops the final `@mosaic/crypto` imports from the share-link
- * surface. The link secret arrives over Comlink but is wiped immediately
- * after the per-link wrappingKey is derived. The wrappingKey itself is
- * also wiped after the per-link wraps complete.
+ * P-W7.6 — derived wrapping keys stay Rust-owned behind link-share handles.
+ * The URL fragment seed arrives over Comlink and is wiped after import.
  *
  * @param shareLinks - Active share links with owner-encrypted secrets.
  * @param epochHandleId - Rust-owned epoch handle for the new epoch.
@@ -352,23 +348,23 @@ export async function wrapKeysForShareLinks(
     }
 
     let linkSecret: Uint8Array | undefined;
-    let wrappingKey: Uint8Array | undefined;
+    let linkShareHandleId: Awaited<ReturnType<typeof crypto.importLinkShareHandle>>['linkShareHandleId'] | undefined;
 
     try {
       const encryptedSecret = fromBase64(link.ownerEncryptedSecret);
       linkSecret = await crypto.unwrapWithAccountKey(encryptedSecret);
 
-      const linkKeys = await crypto.deriveLinkKeys(linkSecret);
-      wrappingKey = linkKeys.wrappingKey;
+      const importedLink = await crypto.importLinkShareHandle(linkSecret);
+      linkShareHandleId = importedLink.linkShareHandleId;
 
       const wrappedKeys: ShareLinkKeyUpdateRequest['wrappedKeys'] = [];
 
       // Always wrap thumb key (tier byte 0).
-      const wrappedThumb = await crypto.wrapTierKeyForLink(
+      const wrappedThumb = await crypto.wrapLinkTierHandle(
+        linkShareHandleId,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         epochHandleId as any,
-        0,
-        wrappingKey,
+        1,
       );
       wrappedKeys.push({
         tier: TIER_THUMB_API,
@@ -377,11 +373,11 @@ export async function wrapKeysForShareLinks(
       });
 
       if (link.accessTier >= 2) {
-        const wrappedPreview = await crypto.wrapTierKeyForLink(
+        const wrappedPreview = await crypto.wrapLinkTierHandle(
+          linkShareHandleId,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           epochHandleId as any,
-          1,
-          wrappingKey,
+          2,
         );
         wrappedKeys.push({
           tier: TIER_PREVIEW_API,
@@ -391,11 +387,11 @@ export async function wrapKeysForShareLinks(
       }
 
       if (link.accessTier >= 3) {
-        const wrappedFull = await crypto.wrapTierKeyForLink(
+        const wrappedFull = await crypto.wrapLinkTierHandle(
+          linkShareHandleId,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           epochHandleId as any,
-          2,
-          wrappingKey,
+          3,
         );
         wrappedKeys.push({
           tier: TIER_FULL_API,
@@ -420,7 +416,9 @@ export async function wrapKeysForShareLinks(
       // may not perform — acceptable for a transient buffer wiped
       // synchronously before any other code runs.
       if (linkSecret) linkSecret.fill(0);
-      if (wrappingKey) wrappingKey.fill(0);
+      if (linkShareHandleId) {
+        await crypto.closeLinkShareHandle(linkShareHandleId);
+      }
     }
   }
 

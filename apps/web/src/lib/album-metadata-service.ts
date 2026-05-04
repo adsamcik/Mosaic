@@ -1,3 +1,4 @@
+import type { LinkDecryptionKey } from '../workers/types';
 /**
  * Album Metadata Service
  *
@@ -100,7 +101,7 @@ export async function decryptAlbumName(
  */
 export async function decryptAlbumNameWithTierKey(
   encryptedName: string | Uint8Array,
-  tierKey: Uint8Array,
+  tierKey: LinkDecryptionKey,
   albumId: string,
 ): Promise<string> {
   try {
@@ -115,8 +116,8 @@ export async function decryptAlbumNameWithTierKey(
       throw new Error('Encrypted name is empty');
     }
 
-    if (!tierKey || tierKey.length !== 32) {
-      throw new Error('Invalid tier key: must be 32 bytes');
+    if (!tierKey || (typeof tierKey !== 'string' && tierKey.length !== 32)) {
+      throw new Error('Invalid tier key handle/key');
     }
 
     // Decrypt using crypto worker with tier key directly (no derivation)

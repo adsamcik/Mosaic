@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { createLogger } from '../../lib/logger';
 import { isVideoMimeType } from '../../lib/image-decoder';
-import type { PhotoMeta } from '../../workers/types';
+import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
 import { downloadShardViaShareLink } from '../../lib/shard-service';
 import { getCryptoClient } from '../../lib/crypto-client';
 import { createDisplayableUrl } from '../../lib/image-decoder';
@@ -27,7 +27,7 @@ export interface SharedPhotoLightboxProps {
   /** Short-lived grant token for limited-use links */
   grantToken?: string | null | undefined;
   /** Tier key for decryption */
-  tierKey?: Uint8Array | undefined;
+  tierKey?: LinkDecryptionKey | undefined;
   /** Access tier for this share link */
   accessTier: AccessTierType;
   /** Close handler */
@@ -44,7 +44,7 @@ export interface SharedPhotoLightboxProps {
   preloadQueue?: PhotoMeta[] | undefined;
   /** Get tier key for preloading */
   getTierKey?:
-    | ((epochId: number, tier: AccessTierType) => Uint8Array | undefined)
+    | ((epochId: number, tier: AccessTierType) => LinkDecryptionKey | undefined)
     | undefined;
 }
 

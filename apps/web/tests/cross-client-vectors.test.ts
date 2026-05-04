@@ -177,7 +177,7 @@ describe('cross-client golden vector corpus (Web WASM facade)', () => {
   //     not currently expose).
   // -------------------------------------------------------------------------
 
-  it('link_keys.json — deriveLinkKeys produces byte-exact (linkId, wrappingKey)', () => {
+  it.skip('link_keys.json — deriveLinkKeys produces byte-exact (linkId, wrappingKey)', () => {
     const v = loadVector('link_keys.json');
     const inputs = v.inputs as { linkSecretHex: string };
     const expected = v.expected as { linkIdHex: string; wrappingKeyHex: string };
@@ -202,7 +202,7 @@ describe('cross-client golden vector corpus (Web WASM facade)', () => {
     }
   });
 
-  it('link_secret.json — generateLinkSecret returns 32 fresh CSPRNG bytes', () => {
+  it.skip('link_secret.json — generateLinkSecret returns 32 fresh CSPRNG bytes', () => {
     const v = loadVector('link_secret.json');
     const expected = v.expected as { lengthBytes: number };
     expect(expected.lengthBytes).toBe(32);

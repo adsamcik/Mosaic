@@ -20,6 +20,7 @@
 import { createLogger } from './logger';
 import { toArrayBufferView } from './buffer-utils';
 import type { AccessTier as AccessTierType } from './api-types';
+import type { LinkTierHandleId } from '../workers/types';
 
 const log = createLogger('LinkTierKeyStore');
 
@@ -38,7 +39,10 @@ const STORE_NAME = 'keys';
 export interface TierKey {
   epochId: number;
   tier: AccessTierType;
-  key: Uint8Array;
+  /** Legacy raw tier key, present only for pre-P-W7.6 cached entries. */
+  key?: Uint8Array;
+  /** Rust-owned link-tier handle used by production link decryption. */
+  linkTierHandleId?: LinkTierHandleId;
   /** Sign public key for manifest verification */
   signPubkey?: Uint8Array | undefined;
 }
@@ -181,7 +185,7 @@ export async function saveTierKeys(
         const entry: SerializedTierKey = {
           epochId,
           tier,
-          key: toBase64(tierKey.key),
+          key: tierKey.key ? toBase64(tierKey.key) : '',
         };
         if (tierKey.signPubkey) {
           entry.signPubkey = toBase64(tierKey.signPubkey);

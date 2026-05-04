@@ -12,7 +12,7 @@ import type { TierKey } from '../../hooks/useLinkKeys';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { createLogger } from '../../lib/logger';
 import { createShareLinkOriginalResolver } from '../../lib/shared-album-download';
-import type { PhotoMeta } from '../../workers/types';
+import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
 import { DownloadProgressOverlay } from '../Gallery/DownloadProgressOverlay';
 import { SharedMosaicPhotoGrid } from './SharedMosaicPhotoGrid';
 import { SharedPhotoGrid } from './SharedPhotoGrid';
@@ -151,7 +151,7 @@ export function SharedGallery({
                 // `decryptManifest` did the parse inside the worker).
                 const plaintextBytes = await crypto.decryptShardWithTierKey(
                   encryptedMeta,
-                  tierKey.key,
+                  (tierKey.linkTierHandleId ?? tierKey.key)!,
                 );
                 const meta = JSON.parse(
                   textDecoder.decode(plaintextBytes),
@@ -214,7 +214,7 @@ export function SharedGallery({
    * Get tier key for a specific epoch and tier
    */
   const getTierKey = useCallback(
-    (epochId: number, tier: AccessTierType): Uint8Array | undefined => {
+    (epochId: number, tier: AccessTierType): LinkDecryptionKey | undefined => {
       log.debug('getTierKey called', {
         epochId,
         requestedTier: tier,
@@ -237,7 +237,7 @@ export function SharedGallery({
               fallbackEpoch: fallbackEpochId,
               tier,
             });
-            return key.key;
+            return key.linkTierHandleId ?? key.key;
           }
         }
         log.warn('No tier key found', { epochId, tier });
@@ -251,7 +251,7 @@ export function SharedGallery({
           epochId,
           tier,
         });
-        return tierKey.key;
+        return tierKey.linkTierHandleId ?? tierKey.key;
       }
 
       // Fall back to highest available
@@ -263,7 +263,7 @@ export function SharedGallery({
             requestedTier: tier,
             actualTier: t,
           });
-          return key.key;
+          return key.linkTierHandleId ?? key.key;
         }
       }
       log.warn('No tier key found after fallback', { epochId, tier });

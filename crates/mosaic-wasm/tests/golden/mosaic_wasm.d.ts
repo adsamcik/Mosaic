@@ -92,6 +92,25 @@ export class CreateAccountResult {
 }
 
 /**
+ * WASM-bindgen class for link-share handle creation results.
+ */
+export class CreateLinkShareHandleResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly code: number;
+    readonly encryptedKey: Uint8Array;
+    readonly handle: bigint;
+    readonly linkId: Uint8Array;
+    /**
+     * URL fragment seed allowed by the link-share protocol; not a derived key.
+     */
+    readonly linkSecretForUrl: Uint8Array;
+    readonly nonce: Uint8Array;
+    readonly tier: number;
+}
+
+/**
  * WASM-bindgen class for public crypto/domain golden-vector snapshots.
  */
 export class CryptoDomainGoldenVectorSnapshot {
@@ -326,24 +345,16 @@ export class IdentityHandleResult {
 }
 
 /**
- * WASM-bindgen class for share-link key derivation results.
+ * WASM-bindgen class for imported link-tier handle results.
  */
-export class LinkKeysResult {
+export class LinkTierHandleResult {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
-    /**
-     * Stable error code. Zero means success.
-     */
     readonly code: number;
-    /**
-     * 16-byte server-visible share-link lookup ID.
-     */
+    readonly handle: bigint;
     readonly linkId: Uint8Array;
-    /**
-     * 32-byte client-side wrapping key. Callers MUST memzero after use.
-     */
-    readonly wrappingKey: Uint8Array;
+    readonly tier: number;
 }
 
 /**
@@ -478,6 +489,16 @@ export function closeEpochKeyHandle(handle: bigint): number;
 export function closeIdentityHandle(handle: bigint): number;
 
 /**
+ * Closes a share-link handle through WASM.
+ */
+export function closeLinkShareHandle(handle: bigint): number;
+
+/**
+ * Closes a link-tier handle through WASM.
+ */
+export function closeLinkTierHandle(handle: bigint): number;
+
+/**
  * Creates a fresh account-key handle through the generated WASM binding
  * surface. Returns the opaque handle plus the wrapped account key the
  * caller must persist on the server for future logins.
@@ -493,6 +514,11 @@ export function createEpochKeyHandle(account_key_handle: bigint, epoch_id: numbe
  * Creates a new identity handle through the generated WASM binding surface.
  */
 export function createIdentityHandle(account_key_handle: bigint): IdentityHandleResult;
+
+/**
+ * Creates a share-link handle and first wrapped tier through WASM.
+ */
+export function createLinkShareHandle(album_id: string, epoch_handle: bigint, tier_byte: number): CreateLinkShareHandleResult;
 
 /**
  * Returns deterministic public crypto/domain golden vectors through WASM.
@@ -515,6 +541,11 @@ export function decryptShardWithEpochHandle(handle: bigint, envelope_bytes: Uint
 export function decryptShardWithLegacyRawKeyHandle(handle: bigint, envelope_bytes: Uint8Array): DecryptedShardResult;
 
 /**
+ * Decrypts a shard using a link-tier handle through WASM.
+ */
+export function decryptShardWithLinkTierHandle(link_tier_handle: bigint, envelope_bytes: Uint8Array): DecryptedShardResult;
+
+/**
  * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
  */
 export function deriveAuthKeypairFromAccount(account_handle: bigint): AuthKeypairResult;
@@ -527,11 +558,6 @@ export function deriveAuthKeypairFromAccount(account_handle: bigint): AuthKeypai
  * key crosses the WASM boundary.
  */
 export function deriveAuthKeypairFromPassword(password: Uint8Array, user_salt: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number): AuthKeypairResult;
-
-/**
- * Derives the (link_id, wrapping_key) pair from a share-link secret through WASM.
- */
-export function deriveLinkKeys(link_secret: Uint8Array): LinkKeysResult;
 
 /**
  * Encrypts album content with an epoch handle through WASM.
@@ -554,11 +580,6 @@ export function encryptShardWithEpochHandle(handle: bigint, plaintext: Uint8Arra
 export function epochKeyHandleIsOpen(handle: bigint): EpochKeyHandleStatusResult;
 
 /**
- * Generates a fresh share-link secret through WASM.
- */
-export function generateLinkSecret(): BytesResult;
-
-/**
  * Returns the LocalAuth Ed25519 public key for an account-key handle through WASM.
  */
 export function getAuthPublicKeyFromAccount(account_handle: bigint): BytesResult;
@@ -578,6 +599,16 @@ export function identityEncryptionPubkey(handle: bigint): BytesResult;
  * Returns an identity handle's Ed25519 public key through WASM.
  */
 export function identitySigningPubkey(handle: bigint): BytesResult;
+
+/**
+ * Imports a URL fragment seed into a share-link handle through WASM.
+ */
+export function importLinkShareHandle(link_secret_for_url: Uint8Array): LinkTierHandleResult;
+
+/**
+ * Imports a wrapped tier key into a link-tier handle through WASM.
+ */
+export function importLinkTierHandle(link_secret_for_url: Uint8Array, nonce: Uint8Array, encrypted_key: Uint8Array, album_id: string, tier_byte: number): LinkTierHandleResult;
 
 /**
  * Initializes an album sync coordinator through a primitive WASM proof surface.
@@ -644,11 +675,6 @@ export function signManifestWithIdentity(handle: bigint, transcript_bytes: Uint8
 export function unlockAccountKey(password: Uint8Array, user_salt: Uint8Array, account_salt: Uint8Array, wrapped_account_key: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number): AccountUnlockResult;
 
 /**
- * Unwraps a tier key from a share-link record through WASM.
- */
-export function unwrapTierKeyFromLink(nonce: Uint8Array, encrypted_key: Uint8Array, tier_byte: number, wrapping_key: Uint8Array): BytesResult;
-
-/**
  * Unwraps `wrapped` with the L2 account key referenced by `account_handle`
  * through WASM.
  */
@@ -671,9 +697,9 @@ export function verifyManifestWithEpoch(transcript_bytes: Uint8Array, signature:
 export function verifyManifestWithIdentity(transcript_bytes: Uint8Array, signature: Uint8Array, public_key: Uint8Array): number;
 
 /**
- * Wraps a tier key for share-link distribution through WASM.
+ * Wraps an epoch tier for an existing share-link handle through WASM.
  */
-export function wrapTierKeyForLink(epoch_handle: bigint, tier_byte: number, wrapping_key: Uint8Array): WrappedTierKeyResult;
+export function wrapLinkTierHandle(link_share_handle: bigint, epoch_handle: bigint, tier_byte: number): WrappedTierKeyResult;
 
 /**
  * Wraps `plaintext` with the L2 account key referenced by `account_handle`
@@ -689,6 +715,7 @@ export interface InitOutput {
     readonly __wbg_accountunlockresult_free: (a: number, b: number) => void;
     readonly __wbg_authkeypairresult_free: (a: number, b: number) => void;
     readonly __wbg_createaccountresult_free: (a: number, b: number) => void;
+    readonly __wbg_createlinksharehandleresult_free: (a: number, b: number) => void;
     readonly __wbg_cryptodomaingoldenvectorsnapshot_free: (a: number, b: number) => void;
     readonly __wbg_encryptedcontentresult_free: (a: number, b: number) => void;
     readonly __wbg_epochkeyhandleresult_free: (a: number, b: number) => void;
@@ -712,12 +739,22 @@ export interface InitOutput {
     readonly closeAccountKeyHandle: (a: bigint) => number;
     readonly closeEpochKeyHandle: (a: bigint) => number;
     readonly closeIdentityHandle: (a: bigint) => number;
+    readonly closeLinkShareHandle: (a: bigint) => number;
+    readonly closeLinkTierHandle: (a: bigint) => number;
     readonly createAccount: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly createEpochKeyHandle: (a: bigint, b: number) => number;
     readonly createIdentityHandle: (a: bigint) => number;
+    readonly createLinkShareHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly createaccountresult_code: (a: number) => number;
     readonly createaccountresult_handle: (a: number) => bigint;
     readonly createaccountresult_wrappedAccountKey: (a: number, b: number) => void;
+    readonly createlinksharehandleresult_code: (a: number) => number;
+    readonly createlinksharehandleresult_encryptedKey: (a: number, b: number) => void;
+    readonly createlinksharehandleresult_handle: (a: number) => bigint;
+    readonly createlinksharehandleresult_linkId: (a: number, b: number) => void;
+    readonly createlinksharehandleresult_linkSecretForUrl: (a: number, b: number) => void;
+    readonly createlinksharehandleresult_nonce: (a: number, b: number) => void;
+    readonly createlinksharehandleresult_tier: (a: number) => number;
     readonly cryptoDomainGoldenVectorSnapshot: () => number;
     readonly cryptodomaingoldenvectorsnapshot_code: (a: number) => number;
     readonly cryptodomaingoldenvectorsnapshot_envelopeEpochId: (a: number) => number;
@@ -733,9 +770,9 @@ export interface InitOutput {
     readonly decryptAlbumContent: (a: bigint, b: number, c: number, d: number, e: number) => number;
     readonly decryptShardWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithLegacyRawKeyHandle: (a: bigint, b: number, c: number) => number;
+    readonly decryptShardWithLinkTierHandle: (a: bigint, b: number, c: number) => number;
     readonly deriveAuthKeypairFromAccount: (a: bigint) => number;
     readonly deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
-    readonly deriveLinkKeys: (a: number, b: number) => number;
     readonly encryptAlbumContent: (a: bigint, b: number, c: number) => number;
     readonly encryptMetadataSidecarWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly encryptShardWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number) => number;
@@ -749,7 +786,6 @@ export interface InitOutput {
     readonly epochkeyhandleresult_handle: (a: number) => bigint;
     readonly epochkeyhandleresult_signPublicKey: (a: number, b: number) => void;
     readonly epochkeyhandleresult_wrappedEpochSeed: (a: number, b: number) => void;
-    readonly generateLinkSecret: () => number;
     readonly getAuthPublicKeyFromAccount: (a: bigint) => number;
     readonly getAuthPublicKeyFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly headerresult_code: (a: number) => number;
@@ -764,8 +800,11 @@ export interface InitOutput {
     readonly identityhandleresult_handle: (a: number) => bigint;
     readonly identityhandleresult_signingPubkey: (a: number, b: number) => void;
     readonly identityhandleresult_wrappedSeed: (a: number, b: number) => void;
+    readonly importLinkShareHandle: (a: number, b: number) => number;
+    readonly importLinkTierHandle: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly initAlbumSync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: number) => void;
     readonly initUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
+    readonly linktierhandleresult_tier: (a: number) => number;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly openIdentityHandle: (a: number, b: number, c: bigint) => number;
     readonly parseEnvelopeHeader: (a: number, b: number) => number;
@@ -784,37 +823,36 @@ export interface InitOutput {
     readonly signManifestWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly signManifestWithIdentity: (a: bigint, b: number, c: number) => number;
     readonly unlockAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
-    readonly unwrapTierKeyFromLink: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly unwrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly verifyAndImportEpochBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly verifyManifestWithEpoch: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly verifyManifestWithIdentity: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-    readonly wrapTierKeyForLink: (a: bigint, b: number, c: number, d: number) => number;
+    readonly wrapLinkTierHandle: (a: bigint, b: bigint, c: number) => number;
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly wrappedtierkeyresult_tier: (a: number) => number;
     readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
-    readonly __wbg_linkkeysresult_free: (a: number, b: number) => void;
     readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
-    readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
+    readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
+    readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_bytesresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
-    readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
     readonly epochkeyhandlestatusresult_code: (a: number) => number;
-    readonly linkkeysresult_linkId: (a: number, b: number) => void;
+    readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
     readonly wrappedtierkeyresult_code: (a: number) => number;
     readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
-    readonly linkkeysresult_wrappingKey: (a: number, b: number) => void;
-    readonly linkkeysresult_code: (a: number) => number;
+    readonly decryptedcontentresult_code: (a: number) => number;
+    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
+    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
+    readonly linktierhandleresult_code: (a: number) => number;
+    readonly linktierhandleresult_handle: (a: number) => bigint;
+    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
     readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
     readonly encryptedshardresult_code: (a: number) => number;
-    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
-    readonly decryptedshardresult_code: (a: number) => number;
-    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
-    readonly decryptedcontentresult_code: (a: number) => number;
     readonly bytesresult_bytes: (a: number, b: number) => void;
-    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
     readonly bytesresult_code: (a: number) => number;
+    readonly decryptedshardresult_code: (a: number) => number;
+    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export2: (a: number, b: number) => number;

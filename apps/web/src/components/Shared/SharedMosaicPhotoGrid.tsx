@@ -5,7 +5,7 @@ import { computeMosaicLayout, type MosaicItem } from '../../lib/mosaic-layout';
 import { useLightboxPreload } from '../../hooks/useLightboxPreload';
 import type { NavigationDirection } from '../../hooks/useLightbox';
 import { formatDateHeader, groupPhotosByDate } from '../../lib/photo-date-utils';
-import type { PhotoMeta } from '../../workers/types';
+import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
 import { MosaicTile } from '../Gallery/MosaicTile';
 import { SharedPhotoLightbox } from './SharedPhotoLightbox';
 import { SharedPhotoThumbnail } from './SharedPhotoThumbnail';
@@ -26,7 +26,7 @@ interface SharedMosaicPhotoGridProps {
   linkId: string;
   accessTier: AccessTierType;
   grantToken?: string | null | undefined;
-  getTierKey: (epochId: number, tier: AccessTierType) => Uint8Array | undefined;
+  getTierKey: (epochId: number, tier: AccessTierType) => LinkDecryptionKey | undefined;
   isLoadingKeys?: boolean;
 }
 

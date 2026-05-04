@@ -287,8 +287,8 @@ describe('link-tier-key-store (H3 security regression)', () => {
 
     const expectedThumb = makeTierKey(7, AccessTier.THUMB).key;
     const expectedPreview = makeTierKey(7, AccessTier.PREVIEW).key;
-    expect(Array.from(thumb!.key)).toEqual(Array.from(expectedThumb));
-    expect(Array.from(preview!.key)).toEqual(Array.from(expectedPreview));
+    expect(Array.from(thumb!.key!)).toEqual(Array.from(expectedThumb));
+    expect(Array.from(preview!.key!)).toEqual(Array.from(expectedPreview));
   });
 
   it('clearLinkKeyEncryption drops the in-memory key without retaining state', async () => {

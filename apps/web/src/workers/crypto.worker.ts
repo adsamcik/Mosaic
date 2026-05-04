@@ -10,6 +10,9 @@ import {
   type EncryptedShard,
   type EpochHandleId,
   type IdentityHandleId,
+  type LinkShareHandleId,
+  type LinkTierHandleId,
+  type LinkDecryptionKey,
   type OpenEpochKeyBundleOptions,
   type PhotoMeta,
   type WorkerKdfParams,
@@ -23,9 +26,8 @@ import {
 // `unwrapAccountKey`, and `IdentityKeypair` are no longer imported here.
 // Slice 4 drops `signManifest`: manifest signing now routes through the
 // Rust epoch handle (`signManifestWithEpoch`). Slice 6 narrows it again:
-// share-link helpers (`deriveLinkKeys`, `generateLinkSecret`,
-// `wrapTierKeyForLink`, `unwrapTierKeyFromLink`) all route through the
-// Rust handle facade; the `AccessTier` runtime enum was a libsodium-typed
+// share-link helpers now route through Rust-owned link-share/link-tier
+// handles in the Rust facade; the `AccessTier` runtime enum was a libsodium-typed
 // shim used only by those legacy share-link methods, so it's gone too.
 // The remaining symbols belong to slices 5/7's territory and stay until
 // their callers are migrated.
@@ -99,7 +101,7 @@ const log = createLogger('CryptoWorker');
 //    not implement explicit rollover handling.
 // =============================================================================
 
-type WasmHandleKind = 'account' | 'identity' | 'epoch';
+type WasmHandleKind = 'account' | 'identity' | 'epoch' | 'linkShare' | 'linkTier';
 
 interface WasmHandle {
   /** Stable string ID exposed across Comlink. */
@@ -120,6 +122,8 @@ const HANDLE_PREFIX_BY_KIND: Record<WasmHandleKind, string> = {
   account: 'acct',
   identity: 'idnt',
   epoch: 'epch',
+  linkShare: 'lnks',
+  linkTier: 'lnkt',
 };
 
 function mintHandleId(kind: WasmHandleKind): string {
@@ -141,6 +145,7 @@ class HandleRegistry {
    * unkeyed lookup via `lookupById`).
    */
   private epochHandles = new Map<string, WasmHandle>();
+  private linkHandles = new Map<string, WasmHandle>();
   /** Index from id → handle for fast lookup across all kinds. */
   private byId = new Map<string, WasmHandle>();
   /**
@@ -231,6 +236,37 @@ class HandleRegistry {
   getEpochByAlbumEpoch(albumId: string, epochId: number): WasmHandle | null {
     const handle = this.epochHandles.get(epochKey(albumId, epochId));
     return handle && !handle.closed ? handle : null;
+  }
+
+
+  registerLinkShare(rustHandle: bigint): WasmHandle {
+    const id = mintHandleId('linkShare');
+    const handle: WasmHandle = {
+      id,
+      rustHandle,
+      generation: this.generation,
+      kind: 'linkShare',
+      closed: false,
+      leaseCount: 0,
+    };
+    this.linkHandles.set(id, handle);
+    this.byId.set(id, handle);
+    return handle;
+  }
+
+  registerLinkTier(rustHandle: bigint): WasmHandle {
+    const id = mintHandleId('linkTier');
+    const handle: WasmHandle = {
+      id,
+      rustHandle,
+      generation: this.generation,
+      kind: 'linkTier',
+      closed: false,
+      leaseCount: 0,
+    };
+    this.linkHandles.set(id, handle);
+    this.byId.set(id, handle);
+    return handle;
   }
 
   // -- lookup with lease --------------------------------------------------
@@ -326,7 +362,20 @@ class HandleRegistry {
    * doesn't matter for correctness.
    */
   async clearAll(): Promise<void> {
-    // 1. Close all epoch handles first (children of account).
+    // 1. Close link handles first (independent Rust-owned link state).
+    for (const handle of this.linkHandles.values()) {
+      handle.closed = true;
+      if (handle.leaseCount === 0) {
+        await this.freeRustHandle(handle).catch((err: unknown) => {
+          log.warn('clearAll: link free failed', {
+            handleId: handle.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    }
+
+    // 2. Close all epoch handles first (children of account).
     for (const handle of this.epochHandles.values()) {
       handle.closed = true;
       if (handle.leaseCount === 0) {
@@ -339,7 +388,7 @@ class HandleRegistry {
       }
     }
 
-    // 2. Close identity (child of account).
+    // 3. Close identity (child of account).
     if (this.identityHandle) {
       this.identityHandle.closed = true;
       if (this.identityHandle.leaseCount === 0) {
@@ -351,7 +400,7 @@ class HandleRegistry {
       }
     }
 
-    // 3. Close account last.
+    // 4. Close account last.
     if (this.accountHandle) {
       this.accountHandle.closed = true;
       if (this.accountHandle.leaseCount === 0) {
@@ -363,7 +412,8 @@ class HandleRegistry {
       }
     }
 
-    // 4. Drop registry pointers and bump generation.
+    // 5. Drop registry pointers and bump generation.
+    this.linkHandles.clear();
     this.epochHandles.clear();
     this.byId.clear();
     this.identityHandle = null;
@@ -375,6 +425,9 @@ class HandleRegistry {
     // Remove from byId immediately so further lookups fail fast even if
     // the WASM free is still in flight (it isn't — calls are sync).
     this.byId.delete(handle.id);
+    if (handle.kind === 'linkShare' || handle.kind === 'linkTier') {
+      this.linkHandles.delete(handle.id);
+    }
     if (handle.kind === 'epoch') {
       // Drop the album/epoch key entry too. We don't store the key on the
       // handle so we have to scan; the map is small (handful of epochs).
@@ -395,6 +448,12 @@ class HandleRegistry {
         break;
       case 'epoch':
         facade.closeEpochKeyHandle(handle.rustHandle);
+        break;
+      case 'linkShare':
+        facade.closeLinkShareHandle(handle.rustHandle);
+        break;
+      case 'linkTier':
+        facade.closeLinkTierHandle(handle.rustHandle);
         break;
     }
   }
@@ -990,8 +1049,11 @@ class CryptoWorker implements CryptoWorkerApi {
    */
   async decryptShardWithTierKey(
     envelope: Uint8Array,
-    tierKey: Uint8Array,
+    tierKey: LinkDecryptionKey,
   ): Promise<Uint8Array> {
+    if (typeof tierKey === 'string') {
+      return this.decryptShardWithLinkTierHandle(tierKey, envelope);
+    }
     await this.ensureSodiumReady();
     return cryptoDecryptShard(envelope, tierKey);
   }
@@ -1734,42 +1796,100 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   // =========================================================================
-  // Link Sharing Operations (Slice 6 — Rust handle contract)
+  // Link Sharing Operations (P-W7.6 � Rust handle contract)
   // =========================================================================
 
-  async generateLinkSecret(): Promise<Uint8Array> {
-    const facade = await getRustFacade();
-    return facade.generateLinkSecret();
-  }
-
-  async deriveLinkKeys(
-    linkSecret: Uint8Array,
-  ): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }> {
-    const facade = await getRustFacade();
-    return facade.deriveLinkKeys(linkSecret);
-  }
-
-  async wrapTierKeyForLink(
+  async createLinkShareHandle(
+    albumId: string,
     epochHandleId: EpochHandleId,
-    tier: 0 | 1 | 2,
-    wrappingKey: Uint8Array,
+    tier: 1 | 2 | 3,
+  ): Promise<{
+    linkShareHandleId: LinkShareHandleId;
+    linkId: Uint8Array;
+    linkSecretForUrl: Uint8Array;
+    tier: number;
+    nonce: Uint8Array;
+    encryptedKey: Uint8Array;
+  }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(epochHandleId, 'epoch', (rustEpoch) => {
+      const created = facade.createLinkShareHandle(albumId, rustEpoch, tier);
+      const handle = this.handleRegistry.registerLinkShare(created.handle);
+      return {
+        linkShareHandleId: handle.id as LinkShareHandleId,
+        linkId: created.linkId,
+        linkSecretForUrl: created.linkSecretForUrl,
+        tier: created.tier,
+        nonce: created.nonce,
+        encryptedKey: created.encryptedKey,
+      };
+    });
+  }
+
+  async importLinkShareHandle(
+    linkSecretForUrl: Uint8Array,
+  ): Promise<{ linkShareHandleId: LinkShareHandleId; linkId: Uint8Array }> {
+    const facade = await getRustFacade();
+    const imported = facade.importLinkShareHandle(linkSecretForUrl);
+    const handle = this.handleRegistry.registerLinkShare(imported.handle);
+    return {
+      linkShareHandleId: handle.id as LinkShareHandleId,
+      linkId: imported.linkId,
+    };
+  }
+
+  async wrapLinkTierHandle(
+    linkShareHandleId: LinkShareHandleId,
+    epochHandleId: EpochHandleId,
+    tier: 1 | 2 | 3,
   ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }> {
     const facade = await getRustFacade();
-    return this.handleRegistry.withLease(
-      epochHandleId,
-      'epoch',
-      (rustEpoch) => facade.wrapTierKeyForLink(rustEpoch, tier, wrappingKey),
+    return this.handleRegistry.withLease(linkShareHandleId, 'linkShare', (rustLink) =>
+      this.handleRegistry.withLease(epochHandleId, 'epoch', (rustEpoch) =>
+        facade.wrapLinkTierHandle(rustLink, rustEpoch, tier),
+      ),
     );
   }
 
-  async unwrapTierKeyFromLink(
+  async importLinkTierHandle(
+    linkSecretForUrl: Uint8Array,
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
-    tier: 0 | 1 | 2,
-    wrappingKey: Uint8Array,
+    albumId: string,
+    tier: 1 | 2 | 3,
+  ): Promise<{ linkTierHandleId: LinkTierHandleId; linkId: Uint8Array; tier: number }> {
+    const facade = await getRustFacade();
+    const imported = facade.importLinkTierHandle(
+      linkSecretForUrl,
+      nonce,
+      encryptedKey,
+      albumId,
+      tier,
+    );
+    const handle = this.handleRegistry.registerLinkTier(imported.handle);
+    return {
+      linkTierHandleId: handle.id as LinkTierHandleId,
+      linkId: imported.linkId,
+      tier: imported.tier,
+    };
+  }
+
+  async decryptShardWithLinkTierHandle(
+    linkTierHandleId: LinkTierHandleId,
+    envelopeBytes: Uint8Array,
   ): Promise<Uint8Array> {
     const facade = await getRustFacade();
-    return facade.unwrapTierKeyFromLink(nonce, encryptedKey, tier, wrappingKey);
+    return this.handleRegistry.withLease(linkTierHandleId, 'linkTier', (rustLinkTier) =>
+      facade.decryptShardWithLinkTierHandle(rustLinkTier, envelopeBytes),
+    );
+  }
+
+  async closeLinkShareHandle(linkShareHandleId: LinkShareHandleId): Promise<void> {
+    await this.handleRegistry.closeHandle(linkShareHandleId, 'linkShare');
+  }
+
+  async closeLinkTierHandle(linkTierHandleId: LinkTierHandleId): Promise<void> {
+    await this.handleRegistry.closeHandle(linkTierHandleId, 'linkTier');
   }
 
   // Slice 7 — `encryptAlbumContent` / `decryptAlbumContent` (handle-based)

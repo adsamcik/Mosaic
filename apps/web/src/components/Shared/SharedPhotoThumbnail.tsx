@@ -17,13 +17,13 @@ import {
   getCachedPlaceholderDataURL,
   isValidPlaceholderHash,
 } from '../../lib/thumbhash-decoder';
-import type { PhotoMeta } from '../../workers/types';
+import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
 
 export interface SharedPhotoThumbnailProps {
   /** Photo metadata */
   photo: PhotoMeta;
   /** Tier key for decryption */
-  tierKey?: Uint8Array | undefined;
+  tierKey?: LinkDecryptionKey | undefined;
   /** Access tier for this share link */
   accessTier: AccessTierType;
   /** Click handler */

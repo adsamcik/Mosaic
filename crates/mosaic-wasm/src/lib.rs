@@ -551,20 +551,51 @@ impl fmt::Debug for AuthKeypairResult {
     }
 }
 
-/// Rust-side WASM facade share-link key derivation result.
+/// Rust-side WASM facade result for creating a link-share handle and first wrapped tier.
+///
+/// `link_secret_for_url` is the protocol-mandated URL fragment seed. It is
+/// not the derived link wrapping key; the wrapping key remains Rust-owned.
 #[derive(Clone, PartialEq, Eq)]
-pub struct LinkKeysResult {
+pub struct CreateLinkShareHandleResult {
     pub code: u16,
+    pub handle: u64,
     pub link_id: Vec<u8>,
-    pub wrapping_key: Vec<u8>,
+    pub link_secret_for_url: Vec<u8>,
+    pub tier: u8,
+    pub nonce: Vec<u8>,
+    pub encrypted_key: Vec<u8>,
 }
 
-impl fmt::Debug for LinkKeysResult {
+impl fmt::Debug for CreateLinkShareHandleResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LinkKeysResult")
+        f.debug_struct("CreateLinkShareHandleResult")
             .field("code", &self.code)
+            .field("handle", &self.handle)
             .field("link_id_len", &self.link_id.len())
-            .field("wrapping_key_len", &self.wrapping_key.len())
+            .field("link_secret_for_url_len", &self.link_secret_for_url.len())
+            .field("tier", &self.tier)
+            .field("nonce_len", &self.nonce.len())
+            .field("encrypted_key_len", &self.encrypted_key.len())
+            .finish()
+    }
+}
+
+/// Rust-side WASM facade result for imported link-tier handles.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LinkTierHandleResult {
+    pub code: u16,
+    pub handle: u64,
+    pub link_id: Vec<u8>,
+    pub tier: u8,
+}
+
+impl fmt::Debug for LinkTierHandleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkTierHandleResult")
+            .field("code", &self.code)
+            .field("handle", &self.handle)
+            .field("link_id_len", &self.link_id.len())
+            .field("tier", &self.tier)
             .finish()
     }
 }
@@ -1143,35 +1174,88 @@ impl JsAuthKeypairResult {
     }
 }
 
-/// WASM-bindgen class for share-link key derivation results.
-#[wasm_bindgen(js_name = LinkKeysResult)]
-pub struct JsLinkKeysResult {
+/// WASM-bindgen class for link-share handle creation results.
+#[wasm_bindgen(js_name = CreateLinkShareHandleResult)]
+pub struct JsCreateLinkShareHandleResult {
     code: u16,
+    handle: u64,
     link_id: Vec<u8>,
-    wrapping_key: Vec<u8>,
+    link_secret_for_url: Vec<u8>,
+    tier: u8,
+    nonce: Vec<u8>,
+    encrypted_key: Vec<u8>,
 }
 
-#[wasm_bindgen(js_class = LinkKeysResult)]
-impl JsLinkKeysResult {
-    /// Stable error code. Zero means success.
+#[wasm_bindgen(js_class = CreateLinkShareHandleResult)]
+impl JsCreateLinkShareHandleResult {
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn code(&self) -> u16 {
         self.code
     }
-
-    /// 16-byte server-visible share-link lookup ID.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn handle(&self) -> u64 {
+        self.handle
+    }
     #[wasm_bindgen(getter, js_name = linkId)]
     #[must_use]
     pub fn link_id(&self) -> Vec<u8> {
         self.link_id.clone()
     }
-
-    /// 32-byte client-side wrapping key. Callers MUST memzero after use.
-    #[wasm_bindgen(getter, js_name = wrappingKey)]
+    /// URL fragment seed allowed by the link-share protocol; not a derived key.
+    #[wasm_bindgen(getter, js_name = linkSecretForUrl)]
     #[must_use]
-    pub fn wrapping_key(&self) -> Vec<u8> {
-        self.wrapping_key.clone()
+    pub fn link_secret_for_url(&self) -> Vec<u8> {
+        self.link_secret_for_url.clone()
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn tier(&self) -> u8 {
+        self.tier
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn nonce(&self) -> Vec<u8> {
+        self.nonce.clone()
+    }
+    #[wasm_bindgen(getter, js_name = encryptedKey)]
+    #[must_use]
+    pub fn encrypted_key(&self) -> Vec<u8> {
+        self.encrypted_key.clone()
+    }
+}
+
+/// WASM-bindgen class for imported link-tier handle results.
+#[wasm_bindgen(js_name = LinkTierHandleResult)]
+pub struct JsLinkTierHandleResult {
+    code: u16,
+    handle: u64,
+    link_id: Vec<u8>,
+    tier: u8,
+}
+
+#[wasm_bindgen(js_class = LinkTierHandleResult)]
+impl JsLinkTierHandleResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn handle(&self) -> u64 {
+        self.handle
+    }
+    #[wasm_bindgen(getter, js_name = linkId)]
+    #[must_use]
+    pub fn link_id(&self) -> Vec<u8> {
+        self.link_id.clone()
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn tier(&self) -> u8 {
+        self.tier
     }
 }
 
@@ -1920,52 +2004,88 @@ pub fn get_auth_public_key_from_password(
     bytes_result_from_client(result)
 }
 
-/// Generates a fresh 32-byte share-link secret using the OS CSPRNG.
+/// Creates a share-link handle and returns the first wrapped tier key.
+///
+/// `link_secret_for_url` is the protocol-mandated URL fragment seed. It is not
+/// the derived wrapping key; Rust derives and retains the wrapping key behind
+/// the returned opaque handle.
 #[must_use]
-pub fn generate_link_secret() -> BytesResult {
-    bytes_result_from_client(mosaic_client::generate_link_secret())
-}
-
-/// Derives the `(link_id, wrapping_key)` pair from a 32-byte share-link secret.
-#[must_use]
-pub fn derive_link_keys(link_secret: Vec<u8>) -> LinkKeysResult {
-    let link_secret = Zeroizing::new(link_secret);
-    link_keys_result_from_client(mosaic_client::derive_link_keys(&link_secret))
-}
-
-/// Wraps the tier key for `epoch_handle` so it can be stored on a
-/// share-link record.
-#[must_use]
-pub fn wrap_tier_key_for_link(
+pub fn create_link_share_handle(
+    album_id: String,
     epoch_handle: u64,
     tier_byte: u8,
-    wrapping_key: Vec<u8>,
-) -> WrappedTierKeyResult {
-    let wrapping_key = Zeroizing::new(wrapping_key);
-    wrapped_tier_key_result_from_client(mosaic_client::wrap_tier_key_for_link_with_epoch_handle(
+) -> CreateLinkShareHandleResult {
+    create_link_share_handle_result_from_client(mosaic_client::create_link_share_handle(
+        album_id,
         epoch_handle,
         tier_byte,
-        &wrapping_key,
     ))
 }
 
-/// Unwraps a previously wrapped tier key from a share-link record.
-///
-/// Callers MUST memzero `BytesResult.bytes` after use.
+/// Imports a URL fragment seed into a Rust-owned share-link handle.
 #[must_use]
-pub fn unwrap_tier_key_from_link(
+pub fn import_link_share_handle(link_secret_for_url: Vec<u8>) -> LinkTierHandleResult {
+    let link_secret_for_url = Zeroizing::new(link_secret_for_url);
+    link_tier_handle_result_from_client(mosaic_client::import_link_share_handle(
+        &link_secret_for_url,
+    ))
+}
+
+/// Wraps an epoch tier for an existing Rust-owned share-link handle.
+#[must_use]
+pub fn wrap_link_tier_handle(
+    link_share_handle: u64,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> WrappedTierKeyResult {
+    wrapped_tier_key_result_from_client(mosaic_client::wrap_link_tier_handle(
+        link_share_handle,
+        epoch_handle,
+        tier_byte,
+    ))
+}
+
+/// Imports a wrapped tier key into a Rust-owned link-tier handle.
+#[must_use]
+pub fn import_link_tier_handle(
+    link_secret_for_url: Vec<u8>,
     nonce: Vec<u8>,
     encrypted_key: Vec<u8>,
+    album_id: String,
     tier_byte: u8,
-    wrapping_key: Vec<u8>,
-) -> BytesResult {
-    let wrapping_key = Zeroizing::new(wrapping_key);
-    bytes_result_from_client(mosaic_client::unwrap_tier_key_from_link_bytes(
+) -> LinkTierHandleResult {
+    let link_secret_for_url = Zeroizing::new(link_secret_for_url);
+    link_tier_handle_result_from_client(mosaic_client::import_link_tier_handle(
+        &link_secret_for_url,
         &nonce,
         &encrypted_key,
+        album_id,
         tier_byte,
-        &wrapping_key,
     ))
+}
+
+/// Decrypts a shard using a Rust-owned share-link tier handle.
+#[must_use]
+pub fn decrypt_shard_with_link_tier_handle(
+    link_tier_handle: u64,
+    envelope_bytes: Vec<u8>,
+) -> DecryptedShardResult {
+    decrypted_shard_result_from_client(mosaic_client::decrypt_shard_with_link_tier_handle(
+        link_tier_handle,
+        &envelope_bytes,
+    ))
+}
+
+/// Closes a Rust-owned share-link handle.
+#[must_use]
+pub fn close_link_share_handle(handle: u64) -> u16 {
+    mosaic_client::close_link_share_handle(handle)
+}
+
+/// Closes a Rust-owned link-tier handle.
+#[must_use]
+pub fn close_link_tier_handle(handle: u64) -> u16 {
+    mosaic_client::close_link_tier_handle(handle)
 }
 
 /// Verifies a sealed bundle's signature and imports the recovered epoch
@@ -2649,50 +2769,87 @@ pub fn get_auth_public_key_from_password_js(
     ))
 }
 
-/// Generates a fresh share-link secret through WASM.
-#[wasm_bindgen(js_name = generateLinkSecret)]
+/// Creates a share-link handle and first wrapped tier through WASM.
+#[wasm_bindgen(js_name = createLinkShareHandle)]
 #[must_use]
-pub fn generate_link_secret_js() -> JsBytesResult {
-    js_bytes_result_from_rust(generate_link_secret())
-}
-
-/// Derives the (link_id, wrapping_key) pair from a share-link secret through WASM.
-#[wasm_bindgen(js_name = deriveLinkKeys)]
-#[must_use]
-pub fn derive_link_keys_js(link_secret: Vec<u8>) -> JsLinkKeysResult {
-    js_link_keys_result_from_rust(derive_link_keys(link_secret))
-}
-
-/// Wraps a tier key for share-link distribution through WASM.
-#[wasm_bindgen(js_name = wrapTierKeyForLink)]
-#[must_use]
-pub fn wrap_tier_key_for_link_js(
+pub fn create_link_share_handle_js(
+    album_id: String,
     epoch_handle: u64,
     tier_byte: u8,
-    wrapping_key: Vec<u8>,
-) -> JsWrappedTierKeyResult {
-    js_wrapped_tier_key_result_from_rust(wrap_tier_key_for_link(
+) -> JsCreateLinkShareHandleResult {
+    js_create_link_share_handle_result_from_rust(create_link_share_handle(
+        album_id,
         epoch_handle,
         tier_byte,
-        wrapping_key,
     ))
 }
 
-/// Unwraps a tier key from a share-link record through WASM.
-#[wasm_bindgen(js_name = unwrapTierKeyFromLink)]
+/// Imports a URL fragment seed into a share-link handle through WASM.
+#[wasm_bindgen(js_name = importLinkShareHandle)]
 #[must_use]
-pub fn unwrap_tier_key_from_link_js(
+pub fn import_link_share_handle_js(link_secret_for_url: Vec<u8>) -> JsLinkTierHandleResult {
+    js_link_tier_handle_result_from_rust(import_link_share_handle(link_secret_for_url))
+}
+
+/// Wraps an epoch tier for an existing share-link handle through WASM.
+#[wasm_bindgen(js_name = wrapLinkTierHandle)]
+#[must_use]
+pub fn wrap_link_tier_handle_js(
+    link_share_handle: u64,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> JsWrappedTierKeyResult {
+    js_wrapped_tier_key_result_from_rust(wrap_link_tier_handle(
+        link_share_handle,
+        epoch_handle,
+        tier_byte,
+    ))
+}
+
+/// Imports a wrapped tier key into a link-tier handle through WASM.
+#[wasm_bindgen(js_name = importLinkTierHandle)]
+#[must_use]
+pub fn import_link_tier_handle_js(
+    link_secret_for_url: Vec<u8>,
     nonce: Vec<u8>,
     encrypted_key: Vec<u8>,
+    album_id: String,
     tier_byte: u8,
-    wrapping_key: Vec<u8>,
-) -> JsBytesResult {
-    js_bytes_result_from_rust(unwrap_tier_key_from_link(
+) -> JsLinkTierHandleResult {
+    js_link_tier_handle_result_from_rust(import_link_tier_handle(
+        link_secret_for_url,
         nonce,
         encrypted_key,
+        album_id,
         tier_byte,
-        wrapping_key,
     ))
+}
+
+/// Decrypts a shard using a link-tier handle through WASM.
+#[wasm_bindgen(js_name = decryptShardWithLinkTierHandle)]
+#[must_use]
+pub fn decrypt_shard_with_link_tier_handle_js(
+    link_tier_handle: u64,
+    envelope_bytes: Vec<u8>,
+) -> JsDecryptedShardResult {
+    js_decrypted_shard_result_from_rust(decrypt_shard_with_link_tier_handle(
+        link_tier_handle,
+        envelope_bytes,
+    ))
+}
+
+/// Closes a share-link handle through WASM.
+#[wasm_bindgen(js_name = closeLinkShareHandle)]
+#[must_use]
+pub fn close_link_share_handle_js(handle: u64) -> u16 {
+    close_link_share_handle(handle)
+}
+
+/// Closes a link-tier handle through WASM.
+#[wasm_bindgen(js_name = closeLinkTierHandle)]
+#[must_use]
+pub fn close_link_tier_handle_js(handle: u64) -> u16 {
+    close_link_tier_handle(handle)
 }
 
 /// Verifies and imports a sealed epoch key bundle through WASM.
@@ -2869,11 +3026,28 @@ fn auth_keypair_result_from_client(result: mosaic_client::AuthKeypairResult) -> 
     }
 }
 
-fn link_keys_result_from_client(mut result: mosaic_client::LinkKeysResult) -> LinkKeysResult {
-    LinkKeysResult {
+fn create_link_share_handle_result_from_client(
+    result: mosaic_client::CreateLinkShareHandleResult,
+) -> CreateLinkShareHandleResult {
+    CreateLinkShareHandleResult {
         code: result.code.as_u16(),
-        link_id: std::mem::take(&mut result.link_id),
-        wrapping_key: std::mem::take(&mut result.wrapping_key),
+        handle: result.handle,
+        link_id: result.link_id,
+        link_secret_for_url: result.link_secret_for_url,
+        tier: result.tier,
+        nonce: result.nonce,
+        encrypted_key: result.encrypted_key,
+    }
+}
+
+fn link_tier_handle_result_from_client(
+    result: mosaic_client::LinkTierHandleResult,
+) -> LinkTierHandleResult {
+    LinkTierHandleResult {
+        code: result.code.as_u16(),
+        handle: result.handle,
+        link_id: result.link_id,
+        tier: result.tier,
     }
 }
 
@@ -3907,11 +4081,26 @@ fn js_auth_keypair_result_from_rust(result: AuthKeypairResult) -> JsAuthKeypairR
     }
 }
 
-fn js_link_keys_result_from_rust(result: LinkKeysResult) -> JsLinkKeysResult {
-    JsLinkKeysResult {
+fn js_create_link_share_handle_result_from_rust(
+    result: CreateLinkShareHandleResult,
+) -> JsCreateLinkShareHandleResult {
+    JsCreateLinkShareHandleResult {
         code: result.code,
+        handle: result.handle,
         link_id: result.link_id,
-        wrapping_key: result.wrapping_key,
+        link_secret_for_url: result.link_secret_for_url,
+        tier: result.tier,
+        nonce: result.nonce,
+        encrypted_key: result.encrypted_key,
+    }
+}
+
+fn js_link_tier_handle_result_from_rust(result: LinkTierHandleResult) -> JsLinkTierHandleResult {
+    JsLinkTierHandleResult {
+        code: result.code,
+        handle: result.handle,
+        link_id: result.link_id,
+        tier: result.tier,
     }
 }
 
@@ -4047,16 +4236,6 @@ mod tests {
             },
             &["envelope_bytes_len: 3", "sha256: \"digest\""],
             &["224", "225", "226", "envelope_bytes: ["],
-        );
-
-        assert_debug_redacts(
-            &super::LinkKeysResult {
-                code: 0,
-                link_id: vec![227; 16],
-                wrapping_key: vec![228, 229, 230],
-            },
-            &["link_id_len: 16", "wrapping_key_len: 3"],
-            &["227", "228", "229", "wrapping_key: ["],
         );
 
         assert_debug_redacts(

@@ -18,12 +18,11 @@ import {
   decodeLinkSecret,
 } from '../lib/link-encoding';
 import {
-  getTierKeys,
-  saveTierKeys,
   removeTierKeys as _removeTierKeys,
   type TierKey,
 } from '../lib/link-tier-key-store';
 import { createLogger } from '../lib/logger';
+import type { LinkDecryptionKey } from '../workers/types';
 
 const log = createLogger('useLinkKeys');
 
@@ -78,7 +77,7 @@ export const clearLinkKeys = _removeTierKeys;
 /** Result of the useLinkKeys hook */
 export interface UseLinkKeysResult extends LinkKeyState {
   /** Get the read key for an epoch (highest available tier) */
-  getReadKey: (epochId: number) => Uint8Array | undefined;
+  getReadKey: (epochId: number) => LinkDecryptionKey | undefined;
   /** Get the sign pubkey for an epoch */
   getSignPubkey: (epochId: number) => Uint8Array | undefined;
   /** Refresh keys from server */
@@ -137,12 +136,6 @@ export function useLinkKeys(
         throw new Error('Invalid link format');
       }
 
-      // Derive keys via the crypto worker (Rust core) and verify linkId matches.
-      const { linkId: derivedLinkId, wrappingKey } =
-        await crypto.deriveLinkKeys(secret);
-      if (!constantTimeEqual(urlLinkId, derivedLinkId)) {
-        throw new Error('Link has been tampered with');
-      }
 
       // Always fetch link info first so limited-use links consume access and return
       // a fresh grant token for subsequent /keys, /photos, and /shards requests.
@@ -155,23 +148,8 @@ export function useLinkKeys(
       }
       const linkAccess: LinkAccessResponse = await accessResponse.json();
 
-      // Check IndexedDB cache after access validation. Cached tier keys are still valid,
-      // but limited-use links need a fresh grant token on each page load.
-      const cached = await getTierKeys(linkId);
-      if (cached) {
-        setState({
-          isLoading: false,
-          error: null,
-          linkId,
-          accessTier: linkAccess.accessTier,
-          albumId: linkAccess.albumId,
-          encryptedName: linkAccess.encryptedName ?? null,
-          grantToken: linkAccess.grantToken ?? null,
-          tierKeys: cached.tierKeys,
-          isValid: true,
-        });
-        return;
-      }
+      // P-W7.6: link-tier handles are Rust-owned and not reload-persistent,
+      // so this flow imports handles from the server-wrapped keys each load.
 
       // Fetch wrapped keys from server
       const keysResponse = await fetch(
@@ -202,15 +180,16 @@ export function useLinkKeys(
       const tierKeys = new Map<number, Map<AccessTierType, TierKey>>();
       for (const wrapped of wrappedKeys) {
         try {
-          // The Rust crypto core uses 0-indexed tier bytes (0=thumb, 1=preview,
-          // 2=full); the share-link wire/API protocol still numbers tiers 1/2/3.
-          const tierByte = (wrapped.tier - 1) as 0 | 1 | 2;
-          const unwrapped = await crypto.unwrapTierKeyFromLink(
+          const imported = await crypto.importLinkTierHandle(
+            secret,
             fromBase64(wrapped.nonce),
             fromBase64(wrapped.encryptedKey),
-            tierByte,
-            wrappingKey,
+            linkAccess.albumId,
+            wrapped.tier,
           );
+          if (!constantTimeEqual(urlLinkId, imported.linkId)) {
+            throw new Error('Link has been tampered with');
+          }
 
           if (!tierKeys.has(wrapped.epochId)) {
             tierKeys.set(wrapped.epochId, new Map());
@@ -219,16 +198,15 @@ export function useLinkKeys(
           tierKeys.get(wrapped.epochId)!.set(wrapped.tier, {
             epochId: wrapped.epochId,
             tier: wrapped.tier,
-            key: unwrapped,
+            linkTierHandleId: imported.linkTierHandleId,
             signPubkey: wrapped.signPubkey
               ? fromBase64(wrapped.signPubkey)
               : undefined,
           });
 
-          log.debug('Unwrapped tier key', {
+          log.debug('Imported link tier handle', {
             epochId: wrapped.epochId,
             tier: wrapped.tier,
-            keyLength: unwrapped.length,
           });
         } catch (err) {
           log.error(
@@ -237,14 +215,6 @@ export function useLinkKeys(
           );
         }
       }
-
-      // Save to IndexedDB for return visits
-      await saveTierKeys(
-        linkId,
-        linkAccess.albumId,
-        linkAccess.accessTier,
-        tierKeys,
-      );
 
       setState({
         isLoading: false,
@@ -277,14 +247,14 @@ export function useLinkKeys(
    * For share links, tier keys ARE read keys derived from the epoch read key
    */
   const getReadKey = useCallback(
-    (epochId: number): Uint8Array | undefined => {
+    (epochId: number): LinkDecryptionKey | undefined => {
       const epochTiers = state.tierKeys.get(epochId);
       if (!epochTiers) return undefined;
 
       // Return highest tier key available (3=full, 2=preview, 1=thumb)
       for (const tier of [3, 2, 1] as AccessTierType[]) {
         const tierKey = epochTiers.get(tier);
-        if (tierKey) return tierKey.key;
+        if (tierKey) return tierKey.linkTierHandleId ?? tierKey.key;
       }
       return undefined;
     },

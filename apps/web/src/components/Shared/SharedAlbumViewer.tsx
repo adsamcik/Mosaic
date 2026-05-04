@@ -1,3 +1,4 @@
+import type { LinkDecryptionKey } from '../../workers/types';
 /**
  * Shared Album Viewer Component
  *
@@ -5,7 +6,7 @@
  * URL format: /s/{linkId}#k={linkSecret}
  *
  * The fragment (#k=...) is never sent to the server.
- * Visitor uses linkSecret to derive wrappingKey and unwrap tier keys.
+ * Visitor imports link-tier handles from the URL fragment seed and server-wrapped keys.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -125,7 +126,7 @@ export function SharedAlbumViewer({
 
         // Get the highest tier key from any epoch
         // In share link context, these are already unwrapped tier keys (not epoch seeds)
-        let tierKey: Uint8Array | undefined;
+        let tierKey: LinkDecryptionKey | undefined;
         let usedTier: AccessTierType | undefined;
         let usedEpoch: number | undefined;
 
@@ -133,7 +134,7 @@ export function SharedAlbumViewer({
           for (const tier of [3, 2, 1] as AccessTierType[]) {
             const key = epochTiers.get(tier);
             if (key) {
-              tierKey = key.key;
+              tierKey = key.linkTierHandleId ?? key.key;
               usedTier = tier;
               usedEpoch = epochId;
               break;

@@ -3,9 +3,10 @@ use std::fmt::Debug;
 use mosaic_wasm::{
     AccountUnlockRequest, AuthKeypairResult, BytesResult, ClientCoreUploadJobEffect,
     ClientCoreUploadJobEvent, ClientCoreUploadJobSnapshot, ClientCoreUploadShardRef,
-    CreateAccountResult, CryptoDomainGoldenVectorSnapshot, DecryptedContentResult,
-    DecryptedShardResult, EncryptedContentResult, EncryptedShardResult, EpochKeyHandleResult,
-    HeaderResult, IdentityHandleResult, LinkKeysResult, SealedBundleResult, WrappedTierKeyResult,
+    CreateAccountResult, CreateLinkShareHandleResult, CryptoDomainGoldenVectorSnapshot,
+    DecryptedContentResult, DecryptedShardResult, EncryptedContentResult, EncryptedShardResult,
+    EpochKeyHandleResult, HeaderResult, IdentityHandleResult, LinkTierHandleResult,
+    SealedBundleResult, WrappedTierKeyResult,
 };
 
 const SENTINEL: u8 = 0xab;
@@ -192,12 +193,30 @@ fn wasm_boundary_debug_output_redacts_vec_payloads() {
         &["auth_public_key_len: 32"],
     );
     assert_debug_redacts(
-        &LinkKeysResult {
+        &CreateLinkShareHandleResult {
             code: 0,
+            handle: 12,
             link_id: bytes(16),
-            wrapping_key: bytes(32),
+            link_secret_for_url: bytes(32),
+            tier: 1,
+            nonce: bytes(24),
+            encrypted_key: bytes(48),
         },
-        &["link_id_len: 16", "wrapping_key_len: 32"],
+        &[
+            "link_id_len: 16",
+            "link_secret_for_url_len: 32",
+            "nonce_len: 24",
+            "encrypted_key_len: 48",
+        ],
+    );
+    assert_debug_redacts(
+        &LinkTierHandleResult {
+            code: 0,
+            handle: 13,
+            link_id: bytes(16),
+            tier: 1,
+        },
+        &["link_id_len: 16"],
     );
     assert_debug_redacts(
         &WrappedTierKeyResult {

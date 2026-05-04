@@ -19,6 +19,7 @@ import { getCryptoClient } from '../lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
 import { getCachedEpochIds, getEpochKey } from '../lib/epoch-key-store';
 import { encodeLinkId, encodeLinkSecret } from '../lib/link-encoding';
+import type { LinkShareHandleId } from '../workers/types';
 
 /** Error thrown by share link operations */
 export class ShareLinkError extends Error {
@@ -213,12 +214,15 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
    */
   const createShareLink = useCallback(
     async (options: CreateShareLinkOptions): Promise<CreateShareLinkResult> => {
+      let cryptoClient: Awaited<ReturnType<typeof getCryptoClient>> | undefined;
+      let linkShareHandleId: LinkShareHandleId | undefined;
+
       try {
         setIsCreating(true);
         setCreateError(null);
 
         const api = getApi();
-        const crypto = await getCryptoClient();
+        cryptoClient = await getCryptoClient();
 
         // Step 1: Ensure epoch keys are loaded
         await fetchAndUnwrapEpochKeys(albumId);
@@ -231,19 +235,15 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           );
         }
 
-        // Step 2: Generate link secret and derive keys via the crypto worker.
-        const linkSecret = await crypto.generateLinkSecret();
-        const { linkId, wrappingKey } = await crypto.deriveLinkKeys(linkSecret);
-
-        // Step 3: Wrap the account key around the link secret for owner recovery
-        const ownerEncryptedSecret =
-          await crypto.wrapWithAccountKey(linkSecret);
+        // Step 2: Create a Rust-owned link-share handle. The returned
+        // linkSecretForUrl is the protocol URL fragment seed, not a wrapping key.
+        let linkSecret: Uint8Array | undefined;
+        let linkId: Uint8Array | undefined;
 
         // Step 4: Wrap tier keys for each epoch using the Rust epoch handle.
         // The tier key never crosses the Comlink boundary — the worker derives
         // it from the epoch handle and wraps it under the per-link wrapping
-        // key in one shot. The Rust core numbers tiers 0/1/2 (thumb/preview/
-        // full); the API protocol still uses 1/2/3.
+        // key in one shot. Link-share handle APIs use protocol tiers 1/2/3.
         const wrappedKeys: WrappedKeyRequest[] = [];
 
         for (const epochId of epochIds) {
@@ -253,12 +253,20 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const epochHandleId = epochBundle.epochHandleId as any;
 
-          // Always wrap thumb key (tier byte 0).
-          const wrappedThumb = await crypto.wrapTierKeyForLink(
-            epochHandleId,
-            0,
-            wrappingKey,
-          );
+          let wrappedThumb: { tier: number; nonce: Uint8Array; encryptedKey: Uint8Array };
+          if (!linkShareHandleId) {
+            const created = await cryptoClient.createLinkShareHandle(albumId, epochHandleId, 1);
+            linkShareHandleId = created.linkShareHandleId;
+            linkSecret = created.linkSecretForUrl;
+            linkId = created.linkId;
+            wrappedThumb = created;
+          } else {
+            wrappedThumb = await cryptoClient.wrapLinkTierHandle(
+              linkShareHandleId,
+              epochHandleId,
+              1,
+            );
+          }
           wrappedKeys.push({
             epochId,
             tier: 1 as AccessTier,
@@ -267,10 +275,10 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           });
 
           if (options.accessTier >= 2) {
-            const wrappedPreview = await crypto.wrapTierKeyForLink(
+            const wrappedPreview = await cryptoClient.wrapLinkTierHandle(
+              linkShareHandleId!,
               epochHandleId,
-              1,
-              wrappingKey,
+              2,
             );
             wrappedKeys.push({
               epochId,
@@ -281,10 +289,10 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           }
 
           if (options.accessTier >= 3) {
-            const wrappedFull = await crypto.wrapTierKeyForLink(
+            const wrappedFull = await cryptoClient.wrapLinkTierHandle(
+              linkShareHandleId!,
               epochHandleId,
-              2,
-              wrappingKey,
+              3,
             );
             wrappedKeys.push({
               epochId,
@@ -294,6 +302,17 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
             });
           }
         }
+
+        if (!linkSecret || !linkId || !linkShareHandleId) {
+          throw new ShareLinkError(
+            'No epoch keys available for album',
+            ShareLinkErrorCode.NO_EPOCH_KEYS,
+          );
+        }
+
+        // Step 3: Wrap the account key around the URL fragment seed for owner recovery
+        const ownerEncryptedSecret =
+          await cryptoClient.wrapWithAccountKey(linkSecret);
 
         // Step 5: Create the share link via API
         const request: CreateShareLinkRequest = {
@@ -334,6 +353,9 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
         setCreateError(message);
         throw err;
       } finally {
+        if (linkShareHandleId && cryptoClient) {
+          await cryptoClient.closeLinkShareHandle(linkShareHandleId);
+        }
         setIsCreating(false);
       }
     },

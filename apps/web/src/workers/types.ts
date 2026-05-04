@@ -184,6 +184,9 @@ export interface WorkerKdfParams {
 export type AccountHandleId = string & { readonly __brand: 'AccountHandleId' };
 export type IdentityHandleId = string & { readonly __brand: 'IdentityHandleId' };
 export type EpochHandleId = string & { readonly __brand: 'EpochHandleId' };
+export type LinkShareHandleId = string & { readonly __brand: 'LinkShareHandleId' };
+export type LinkTierHandleId = string & { readonly __brand: 'LinkTierHandleId' };
+export type LinkDecryptionKey = Uint8Array | LinkTierHandleId;
 
 /** Photo metadata stored in local SQLite */
 export interface PhotoMeta {
@@ -563,7 +566,7 @@ export interface CryptoWorkerApi {
    */
   decryptShardWithTierKey(
     envelope: Uint8Array,
-    tierKey: Uint8Array,
+    tierKey: LinkDecryptionKey,
   ): Promise<Uint8Array>;
 
   /**
@@ -1055,57 +1058,49 @@ export interface CryptoWorkerApi {
     shardIndex: number,
   ): Promise<{ envelopeBytes: Uint8Array; sha256: string }>;
 
-  // ---- Link sharing (Slice 6) ----
+  // ---- Link sharing (P-W7.6 handle-based) ----
 
-  /**
-   * Generate a fresh 32-byte link secret. Random bytes are produced inside
-   * the Rust crypto core; the worker only forwards the resulting buffer
-   * across Comlink.
-   */
-  generateLinkSecret(): Promise<Uint8Array>;
-
-  /**
-   * Derive `(linkId, wrappingKey)` from a link secret.
-   *
-   * @param linkSecret - 32-byte secret from URL fragment.
-   * @returns 16-byte link ID + 32-byte wrapping key.
-   */
-  deriveLinkKeys(
-    linkSecret: Uint8Array,
-  ): Promise<{ linkId: Uint8Array; wrappingKey: Uint8Array }>;
-
-  /**
-   * Wrap a tier key for share-link distribution.
-   *
-   * The tier key never crosses Comlink — it is derived inside the worker
-   * from the epoch handle and wrapped under the per-link wrapping key in
-   * one shot.
-   *
-   * @param epochHandleId - Opaque epoch handle id.
-   * @param tier - 0-indexed tier byte (0=thumb, 1=preview, 2=full).
-   * @param wrappingKey - 32-byte per-link wrapping key.
-   */
-  wrapTierKeyForLink(
+  createLinkShareHandle(
+    albumId: string,
     epochHandleId: EpochHandleId,
-    tier: 0 | 1 | 2,
-    wrappingKey: Uint8Array,
+    tier: 1 | 2 | 3,
+  ): Promise<{
+    linkShareHandleId: LinkShareHandleId;
+    linkId: Uint8Array;
+    linkSecretForUrl: Uint8Array;
+    tier: number;
+    nonce: Uint8Array;
+    encryptedKey: Uint8Array;
+  }>;
+
+  importLinkShareHandle(
+    linkSecretForUrl: Uint8Array,
+  ): Promise<{
+    linkShareHandleId: LinkShareHandleId;
+    linkId: Uint8Array;
+  }>;
+
+  wrapLinkTierHandle(
+    linkShareHandleId: LinkShareHandleId,
+    epochHandleId: EpochHandleId,
+    tier: 1 | 2 | 3,
   ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
 
-  /**
-   * Unwrap a tier key wrapped via `wrapTierKeyForLink`.
-   *
-   * @param nonce - 24-byte nonce stored alongside the encrypted key.
-   * @param encryptedKey - Encrypted tier key.
-   * @param tier - 0-indexed tier byte (0=thumb, 1=preview, 2=full).
-   * @param wrappingKey - 32-byte per-link wrapping key.
-   * @returns Unwrapped 32-byte tier key (caller is responsible for wiping).
-   */
-  unwrapTierKeyFromLink(
+  importLinkTierHandle(
+    linkSecretForUrl: Uint8Array,
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
-    tier: 0 | 1 | 2,
-    wrappingKey: Uint8Array,
+    albumId: string,
+    tier: 1 | 2 | 3,
+  ): Promise<{ linkTierHandleId: LinkTierHandleId; linkId: Uint8Array; tier: number }>;
+
+  decryptShardWithLinkTierHandle(
+    linkTierHandleId: LinkTierHandleId,
+    envelopeBytes: Uint8Array,
   ): Promise<Uint8Array>;
+
+  closeLinkShareHandle(linkShareHandleId: LinkShareHandleId): Promise<void>;
+  closeLinkTierHandle(linkTierHandleId: LinkTierHandleId): Promise<void>;
 
   // ---- Album content (Slice 7) ----
   //

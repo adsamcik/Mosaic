@@ -1,19 +1,13 @@
-//! WASM facade tests for share-link sharing exports.
-//!
-//! Exercises `generateLinkSecret`, `deriveLinkKeys`, `wrapTierKeyForLink`,
-//! and `unwrapTierKeyFromLink` through the public Rust facade entry points
-//! that the wasm-bindgen `*_js` wrappers ultimately call.
+//! WASM facade tests for handle-based share-link operations.
 
 use mosaic_client::ClientErrorCode;
 use mosaic_crypto::{KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, derive_account_key};
-use mosaic_crypto::{SecretKey, decrypt_shard};
-use mosaic_vectors::{load_vector, vectors::LinkKeysVector};
 use mosaic_wasm::{
     AccountUnlockRequest, close_account_key_handle, close_epoch_key_handle,
-    create_epoch_key_handle, derive_link_keys, encrypt_shard_with_epoch_handle,
-    generate_link_secret, unlock_account_key, unwrap_tier_key_from_link, wrap_tier_key_for_link,
+    close_link_share_handle, close_link_tier_handle, create_epoch_key_handle,
+    create_link_share_handle, decrypt_shard_with_link_tier_handle, encrypt_shard_with_epoch_handle,
+    import_link_share_handle, import_link_tier_handle, unlock_account_key, wrap_link_tier_handle,
 };
-use std::path::PathBuf;
 
 const PASSWORD: &[u8] = b"correct horse battery staple";
 const USER_SALT: [u8; 16] = [
@@ -47,172 +41,109 @@ fn wrapped_account_key() -> Vec<u8> {
     material.wrapped_account_key
 }
 
-fn corpus_path(name: &str) -> PathBuf {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let mut path = PathBuf::from(manifest_dir);
-    path.pop(); // crates/
-    path.pop(); // repo root
-    path.push("tests");
-    path.push("vectors");
-    path.push(name);
-    path
-}
-
 #[test]
-fn generate_link_secret_returns_thirty_two_random_bytes() {
-    let first = generate_link_secret();
-    assert_eq!(first.code, 0);
-    assert_eq!(first.bytes.len(), 32);
-
-    let second = generate_link_secret();
-    assert_eq!(second.code, 0);
-    assert_eq!(second.bytes.len(), 32);
-
-    assert_ne!(
-        first.bytes, second.bytes,
-        "generate_link_secret must use the OS CSPRNG"
-    );
-}
-
-#[test]
-fn derive_link_keys_matches_golden_vector() {
-    let parsed = match load_vector(&corpus_path("link_keys.json")) {
-        Ok(value) => value,
-        Err(error) => panic!("link_keys.json must load: {error}"),
-    };
-    let vector = match LinkKeysVector::from(&parsed) {
-        Ok(value) => value,
-        Err(error) => panic!("link_keys.json must parse: {error}"),
-    };
-
-    let result = derive_link_keys(vector.link_secret.clone());
-    assert_eq!(result.code, 0);
-    assert_eq!(result.link_id, vector.expected_link_id);
-    assert_eq!(result.wrapping_key, vector.expected_wrapping_key);
-}
-
-#[test]
-fn derive_link_keys_rejects_short_secret() {
-    let truncated = vec![0_u8; 31];
-    let result = derive_link_keys(truncated);
-    assert_eq!(result.code, ClientErrorCode::InvalidKeyLength.as_u16());
-    assert!(result.link_id.is_empty());
-    assert!(result.wrapping_key.is_empty());
-}
-
-#[test]
-fn wrap_and_unwrap_tier_key_round_trips_through_handle() {
+fn create_link_share_handle_returns_url_seed_and_wrapped_tier() {
     let unlock = unlock_account_key(PASSWORD.to_vec(), unlock_request(wrapped_account_key()));
     assert_eq!(unlock.code, 0);
     let epoch = create_epoch_key_handle(unlock.handle, 11);
     assert_eq!(epoch.code, 0);
 
-    let secret = generate_link_secret();
-    assert_eq!(secret.code, 0);
-    let derived = derive_link_keys(secret.bytes.clone());
-    assert_eq!(derived.code, 0);
+    let created = create_link_share_handle("album".to_owned(), epoch.handle, 1);
+    assert_eq!(created.code, 0);
+    assert_ne!(created.handle, 0);
+    assert_eq!(created.link_id.len(), 16);
+    assert_eq!(created.link_secret_for_url.len(), 32);
+    assert_eq!(created.tier, 1);
+    assert_eq!(created.nonce.len(), 24);
+    assert_eq!(created.encrypted_key.len(), 32 + 16);
 
-    let wrapped = wrap_tier_key_for_link(epoch.handle, 1, derived.wrapping_key.clone());
-    assert_eq!(wrapped.code, 0);
-    assert_eq!(wrapped.tier, 1);
-    assert_eq!(wrapped.nonce.len(), 24);
-    assert_eq!(wrapped.encrypted_key.len(), 32 + 16);
-
-    let unwrapped = unwrap_tier_key_from_link(
-        wrapped.nonce.clone(),
-        wrapped.encrypted_key.clone(),
-        1,
-        derived.wrapping_key.clone(),
-    );
-    assert_eq!(unwrapped.code, 0);
-    assert_eq!(unwrapped.bytes.len(), 32);
-
-    let encrypted =
-        encrypt_shard_with_epoch_handle(epoch.handle, b"linked thumbnail".to_vec(), 7, 1);
-    assert_eq!(encrypted.code, 0);
-
-    let mut unwrapped_key_bytes = unwrapped.bytes.clone();
-    let unwrapped_key = match SecretKey::from_bytes(&mut unwrapped_key_bytes) {
-        Ok(value) => value,
-        Err(error) => panic!("unwrapped tier key should construct: {error:?}"),
-    };
-    let decrypted = match decrypt_shard(&encrypted.envelope_bytes, &unwrapped_key) {
-        Ok(value) => value,
-        Err(error) => panic!("unwrapped tier key should decrypt handle-encrypted shard: {error:?}"),
-    };
-    assert_eq!(decrypted.as_slice(), b"linked thumbnail");
-
+    assert_eq!(close_link_share_handle(created.handle), 0);
     assert_eq!(close_epoch_key_handle(epoch.handle), 0);
     assert_eq!(close_account_key_handle(unlock.handle), 0);
 }
 
 #[test]
-fn wrap_tier_key_for_link_rejects_invalid_handle() {
-    let derived = derive_link_keys(vec![0x42; 32]);
-    assert_eq!(derived.code, 0);
-
-    let wrapped = wrap_tier_key_for_link(0, 1, derived.wrapping_key);
-    assert_eq!(wrapped.code, ClientErrorCode::EpochHandleNotFound.as_u16());
-    assert!(wrapped.nonce.is_empty());
-    assert!(wrapped.encrypted_key.is_empty());
-}
-
-#[test]
-fn wrap_tier_key_for_link_rejects_invalid_tier_byte() {
+fn link_tier_handle_decrypts_handle_encrypted_shard() {
     let unlock = unlock_account_key(PASSWORD.to_vec(), unlock_request(wrapped_account_key()));
     assert_eq!(unlock.code, 0);
     let epoch = create_epoch_key_handle(unlock.handle, 12);
     assert_eq!(epoch.code, 0);
 
-    let derived = derive_link_keys(vec![0x42; 32]);
-    assert_eq!(derived.code, 0);
+    let created = create_link_share_handle("album".to_owned(), epoch.handle, 2);
+    assert_eq!(created.code, 0);
+    let imported = import_link_tier_handle(
+        created.link_secret_for_url.clone(),
+        created.nonce.clone(),
+        created.encrypted_key.clone(),
+        "album".to_owned(),
+        2,
+    );
+    assert_eq!(imported.code, 0);
+    assert_eq!(imported.link_id, created.link_id);
+    assert_eq!(imported.tier, 2);
 
-    let wrapped = wrap_tier_key_for_link(epoch.handle, 99, derived.wrapping_key);
-    assert_eq!(wrapped.code, ClientErrorCode::InvalidTier.as_u16());
+    let encrypted = encrypt_shard_with_epoch_handle(epoch.handle, b"linked preview".to_vec(), 7, 2);
+    assert_eq!(encrypted.code, 0);
+    let decrypted = decrypt_shard_with_link_tier_handle(imported.handle, encrypted.envelope_bytes);
+    assert_eq!(decrypted.code, 0);
+    assert_eq!(decrypted.plaintext, b"linked preview");
 
+    assert_eq!(close_link_tier_handle(imported.handle), 0);
+    assert_eq!(close_link_share_handle(created.handle), 0);
     assert_eq!(close_epoch_key_handle(epoch.handle), 0);
     assert_eq!(close_account_key_handle(unlock.handle), 0);
 }
 
 #[test]
-fn unwrap_tier_key_from_link_rejects_short_nonce() {
-    let derived = derive_link_keys(vec![0x42; 32]);
-    let result = unwrap_tier_key_from_link(vec![0; 23], vec![0; 48], 1, derived.wrapping_key);
-    assert_eq!(result.code, ClientErrorCode::InvalidInputLength.as_u16());
-}
-
-#[test]
-fn unwrap_tier_key_from_link_rejects_tampered_ciphertext() {
+fn imported_link_share_handle_wraps_additional_tiers() {
     let unlock = unlock_account_key(PASSWORD.to_vec(), unlock_request(wrapped_account_key()));
+    assert_eq!(unlock.code, 0);
     let epoch = create_epoch_key_handle(unlock.handle, 13);
+    assert_eq!(epoch.code, 0);
 
-    let derived = derive_link_keys(vec![0x9f; 32]);
-    let wrapped = wrap_tier_key_for_link(epoch.handle, 2, derived.wrapping_key.clone());
-    assert_eq!(wrapped.code, 0);
+    let created = create_link_share_handle("album".to_owned(), epoch.handle, 1);
+    assert_eq!(created.code, 0);
+    let imported_share = import_link_share_handle(created.link_secret_for_url.clone());
+    assert_eq!(imported_share.code, 0);
+    assert_eq!(imported_share.link_id, created.link_id);
 
-    let mut tampered = wrapped.encrypted_key.clone();
-    tampered[0] ^= 0x01;
-    let result = unwrap_tier_key_from_link(
-        wrapped.nonce.clone(),
-        tampered,
-        2,
-        derived.wrapping_key.clone(),
+    let wrapped_full = wrap_link_tier_handle(imported_share.handle, epoch.handle, 3);
+    assert_eq!(wrapped_full.code, 0);
+    assert_eq!(wrapped_full.tier, 3);
+
+    let imported_tier = import_link_tier_handle(
+        created.link_secret_for_url,
+        wrapped_full.nonce,
+        wrapped_full.encrypted_key,
+        "album".to_owned(),
+        3,
     );
-    assert_eq!(result.code, ClientErrorCode::AuthenticationFailed.as_u16());
-    assert!(result.bytes.is_empty());
+    assert_eq!(imported_tier.code, 0);
 
-    let bad_wrapping = unwrap_tier_key_from_link(
-        wrapped.nonce.clone(),
-        wrapped.encrypted_key.clone(),
-        2,
-        // Wrong wrapping key bytes => AEAD authentication failure.
-        vec![0_u8; 32],
-    );
-    assert_eq!(
-        bad_wrapping.code,
-        ClientErrorCode::AuthenticationFailed.as_u16()
-    );
+    let encrypted =
+        encrypt_shard_with_epoch_handle(epoch.handle, b"linked original".to_vec(), 9, 3);
+    assert_eq!(encrypted.code, 0);
+    let decrypted =
+        decrypt_shard_with_link_tier_handle(imported_tier.handle, encrypted.envelope_bytes);
+    assert_eq!(decrypted.code, 0);
+    assert_eq!(decrypted.plaintext, b"linked original");
 
+    assert_eq!(close_link_tier_handle(imported_tier.handle), 0);
+    assert_eq!(close_link_share_handle(imported_share.handle), 0);
+    assert_eq!(close_link_share_handle(created.handle), 0);
     assert_eq!(close_epoch_key_handle(epoch.handle), 0);
     assert_eq!(close_account_key_handle(unlock.handle), 0);
+}
+
+#[test]
+fn link_handles_reject_invalid_inputs() {
+    let bad_import =
+        import_link_tier_handle(vec![0; 31], vec![0; 24], vec![0; 48], "album".to_owned(), 1);
+    assert_eq!(bad_import.code, ClientErrorCode::InvalidKeyLength.as_u16());
+
+    let bad_wrap = wrap_link_tier_handle(0, 0, 1);
+    assert_eq!(
+        bad_wrap.code,
+        ClientErrorCode::SecretHandleNotFound.as_u16()
+    );
 }

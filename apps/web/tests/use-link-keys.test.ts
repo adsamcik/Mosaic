@@ -15,8 +15,7 @@ const mocks = vi.hoisted(() => ({
   // for `fromBase64` from `lib/api` and the URL encoders from
   // `lib/link-encoding`, all of which we mock below.
   worker: {
-    deriveLinkKeys: vi.fn(),
-    unwrapTierKeyFromLink: vi.fn(),
+    importLinkTierHandle: vi.fn(),
   },
   api: {
     fromBase64: vi.fn(),
@@ -267,9 +266,10 @@ describe('useLinkKeys', () => {
     );
     mocks.linkEncoding.decodeLinkId.mockReturnValue(new Uint8Array(16).fill(2));
     mocks.linkEncoding.constantTimeEqual.mockReturnValue(true);
-    mocks.worker.deriveLinkKeys.mockResolvedValue({
+    mocks.worker.importLinkTierHandle.mockResolvedValue({
+      linkTierHandleId: 'lnkt_test-handle',
       linkId: new Uint8Array(16).fill(2),
-      wrappingKey: new Uint8Array(32).fill(3),
+      tier: 2,
     });
     mocks.api.fromBase64.mockImplementation((s: string) => {
       if (s === 'test-nonce') return new Uint8Array(24).fill(4);
@@ -277,9 +277,7 @@ describe('useLinkKeys', () => {
       if (s === 'test-signpubkey') return new Uint8Array(32).fill(6);
       return new Uint8Array(32);
     });
-    mocks.worker.unwrapTierKeyFromLink.mockResolvedValue(
-      new Uint8Array(32).fill(7),
-    );
+
   });
 
   afterEach(() => {
@@ -443,26 +441,47 @@ describe('useLinkKeys', () => {
         ]),
       });
 
-      mocks.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          albumId: 'album-123',
-          accessTier: 2,
-          epochCount: 1,
-          grantToken: 'grant-token-123',
-        }),
-      });
+      mocks.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            albumId: 'album-123',
+            accessTier: 2,
+            epochCount: 1,
+            grantToken: 'grant-token-123',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => [
+            {
+              epochId: 1,
+              tier: 2,
+              nonce: 'test-nonce',
+              encryptedKey: 'test-encrypted',
+            },
+          ],
+        });
 
       const { result, cleanup } = renderHookWithArgs(
         'test-link-id',
         'test-secret',
       );
 
-      await waitFor(() => mocks.fetch.mock.calls.length === 1);
+      await waitFor(() => mocks.fetch.mock.calls.length === 2);
 
-      expect(mocks.fetch).toHaveBeenCalledTimes(1);
-      expect(mocks.fetch).toHaveBeenCalledWith('/api/s/test-link-id');
-      expect(linkTierKeyStore.getTierKeys).toHaveBeenCalledWith('test-link-id');
+      expect(mocks.fetch).toHaveBeenCalledTimes(2);
+      expect(mocks.fetch).toHaveBeenNthCalledWith(1, '/api/s/test-link-id');
+      expect(mocks.fetch).toHaveBeenNthCalledWith(
+        2,
+        '/api/s/test-link-id/keys',
+        {
+          headers: {
+            'X-Share-Grant': 'grant-token-123',
+          },
+        },
+      );
+      expect(linkTierKeyStore.getTierKeys).not.toHaveBeenCalled();
 
       cleanup();
     });
