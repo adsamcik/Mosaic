@@ -18,10 +18,16 @@ current shape; the shape itself is now locked by a Rust test (see "Lock
 tests" below).
 
 - **Shard envelope header — magic `SGzk` (4 bytes), version `0x03`, total
-  length 64 bytes, 24-byte nonce, tier byte `1/2/3`, reserved bytes
-  `0x00..=0x00` over offsets `38..64`, AAD = entire 64-byte header.**
-  Established by `1aa2baa3` (`build(rust): add ffi facade spike`). Locked by
-  `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs`.
+   length 64 bytes, 24-byte nonce, tier byte `1/2/3`, reserved bytes
+   `0x00..=0x00` over offsets `38..64`, AAD = entire 64-byte header.**
+   Established by `1aa2baa3` (`build(rust): add ffi facade spike`). Locked by
+   `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs`.
+- **KDF/auth/bundle domain labels — `mosaic:root-key:v1`,
+  `mosaic:auth-signing:v1`, `mosaic:tier:thumb:v1`,
+  `mosaic:tier:preview:v1`, `mosaic:tier:full:v1`,
+  `mosaic:tier:content:v1`, `mosaic:db-session-key:v1`,
+  `Mosaic_Auth_Challenge_v1`, and `Mosaic_EpochBundle_v1`.** Locked by
+  `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs`.
 - **Manifest signing transcript context — `Mosaic_Manifest_v1` (UTF-8) at
   transcript version `1`.** Established by `933382ff`
   (`feat(domain): add manifest signing transcript`). Locked by
@@ -141,9 +147,11 @@ update.
 | WASM API snapshot (`ffi-spike:v6`) | `crates/mosaic-wasm/tests/ffi_snapshot.rs` | Byte-exact equality of `wasm_api_snapshot()` and the version-label prefix. |
 | `ClientErrorCode` numeric table | `crates/mosaic-uniffi/tests/error_code_table.rs` | Variant order, names, and numeric values for all 49 codes (0–706); collision check across the live table. |
 | Shard envelope header (`SGzk`/`0x03`/64 bytes/reserved-zero) | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs` | Magic bytes, version byte, header length, encode-side reserved-zero, decode-side `NonZeroReservedByte` enforcement at every reserved offset. |
+| `ShardTier` byte discriminants | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_tier_byte_discriminants_locked` | Thumbnail `1`, preview `2`, original `3`; rejects `0` and `4`. |
 | Manifest transcript context (`Mosaic_Manifest_v1`, v1) | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs` | Byte-exact context value, length, and transcript version constant. |
 | Metadata sidecar context (`Mosaic_Metadata_v1`, v1) | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs` | Byte-exact context value, length, and sidecar version constant. |
 | Manifest ↔ metadata domain separation | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs` | The two contexts must remain distinct. |
+| KDF/auth/bundle labels | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs` | Byte-exact equality for root/auth/tier/content/DB-session KDF labels plus LocalAuth challenge and epoch-bundle signing contexts. |
 | Late-v1 spec coverage | `crates/mosaic-domain/tests/late_v1_protocol_freeze_spec.rs` | The SPEC document continues to reference every contract domain. |
 
 ## Prerequisites

@@ -217,7 +217,7 @@ fn album_sync_page_applied_without_current_page_returns_invalid_snapshot() {
 }
 
 #[test]
-fn album_sync_retry_budget_exhaustion_preserves_legacy_coverage() {
+fn album_sync_retry_budget_exhaustion_preserves_originating_code() {
     let mut snapshot = sync_snapshot(AlbumSyncPhase::FetchingPage);
     snapshot.retry.attempt_count = 2;
     snapshot.retry.max_attempts = 2;
@@ -232,7 +232,15 @@ fn album_sync_retry_budget_exhaustion_preserves_legacy_coverage() {
     assert_eq!(transition.snapshot.phase, AlbumSyncPhase::Failed);
     assert_eq!(
         transition.snapshot.failure_code,
-        Some(ClientErrorCode::ClientCoreRetryBudgetExhausted)
+        Some(ClientErrorCode::InvalidInputLength)
+    );
+    assert_eq!(
+        transition.snapshot.retry.last_error_code,
+        Some(ClientErrorCode::InvalidInputLength)
+    );
+    assert_eq!(
+        transition.snapshot.retry.last_error_stage,
+        Some(AlbumSyncPhase::FetchingPage)
     );
     assert!(transition.effects.is_empty());
 }

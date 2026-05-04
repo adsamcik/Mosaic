@@ -64,6 +64,40 @@ fn album_sync_completed_retryable_failure_rejected() {
 }
 
 #[test]
+fn album_sync_retry_budget_exhaustion_preserves_originating_code() {
+    let mut fetching = snapshot();
+    fetching.phase = AlbumSyncPhase::FetchingPage;
+    fetching.retry.attempt_count = 3;
+    fetching.retry.max_attempts = 3;
+
+    let transition = match advance_album_sync(
+        &fetching,
+        AlbumSyncEvent::RetryableFailure {
+            code: ClientErrorCode::BackendIdempotencyConflict,
+            retry_after_ms: Some(100),
+        },
+    ) {
+        Ok(transition) => transition,
+        Err(error) => panic!("retry budget exhaustion should fail cleanly: {error:?}"),
+    };
+
+    assert_eq!(transition.snapshot.phase, AlbumSyncPhase::Failed);
+    assert_eq!(
+        transition.snapshot.failure_code,
+        Some(ClientErrorCode::BackendIdempotencyConflict)
+    );
+    assert_eq!(
+        transition.snapshot.retry.last_error_code,
+        Some(ClientErrorCode::BackendIdempotencyConflict)
+    );
+    assert_eq!(
+        transition.snapshot.retry.last_error_stage,
+        Some(AlbumSyncPhase::FetchingPage)
+    );
+    assert!(transition.effects.is_empty());
+}
+
+#[test]
 fn album_sync_cancelled_cancel_requested_idempotent() {
     let mut cancelled = snapshot();
     cancelled.phase = AlbumSyncPhase::Cancelled;

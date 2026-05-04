@@ -460,7 +460,15 @@ fn album_sync_handles_retry_and_cancel_and_failure_events_explicitly() {
     assert_eq!(exhausted.snapshot.phase, AlbumSyncPhase::Failed);
     assert_eq!(
         exhausted.snapshot.failure_code,
-        Some(ClientErrorCode::ClientCoreRetryBudgetExhausted)
+        Some(ClientErrorCode::InvalidInputLength)
+    );
+    assert_eq!(
+        exhausted.snapshot.retry.last_error_code,
+        Some(ClientErrorCode::InvalidInputLength)
+    );
+    assert_eq!(
+        exhausted.snapshot.retry.last_error_stage,
+        Some(AlbumSyncPhase::FetchingPage)
     );
     assert!(exhausted.effects.is_empty());
 

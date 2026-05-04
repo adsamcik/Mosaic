@@ -1213,7 +1213,6 @@ fn upload_phase_allows_retry(phase: UploadJobPhase) -> bool {
             | UploadJobPhase::CreatingShardUpload
             | UploadJobPhase::UploadingShard
             | UploadJobPhase::CreatingManifest
-            | UploadJobPhase::ManifestCommitUnknown
             | UploadJobPhase::AwaitingSyncConfirmation
     )
 }
@@ -1948,7 +1947,9 @@ pub fn advance_album_sync(
             if snapshot.retry.attempt_count >= snapshot.retry.max_attempts {
                 let mut next = snapshot.clone();
                 next.phase = AlbumSyncPhase::Failed;
-                next.failure_code = Some(ClientErrorCode::ClientCoreRetryBudgetExhausted);
+                next.failure_code = Some(code);
+                next.retry.last_error_code = Some(code);
+                next.retry.last_error_stage = Some(snapshot.phase);
                 return Ok(AlbumSyncTransition {
                     snapshot: next,
                     effects: Vec::new(),

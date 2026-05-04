@@ -67,6 +67,30 @@ Upsert immutability: after a shard coordinate exists, `shard_id`, `sha256`, `con
 | 11 | `Cancelled` | Terminal cancellation. |
 | 12 | `Failed` | Terminal failure. |
 
+### Upload retry/resume consistency
+
+For every upload phase, accepting `RetryableFailure` and resumability from
+`RetryWaiting` are the same contract. These two columns must agree for every
+phase. The `upload_retryable_phase_consistency_every_accepted_retry_resumes`
+Rust test enforces this invariant so `upload_phase_allows_retry` cannot drift
+from retry-timer resume behavior.
+
+| Phase | Accepts `RetryableFailure`? | Resumable from `RetryWaiting`? |
+|---|---:|---:|
+| `Queued` | No | No |
+| `AwaitingPreparedMedia` | Yes | Yes |
+| `AwaitingEpochHandle` | Yes | Yes |
+| `EncryptingShard` | Yes | Yes |
+| `CreatingShardUpload` | Yes | Yes |
+| `UploadingShard` | Yes | Yes |
+| `CreatingManifest` | Yes | Yes |
+| `ManifestCommitUnknown` | No | No |
+| `AwaitingSyncConfirmation` | Yes | Yes |
+| `RetryWaiting` | No | No |
+| `Confirmed` | No | No |
+| `Cancelled` | No | No |
+| `Failed` | No | No |
+
 ## Upload event taxonomy
 
 Every event carries a UUIDv7 `effect_id`. If a non-`EffectAck` incoming event's `effect_id == snapshot.last_applied_event_id`, the reducer returns `{ next_snapshot: snapshot, effects: [] }` with no revision bump. This is the crash replay idempotency rule for dropped acknowledgements. `EffectAck` updates only `last_acknowledged_effect_id` and cannot poison replay dedup.
@@ -141,11 +165,19 @@ Because the frozen snapshot has no retry-target key, `RetryTimerElapsed` carries
 
 AlbumSync legacy reducer behavior remains covered by `client_core_state_machines`, `state_machine_core`, `state_machine_crafted_snapshots`, `public_api_smoke`, and `mutation_kills`. R-Cl1 does not freeze AlbumSync CBOR or DTO field layout; that remains R-Cl2. R-Cl2 sync state-machine finalization is independent and must not reinterpret the upload CBOR keys added here. No R-Cl1 change may remove existing AlbumSync retry, rerun, cancel, page-apply, or failure coverage.
 
+On AlbumSync retry-budget exhaustion, `failure_code` MUST be the originating
+`code` from the `RetryableFailure` event, NOT
+`ClientCoreRetryBudgetExhausted`. Budget exhaustion is signaled by
+`phase=Failed AND retry.attempt_count >= retry.max_attempts`. The retry
+breadcrumb fields `retry.last_error_code` and `retry.last_error_stage` MUST be
+updated to the originating code and source phase at the exhaustion boundary.
+
 ## Verification plan
 
 | Test file | Required coverage |
 |---|---|
-| `upload_state_machine_locked.rs` | Phase numerics, golden canonical CBOR, c2/c3 byte regression, strict CBOR rejection, backoff table, ADR-022 recovery table, ADR-011 cleanup, effect-id idempotency, EffectAck replay-dedup split, failure_code persistence. |
+| `upload_state_machine_locked.rs` | Phase numerics, golden canonical CBOR, c2/c3 byte regression, strict CBOR rejection, backoff table, ADR-022 recovery table, ADR-011 cleanup, effect-id idempotency, EffectAck replay-dedup split, failure_code persistence, retryable-phase/resume consistency, ManifestCommitUnknown retry-trap rejection. |
+| `album_sync_phase_lock.rs` | AlbumSync phase matrix, terminal/idempotent cancellation behavior, retry target validation, and retry-budget exhaustion cause preservation. |
 | `upload_state_machine_replay.rs` | Encode/decode post-state then re-apply same event/effect id and assert no effects/no revision bump. |
 | Existing `mosaic-client` tests | Compile against R-Cl1 DTOs and preserve AlbumSync behavior. |
 | Architecture script | Rust boundary remains clean and no forbidden cross-crate dependency is introduced. |

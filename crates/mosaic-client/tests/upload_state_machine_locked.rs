@@ -264,6 +264,111 @@ fn retry_timer_elapsed_rejects_terminal_target_phase() {
 }
 
 #[test]
+fn upload_retryable_phase_consistency_every_accepted_retry_resumes() {
+    let phases = [
+        UploadJobPhase::Queued,
+        UploadJobPhase::AwaitingPreparedMedia,
+        UploadJobPhase::AwaitingEpochHandle,
+        UploadJobPhase::EncryptingShard,
+        UploadJobPhase::CreatingShardUpload,
+        UploadJobPhase::UploadingShard,
+        UploadJobPhase::CreatingManifest,
+        UploadJobPhase::ManifestCommitUnknown,
+        UploadJobPhase::AwaitingSyncConfirmation,
+        UploadJobPhase::RetryWaiting,
+        UploadJobPhase::Confirmed,
+        UploadJobPhase::Cancelled,
+        UploadJobPhase::Failed,
+    ];
+
+    for phase in phases {
+        let mut snap = snapshot(phase);
+        if matches!(
+            phase,
+            UploadJobPhase::CreatingManifest
+                | UploadJobPhase::ManifestCommitUnknown
+                | UploadJobPhase::AwaitingSyncConfirmation
+                | UploadJobPhase::Confirmed
+        ) {
+            for shard in &mut snap.tiered_shards {
+                shard.uploaded = true;
+            }
+        }
+
+        let retry = advance_upload_job(
+            snap,
+            UploadJobEvent::RetryableFailure {
+                effect_id: uuid(60 + phase.to_u8()),
+                code: ClientErrorCode::AuthenticationFailed,
+                now_ms: 10_000,
+                base_backoff_ms: 1_000,
+                server_retry_after_ms: None,
+            },
+        );
+
+        let Ok(retry) = retry else {
+            continue;
+        };
+        assert_eq!(retry.next_snapshot.phase, UploadJobPhase::RetryWaiting);
+        let [UploadJobEffect::ScheduleRetry { target_phase, .. }] = retry.effects.as_slice() else {
+            panic!("accepted retryable failure must schedule exactly one retry");
+        };
+
+        let resumed = advance_upload_job(
+            retry.next_snapshot,
+            UploadJobEvent::RetryTimerElapsed {
+                effect_id: uuid(80 + phase.to_u8()),
+                target_phase: *target_phase,
+            },
+        );
+        assert!(
+            resumed.is_ok(),
+            "phase {phase:?} accepted RetryableFailure but could not resume from RetryWaiting"
+        );
+    }
+}
+
+#[test]
+fn manifest_commit_unknown_does_not_get_stuck_after_retryable_failure() {
+    let unknown = match advance_upload_job(
+        snapshot(UploadJobPhase::CreatingManifest),
+        UploadJobEvent::ManifestOutcomeUnknown {
+            effect_id: uuid(54),
+            asset_id: uuid(4),
+            since_metadata_version: 12,
+        },
+    ) {
+        Ok(transition) => transition,
+        Err(error) => panic!("ManifestOutcomeUnknown should enter recovery: {error:?}"),
+    };
+    assert_eq!(
+        unknown.next_snapshot.phase,
+        UploadJobPhase::ManifestCommitUnknown
+    );
+    assert!(matches!(
+        unknown.effects.as_slice(),
+        [UploadJobEffect::RecoverManifestThroughSync { .. }]
+    ));
+
+    let error = match advance_upload_job(
+        unknown.next_snapshot,
+        UploadJobEvent::RetryableFailure {
+            effect_id: uuid(55),
+            code: ClientErrorCode::AuthenticationFailed,
+            now_ms: 10_000,
+            base_backoff_ms: 1_000,
+            server_retry_after_ms: None,
+        },
+    ) {
+        Ok(transition) => panic!(
+            "ManifestCommitUnknown recovery must not enter unresumable RetryWaiting: {transition:?}"
+        ),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ClientErrorCode::ClientCoreInvalidTransition);
+}
+
+#[test]
 fn non_retryable_failure_persists_failure_code() {
     let transition = advance_upload_job(
         snapshot(UploadJobPhase::CreatingManifest),
