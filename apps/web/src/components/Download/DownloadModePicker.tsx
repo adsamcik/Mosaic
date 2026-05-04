@@ -1,0 +1,239 @@
+import { useEffect, useMemo, useState, type JSX } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { DownloadOutputMode } from '../../workers/types';
+import type { PhotoMeta } from '../../workers/types';
+import { supportsStreamingSave } from '../../lib/save-target';
+
+const LAST_MODE_STORAGE_KEY = 'mosaic.download.lastMode';
+
+/** Discriminator for the mode picker's three radio options. */
+type PickerKind = 'zip' | 'keepOffline' | 'perFile';
+
+/** Props for {@link DownloadModePicker}. */
+export interface DownloadModePickerProps {
+  /** When true, the picker is mounted and visible. */
+  readonly open: boolean;
+  /** Album id (for telemetry / analytics scoping; not displayed). */
+  readonly albumId: string;
+  /** Suggested base archive filename (without `.zip`). */
+  readonly suggestedFileName: string;
+  /** Photos to download; used for the size-estimate row. */
+  readonly photos: ReadonlyArray<PhotoMeta>;
+  /** Called when the user dismisses the picker without picking. */
+  readonly onClose: () => void;
+  /** Called with the chosen mode when the user clicks "Start download". */
+  readonly onConfirm: (mode: DownloadOutputMode) => void | Promise<void>;
+}
+
+/**
+ * Bottom-sheet (mobile) / centered dialog (desktop) that lets the user choose
+ * how to receive a downloaded album. Three options, two enabled today:
+ *
+ * - **Save as ZIP**             one .zip file via the streaming finalizer
+ * - **Make available offline**  no file emitted; bytes stay in OPFS
+ * - **Save individual files**   placeholder, gated until `p2-per-file-mode`
+ */
+export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element | null {
+  const { t } = useTranslation();
+  const [selected, setSelected] = useState<PickerKind>(() => loadLastMode());
+
+  useEffect(() => {
+    if (!props.open) return;
+    setSelected(loadLastMode());
+  }, [props.open]);
+
+  const isMobile = useIsMobile();
+  const sizeEstimate = useMemo(() => estimateSize(props.photos), [props.photos]);
+
+  if (!props.open) return null;
+
+  const handleConfirm = async (): Promise<void> => {
+    persistLastMode(selected);
+    if (selected === 'perFile') return; // disabled, defensive
+    const mode: DownloadOutputMode = selected === 'zip'
+      ? { kind: 'zip', fileName: ensureZipExtension(props.suggestedFileName) }
+      : { kind: 'keepOffline' };
+    await props.onConfirm(mode);
+  };
+
+  const className = `download-mode-picker download-mode-picker--${isMobile ? 'sheet' : 'dialog'}`;
+
+  return (
+    <div className="download-mode-picker-backdrop" role="presentation" onClick={props.onClose}>
+      <div
+        className={className}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="download-mode-picker-title"
+        onClick={(event): void => event.stopPropagation()}
+      >
+        <h2 id="download-mode-picker-title" className="download-mode-picker-title">
+          {t('download.modePicker.title')}
+        </h2>
+        <p className="download-mode-picker-subtitle">
+          {t('download.modePicker.subtitle', {
+            count: props.photos.length,
+            size: sizeEstimate.label === null
+              ? t('download.modePicker.sizeUnknown')
+              : sizeEstimate.label,
+          })}
+        </p>
+        <fieldset className="download-mode-picker-options">
+          <legend className="visually-hidden">{t('download.modePicker.title')}</legend>
+          <ModeOption
+            kind="zip"
+            selected={selected}
+            onSelect={setSelected}
+            label={t('download.modePicker.zip.label')}
+            sub={t('download.modePicker.zip.sub')}
+          />
+          <ModeOption
+            kind="keepOffline"
+            selected={selected}
+            onSelect={setSelected}
+            label={t('download.modePicker.keepOffline.label')}
+            sub={t('download.modePicker.keepOffline.sub')}
+          />
+          <ModeOption
+            kind="perFile"
+            selected={selected}
+            onSelect={setSelected}
+            label={t('download.modePicker.perFile.label')}
+            sub={t('download.modePicker.perFile.sub')}
+            disabled
+          />
+        </fieldset>
+        <StatusRow />
+        <div className="download-mode-picker-actions">
+          <button type="button" className="download-mode-picker-button" onClick={props.onClose}>
+            {t('download.modePicker.cancel')}
+          </button>
+          <button
+            type="button"
+            className="download-mode-picker-button download-mode-picker-button--primary"
+            onClick={(): void => { void handleConfirm(); }}
+            disabled={selected === 'perFile'}
+            data-testid="download-mode-picker-start"
+          >
+            {t('download.modePicker.start')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ModeOptionProps {
+  readonly kind: PickerKind;
+  readonly selected: PickerKind;
+  readonly onSelect: (kind: PickerKind) => void;
+  readonly label: string;
+  readonly sub: string;
+  readonly disabled?: boolean;
+}
+
+function ModeOption(p: ModeOptionProps): JSX.Element {
+  const id = `download-mode-${p.kind}`;
+  return (
+    <label className={`download-mode-option ${p.disabled ? 'download-mode-option--disabled' : ''}`} htmlFor={id}>
+      <input
+        id={id}
+        type="radio"
+        name="download-mode"
+        value={p.kind}
+        checked={p.selected === p.kind}
+        onChange={(): void => p.onSelect(p.kind)}
+        disabled={p.disabled === true}
+        data-testid={`download-mode-radio-${p.kind}`}
+      />
+      <span className="download-mode-option-text">
+        <span className="download-mode-option-label">{p.label}</span>
+        <span className="download-mode-option-sub">{p.sub}</span>
+      </span>
+    </label>
+  );
+}
+
+function StatusRow(): JSX.Element | null {
+  const { t } = useTranslation();
+  const [connection, setConnection] = useState<string | null>(null);
+  const [battery, setBattery] = useState<string | null>(null);
+  const streamingHint = supportsStreamingSave()
+    ? t('download.modePicker.statusStreaming')
+    : t('download.modePicker.statusFallback');
+
+  useEffect(() => {
+    const nav = navigator as unknown as { connection?: { effectiveType?: string; type?: string } };
+    if (nav.connection) {
+      const label = nav.connection.type ?? nav.connection.effectiveType ?? null;
+      setConnection(label);
+    }
+    type BatteryManager = { level: number };
+    const navWithBattery = navigator as unknown as { getBattery?: () => Promise<BatteryManager> };
+    if (typeof navWithBattery.getBattery === 'function') {
+      navWithBattery.getBattery().then((b) => {
+        setBattery(`${Math.round(b.level * 100)}%`);
+      }).catch(() => undefined);
+    }
+  }, []);
+
+  return (
+    <p className="download-mode-picker-status">
+      {streamingHint}
+      {connection !== null ? ` · ${t('download.modePicker.connection', { type: connection })}` : null}
+      {battery !== null ? ` · ${t('download.modePicker.battery', { level: battery })}` : null}
+    </p>
+  );
+}
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 768px)').matches;
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mql = window.matchMedia('(max-width: 768px)');
+    const handler = (event: MediaQueryListEvent): void => setIsMobile(event.matches);
+    mql.addEventListener('change', handler);
+    return (): void => mql.removeEventListener('change', handler);
+  }, []);
+  return isMobile;
+}
+
+function loadLastMode(): PickerKind {
+  if (typeof window === 'undefined') return 'zip';
+  try {
+    const raw = window.localStorage.getItem(LAST_MODE_STORAGE_KEY);
+    if (raw === 'zip' || raw === 'keepOffline') return raw;
+  } catch {
+    // ignore
+  }
+  return 'zip';
+}
+
+function persistLastMode(kind: PickerKind): void {
+  if (typeof window === 'undefined') return;
+  if (kind === 'perFile') return;
+  try {
+    window.localStorage.setItem(LAST_MODE_STORAGE_KEY, kind);
+  } catch {
+    // ignore quota/privacy errors
+  }
+}
+
+function ensureZipExtension(name: string): string {
+  return name.toLowerCase().endsWith('.zip') ? name : `${name}.zip`;
+}
+
+interface SizeEstimate {
+  readonly bytes: number;
+  readonly label: string | null;
+}
+
+function estimateSize(_photos: ReadonlyArray<PhotoMeta>): SizeEstimate {
+  // PhotoMeta does not currently carry a single declared size; we only have
+  // shard-level declared sizes in the plan. As a conservative MVP, return
+  // null when we cannot confidently estimate, so the UI shows "size unknown".
+  return { bytes: 0, label: null };
+}

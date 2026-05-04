@@ -342,6 +342,29 @@
       "Quota": "Out of storage",
       "Cancelled": "Cancelled by user",
       "IllegalState": "Internal error"
+    },
+    "modePicker": {
+      "title": "Save album",
+      "subtitle": "{{count}} photos ? {{size}}",
+      "sizeUnknown": "size unknown",
+      "cancel": "Cancel",
+      "start": "Start download",
+      "statusStreaming": "Streams to disk",
+      "statusFallback": "Buffered in memory",
+      "connection": "Connection: {{type}}",
+      "battery": "Battery: {{level}}",
+      "zip": {
+        "label": "Save as ZIP",
+        "sub": "Best for desktop"
+      },
+      "keepOffline": {
+        "label": "Make available offline",
+        "sub": "View this album later in Mosaic without exporting files"
+      },
+      "perFile": {
+        "label": "Save individual files",
+        "sub": "Coming soon"
+      }
     }
   },
   "lightbox": {

@@ -353,6 +353,29 @@
       "Quota": "Nedostatek úložiště",
       "Cancelled": "Zrušeno uživatelem",
       "IllegalState": "Interní chyba"
+    },
+    "modePicker": {
+      "title": "Ulo?it album",
+      "subtitle": "{{count}} fotek ? {{size}}",
+      "sizeUnknown": "nezn?m? velikost",
+      "cancel": "Zru?it",
+      "start": "St?hnout",
+      "statusStreaming": "Streamuje se na disk",
+      "statusFallback": "Ukl?d? se do pam?ti",
+      "connection": "P?ipojen?: {{type}}",
+      "battery": "Baterie: {{level}}",
+      "zip": {
+        "label": "Ulo?it jako ZIP",
+        "sub": "Nejlep?? pro desktop"
+      },
+      "keepOffline": {
+        "label": "Zp??stupnit offline",
+        "sub": "Prohl??ejte album v Mosaicu pozd?ji bez exportu soubor?"
+      },
+      "perFile": {
+        "label": "Ulo?it jednotliv? soubory",
+        "sub": "Ji? brzy"
+      }
     }
   },
   "lightbox": {
