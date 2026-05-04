@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { downloadAlbumAsZip, supportsFileSystemAccess, type AlbumDownloadProgress, type AlbumDownloadResolver } from '../lib/album-download-service';
 import { createLogger } from '../lib/logger';
+import { useWakeLock } from './useWakeLock';
 import type { PhotoMeta } from '../workers/types';
 
 const log = createLogger('useAlbumDownload');
@@ -34,6 +35,7 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
   const [progress, setProgress] = useState<AlbumDownloadProgress | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const { acquire: acquireWakeLock, release: releaseWakeLock } = useWakeLock();
 
   const startDownload = useCallback(async (
     albumId: string,
@@ -46,6 +48,7 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
     setIsDownloading(true);
     setError(null);
     setProgress(null);
+    void acquireWakeLock();
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -70,9 +73,10 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
       setError(error);
     } finally {
       setIsDownloading(false);
+      void releaseWakeLock();
       abortControllerRef.current = null;
     }
-  }, [isDownloading]);
+  }, [acquireWakeLock, isDownloading, releaseWakeLock]);
 
   const cancel = useCallback(() => {
     abortControllerRef.current?.abort();
