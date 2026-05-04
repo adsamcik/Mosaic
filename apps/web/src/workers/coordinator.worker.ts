@@ -429,6 +429,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
           },
         };
       },
+      recordPhotoFailure: async (_recordJobId, photoId): Promise<void> => {
+        await this.transitionPhoto(jobId, photoId, { kind: 'failed', reason: 'Cancelled' });
+      },
     };
     await runPerFileFinalizerForCoordinator({ jobId, entries }, strategy, deps, signal);
   }
@@ -548,7 +551,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private transitionPhoto(jobId: string, photoId: string, status: PhotoStatusPatch): Promise<void> {
     return this.withJobLock(jobId, async () => {
       const job = this.requireJob(jobId);
-      if (job.state.phase !== 'Running' && status.kind !== 'pending') {
+      if (job.state.phase !== 'Running' && !(job.state.phase === 'Finalizing' && status.kind === 'failed') && status.kind !== 'pending') {
         return;
       }
       const updatedBody = patchSnapshotPhoto(job.snapshotBytes, photoId, status, Date.now());

@@ -34,6 +34,8 @@ export interface PerFileFinalizerDeps {
   readPhotoStream: (jobId: JobId, photoId: PhotoId) => Promise<ReadableStream<Uint8Array>>;
   getPhotoFileLength: (jobId: JobId, photoId: PhotoId) => Promise<number | null>;
   openPerFileSaveTarget: (strategy: PerFileStrategy, photos: ReadonlyArray<PerFilePhotoPlanEntry>) => Promise<PerFileSaveSink>;
+  /** Record a per-photo export failure in the coordinator failure log. */
+  recordPhotoFailure?: (jobId: JobId, photoId: PhotoId) => Promise<void>;
 }
 
 export async function runPerFileFinalizer(
@@ -65,6 +67,7 @@ export async function runPerFileFinalizer(
         if (signal.aborted || isAbortError(err)) {
           throw new DOMException('Finalizer aborted', 'AbortError');
         }
+        await recordPhotoFailure(job.jobId, photo.photoId, deps);
         log.warn('Per-file photo export failed', {
           jobId: shortId(job.jobId),
           photoId: shortId(photo.photoId),
@@ -108,6 +111,19 @@ async function buildPhotoPlan(
     photos.push({ photoId: entry.photoId, filename: entry.filename, sizeBytes });
   }
   return photos;
+}
+
+async function recordPhotoFailure(jobId: JobId, photoId: PhotoId, deps: PerFileFinalizerDeps): Promise<void> {
+  if (!deps.recordPhotoFailure) return;
+  try {
+    await deps.recordPhotoFailure(jobId, photoId);
+  } catch (err) {
+    log.warn('Per-file failure-log update failed', {
+      jobId: shortId(jobId),
+      photoId: shortId(photoId),
+      errorName: err instanceof Error ? err.name : 'Unknown',
+    });
+  }
 }
 
 function throwIfAborted(signal: AbortSignal): void {
