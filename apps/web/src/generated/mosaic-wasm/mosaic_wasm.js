@@ -80,6 +80,50 @@ export class AccountUnlockResult {
 }
 if (Symbol.dispose) AccountUnlockResult.prototype[Symbol.dispose] = AccountUnlockResult.prototype.free;
 
+export class ApplyEventResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(ApplyEventResult.prototype);
+        obj.__wbg_ptr = ptr;
+        ApplyEventResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ApplyEventResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_applyeventresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.applyeventresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get newStateCbor() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.applyeventresult_newStateCbor(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) ApplyEventResult.prototype[Symbol.dispose] = ApplyEventResult.prototype.free;
+
 /**
  * WASM-bindgen class for auth keypair derivation results.
  */
@@ -129,6 +173,69 @@ export class AuthKeypairResult {
 }
 if (Symbol.dispose) AuthKeypairResult.prototype[Symbol.dispose] = AuthKeypairResult.prototype.free;
 
+export class BuildPlanResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(BuildPlanResult.prototype);
+        obj.__wbg_ptr = ptr;
+        BuildPlanResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        BuildPlanResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_buildplanresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.buildplanresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {string}
+     */
+    get errorDetail() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.buildplanresult_errorDetail(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get planCbor() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.buildplanresult_planCbor(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) BuildPlanResult.prototype[Symbol.dispose] = BuildPlanResult.prototype.free;
+
 /**
  * WASM-bindgen class for byte-array results.
  */
@@ -177,6 +284,50 @@ export class BytesResult {
     }
 }
 if (Symbol.dispose) BytesResult.prototype[Symbol.dispose] = BytesResult.prototype.free;
+
+export class CommitSnapshotResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(CommitSnapshotResult.prototype);
+        obj.__wbg_ptr = ptr;
+        CommitSnapshotResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        CommitSnapshotResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_commitsnapshotresult_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get checksum() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.commitsnapshotresult_checksum(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.commitsnapshotresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) CommitSnapshotResult.prototype[Symbol.dispose] = CommitSnapshotResult.prototype.free;
 
 /**
  * WASM-bindgen class for new-account creation results.
@@ -1102,6 +1253,57 @@ export class LinkTierHandleResult {
 }
 if (Symbol.dispose) LinkTierHandleResult.prototype[Symbol.dispose] = LinkTierHandleResult.prototype.free;
 
+export class LoadSnapshotResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(LoadSnapshotResult.prototype);
+        obj.__wbg_ptr = ptr;
+        LoadSnapshotResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        LoadSnapshotResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_loadsnapshotresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.loadsnapshotresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get schemaVersionLoaded() {
+        const ret = wasm.loadsnapshotresult_schemaVersionLoaded(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get snapshotCbor() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.loadsnapshotresult_snapshotCbor(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) LoadSnapshotResult.prototype[Symbol.dispose] = LoadSnapshotResult.prototype.free;
+
 /**
  * WASM-bindgen class for progress events.
  */
@@ -1267,6 +1469,66 @@ export class SealedBundleResult {
 }
 if (Symbol.dispose) SealedBundleResult.prototype[Symbol.dispose] = SealedBundleResult.prototype.free;
 
+export class SerializeSnapshotResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SerializeSnapshotResult.prototype);
+        obj.__wbg_ptr = ptr;
+        SerializeSnapshotResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SerializeSnapshotResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_serializesnapshotresult_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get body() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.serializesnapshotresult_body(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get checksum() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.serializesnapshotresult_checksum(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.serializesnapshotresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) SerializeSnapshotResult.prototype[Symbol.dispose] = SerializeSnapshotResult.prototype.free;
+
 /**
  * WASM-bindgen class for metadata stripping results.
  */
@@ -1323,6 +1585,41 @@ export class StripResult {
     }
 }
 if (Symbol.dispose) StripResult.prototype[Symbol.dispose] = StripResult.prototype.free;
+
+export class VerifySnapshotResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(VerifySnapshotResult.prototype);
+        obj.__wbg_ptr = ptr;
+        VerifySnapshotResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        VerifySnapshotResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_verifysnapshotresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.verifysnapshotresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {boolean}
+     */
+    get valid() {
+        const ret = wasm.verifysnapshotresult_valid(this.__wbg_ptr);
+        return ret !== 0;
+    }
+}
+if (Symbol.dispose) VerifySnapshotResult.prototype[Symbol.dispose] = VerifySnapshotResult.prototype.free;
 
 /**
  * WASM-bindgen class for wrapped tier key results.
@@ -1795,6 +2092,87 @@ export function deriveAuthKeypairFromPassword(password, user_salt, kdf_memory_ki
     const len1 = WASM_VECTOR_LEN;
     const ret = wasm.deriveAuthKeypairFromPassword(ptr0, len0, ptr1, len1, kdf_memory_kib, kdf_iterations, kdf_parallelism);
     return AuthKeypairResult.__wrap(ret);
+}
+
+/**
+ * Applies a download state-machine event through WASM.
+ * @param {Uint8Array} state_cbor
+ * @param {Uint8Array} event_cbor
+ * @returns {ApplyEventResult}
+ */
+export function downloadApplyEventV1(state_cbor, event_cbor) {
+    const ptr0 = passArray8ToWasm0(state_cbor, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(event_cbor, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.downloadApplyEventV1(ptr0, len0, ptr1, len1);
+    return ApplyEventResult.__wrap(ret);
+}
+
+/**
+ * Builds a canonical download plan through WASM.
+ * @param {Uint8Array} input_cbor
+ * @returns {BuildPlanResult}
+ */
+export function downloadBuildPlanV1(input_cbor) {
+    const ptr0 = passArray8ToWasm0(input_cbor, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.downloadBuildPlanV1(ptr0, len0);
+    return BuildPlanResult.__wrap(ret);
+}
+
+/**
+ * Commits a canonical download snapshot through WASM.
+ * @param {Uint8Array} snapshot_cbor
+ * @returns {CommitSnapshotResult}
+ */
+export function downloadCommitSnapshotV1(snapshot_cbor) {
+    const ptr0 = passArray8ToWasm0(snapshot_cbor, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.downloadCommitSnapshotV1(ptr0, len0);
+    return CommitSnapshotResult.__wrap(ret);
+}
+
+/**
+ * Initializes a canonical download snapshot through WASM.
+ * @param {Uint8Array} input_cbor
+ * @returns {SerializeSnapshotResult}
+ */
+export function downloadInitSnapshotV1(input_cbor) {
+    const ptr0 = passArray8ToWasm0(input_cbor, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.downloadInitSnapshotV1(ptr0, len0);
+    return SerializeSnapshotResult.__wrap(ret);
+}
+
+/**
+ * Loads and canonicalizes a checksum-protected download snapshot through WASM.
+ * @param {Uint8Array} snapshot_cbor
+ * @param {Uint8Array} checksum
+ * @returns {LoadSnapshotResult}
+ */
+export function downloadLoadSnapshotV1(snapshot_cbor, checksum) {
+    const ptr0 = passArray8ToWasm0(snapshot_cbor, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(checksum, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.downloadLoadSnapshotV1(ptr0, len0, ptr1, len1);
+    return LoadSnapshotResult.__wrap(ret);
+}
+
+/**
+ * Verifies a download snapshot checksum through WASM.
+ * @param {Uint8Array} snapshot_cbor
+ * @param {Uint8Array} checksum
+ * @returns {VerifySnapshotResult}
+ */
+export function downloadVerifySnapshotV1(snapshot_cbor, checksum) {
+    const ptr0 = passArray8ToWasm0(snapshot_cbor, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(checksum, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.downloadVerifySnapshotV1(ptr0, len0, ptr1, len1);
+    return VerifySnapshotResult.__wrap(ret);
 }
 
 /**
@@ -2321,12 +2699,21 @@ const AccountKeyHandleStatusResultFinalization = (typeof FinalizationRegistry ==
 const AccountUnlockResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_accountunlockresult_free(ptr >>> 0, 1));
+const ApplyEventResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_applyeventresult_free(ptr >>> 0, 1));
 const AuthKeypairResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_authkeypairresult_free(ptr >>> 0, 1));
+const BuildPlanResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_buildplanresult_free(ptr >>> 0, 1));
 const BytesResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_bytesresult_free(ptr >>> 0, 1));
+const CommitSnapshotResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_commitsnapshotresult_free(ptr >>> 0, 1));
 const CreateAccountResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_createaccountresult_free(ptr >>> 0, 1));
@@ -2363,6 +2750,9 @@ const IdentityHandleResultFinalization = (typeof FinalizationRegistry === 'undef
 const LinkTierHandleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_linktierhandleresult_free(ptr >>> 0, 1));
+const LoadSnapshotResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_loadsnapshotresult_free(ptr >>> 0, 1));
 const ProgressEventFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_progressevent_free(ptr >>> 0, 1));
@@ -2372,9 +2762,15 @@ const ProgressResultFinalization = (typeof FinalizationRegistry === 'undefined')
 const SealedBundleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_sealedbundleresult_free(ptr >>> 0, 1));
+const SerializeSnapshotResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_serializesnapshotresult_free(ptr >>> 0, 1));
 const StripResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_stripresult_free(ptr >>> 0, 1));
+const VerifySnapshotResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_verifysnapshotresult_free(ptr >>> 0, 1));
 const WrappedTierKeyResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wrappedtierkeyresult_free(ptr >>> 0, 1));

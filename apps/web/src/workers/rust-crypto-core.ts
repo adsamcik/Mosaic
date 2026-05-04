@@ -31,6 +31,27 @@ const KNOWN_RUST_CLIENT_ERROR_CODES = new Set<number>(
   ),
 );
 
+export interface DownloadApplyResult {
+  readonly newStateBytes: Uint8Array;
+}
+
+export interface DownloadBuildPlanShardInput {
+  readonly shardId: Uint8Array;
+  readonly epochId: number;
+  readonly tier: number;
+  readonly expectedHash: Uint8Array;
+  readonly declaredSize: number | bigint;
+}
+
+export interface DownloadBuildPlanPhotoInput {
+  readonly photoId: string;
+  readonly filename: string;
+  readonly shards: readonly DownloadBuildPlanShardInput[];
+}
+
+export interface DownloadBuildPlanInput {
+  readonly photos: readonly DownloadBuildPlanPhotoInput[];
+}
 // ---------------------------------------------------------------------------
 // Lazy WASM init — single shared promise across the worker.
 // ---------------------------------------------------------------------------
@@ -107,6 +128,71 @@ export class RustHandleFacade {
     }
   }
 
+  // ---- Download orchestration (pure-functional v1) ----
+
+  applyDownloadEvent(
+    stateBytes: Uint8Array,
+    eventBytes: Uint8Array,
+  ): DownloadApplyResult {
+    const result = rustWasm.downloadApplyEventV1(stateBytes, eventBytes);
+    return consumeResult(result, 'downloadApplyEventV1', (r) => ({
+      newStateBytes: copyBytes(r.newStateCbor),
+    }));
+  }
+
+  buildDownloadPlan(
+    input: DownloadBuildPlanInput | Uint8Array,
+  ): { planBytes: Uint8Array } {
+    const inputBytes =
+      input instanceof Uint8Array ? input : encodeDownloadBuildPlanInput(input);
+    const result = rustWasm.downloadBuildPlanV1(inputBytes);
+    return consumeResult(result, 'downloadBuildPlanV1', (r) => ({
+      planBytes: copyBytes(r.planCbor),
+    }));
+  }
+
+  initDownloadSnapshot(input: {
+    readonly jobId: Uint8Array;
+    readonly albumId: string;
+    readonly planBytes: Uint8Array;
+    readonly nowMs: number;
+  }): { bodyBytes: Uint8Array; checksum: Uint8Array } {
+    const result = rustWasm.downloadInitSnapshotV1(
+      encodeDownloadInitSnapshotInput(input),
+    );
+    return consumeResult(result, 'downloadInitSnapshotV1', (r) => ({
+      bodyBytes: copyBytes(r.body),
+      checksum: copyBytes(r.checksum),
+    }));
+  }
+
+  loadDownloadSnapshot(
+    snapshotBytes: Uint8Array,
+    checksum: Uint8Array,
+  ): { snapshotBytes: Uint8Array; schemaVersionLoaded: number } {
+    const result = rustWasm.downloadLoadSnapshotV1(snapshotBytes, checksum);
+    return consumeResult(result, 'downloadLoadSnapshotV1', (r) => ({
+      snapshotBytes: copyBytes(r.snapshotCbor),
+      schemaVersionLoaded: r.schemaVersionLoaded,
+    }));
+  }
+
+  commitDownloadSnapshot(snapshotBytes: Uint8Array): { checksum: Uint8Array } {
+    const result = rustWasm.downloadCommitSnapshotV1(snapshotBytes);
+    return consumeResult(result, 'downloadCommitSnapshotV1', (r) => ({
+      checksum: copyBytes(r.checksum),
+    }));
+  }
+
+  verifyDownloadSnapshot(
+    snapshotBytes: Uint8Array,
+    checksum: Uint8Array,
+  ): { valid: boolean } {
+    const result = rustWasm.downloadVerifySnapshotV1(snapshotBytes, checksum);
+    return consumeResult(result, 'downloadVerifySnapshotV1', (r) => ({
+      valid: r.valid,
+    }));
+  }
   // ---- Account handle lifecycle ----
 
   /**
@@ -762,6 +848,47 @@ export function getRustFacade(): Promise<RustHandleFacade> {
   return facadeReadyPromise;
 }
 
+export async function rustApplyDownloadEvent(
+  stateBytes: Uint8Array,
+  eventBytes: Uint8Array,
+): Promise<DownloadApplyResult> {
+  return (await getRustFacade()).applyDownloadEvent(stateBytes, eventBytes);
+}
+
+export async function rustBuildDownloadPlan(
+  input: DownloadBuildPlanInput | Uint8Array,
+): Promise<{ planBytes: Uint8Array }> {
+  return (await getRustFacade()).buildDownloadPlan(input);
+}
+
+export async function rustInitDownloadSnapshot(input: {
+  readonly jobId: Uint8Array;
+  readonly albumId: string;
+  readonly planBytes: Uint8Array;
+  readonly nowMs: number;
+}): Promise<{ bodyBytes: Uint8Array; checksum: Uint8Array }> {
+  return (await getRustFacade()).initDownloadSnapshot(input);
+}
+
+export async function rustLoadDownloadSnapshot(
+  snapshotBytes: Uint8Array,
+  checksum: Uint8Array,
+): Promise<{ snapshotBytes: Uint8Array; schemaVersionLoaded: number }> {
+  return (await getRustFacade()).loadDownloadSnapshot(snapshotBytes, checksum);
+}
+
+export async function rustCommitDownloadSnapshot(
+  snapshotBytes: Uint8Array,
+): Promise<{ checksum: Uint8Array }> {
+  return (await getRustFacade()).commitDownloadSnapshot(snapshotBytes);
+}
+
+export async function rustVerifyDownloadSnapshot(
+  snapshotBytes: Uint8Array,
+  checksum: Uint8Array,
+): Promise<{ valid: boolean }> {
+  return (await getRustFacade()).verifyDownloadSnapshot(snapshotBytes, checksum);
+}
 // ---------------------------------------------------------------------------
 // Legacy compatibility surface — used by Slice 0 wiring and the existing
 // rust-crypto-core unit tests. Slices 2-9 will replace each caller; for now
@@ -851,6 +978,137 @@ export function parseEnvelopeHeaderFromRust(
 // Helpers
 // ---------------------------------------------------------------------------
 
+function encodeDownloadBuildPlanInput(input: DownloadBuildPlanInput): Uint8Array {
+  return cborMap([
+    [0, cborArray(input.photos.map((photo) => encodeDownloadPlanPhoto(photo)))],
+  ]);
+}
+
+function encodeDownloadPlanPhoto(photo: DownloadBuildPlanPhotoInput): Uint8Array {
+  return cborMap([
+    [0, cborText(photo.photoId)],
+    [1, cborText(photo.filename)],
+    [2, cborArray(photo.shards.map((shard) => encodeDownloadPlanShard(shard)))],
+  ]);
+}
+
+function encodeDownloadPlanShard(shard: DownloadBuildPlanShardInput): Uint8Array {
+  return cborMap([
+    [0, cborBytes(shard.shardId)],
+    [1, cborUint(shard.epochId)],
+    [2, cborUint(shard.tier)],
+    [3, cborBytes(shard.expectedHash)],
+    [4, cborUint(shard.declaredSize)],
+  ]);
+}
+
+function encodeDownloadInitSnapshotInput(input: {
+  readonly jobId: Uint8Array;
+  readonly albumId: string;
+  readonly planBytes: Uint8Array;
+  readonly nowMs: number;
+}): Uint8Array {
+  if (input.jobId.length !== 16) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidInputLength,
+      'downloadInitSnapshotV1 requires a 16-byte jobId',
+    );
+  }
+  return cborMap([
+    [0, cborBytes(input.jobId)],
+    [1, cborText(input.albumId)],
+    [2, cborBytes(input.planBytes)],
+    [3, cborUint(input.nowMs)],
+  ]);
+}
+
+function cborMap(entries: readonly (readonly [number, Uint8Array])[]): Uint8Array {
+  const encodedEntries: Uint8Array[] = [cborTypeAndLength(5, BigInt(entries.length))];
+  for (const [key, value] of entries) {
+    encodedEntries.push(cborUint(key), value);
+  }
+  return concatBytes(encodedEntries);
+}
+
+function cborArray(items: readonly Uint8Array[]): Uint8Array {
+  return concatBytes([cborTypeAndLength(4, BigInt(items.length)), ...items]);
+}
+
+function cborBytes(bytes: Uint8Array): Uint8Array {
+  return concatBytes([cborTypeAndLength(2, BigInt(bytes.length)), bytes]);
+}
+
+function cborText(value: string): Uint8Array {
+  const encoded = new TextEncoder().encode(value);
+  return concatBytes([cborTypeAndLength(3, BigInt(encoded.length)), encoded]);
+}
+
+function cborUint(value: number | bigint): Uint8Array {
+  const bigintValue = typeof value === 'bigint' ? value : numberToUnsignedBigInt(value);
+  if (bigintValue > 0xffff_ffff_ffff_ffffn) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidInputLength,
+      'CBOR unsigned integer exceeds u64',
+    );
+  }
+  return cborTypeAndLength(0, bigintValue);
+}
+
+function numberToUnsignedBigInt(value: number): bigint {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidInputLength,
+      'CBOR unsigned integer must be a non-negative safe integer',
+    );
+  }
+  return BigInt(value);
+}
+
+function cborTypeAndLength(major: number, value: bigint): Uint8Array {
+  if (value < 0n) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidInputLength,
+      'CBOR length must be non-negative',
+    );
+  }
+  const majorBits = major << 5;
+  if (value < 24n) return new Uint8Array([majorBits | Number(value)]);
+  if (value <= 0xffn) return new Uint8Array([majorBits | 24, Number(value)]);
+  if (value <= 0xffffn) {
+    return new Uint8Array([majorBits | 25, Number(value >> 8n), Number(value & 0xffn)]);
+  }
+  if (value <= 0xffff_ffffn) {
+    return new Uint8Array([
+      majorBits | 26,
+      Number((value >> 24n) & 0xffn),
+      Number((value >> 16n) & 0xffn),
+      Number((value >> 8n) & 0xffn),
+      Number(value & 0xffn),
+    ]);
+  }
+  return new Uint8Array([
+    majorBits | 27,
+    Number((value >> 56n) & 0xffn),
+    Number((value >> 48n) & 0xffn),
+    Number((value >> 40n) & 0xffn),
+    Number((value >> 32n) & 0xffn),
+    Number((value >> 24n) & 0xffn),
+    Number((value >> 16n) & 0xffn),
+    Number((value >> 8n) & 0xffn),
+    Number(value & 0xffn),
+  ]);
+}
+
+function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
+  const totalLength = parts.reduce((total, part) => total + part.length, 0);
+  const out = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
 /**
  * Copy bytes off the wasm-bindgen result object so the underlying buffer can
  * safely be `free()`-ed by `consumeResult`. Without this copy the returned

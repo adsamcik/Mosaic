@@ -3,6 +3,13 @@
 #![forbid(unsafe_code)]
 
 use std::fmt;
+use std::io::Cursor;
+
+use blake2::{
+    digest::{Update, VariableOutput},
+    Blake2bVar,
+};
+use ciborium::value::{Integer, Value};
 
 use wasm_bindgen::prelude::wasm_bindgen;
 use zeroize::Zeroizing;
@@ -1445,6 +1452,245 @@ impl JsDecryptedContentResult {
     }
 }
 
+/// Rust-side WASM facade result for a pure download state transition.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ApplyEventResult {
+    pub code: u32,
+    pub new_state_cbor: Vec<u8>,
+}
+
+impl fmt::Debug for ApplyEventResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ApplyEventResult")
+            .field("code", &self.code)
+            .field("new_state_cbor_len", &self.new_state_cbor.len())
+            .finish()
+    }
+}
+
+/// Rust-side WASM facade result for canonical download plan construction.
+#[derive(Clone, PartialEq, Eq)]
+pub struct BuildPlanResult {
+    pub code: u32,
+    pub plan_cbor: Vec<u8>,
+    pub error_detail: String,
+}
+
+impl fmt::Debug for BuildPlanResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BuildPlanResult")
+            .field("code", &self.code)
+            .field("plan_cbor_len", &self.plan_cbor.len())
+            .field("error_detail", &self.error_detail)
+            .finish()
+    }
+}
+
+/// Rust-side WASM facade result for fresh snapshot serialization.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SerializeSnapshotResult {
+    pub code: u32,
+    pub body: Vec<u8>,
+    pub checksum: Vec<u8>,
+}
+
+impl fmt::Debug for SerializeSnapshotResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SerializeSnapshotResult")
+            .field("code", &self.code)
+            .field("body_len", &self.body.len())
+            .field("checksum_len", &self.checksum.len())
+            .finish()
+    }
+}
+
+/// Rust-side WASM facade result for verified snapshot loading.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LoadSnapshotResult {
+    pub code: u32,
+    pub snapshot_cbor: Vec<u8>,
+    pub schema_version_loaded: u32,
+}
+
+impl fmt::Debug for LoadSnapshotResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LoadSnapshotResult")
+            .field("code", &self.code)
+            .field("snapshot_cbor_len", &self.snapshot_cbor.len())
+            .field("schema_version_loaded", &self.schema_version_loaded)
+            .finish()
+    }
+}
+
+/// Rust-side WASM facade result for snapshot checksum commits.
+#[derive(Clone, PartialEq, Eq)]
+pub struct CommitSnapshotResult {
+    pub code: u32,
+    pub checksum: Vec<u8>,
+}
+
+impl fmt::Debug for CommitSnapshotResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CommitSnapshotResult")
+            .field("code", &self.code)
+            .field("checksum_len", &self.checksum.len())
+            .finish()
+    }
+}
+
+/// Rust-side WASM facade result for constant-time snapshot verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerifySnapshotResult {
+    pub code: u32,
+    pub valid: bool,
+}
+
+#[wasm_bindgen(js_name = ApplyEventResult)]
+pub struct JsApplyEventResult {
+    code: u32,
+    new_state_cbor: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = ApplyEventResult)]
+impl JsApplyEventResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[wasm_bindgen(getter, js_name = newStateCbor)]
+    #[must_use]
+    pub fn new_state_cbor(&self) -> Vec<u8> {
+        self.new_state_cbor.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = BuildPlanResult)]
+pub struct JsBuildPlanResult {
+    code: u32,
+    plan_cbor: Vec<u8>,
+    error_detail: String,
+}
+
+#[wasm_bindgen(js_class = BuildPlanResult)]
+impl JsBuildPlanResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[wasm_bindgen(getter, js_name = planCbor)]
+    #[must_use]
+    pub fn plan_cbor(&self) -> Vec<u8> {
+        self.plan_cbor.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = errorDetail)]
+    #[must_use]
+    pub fn error_detail(&self) -> String {
+        self.error_detail.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = SerializeSnapshotResult)]
+pub struct JsSerializeSnapshotResult {
+    code: u32,
+    body: Vec<u8>,
+    checksum: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = SerializeSnapshotResult)]
+impl JsSerializeSnapshotResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn body(&self) -> Vec<u8> {
+        self.body.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn checksum(&self) -> Vec<u8> {
+        self.checksum.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = LoadSnapshotResult)]
+pub struct JsLoadSnapshotResult {
+    code: u32,
+    snapshot_cbor: Vec<u8>,
+    schema_version_loaded: u32,
+}
+
+#[wasm_bindgen(js_class = LoadSnapshotResult)]
+impl JsLoadSnapshotResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[wasm_bindgen(getter, js_name = snapshotCbor)]
+    #[must_use]
+    pub fn snapshot_cbor(&self) -> Vec<u8> {
+        self.snapshot_cbor.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = schemaVersionLoaded)]
+    #[must_use]
+    pub fn schema_version_loaded(&self) -> u32 {
+        self.schema_version_loaded
+    }
+}
+
+#[wasm_bindgen(js_name = CommitSnapshotResult)]
+pub struct JsCommitSnapshotResult {
+    code: u32,
+    checksum: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = CommitSnapshotResult)]
+impl JsCommitSnapshotResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn checksum(&self) -> Vec<u8> {
+        self.checksum.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = VerifySnapshotResult)]
+pub struct JsVerifySnapshotResult {
+    code: u32,
+    valid: bool,
+}
+
+#[wasm_bindgen(js_class = VerifySnapshotResult)]
+impl JsVerifySnapshotResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        self.valid
+    }
+}
 /// Returns the crate name for smoke tests and generated wrapper diagnostics.
 #[must_use]
 pub const fn crate_name() -> &'static str {
@@ -1475,6 +1721,154 @@ sync(init_album_sync(ClientCoreAlbumSyncRequest)->ClientCoreAlbumSyncResult,\
 advance_album_sync(ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncEvent)->ClientCoreAlbumSyncTransitionResult,\
 ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncTransition,ClientCoreAlbumSyncEffect)";
 
+/// Applies a download state-machine event to a CBOR-encoded state.
+#[must_use]
+pub fn download_apply_event_v1(state_cbor: &[u8], event_cbor: &[u8]) -> ApplyEventResult {
+    let state = match download_state_from_cbor(state_cbor) {
+        Ok(value) => value,
+        Err(code) => return apply_event_error(code),
+    };
+    let event = match download_event_from_cbor(event_cbor) {
+        Ok(value) => value,
+        Err(code) => return apply_event_error(code),
+    };
+    match mosaic_client::download::state::apply(&state, &event) {
+        Ok(new_state) => match download_state_to_cbor(&new_state) {
+            Ok(new_state_cbor) => ApplyEventResult {
+                code: client_ok(),
+                new_state_cbor,
+            },
+            Err(code) => apply_event_error(code),
+        },
+        Err(_) => apply_event_error(mosaic_client::ClientErrorCode::DownloadIllegalTransition),
+    }
+}
+
+/// Builds a canonical download plan from the stable CBOR plan-builder input.
+#[must_use]
+pub fn download_build_plan_v1(input_cbor: &[u8]) -> BuildPlanResult {
+    let photos = match download_plan_inputs_from_cbor(input_cbor) {
+        Ok(value) => value,
+        Err(code) => return build_plan_error(code, String::new()),
+    };
+    let mut builder = mosaic_client::download::plan::DownloadPlanBuilder::new();
+    for photo in photos {
+        builder = builder.with_photo(photo);
+    }
+    match builder.build() {
+        Ok(plan) => match download_plan_to_cbor(&plan) {
+            Ok(plan_cbor) => BuildPlanResult {
+                code: client_ok(),
+                plan_cbor,
+                error_detail: String::new(),
+            },
+            Err(code) => build_plan_error(code, String::new()),
+        },
+        Err(error) => build_plan_error(
+            mosaic_client::ClientErrorCode::DownloadInvalidPlan,
+            download_plan_error_detail(&error),
+        ),
+    }
+}
+
+/// Initializes a canonical download job snapshot from a CBOR input envelope.
+#[must_use]
+pub fn download_init_snapshot_v1(input_cbor: &[u8]) -> SerializeSnapshotResult {
+    let input = match download_init_snapshot_input_from_cbor(input_cbor) {
+        Ok(value) => value,
+        Err(code) => return serialize_snapshot_error(code),
+    };
+    let photos = input
+        .plan
+        .entries
+        .iter()
+        .map(|entry| mosaic_client::download::snapshot::PhotoState {
+            photo_id: entry.photo_id.clone(),
+            status: mosaic_client::download::state::PhotoStatus::Pending,
+            bytes_written: 0,
+            last_attempt_at_ms: None,
+            retry_count: 0,
+        })
+        .collect();
+    let snapshot = mosaic_client::download::snapshot::DownloadJobSnapshot {
+        schema_version: mosaic_client::download::snapshot::CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION,
+        job_id: mosaic_client::download::snapshot::JobId::from_bytes(input.job_id),
+        album_id: input.album_id,
+        created_at_ms: input.now_ms,
+        last_updated_at_ms: input.now_ms,
+        state: mosaic_client::download::state::DownloadJobState::Idle,
+        plan: input.plan,
+        photos,
+        failure_log: Vec::new(),
+        lease_token: None,
+    };
+    match mosaic_client::download::snapshot::prepare_snapshot_bytes(&snapshot) {
+        Ok(bytes) => SerializeSnapshotResult {
+            code: client_ok(),
+            body: bytes.body,
+            checksum: bytes.checksum.to_vec(),
+        },
+        Err(error) => serialize_snapshot_error(download_snapshot_error_code(&error)),
+    }
+}
+
+/// Validates and canonicalizes a persisted download snapshot body.
+#[must_use]
+pub fn download_load_snapshot_v1(snapshot_cbor: &[u8], checksum: &[u8]) -> LoadSnapshotResult {
+    let expected = match checksum_32(checksum) {
+        Ok(value) => value,
+        Err(code) => return load_snapshot_error(code),
+    };
+    let actual = match download_checksum_body(snapshot_cbor) {
+        Ok(value) => value,
+        Err(code) => return load_snapshot_error(code),
+    };
+    if !checksum_matches(&actual, &expected) {
+        return load_snapshot_error(
+            mosaic_client::ClientErrorCode::DownloadSnapshotChecksumMismatch,
+        );
+    }
+    match mosaic_client::download::snapshot::DownloadJobSnapshot::from_canonical_cbor(snapshot_cbor)
+    {
+        Ok(snapshot) => match snapshot.to_canonical_cbor() {
+            Ok(snapshot_cbor) => LoadSnapshotResult {
+                code: client_ok(),
+                snapshot_cbor,
+                schema_version_loaded: snapshot.schema_version,
+            },
+            Err(error) => load_snapshot_error(download_snapshot_error_code(&error)),
+        },
+        Err(error) => load_snapshot_error(download_snapshot_error_code(&error)),
+    }
+}
+
+/// Computes the canonical BLAKE2b-256 checksum for a download snapshot body.
+#[must_use]
+pub fn download_commit_snapshot_v1(snapshot_cbor: &[u8]) -> CommitSnapshotResult {
+    match mosaic_client::download::snapshot::DownloadJobSnapshot::from_canonical_cbor(snapshot_cbor)
+        .and_then(|snapshot| mosaic_client::download::snapshot::prepare_snapshot_bytes(&snapshot))
+    {
+        Ok(bytes) => CommitSnapshotResult {
+            code: client_ok(),
+            checksum: bytes.checksum.to_vec(),
+        },
+        Err(error) => commit_snapshot_error(download_snapshot_error_code(&error)),
+    }
+}
+
+/// Verifies a download snapshot body checksum without branching on checksum byte contents.
+#[must_use]
+pub fn download_verify_snapshot_v1(snapshot_cbor: &[u8], checksum: &[u8]) -> VerifySnapshotResult {
+    let actual = match download_checksum_body(snapshot_cbor) {
+        Ok(value) => value,
+        Err(code) => return verify_snapshot_error(code),
+    };
+    let expected = checksum_32_padded(checksum);
+    VerifySnapshotResult {
+        code: client_ok(),
+        valid: checksum.len() == 32 && checksum_matches(&actual, &expected),
+    }
+}
 /// Parses a shard envelope header for Rust-side wrapper tests.
 #[must_use]
 pub fn parse_envelope_header(bytes: Vec<u8>) -> HeaderResult {
@@ -3029,6 +3423,53 @@ pub fn decrypt_album_content_js(
     js_decrypted_content_result_from_rust(decrypt_album_content(epoch_handle, nonce, ciphertext))
 }
 
+/// Applies a download state-machine event through WASM.
+#[wasm_bindgen(js_name = downloadApplyEventV1)]
+#[must_use]
+pub fn download_apply_event_v1_js(state_cbor: Vec<u8>, event_cbor: Vec<u8>) -> JsApplyEventResult {
+    js_apply_event_result_from_rust(download_apply_event_v1(&state_cbor, &event_cbor))
+}
+
+/// Builds a canonical download plan through WASM.
+#[wasm_bindgen(js_name = downloadBuildPlanV1)]
+#[must_use]
+pub fn download_build_plan_v1_js(input_cbor: Vec<u8>) -> JsBuildPlanResult {
+    js_build_plan_result_from_rust(download_build_plan_v1(&input_cbor))
+}
+
+/// Initializes a canonical download snapshot through WASM.
+#[wasm_bindgen(js_name = downloadInitSnapshotV1)]
+#[must_use]
+pub fn download_init_snapshot_v1_js(input_cbor: Vec<u8>) -> JsSerializeSnapshotResult {
+    js_serialize_snapshot_result_from_rust(download_init_snapshot_v1(&input_cbor))
+}
+
+/// Loads and canonicalizes a checksum-protected download snapshot through WASM.
+#[wasm_bindgen(js_name = downloadLoadSnapshotV1)]
+#[must_use]
+pub fn download_load_snapshot_v1_js(
+    snapshot_cbor: Vec<u8>,
+    checksum: Vec<u8>,
+) -> JsLoadSnapshotResult {
+    js_load_snapshot_result_from_rust(download_load_snapshot_v1(&snapshot_cbor, &checksum))
+}
+
+/// Commits a canonical download snapshot through WASM.
+#[wasm_bindgen(js_name = downloadCommitSnapshotV1)]
+#[must_use]
+pub fn download_commit_snapshot_v1_js(snapshot_cbor: Vec<u8>) -> JsCommitSnapshotResult {
+    js_commit_snapshot_result_from_rust(download_commit_snapshot_v1(&snapshot_cbor))
+}
+
+/// Verifies a download snapshot checksum through WASM.
+#[wasm_bindgen(js_name = downloadVerifySnapshotV1)]
+#[must_use]
+pub fn download_verify_snapshot_v1_js(
+    snapshot_cbor: Vec<u8>,
+    checksum: Vec<u8>,
+) -> JsVerifySnapshotResult {
+    js_verify_snapshot_result_from_rust(download_verify_snapshot_v1(&snapshot_cbor, &checksum))
+}
 fn header_result_from_client(result: mosaic_client::HeaderResult) -> HeaderResult {
     HeaderResult {
         code: result.code.as_u16(),
@@ -4031,6 +4472,535 @@ fn json_escape(value: &str) -> String {
     escaped
 }
 
+struct DownloadInitSnapshotInput {
+    job_id: [u8; 16],
+    album_id: mosaic_client::Uuid,
+    plan: mosaic_client::download::plan::DownloadPlan,
+    now_ms: u64,
+}
+
+fn client_ok() -> u32 {
+    u32::from(mosaic_client::ClientErrorCode::Ok.as_u16())
+}
+
+fn client_code(code: mosaic_client::ClientErrorCode) -> u32 {
+    u32::from(code.as_u16())
+}
+
+fn apply_event_error(code: mosaic_client::ClientErrorCode) -> ApplyEventResult {
+    ApplyEventResult {
+        code: client_code(code),
+        new_state_cbor: Vec::new(),
+    }
+}
+
+fn build_plan_error(code: mosaic_client::ClientErrorCode, error_detail: String) -> BuildPlanResult {
+    BuildPlanResult {
+        code: client_code(code),
+        plan_cbor: Vec::new(),
+        error_detail,
+    }
+}
+
+fn serialize_snapshot_error(code: mosaic_client::ClientErrorCode) -> SerializeSnapshotResult {
+    SerializeSnapshotResult {
+        code: client_code(code),
+        body: Vec::new(),
+        checksum: Vec::new(),
+    }
+}
+
+fn load_snapshot_error(code: mosaic_client::ClientErrorCode) -> LoadSnapshotResult {
+    LoadSnapshotResult {
+        code: client_code(code),
+        snapshot_cbor: Vec::new(),
+        schema_version_loaded: 0,
+    }
+}
+
+fn commit_snapshot_error(code: mosaic_client::ClientErrorCode) -> CommitSnapshotResult {
+    CommitSnapshotResult {
+        code: client_code(code),
+        checksum: Vec::new(),
+    }
+}
+
+fn verify_snapshot_error(code: mosaic_client::ClientErrorCode) -> VerifySnapshotResult {
+    VerifySnapshotResult {
+        code: client_code(code),
+        valid: false,
+    }
+}
+
+fn cbor_value(bytes: &[u8]) -> Result<Value, mosaic_client::ClientErrorCode> {
+    ciborium::de::from_reader(Cursor::new(bytes))
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn cbor_bytes(value: &Value) -> Result<Vec<u8>, mosaic_client::ClientErrorCode> {
+    let mut out = Vec::new();
+    ciborium::ser::into_writer(value, &mut out)
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)?;
+    Ok(out)
+}
+
+fn download_state_from_cbor(
+    bytes: &[u8],
+) -> Result<mosaic_client::download::state::DownloadJobState, mosaic_client::ClientErrorCode> {
+    decode_download_state(&cbor_value(bytes)?)
+}
+
+fn download_state_to_cbor(
+    state: &mosaic_client::download::state::DownloadJobState,
+) -> Result<Vec<u8>, mosaic_client::ClientErrorCode> {
+    cbor_bytes(&download_state_value(state))
+}
+
+fn download_event_from_cbor(
+    bytes: &[u8],
+) -> Result<mosaic_client::download::state::DownloadJobEvent, mosaic_client::ClientErrorCode> {
+    decode_download_event(&cbor_value(bytes)?)
+}
+
+fn download_plan_inputs_from_cbor(
+    bytes: &[u8],
+) -> Result<Vec<mosaic_client::download::plan::DownloadPlanInput>, mosaic_client::ClientErrorCode> {
+    let value = cbor_value(bytes)?;
+    let entries = map_entries(&value)?;
+    let photos = array_items(required_entry(entries, 0)?)?;
+    photos.iter().map(decode_download_plan_input).collect()
+}
+
+fn download_init_snapshot_input_from_cbor(
+    bytes: &[u8],
+) -> Result<DownloadInitSnapshotInput, mosaic_client::ClientErrorCode> {
+    let value = cbor_value(bytes)?;
+    let entries = map_entries(&value)?;
+    let job_id = bytes_16_from_value(required_entry(entries, 0)?)?;
+    let album_id = uuid_from_cbor_value(required_entry(entries, 1)?)?;
+    let plan_bytes = bytes_from_value(required_entry(entries, 2)?)?;
+    let plan = download_plan_from_cbor(&plan_bytes)?;
+    let now_ms = u64_from_value(required_entry(entries, 3)?)?;
+    Ok(DownloadInitSnapshotInput {
+        job_id,
+        album_id,
+        plan,
+        now_ms,
+    })
+}
+
+fn download_plan_to_cbor(
+    plan: &mosaic_client::download::plan::DownloadPlan,
+) -> Result<Vec<u8>, mosaic_client::ClientErrorCode> {
+    cbor_bytes(&download_plan_value(plan))
+}
+
+fn download_plan_from_cbor(
+    bytes: &[u8],
+) -> Result<mosaic_client::download::plan::DownloadPlan, mosaic_client::ClientErrorCode> {
+    decode_download_plan(&cbor_value(bytes)?)
+}
+
+fn download_state_value(state: &mosaic_client::download::state::DownloadJobState) -> Value {
+    match state {
+        mosaic_client::download::state::DownloadJobState::Errored { reason } => Value::Map(vec![
+            cbor_kv(0, cbor_uint(u64::from(state.to_u8()))),
+            cbor_kv(1, download_error_value(*reason)),
+        ]),
+        mosaic_client::download::state::DownloadJobState::Cancelled { soft } => Value::Map(vec![
+            cbor_kv(0, cbor_uint(u64::from(state.to_u8()))),
+            cbor_kv(2, Value::Bool(*soft)),
+        ]),
+        _ => Value::Map(vec![cbor_kv(0, cbor_uint(u64::from(state.to_u8())))]),
+    }
+}
+
+fn decode_download_state(
+    value: &Value,
+) -> Result<mosaic_client::download::state::DownloadJobState, mosaic_client::ClientErrorCode> {
+    use mosaic_client::download::snapshot::download_job_state_codes as codes;
+    let entries = map_entries(value)?;
+    let code = u8_from_value(required_entry(entries, 0)?)?;
+    match code {
+        codes::IDLE => Ok(mosaic_client::download::state::DownloadJobState::Idle),
+        codes::PREPARING => Ok(mosaic_client::download::state::DownloadJobState::Preparing),
+        codes::RUNNING => Ok(mosaic_client::download::state::DownloadJobState::Running),
+        codes::PAUSED => Ok(mosaic_client::download::state::DownloadJobState::Paused),
+        codes::FINALIZING => Ok(mosaic_client::download::state::DownloadJobState::Finalizing),
+        codes::DONE => Ok(mosaic_client::download::state::DownloadJobState::Done),
+        codes::ERRORED => Ok(mosaic_client::download::state::DownloadJobState::Errored {
+            reason: decode_download_error(required_entry(entries, 1)?)?,
+        }),
+        codes::CANCELLED => Ok(
+            mosaic_client::download::state::DownloadJobState::Cancelled {
+                soft: bool_from_value(required_entry(entries, 2)?)?,
+            },
+        ),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn decode_download_event(
+    value: &Value,
+) -> Result<mosaic_client::download::state::DownloadJobEvent, mosaic_client::ClientErrorCode> {
+    let entries = map_entries(value)?;
+    let kind = u8_from_value(required_entry(entries, 0)?)?;
+    match kind {
+        0 => Ok(
+            mosaic_client::download::state::DownloadJobEvent::StartRequested {
+                job_id: mosaic_client::download::snapshot::JobId::from_bytes(bytes_16_from_value(
+                    required_entry(entries, 1)?,
+                )?),
+                album_id: uuid_from_cbor_value(required_entry(entries, 2)?)?,
+            },
+        ),
+        1 => Ok(mosaic_client::download::state::DownloadJobEvent::PlanReady),
+        2 => Ok(mosaic_client::download::state::DownloadJobEvent::PauseRequested),
+        3 => Ok(mosaic_client::download::state::DownloadJobEvent::ResumeRequested),
+        4 => Ok(
+            mosaic_client::download::state::DownloadJobEvent::CancelRequested {
+                soft: bool_from_value(required_entry(entries, 3)?)?,
+            },
+        ),
+        5 => Ok(
+            mosaic_client::download::state::DownloadJobEvent::ErrorEncountered {
+                reason: decode_download_error(required_entry(entries, 4)?)?,
+            },
+        ),
+        6 => Ok(mosaic_client::download::state::DownloadJobEvent::AllPhotosDone),
+        7 => Ok(mosaic_client::download::state::DownloadJobEvent::FinalizationDone),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadIllegalTransition),
+    }
+}
+
+fn download_plan_value(plan: &mosaic_client::download::plan::DownloadPlan) -> Value {
+    Value::Array(plan.entries.iter().map(download_plan_entry_value).collect())
+}
+
+fn download_plan_entry_value(entry: &mosaic_client::download::plan::DownloadPlanEntry) -> Value {
+    Value::Map(vec![
+        cbor_kv(0, Value::Text(entry.photo_id.as_str().to_owned())),
+        cbor_kv(1, cbor_uint(u64::from(entry.epoch_id))),
+        cbor_kv(2, cbor_uint(u64::from(entry.tier.to_byte()))),
+        cbor_kv(
+            3,
+            Value::Array(
+                entry
+                    .shard_ids
+                    .iter()
+                    .map(|id| Value::Bytes(id.as_bytes().to_vec()))
+                    .collect(),
+            ),
+        ),
+        cbor_kv(
+            4,
+            Value::Array(
+                entry
+                    .expected_hashes
+                    .iter()
+                    .map(|hash| Value::Bytes(hash.to_vec()))
+                    .collect(),
+            ),
+        ),
+        cbor_kv(5, Value::Text(entry.filename.clone())),
+        cbor_kv(6, cbor_uint(entry.total_bytes)),
+    ])
+}
+
+fn decode_download_plan(
+    value: &Value,
+) -> Result<mosaic_client::download::plan::DownloadPlan, mosaic_client::ClientErrorCode> {
+    let items = array_items(value)?;
+    let mut entries = Vec::with_capacity(items.len());
+    for item in items {
+        let fields = map_entries(item)?;
+        let tier = shard_tier_from_value(required_entry(fields, 2)?)?;
+        let shard_ids = array_items(required_entry(fields, 3)?)?
+            .iter()
+            .map(|value| {
+                bytes_16_from_value(value).map(mosaic_client::download::plan::ShardId::from_bytes)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let expected_hashes = array_items(required_entry(fields, 4)?)?
+            .iter()
+            .map(bytes_32_from_value)
+            .collect::<Result<Vec<_>, _>>()?;
+        if shard_ids.is_empty() || shard_ids.len() != expected_hashes.len() {
+            return Err(mosaic_client::ClientErrorCode::DownloadInvalidPlan);
+        }
+        entries.push(mosaic_client::download::plan::DownloadPlanEntry {
+            photo_id: mosaic_client::download::plan::PhotoId::new(text_from_value(
+                required_entry(fields, 0)?,
+            )?),
+            epoch_id: u32_from_value(required_entry(fields, 1)?)?,
+            tier,
+            shard_ids,
+            expected_hashes,
+            filename: text_from_value(required_entry(fields, 5)?)?,
+            total_bytes: u64_from_value(required_entry(fields, 6)?)?,
+        });
+    }
+    Ok(mosaic_client::download::plan::DownloadPlan { entries })
+}
+
+fn decode_download_plan_input(
+    value: &Value,
+) -> Result<mosaic_client::download::plan::DownloadPlanInput, mosaic_client::ClientErrorCode> {
+    let fields = map_entries(value)?;
+    let shards = array_items(required_entry(fields, 2)?)?
+        .iter()
+        .map(decode_download_shard_input)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(mosaic_client::download::plan::DownloadPlanInput {
+        photo_id: mosaic_client::download::plan::PhotoId::new(text_from_value(required_entry(
+            fields, 0,
+        )?)?),
+        filename: text_from_value(required_entry(fields, 1)?)?,
+        shards,
+    })
+}
+
+fn decode_download_shard_input(
+    value: &Value,
+) -> Result<mosaic_client::download::plan::DownloadShardInput, mosaic_client::ClientErrorCode> {
+    let fields = map_entries(value)?;
+    Ok(mosaic_client::download::plan::DownloadShardInput {
+        shard_id: mosaic_client::download::plan::ShardId::from_bytes(bytes_16_from_value(
+            required_entry(fields, 0)?,
+        )?),
+        epoch_id: u32_from_value(required_entry(fields, 1)?)?,
+        tier: shard_tier_from_value(required_entry(fields, 2)?)?,
+        expected_hash: bytes_32_from_value(required_entry(fields, 3)?)?,
+        declared_size: u64_from_value(required_entry(fields, 4)?)?,
+    })
+}
+
+fn download_plan_error_detail(error: &mosaic_client::download::plan::DownloadPlanError) -> String {
+    match error {
+        mosaic_client::download::plan::DownloadPlanError::DisallowedTier { photo_id, tier } => {
+            format!("DisallowedTier:photoId={photo_id},tier={}", tier.to_byte())
+        }
+        mosaic_client::download::plan::DownloadPlanError::MultiEpochPhoto { photo_id, epochs } => {
+            let epochs = epochs
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("MultiEpochPhoto:photoId={photo_id},epochs=[{epochs}]")
+        }
+        mosaic_client::download::plan::DownloadPlanError::PhotoHasNoShards { photo_id } => {
+            format!("PhotoHasNoShards:photoId={photo_id}")
+        }
+        mosaic_client::download::plan::DownloadPlanError::SizeOverflow { photo_id } => {
+            format!("SizeOverflow:photoId={photo_id}")
+        }
+    }
+}
+
+fn download_snapshot_error_code(
+    error: &mosaic_client::download::snapshot::DownloadSnapshotError,
+) -> mosaic_client::ClientErrorCode {
+    match error {
+        mosaic_client::download::snapshot::DownloadSnapshotError::ChecksumMismatch => {
+            mosaic_client::ClientErrorCode::DownloadSnapshotChecksumMismatch
+        }
+        mosaic_client::download::snapshot::DownloadSnapshotError::SchemaTooNew { .. } => {
+            mosaic_client::ClientErrorCode::DownloadSnapshotMigration
+        }
+        mosaic_client::download::snapshot::DownloadSnapshotError::Torn { .. } => {
+            mosaic_client::ClientErrorCode::DownloadSnapshotTorn
+        }
+        mosaic_client::download::snapshot::DownloadSnapshotError::CborDecodeFailed
+        | mosaic_client::download::snapshot::DownloadSnapshotError::SchemaVersionMissing
+        | mosaic_client::download::snapshot::DownloadSnapshotError::SchemaCorrupt
+        | mosaic_client::download::snapshot::DownloadSnapshotError::ForbiddenField => {
+            mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt
+        }
+    }
+}
+
+fn download_checksum_body(body: &[u8]) -> Result<[u8; 32], mosaic_client::ClientErrorCode> {
+    let mut hasher =
+        Blake2bVar::new(32).map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)?;
+    hasher.update(body);
+    let mut out = [0_u8; 32];
+    hasher
+        .finalize_variable(&mut out)
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)?;
+    Ok(out)
+}
+
+fn checksum_32(bytes: &[u8]) -> Result<[u8; 32], mosaic_client::ClientErrorCode> {
+    if bytes.len() != 32 {
+        return Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt);
+    }
+    Ok(checksum_32_padded(bytes))
+}
+
+fn checksum_32_padded(bytes: &[u8]) -> [u8; 32] {
+    let mut out = [0_u8; 32];
+    let mut index = 0_usize;
+    while index < out.len() {
+        if let Some(value) = bytes.get(index) {
+            out[index] = *value;
+        }
+        index += 1;
+    }
+    out
+}
+
+fn checksum_matches(actual: &[u8; 32], expected: &[u8; 32]) -> bool {
+    let mut diff = 0_u8;
+    let mut index = 0_usize;
+    while index < actual.len() {
+        diff |= actual[index] ^ expected[index];
+        index += 1;
+    }
+    diff == 0
+}
+
+fn map_entries(value: &Value) -> Result<&[(Value, Value)], mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Map(entries) => Ok(entries.as_slice()),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn array_items(value: &Value) -> Result<&[Value], mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Array(items) => Ok(items.as_slice()),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn required_entry(
+    entries: &[(Value, Value)],
+    key: u32,
+) -> Result<&Value, mosaic_client::ClientErrorCode> {
+    entries
+        .iter()
+        .find_map(|(candidate, value)| {
+            match candidate
+                .as_integer()
+                .and_then(|integer| u32::try_from(integer).ok())
+            {
+                Some(found) if found == key => Some(value),
+                _ => None,
+            }
+        })
+        .ok_or(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn cbor_kv(key: u32, value: Value) -> (Value, Value) {
+    (Value::Integer(Integer::from(key)), value)
+}
+
+fn cbor_uint(value: u64) -> Value {
+    Value::Integer(Integer::from(value))
+}
+
+fn u8_from_value(value: &Value) -> Result<u8, mosaic_client::ClientErrorCode> {
+    value
+        .as_integer()
+        .and_then(|integer| u8::try_from(integer).ok())
+        .ok_or(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn u32_from_value(value: &Value) -> Result<u32, mosaic_client::ClientErrorCode> {
+    value
+        .as_integer()
+        .and_then(|integer| u32::try_from(integer).ok())
+        .ok_or(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn u64_from_value(value: &Value) -> Result<u64, mosaic_client::ClientErrorCode> {
+    value
+        .as_integer()
+        .and_then(|integer| u64::try_from(integer).ok())
+        .ok_or(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn bool_from_value(value: &Value) -> Result<bool, mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Bool(value) => Ok(*value),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn text_from_value(value: &Value) -> Result<String, mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Text(value) => Ok(value.clone()),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn bytes_from_value(value: &Value) -> Result<Vec<u8>, mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Bytes(value) => Ok(value.clone()),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn bytes_16_from_value(value: &Value) -> Result<[u8; 16], mosaic_client::ClientErrorCode> {
+    bytes_from_value(value)?
+        .as_slice()
+        .try_into()
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn bytes_32_from_value(value: &Value) -> Result<[u8; 32], mosaic_client::ClientErrorCode> {
+    bytes_from_value(value)?
+        .as_slice()
+        .try_into()
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn uuid_from_cbor_value(
+    value: &Value,
+) -> Result<mosaic_client::Uuid, mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Bytes(_) => Ok(mosaic_client::Uuid::from_bytes(bytes_16_from_value(value)?)),
+        Value::Text(text) => uuid_from_string(text)
+            .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn shard_tier_from_value(value: &Value) -> Result<ShardTier, mosaic_client::ClientErrorCode> {
+    ShardTier::try_from(u8_from_value(value)?)
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadInvalidPlan)
+}
+
+fn download_error_value(error: mosaic_client::download::error::DownloadErrorCode) -> Value {
+    cbor_uint(u64::from(match error {
+        mosaic_client::download::error::DownloadErrorCode::TransientNetwork => 0_u8,
+        mosaic_client::download::error::DownloadErrorCode::Integrity => 1,
+        mosaic_client::download::error::DownloadErrorCode::Decrypt => 2,
+        mosaic_client::download::error::DownloadErrorCode::NotFound => 3,
+        mosaic_client::download::error::DownloadErrorCode::AccessRevoked => 4,
+        mosaic_client::download::error::DownloadErrorCode::AuthorizationChanged => 5,
+        mosaic_client::download::error::DownloadErrorCode::Quota => 6,
+        mosaic_client::download::error::DownloadErrorCode::Cancelled => 7,
+        mosaic_client::download::error::DownloadErrorCode::IllegalState => 8,
+    }))
+}
+
+fn decode_download_error(
+    value: &Value,
+) -> Result<mosaic_client::download::error::DownloadErrorCode, mosaic_client::ClientErrorCode> {
+    match u8_from_value(value)? {
+        0 => Ok(mosaic_client::download::error::DownloadErrorCode::TransientNetwork),
+        1 => Ok(mosaic_client::download::error::DownloadErrorCode::Integrity),
+        2 => Ok(mosaic_client::download::error::DownloadErrorCode::Decrypt),
+        3 => Ok(mosaic_client::download::error::DownloadErrorCode::NotFound),
+        4 => Ok(mosaic_client::download::error::DownloadErrorCode::AccessRevoked),
+        5 => Ok(mosaic_client::download::error::DownloadErrorCode::AuthorizationChanged),
+        6 => Ok(mosaic_client::download::error::DownloadErrorCode::Quota),
+        7 => Ok(mosaic_client::download::error::DownloadErrorCode::Cancelled),
+        8 => Ok(mosaic_client::download::error::DownloadErrorCode::IllegalState),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
 fn canonical_metadata_sidecar_bytes_result(
     album_id: &[u8],
     photo_id: &[u8],
@@ -4275,6 +5245,52 @@ fn js_crypto_domain_vector_from_rust(
     }
 }
 
+fn js_apply_event_result_from_rust(result: ApplyEventResult) -> JsApplyEventResult {
+    JsApplyEventResult {
+        code: result.code,
+        new_state_cbor: result.new_state_cbor,
+    }
+}
+
+fn js_build_plan_result_from_rust(result: BuildPlanResult) -> JsBuildPlanResult {
+    JsBuildPlanResult {
+        code: result.code,
+        plan_cbor: result.plan_cbor,
+        error_detail: result.error_detail,
+    }
+}
+
+fn js_serialize_snapshot_result_from_rust(
+    result: SerializeSnapshotResult,
+) -> JsSerializeSnapshotResult {
+    JsSerializeSnapshotResult {
+        code: result.code,
+        body: result.body,
+        checksum: result.checksum,
+    }
+}
+
+fn js_load_snapshot_result_from_rust(result: LoadSnapshotResult) -> JsLoadSnapshotResult {
+    JsLoadSnapshotResult {
+        code: result.code,
+        snapshot_cbor: result.snapshot_cbor,
+        schema_version_loaded: result.schema_version_loaded,
+    }
+}
+
+fn js_commit_snapshot_result_from_rust(result: CommitSnapshotResult) -> JsCommitSnapshotResult {
+    JsCommitSnapshotResult {
+        code: result.code,
+        checksum: result.checksum,
+    }
+}
+
+fn js_verify_snapshot_result_from_rust(result: VerifySnapshotResult) -> JsVerifySnapshotResult {
+    JsVerifySnapshotResult {
+        code: result.code,
+        valid: result.valid,
+    }
+}
 #[cfg(test)]
 mod tests {
     #[test]

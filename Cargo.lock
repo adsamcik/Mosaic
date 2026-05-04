@@ -563,6 +563,8 @@ dependencies = [
 name = "mosaic-wasm"
 version = "0.1.0"
 dependencies = [
+ "blake2",
+ "ciborium",
  "mosaic-client",
  "mosaic-crypto",
  "mosaic-domain",

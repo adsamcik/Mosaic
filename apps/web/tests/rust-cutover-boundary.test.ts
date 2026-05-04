@@ -111,7 +111,14 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
 ]);
 
 const directSodiumPrimitiveAllowlist = new Map<string, string>([
-  ['lib/session.ts', 'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)'],
+  [
+    'lib/opfs-staging.ts',
+    'download staging checksum verification compatibility pending Rust download coordinator cutover',
+  ],
+  [
+    'lib/session.ts',
+    'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)',
+  ],
   ['workers/crypto.worker.ts', 'central TypeScript crypto compatibility facade'],
 ]);
 
