@@ -1,4 +1,12 @@
 /// <reference lib="webworker" />
+/**
+ * Phase 2 caveat: a job's `DownloadOutputMode` is held in-memory ONLY on the
+ * coordinator. It is intentionally NOT persisted into the Rust snapshot to
+ * avoid a schema bump. If the worker restarts mid-job (tab reload, crash) the
+ * resumed job defaults to `keepOffline` (staged bytes are preserved) and the
+ * UI is expected to re-prompt the user via the mode picker. Persisting output
+ * mode is tracked for Phase 3.
+ */
 import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import * as opfsStaging from '../lib/opfs-staging';
@@ -24,16 +32,20 @@ import type {
   DownloadFailureView,
   DownloadJobStateView,
   DownloadJobsBroadcastMessage,
+  DownloadOutputMode,
   DownloadPhase,
   DownloadPhotoCounts,
   DownloadPhotoStateView,
   JobProgressEvent,
   JobSummary,
+  RemoteByteSink,
+  RemoteSaveTargetProvider,
   ResumableJobSummary,
   CurrentAlbumManifest,
   AlbumDiff,
   StartJobInput,
 } from './types';
+import { runZipFinalizer as defaultRunZipFinalizer, type ZipFinalizerDeps } from './coordinator/zip-finalizer';
 
 const log = createLogger('CoordinatorWorker');
 const CHANNEL_NAME = 'mosaic-download-jobs';
@@ -53,6 +65,7 @@ interface ByteProgressTimer {
 
 let getCryptoPoolForCoordinator = getCryptoPool;
 let executePhotoTaskForCoordinator = executePhotoTask;
+let runZipFinalizerForCoordinator: typeof defaultRunZipFinalizer = defaultRunZipFinalizer;
 
 interface InMemoryJob {
   readonly jobId: string;
@@ -148,6 +161,10 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private readonly byteProgressTimers = new Map<string, ByteProgressTimer>();
   private readonly byteProgressRateLimitMs: number;
   private readonly channel: BroadcastChannel | null;
+  /** Per-job output mode, kept in-memory only (Phase 2). See file header. */
+  private readonly jobOutputModes = new Map<string, DownloadOutputMode>();
+  /** Main-thread provider for opening writable byte sinks during finalize. */
+  private saveTargetProvider: RemoteSaveTargetProvider | null = null;
 
   constructor(opts: CoordinatorWorkerOptions = {}) {
     this.byteProgressRateLimitMs = opts.byteProgressRateLimitMs ?? DEFAULT_BYTE_PROGRESS_RATE_LIMIT_MS;
@@ -166,6 +183,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   /** Build a Rust download plan and create a new persisted job. */
   async startJob(input: StartJobInput): Promise<{ jobId: string }> {
     this.assertInitialized();
+    const outputMode: DownloadOutputMode = input.outputMode ?? { kind: 'keepOffline' };
     const planInput: DownloadBuildPlanInput = { photos: input.photos };
     const { planBytes } = await rustBuildDownloadPlan(planInput);
     const jobIdBytes = randomJobIdBytes();
@@ -190,7 +208,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
     const job = createInMemoryJob(updatedBody, committed.checksum);
     this.jobs.set(jobId, job);
-    log.info('Job started', { jobId: shortId(jobId) });
+    this.jobOutputModes.set(jobId, outputMode);
+    log.info('Job started', { jobId: shortId(jobId), outputMode: outputMode.kind });
     this.emitJobChanged(job);
     await this.sendEvent(jobId, { kind: 'PlanReady' });
     this.scheduleJobDriver(jobId);
@@ -229,6 +248,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     if (event.kind === 'CancelRequested' && event.soft === false) {
       await opfsStaging.purgeJob(jobId);
       this.jobs.delete(jobId);
+      this.jobOutputModes.delete(jobId);
       this.emitProgress(summaryToProgress(updated));
       this.broadcast(updated);
       return { phase: updated.state.phase };
@@ -333,10 +353,49 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     });
     for (const jobId of result.purged) {
       this.jobs.delete(jobId);
+      this.jobOutputModes.delete(jobId);
     }
     return { purged: result.purged };
   }
 
+  /** Register or clear the main-thread save-target factory. See {@link CoordinatorWorkerApi}. */
+  setSaveTargetProvider(provider: RemoteSaveTargetProvider | null): Promise<void> {
+    this.saveTargetProvider = provider;
+    return Promise.resolve();
+  }
+
+  /** Dispatch to the appropriate finalizer for this job's output mode. */
+  private async runFinalizer(jobId: string, mode: DownloadOutputMode, signal: AbortSignal): Promise<void> {
+    switch (mode.kind) {
+      case 'keepOffline':
+        return;
+      case 'zip':
+        await this.runZipFinalizer(jobId, mode.fileName, signal);
+        return;
+      default: {
+        const _exhaustive: never = mode;
+        throw new Error(`Unknown output mode: ${String(_exhaustive)}`);
+      }
+    }
+  }
+
+  private async runZipFinalizer(jobId: string, fileName: string, signal: AbortSignal): Promise<void> {
+    const provider = this.saveTargetProvider;
+    if (!provider) {
+      throw new Error('No save-target provider registered for ZIP finalizer');
+    }
+    const job = this.requireJob(jobId);
+    const entries = job.plan.map((entry) => ({ photoId: entry.photoId, filename: entry.filename }));
+    const deps: ZipFinalizerDeps = {
+      readPhotoStream: opfsStaging.readPhotoStream,
+      getPhotoFileLength: opfsStaging.getPhotoFileLength,
+      openSaveTarget: async (name: string): Promise<WritableStream<Uint8Array>> => {
+        const sink = await provider(name);
+        return sinkToWritableStream(sink);
+      },
+    };
+    await runZipFinalizerForCoordinator({ jobId, entries }, fileName, deps, signal);
+  }
 
   private scheduleJobDriver(jobId: string): void {
     if (this.jobDrivers.has(jobId)) {
@@ -391,7 +450,14 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       const latest = this.jobs.get(jobId);
       if (!abortController.signal.aborted && latest?.state.phase === 'Running') {
         await this.sendEvent(jobId, { kind: 'AllPhotosDone' });
-        await this.sendEvent(jobId, { kind: 'FinalizationDone' });
+        try {
+          const mode = this.jobOutputModes.get(jobId) ?? { kind: 'keepOffline' };
+          await this.runFinalizer(jobId, mode, abortController.signal);
+          await this.sendEvent(jobId, { kind: 'FinalizationDone' });
+        } catch (err) {
+          log.warn('Finalizer failed', { jobId: shortId(jobId), errorName: err instanceof Error ? err.name : 'Unknown' });
+          await this.sendEvent(jobId, { kind: 'ErrorEncountered', reason: 'IllegalState' });
+        }
       }
     } finally {
       if (this.jobAborts.get(jobId) === abortController) {
@@ -1312,6 +1378,23 @@ function shortId(id: string): string {
 const coordinatorWorker = new CoordinatorWorker();
 Comlink.expose(coordinatorWorker);
 
+function sinkToWritableStream(sink: RemoteByteSink): WritableStream<Uint8Array> {
+  return new WritableStream<Uint8Array>({
+    async write(chunk: Uint8Array): Promise<void> {
+      await sink.write(chunk);
+    },
+    async close(): Promise<void> {
+      await sink.close();
+    },
+    async abort(reason: unknown): Promise<void> {
+      const message = typeof reason === 'string'
+        ? reason
+        : reason instanceof Error ? reason.message : 'aborted';
+      await sink.abort(message);
+    },
+  });
+}
+
 export const __coordinatorWorkerTestUtils = {
   encodeCbor,
   parseCbor,
@@ -1323,8 +1406,16 @@ export const __coordinatorWorkerTestUtils = {
   setExecutePhotoTask(fn: typeof executePhotoTask): void {
     executePhotoTaskForCoordinator = fn;
   },
+  setRunZipFinalizer(fn: typeof defaultRunZipFinalizer): void {
+    runZipFinalizerForCoordinator = fn;
+  },
   runJobDriver(worker: CoordinatorWorker, jobId: string): Promise<void> {
     return worker.runJobDriver(jobId);
+  },
+  awaitScheduledDriver(worker: CoordinatorWorker, jobId: string): Promise<void> {
+    interface DriverMapHolder { readonly jobDrivers: Map<string, Promise<void>> }
+    const map = (worker as unknown as DriverMapHolder).jobDrivers;
+    return map.get(jobId) ?? Promise.resolve();
   },
 };
 

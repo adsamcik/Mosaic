@@ -1259,9 +1259,44 @@ export interface DownloadBuildPlanInput {
   readonly photos: readonly DownloadBuildPlanPhotoInput[];
 }
 
+
+/**
+ * Output mode for a download job. Determines what (if anything) the
+ * coordinator does with OPFS-staged photo bytes once all photo tasks complete.
+ *
+ * - `zip`         emit a streaming ZIP archive to a user-provided save target
+ * - `keepOffline` no file output; bytes stay in OPFS so future browse-time
+ *                 viewers can stream from local storage
+ *
+ * Future variants (perFile, directory) will be added behind their own flags.
+ */
+export type DownloadOutputMode =
+  | { readonly kind: 'zip'; readonly fileName: string }
+  | { readonly kind: 'keepOffline' };
+
+/**
+ * Worker-friendly byte sink the coordinator writes streamed finalizer output
+ * into. The main thread implements this by adapting a real `WritableStream`
+ * (returned by `openZipSaveTarget`); the worker writes through it via Comlink.
+ */
+export interface RemoteByteSink {
+  write(chunk: Uint8Array): Promise<void>;
+  close(): Promise<void>;
+  abort(reason?: string): Promise<void>;
+}
+
+/** Main-thread save-target factory proxied to the coordinator worker. */
+export type RemoteSaveTargetProvider = (fileName: string) => Promise<RemoteByteSink>;
+
 /** Raw input accepted by Rust's `DownloadPlanBuilder`, plus the owning album id. */
 export interface StartJobInput extends DownloadBuildPlanInput {
   readonly albumId: string;
+  /**
+   * Optional output mode the coordinator drives during the Finalizing phase.
+   * Defaults to `keepOffline` when omitted. Phase 2 stores this in-memory only
+   * (not in the Rust snapshot); see top-of-file comment in coordinator.worker.ts.
+   */
+  readonly outputMode?: DownloadOutputMode;
 }
 
 /** Stable JS event shape for the Rust `DownloadJobEvent` transition table. */
@@ -1359,4 +1394,10 @@ export interface CoordinatorWorkerApi {
     readonly maxAgeMs: number;
     readonly preserveJobIds?: ReadonlyArray<string>;
   }): Promise<{ purged: string[] }>;
+  /**
+   * Register/clear the main-thread save-target factory used by the ZIP finalizer.
+   * The factory must be registered before `startJob` is called with
+   * `outputMode.kind === 'zip'`; otherwise finalization fails with IllegalState.
+   */
+  setSaveTargetProvider(provider: RemoteSaveTargetProvider | null): Promise<void>;
 }

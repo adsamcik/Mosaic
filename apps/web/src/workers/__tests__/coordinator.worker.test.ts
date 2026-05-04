@@ -133,6 +133,7 @@ vi.mock('../../lib/opfs-staging', () => ({
   writePhotoChunk: vi.fn(async (): Promise<void> => undefined),
   truncatePhotoTo: vi.fn(async (): Promise<void> => undefined),
   getPhotoFileLength: vi.fn(async (): Promise<number | null> => null),
+  readPhotoStream: vi.fn(async (): Promise<ReadableStream<Uint8Array>> => new ReadableStream<Uint8Array>({ start(controller): void { controller.close(); } })),
 }));
 
 import { CoordinatorWorker, __coordinatorWorkerTestUtils as cbor } from '../coordinator.worker';
@@ -323,7 +324,7 @@ function transition(from: DownloadPhase, eventBytes: Uint8Array): DownloadPhase 
   if (from === 'Preparing' && kind === 1) return 'Running';
   if (from === 'Running' && kind === 2) return 'Paused';
   if (from === 'Paused' && kind === 3) return 'Running';
-  if ((from === 'Running' || from === 'Preparing' || from === 'Paused' || from === 'Errored') && kind === 5) return 'Errored';
+  if ((from === 'Running' || from === 'Preparing' || from === 'Paused' || from === 'Finalizing' || from === 'Errored') && kind === 5) return 'Errored';
   if (kind === 4) return 'Cancelled';
   if (from === 'Running' && kind === 6) return 'Finalizing';
   if (from === 'Finalizing' && kind === 7) return 'Done';
@@ -713,6 +714,55 @@ describe('CoordinatorWorker', () => {
       unchanged: ['a'],
       shardChanged: [],
     });
+  });
+
+  it('startJob accepts an outputMode and dispatches the matching finalizer', async () => {
+    const zipFinalizer = vi.fn(async () => undefined);
+    cbor.setRunZipFinalizer(zipFinalizer as unknown as Parameters<typeof cbor.setRunZipFinalizer>[0]);
+    const provider = vi.fn(async () => ({
+      write: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      abort: vi.fn(async () => undefined),
+    }));
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    await worker.setSaveTargetProvider(provider);
+    const { jobId } = await worker.startJob({ ...validInput(), outputMode: { kind: 'zip', fileName: 'album.zip' } });
+    await cbor.awaitScheduledDriver(worker, jobId);
+    expect((await worker.getJob(jobId))?.phase).toBe('Done');
+    expect(zipFinalizer).toHaveBeenCalledTimes(1);
+    const calls = zipFinalizer.mock.calls as unknown as ReadonlyArray<readonly [unknown, string, ...unknown[]]>;
+    if (calls.length === 0) throw new Error('expected call');
+    expect(calls[0]?.[1]).toBe('album.zip');
+  });
+
+  it('keepOffline (default) finalizer is a no-op and does not call save-target provider', async () => {
+    const zipFinalizer = vi.fn(async () => undefined);
+    cbor.setRunZipFinalizer(zipFinalizer as unknown as Parameters<typeof cbor.setRunZipFinalizer>[0]);
+    const provider = vi.fn();
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    await worker.setSaveTargetProvider(provider as unknown as Parameters<typeof worker.setSaveTargetProvider>[0]);
+    const { jobId } = await worker.startJob({ ...validInput(), outputMode: { kind: 'keepOffline' } });
+    await cbor.awaitScheduledDriver(worker, jobId);
+    expect((await worker.getJob(jobId))?.phase).toBe('Done');
+    expect(zipFinalizer).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it('zip finalizer failure transitions the job to Errored', async () => {
+    cbor.setRunZipFinalizer(((async (): Promise<void> => { throw new Error('boom'); }) as unknown) as Parameters<typeof cbor.setRunZipFinalizer>[0]);
+    const provider = vi.fn(async () => ({
+      write: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      abort: vi.fn(async () => undefined),
+    }));
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    await worker.setSaveTargetProvider(provider);
+    const { jobId } = await worker.startJob({ ...validInput(), outputMode: { kind: 'zip', fileName: 'a.zip' } });
+    await cbor.awaitScheduledDriver(worker, jobId);
+    expect((await worker.getJob(jobId))?.phase).toBe('Errored');
   });
 
   it('computes shardChanged when epoch is unchanged but tier-3 shards differ', async () => {
