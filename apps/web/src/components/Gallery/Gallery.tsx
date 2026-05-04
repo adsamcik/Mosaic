@@ -12,6 +12,7 @@ import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
 import { useLightbox } from '../../hooks/useLightbox';
 import { usePhotoActions } from '../../hooks/usePhotoActions';
 import { useAlbumDownload } from '../../hooks/useAlbumDownload';
+import { useAlbumDownloadModePicker } from '../../hooks/useAlbumDownloadModePicker';
 import { usePhotoList } from '../../hooks/usePhotoList';
 import { useSelection } from '../../hooks/useSelection';
 import { useSync } from '../../hooks/useSync';
@@ -289,6 +290,7 @@ export function Gallery({
   const { currentUserRole, isOwner, canEdit } = useAlbumMembers(albumId);
   const photoActions = usePhotoActions();
   const albumDownload = useAlbumDownload();
+  const albumDownloadModePicker = useAlbumDownloadModePicker();
 
   // Sort photos by createdAt descending to match display order
   // This ensures lightbox navigation follows the visual order
@@ -482,18 +484,24 @@ export function Gallery({
     selection.selectAll(sortedPhotos.map((p) => p.id));
   }, [sortedPhotos, selection]);
 
-  // Handle download all photos
-  const handleDownloadAll = useCallback(() => {
+  // Handle download all photos: prompt for output mode, then start coordinator download.
+  const handleDownloadAll = useCallback(async (): Promise<void> => {
     if (photos.length === 0) return;
-    void albumDownload.startDownload(albumId, albumName ?? 'Album', photos);
-  }, [photos, albumId, albumName, albumDownload]);
+    const name = albumName ?? 'Album';
+    const mode = await albumDownloadModePicker.prompt({ albumId, suggestedFileName: name, photos });
+    if (mode === null) return;
+    await albumDownload.startDownload(albumId, name, photos, { mode });
+  }, [photos, albumId, albumName, albumDownload, albumDownloadModePicker]);
 
-  // Handle download selected photos
-  const handleDownloadSelected = useCallback(() => {
+  // Handle download selected photos: prompt for output mode, then start coordinator download.
+  const handleDownloadSelected = useCallback(async (): Promise<void> => {
     const selectedPhotos = photos.filter((p) => selection.selectedIds.has(p.id));
     if (selectedPhotos.length === 0) return;
-    void albumDownload.startDownload(albumId, albumName ?? 'Album', selectedPhotos);
-  }, [photos, selection.selectedIds, albumId, albumName, albumDownload]);
+    const name = albumName ?? 'Album';
+    const mode = await albumDownloadModePicker.prompt({ albumId, suggestedFileName: name, photos: selectedPhotos });
+    if (mode === null) return;
+    await albumDownload.startDownload(albumId, name, selectedPhotos, { mode });
+  }, [photos, selection.selectedIds, albumId, albumName, albumDownload, albumDownloadModePicker]);
 
   // Handle album rename
   const handleRenameAlbum = useCallback(() => {
@@ -801,6 +809,8 @@ export function Gallery({
               onDownloadSelected={handleDownloadSelected}
               totalPhotos={photos.length}
             />
+
+            {albumDownloadModePicker.pickerElement}
           </div>
         </SyncCoordinatorProvider>
       </UploadProvider>
