@@ -2,112 +2,15 @@
  * Shared types for worker communication
  */
 import type { EncryptedShard } from '@mosaic/crypto';
+import { WorkerCryptoErrorCode } from './worker-crypto-error-code.generated';
 
 // Re-export EncryptedShard from crypto lib (single source of truth)
 export type { EncryptedShard };
+export { WorkerCryptoErrorCode };
 
 // =============================================================================
 // Stable error codes for the Rust cutover handle-based contract
 // =============================================================================
-
-/**
- * Stable numeric error codes mirroring `mosaic_client::ClientErrorCode`
- * (subset that is reachable through the worker), plus worker-only codes for
- * handle-lifecycle errors that originate inside the TypeScript worker layer.
- *
- * Worker-only codes start at 1000 to avoid collisions with the Rust enum
- * (which currently maxes out at 706 — `ClientCoreInvalidSnapshot`). Adding
- * a new worker-only code? Pick the next free value above 1000 and document
- * the failure mode here.
- */
-export enum WorkerCryptoErrorCode {
-  Ok = 0,
-
-  // Mirrors `mosaic_client::ClientErrorCode` — keep in sync.
-  InvalidHeaderLength = 100,
-  InvalidMagic = 101,
-  UnsupportedVersion = 102,
-  InvalidTier = 103,
-  NonZeroReservedByte = 104,
-  EmptyContext = 200,
-  InvalidKeyLength = 201,
-  InvalidInputLength = 202,
-  InvalidEnvelope = 203,
-  MissingCiphertext = 204,
-  AuthenticationFailed = 205,
-  RngFailure = 206,
-  WrappedKeyTooShort = 207,
-  KdfProfileTooWeak = 208,
-  InvalidSaltLength = 209,
-  KdfFailure = 210,
-  InvalidSignatureLength = 211,
-  InvalidPublicKey = 212,
-  InvalidUsername = 213,
-  KdfProfileTooCostly = 214,
-  LinkTierMismatch = 215,
-  BundleSignatureInvalid = 216,
-  BundleAlbumIdEmpty = 217,
-  BundleAlbumIdMismatch = 218,
-  BundleEpochTooOld = 219,
-  BundleRecipientMismatch = 220,
-  BundleJsonParse = 221,
-  BundleSealOpenFailed = 222,
-  ShardIntegrityFailed = 223,
-  LegacyRawKeyDecryptFallback = 224,
-  StreamingChunkOutOfOrder = 225,
-  StreamingTotalChunkMismatch = 226,
-  StreamingPlaintextDivergence = 227,
-  OperationCancelled = 300,
-  SecretHandleNotFound = 400,
-  IdentityHandleNotFound = 401,
-  HandleSpaceExhausted = 402,
-  EpochHandleNotFound = 403,
-  InternalStatePoisoned = 500,
-  UnsupportedMediaFormat = 600,
-  InvalidMediaContainer = 601,
-  InvalidMediaDimensions = 602,
-  MediaOutputTooLarge = 603,
-  MediaMetadataMismatch = 604,
-  InvalidMediaSidecar = 605,
-  MediaAdapterOutputMismatch = 606,
-  VideoContainerInvalid = 607,
-  MediaInspectFailed = 608,
-  MediaStripFailed = 609,
-  SidecarFieldOverflow = 610,
-  SidecarTagUnknown = 611,
-  MalformedSidecar = 612,
-  MakerNoteRejected = 613,
-  ExifTraversalLimitExceeded = 614,
-  VideoTooLargeForV1 = 615,
-  VideoSourceUnreadable = 616,
-  VideoTierShapeRejected = 617,
-  MetadataSidecarReservedTagNotPromoted = 618,
-  ClientCoreInvalidTransition = 700,
-  ClientCoreMissingEventPayload = 701,
-  ClientCoreRetryBudgetExhausted = 702,
-  ClientCoreSyncPageDidNotAdvance = 703,
-  ClientCoreManifestOutcomeUnknown = 704,
-  ClientCoreUnsupportedSnapshotVersion = 705,
-  ClientCoreInvalidSnapshot = 706,
-  ManifestShapeRejected = 707,
-  IdempotencyExpired = 708,
-  ManifestSetConflict = 709,
-  BackendIdempotencyConflict = 710,
-  VideoPosterExtractionFailed = 711,
-  PinValidationFailed = 800,
-
-  // Worker-only error codes start at 1000.
-  /** Operation issued against a handle whose generation no longer matches. */
-  StaleHandle = 1000,
-  /** Handle ID is not registered with the worker's handle registry. */
-  HandleNotFound = 1001,
-  /** Handle ID exists but refers to a handle of a different kind than expected. */
-  HandleWrongKind = 1002,
-  /** Handle has been closed; subsequent operations are rejected. */
-  ClosedHandle = 1003,
-  /** Worker has not been bootstrapped or has been cleared via clear(). */
-  WorkerNotInitialized = 1004,
-}
 
 /**
  * Wire-shape used to round-trip a `WorkerCryptoError` across the Comlink

@@ -227,6 +227,9 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+
+      - name: Check generated TypeScript worker crypto error codes
+        run: node scripts/generate-worker-crypto-error-codes.mjs --check
       
       - name: Build crypto library
         working-directory: libs/crypto
