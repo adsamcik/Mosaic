@@ -71,7 +71,9 @@ M0 makes browser upload metadata stripping use the same dependency-free Rust `mo
 
 ## Cross-platform parity rule
 
-All clients (web TS via WASM, Android Kotlin via UniFFI, Rust core) MUST produce byte-identical post-strip output for the same input. M0 locks a shared corpus in `apps/web/tests/fixtures/strip-corpus/`: web WASM tests and native Rust tests both compare post-strip bytes and removed-carrier counts against the same golden files.
+All clients (web TS via WASM and Rust core) MUST produce byte-identical post-strip output for the same input. Android Kotlin obtains stripped bytes transitively via `generate_tiers_*`; the parity guarantee is internal to the Rust call path and does not require a separate Android corpus test until the Android client adds a strip path that bypasses `generate_tiers_*`. M0 locks a shared corpus in `apps/web/tests/fixtures/strip-corpus/`: web WASM tests and native Rust tests both compare post-strip bytes and removed-carrier counts against the same golden files.
+
+If a future Android caller strips outside `generate_tiers_*`, file a new ticket to expose `strip_known_metadata` through UniFFI and add an Android-side corpus parity test.
 
 ## Zero-Knowledge Invariants
 

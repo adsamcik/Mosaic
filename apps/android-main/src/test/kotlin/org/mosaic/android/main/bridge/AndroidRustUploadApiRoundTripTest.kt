@@ -7,16 +7,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.mosaic.android.foundation.RustClientCoreUploadJobFfiEvent
-import org.mosaic.android.foundation.RustClientCoreUploadJobFfiRequest
-import org.mosaic.android.foundation.RustClientCoreUploadJobFfiSnapshot
-import org.mosaic.android.foundation.RustClientCoreUploadStableCode
 import org.mosaic.android.foundation.AlbumId
 import org.mosaic.android.foundation.ManualUploadAssetId
 import org.mosaic.android.foundation.ManualUploadClientCoreHandoffRequest
 import org.mosaic.android.foundation.ManualUploadHandoffStage
 import org.mosaic.android.foundation.ManualUploadJobId
 import org.mosaic.android.foundation.QueueRecordId
+import org.mosaic.android.foundation.RustClientCoreAlbumSyncFfiEvent
+import org.mosaic.android.foundation.RustClientCoreUploadJobFfiEvent
+import org.mosaic.android.foundation.RustClientCoreUploadJobFfiRequest
+import org.mosaic.android.foundation.RustClientCoreUploadJobFfiSnapshot
+import org.mosaic.android.foundation.RustClientCoreUploadStableCode
+import org.mosaic.android.foundation.RustEpochHandleFfiResult
 import org.mosaic.android.foundation.StagedMediaReference
 import uniffi.mosaic_uniffi.ClientCoreUploadJobSnapshot
 import uniffi.mosaic_uniffi.ClientCoreUploadShardRef
@@ -47,6 +49,66 @@ class AndroidRustUploadApiRoundTripTest {
       maxRetryCount = 3,
     )
   }
+
+  private fun buildExhaustiveShellSnapshot(): RustClientCoreUploadJobFfiSnapshot =
+    RustClientCoreUploadJobFfiSnapshot(
+      schemaVersion = 1,
+      jobId = "018f05a4-8b31-7c00-8c00-0000000000e1",
+      albumId = "018f05a4-8b31-7c00-8c00-0000000000a3",
+      phase = "UploadingShards",
+      retryCount = 2,
+      maxRetryCount = 5,
+      nextRetryNotBeforeMs = 1_700_000_000_000L,
+      hasNextRetryNotBeforeMs = true,
+      idempotencyKey = "018f05a4-8b31-7c00-8c00-0000000000c1",
+      tieredShards = listOf(
+        org.mosaic.android.foundation.RustClientCoreUploadShardRef(
+          tier = 2,
+          shardIndex = 4,
+          shardId = "shard-preview-4",
+          sha256 = byteArrayOf(1, 2, 3, 4),
+          contentLength = 4096L,
+          envelopeVersion = 1,
+          uploaded = true,
+        ),
+        org.mosaic.android.foundation.RustClientCoreUploadShardRef(
+          tier = 3,
+          shardIndex = 5,
+          shardId = "shard-original-5",
+          sha256 = byteArrayOf(5, 6, 7, 8),
+          contentLength = 8192L,
+          envelopeVersion = 1,
+          uploaded = false,
+        ),
+      ),
+      shardSetHash = byteArrayOf(9, 8, 7, 6),
+      snapshotRevision = 42L,
+      lastEffectId = "effect-issued",
+      lastAcknowledgedEffectId = "effect-acked",
+      lastAppliedEventId = "event-applied",
+      failureCode = RustClientCoreUploadStableCode.CLIENT_CORE_INVALID_SNAPSHOT,
+    )
+
+  private fun buildEpochImport(signPublicKey: ByteArray): RustEpochHandleFfiResult =
+    RustEpochHandleFfiResult(
+      code = 0,
+      handle = 17L,
+      epochId = 11,
+      wrappedEpochSeed = ByteArray(32) { (it + 64).toByte() },
+      signPublicKey = signPublicKey,
+    )
+
+  private fun buildAlbumSyncEvent(errorCode: Int, hasErrorCode: Boolean): RustClientCoreAlbumSyncFfiEvent =
+    RustClientCoreAlbumSyncFfiEvent(
+      kind = "Failed",
+      fetchedCursor = "cursor-before",
+      nextCursor = "cursor-after",
+      appliedCount = 3,
+      observedAssetIds = listOf("asset-a", "asset-b"),
+      retryAfterUnixMs = 1_700_000_001_000L,
+      errorCode = errorCode,
+      hasErrorCode = hasErrorCode,
+    )
 
   @Test
   fun initUploadJobProducesValidSnapshot() {
@@ -153,5 +215,46 @@ class AndroidRustUploadApiRoundTripTest {
     assertNotEquals(shellSnapshot.lastEffectId, shellSnapshot.lastAcknowledgedEffectId)
     assertEquals("event-applied", shellSnapshot.lastAppliedEventId)
     assertEquals(RustClientCoreUploadStableCode.CLIENT_CORE_INVALID_SNAPSHOT, shellSnapshot.failureCode)
+  }
+
+  @Test
+  fun `upload snapshot survives shell-UniFFI-shell round-trip equality`() {
+    assumeTrue(NativeLibraryAvailability.isAvailable)
+    val api = AndroidRustUploadApi()
+    val original = buildExhaustiveShellSnapshot()
+
+    val roundTripped = with(api) { original.toUniFfiSnapshot().toShellSnapshot() }
+
+    assertEquals(original, roundTripped)
+    assertArrayEquals(original.shardSetHash, roundTripped.shardSetHash)
+    assertArrayEquals(original.tieredShards[0].sha256, roundTripped.tieredShards[0].sha256)
+    assertArrayEquals(original.tieredShards[1].sha256, roundTripped.tieredShards[1].sha256)
+  }
+
+  @Test
+  fun `epoch import round-trip preserves signPublicKey`() {
+    assumeTrue(NativeLibraryAvailability.isAvailable)
+    val api = AndroidRustEpochApi()
+    val original = buildEpochImport(signPublicKey = ByteArray(32) { it.toByte() })
+
+    val roundTripped = with(api) { original.toUniFfiResult().toShellResult() }
+
+    assertArrayEquals(original.signPublicKey, roundTripped.signPublicKey)
+  }
+
+  @Test
+  fun `album-sync event round-trip preserves hasErrorCode flag`() {
+    assumeTrue(NativeLibraryAvailability.isAvailable)
+    val api = AndroidRustAlbumSyncApi()
+    val withError = buildAlbumSyncEvent(errorCode = 707, hasErrorCode = true)
+    val withoutError = buildAlbumSyncEvent(errorCode = 0, hasErrorCode = false)
+
+    val roundTrippedWith = with(api) { withError.toUniFfiEvent().toShellEvent() }
+    val roundTrippedWithout = with(api) { withoutError.toUniFfiEvent().toShellEvent() }
+
+    assertEquals(true, roundTrippedWith.hasErrorCode)
+    assertEquals(707, roundTrippedWith.errorCode)
+    assertEquals(false, roundTrippedWithout.hasErrorCode)
+    assertEquals(0, roundTrippedWithout.errorCode)
   }
 }

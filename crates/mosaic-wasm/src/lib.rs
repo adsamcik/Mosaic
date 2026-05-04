@@ -2253,13 +2253,20 @@ pub fn wasm_progress_probe_js(total_steps: u32, cancel_after: i64) -> JsProgress
     }
 }
 
+const MEDIA_INVALID_JPEG_CODE: u16 = 601;
+const MEDIA_INVALID_PNG_CODE: u16 = 602;
+const MEDIA_INVALID_WEBP_CODE: u16 = 603;
+const MEDIA_OUTPUT_TOO_LARGE_CODE: u16 = 604;
+const METADATA_STRIP_OVERFLOW_CODE: u16 = 605;
+const MEDIA_UNKNOWN_ERROR_CODE: u16 = 699;
+
 fn media_error_code(error: mosaic_media::MosaicMediaError) -> u16 {
     match error {
-        mosaic_media::MosaicMediaError::InvalidJpeg => 601,
-        mosaic_media::MosaicMediaError::InvalidPng => 602,
-        mosaic_media::MosaicMediaError::InvalidWebP => 603,
-        mosaic_media::MosaicMediaError::OutputTooLarge => 604,
-        _ => 699,
+        mosaic_media::MosaicMediaError::InvalidJpeg => MEDIA_INVALID_JPEG_CODE,
+        mosaic_media::MosaicMediaError::InvalidPng => MEDIA_INVALID_PNG_CODE,
+        mosaic_media::MosaicMediaError::InvalidWebP => MEDIA_INVALID_WEBP_CODE,
+        mosaic_media::MosaicMediaError::OutputTooLarge => MEDIA_OUTPUT_TOO_LARGE_CODE,
+        _ => MEDIA_UNKNOWN_ERROR_CODE,
     }
 }
 
@@ -2270,7 +2277,7 @@ fn strip_metadata(format: mosaic_media::MediaFormat, input_bytes: Vec<u8>) -> St
                 Ok(value) => value,
                 Err(_) => {
                     return StripResult {
-                        code: 604,
+                        code: METADATA_STRIP_OVERFLOW_CODE,
                         stripped_bytes: Vec::new(),
                         removed_metadata_count: 0,
                     };
@@ -4280,6 +4287,19 @@ mod tests {
     #[test]
     fn uses_client_protocol_version() {
         assert_eq!(super::protocol_version(), "mosaic-v1");
+    }
+
+    #[test]
+    fn metadata_strip_overflow_code_is_distinct_from_media_output_too_large() {
+        assert_eq!(
+            super::media_error_code(mosaic_media::MosaicMediaError::OutputTooLarge),
+            604
+        );
+        assert_eq!(super::METADATA_STRIP_OVERFLOW_CODE, 605);
+        assert_ne!(
+            super::METADATA_STRIP_OVERFLOW_CODE,
+            super::media_error_code(mosaic_media::MosaicMediaError::OutputTooLarge)
+        );
     }
 
     #[test]
