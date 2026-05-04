@@ -1,10 +1,9 @@
 import * as Comlink from 'comlink';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { downloadAlbumAsZip, supportsFileSystemAccess, type AlbumDownloadProgress, type AlbumDownloadResolver } from '../lib/album-download-service';
 import { createLogger } from '../lib/logger';
 import { useWakeLock } from './useWakeLock';
 import { useDownloadManager } from './useDownloadManager';
-import { defaultSaveTargetProvider } from '../lib/save-target-bridge';
 import { getOrFetchEpochKey } from '../lib/epoch-key-service';
 import type {
   CoordinatorWorkerApi,
@@ -157,16 +156,6 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
       activeJobIdRef.current = null;
     }
   }, [acquireWakeLock, isDownloading, manager, releaseWakeLock]);
-
-  // Register the default save-target provider once the manager is ready.
-  useEffect(() => {
-    if (manager.api === null) return undefined;
-    const api = manager.api;
-    void api.setSaveTargetProvider(Comlink.proxy(defaultSaveTargetProvider));
-    return (): void => {
-      void api.setSaveTargetProvider(null).catch(() => undefined);
-    };
-  }, [manager.api]);
 
   return {
     isDownloading,
