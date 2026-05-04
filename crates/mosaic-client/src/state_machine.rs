@@ -1491,6 +1491,9 @@ fn migrate_legacy_upload_retry_target_phase(
 }
 
 fn emit_upload_snapshot_migration_telemetry(snapshot: &UploadJobSnapshot) {
+    // Stderr key=value line. mosaic-client has no `tracing`/`log` dependency
+    // today; when a logger is adopted, swap this for `tracing::warn!` with
+    // explicit fields. Tracked under `wave3-1-tracing` follow-up.
     eprintln!(
         "level=warn event=legacy_upload_retry_waiting_manifest_commit_unknown_migrated schema_version={} retry_count={} max_retry_count={}",
         snapshot.schema_version, snapshot.retry_count, snapshot.max_retry_count,

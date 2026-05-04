@@ -225,7 +225,25 @@ class AndroidRustUploadApiRoundTripTest {
 
     val roundTripped = with(api) { original.toUniFfiSnapshot().toShellSnapshot() }
 
-    assertEquals(original, roundTripped)
+    // ByteArray fields don't have structural equals/hashCode, so the targeted
+    // assertArrayEquals calls below are the meaningful content checks. Each
+    // scalar/collection field is asserted explicitly to avoid relying on
+    // ByteArray reference passthrough through the conversion helpers (a future
+    // defensive .copyOf() during conversion would silently break a bare
+    // assertEquals(original, roundTripped) without changing logical behavior).
+    assertEquals(original.schemaVersion, roundTripped.schemaVersion)
+    assertEquals(original.jobId, roundTripped.jobId)
+    assertEquals(original.albumId, roundTripped.albumId)
+    assertEquals(original.phase, roundTripped.phase)
+    assertEquals(original.retryCount, roundTripped.retryCount)
+    assertEquals(original.maxRetryCount, roundTripped.maxRetryCount)
+    assertEquals(original.idempotencyKey, roundTripped.idempotencyKey)
+    assertEquals(original.tieredShards.size, roundTripped.tieredShards.size)
+    assertEquals(original.snapshotRevision, roundTripped.snapshotRevision)
+    assertEquals(original.lastEffectId, roundTripped.lastEffectId)
+    assertEquals(original.lastAcknowledgedEffectId, roundTripped.lastAcknowledgedEffectId)
+    assertEquals(original.lastAppliedEventId, roundTripped.lastAppliedEventId)
+    assertEquals(original.failureCode, roundTripped.failureCode)
     assertArrayEquals(original.shardSetHash, roundTripped.shardSetHash)
     assertArrayEquals(original.tieredShards[0].sha256, roundTripped.tieredShards[0].sha256)
     assertArrayEquals(original.tieredShards[1].sha256, roundTripped.tieredShards[1].sha256)

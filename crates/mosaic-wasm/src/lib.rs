@@ -2257,6 +2257,13 @@ const MEDIA_INVALID_JPEG_CODE: u16 = 601;
 const MEDIA_INVALID_PNG_CODE: u16 = 602;
 const MEDIA_INVALID_WEBP_CODE: u16 = 603;
 const MEDIA_OUTPUT_TOO_LARGE_CODE: u16 = 604;
+/// Strip-result-namespace code for `removed.len() > u32::MAX` overflow on the
+/// strip wrapper path (effectively unreachable since input is bounded by image
+/// size limits, but defensive). NOT a `WorkerCryptoErrorCode`: this lives in
+/// the wasm strip-result namespace and flows only through `JsStripResult.code`
+/// (see `apps/web/src/lib/exif-stripper.ts`). The numeric collision with
+/// `WorkerCryptoErrorCode.InvalidMediaSidecar = 605` (TS-side) is intentional —
+/// the two namespaces are independent and never cross.
 const METADATA_STRIP_OVERFLOW_CODE: u16 = 605;
 const MEDIA_UNKNOWN_ERROR_CODE: u16 = 699;
 
