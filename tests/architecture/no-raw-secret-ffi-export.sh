@@ -6,6 +6,8 @@ set -euo pipefail
 #    proving the new pattern catches what the old missed.
 # 2. Fixtures live inline in invoke_negative_fixtures() below and run as part of CI.
 # 3. PR adding a new pattern without a fixture should be rejected at review.
+# 4. Option B: mosaic-wasm producer exports with exotic byte-array returns
+#    (Cow<[u8]>, Box<[u8]>, Uint8Array, ArrayBuffer) are name-agnostic.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -21,6 +23,7 @@ dts_files = [Path("apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts")]
 # because serde_wasm_bindgen can smuggle byte arrays through JsValue; reviewers can
 # use the explicit allowlist when a non-secret JsValue API is justified.
 secret_result_types = re.compile(r"->\s*(Vec\s*<\s*u8\s*>|Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer|JsValue|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)")
+exotic_wasm_result_types = re.compile(r"->\s*(Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer)")
 secret_name_pattern = re.compile(r"(derive.*(key|keys|secret)|generate.*secret|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)", re.IGNORECASE)
 domain_handle_pattern = re.compile(r"(^(wrap|unwrap)_.*(account|epoch|identity|link).*(handle|seed|key|secret)|^(seal|unseal)_.*(account|epoch|identity|link).*handle)", re.IGNORECASE)
 generic_bytes_wrap_pattern = re.compile(r"^(wrap|unwrap)(_|$)", re.IGNORECASE)
@@ -78,8 +81,13 @@ dts_allowlist = {
 def is_secret_name(name: str) -> bool:
     return bool(secret_shaped_name.search(name)) and not public_key_name.search(name)
 
-def assert_negative_fixture_caught(name: str, source: str, expected_symbol: str) -> None:
-    fixture_path = f"tests/architecture/negative-fixtures/{name}.rs"
+def assert_negative_fixture_caught(
+    name: str,
+    source: str,
+    expected_symbol: str,
+    source_path = None,
+) -> None:
+    fixture_path = source_path or f"tests/architecture/negative-fixtures/{name}.rs"
     fixture_violations = []
     lines = source.splitlines()
     for index, line in enumerate(lines):
@@ -101,10 +109,16 @@ def assert_negative_fixture_caught(name: str, source: str, expected_symbol: str)
             )
             or domain_noun_pattern.search(function_name)
         )
+        is_name_agnostic_wasm_exotic = (
+            fixture_path == "crates/mosaic-wasm/src/lib.rs"
+            and exotic_wasm_result_types.search(signature)
+        )
         if (
             not public_key_name.search(function_name)
-            and is_secret_shaped_export
-            and secret_result_types.search(signature)
+            and (
+                (is_secret_shaped_export and secret_result_types.search(signature))
+                or is_name_agnostic_wasm_exotic
+            )
         ):
             fixture_violations.append(
                 f"{fixture_path}:{index + 1}: forbidden raw-secret-shaped FFI export '{function_name}' -> {signature.strip()}"
@@ -145,6 +159,12 @@ def invoke_negative_fixtures() -> None:
         "exotic-return-jsvalue",
         "pub fn get_identity_key() -> JsValue { unimplemented!() }",
         "get_identity_key",
+    )
+    assert_negative_fixture_caught(
+        "wasm-bare-name-cow-u8",
+        "pub fn leak() -> Cow<'static, [u8]> { unimplemented!() }",
+        "leak",
+        "crates/mosaic-wasm/src/lib.rs",
     )
 
 invoke_negative_fixtures()
@@ -190,7 +210,14 @@ for path in ffi_files:
             )
             or domain_noun_pattern.search(name)
         )
-        if is_secret_shaped_export and secret_result_types.search(signature) and key not in allowlist:
+        is_name_agnostic_wasm_exotic = (
+            path.as_posix() == "crates/mosaic-wasm/src/lib.rs"
+            and exotic_wasm_result_types.search(signature)
+        )
+        if (
+            (is_secret_shaped_export and secret_result_types.search(signature))
+            or is_name_agnostic_wasm_exotic
+        ) and key not in allowlist:
             violations.append(f"{path.as_posix()}:{index + 1}: forbidden raw-secret-shaped FFI export '{name}' -> {signature.strip()}")
 
 for path in dts_files:

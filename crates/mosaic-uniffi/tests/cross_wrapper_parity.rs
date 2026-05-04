@@ -40,6 +40,7 @@ const EXPECTED_DIVERGENCES: &[ExpectedDivergence] = &[ExpectedDivergence {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct StructShape {
+    attributes: Vec<String>,
     fields: BTreeMap<String, String>,
 }
 
@@ -158,7 +159,13 @@ fn parse_structs(
         if accepts_struct(&attrs, line) {
             if let Some(name) = struct_name(line) {
                 if let Some((next_index, fields)) = parse_struct_fields(&lines, index) {
-                    shapes.insert(strip_js_prefix(name).to_owned(), StructShape { fields });
+                    shapes.insert(
+                        strip_js_prefix(name).to_owned(),
+                        StructShape {
+                            attributes: attrs.clone(),
+                            fields,
+                        },
+                    );
                     attrs.clear();
                     index = next_index;
                     continue;
@@ -302,8 +309,24 @@ fn struct_parser_associates_stacked_attrs_with_following_struct() {
     "#;
 
     let records = parse_uniffi_records(source);
+    let record = &records["StackedAttributeRecord"];
+
+    // Option A: expose the test parser's associated attribute list and assert
+    // both stacked attributes attach to the following UniFFI record.
+    assert!(
+        record
+            .attributes
+            .iter()
+            .any(|attr| compact_attr(attr).contains("uniffi::Record"))
+    );
+    assert!(
+        record
+            .attributes
+            .iter()
+            .any(|attr| compact_attr(attr).contains("serde"))
+    );
     assert_eq!(
-        records["StackedAttributeRecord"].fields,
+        record.fields,
         fields_from_pairs(&[("schema_version", "u32"), ("payload_bytes", "Vec<u8>")])
     );
 }

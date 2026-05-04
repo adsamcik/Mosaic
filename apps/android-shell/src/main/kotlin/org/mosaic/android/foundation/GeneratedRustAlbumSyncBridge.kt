@@ -164,7 +164,7 @@ data class RustClientCoreAlbumSyncFfiEvent(
   val observedAssetIds: List<String>,
   val retryAfterUnixMs: Long,
   val errorCode: Int,
-  val hasErrorCode: Boolean = false,
+  val hasErrorCode: Boolean,
 ) {
   init {
     require(kind.isNotBlank()) { "event kind is required" }

@@ -357,6 +357,7 @@ private fun epochBridgeCreateMapsOkAndMissingAccountHandle() {
       handle = 88,
       epochId = 5,
       wrappedEpochSeed = seed,
+      signPublicKey = ByteArray(32),
     ),
   )
   val ok = GeneratedRustEpochBridge(okApi).createEpoch(AccountKeyHandle(7), epochId = 5)
@@ -372,6 +373,7 @@ private fun epochBridgeCreateMapsOkAndMissingAccountHandle() {
       handle = 0,
       epochId = 0,
       wrappedEpochSeed = ByteArray(0),
+      signPublicKey = ByteArray(0),
     ),
   )
   val missing = GeneratedRustEpochBridge(missingApi).createEpoch(AccountKeyHandle(7), epochId = 5)
@@ -386,6 +388,7 @@ private fun epochBridgeOpenMapsWrappedKeyTooShort() {
       handle = 0,
       epochId = 0,
       wrappedEpochSeed = ByteArray(0),
+      signPublicKey = ByteArray(0),
     ),
   )
   val result = GeneratedRustEpochBridge(api).openEpoch(ByteArray(8), AccountKeyHandle(7), epochId = 1)
@@ -644,6 +647,7 @@ private fun albumSyncDtosRedactCursorsAndAssetIds() {
     observedAssetIds = listOf("asset-1", "asset-2"),
     retryAfterUnixMs = 0,
     errorCode = 0,
+    hasErrorCode = false,
   )
   val s = event.toString()
   bridgeAssertTrue("fetchedCursor=<redacted>" in s)
@@ -1358,6 +1362,7 @@ private fun epochBridgeOpenWipesFfiSeed() {
       handle = 17,
       epochId = 9,
       wrappedEpochSeed = seed,
+      signPublicKey = ByteArray(32),
     ),
   )
   val result = GeneratedRustEpochBridge(api).openEpoch(ByteArray(64), AccountKeyHandle(7), epochId = 9)
@@ -1565,6 +1570,7 @@ private fun openEpochWipingWrappedSeedWipesCallerBuffer() {
       handle = 9,
       epochId = 3,
       wrappedEpochSeed = ByteArray(48),
+      signPublicKey = ByteArray(32),
     ),
   )
   val bridge = GeneratedRustEpochBridge(api)

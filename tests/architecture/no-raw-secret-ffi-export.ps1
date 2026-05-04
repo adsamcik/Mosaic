@@ -6,6 +6,8 @@ $ErrorActionPreference = 'Stop'
 #    proving the new pattern catches what the old missed.
 # 2. Fixtures live inline in Invoke-NegativeFixtures below and run as part of CI.
 # 3. PR adding a new pattern without a fixture should be rejected at review.
+# 4. Option B: mosaic-wasm producer exports with exotic byte-array returns
+#    (Cow<[u8]>, Box<[u8]>, Uint8Array, ArrayBuffer) are name-agnostic.
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
@@ -17,6 +19,7 @@ $dtsFiles = @('apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts')
 # because serde_wasm_bindgen can smuggle byte arrays through JsValue; reviewers can
 # use the explicit allowlist when a non-secret JsValue API is justified.
 $secretResultTypes = '(Vec\s*<\s*u8\s*>|Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer|JsValue|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)'
+$exoticWasmResultTypes = '(Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer)'
 $secretNamePattern = '(derive.*(key|keys|secret)|generate.*secret|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
 $domainHandlePattern = '(?i)(^(wrap|unwrap)_.*(account|epoch|identity|link).*(handle|seed|key|secret)|^(seal|unseal)_.*(account|epoch|identity|link).*handle)'
 $genericBytesWrapPattern = '(?i)^(wrap|unwrap)(_|$)'
@@ -75,8 +78,8 @@ function Test-SecretName([string]$Name) {
   return ($Name -match $secretShapedName) -and ($Name -notmatch $publicKeyName)
 }
 
-function Assert-NegativeFixtureCaught([string]$Name, [string]$Source, [string]$ExpectedSymbol) {
-  $fixturePath = "tests/architecture/negative-fixtures/$Name.rs"
+function Assert-NegativeFixtureCaught([string]$Name, [string]$Source, [string]$ExpectedSymbol, [string]$SourcePath = "tests/architecture/negative-fixtures/$Name.rs") {
+  $fixturePath = $SourcePath
   $fixtureLines = $Source -split "`r?`n"
   $fixtureViolations = New-Object System.Collections.Generic.List[string]
 
@@ -94,7 +97,8 @@ function Assert-NegativeFixtureCaught([string]$Name, [string]$Source, [string]$E
       ($name -match $domainHandlePattern) -or
       (($name -match $genericBytesWrapPattern) -and ($signature -match '->\s*(BytesResult|JsBytesResult)')) -or
       ($name -match $domainNounPattern))
-    if (($name -notmatch $publicKeyName) -and $isSecretShapedExport -and $signature -match "->\s*$secretResultTypes") {
+    $isNameAgnosticWasmExotic = ($fixturePath -eq 'crates/mosaic-wasm/src/lib.rs') -and ($signature -match "->\s*$exoticWasmResultTypes")
+    if (($name -notmatch $publicKeyName) -and (($isSecretShapedExport -and $signature -match "->\s*$secretResultTypes") -or $isNameAgnosticWasmExotic)) {
       $fixtureViolations.Add("$fixturePath`:$($i + 1): forbidden raw-secret-shaped FFI export '$name' -> $($signature.Trim())")
     }
   }
@@ -111,6 +115,7 @@ function Invoke-NegativeFixtures {
   Assert-NegativeFixtureCaught 'exotic-return-uint8array' 'pub fn get_link_key() -> js_sys::Uint8Array { unimplemented!() }' 'get_link_key'
   Assert-NegativeFixtureCaught 'exotic-return-arraybuffer' 'pub fn get_account_key() -> js_sys::ArrayBuffer { unimplemented!() }' 'get_account_key'
   Assert-NegativeFixtureCaught 'exotic-return-jsvalue' 'pub fn get_identity_key() -> JsValue { unimplemented!() }' 'get_identity_key'
+  Assert-NegativeFixtureCaught 'wasm-bare-name-cow-u8' "pub fn leak() -> Cow<'static, [u8]> { unimplemented!() }" 'leak' 'crates/mosaic-wasm/src/lib.rs'
 }
 
 Invoke-NegativeFixtures
@@ -148,7 +153,8 @@ foreach ($path in $ffiFiles) {
       ($name -match $domainHandlePattern) -or
       (($name -match $genericBytesWrapPattern) -and ($signature -match '->\s*(BytesResult|JsBytesResult)')) -or
       ($name -match $domainNounPattern))
-    if ($isSecretShapedExport -and $signature -match "->\s*$secretResultTypes") {
+    $isNameAgnosticWasmExotic = ($path -eq 'crates/mosaic-wasm/src/lib.rs') -and ($signature -match "->\s*$exoticWasmResultTypes")
+    if (($isSecretShapedExport -and $signature -match "->\s*$secretResultTypes") -or $isNameAgnosticWasmExotic) {
       $key = "$path`::$name"
       if (-not $allowlist.ContainsKey($key)) {
         $violations.Add("$path`:$($i + 1): forbidden raw-secret-shaped FFI export '$name' -> $($signature.Trim())")
