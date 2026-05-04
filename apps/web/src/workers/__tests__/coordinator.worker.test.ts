@@ -17,6 +17,25 @@ const opfsState = vi.hoisted(() => ({
   tempSnapshots: new Map<string, Uint8Array>(),
 }));
 
+const pipelineMocks = vi.hoisted(() => ({
+  executePhotoTask: vi.fn<(input: { readonly signal: AbortSignal }) => Promise<{ kind: 'done'; bytesWritten: number } | { kind: 'failed'; code: 'Cancelled' | 'Integrity' | 'AccessRevoked' }>>(),
+}));
+
+const cryptoPoolMocks = vi.hoisted(() => {
+  const pool = {
+    size: 2,
+    verifyShard: vi.fn(),
+    decryptShard: vi.fn(),
+    decryptShardWithTierKey: vi.fn(),
+    getStats: vi.fn(async () => ({ size: 2, idle: 2, busy: 0, queued: 0 })),
+    shutdown: vi.fn(),
+  };
+  return {
+    pool,
+    getCryptoPool: vi.fn(async () => pool),
+  };
+});
+
 const broadcastState = vi.hoisted(() => ({
   channels: [] as Array<{
     readonly name: string;
@@ -74,6 +93,8 @@ vi.mock('../../lib/logger', () => ({
   }),
 }));
 vi.mock('../rust-crypto-core', () => rustMocks);
+vi.mock('../crypto-pool', () => cryptoPoolMocks);
+vi.mock('../coordinator/photo-pipeline', () => pipelineMocks);
 vi.mock('../../lib/opfs-staging', () => ({
   createJobDir: vi.fn(async (jobId: string): Promise<void> => {
     opfsState.dirs.add(jobId);
@@ -109,6 +130,9 @@ vi.mock('../../lib/opfs-staging', () => ({
   readSnapshot: vi.fn(async (jobId: string): Promise<{ body: Uint8Array; checksum: Uint8Array } | null> => opfsState.snapshots.get(jobId) ?? null),
   jobExists: vi.fn(async (jobId: string): Promise<boolean> => opfsState.dirs.has(jobId)),
   listJobs: vi.fn(async (): Promise<string[]> => [...opfsState.dirs].sort()),
+  writePhotoChunk: vi.fn(async (): Promise<void> => undefined),
+  truncatePhotoTo: vi.fn(async (): Promise<void> => undefined),
+  getPhotoFileLength: vi.fn(async (): Promise<number | null> => null),
 }));
 
 import { CoordinatorWorker, __coordinatorWorkerTestUtils as cbor } from '../coordinator.worker';
@@ -224,7 +248,15 @@ function snapshotBody(opts: {
     mapEntry(3, uint(opts.createdAtMs)),
     mapEntry(4, uint(opts.lastUpdatedAtMs)),
     mapEntry(5, stateValue(opts.phase)),
-    mapEntry(6, { kind: 'array', value: [] }),
+    mapEntry(6, { kind: 'array', value: Array.from({ length: opts.photoCount }, () => map([
+      mapEntry(0, { kind: 'text', value: '018f0000-0000-7000-8000-000000000101' }),
+      mapEntry(1, uint(7)),
+      mapEntry(2, uint(3)),
+      mapEntry(3, { kind: 'array', value: [{ kind: 'bytes', value: new Uint8Array(16).fill(3) }] }),
+      mapEntry(4, { kind: 'array', value: [{ kind: 'bytes', value: new Uint8Array(32).fill(4) }] }),
+      mapEntry(5, { kind: 'text', value: 'image-1.jpg' }),
+      mapEntry(6, uint(123)),
+    ])) }),
     mapEntry(7, { kind: 'array', value: Array.from({ length: opts.photoCount }, () => map([
       mapEntry(0, { kind: 'text', value: '018f0000-0000-7000-8000-000000000101' }),
       mapEntry(1, map([mapEntry(0, uint(0))])),
@@ -264,6 +296,7 @@ function transition(from: DownloadPhase, eventBytes: Uint8Array): DownloadPhase 
   if (from === 'Preparing' && kind === 1) return 'Running';
   if (from === 'Running' && kind === 2) return 'Paused';
   if (from === 'Paused' && kind === 3) return 'Running';
+  if ((from === 'Running' || from === 'Preparing' || from === 'Paused' || from === 'Errored') && kind === 5) return 'Errored';
   if (kind === 4) return 'Cancelled';
   if (from === 'Running' && kind === 6) return 'Finalizing';
   if (from === 'Finalizing' && kind === 7) return 'Done';
@@ -315,6 +348,9 @@ beforeEach(() => {
   rustMocks.rustCommitDownloadSnapshot.mockImplementation(async () => ({ checksum: checksum(7) }));
   rustMocks.rustVerifyDownloadSnapshot.mockResolvedValue({ valid: true });
   rustMocks.rustLoadDownloadSnapshot.mockImplementation(async (snapshotBytes) => ({ snapshotBytes, schemaVersionLoaded: 1 }));
+  pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'done', bytesWritten: 123 });
+  cbor.setCryptoPoolFactory(cryptoPoolMocks.getCryptoPool);
+  cbor.setExecutePhotoTask(pipelineMocks.executePhotoTask);
 });
 
 afterEach(() => {
@@ -329,15 +365,17 @@ describe('CoordinatorWorker', () => {
     await expect(worker.listJobs()).resolves.toEqual([]);
   });
 
-  it('starts a job and transitions Idle to Preparing', async () => {
+  it('starts a job and transitions into Running after PlanReady', async () => {
     const worker = new CoordinatorWorker();
     await worker.initialize({ nowMs });
     const { jobId } = await worker.startJob(validInput());
     expect(jobId).toMatch(/^[0-9a-f]{32}$/u);
     const jobs = await worker.listJobs();
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]?.phase).toBe('Preparing');
-    expect(jobs[0]?.photoCounts.pending).toBe(1);
+    expect(jobs[0]?.phase).toBe('Running');
+    const job = jobs[0];
+    if (!job) throw new Error('expected job');
+    expect(job.photoCounts.pending + job.photoCounts.inflight + job.photoCounts.done).toBe(1);
   });
 
   it('rejects invalid tier-2 plans with DownloadInvalidPlan', async () => {
@@ -370,6 +408,62 @@ describe('CoordinatorWorker', () => {
     expect((await nextWorker.listJobs())[0]?.phase).toBe('Cancelled');
   });
 
+
+  it('driver completes a photo and finalizes the job', async () => {
+    pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'done', bytesWritten: 123 });
+  cbor.setCryptoPoolFactory(cryptoPoolMocks.getCryptoPool);
+  cbor.setExecutePhotoTask(pipelineMocks.executePhotoTask);
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const jobId = await startPreparingJob(worker);
+    await vi.waitFor(async () => {
+      expect((await worker.getJob(jobId))?.phase).toBe('Done');
+    });
+    expect((await worker.getJob(jobId))?.photoCounts.done).toBe(1);
+  });
+
+  it('driver keeps cancelled in-flight photos pending on pause and resumes them', async () => {
+    pipelineMocks.executePhotoTask.mockImplementation(async (input: { readonly signal: AbortSignal }) => {
+      if (!input.signal.aborted) {
+        await new Promise<void>((resolve) => input.signal.addEventListener('abort', () => resolve(), { once: true }));
+      }
+      return { kind: 'failed', code: 'Cancelled' };
+    });
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const jobId = await startPreparingJob(worker);
+    await vi.waitFor(async () => expect((await worker.getJob(jobId))?.photoCounts.inflight).toBe(1));
+    await worker.pauseJob(jobId);
+    await vi.waitFor(async () => expect((await worker.getJob(jobId))?.phase).toBe('Paused'));
+    expect((await worker.getJob(jobId))?.photoCounts.pending).toBe(1);
+
+    pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'done', bytesWritten: 123 });
+  cbor.setCryptoPoolFactory(cryptoPoolMocks.getCryptoPool);
+  cbor.setExecutePhotoTask(pipelineMocks.executePhotoTask);
+    await worker.resumeJob(jobId);
+    await cbor.runJobDriver(worker, jobId);
+    await vi.waitFor(async () => expect((await worker.getJob(jobId))?.phase).toBe('Done'));
+  });
+
+  it('driver records one-photo integrity failure and still finalizes', async () => {
+    pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'failed', code: 'Integrity' });
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const jobId = await startPreparingJob(worker);
+    await vi.waitFor(async () => expect((await worker.getJob(jobId))?.phase).toBe('Done'));
+    const job = await worker.getJob(jobId);
+    expect(job?.photoCounts.failed).toBe(1);
+    expect(job?.failureCount).toBe(1);
+  });
+
+  it('driver stops the whole job on access revocation', async () => {
+    pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'failed', code: 'AccessRevoked' });
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const jobId = await startPreparingJob(worker);
+    await cbor.runJobDriver(worker, jobId);
+    await vi.waitFor(async () => expect((await worker.getJob(jobId))?.phase).toBe('Errored'));
+  });
   it('cancel-hard purges OPFS and removes the job', async () => {
     const worker = new CoordinatorWorker();
     await worker.initialize({ nowMs });
@@ -400,7 +494,7 @@ describe('CoordinatorWorker', () => {
 
     const jobId = await startPreparingJob(workerA);
     await Promise.resolve();
-    expect((await workerB.getJob(jobId))?.phase).toBe('Preparing');
+    expect((await workerB.getJob(jobId))?.phase).toBe('Running');
 
     const phases: DownloadPhase[] = [];
     await workerB.subscribe(jobId, (event) => {
@@ -414,7 +508,8 @@ describe('CoordinatorWorker', () => {
       expect(phases).toContain('Paused');
     });
 
-    expect(phases).toEqual(['Preparing', 'Running', 'Paused']);
+    expect(phases[0]).toBe('Running');
+    expect(phases).toContain('Paused');
     expect((await workerB.getJob(jobId))?.phase).toBe('Paused');
   });
 
@@ -444,7 +539,7 @@ describe('CoordinatorWorker', () => {
     await worker.sendEvent(jobId, { kind: 'PlanReady' });
     subscription.unsubscribe();
     await worker.pauseJob(jobId);
-    expect(events).toEqual(['Preparing', 'Running']);
+    expect(events).toEqual(['Running', 'Running']);
   });
 
   it('garbage-collects stale jobs', async () => {
@@ -467,3 +562,16 @@ describe('CoordinatorWorker', () => {
     await expect(opfsStaging.jobExists(jobId)).resolves.toBe(false);
   });
 });
+
+
+
+
+
+
+
+
+
+
+
+
+

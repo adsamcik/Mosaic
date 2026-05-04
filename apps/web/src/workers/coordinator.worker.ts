@@ -2,6 +2,8 @@
 import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import * as opfsStaging from '../lib/opfs-staging';
+import { downloadShards } from '../lib/shard-service';
+import { getOrFetchEpochKey } from '../lib/epoch-key-service';
 import {
   ensureRustReady,
   rustApplyDownloadEvent,
@@ -11,6 +13,8 @@ import {
   rustLoadDownloadSnapshot,
   rustVerifyDownloadSnapshot,
 } from './rust-crypto-core';
+import { getCryptoPool, type CryptoPool, type DownloadErrorCode } from './crypto-pool';
+import { executePhotoTask, type DownloadPlanEntry, type PhotoOutcome } from './coordinator/photo-pipeline';
 import { WorkerCryptoError, WorkerCryptoErrorCode } from './types';
 import type {
   CoordinatorWorkerApi,
@@ -33,6 +37,9 @@ const CHANNEL_NAME = 'mosaic-download-jobs';
 const JOB_ID_HEX_BYTES = 16;
 const CHECKSUM_BYTES = 32;
 
+let getCryptoPoolForCoordinator = getCryptoPool;
+let executePhotoTaskForCoordinator = executePhotoTask;
+
 interface InMemoryJob {
   readonly jobId: string;
   readonly albumId: string;
@@ -41,6 +48,7 @@ interface InMemoryJob {
   state: DownloadJobStateView;
   photos: DownloadPhotoStateView[];
   failureLog: DownloadFailureView[];
+  readonly plan: DownloadPlanEntry[];
   createdAtMs: number;
   lastUpdatedAtMs: number;
 }
@@ -69,6 +77,7 @@ interface ParsedSnapshotView {
   readonly state: DownloadJobStateView;
   readonly photos: DownloadPhotoStateView[];
   readonly failureLog: DownloadFailureView[];
+  readonly plan: DownloadPlanEntry[];
 }
 
 const PHASE_BY_CODE: Readonly<Record<number, DownloadPhase>> = {
@@ -120,6 +129,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private readonly jobs = new Map<string, InMemoryJob>();
   private readonly subscribers = new Map<string, Set<SubscriptionCallback>>();
   private readonly jobMutations = new Map<string, Promise<void>>();
+  private readonly jobAborts = new Map<string, AbortController>();
+  private readonly jobDrivers = new Map<string, Promise<void>>();
   private readonly channel: BroadcastChannel | null;
 
   constructor() {
@@ -164,6 +175,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     this.jobs.set(jobId, job);
     log.info('Job started', { jobId: shortId(jobId) });
     this.emitJobChanged(job);
+    await this.sendEvent(jobId, { kind: 'PlanReady' });
+    this.scheduleJobDriver(jobId);
     return { jobId };
   }
 
@@ -186,6 +199,13 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
     const updated = createInMemoryJob(updatedBody, committed.checksum);
     this.jobs.set(jobId, updated);
+    if (event.kind === 'PauseRequested' || event.kind === 'CancelRequested') {
+      this.jobAborts.get(jobId)?.abort();
+    }
+    if (updated.state.phase === 'Running' && (event.kind === 'PlanReady' || event.kind === 'ResumeRequested')) {
+      this.scheduleJobDriver(jobId);
+    }
+
     if (event.kind === 'CancelRequested' && event.soft === false) {
       await opfsStaging.purgeJob(jobId);
       this.jobs.delete(jobId);
@@ -200,6 +220,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
   /** Pause a running job. */
   pauseJob(jobId: string): Promise<{ phase: DownloadPhase }> {
+    this.jobAborts.get(jobId)?.abort();
     return this.sendEvent(jobId, { kind: 'PauseRequested' });
   }
 
@@ -210,6 +231,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
   /** Cancel a job; hard cancel also purges OPFS staging. */
   cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }> {
+    this.jobAborts.get(jobId)?.abort();
     return this.sendEvent(jobId, { kind: 'CancelRequested', soft: opts.soft });
   }
 
@@ -272,10 +294,133 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     return { purged: result.purged };
   }
 
+
+  private scheduleJobDriver(jobId: string): void {
+    if (this.jobDrivers.has(jobId)) {
+      return;
+    }
+    const driver = this.runJobDriver(jobId)
+      .catch((error: unknown) => {
+        log.warn('Download driver stopped unexpectedly', {
+          jobId: shortId(jobId),
+          errorName: error instanceof Error ? error.name : 'Unknown',
+        });
+      })
+      .finally(() => {
+        if (this.jobDrivers.get(jobId) === driver) {
+          this.jobDrivers.delete(jobId);
+        }
+      });
+    this.jobDrivers.set(jobId, driver);
+  }
+
+  async runJobDriver(jobId: string): Promise<void> {
+    const job = this.jobs.get(jobId);
+    if (!job || job.state.phase !== 'Running') {
+      return;
+    }
+    const pool = await getCryptoPoolForCoordinator();
+    const abortController = new AbortController();
+    this.jobAborts.set(jobId, abortController);
+    try {
+      const pendingPhotos = job.photos.filter((photo) => photo.status === 'pending' || photo.status === 'inflight');
+      await runWithConcurrency(pendingPhotos, pool.size, async (photo) => {
+        if (abortController.signal.aborted || this.jobs.get(jobId)?.state.phase !== 'Running') {
+          return;
+        }
+        const entry = this.jobs.get(jobId)?.plan.find((candidate) => candidate.photoId === photo.photoId);
+        if (!entry) {
+          await this.sendEvent(jobId, { kind: 'ErrorEncountered', reason: 'IllegalState' });
+          abortController.abort();
+          return;
+        }
+        await this.transitionPhoto(jobId, photo.photoId, { kind: 'inflight' });
+        const outcome = await executePhotoTaskForCoordinator({
+          jobId,
+          albumId: job.albumId,
+          entry,
+          resumeFromBytes: photo.bytesWritten,
+          signal: abortController.signal,
+        }, this.pipelineDeps(pool));
+        await this.handlePhotoOutcome(jobId, photo.photoId, outcome);
+      });
+
+      const latest = this.jobs.get(jobId);
+      if (!abortController.signal.aborted && latest?.state.phase === 'Running') {
+        await this.sendEvent(jobId, { kind: 'AllPhotosDone' });
+        await this.sendEvent(jobId, { kind: 'FinalizationDone' });
+      }
+    } finally {
+      if (this.jobAborts.get(jobId) === abortController) {
+        this.jobAborts.delete(jobId);
+      }
+    }
+  }
+
+  private pipelineDeps(pool: CryptoPool): Parameters<typeof executePhotoTask>[1] {
+    return {
+      pool,
+      fetchShards: async (shardIds: string[], signal: AbortSignal): Promise<Uint8Array[]> => {
+        if (signal.aborted) {
+          throw new DOMException('Download aborted', 'AbortError');
+        }
+        const shards = await downloadShards(shardIds, undefined, 4);
+        if (signal.aborted) {
+          throw new DOMException('Download aborted', 'AbortError');
+        }
+        return shards;
+      },
+      getEpochSeed: async (albumId: string, epochId: number): Promise<Uint8Array> => (await getOrFetchEpochKey(albumId, epochId)).epochSeed,
+      writePhotoChunk: opfsStaging.writePhotoChunk,
+      truncatePhoto: opfsStaging.truncatePhotoTo,
+      getPhotoFileLength: opfsStaging.getPhotoFileLength,
+    };
+  }
+
+  private async handlePhotoOutcome(jobId: string, photoId: string, outcome: PhotoOutcome): Promise<void> {
+    if (outcome.kind === 'done') {
+      await this.transitionPhoto(jobId, photoId, { kind: 'done', bytesWritten: outcome.bytesWritten });
+      return;
+    }
+    if (outcome.kind === 'skipped') {
+      await this.transitionPhoto(jobId, photoId, { kind: 'skipped', reason: outcome.reason });
+      return;
+    }
+    if (outcome.code === 'Cancelled') {
+      await this.transitionPhoto(jobId, photoId, { kind: 'pending' });
+      return;
+    }
+    await this.transitionPhoto(jobId, photoId, { kind: 'failed', reason: outcome.code });
+    if (outcome.code === 'AccessRevoked' || outcome.code === 'AuthorizationChanged' || outcome.code === 'Quota') {
+      this.jobAborts.get(jobId)?.abort();
+      await this.sendEvent(jobId, { kind: 'ErrorEncountered', reason: outcome.code });
+    }
+  }
+
+  private transitionPhoto(jobId: string, photoId: string, status: PhotoStatusPatch): Promise<void> {
+    return this.withJobLock(jobId, async () => {
+      const job = this.requireJob(jobId);
+      if (job.state.phase !== 'Running' && status.kind !== 'pending') {
+        return;
+      }
+      const updatedBody = patchSnapshotPhoto(job.snapshotBytes, photoId, status, Date.now());
+      const committed = await rustCommitDownloadSnapshot(updatedBody);
+      await opfsStaging.writeSnapshot(jobId, updatedBody, committed.checksum);
+      const updated = createInMemoryJob(updatedBody, committed.checksum);
+      this.jobs.set(jobId, updated);
+      this.emitJobChanged(updated);
+    });
+  }
+
   private async initializeOnce(): Promise<{ reconstructedJobs: number }> {
     await ensureRustReady();
     const reconstructedJobs = await this.reconcilePersistedJobs();
     this.initialized = true;
+    for (const job of this.jobs.values()) {
+      if (job.state.phase === 'Running') {
+        this.scheduleJobDriver(job.jobId);
+      }
+    }
     log.info('Coordinator initialized', { reconstructedJobs });
     return { reconstructedJobs };
   }
@@ -408,7 +553,8 @@ function createBroadcastChannel(): BroadcastChannel | null {
 }
 
 function isIdempotentEvent(phase: DownloadPhase, event: DownloadEventInput): boolean {
-  return (event.kind === 'PauseRequested' && phase === 'Paused')
+  return (event.kind === 'PlanReady' && phase === 'Running')
+    || (event.kind === 'PauseRequested' && phase === 'Paused')
     || (event.kind === 'ResumeRequested' && phase === 'Running')
     || (event.kind === 'CancelRequested' && event.soft === true && phase === 'Cancelled');
 }
@@ -426,6 +572,13 @@ function isDownloadJobsBroadcastMessage(value: unknown): value is DownloadJobsBr
     && typeof value.lastUpdatedAtMs === 'number';
 }
 
+type PhotoStatusPatch =
+  | { readonly kind: 'pending' }
+  | { readonly kind: 'inflight' }
+  | { readonly kind: 'done'; readonly bytesWritten: number }
+  | { readonly kind: 'failed'; readonly reason: DownloadErrorCode }
+  | { readonly kind: 'skipped'; readonly reason: 'NotFound' | 'UserExcluded' };
+
 function createInMemoryJob(snapshotBytes: Uint8Array, checksum: Uint8Array): InMemoryJob {
   const view = parseSnapshotView(snapshotBytes);
   return {
@@ -436,6 +589,7 @@ function createInMemoryJob(snapshotBytes: Uint8Array, checksum: Uint8Array): InM
     state: view.state,
     photos: view.photos,
     failureLog: view.failureLog,
+    plan: view.plan,
     createdAtMs: view.createdAtMs,
     lastUpdatedAtMs: view.lastUpdatedAtMs,
   };
@@ -482,6 +636,7 @@ function parseSnapshotView(bytes: Uint8Array): ParsedSnapshotView {
     createdAtMs: expectUint(requiredMapValue(fields, 3)),
     lastUpdatedAtMs: expectUint(requiredMapValue(fields, 4)),
     state: parseState(requiredMapValue(fields, 5)),
+    plan: expectArray(requiredMapValue(fields, 6)).map(parsePlanEntry),
     photos: expectArray(requiredMapValue(fields, 7)).map(parsePhoto),
     failureLog: expectArray(requiredMapValue(fields, 8)).map(parseFailure),
   };
@@ -515,6 +670,19 @@ function parseState(value: CborValue): DownloadJobStateView {
   return { phase };
 }
 
+function parsePlanEntry(value: CborValue): DownloadPlanEntry {
+  const fields = expectMap(value);
+  return {
+    photoId: expectText(requiredMapValue(fields, 0)),
+    epochId: expectUint(requiredMapValue(fields, 1)),
+    tier: expectUint(requiredMapValue(fields, 2)),
+    shardIds: expectArray(requiredMapValue(fields, 3)).map((item) => bytesToHex(expectBytes(item))),
+    expectedHashes: expectArray(requiredMapValue(fields, 4)).map(expectBytes),
+    filename: expectText(requiredMapValue(fields, 5)),
+    totalBytes: expectUint(requiredMapValue(fields, 6)),
+  };
+}
+
 function parsePhoto(value: CborValue): DownloadPhotoStateView {
   const fields = expectMap(value);
   const statusFields = expectMap(requiredMapValue(fields, 1));
@@ -523,12 +691,92 @@ function parsePhoto(value: CborValue): DownloadPhotoStateView {
   if (!status) {
     throw new Error('Unknown download photo status code');
   }
-  return { status };
+  return {
+    photoId: expectText(requiredMapValue(fields, 0)),
+    status,
+    bytesWritten: expectUint(requiredMapValue(fields, 2)),
+    retryCount: expectUint(requiredMapValue(fields, 4)),
+  };
 }
 
 function parseFailure(value: CborValue): DownloadFailureView {
   const fields = expectMap(value);
   return { atMs: expectUint(requiredMapValue(fields, 2)) };
+}
+
+
+function patchSnapshotPhoto(snapshotBytes: Uint8Array, photoId: string, patch: PhotoStatusPatch, nowMs: number): Uint8Array {
+  const root = parseCbor(snapshotBytes);
+  const entries = expectMap(root).map((entry) => {
+    const key = expectUint(entry.key);
+    if (key === 4) {
+      return { key: entry.key, value: uintValue(nowMs) };
+    }
+    if (key === 7) {
+      const photos = expectArray(entry.value).map((photoValue) => patchPhotoValue(photoValue, photoId, patch, nowMs));
+      return { key: entry.key, value: { kind: 'array', value: photos } as CborValue };
+    }
+    if (key === 8 && (patch.kind === 'failed' || (patch.kind === 'skipped' && patch.reason === 'NotFound'))) {
+      const reason: DownloadErrorCode = patch.kind === 'failed' ? patch.reason : 'NotFound';
+      return {
+        key: entry.key,
+        value: {
+          kind: 'array',
+          value: [
+            ...expectArray(entry.value),
+            {
+              kind: 'map',
+              value: [
+                { key: uintValue(0), value: { kind: 'text', value: photoId } },
+                { key: uintValue(1), value: uintValue(DOWNLOAD_ERROR_CODE_BY_REASON[reason]) },
+                { key: uintValue(2), value: uintValue(nowMs) },
+              ],
+            },
+          ],
+        } as CborValue,
+      };
+    }
+    return entry;
+  });
+  return encodeCbor({ kind: 'map', value: entries });
+}
+
+function patchPhotoValue(value: CborValue, photoId: string, patch: PhotoStatusPatch, nowMs: number): CborValue {
+  const fields = expectMap(value);
+  if (expectText(requiredMapValue(fields, 0)) !== photoId) {
+    return value;
+  }
+  return {
+    kind: 'map',
+    value: fields.map((entry) => {
+      const key = expectUint(entry.key);
+      if (key === 1) {
+        return { key: entry.key, value: photoStatusValue(patch) };
+      }
+      if (key === 2) {
+        return { key: entry.key, value: uintValue(patch.kind === 'done' ? patch.bytesWritten : patch.kind === 'pending' ? 0 : expectUint(entry.value)) };
+      }
+      if (key === 3 && patch.kind === 'inflight') {
+        return { key: entry.key, value: uintValue(nowMs) };
+      }
+      return entry;
+    }),
+  };
+}
+
+function photoStatusValue(patch: PhotoStatusPatch): CborValue {
+  switch (patch.kind) {
+    case 'pending':
+      return { kind: 'map', value: [{ key: uintValue(0), value: uintValue(0) }] };
+    case 'inflight':
+      return { kind: 'map', value: [{ key: uintValue(0), value: uintValue(1) }] };
+    case 'done':
+      return { kind: 'map', value: [{ key: uintValue(0), value: uintValue(2) }] };
+    case 'failed':
+      return { kind: 'map', value: [{ key: uintValue(0), value: uintValue(3) }, { key: uintValue(1), value: uintValue(DOWNLOAD_ERROR_CODE_BY_REASON[patch.reason]) }] };
+    case 'skipped':
+      return { kind: 'map', value: [{ key: uintValue(0), value: uintValue(4) }, { key: uintValue(2), value: uintValue(patch.reason === 'NotFound' ? 0 : 1) }] };
+  }
 }
 
 function encodeStartRequestedEvent(jobIdBytes: Uint8Array, albumId: string): Uint8Array {
@@ -770,6 +1018,13 @@ function expectArray(value: CborValue): CborValue[] {
   return value.value;
 }
 
+function expectText(value: CborValue): string {
+  if (value.kind !== 'text') {
+    throw new Error('Expected CBOR text');
+  }
+  return value.value;
+}
+
 function expectBytes(value: CborValue): Uint8Array {
   if (value.kind !== 'bytes') {
     throw new Error('Expected CBOR bytes');
@@ -794,6 +1049,21 @@ function requiredMapValue(entries: readonly CborMapEntry[], key: number): CborVa
 
 function uintValue(value: number): CborValue {
   return { kind: 'uint', value };
+}
+
+
+async function runWithConcurrency<T>(items: readonly T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
+  const executing = new Set<Promise<void>>();
+  for (const item of items) {
+    const promise = worker(item).finally(() => {
+      executing.delete(promise);
+    });
+    executing.add(promise);
+    if (executing.size >= Math.max(1, concurrency)) {
+      await Promise.race(executing);
+    }
+  }
+  await Promise.all(executing);
 }
 
 function randomJobIdBytes(): Uint8Array {
@@ -826,4 +1096,19 @@ export const __coordinatorWorkerTestUtils = {
   parseCbor,
   uintValue,
   phaseCodeByPhase: PHASE_CODE_BY_PHASE,
+  setCryptoPoolFactory(factory: typeof getCryptoPool): void {
+    getCryptoPoolForCoordinator = factory;
+  },
+  setExecutePhotoTask(fn: typeof executePhotoTask): void {
+    executePhotoTaskForCoordinator = fn;
+  },
+  runJobDriver(worker: CoordinatorWorker, jobId: string): Promise<void> {
+    return worker.runJobDriver(jobId);
+  },
 };
+
+
+
+
+
+

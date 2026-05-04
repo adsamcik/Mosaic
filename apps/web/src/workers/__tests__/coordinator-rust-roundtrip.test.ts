@@ -298,7 +298,7 @@ describe('coordinator Rust snapshot round-trip', () => {
     const initialLastUpdatedAtMs = snapshotLastUpdatedAtMs(initialSnapshot.body);
     vi.setSystemTime(laterMs);
 
-    await worker.sendEvent(jobId, { kind: 'PlanReady' });
+    await worker.pauseJob(jobId);
     const persisted = await readSnapshot(jobId);
     if (persisted === null) {
       throw new Error('expected persisted snapshot');
@@ -306,8 +306,9 @@ describe('coordinator Rust snapshot round-trip', () => {
 
     await expect(rustVerifyDownloadSnapshot(persisted.body, persisted.checksum)).resolves.toEqual({ valid: true });
     const loaded = await rustLoadDownloadSnapshot(persisted.body, persisted.checksum);
-    expect(snapshotPhase(loaded.snapshotBytes)).toBe('Running');
+    expect(snapshotPhase(loaded.snapshotBytes)).toBe('Paused');
     expect(snapshotLastUpdatedAtMs(loaded.snapshotBytes)).toBe(laterMs);
     expect(snapshotLastUpdatedAtMs(loaded.snapshotBytes)).not.toBe(initialLastUpdatedAtMs);
   });
 });
+

@@ -102,6 +102,13 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
     },
   ],
   [
+    'workers/crypto.worker-pool-member.ts',
+    {
+      rationale: 'Phase 2 download worker-pool shard decrypt compatibility pending Rust seed decrypt wrapper',
+      allowedSymbols: ['decryptShard', 'deriveTierKeys', 'memzero'],
+    },
+  ],
+  [
     'workers/types.ts',
     {
       rationale: 'temporary EncryptedShard worker API type (shell-class)',
@@ -612,3 +619,5 @@ describe('Rust cutover slice retirement guards', () => {
     });
   }
 });
+
+

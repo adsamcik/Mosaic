@@ -1215,7 +1215,10 @@ export interface DownloadJobStateView {
 
 /** TS-side mirror of the minimal Rust per-photo state needed by progress summaries. */
 export interface DownloadPhotoStateView {
+  readonly photoId: string;
   readonly status: keyof DownloadPhotoCounts;
+  readonly bytesWritten: number;
+  readonly retryCount: number;
 }
 
 /** TS-side mirror of a Rust failure-log entry; intentionally omits photo ids. */
