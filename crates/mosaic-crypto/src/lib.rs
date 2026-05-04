@@ -144,12 +144,22 @@ const FULL_KEY_INFO: &[u8] = b"mosaic:tier:full:v1";
 const CONTENT_KEY_INFO: &[u8] = b"mosaic:tier:content:v1";
 
 /// HKDF-SHA256 domain separation label for the OPFS-snapshot encryption key
-/// the worker derives from the L2 account key.
+/// derivable from the L2 account key.
 ///
-/// This key is the bootstrap material the legacy DB worker still expects
-/// (Slice 8 will replace it with an opaque handle). Deriving it via HKDF on a
-/// dedicated label prevents cross-protocol reuse with the album content key
-/// or any tier sub-key.
+/// **§13 Irreversibility Register status:** this label is enumerated in the
+/// programme's KDF-labels freeze row and therefore cannot be deleted, renamed,
+/// or repurposed without an ADR amendment + §13 update + new lock test.
+///
+/// **Production usage status (post-P-W7.3):** the OPFS DB worker now wraps
+/// snapshots through `wrap_with_account_handle` / `unwrap_with_account_handle`,
+/// which encrypt with the L2 account key directly. As a result, this label
+/// has no production callsites today. The constant is intentionally retained
+/// to preserve the §13 protocol commitment: re-introducing domain separation
+/// later (via `wrap_with_account_handle` deriving through this label first)
+/// is a transparent change that preserves the v1 protocol surface.
+///
+/// Do not delete this constant. See plan §13 KDF-labels row + Opus P-W7.5/P-W7.8
+/// review notes for rationale.
 const DB_SESSION_KEY_INFO: &[u8] = b"mosaic:db-session-key:v1";
 
 /// Crypto crate errors.
@@ -1413,6 +1423,17 @@ pub fn derive_content_key(epoch_seed: &SecretKey) -> Result<SecretKey, MosaicCry
 /// HKDF-SHA256 with a dedicated `mosaic:db-session-key:v1` label so this
 /// material is domain-separated from every other epoch/tier/content key. The
 /// returned `SecretKey` zeroizes on drop.
+///
+/// **§13 Irreversibility Register status:** the `mosaic:db-session-key:v1`
+/// HKDF label is a frozen v1 protocol surface. This function and its label
+/// constant must be preserved.
+///
+/// **Production usage status (post-P-W7.3):** no production callsites today;
+/// the OPFS DB worker uses `wrap_with_account_handle` directly. This function
+/// is exercised only by `mosaic-crypto/tests/account_creation.rs` to ensure
+/// the §13-frozen label remains derivable should domain separation be
+/// re-introduced (e.g., by routing `wrap_with_account_handle` through this
+/// label first; that is a transparent in-protocol refinement).
 ///
 /// # Errors
 /// Returns `KdfFailure` if HKDF expansion reports an error.
