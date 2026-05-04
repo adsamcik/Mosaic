@@ -52,22 +52,30 @@ fn canonical_uniffi_api_shape(source: &str) -> String {
     while index < lines.len() {
         let line = lines[index].trim();
 
-        if line.contains("uniffi::Record") {
-            if let Some((next_index, record)) = parse_record(&lines, index + 1) {
-                output.push_str(&record);
-                index = next_index;
-                continue;
+        if starts_attribute(line) {
+            let (next_attr_index, attr) = collect_attribute(&lines, index);
+            if attr_has_uniffi_marker(&attr, "Record") {
+                if let Some((next_index, record)) = parse_record(&lines, next_attr_index) {
+                    output.push_str(&record);
+                    index = next_index;
+                    continue;
+                }
             }
-        }
 
-        if line == "#[uniffi::export]" {
-            if let Some((next_index, signature)) = parse_exported_function(&lines, index + 1) {
-                output.push_str("export ");
-                output.push_str(&signature);
-                output.push('\n');
-                index = next_index;
-                continue;
+            if is_uniffi_export_attr(&attr) {
+                if let Some((next_index, signature)) =
+                    parse_exported_function(&lines, next_attr_index)
+                {
+                    output.push_str("export ");
+                    output.push_str(&signature);
+                    output.push('\n');
+                    index = next_index;
+                    continue;
+                }
             }
+
+            index = next_attr_index;
+            continue;
         }
 
         index += 1;
@@ -102,7 +110,12 @@ fn parse_record(lines: &[&str], start: usize) -> Option<(usize, String)> {
             }
             return None;
         }
-        if line.starts_with("#[") || line.starts_with("///") || line.is_empty() {
+        if starts_attribute(line) {
+            let (next_index, _) = collect_attribute(lines, index);
+            index = next_index;
+            continue;
+        }
+        if line.starts_with("///") || line.is_empty() {
             index += 1;
             continue;
         }
@@ -115,7 +128,12 @@ fn parse_exported_function(lines: &[&str], start: usize) -> Option<(usize, Strin
     let mut index = start;
     while index < lines.len() {
         let line = lines[index].trim();
-        if line.starts_with("#[") || line.starts_with("///") || line.is_empty() {
+        if starts_attribute(line) {
+            let (next_index, _) = collect_attribute(lines, index);
+            index = next_index;
+            continue;
+        }
+        if line.starts_with("///") || line.is_empty() {
             index += 1;
             continue;
         }
@@ -141,6 +159,125 @@ fn parse_exported_function(lines: &[&str], start: usize) -> Option<(usize, Strin
 
 fn normalize_field(field: &str) -> String {
     normalize_whitespace(field.trim_end_matches(','))
+}
+
+#[test]
+fn uniffi_export_attribute_detection_accepts_format_variants() {
+    assert!(is_uniffi_export_attr("#[uniffi::export]"));
+    assert!(is_uniffi_export_attr("# [uniffi::export]"));
+    assert!(is_uniffi_export_attr(r#"#[uniffi::export(name = "x")]"#));
+    assert!(is_uniffi_export_attr(
+        "#[\n    uniffi :: export(\n        name = \"x\"\n    )\n]"
+    ));
+    assert!(!is_uniffi_export_attr("#[uniffi::Record]"));
+}
+
+#[test]
+fn golden_parser_has_no_unhandled_uniffi_enum_or_object_surfaces() {
+    let attrs = collect_source_attributes(SOURCE);
+    assert!(
+        attrs
+            .iter()
+            .all(|attr| !attr_has_uniffi_marker(attr, "Enum")),
+        "api_shape_lock.rs must parse UniFFI enum variants before adding uniffi::Enum"
+    );
+    assert!(
+        attrs
+            .iter()
+            .all(|attr| !attr_has_uniffi_marker(attr, "Object")),
+        "api_shape_lock.rs must parse UniFFI object methods before adding uniffi::Object"
+    );
+}
+
+#[test]
+fn uniffi_enum_and_object_canary_detection_accepts_derive_format_variants() {
+    assert!(attr_has_uniffi_marker(
+        "#[derive(Debug, uniffi::Enum)]",
+        "Enum"
+    ));
+    assert!(attr_has_uniffi_marker(
+        "#[derive(Debug, uniffi :: Enum)]",
+        "Enum"
+    ));
+    assert!(attr_has_uniffi_marker(
+        "#[\n  derive(\n    Debug,\n    uniffi :: Object,\n  )\n]",
+        "Object"
+    ));
+    assert!(attr_has_uniffi_marker("#[uniffi::Object]", "Object"));
+    assert!(!attr_has_uniffi_marker(
+        "#[derive(Debug, uniffi::Record)]",
+        "Enum"
+    ));
+}
+
+fn is_uniffi_export_attr(line: &str) -> bool {
+    let compact = compact_attr(line);
+    compact == "#[uniffi::export]"
+        || compact.starts_with("#[uniffi::export(") && compact.ends_with(']')
+}
+
+fn attr_has_uniffi_marker(attr: &str, marker: &str) -> bool {
+    compact_attr(attr).contains(&format!("uniffi::{marker}"))
+}
+
+fn compact_attr(attr: &str) -> String {
+    attr.split_whitespace().collect::<String>()
+}
+
+fn starts_attribute(line: &str) -> bool {
+    compact_attr(line).starts_with("#[")
+}
+
+fn collect_source_attributes(source: &str) -> Vec<String> {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut attrs = Vec::new();
+    let mut index = 0;
+
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if starts_attribute(line) {
+            let (next_index, attr) = collect_attribute(&lines, index);
+            attrs.push(attr);
+            index = next_index;
+        } else {
+            index += 1;
+        }
+    }
+
+    attrs
+}
+
+fn collect_attribute(lines: &[&str], start: usize) -> (usize, String) {
+    let mut attr = String::new();
+    let mut bracket_depth = 0_i32;
+    let mut saw_open = false;
+    let mut index = start;
+
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if !attr.is_empty() {
+            attr.push('\n');
+        }
+        attr.push_str(line);
+
+        for character in line.chars() {
+            match character {
+                '[' => {
+                    bracket_depth += 1;
+                    saw_open = true;
+                }
+                ']' => bracket_depth -= 1,
+                _ => {}
+            }
+        }
+
+        index += 1;
+        if saw_open && bracket_depth <= 0 {
+            break;
+        }
+    }
+
+    (index, attr)
 }
 
 fn normalize_whitespace(value: &str) -> String {

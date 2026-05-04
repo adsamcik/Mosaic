@@ -3987,7 +3987,7 @@ fn map_metadata_sidecar_error(error: MetadataSidecarError) -> u16 {
         MetadataSidecarError::ReservedTagNotPromoted { .. } => {
             mosaic_client::ClientErrorCode::MetadataSidecarReservedTagNotPromoted.as_u16()
         }
-        MetadataSidecarError::UnknownTag { .. } => {
+        MetadataSidecarError::ForbiddenTag { .. } | MetadataSidecarError::UnknownTag { .. } => {
             mosaic_client::ClientErrorCode::SidecarTagUnknown.as_u16()
         }
         MetadataSidecarError::ZeroFieldTag
