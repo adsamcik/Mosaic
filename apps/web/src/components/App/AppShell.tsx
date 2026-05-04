@@ -9,6 +9,7 @@ import { ErrorBoundary } from '../ErrorBoundary';
 import { Gallery } from '../Gallery/Gallery';
 import { SectionErrorFallback } from '../SectionErrorFallback';
 import { SettingsPage } from '../Settings/SettingsPage';
+import { DownloadTray } from '../Download/DownloadTray';
 import { getApi } from '../../lib/api';
 
 /**
@@ -262,6 +263,7 @@ export function AppShell() {
             </ErrorBoundary>
           )}
         </main>
+        <DownloadTray />
       </div>
     </SyncProvider>
   );

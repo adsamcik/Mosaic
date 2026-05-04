@@ -3,8 +3,11 @@ import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import { getDownloadManager } from '../lib/download-manager';
 import type {
+  AlbumDiff,
   CoordinatorWorkerApi,
+  CurrentAlbumManifest,
   DownloadJobsBroadcastMessage,
+  DownloadPhase,
   JobSummary,
   ResumableJobSummary,
 } from '../workers/types';
@@ -21,6 +24,14 @@ export interface UseDownloadManagerResult {
   readonly error: Error | null;
   /** Subscribe to a specific job and refresh jobs on progress; returns a cleanup callback. */
   subscribe(jobId: string): () => void;
+  /** Pause a running job through the coordinator. */
+  pauseJob(jobId: string): Promise<{ phase: DownloadPhase }>;
+  /** Resume a paused job through the coordinator. */
+  resumeJob(jobId: string): Promise<{ phase: DownloadPhase }>;
+  /** Cancel a job through the coordinator; hard cancel discards persisted progress. */
+  cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }>;
+  /** Compute a local manifest diff for a persisted download plan. */
+  computeAlbumDiff(jobId: string, current: CurrentAlbumManifest): Promise<AlbumDiff>;
 }
 
 /**
@@ -129,7 +140,38 @@ export function useDownloadManager(): UseDownloadManagerResult {
     };
   }, [refreshJobs]);
 
-  return { ready, jobs, resumableJobs, api, error, subscribe };
+
+  const requireApi = useCallback((): CoordinatorWorkerApi => {
+    const currentApi = apiRef.current;
+    if (!currentApi) {
+      throw new Error('Download manager is not ready');
+    }
+    return currentApi;
+  }, []);
+
+  const pauseJob = useCallback(async (jobId: string): Promise<{ phase: DownloadPhase }> => {
+    const result = await requireApi().pauseJob(jobId);
+    await refreshJobs();
+    return result;
+  }, [refreshJobs, requireApi]);
+
+  const resumeJob = useCallback(async (jobId: string): Promise<{ phase: DownloadPhase }> => {
+    const result = await requireApi().resumeJob(jobId);
+    await refreshJobs();
+    return result;
+  }, [refreshJobs, requireApi]);
+
+  const cancelJob = useCallback(async (jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }> => {
+    const result = await requireApi().cancelJob(jobId, opts);
+    await refreshJobs();
+    return result;
+  }, [refreshJobs, requireApi]);
+
+  const computeAlbumDiff = useCallback((jobId: string, current: CurrentAlbumManifest): Promise<AlbumDiff> => {
+    return requireApi().computeAlbumDiff(jobId, current);
+  }, [requireApi]);
+
+  return { ready, jobs, resumableJobs, api, error, subscribe, pauseJob, resumeJob, cancelJob, computeAlbumDiff };
 }
 
 function isDownloadJobsBroadcastMessage(value: unknown): value is DownloadJobsBroadcastMessage {

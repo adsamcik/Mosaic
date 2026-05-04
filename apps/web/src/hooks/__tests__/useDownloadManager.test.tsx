@@ -259,5 +259,20 @@ describe('useDownloadManager', () => {
     });
     expect(hook.result().resumableJobs).toEqual([resumable]);
   });
+
+  it('delegates job actions through the coordinator and refreshes job lists', async () => {
+    jobs = [baseJob];
+    const hook = await renderHook();
+    let result: { phase: DownloadPhase } | null = null;
+    await act(async () => {
+      result = await hook.result().pauseJob(baseJob.jobId);
+      await flushMicrotasks();
+    });
+    expect(result).toEqual({ phase: 'Paused' });
+    expect(api.pauseJob).toHaveBeenCalledWith(baseJob.jobId);
+    expect(api.listJobs).toHaveBeenCalledTimes(2);
+    expect(api.listResumableJobs).toHaveBeenCalledTimes(2);
+  });
+
 });
 
