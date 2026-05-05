@@ -23,6 +23,11 @@ export interface DownloadModePickerProps {
   readonly onClose: () => void;
   /** Called with the chosen mode when the user clicks "Start download". */
   readonly onConfirm: (mode: DownloadOutputMode) => void | Promise<void>;
+  /**
+   * Hide the "Make available offline" option. Used by visitor (share-link)
+   * flows where there is no per-account scope key to bind OPFS staging to.
+   */
+  readonly hideKeepOffline?: boolean;
 }
 
 /**
@@ -49,8 +54,9 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
 
   useEffect(() => {
     if (!props.open) return;
-    setSelected(loadLastMode(perFileStrategy === 'fsAccessDirectory'));
-  }, [props.open, perFileStrategy]);
+    const last = loadLastMode(perFileStrategy === 'fsAccessDirectory');
+    setSelected(last === 'keepOffline' && props.hideKeepOffline === true ? 'zip' : last);
+  }, [props.open, perFileStrategy, props.hideKeepOffline]);
 
   if (!props.open) return null;
 
@@ -99,13 +105,15 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
             label={t('download.modePicker.zip.label')}
             sub={t('download.modePicker.zip.sub')}
           />
-          <ModeOption
-            kind="keepOffline"
-            selected={selected}
-            onSelect={setSelected}
-            label={t('download.modePicker.keepOffline.label')}
-            sub={t('download.modePicker.keepOffline.sub')}
-          />
+          {props.hideKeepOffline === true ? null : (
+            <ModeOption
+              kind="keepOffline"
+              selected={selected}
+              onSelect={setSelected}
+              label={t('download.modePicker.keepOffline.label')}
+              sub={t('download.modePicker.keepOffline.sub')}
+            />
+          )}
           <ModeOption
             kind="perFile"
             selected={selected}
