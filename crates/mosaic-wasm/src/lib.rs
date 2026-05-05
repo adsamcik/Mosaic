@@ -1880,12 +1880,7 @@ pub fn download_init_snapshot_v1(input_cbor: &[u8]) -> SerializeSnapshotResult {
         photos,
         failure_log: Vec::new(),
         lease_token: None,
-        // Transitional: a real scope_key is threaded through the plan input
-        // in a follow-up commit. Until then we synthesize a stable legacy
-        // scope from the job id so existing callers see a non-empty value.
-        scope_key: mosaic_client::download::scope::legacy_scope_for(
-            &mosaic_client::download::snapshot::JobId::from_bytes(input.job_id),
-        ),
+        scope_key: input.scope_key,
     };
     match mosaic_client::download::snapshot::prepare_snapshot_bytes(&snapshot) {
         Ok(bytes) => SerializeSnapshotResult {
@@ -4639,6 +4634,10 @@ struct DownloadInitSnapshotInput {
     album_id: mosaic_client::Uuid,
     plan: mosaic_client::download::plan::DownloadPlan,
     now_ms: u64,
+    /// Tray scope key produced by the host (TS) side. Format is
+    /// `<prefix>:<32-hex>` where prefix is one of `auth`/`visitor`/`legacy`.
+    /// Required so jobs can be partitioned per identity.
+    scope_key: String,
 }
 
 fn client_ok() -> u32 {
@@ -4775,12 +4774,32 @@ fn download_init_snapshot_input_from_cbor(
     let plan_bytes = bytes_from_value(required_entry(entries, 2)?)?;
     let plan = download_plan_from_cbor(&plan_bytes)?;
     let now_ms = u64_from_value(required_entry(entries, 3)?)?;
+    // Plan-input key 4: scope_key (text). Required so jobs are partitioned by
+    // tray identity. Must be non-empty and prefixed with `auth:`, `visitor:`
+    // or `legacy:` to match `mosaic_client::download::scope` derivation.
+    let scope_key = text_from_value(required_entry(entries, 4)?)?;
+    if !is_valid_scope_key(&scope_key) {
+        return Err(mosaic_client::ClientErrorCode::DownloadInvalidPlan);
+    }
     Ok(DownloadInitSnapshotInput {
         job_id,
         album_id,
         plan,
         now_ms,
+        scope_key,
     })
+}
+
+fn is_valid_scope_key(value: &str) -> bool {
+    // Accept `<prefix>:<32-hex>`; prefix one of auth/visitor/legacy. ZK-safe:
+    // we only validate shape, never log the value itself.
+    let Some((prefix, suffix)) = value.split_once(':') else {
+        return false;
+    };
+    if !matches!(prefix, "auth" | "visitor" | "legacy") {
+        return false;
+    }
+    suffix.len() == 32 && suffix.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 fn download_plan_to_cbor(
