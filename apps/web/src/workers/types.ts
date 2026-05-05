@@ -1264,6 +1264,7 @@ export interface DownloadBuildPlanInput {
 export type PerFileStrategy =
   | 'webShare'
   | 'fsAccessPerFile'
+  | 'fsAccessDirectory'
   | 'blobAnchor';
 
 /** Metadata the main thread needs before opening per-file save targets. */
