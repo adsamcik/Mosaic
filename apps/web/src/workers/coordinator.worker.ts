@@ -362,6 +362,10 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   }
 
   /** List non-terminal jobs that should surface in the resume prompt. */
+  // TODO(p3-visitor-resume-prompt): when surfacing a resumable visitor
+  // job whose linkId/grant the user no longer has client-side keys for, the
+  // restore prompt must offer "discard" only, not "resume", so the user is
+  // not stuck staring at a download they cannot complete.
   async listResumableJobs(): Promise<ResumableJobSummary[]> {
     this.assertInitialized();
     await this.reconcilePersistedJobs();
@@ -806,6 +810,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     }
   }
 
+  // TODO(p3-visitor-gc): GC visitor: scope snapshots whose link is no longer
+  // accessible (404 from /api/s/{linkId}/photos) so an offline tab does not
+  // hold an OPFS staging dir indefinitely after a share-link revocation.
   private async reconcilePersistedJobs(): Promise<number> {
     const persistedJobs = await opfsStaging.listJobs();
     let reconstructedJobs = 0;
@@ -903,6 +910,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     }
   }
 
+  // TODO(p3-visitor-broadcast-scope): include the job's scopeKey in the
+  // broadcast payload so other tabs can locally pre-filter without having to
+  // reload the full snapshot just to discover that a job is in another scope.
   private broadcast(job: InMemoryJob): void {
     const message: DownloadJobsBroadcastMessage = {
       kind: 'job-changed',
