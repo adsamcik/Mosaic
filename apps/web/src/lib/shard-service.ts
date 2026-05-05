@@ -6,6 +6,7 @@
  */
 
 import { ApiError, getApi } from './api';
+import { evictCachedShard, lookupCachedShardBytes } from './shard-cache';
 
 /**
  * Progress callback for shard downloads
@@ -35,11 +36,31 @@ export class ShardDownloadError extends Error {
  * @returns The encrypted shard data as Uint8Array
  * @throws ShardDownloadError if download fails
  */
+/** Build the shard-fetch URL for the authenticated endpoint. Exposed so the
+ *  Background Fetch launcher can pre-warm the same URLs the SW will receive. */
+export function buildAuthShardUrl(shardId: string): string {
+  return `/api/shards/${shardId}`;
+}
+
+/** Build the share-link shard-fetch URL. */
+export function buildShareLinkShardUrl(linkId: string, shardId: string): string {
+  return `/api/s/${linkId}/shards/${shardId}`;
+}
+
 export async function downloadShard(
   shardId: string,
   onProgress?: ProgressCallback,
 ): Promise<Uint8Array> {
   try {
+    // Background-Fetch cache peek: if the SW already pulled this shard
+    // (e.g. while the tab was closed on Android), reuse the encrypted bytes.
+    const cached = await lookupCachedShardBytes(buildAuthShardUrl(shardId));
+    if (cached !== null) {
+      onProgress?.(cached.length, cached.length);
+      // Single-use eviction to bound storage; the SW will refetch if needed.
+      void evictCachedShard(buildAuthShardUrl(shardId));
+      return cached;
+    }
     // Use the API client for simple downloads
     if (!onProgress) {
       const api = getApi();
@@ -172,6 +193,14 @@ export async function downloadShardViaShareLink(
   onProgress?: ProgressCallback,
 ): Promise<Uint8Array> {
   try {
+    // Background-Fetch cache peek for the share-link URL.
+    const url = buildShareLinkShardUrl(linkId, shardId);
+    const cached = await lookupCachedShardBytes(url);
+    if (cached !== null) {
+      onProgress?.(cached.length, cached.length);
+      void evictCachedShard(url);
+      return cached;
+    }
     const requestInit: RequestInit = {
       credentials: 'same-origin',
     };
