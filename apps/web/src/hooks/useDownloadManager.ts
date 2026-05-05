@@ -14,6 +14,7 @@ import type {
   JobSummary,
   ResumableJobSummary,
 } from '../workers/types';
+import type { DownloadSchedule } from '../lib/download-schedule';
 
 const log = createLogger('useDownloadManager');
 const CHANNEL_NAME = 'mosaic-download-jobs';
@@ -39,6 +40,10 @@ export interface UseDownloadManagerResult {
   cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }>;
   /** Compute a local manifest diff for a persisted download plan. */
   computeAlbumDiff(jobId: string, current: CurrentAlbumManifest): Promise<AlbumDiff>;
+  /** Force-start a Scheduled job (bypassing the manager). Idempotent for unknown ids. */
+  forceStartJob(jobId: string): Promise<void>;
+  /** Replace a job's conditional schedule. Throws JobNotFound for unknown ids. */
+  updateJobSchedule(jobId: string, schedule: DownloadSchedule | null): Promise<void>;
 }
 
 /**
@@ -204,7 +209,30 @@ export function useDownloadManager(): UseDownloadManagerResult {
     return requireApi().computeAlbumDiff(jobId, current);
   }, [requireApi]);
 
-  return { ready, jobs, resumableJobs, api, error, subscribe, pauseJob, resumeJob, cancelJob, computeAlbumDiff };
+  const forceStartJob = useCallback(async (jobId: string): Promise<void> => {
+    await requireApi().forceStartJob(jobId);
+    await refreshJobs();
+  }, [refreshJobs, requireApi]);
+
+  const updateJobSchedule = useCallback(async (jobId: string, schedule: DownloadSchedule | null): Promise<void> => {
+    await requireApi().updateJobSchedule(jobId, schedule);
+    await refreshJobs();
+  }, [refreshJobs, requireApi]);
+
+  return {
+    ready,
+    jobs,
+    resumableJobs,
+    api,
+    error,
+    subscribe,
+    pauseJob,
+    resumeJob,
+    cancelJob,
+    computeAlbumDiff,
+    forceStartJob,
+    updateJobSchedule,
+  };
 }
 
 /**

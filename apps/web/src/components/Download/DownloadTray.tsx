@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useDownloadManager } from '../../hooks/useDownloadManager';
 import { useDownloadScopeKey } from '../../hooks/useDownloadScopeKey';
 import type { DownloadPhase, JobSummary, ResumableJobSummary } from '../../workers/types';
+import type { DownloadSchedule } from '../../lib/download-schedule';
 import { DownloadJobRow, shortId } from './DownloadJobRow';
+import { EditScheduleDialog } from './EditScheduleDialog';
 import '../../styles/download-tray.css';
 
 export interface DownloadTrayProps {
@@ -35,6 +37,7 @@ export function DownloadTray(props: DownloadTrayProps = {}): JSX.Element | null 
   const [dismissedJobIds, setDismissedJobIds] = useState<ReadonlySet<string>>(new Set());
   const [recentDoneJobIds, setRecentDoneJobIds] = useState<ReadonlySet<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
+  const [editingScheduleJobId, setEditingScheduleJobId] = useState<string | null>(null);
   const previousPhasesRef = useRef<Map<string, DownloadPhase>>(new Map());
   const doneTimersRef = useRef<Map<string, number>>(new Map());
 
@@ -125,6 +128,17 @@ export function DownloadTray(props: DownloadTrayProps = {}): JSX.Element | null 
   const pauseJob = (jobId: string): void => runAction(async () => manager.pauseJob(jobId));
   const resumeJob = (jobId: string): void => runAction(async () => manager.resumeJob(jobId));
   const cancelSoft = (jobId: string): void => runAction(async () => manager.cancelJob(jobId, { soft: true }));
+  const forceStart = (jobId: string): void => runAction(async () => manager.forceStartJob(jobId));
+  const openEditSchedule = (jobId: string): void => { setEditingScheduleJobId(jobId); };
+  const closeEditSchedule = (): void => { setEditingScheduleJobId(null); };
+  const saveEditSchedule = async (schedule: DownloadSchedule): Promise<void> => {
+    const jobId = editingScheduleJobId;
+    if (jobId === null) return;
+    setEditingScheduleJobId(null);
+    await manager.updateJobSchedule(jobId, schedule).catch((caught: unknown) => {
+      setActionError(caught instanceof Error ? caught.message : String(caught));
+    });
+  };
   const cancelHard = (jobId: string): void => {
     setDismissedJobIds((current) => new Set(current).add(jobId));
     runAction(async () => manager.cancelJob(jobId, { soft: false }));
@@ -193,6 +207,8 @@ export function DownloadTray(props: DownloadTrayProps = {}): JSX.Element | null 
                 onResume={resumeJob}
                 onCancelSoft={cancelSoft}
                 onCancelHard={cancelHard}
+                onForceStart={forceStart}
+                onEditSchedule={openEditSchedule}
               />
               {job.phase === 'Done' && (
                 <button type="button" className="download-tray-link-button" onClick={() => dismissCompleted(job.jobId)}>
@@ -206,6 +222,16 @@ export function DownloadTray(props: DownloadTrayProps = {}): JSX.Element | null 
           ))}
         </div>
       )}
+      <EditScheduleDialog
+        open={editingScheduleJobId !== null}
+        initialSchedule={
+          editingScheduleJobId === null
+            ? null
+            : displayedJobs.find((job) => job.jobId === editingScheduleJobId)?.schedule ?? null
+        }
+        onClose={closeEditSchedule}
+        onConfirm={saveEditSchedule}
+      />
     </aside>
   );
 }

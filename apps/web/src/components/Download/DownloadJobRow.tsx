@@ -3,6 +3,25 @@ import { useTranslation } from 'react-i18next';
 import type { JobProgressEvent, JobSummary } from '../../workers/types';
 import { DownloadFailureList, type DownloadFailureListEntry } from './DownloadFailureList';
 
+/**
+ * Map raw schedule-evaluation reasons (from ScheduleManager.evaluateSchedule)
+ * to i18n keys. Unknown reasons fall back to the raw string so a future
+ * Rust-side reason is not silently swallowed.
+ *
+ * ZK-safety: reasons are GENERIC strings ("connection too slow", "offline")
+ * — never job/album/scope ids. Safe to render.
+ */
+const SCHEDULE_REASON_KEYS: Readonly<Record<string, string>> = {
+  'offline': 'download.tray.scheduledReasons.offline',
+  'data-saver enabled': 'download.tray.scheduledReasons.dataSaver',
+  'connection too slow': 'download.tray.scheduledReasons.connectionTooSlow',
+  'not charging': 'download.tray.scheduledReasons.notCharging',
+  'user active': 'download.tray.scheduledReasons.userActive',
+  'outside window': 'download.tray.scheduledReasons.outsideWindow',
+  'window misconfigured': 'download.tray.scheduledReasons.windowMisconfigured',
+  'window empty': 'download.tray.scheduledReasons.windowMisconfigured',
+};
+
 export interface DownloadJobRowProps {
   /** Job summary to render. Full ids are never displayed. */
   readonly job: JobSummary;
@@ -20,6 +39,16 @@ export interface DownloadJobRowProps {
   readonly onShowFailures?: (jobId: string) => void;
   /** Optional display-safe failure rows. Photo ids must be shortened by the caller. */
   readonly failures?: ReadonlyArray<DownloadFailureListEntry>;
+  /**
+   * Called when the user clicks Start now on a Scheduled (Idle + schedule)
+   * job. Optional — when omitted the action button is hidden.
+   */
+  readonly onForceStart?: (jobId: string) => void;
+  /**
+   * Called when the user clicks Edit schedule on a Scheduled job.
+   * Optional — when omitted the link is hidden.
+   */
+  readonly onEditSchedule?: (jobId: string) => void;
 }
 
 /** Presentational row for one persistent coordinator download job. */
@@ -32,6 +61,8 @@ export function DownloadJobRow({
   onCancelHard,
   onShowFailures,
   failures = [],
+  onForceStart,
+  onEditSchedule,
 }: DownloadJobRowProps): JSX.Element {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -51,9 +82,15 @@ export function DownloadJobRow({
   const isShareLinkRevoked = phase === 'Errored'
     && job.lastErrorReason === 'AccessRevoked'
     && job.scopeKey.startsWith('visitor:');
+  const isScheduled = phase === 'Idle' && job.schedule !== null && job.schedule.kind !== 'immediate';
+  const scheduledReasonLabel = isScheduled && job.scheduleEvaluation
+    ? translateScheduleReason(t, job.scheduleEvaluation.reason)
+    : null;
   const statusLabel = isShareLinkRevoked
     ? t('download.tray.shareLinkRevoked')
-    : t(`download.tray.phase.${phase}`, { defaultValue: phase });
+    : isScheduled
+      ? t('download.tray.scheduledBadge')
+      : t(`download.tray.phase.${phase}`, { defaultValue: phase });
   const safeAlbumId = useMemo(() => shortId(job.albumId), [job.albumId]);
 
   const handleRowClick = (): void => {
@@ -84,6 +121,16 @@ export function DownloadJobRow({
         <span className="download-tray-phase-badge">{statusLabel}</span>
         {phase === 'Running' && <span className="download-tray-wake-badge">{t('download.tray.screenOnRequired')}</span>}
         {failureCount > 0 && <span className="download-tray-failure-badge">{t('download.tray.failureBadge', { count: failureCount })}</span>}
+        {isScheduled && scheduledReasonLabel !== null && (
+          <span
+            className="download-tray-scheduled-reason"
+            role="status"
+            aria-live="polite"
+            data-testid="download-tray-scheduled-reason"
+          >
+            {t('download.tray.scheduledReason', { reason: scheduledReasonLabel })}
+          </span>
+        )}
         <div className="download-tray-job-progress" aria-live="polite">
           <div
             className="download-tray-progressbar"
@@ -99,6 +146,28 @@ export function DownloadJobRow({
         </div>
       </div>
       <div className="download-tray-job-actions">
+        {isScheduled && onForceStart && (
+          <button
+            type="button"
+            className="download-tray-button download-tray-button--primary"
+            aria-label={t('download.tray.scheduledStartNow')}
+            onClick={() => onForceStart(job.jobId)}
+            data-testid="download-tray-start-now"
+          >
+            {t('download.tray.scheduledStartNow')}
+          </button>
+        )}
+        {isScheduled && onEditSchedule && (
+          <button
+            type="button"
+            className="download-tray-link-button"
+            aria-label={t('download.tray.scheduledEdit')}
+            onClick={() => onEditSchedule(job.jobId)}
+            data-testid="download-tray-edit-schedule"
+          >
+            {t('download.tray.scheduledEdit')}
+          </button>
+        )}
         {isRunning && (
           <button type="button" className="download-tray-button" aria-label={t('download.tray.pauseJob')} onClick={() => onPause(job.jobId)}>
             {t('download.tray.pause')}
@@ -153,5 +222,17 @@ function iconForPhase(phase: string): string {
   if (phase === 'Done') return '✓';
   if (phase === 'Errored') return '!';
   if (phase === 'Cancelled') return '×';
+  if (phase === 'Idle') return '⏰';
   return '↓';
+}
+
+/**
+ * Translate a raw {@link ScheduleEvaluation} reason into a user-facing
+ * label. Falls back to the raw reason when no mapping exists so future
+ * Rust-side strings are surfaced verbatim rather than dropped.
+ */
+function translateScheduleReason(t: (key: string, opts?: Record<string, unknown>) => string, reason: string): string {
+  const key = SCHEDULE_REASON_KEYS[reason];
+  if (key === undefined) return reason;
+  return t(key);
 }
