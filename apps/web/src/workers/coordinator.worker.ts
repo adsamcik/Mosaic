@@ -18,6 +18,7 @@ import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import * as opfsStaging from '../lib/opfs-staging';
 import { createAuthenticatedSourceStrategy } from './coordinator/source-strategy-auth';
+import { ensureScopeKeySodiumReady } from '../lib/scope-key';
 import type { SourceStrategy } from './coordinator/source-strategy';
 import {
   ensureRustReady,
@@ -65,6 +66,13 @@ const DEFAULT_BYTE_PROGRESS_RATE_LIMIT_MS = 2_000;
 
 interface CoordinatorWorkerOptions {
   readonly byteProgressRateLimitMs?: number;
+  /**
+   * Stable, non-secret account identifier used to derive the authenticated
+   * tray scope key. When omitted the default-auth scope falls back to an
+   * empty-input derivation; production callers MUST set this so jobs are
+   * partitioned per identity.
+   */
+  readonly accountId?: string;
 }
 
 interface ByteProgressTimer {
@@ -181,6 +189,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private readonly jobSources = new Map<string, SourceStrategy>();
   /** Lazy-built default authenticated source (created on first use). */
   private defaultAuthSource: SourceStrategy | null = null;
+  /** Account id used to derive the default-auth tray scope key. */
+  private readonly accountId: string;
   /**
    * Per-job, per-photo export-side failure reasons (Phase 2 in-memory only).
    * Tracks per-file finalizer write failures WITHOUT mutating the source-side
@@ -193,6 +203,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
   constructor(opts: CoordinatorWorkerOptions = {}) {
     this.byteProgressRateLimitMs = opts.byteProgressRateLimitMs ?? DEFAULT_BYTE_PROGRESS_RATE_LIMIT_MS;
+    this.accountId = opts.accountId ?? '';
     this.channel = createBroadcastChannel();
     this.channel?.addEventListener('message', (event: MessageEvent<unknown>) => {
       this.handleBroadcastMessage(event.data);
@@ -588,7 +599,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
   private getDefaultAuthSource(): SourceStrategy {
     if (this.defaultAuthSource === null) {
-      this.defaultAuthSource = createAuthenticatedSourceStrategy();
+      this.defaultAuthSource = createAuthenticatedSourceStrategy(this.accountId);
     }
     return this.defaultAuthSource;
   }
@@ -721,6 +732,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
   private async initializeOnce(): Promise<{ reconstructedJobs: number }> {
     await ensureRustReady();
+    await ensureScopeKeySodiumReady();
     const reconstructedJobs = await this.reconcilePersistedJobs();
     this.initialized = true;
     // Intentionally NOT auto-spinning drivers for reconstructed jobs:

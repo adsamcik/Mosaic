@@ -1,4 +1,5 @@
 import { downloadShardViaShareLink } from '../../lib/shard-service';
+import { deriveVisitorScopeKey } from '../../lib/scope-key';
 import { DownloadError } from '../crypto-pool';
 import type { LinkDecryptionKey } from '../types';
 import type { SourceStrategy } from './source-strategy';
@@ -37,6 +38,8 @@ export function createShareLinkSourceStrategy(
 ): SourceStrategy {
   const { linkId, grantToken, getTierKey } = opts;
   const grant = grantToken ?? undefined;
+  // Precondition: caller awaited nsureScopeKeySodiumReady() so this is sync.
+  const scopeKey = deriveVisitorScopeKey(linkId, grantToken ?? null);
 
   const fetchOne = async (shardId: string, signal: AbortSignal): Promise<Uint8Array> => {
     throwIfAborted(signal);
@@ -47,6 +50,9 @@ export function createShareLinkSourceStrategy(
 
   return {
     kind: 'share-link',
+    getScopeKey(): string {
+      return scopeKey;
+    },
     fetchShard: fetchOne,
     async fetchShards(
       shardIds: ReadonlyArray<string>,

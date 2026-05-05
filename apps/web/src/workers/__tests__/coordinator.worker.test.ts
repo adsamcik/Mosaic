@@ -948,6 +948,7 @@ describe('CoordinatorWorker', () => {
       fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
       fetchShards: fetchSpy,
       resolveKey: resolveSpy,
+      getScopeKey: () => 'visitor:00000000000000000000000000000000',
     };
     pipelineMocks.executePhotoTask.mockImplementation(async (_input, deps) => {
       const full = deps as unknown as FullDeps;

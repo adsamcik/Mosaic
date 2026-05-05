@@ -30,11 +30,11 @@ afterEach(() => { vi.restoreAllMocks(); });
 
 describe('createAuthenticatedSourceStrategy', () => {
   it('reports kind=authenticated', () => {
-    expect(createAuthenticatedSourceStrategy().kind).toBe('authenticated');
+    expect(createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555').kind).toBe('authenticated');
   });
 
   it('fetchShard delegates to downloadShard', async () => {
-    const s = createAuthenticatedSourceStrategy();
+    const s = createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555');
     shardServiceMocks.downloadShard.mockResolvedValue(new Uint8Array([1, 2, 3]));
     const result = await s.fetchShard('shard-a', new AbortController().signal);
     expect(result).toEqual(new Uint8Array([1, 2, 3]));
@@ -42,7 +42,7 @@ describe('createAuthenticatedSourceStrategy', () => {
   });
 
   it('fetchShards delegates to downloadShards with concurrency=4', async () => {
-    const s = createAuthenticatedSourceStrategy();
+    const s = createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555');
     shardServiceMocks.downloadShards.mockResolvedValue([new Uint8Array([1]), new Uint8Array([2])]);
     const result = await s.fetchShards(['a', 'b'], new AbortController().signal);
     expect(result.map((r) => Array.from(r))).toEqual([[1], [2]]);
@@ -50,21 +50,21 @@ describe('createAuthenticatedSourceStrategy', () => {
   });
 
   it('fetchShards short-circuits empty input', async () => {
-    const s = createAuthenticatedSourceStrategy();
+    const s = createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555');
     const result = await s.fetchShards([], new AbortController().signal);
     expect(result).toEqual([]);
     expect(shardServiceMocks.downloadShards).not.toHaveBeenCalled();
   });
 
   it('fetchShard throws AbortError when signal pre-aborted', async () => {
-    const s = createAuthenticatedSourceStrategy();
+    const s = createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555');
     const ctl = new AbortController(); ctl.abort();
     await expect(s.fetchShard('x', ctl.signal)).rejects.toMatchObject({ name: 'AbortError' });
     expect(shardServiceMocks.downloadShard).not.toHaveBeenCalled();
   });
 
   it('resolveKey returns epochSeed from epoch-key service', async () => {
-    const s = createAuthenticatedSourceStrategy();
+    const s = createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555');
     const seed = new Uint8Array(32).fill(7);
     epochKeyMocks.getOrFetchEpochKey.mockResolvedValue({ epochSeed: seed });
     const out = await s.resolveKey('album-1', 5);
@@ -134,5 +134,58 @@ describe('createShareLinkSourceStrategy', () => {
       expect(err).toBeInstanceOf(DownloadError);
       expect((err as DownloadError).code).toBe('IllegalState');
     }
+  });
+});
+
+describe('SourceStrategy.getScopeKey', () => {
+  const ACCOUNT_A = '11111111-2222-3333-4444-555555555555';
+  const ACCOUNT_B = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+  it('auth scope is deterministic and prefixed', () => {
+    const a1 = createAuthenticatedSourceStrategy(ACCOUNT_A).getScopeKey();
+    const a2 = createAuthenticatedSourceStrategy(ACCOUNT_A).getScopeKey();
+    expect(a1).toBe(a2);
+    expect(a1.startsWith('auth:')).toBe(true);
+    expect(a1.slice('auth:'.length)).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('auth scopes for different accounts differ', () => {
+    const a = createAuthenticatedSourceStrategy(ACCOUNT_A).getScopeKey();
+    const b = createAuthenticatedSourceStrategy(ACCOUNT_B).getScopeKey();
+    expect(a).not.toBe(b);
+  });
+
+  it('visitor scope is deterministic and prefixed', () => {
+    const s1 = createShareLinkSourceStrategy({ linkId: 'L1', grantToken: 'g', getTierKey: () => undefined }).getScopeKey();
+    const s2 = createShareLinkSourceStrategy({ linkId: 'L1', grantToken: 'g', getTierKey: () => undefined }).getScopeKey();
+    expect(s1).toBe(s2);
+    expect(s1.startsWith('visitor:')).toBe(true);
+    expect(s1.slice('visitor:'.length)).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('visitor scopes differ for different links and grants', () => {
+    const v1 = createShareLinkSourceStrategy({ linkId: 'L1', grantToken: 'g1', getTierKey: () => undefined }).getScopeKey();
+    const v2 = createShareLinkSourceStrategy({ linkId: 'L2', grantToken: 'g1', getTierKey: () => undefined }).getScopeKey();
+    const v3 = createShareLinkSourceStrategy({ linkId: 'L1', grantToken: 'g2', getTierKey: () => undefined }).getScopeKey();
+    expect(v1).not.toBe(v2);
+    expect(v1).not.toBe(v3);
+  });
+
+  it('visitor null and empty grant collapse to the same scope', () => {
+    const a = createShareLinkSourceStrategy({ linkId: 'L', grantToken: null, getTierKey: () => undefined }).getScopeKey();
+    const b = createShareLinkSourceStrategy({ linkId: 'L', grantToken: '', getTierKey: () => undefined }).getScopeKey();
+    expect(a).toBe(b);
+  });
+
+  it('auth and visitor scopes for the same input differ (domain separation)', () => {
+    const a = createAuthenticatedSourceStrategy('L1').getScopeKey();
+    const v = createShareLinkSourceStrategy({ linkId: 'L1', grantToken: null, getTierKey: () => undefined }).getScopeKey();
+    expect(a).not.toBe(v);
+  });
+
+  it('does not leak the input account id in the hex tail', () => {
+    const account = 'leaky-account-id-shouldnt-appear';
+    const scope = createAuthenticatedSourceStrategy(account).getScopeKey();
+    expect(scope.slice('auth:'.length)).not.toContain(account);
   });
 });
