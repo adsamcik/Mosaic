@@ -1,4 +1,5 @@
-import { downloadShardViaShareLink } from '../../lib/shard-service';
+import { downloadShardViaShareLink, ShardDownloadError } from '../../lib/shard-service';
+import { ApiError } from '../../lib/api';
 import { deriveVisitorScopeKey } from '../../lib/scope-key';
 import { DownloadError } from '../crypto-pool';
 import type { LinkDecryptionKey } from '../types';
@@ -41,12 +42,41 @@ export function createShareLinkSourceStrategy(
   // Precondition: caller awaited nsureScopeKeySodiumReady() so this is sync.
   const scopeKey = deriveVisitorScopeKey(linkId, grantToken ?? null);
 
+  /**
+   * Map server status codes 401 / 403 / 410 to a stable `AccessRevoked`
+   * `DownloadError`. The coordinator (Phase 1) already treats this code
+   * as job-fatal and transitions the job to Errored, so the visitor tray
+   * can surface a clear "share link revoked or expired" message.
+   *
+   * Other failures keep their current behavior — propagate as ShardDownloadError
+   * so the photo-pipeline retry / classification stays unchanged.
+   */
   const fetchOne = async (shardId: string, signal: AbortSignal): Promise<Uint8Array> => {
     throwIfAborted(signal);
-    const bytes = await downloadShardViaShareLink(linkId, shardId, grant);
-    throwIfAborted(signal);
-    return bytes;
+    try {
+      const bytes = await downloadShardViaShareLink(linkId, shardId, grant);
+      throwIfAborted(signal);
+      return bytes;
+    } catch (err) {
+      const status = extractHttpStatus(err);
+      if (status === 401 || status === 403 || status === 410) {
+        // ZK-safe: never log linkId or grant token; only the status family.
+        throw new DownloadError(
+          'AccessRevoked',
+          `Share link revoked or expired (HTTP ${status})`,
+        );
+      }
+      throw err;
+    }
   };
+
+  function extractHttpStatus(err: unknown): number | null {
+    if (err instanceof ApiError) return err.status;
+    if (err instanceof ShardDownloadError && err.cause instanceof ApiError) {
+      return err.cause.status;
+    }
+    return null;
+  }
 
   return {
     kind: 'share-link',

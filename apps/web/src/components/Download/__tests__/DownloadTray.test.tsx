@@ -83,6 +83,7 @@ const baseJob: JobSummary = {
   createdAtMs: 1,
   lastUpdatedAtMs: 1,
   scopeKey: 'auth:00000000000000000000000000000000',
+  lastErrorReason: null,
 };
 
 beforeEach(() => {
@@ -230,6 +231,51 @@ describe('DownloadTray', () => {
       expect(textContent(rendered.container)).toContain('1 downloading');
       await rendered.unmount();
     });
+
+    it('visitor pausedNoSource renders Discard only and an open-share-link hint', async () => {
+      mockScopeKey = visitorScope;
+      jobs = [];
+      resumableJobs = [{
+        ...baseJob,
+        phase: 'Paused',
+        scopeKey: visitorScope,
+        photoCounts: { pending: 1, inflight: 0, done: 1, failed: 0, skipped: 0 },
+        photosDone: 1,
+        photosTotal: 2,
+        bytesWritten: 100,
+        pausedNoSource: true,
+      }];
+      const rendered = await render(<DownloadTray forceVisible />);
+      // Expand to inspect resumable rows.
+      await click(requireElement(rendered.container.querySelector('.download-tray-summary')));
+      const row = rendered.container.querySelector('[data-testid="resumable-paused-no-source"]');
+      expect(row).not.toBeNull();
+      // Resume button is hidden; only Discard is offered.
+      const buttons = (row as HTMLElement).querySelectorAll('button');
+      expect(buttons.length).toBe(1);
+      expect((buttons[0] as HTMLButtonElement).textContent).toContain('Discard');
+      expect(textContent(rendered.container)).toContain('Visitor download paused');
+      await rendered.unmount();
+    });
+
+    it('non-pausedNoSource resumable rows still show Resume', async () => {
+      mockScopeKey = visitorScope;
+      jobs = [];
+      resumableJobs = [{
+        ...baseJob,
+        phase: 'Paused',
+        scopeKey: visitorScope,
+        photoCounts: { pending: 1, inflight: 0, done: 1, failed: 0, skipped: 0 },
+        photosDone: 1,
+        photosTotal: 2,
+        bytesWritten: 100,
+        pausedNoSource: false,
+      }];
+      const rendered = await render(<DownloadTray forceVisible />);
+      await click(requireElement(rendered.container.querySelector('.download-tray-summary')));
+      expect(rendered.container.querySelector('[data-testid="resumable-paused-no-source"]')).toBeNull();
+      await rendered.unmount();
+    });
   });
 });
 
@@ -265,6 +311,13 @@ function translate(key: string, values?: Record<string, unknown>): string {
     'download.tray.screenOnRequired': 'Keep screen on',
     'download.tray.phase.Running': 'Running',
     'download.tray.progressAria': 'Download progress {{percent}} percent',
+    'download.tray.discard': 'Discard',
+    'download.tray.resumeFromYesterday': 'Resume from yesterday',
+    'download.tray.resumePromptBody': '{{done}} of {{total}} photos completed last time.',
+    'download.tray.visitorPausedNoSourceBody': 'Visitor download paused — {{done}} of {{total}} photos saved. Re-open the share link to resume.',
+    'download.tray.visitorPausedNoSourceHint': 'We could not keep your share-link credentials across tabs. Open the original link to continue.',
+    'download.tray.openShareLinkToResume': 'Open the share link to resume',
+    'download.tray.failureBadge': '{{count}} failure',
   };
   return interpolate(map[key] ?? key, values);
 }

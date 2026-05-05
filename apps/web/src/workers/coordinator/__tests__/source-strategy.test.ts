@@ -189,3 +189,60 @@ describe('SourceStrategy.getScopeKey', () => {
     expect(scope.slice('auth:'.length)).not.toContain(account);
   });
 });
+
+describe('createShareLinkSourceStrategy revocation mapping', () => {
+  // ApiError is not mocked at module level, so we import it from the real
+  // module here so `instanceof` checks succeed in the strategy under test.
+  it.each([
+    [401, '401 unauthorized'],
+    [403, '403 forbidden'],
+    [410, '410 gone'],
+  ])('maps HTTP %i from share-link shard fetch to AccessRevoked', async (status) => {
+    const { ApiError } = await import('../../../lib/api');
+    shardServiceMocks.downloadShardViaShareLink.mockRejectedValueOnce(
+      new ApiError(status, 'denied'),
+    );
+    const s = createShareLinkSourceStrategy({
+      linkId: 'link-1',
+      grantToken: null,
+      getTierKey: () => new Uint8Array(32),
+    });
+    const err = await s.fetchShard('shard-a', new AbortController().signal).catch((e) => e);
+    expect(err).toBeInstanceOf(DownloadError);
+    expect((err as DownloadError).code).toBe('AccessRevoked');
+  });
+
+  it('does NOT map other status codes to AccessRevoked', async () => {
+    const { ApiError } = await import('../../../lib/api');
+    shardServiceMocks.downloadShardViaShareLink.mockRejectedValueOnce(
+      new ApiError(500, 'server error'),
+    );
+    const s = createShareLinkSourceStrategy({
+      linkId: 'link-1',
+      grantToken: null,
+      getTierKey: () => new Uint8Array(32),
+    });
+    const err = await s.fetchShard('shard-a', new AbortController().signal).catch((e) => e);
+    expect(err).not.toBeInstanceOf(DownloadError);
+    expect((err as ApiError).status).toBe(500);
+  });
+
+  it('maps an ApiError wrapped inside ShardDownloadError', async () => {
+    const { ApiError } = await import('../../../lib/api');
+    // Use the same mocked ShardDownloadError class the strategy will see.
+    const mod = await import('../../../lib/shard-service');
+    const wrapped = new (mod.ShardDownloadError as unknown as {
+      new (id: string, cause: unknown): Error;
+    })('shard-a', new ApiError(403, 'gone'));
+    (wrapped as unknown as { cause: unknown }).cause = new ApiError(403, 'gone');
+    shardServiceMocks.downloadShardViaShareLink.mockRejectedValueOnce(wrapped);
+    const s = createShareLinkSourceStrategy({
+      linkId: 'link-1',
+      grantToken: null,
+      getTierKey: () => new Uint8Array(32),
+    });
+    const err = await s.fetchShard('shard-a', new AbortController().signal).catch((e) => e);
+    expect(err).toBeInstanceOf(DownloadError);
+    expect((err as DownloadError).code).toBe('AccessRevoked');
+  });
+});

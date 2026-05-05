@@ -3,6 +3,7 @@ import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import { getDownloadManager } from '../lib/download-manager';
 import { defaultSaveTargetProvider } from '../lib/save-target-bridge';
+import { useDownloadScopeKey } from './useDownloadScopeKey';
 import type {
   AlbumDiff,
   CoordinatorWorkerApi,
@@ -53,6 +54,14 @@ export function useDownloadManager(): UseDownloadManagerResult {
   const [api, setApi] = useState<CoordinatorWorkerApi | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const apiRef = useRef<CoordinatorWorkerApi | null>(null);
+  // Current viewer scope. We use this to drop cross-scope broadcasts so a
+  // visitor tab is not even woken up by an authenticated tab's events
+  // (and vice versa). The tray UI applies the same predicate at render.
+  const currentScope = useDownloadScopeKey();
+  const currentScopeRef = useRef<string | null>(currentScope);
+  useEffect(() => {
+    currentScopeRef.current = currentScope;
+  }, [currentScope]);
 
   const refreshJobs = useCallback(async (): Promise<void> => {
     const currentApi = apiRef.current;
@@ -120,6 +129,12 @@ export function useDownloadManager(): UseDownloadManagerResult {
     const channel = new BroadcastChannel(CHANNEL_NAME);
     const listener = (event: MessageEvent<unknown>): void => {
       if (!isDownloadJobsBroadcastMessage(event.data)) {
+        return;
+      }
+      // Cross-scope filter: ZK-safety + perf. Visitor tabs MUST NOT be
+      // woken up by auth-tab events. Auth viewers additionally see
+      // `legacy:*` jobs as a one-shot v1 → v2 migration safety net.
+      if (!isMessageVisibleInScope(event.data.scopeKey, currentScopeRef.current)) {
         return;
       }
       void refreshJobs();
@@ -192,15 +207,24 @@ export function useDownloadManager(): UseDownloadManagerResult {
   return { ready, jobs, resumableJobs, api, error, subscribe, pauseJob, resumeJob, cancelJob, computeAlbumDiff };
 }
 
+/**
+ * Mirror of `filterJobsByScope` from DownloadTray.tsx, applied at the
+ * BroadcastChannel receive site so cross-scope events are dropped before
+ * we even hit the worker. Keep the predicate IN SYNC with the tray.
+ */
+function isMessageVisibleInScope(messageScope: string, currentScope: string | null): boolean {
+  if (currentScope === null) return false;
+  if (messageScope === currentScope) return true;
+  if (messageScope.startsWith('legacy:') && currentScope.startsWith('auth:')) return true;
+  return false;
+}
+
 function isDownloadJobsBroadcastMessage(value: unknown): value is DownloadJobsBroadcastMessage {
-  return typeof value === 'object'
-    && value !== null
-    && 'kind' in value
-    && value.kind === 'job-changed'
-    && 'jobId' in value
-    && typeof value.jobId === 'string'
-    && 'phase' in value
-    && typeof value.phase === 'string'
-    && 'lastUpdatedAtMs' in value
-    && typeof value.lastUpdatedAtMs === 'number';
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return v.kind === 'job-changed'
+    && typeof v.jobId === 'string'
+    && typeof v.phase === 'string'
+    && typeof v.lastUpdatedAtMs === 'number'
+    && typeof v.scopeKey === 'string';
 }

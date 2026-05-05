@@ -216,6 +216,33 @@ function ResumableRow({ job, onResume, onDiscard }: {
   readonly onDiscard: (jobId: string) => void;
 }): JSX.Element {
   const { t } = useTranslation();
+  // Visitor jobs reconstructed from OPFS lose their in-memory SourceStrategy
+  // (link-id + grant token + tier-3 key resolver are not persisted). Until
+  // the user re-opens the matching share link the only safe action is
+  // Discard. Resume is hidden behind a help tooltip.
+  if (job.pausedNoSource) {
+    return (
+      <div className="download-tray-resumable-row" data-testid="resumable-paused-no-source">
+        <span className="download-tray-status-icon" aria-hidden="true">↻</span>
+        <span>{shortId(job.albumId)}</span>
+        <span>{t('download.tray.visitorPausedNoSourceBody', { done: job.photosDone, total: job.photosTotal })}</span>
+        <span
+          className="download-tray-muted"
+          title={t('download.tray.visitorPausedNoSourceHint')}
+          aria-label={t('download.tray.visitorPausedNoSourceHint')}
+        >
+          {t('download.tray.openShareLinkToResume')}
+        </span>
+        <button
+          type="button"
+          className="download-tray-button download-tray-button--danger"
+          onClick={() => onDiscard(job.jobId)}
+        >
+          {t('download.tray.discard')}
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="download-tray-resumable-row">
       <span className="download-tray-status-icon" aria-hidden="true">↻</span>

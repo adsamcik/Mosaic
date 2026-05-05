@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
-import { render } from '../../components/Download/__tests__/DownloadTestUtils';
+import { render, flushMicrotasks } from '../../components/Download/__tests__/DownloadTestUtils';
 import type { CoordinatorWorkerApi, JobProgressEvent, PhotoMeta } from '../../workers/types';
 import type { LinkDecryptionKey } from '../../workers/types';
 
@@ -32,6 +32,7 @@ vi.mock('../../lib/shard-service', () => ({
 interface ManagerStub {
   api: CoordinatorWorkerApi | null;
   cancelJob: ReturnType<typeof vi.fn>;
+  resumableJobs: ReadonlyArray<unknown>;
 }
 let managerStub: ManagerStub;
 vi.mock('../useDownloadManager', () => ({
@@ -86,14 +87,14 @@ function Harness(p: HarnessProps): null {
 }
 
 beforeEach(() => {
-  managerStub = { api: null, cancelJob: vi.fn() };
+  managerStub = { api: null, cancelJob: vi.fn(), resumableJobs: [] };
 });
 afterEach(() => { document.body.replaceChildren(); });
 
 describe('useVisitorAlbumDownload', () => {
   it('starts a coordinator job with a share-link source strategy', async () => {
     const stub = makeApi();
-    managerStub = { api: stub.api, cancelJob: vi.fn() };
+    managerStub = { api: stub.api, cancelJob: vi.fn(), resumableJobs: [] };
     const tier3: LinkDecryptionKey = new Uint8Array(32).fill(5);
     let latest: ReturnType<typeof useVisitorAlbumDownload> | null = null;
 
@@ -136,7 +137,7 @@ describe('useVisitorAlbumDownload', () => {
   });
 
   it('does nothing and surfaces an error when the coordinator manager is not ready', async () => {
-    managerStub = { api: null, cancelJob: vi.fn() };
+    managerStub = { api: null, cancelJob: vi.fn(), resumableJobs: [] };
     let latest: ReturnType<typeof useVisitorAlbumDownload> | null = null;
     const r = await render(
       <Harness
@@ -156,7 +157,7 @@ describe('useVisitorAlbumDownload', () => {
   it('cancel() aborts and hard-cancels the coordinator job', async () => {
     const stub = makeApi();
     const cancelJob = vi.fn(async () => ({ phase: 'Cancelled' }));
-    managerStub = { api: stub.api, cancelJob };
+    managerStub = { api: stub.api, cancelJob, resumableJobs: [] };
     let latest: ReturnType<typeof useVisitorAlbumDownload> | null = null;
     const r = await render(
       <Harness
@@ -176,4 +177,40 @@ describe('useVisitorAlbumDownload', () => {
     expect(cancelJob).toHaveBeenCalledWith('job-v1', { soft: false });
     await r.unmount();
   });
+
+  it('rebinds reconstructed visitor jobs whose scope key matches and skips others', async () => {
+    const stub = makeApi();
+    const rebind = vi.fn(async (): Promise<void> => undefined);
+    (stub.api as unknown as { rebindJobSource: typeof rebind }).rebindJobSource = rebind;
+    // Two paused-no-source jobs: one matches the link's scope (rebinds), one does not.
+    await import('../../lib/scope-key').then((mod) => mod.ensureScopeKeySodiumReady());
+    const { deriveVisitorScopeKey } = await import('../../lib/scope-key');
+    const matchScope = deriveVisitorScopeKey('link-a', null);
+    const otherScope = deriveVisitorScopeKey('link-b', null);
+    managerStub = {
+      api: stub.api,
+      cancelJob: vi.fn(),
+      resumableJobs: [
+        { jobId: 'match', scopeKey: matchScope, pausedNoSource: true },
+        { jobId: 'other', scopeKey: otherScope, pausedNoSource: true },
+        { jobId: 'live', scopeKey: matchScope, pausedNoSource: false },
+      ],
+    };
+    const tier3: LinkDecryptionKey = new Uint8Array(32).fill(5);
+    const r = await render(
+      <Harness
+        linkId={'link-a'}
+        grantToken={null}
+        getTier3Key={() => tier3}
+        onResult={() => undefined}
+      />,
+    );
+    // Allow effect microtasks to drain.
+    await act(async () => { await flushMicrotasks(); await flushMicrotasks(); });
+    expect(rebind).toHaveBeenCalledTimes(1);
+    const firstCall = rebind.mock.calls[0] as [string, unknown] | undefined;
+    expect(firstCall?.[0]).toBe('match');
+    await r.unmount();
+  });
+
 });

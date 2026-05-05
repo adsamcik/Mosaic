@@ -14,6 +14,7 @@ const baseJob: JobSummary = {
   createdAtMs: 1,
   lastUpdatedAtMs: 1,
   scopeKey: 'auth:00000000000000000000000000000000',
+  lastErrorReason: null,
 };
 
 afterEach(() => document.body.replaceChildren());
@@ -43,6 +44,46 @@ describe('DownloadJobRow', () => {
     expect(textContent(rendered.container)).toContain('2 failures');
     await rendered.unmount();
   });
+
+  it('shows "Share link revoked or expired" for visitor jobs Errored with AccessRevoked', async () => {
+    const visitorJob: JobSummary = {
+      ...baseJob,
+      phase: 'Errored',
+      lastErrorReason: 'AccessRevoked',
+      scopeKey: 'visitor:11111111111111111111111111111111',
+    };
+    const rendered = await render(
+      <DownloadJobRow
+        job={visitorJob}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onCancelSoft={vi.fn()}
+        onCancelHard={vi.fn()}
+      />,
+    );
+    expect(textContent(rendered.container)).toContain('Share link revoked or expired');
+    await rendered.unmount();
+  });
+
+  it('does NOT use the share-link copy for AUTH jobs Errored with AccessRevoked', async () => {
+    const authJob: JobSummary = {
+      ...baseJob,
+      phase: 'Errored',
+      lastErrorReason: 'AccessRevoked',
+      scopeKey: 'auth:00000000000000000000000000000000',
+    };
+    const rendered = await render(
+      <DownloadJobRow
+        job={authJob}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onCancelSoft={vi.fn()}
+        onCancelHard={vi.fn()}
+      />,
+    );
+    expect(textContent(rendered.container)).not.toContain('Share link revoked');
+    await rendered.unmount();
+  });
 });
 
 function translate(key: string, values?: Record<string, unknown>): string {
@@ -56,6 +97,10 @@ function translate(key: string, values?: Record<string, unknown>): string {
     'download.tray.cancelJob': 'Cancel download job',
     'download.tray.pause': 'Pause',
     'download.tray.cancel': 'Cancel',
+    'download.tray.shareLinkRevoked': 'Share link revoked or expired',
+    'download.tray.phase.Errored': 'Error',
+    'download.tray.discardJob': 'Discard download progress',
+    'download.tray.discard': 'Discard',
   };
   let output = map[key] ?? key;
   for (const [name, value] of Object.entries(values ?? {})) {

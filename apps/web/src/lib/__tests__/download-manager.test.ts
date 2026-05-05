@@ -46,6 +46,7 @@ function createApi(): CoordinatorWorkerApi & { [releaseProxy]: () => void } {
     sendEvent: vi.fn(() => phaseResult('Running')),
     pauseJob: vi.fn(() => phaseResult('Paused')),
     resumeJob: vi.fn(() => phaseResult('Running')),
+    rebindJobSource: vi.fn(async () => undefined),
     cancelJob: vi.fn(() => phaseResult('Cancelled')),
     listJobs: vi.fn(async () => []),
     listResumableJobs: vi.fn(async () => []),

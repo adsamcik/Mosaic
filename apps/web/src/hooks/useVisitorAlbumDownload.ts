@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createLogger } from '../lib/logger';
 import { supportsFileSystemAccess } from '../lib/album-download-service';
 import { useDownloadManager } from './useDownloadManager';
 import { useWakeLock } from './useWakeLock';
 import { runCoordinatorDownload } from './coordinator-download-runner';
 import { createShareLinkSourceStrategy } from '../workers/coordinator/source-strategy-sharelink';
+import { ensureScopeKeySodiumReady, deriveVisitorScopeKey, scopeKeyPrefix } from '../lib/scope-key';
 import type {
   DownloadOutputMode,
   JobProgressEvent,
@@ -88,6 +89,39 @@ export function useVisitorAlbumDownload(
     }),
     [linkId, grantToken, getTier3Key],
   );
+
+  // Re-bind any reconstructed paused-no-source visitor jobs that match
+  // this share link. The coordinator strictly checks the scope-key match
+  // before accepting the rebind, so a different link in another tab cannot
+  // pull jobs onto the wrong visitor scope.
+  useEffect(() => {
+    const api = manager.api;
+    if (api === null) return;
+    let cancelled = false;
+    void (async (): Promise<void> => {
+      await ensureScopeKeySodiumReady();
+      if (cancelled) return;
+      const scopeKey = deriveVisitorScopeKey(linkId, grantToken);
+      const resumable = manager.resumableJobs.filter(
+        (job) => job.pausedNoSource && job.scopeKey === scopeKey,
+      );
+      for (const job of resumable) {
+        try {
+          await api.rebindJobSource(job.jobId, sourceFactory());
+        } catch (err) {
+          // ZK-safe: log only the error name and the scope prefix; never the
+          // link id, grant token, or hex tail of the scope key.
+          log.warn('Visitor source rebind failed', {
+            errorName: err instanceof Error ? err.name : 'Unknown',
+            scopePrefix: scopeKeyPrefix(scopeKey),
+          });
+        }
+      }
+    })();
+    return (): void => {
+      cancelled = true;
+    };
+  }, [manager.api, manager.resumableJobs, linkId, grantToken, sourceFactory]);
 
   const cancel = useCallback((): void => {
     abortControllerRef.current?.abort();
