@@ -11,6 +11,7 @@ import type {
   JobProgressEvent,
   PhotoMeta,
 } from '../workers/types';
+import type { DownloadSchedule } from '../lib/download-schedule';
 
 const log = createLogger('useAlbumDownload');
 
@@ -58,6 +59,13 @@ export interface StartDownloadOptions {
   readonly mode?: DownloadOutputMode;
   /** Legacy-flow resolver (e.g. share-link bulk path). Triggers the legacy path. */
   readonly resolveOriginal?: AlbumDownloadResolver;
+  /**
+   * Optional conditional schedule (coordinator path only). When omitted /
+   * kind === 'immediate', the job dispatches as soon as the worker is
+   * ready; otherwise the coordinator persists the schedule and gates
+   * dispatch through ScheduleManager.
+   */
+  readonly schedule?: DownloadSchedule;
 }
 
 export function useAlbumDownload(): UseAlbumDownloadResult {
@@ -147,6 +155,7 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
         albumName,
         photos,
         mode,
+        ...(options?.schedule ? { schedule: options.schedule } : {}),
         onJobProgress: setJobProgress,
         signal: abortController.signal,
         activeJobIdRef,

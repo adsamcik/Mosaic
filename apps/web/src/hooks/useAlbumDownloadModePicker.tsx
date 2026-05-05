@@ -3,6 +3,13 @@ import { DownloadModePicker } from '../components/Download/DownloadModePicker';
 import { PersistencePrompt } from '../components/Download/PersistencePrompt';
 import { useStoragePersistence } from './useStoragePersistence';
 import type { DownloadOutputMode, PhotoMeta } from '../workers/types';
+import type { DownloadSchedule } from '../lib/download-schedule';
+
+/** Bundle returned by the picker promise. */
+export interface PickerResolution {
+  readonly mode: DownloadOutputMode;
+  readonly schedule: DownloadSchedule;
+}
 
 /**
  * Companion hook for {@link useAlbumDownload} / {@link useVisitorAlbumDownload}
@@ -25,8 +32,8 @@ import type { DownloadOutputMode, PhotoMeta } from '../workers/types';
 export interface UseAlbumDownloadModePickerResult {
   /** Mount this somewhere in the tree (e.g. portal). */
   readonly pickerElement: JSX.Element | null;
-  /** Open the picker and resolve with the chosen mode, or null if cancelled. */
-  readonly prompt: (args: PromptArgs) => Promise<DownloadOutputMode | null>;
+  /** Open the picker and resolve with the chosen mode + schedule, or null if cancelled. */
+  readonly prompt: (args: PromptArgs) => Promise<PickerResolution | null>;
 }
 
 interface PromptArgs {
@@ -46,7 +53,7 @@ interface PickerSession {
   readonly suggestedFileName: string;
   readonly photos: ReadonlyArray<PhotoMeta>;
   readonly hideKeepOffline: boolean;
-  readonly resolve: (mode: DownloadOutputMode | null) => void;
+  readonly resolve: (resolution: PickerResolution | null) => void;
 }
 
 export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
@@ -60,8 +67,8 @@ export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
   const [persistencePromptActive, setPersistencePromptActive] = useState(false);
   const persistence = useStoragePersistence();
 
-  const prompt = useCallback((args: PromptArgs): Promise<DownloadOutputMode | null> => {
-    return new Promise<DownloadOutputMode | null>((resolve) => {
+  const prompt = useCallback((args: PromptArgs): Promise<PickerResolution | null> => {
+    return new Promise<PickerResolution | null>((resolve) => {
       setSession({
         albumId: args.albumId,
         suggestedFileName: args.suggestedFileName,
@@ -72,12 +79,12 @@ export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
     });
   }, []);
 
-  const handleConfirm = useCallback((mode: DownloadOutputMode): void => {
+  const handleConfirm = useCallback((mode: DownloadOutputMode, schedule: DownloadSchedule): void => {
     if (!session) return;
     // Resolve the picker promise FIRST so the caller can start the job
     // immediately. The persistence banner is rendered below in parallel
     // and never blocks job start.
-    session.resolve(mode);
+    session.resolve({ mode, schedule });
     setSession(null);
     if (mode.kind === 'keepOffline') {
       setPersistencePromptActive(true);

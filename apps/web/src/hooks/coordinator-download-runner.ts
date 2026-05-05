@@ -1,5 +1,6 @@
 import * as Comlink from 'comlink';
 import { getOrFetchEpochKey } from '../lib/epoch-key-service';
+import type { DownloadSchedule } from '../lib/download-schedule';
 import type {
   CoordinatorWorkerApi,
   DownloadOutputMode,
@@ -26,6 +27,15 @@ export interface RunCoordinatorDownloadArgs {
   /** Optional source strategy. When omitted, the worker uses its default
    *  authenticated source. Visitor flows MUST pass a `share-link` strategy. */
   readonly source?: SourceStrategy;
+  /**
+   * Optional conditional schedule. When omitted (or kind === 'immediate')
+   * the coordinator dispatches the job right away. Non-trivial schedules
+   * are persisted into the v3 snapshot and gated by the in-worker
+   * ScheduleManager. The runner still subscribes for progress and resolves
+   * once a terminal phase is reached, so callers see the same await
+   * semantics regardless of whether the job ran immediately or later.
+   */
+  readonly schedule?: DownloadSchedule;
   readonly onJobProgress: (event: JobProgressEvent) => void;
   readonly signal: AbortSignal;
   readonly activeJobIdRef: { current: string | null };
@@ -39,9 +49,12 @@ export async function runCoordinatorDownload(args: RunCoordinatorDownloadArgs): 
     : { ...planInput, outputMode: args.mode };
   // Comlink-proxy the source so its async methods are callable from the
   // coordinator worker (the strategy holds React-state callbacks).
-  const startInput: StartJobInput = args.source
+  const withSource: StartJobInput = args.source
     ? { ...baseInput, source: Comlink.proxy(args.source) }
     : baseInput;
+  const startInput: StartJobInput = args.schedule
+    ? { ...withSource, schedule: args.schedule }
+    : withSource;
 
   const { jobId } = await args.api.startJob(startInput);
   args.activeJobIdRef.current = jobId;

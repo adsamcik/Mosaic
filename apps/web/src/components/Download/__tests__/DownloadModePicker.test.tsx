@@ -123,7 +123,7 @@ describe('DownloadModePicker', () => {
     expect(r.container.textContent).toContain('1 prompt');
     await click(radio);
     await click(requireElement(r.container.querySelector('[data-testid="download-mode-picker-start"]')));
-    expect(onConfirm).toHaveBeenCalledWith({ kind: 'perFile', strategy: 'webShare' });
+    expect(onConfirm).toHaveBeenCalledWith({ kind: 'perFile', strategy: 'webShare' }, { kind: 'immediate' });
     await r.unmount();
   });
 
@@ -176,7 +176,7 @@ describe('DownloadModePicker', () => {
     );
     await click(requireElement(r.container.querySelector('[data-testid="download-mode-radio-keepOffline"]')));
     await click(requireElement(r.container.querySelector('[data-testid="download-mode-picker-start"]')));
-    expect(onConfirm).toHaveBeenCalledWith({ kind: 'keepOffline' });
+    expect(onConfirm).toHaveBeenCalledWith({ kind: 'keepOffline' }, expect.objectContaining({ kind: expect.any(String) }));
     await r.unmount();
   });
 
@@ -187,7 +187,7 @@ describe('DownloadModePicker', () => {
     );
     // Default selection should be 'zip'
     await click(requireElement(r.container.querySelector('[data-testid="download-mode-picker-start"]')));
-    expect(onConfirm).toHaveBeenCalledWith({ kind: 'zip', fileName: 'my-album.zip' });
+    expect(onConfirm).toHaveBeenCalledWith({ kind: 'zip', fileName: 'my-album.zip' }, { kind: 'immediate' });
     await r.unmount();
   });
 

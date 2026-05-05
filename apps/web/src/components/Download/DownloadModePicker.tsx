@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DownloadOutputMode, PerFileStrategy } from '../../workers/types';
 import type { PhotoMeta } from '../../workers/types';
+import type { DownloadSchedule } from '../../lib/download-schedule';
 import { BLOB_ANCHOR_PHOTO_LIMIT, detectPerFileStrategy, supportsStreamingSave } from '../../lib/save-target';
+import { ScheduleControls, loadLastUsedSchedule, persistLastUsedSchedule } from './ScheduleControls';
 
 const LAST_MODE_STORAGE_KEY = 'mosaic.download.lastMode';
 
@@ -21,8 +23,8 @@ export interface DownloadModePickerProps {
   readonly photos: ReadonlyArray<PhotoMeta>;
   /** Called when the user dismisses the picker without picking. */
   readonly onClose: () => void;
-  /** Called with the chosen mode when the user clicks "Start download". */
-  readonly onConfirm: (mode: DownloadOutputMode) => void | Promise<void>;
+  /** Called with the chosen mode + optional schedule when the user clicks "Start download". */
+  readonly onConfirm: (mode: DownloadOutputMode, schedule: DownloadSchedule) => void | Promise<void>;
   /**
    * Hide the "Make available offline" option. Used by visitor (share-link)
    * flows where there is no per-account scope key to bind OPFS staging to.
@@ -41,6 +43,7 @@ export interface DownloadModePickerProps {
 export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element | null {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<PickerKind>(() => loadLastMode());
+  const [schedule, setSchedule] = useState<DownloadSchedule>(() => loadLastUsedSchedule());
 
   const translate = (key: string, opts?: Record<string, unknown>): string => (opts === undefined ? t(key) : t(key, opts));
   const isMobile = useIsMobile();
@@ -60,18 +63,27 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
 
   if (!props.open) return null;
 
+  // Schedule is only meaningful for keepOffline (the only mode that can
+  // legitimately defer). For all other modes we pass through Immediate to
+  // preserve historical behaviour and avoid surfacing a Wi-Fi gate when
+  // the user explicitly clicked Save as ZIP / individual files.
+  const effectiveSchedule: DownloadSchedule = selected === 'keepOffline' ? schedule : { kind: 'immediate' };
+
   const handleConfirm = async (): Promise<void> => {
     if (selected === 'perFile') {
       if (perFileStrategy === null || perFileRefusal !== null) return;
       persistLastMode(selected);
-      await props.onConfirm({ kind: 'perFile', strategy: perFileStrategy });
+      await props.onConfirm({ kind: 'perFile', strategy: perFileStrategy }, effectiveSchedule);
       return;
     }
     persistLastMode(selected);
+    if (selected === 'keepOffline') {
+      persistLastUsedSchedule(schedule);
+    }
     const mode: DownloadOutputMode = selected === 'zip'
       ? { kind: 'zip', fileName: ensureZipExtension(props.suggestedFileName) }
       : { kind: 'keepOffline' };
-    await props.onConfirm(mode);
+    await props.onConfirm(mode, effectiveSchedule);
   };
 
   const className = `download-mode-picker download-mode-picker--${isMobile ? 'sheet' : 'dialog'}`;
@@ -130,6 +142,11 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
         {selected === 'perFile' && perFileStrategy === 'fsAccessDirectory' ? (
           <p className="download-mode-picker-status">{t('download.modePicker.perFileDirectoryDisclosure')}</p>
         ) : null}
+        {selected === 'keepOffline' && (
+          <div className="download-mode-picker-schedule" data-testid="download-mode-picker-schedule">
+            <ScheduleControls value={schedule} onChange={setSchedule} />
+          </div>
+        )}
         <StatusRow />
         <div className="download-mode-picker-actions">
           <button type="button" className="download-mode-picker-button" onClick={props.onClose}>
