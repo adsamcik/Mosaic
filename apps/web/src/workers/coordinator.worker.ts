@@ -18,7 +18,13 @@ import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import * as opfsStaging from '../lib/opfs-staging';
 import { createAuthenticatedSourceStrategy } from './coordinator/source-strategy-auth';
-import { ensureScopeKeySodiumReady } from '../lib/scope-key';
+import {
+  isVisitorScopeKey,
+  selectStaleVisitorJobs,
+  VISITOR_GC_TTL_MS,
+  VISITOR_RESUME_GRACE_MS,
+} from './coordinator/visitor-gc';
+import { ensureScopeKeySodiumReady, scopeKeyPrefix } from '../lib/scope-key';
 import type { SourceStrategy } from './coordinator/source-strategy';
 import {
   ensureRustReady,
@@ -99,6 +105,8 @@ interface InMemoryJob {
   lastUpdatedAtMs: number;
   /** Tray scope key (`auth:|visitor:|legacy:` + 32-hex). ZK-safe to log only the prefix. */
   readonly scopeKey: string;
+  /** Most-recent error reason from the persisted failure log, when any. */
+  readonly lastErrorReason: DownloadErrorReason | null;
 }
 
 type SubscriptionCallback = (event: JobProgressEvent) => void;
@@ -128,6 +136,8 @@ interface ParsedSnapshotView {
   readonly plan: DownloadPlanEntry[];
   /** Tray scope key (CBOR snapshot key 10). v1 snapshots get a synthesized legacy fallback. */
   readonly scopeKey: string;
+  /** Last failure reason persisted in the failure log (null when empty). */
+  readonly lastErrorReason: DownloadErrorReason | null;
 }
 
 const PHASE_BY_CODE: Readonly<Record<number, DownloadPhase>> = {
@@ -172,6 +182,14 @@ const DOWNLOAD_ERROR_CODE_BY_REASON: Readonly<Record<DownloadErrorReason, number
   IllegalState: 8,
 };
 
+const DOWNLOAD_REASON_BY_CODE: Readonly<Record<number, DownloadErrorReason>> = (() => {
+  const out: Record<number, DownloadErrorReason> = {} as Record<number, DownloadErrorReason>;
+  for (const [reason, code] of Object.entries(DOWNLOAD_ERROR_CODE_BY_REASON)) {
+    out[code] = reason as DownloadErrorReason;
+  }
+  return out;
+})();
+
 /** Singleton worker implementation hosting all Phase 1 download jobs. */
 export class CoordinatorWorker implements CoordinatorWorkerApi {
   private initialized = false;
@@ -202,6 +220,15 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
    * restart; partially mitigated by the resume-prompt re-confirmation.
    */
   private readonly jobExportFailures = new Map<string, Map<string, DownloadErrorReason>>();
+  /**
+   * Visitor-scope job ids whose in-memory `SourceStrategy` was lost on
+   * worker restart. Until the user re-opens the matching share link and
+   * `rebindJobSource` is called, these jobs surface in the resume prompt
+   * as `pausedNoSource: true` and `resumeJob` rejects with IllegalState.
+   * Auth and legacy jobs are NEVER added — they keep their existing resume
+   * path via the default authenticated source.
+   */
+  private readonly pausedNoSourceVisitorJobs = new Set<string>();
   /** Main-thread provider for opening writable byte sinks during finalize. */
   private saveTargetProvider: RemoteSaveTargetProvider | null = null;
 
@@ -305,6 +332,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       this.jobOutputModes.delete(jobId);
       this.jobSources.delete(jobId);
       this.jobExportFailures.delete(jobId);
+      this.pausedNoSourceVisitorJobs.delete(jobId);
       this.emitProgress(summaryToProgress(updated));
       this.broadcast(updated);
       return { phase: updated.state.phase };
@@ -323,6 +351,12 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   /** Resume a paused, reconstructed-running, or finalizing job. */
   async resumeJob(jobId: string, opts?: { readonly mode?: DownloadOutputMode }): Promise<{ phase: DownloadPhase }> {
     this.assertInitialized();
+    if (this.pausedNoSourceVisitorJobs.has(jobId)) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.DownloadIllegalState,
+        'Visitor job has no source strategy; rebind via the share link first',
+      );
+    }
     if (opts?.mode) {
       this.jobOutputModes.set(jobId, opts.mode);
     }
@@ -354,6 +388,48 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     return this.sendEvent(jobId, { kind: 'CancelRequested', soft: opts.soft });
   }
 
+  /**
+   * Re-attach a `SourceStrategy` to a reconstructed visitor job after the
+   * user has opened the matching share link.
+   *
+   * Rejects with `IllegalState` if:
+   *   - the job is unknown,
+   *   - the job is not currently `pausedNoSource`,
+   *   - or the supplied source's `scopeKey` does not match the persisted
+   *     job's `scopeKey` (defensive cross-link guard).
+   *
+   * On success the job is removed from `pausedNoSourceVisitorJobs` and
+   * `resumeJob` proceeds normally on the caller's next click.
+   */
+  async rebindJobSource(jobId: string, source: SourceStrategy): Promise<void> {
+    this.assertInitialized();
+    const job = this.requireJob(jobId);
+    if (!this.pausedNoSourceVisitorJobs.has(jobId)) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.DownloadIllegalState,
+        'Job is not paused-no-source; rebind is a no-op',
+      );
+    }
+    if (source.getScopeKey() !== job.scopeKey) {
+      log.warn('Rebind rejected: scope mismatch', {
+        jobId: shortId(jobId),
+        sourcePrefix: scopeKeyPrefix(source.getScopeKey()),
+        jobPrefix: scopeKeyPrefix(job.scopeKey),
+      });
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.DownloadIllegalState,
+        'Source strategy scope does not match job scope',
+      );
+    }
+    this.jobSources.set(jobId, source);
+    this.pausedNoSourceVisitorJobs.delete(jobId);
+    log.info('Rebound visitor job source', {
+      jobId: shortId(jobId),
+      scopePrefix: scopeKeyPrefix(job.scopeKey),
+    });
+    this.emitJobChanged(job);
+  }
+
   /** List all known in-memory + OPFS jobs. */
   async listJobs(): Promise<JobSummary[]> {
     this.assertInitialized();
@@ -371,7 +447,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     await this.reconcilePersistedJobs();
     return [...this.jobs.values()]
       .filter((job) => this.isJobResumable(job))
-      .map(toResumableJobSummary)
+      .map((job) => toResumableJobSummary(job, this.pausedNoSourceVisitorJobs.has(job.jobId)))
       .sort((a, b) => a.jobId.localeCompare(b.jobId));
   }
 
@@ -385,6 +461,11 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
    */
   private isJobResumable(job: InMemoryJob): boolean {
     const phase = job.state.phase;
+    // Visitor pausedNoSource: always surface so the user can Discard or
+    // re-bind via the share-link tab regardless of progress.
+    if (this.pausedNoSourceVisitorJobs.has(job.jobId)) {
+      return phase !== 'Done' && phase !== 'Cancelled' && phase !== 'Errored';
+    }
     if (phase === 'Finalizing') return true;
     if (phase === 'Running') return !this.jobOutputModes.has(job.jobId);
     if (phase === 'Paused' || phase === 'Preparing') {
@@ -457,6 +538,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       this.jobOutputModes.delete(jobId);
       this.jobSources.delete(jobId);
       this.jobExportFailures.delete(jobId);
+      this.pausedNoSourceVisitorJobs.delete(jobId);
     }
     return { purged: result.purged };
   }
@@ -753,6 +835,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     await ensureRustReady();
     await ensureScopeKeySodiumReady();
     const reconstructedJobs = await this.reconcilePersistedJobs();
+    await this.sweepStaleVisitorJobsOnStartup();
+    this.markPausedNoSourceVisitorJobs();
     this.initialized = true;
     // Intentionally NOT auto-spinning drivers for reconstructed jobs:
     // the Rust snapshot does not persist the user's chosen output mode, so
@@ -810,9 +894,69 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     }
   }
 
-  // TODO(p3-visitor-gc): GC visitor: scope snapshots whose link is no longer
-  // accessible (404 from /api/s/{linkId}/photos) so an offline tab does not
-  // hold an OPFS staging dir indefinitely after a share-link revocation.
+  /**
+   * Sweep abandoned visitor-scope OPFS jobs on startup.
+   *
+   * Visitor jobs are coupled to a share-link/grant the user may never come
+   * back to. After {@link VISITOR_GC_TTL_MS} (terminal) or
+   * {@link VISITOR_RESUME_GRACE_MS} (non-terminal) the staging directory is
+   * deleted so an offline tab cannot accumulate OPFS storage indefinitely.
+   *
+   * Auth and legacy jobs are never touched here; they have their own
+   * retention paths via the explicit `gc({ maxAgeMs })` API.
+   */
+  private async sweepStaleVisitorJobsOnStartup(): Promise<void> {
+    const candidates = [...this.jobs.values()].map((job) => ({
+      jobId: job.jobId,
+      scopeKey: job.scopeKey,
+      phase: job.state.phase,
+      lastUpdatedAtMs: job.lastUpdatedAtMs,
+    }));
+    const stale = selectStaleVisitorJobs(candidates, {
+      nowMs: Date.now(),
+      ttlMs: VISITOR_GC_TTL_MS,
+      graceMs: VISITOR_RESUME_GRACE_MS,
+    });
+    if (stale.length === 0) return;
+    for (const jobId of stale) {
+      try {
+        await opfsStaging.purgeJob(jobId);
+      } catch (error) {
+        log.warn('Visitor GC purge failed', {
+          jobId: shortId(jobId),
+          errorName: error instanceof Error ? error.name : 'Unknown',
+        });
+      }
+      this.jobs.delete(jobId);
+      this.jobOutputModes.delete(jobId);
+      this.jobSources.delete(jobId);
+      this.jobExportFailures.delete(jobId);
+      this.pausedNoSourceVisitorJobs.delete(jobId);
+    }
+    log.info('Visitor GC swept stale jobs', { count: stale.length });
+  }
+
+  /**
+   * After reconcile, mark every non-terminal visitor-scope job as
+   * `pausedNoSource` because the in-memory `SourceStrategy` did not
+   * survive the worker restart. The resume prompt will surface these with
+   * Discard-only actions until the user re-opens the matching share link.
+   */
+  private markPausedNoSourceVisitorJobs(): void {
+    for (const job of this.jobs.values()) {
+      if (!isVisitorScopeKey(job.scopeKey)) continue;
+      if (this.jobSources.has(job.jobId)) continue;
+      const phase = job.state.phase;
+      if (phase === 'Done' || phase === 'Cancelled' || phase === 'Errored') continue;
+      this.pausedNoSourceVisitorJobs.add(job.jobId);
+    }
+    if (this.pausedNoSourceVisitorJobs.size > 0) {
+      log.info('Marked visitor jobs paused-no-source', {
+        count: this.pausedNoSourceVisitorJobs.size,
+      });
+    }
+  }
+
   private async reconcilePersistedJobs(): Promise<number> {
     const persistedJobs = await opfsStaging.listJobs();
     let reconstructedJobs = 0;
@@ -910,15 +1054,29 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     }
   }
 
-  // TODO(p3-visitor-broadcast-scope): include the job's scopeKey in the
-  // broadcast payload so other tabs can locally pre-filter without having to
-  // reload the full snapshot just to discover that a job is in another scope.
+  /**
+   * Cross-tab job-changed broadcast.
+   *
+   * The payload carries the job's tray `scopeKey` so subscribers can drop
+   * messages for scopes they are not viewing — visitor tabs MUST NOT be
+   * woken up by authenticated-tab events, and vice versa.
+   *
+   * Channel-name partitioning was considered (one channel per scope-prefix)
+   * but rejected because:
+   *   - The receive-side filter is already required for the legacy → auth
+   *     migration safety net.
+   *   - Multiple channel objects would multiply listeners + cleanup paths
+   *     without strengthening the invariant.
+   *   - The scope-key hex is a pseudonymous BLAKE2b-128 of identity bytes
+   *     and is already on `JobSummary`; broadcasting it adds no leakage.
+   */
   private broadcast(job: InMemoryJob): void {
     const message: DownloadJobsBroadcastMessage = {
       kind: 'job-changed',
       jobId: job.jobId,
       phase: job.state.phase,
       lastUpdatedAtMs: job.lastUpdatedAtMs,
+      scopeKey: job.scopeKey,
     };
     this.channel?.postMessage(message);
   }
@@ -951,16 +1109,13 @@ function isIdempotentEvent(phase: DownloadPhase, event: DownloadEventInput): boo
 }
 
 function isDownloadJobsBroadcastMessage(value: unknown): value is DownloadJobsBroadcastMessage {
-  return typeof value === 'object'
-    && value !== null
-    && 'kind' in value
-    && value.kind === 'job-changed'
-    && 'jobId' in value
-    && typeof value.jobId === 'string'
-    && 'phase' in value
-    && typeof value.phase === 'string'
-    && 'lastUpdatedAtMs' in value
-    && typeof value.lastUpdatedAtMs === 'number';
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return v.kind === 'job-changed'
+    && typeof v.jobId === 'string'
+    && typeof v.phase === 'string'
+    && typeof v.lastUpdatedAtMs === 'number'
+    && typeof v.scopeKey === 'string';
 }
 
 type PhotoStatusPatch =
@@ -984,6 +1139,7 @@ function createInMemoryJob(snapshotBytes: Uint8Array, checksum: Uint8Array): InM
     createdAtMs: view.createdAtMs,
     lastUpdatedAtMs: view.lastUpdatedAtMs,
     scopeKey: view.scopeKey,
+    lastErrorReason: view.lastErrorReason,
   };
 }
 
@@ -997,10 +1153,11 @@ function toJobSummary(job: InMemoryJob): JobSummary {
     createdAtMs: job.createdAtMs,
     lastUpdatedAtMs: job.lastUpdatedAtMs,
     scopeKey: job.scopeKey,
+    lastErrorReason: job.lastErrorReason,
   };
 }
 
-function toResumableJobSummary(job: InMemoryJob): ResumableJobSummary {
+function toResumableJobSummary(job: InMemoryJob, pausedNoSource: boolean): ResumableJobSummary {
   const summary = toJobSummary(job);
   return {
     ...summary,
@@ -1008,6 +1165,7 @@ function toResumableJobSummary(job: InMemoryJob): ResumableJobSummary {
     photosTotal: job.photos.length,
     bytesWritten: job.photos.reduce((total, photo) => total + photo.bytesWritten, 0),
     lastUpdatedAtMs: job.lastUpdatedAtMs,
+    pausedNoSource,
   };
 }
 
@@ -1091,7 +1249,20 @@ function parseSnapshotView(bytes: Uint8Array): ParsedSnapshotView {
     photos: expectArray(requiredMapValue(fields, 7)).map(parsePhoto),
     failureLog: expectArray(requiredMapValue(fields, 8)).map(parseFailure),
     scopeKey: scopeKey === null ? `legacy:${jobId}` : expectText(scopeKey),
+    lastErrorReason: lastFailureReason(expectArray(requiredMapValue(fields, 8))),
   };
+}
+
+function lastFailureReason(entries: readonly CborValue[]): DownloadErrorReason | null {
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const e = entries[i];
+    if (!e) continue;
+    const reasonValue = optionalMapValue(expectMap(e), 1);
+    if (reasonValue === null) continue;
+    const code = expectUint(reasonValue);
+    return DOWNLOAD_REASON_BY_CODE[code] ?? null;
+  }
+  return null;
 }
 
 function extractStateValue(snapshotBytes: Uint8Array): CborValue {
@@ -1192,7 +1363,13 @@ function parsePhoto(value: CborValue): DownloadPhotoStateView {
 
 function parseFailure(value: CborValue): DownloadFailureView {
   const fields = expectMap(value);
-  return { atMs: expectUint(requiredMapValue(fields, 2)) };
+  const reasonValue = optionalMapValue(fields, 1);
+  let reason: DownloadErrorReason | null = null;
+  if (reasonValue !== null) {
+    const code = expectUint(reasonValue);
+    reason = DOWNLOAD_REASON_BY_CODE[code] ?? null;
+  }
+  return { atMs: expectUint(requiredMapValue(fields, 2)), reason };
 }
 
 

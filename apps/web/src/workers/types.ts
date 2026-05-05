@@ -1225,6 +1225,11 @@ export interface DownloadPhotoStateView {
 /** TS-side mirror of a Rust failure-log entry; intentionally omits photo ids. */
 export interface DownloadFailureView {
   readonly atMs: number;
+  /**
+   * Stable error code for the failure (CBOR snapshot key 1 in failure-log entries).
+   * `null` when the persisted snapshot omits the reason (legacy snapshots).
+   */
+  readonly reason: DownloadErrorReason | null;
 }
 
 /** Stable download error reasons accepted by the Phase 1 coordinator event API. */
@@ -1357,6 +1362,11 @@ export interface JobSummary {
    * Only the prefix is safe to log; treat the hex tail as opaque.
    */
   readonly scopeKey: string;
+  /**
+   * Most recent failure reason (mirrors the tail of the persisted failure log).
+   * Used by the tray to surface visitor-specific copy for `AccessRevoked`.
+   */
+  readonly lastErrorReason: DownloadErrorReason | null;
 }
 
 /** Job summary useful for resuming a partially completed non-terminal download. */
@@ -1365,6 +1375,13 @@ export interface ResumableJobSummary extends JobSummary {
   readonly photosTotal: number;
   readonly bytesWritten: number;
   readonly lastUpdatedAtMs: number;
+  /**
+   * True for visitor-scope jobs reconstructed from OPFS that have lost their
+   * `SourceStrategy` (in-memory only). The tray must offer Discard only; the
+   * job becomes resumable again after `rebindJobSource()` when the user
+   * re-opens the matching share link.
+   */
+  readonly pausedNoSource: boolean;
 }
 
 /** Freshly decrypted current album manifest supplied by the caller for local diffing. */
@@ -1401,6 +1418,12 @@ export type DownloadJobsBroadcastMessage = {
   readonly jobId: string;
   readonly phase: DownloadPhase;
   readonly lastUpdatedAtMs: number;
+  /**
+   * Tray scope key the job belongs to (mirrors `JobSummary.scopeKey`).
+   * Subscribers MUST drop messages whose scopeKey is not visible to the
+   * viewer so visitor tabs are not woken up by authenticated-tab events.
+   */
+  readonly scopeKey: string;
 };
 
 /** Public Comlink API exposed by `coordinator.worker.ts`. */
@@ -1422,6 +1445,13 @@ export interface CoordinatorWorkerApi {
   resumeJob(jobId: string, opts?: { readonly mode?: DownloadOutputMode }): Promise<{ phase: DownloadPhase }>;
   /** Cancel a job; hard cancel also purges OPFS staging. */
   cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }>;
+  /**
+   * Re-attach an in-memory `SourceStrategy` to a reconstructed visitor job.
+   * Required after a worker restart for visitor jobs whose source was lost.
+   * The supplied source's `getScopeKey()` MUST match the persisted job's
+   * scope key; otherwise the call rejects with `DownloadIllegalState`.
+   */
+  rebindJobSource(jobId: string, source: SourceStrategy): Promise<void>;
   /** List all known in-memory jobs. */
   listJobs(): Promise<JobSummary[]>;
   /** List non-terminal jobs with at least one completed photo for resume prompts. */
