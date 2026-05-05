@@ -917,6 +917,93 @@ export async function rustVerifyShardIntegrity(
   const result = rustWasm.verifyShardIntegrityV1(envelope, expectedHash);
   consumeResult(result, 'verifyShardIntegrityV1', () => undefined);
 }
+const STREAMING_CHUNK_TAG_BYTES = 16;
+
+export interface StreamingShardDecryptor {
+  /** Process a wire-format chunk; returns plaintext bytes. Pass isFinal=true for the last chunk. */
+  processChunk(chunk: Uint8Array, isFinal: boolean): Promise<Uint8Array>;
+  /** Release WASM resources. Idempotent. */
+  close(): Promise<void>;
+  /** Plaintext chunk size declared in the envelope header (bytes). */
+  readonly chunkSizeBytes: number;
+}
+
+class StreamingShardDecryptorImpl implements StreamingShardDecryptor {
+  private handleId: number | null;
+  public readonly chunkSizeBytes: number;
+
+  constructor(handleId: number, chunkSizeBytes: number) {
+    this.handleId = handleId;
+    this.chunkSizeBytes = chunkSizeBytes;
+  }
+
+  async processChunk(chunk: Uint8Array, isFinal: boolean): Promise<Uint8Array> {
+    if (this.handleId === null) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.StaleHandle,
+        'streamingShardProcessChunkV1 called after close',
+      );
+    }
+    await ensureRustReady();
+    const result = rustWasm.streamingShardProcessChunkV1(
+      this.handleId,
+      chunk,
+      isFinal,
+    );
+    try {
+      const plaintext = consumeResult(result, 'streamingShardProcessChunkV1', (r) =>
+        copyBytes(r.plaintext),
+      );
+      if (isFinal) {
+        // The Rust side already finalized the streaming state; drop the handle
+        // reference so close() is a no-op (idempotent).
+        this.handleId = null;
+      }
+      return plaintext;
+    } catch (error) {
+      // On any chunk failure the Rust handle is now in an unrecoverable state;
+      // clear our reference so close() is idempotent and won't double-free.
+      this.handleId = null;
+      throw error;
+    }
+  }
+
+  async close(): Promise<void> {
+    if (this.handleId === null) {
+      return;
+    }
+    const handleId = this.handleId;
+    this.handleId = null;
+    await ensureRustReady();
+    const code = rustWasm.streamingShardCloseV1(handleId);
+    // Close is best-effort: it MUST be safe to call from a finally block even
+    // if the Rust side already finalized. We tolerate non-OK codes silently
+    // so the original error (if any) bubbles up.
+    // Best-effort: a non-zero close code (e.g. handle already finalized
+    // by a prior isFinal=true chunk) is swallowed so close() in a finally
+    // block never masks the original error.
+    void code;
+  }
+}
+
+/**
+ * Open a streaming-AEAD decryptor over a shard envelope (Reserved[0] == 1).
+ *
+ * Caller MUST call close() (e.g., in a finally block) regardless of whether
+ * processChunk succeeded — close() is idempotent.
+ */
+export async function rustOpenStreamingShard(
+  envelopeHeader: Uint8Array,
+  key: Uint8Array,
+): Promise<StreamingShardDecryptor> {
+  await ensureRustReady();
+  const result = rustWasm.openStreamingShardV1(envelopeHeader, key);
+  return consumeResult(result, 'openStreamingShardV1', (r) => {
+    return new StreamingShardDecryptorImpl(r.handleId, r.chunkSizeBytes);
+  });
+}
+
+export const STREAMING_CHUNK_TAG_BYTES_V1 = STREAMING_CHUNK_TAG_BYTES;
 // ---------------------------------------------------------------------------
 // Legacy compatibility surface — used by Slice 0 wiring and the existing
 // rust-crypto-core unit tests. Slices 2-9 will replace each caller; for now
