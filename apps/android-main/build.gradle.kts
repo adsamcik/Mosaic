@@ -11,6 +11,7 @@ import java.util.Locale
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.android)
+  id("com.google.devtools.ksp") version "2.0.21-1.0.28"
 }
 
 // ---------------------------------------------------------------------------------------
@@ -32,6 +33,10 @@ val generatedKotlinDir: File = layout.buildDirectory.dir("generated/source/uniff
 val generatedJniLibsDir: File = layout.buildDirectory.dir("generated/jniLibs").get().asFile
 val crossClientVectorsFeature = "cross-client-vectors"
 var rustUniffiCargoFeatures: String = ""
+
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
+}
 
 gradle.taskGraph.whenReady(
   object : Action<TaskExecutionGraph> {
@@ -143,6 +148,12 @@ android {
     jvmTarget = "17"
   }
 
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+    }
+  }
+
   // Generated UniFFI Kotlin bindings live under build/generated and are imported
   // as `import uniffi.mosaic_uniffi.*`. The native `.so` files live in the
   // generated jniLibs srcDir below. The android-shell foundation contracts are
@@ -170,6 +181,10 @@ dependencies {
   implementation(libs.androidx.activity)
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.core)
+  implementation("androidx.room:room-runtime:2.6.1")
+  implementation("androidx.room:room-ktx:2.6.1")
+  ksp("androidx.room:room-compiler:2.6.1")
+  implementation("com.squareup.okhttp3:okhttp:4.12.0")
   // WorkManager powers the auto-import foreground (`dataSync`) worker. See
   // `apps/android-main/src/main/kotlin/org/mosaic/android/main/work/`.
   implementation(libs.androidx.work.runtime)
@@ -185,6 +200,12 @@ dependencies {
   // (com/sun/jna/<os>/jnidispatch.<ext>) not found in resource path`.
   testImplementation("net.java.dev.jna:jna:${libs.versions.jna.get()}")
   testImplementation(libs.junit4)
+  testImplementation("androidx.room:room-testing:2.6.1")
+  testImplementation("androidx.test:core-ktx:1.6.1")
+  testImplementation("org.robolectric:robolectric:4.13")
+  testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+  testImplementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+  testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
 
   androidTestImplementation(libs.androidx.test.junit)
   androidTestImplementation(libs.androidx.test.espresso)
