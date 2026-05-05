@@ -18,6 +18,7 @@ import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import * as opfsStaging from '../lib/opfs-staging';
 import { createAuthenticatedSourceStrategy } from './coordinator/source-strategy-auth';
+import { ensureScopeKeySodiumReady } from '../lib/scope-key';
 import type { SourceStrategy } from './coordinator/source-strategy';
 import {
   ensureRustReady,
@@ -65,6 +66,13 @@ const DEFAULT_BYTE_PROGRESS_RATE_LIMIT_MS = 2_000;
 
 interface CoordinatorWorkerOptions {
   readonly byteProgressRateLimitMs?: number;
+  /**
+   * Stable, non-secret account identifier used to derive the authenticated
+   * tray scope key. When omitted the default-auth scope falls back to an
+   * empty-input derivation; production callers MUST set this so jobs are
+   * partitioned per identity.
+   */
+  readonly accountId?: string;
 }
 
 interface ByteProgressTimer {
@@ -89,6 +97,8 @@ interface InMemoryJob {
   readonly plan: DownloadPlanEntry[];
   createdAtMs: number;
   lastUpdatedAtMs: number;
+  /** Tray scope key (`auth:|visitor:|legacy:` + 32-hex). ZK-safe to log only the prefix. */
+  readonly scopeKey: string;
 }
 
 type SubscriptionCallback = (event: JobProgressEvent) => void;
@@ -116,6 +126,8 @@ interface ParsedSnapshotView {
   readonly photos: DownloadPhotoStateView[];
   readonly failureLog: DownloadFailureView[];
   readonly plan: DownloadPlanEntry[];
+  /** Tray scope key (CBOR snapshot key 10). v1 snapshots get a synthesized legacy fallback. */
+  readonly scopeKey: string;
 }
 
 const PHASE_BY_CODE: Readonly<Record<number, DownloadPhase>> = {
@@ -181,6 +193,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private readonly jobSources = new Map<string, SourceStrategy>();
   /** Lazy-built default authenticated source (created on first use). */
   private defaultAuthSource: SourceStrategy | null = null;
+  /** Account id used to derive the default-auth tray scope key. */
+  private readonly accountId: string;
   /**
    * Per-job, per-photo export-side failure reasons (Phase 2 in-memory only).
    * Tracks per-file finalizer write failures WITHOUT mutating the source-side
@@ -193,6 +207,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
   constructor(opts: CoordinatorWorkerOptions = {}) {
     this.byteProgressRateLimitMs = opts.byteProgressRateLimitMs ?? DEFAULT_BYTE_PROGRESS_RATE_LIMIT_MS;
+    this.accountId = opts.accountId ?? '';
     this.channel = createBroadcastChannel();
     this.channel?.addEventListener('message', (event: MessageEvent<unknown>) => {
       this.handleBroadcastMessage(event.data);
@@ -214,11 +229,17 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     const jobIdBytes = randomJobIdBytes();
     const jobId = bytesToHex(jobIdBytes);
     const nowMs = Date.now();
+    // Resolve the tray scope key from the per-job source (when supplied) or
+    // from the default authenticated source. Persisted in the v2 snapshot so
+    // the tray can filter jobs by identity across worker restarts.
+    const sourceForScope = input.source ?? this.getDefaultAuthSource();
+    const scopeKey = sourceForScope.getScopeKey();
     const initialized = await rustInitDownloadSnapshot({
       jobId: jobIdBytes,
       albumId: input.albumId,
       planBytes,
       nowMs,
+      scopeKey,
     });
 
     await opfsStaging.createJobDir(jobId);
@@ -237,7 +258,12 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     if (input.source) {
       this.jobSources.set(jobId, input.source);
     }
-    log.info('Job started', { jobId: shortId(jobId), outputMode: outputMode.kind });
+    // ZK-safe: only the scope prefix is logged; the hex tail is opaque.
+    log.info('Job started', {
+      jobId: shortId(jobId),
+      outputMode: outputMode.kind,
+      scopePrefix: scopeKey.slice(0, scopeKey.indexOf(':')),
+    });
     this.emitJobChanged(job);
     await this.sendEvent(jobId, { kind: 'PlanReady' });
     this.scheduleJobDriver(jobId);
@@ -336,6 +362,10 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   }
 
   /** List non-terminal jobs that should surface in the resume prompt. */
+  // TODO(p3-visitor-resume-prompt): when surfacing a resumable visitor
+  // job whose linkId/grant the user no longer has client-side keys for, the
+  // restore prompt must offer "discard" only, not "resume", so the user is
+  // not stuck staring at a download they cannot complete.
   async listResumableJobs(): Promise<ResumableJobSummary[]> {
     this.assertInitialized();
     await this.reconcilePersistedJobs();
@@ -588,7 +618,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
   private getDefaultAuthSource(): SourceStrategy {
     if (this.defaultAuthSource === null) {
-      this.defaultAuthSource = createAuthenticatedSourceStrategy();
+      this.defaultAuthSource = createAuthenticatedSourceStrategy(this.accountId);
     }
     return this.defaultAuthSource;
   }
@@ -721,6 +751,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
 
   private async initializeOnce(): Promise<{ reconstructedJobs: number }> {
     await ensureRustReady();
+    await ensureScopeKeySodiumReady();
     const reconstructedJobs = await this.reconcilePersistedJobs();
     this.initialized = true;
     // Intentionally NOT auto-spinning drivers for reconstructed jobs:
@@ -779,6 +810,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     }
   }
 
+  // TODO(p3-visitor-gc): GC visitor: scope snapshots whose link is no longer
+  // accessible (404 from /api/s/{linkId}/photos) so an offline tab does not
+  // hold an OPFS staging dir indefinitely after a share-link revocation.
   private async reconcilePersistedJobs(): Promise<number> {
     const persistedJobs = await opfsStaging.listJobs();
     let reconstructedJobs = 0;
@@ -876,6 +910,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     }
   }
 
+  // TODO(p3-visitor-broadcast-scope): include the job's scopeKey in the
+  // broadcast payload so other tabs can locally pre-filter without having to
+  // reload the full snapshot just to discover that a job is in another scope.
   private broadcast(job: InMemoryJob): void {
     const message: DownloadJobsBroadcastMessage = {
       kind: 'job-changed',
@@ -946,6 +983,7 @@ function createInMemoryJob(snapshotBytes: Uint8Array, checksum: Uint8Array): InM
     plan: view.plan,
     createdAtMs: view.createdAtMs,
     lastUpdatedAtMs: view.lastUpdatedAtMs,
+    scopeKey: view.scopeKey,
   };
 }
 
@@ -958,6 +996,7 @@ function toJobSummary(job: InMemoryJob): JobSummary {
     failureCount: job.failureLog.length,
     createdAtMs: job.createdAtMs,
     lastUpdatedAtMs: job.lastUpdatedAtMs,
+    scopeKey: job.scopeKey,
   };
 }
 
@@ -1038,6 +1077,10 @@ function parseSnapshotView(bytes: Uint8Array): ParsedSnapshotView {
   const fields = expectMap(root);
   const jobId = bytesToHex(expectBytes(requiredMapValue(fields, 1)));
   const albumBytes = expectBytes(requiredMapValue(fields, 2));
+  // Snapshot key 10 = scope_key (v2). v1 snapshots are migrated by Rust to
+  // synthesize a `legacy:<jobIdHex>` value, so this is always present after
+  // load. Treat unexpected absence as `legacy:<jobIdHex>` for robustness.
+  const scopeKey = optionalMapValue(fields, 10);
   return {
     jobId,
     albumId: uuidBytesToString(albumBytes),
@@ -1047,6 +1090,7 @@ function parseSnapshotView(bytes: Uint8Array): ParsedSnapshotView {
     plan: expectArray(requiredMapValue(fields, 6)).map(parsePlanEntry),
     photos: expectArray(requiredMapValue(fields, 7)).map(parsePhoto),
     failureLog: expectArray(requiredMapValue(fields, 8)).map(parseFailure),
+    scopeKey: scopeKey === null ? `legacy:${jobId}` : expectText(scopeKey),
   };
 }
 
@@ -1492,6 +1536,11 @@ function requiredMapValue(entries: readonly CborMapEntry[], key: number): CborVa
     throw new Error('Missing CBOR map key');
   }
   return entry.value;
+}
+
+function optionalMapValue(entries: readonly CborMapEntry[], key: number): CborValue | null {
+  const entry = entries.find((candidate) => candidate.key.kind === 'uint' && candidate.key.value === key);
+  return entry ? entry.value : null;
 }
 
 function uintValue(value: number): CborValue {

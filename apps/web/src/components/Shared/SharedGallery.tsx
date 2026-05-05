@@ -15,6 +15,8 @@ import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { createLogger } from '../../lib/logger';
 import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
 import { DownloadTray } from '../Download/DownloadTray';
+import { DownloadScopeProvider } from '../../contexts/DownloadScopeContext';
+import { deriveVisitorScopeKey, ensureScopeKeySodiumReady } from '../../lib/scope-key';
 import { SharedMosaicPhotoGrid } from './SharedMosaicPhotoGrid';
 import { SharedPhotoGrid } from './SharedPhotoGrid';
 
@@ -65,6 +67,21 @@ export function SharedGallery({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'mosaic'>('grid');
+
+  // Visitor tray scope key. Derived once libsodium is ready; until then the
+  // tray sees `null` and renders no jobs (preventing brief auth/visitor leaks
+  // on first render). Recomputed when linkId or grantToken change.
+  const [visitorScopeKey, setVisitorScopeKey] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void ensureScopeKeySodiumReady().then(() => {
+      if (cancelled) return;
+      setVisitorScopeKey(deriveVisitorScopeKey(linkId, grantToken ?? null));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [linkId, grantToken]);
 
   // Determine default layout based on metadata when photos load
   useEffect(() => {
@@ -341,6 +358,7 @@ export function SharedGallery({
   }
 
   return (
+    <DownloadScopeProvider scopeKey={visitorScopeKey}>
     <div className="shared-gallery" data-testid="shared-gallery">
       <div className="gallery-header">
         <h2 className="gallery-title">
@@ -456,5 +474,6 @@ export function SharedGallery({
       {modePicker.pickerElement}
       <DownloadTray />
     </div>
+    </DownloadScopeProvider>
   );
 }

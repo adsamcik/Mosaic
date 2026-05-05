@@ -28,7 +28,8 @@ use crate::download::plan::{DownloadPlan, DownloadPlanEntry, PhotoId, ShardId};
 use crate::download::state::{DownloadJobState, PhotoStatus, SkipReason};
 
 pub const DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1: u32 = 1;
-pub const CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION: u32 = DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1;
+pub const DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V2: u32 = 2;
+pub const CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION: u32 = DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V2;
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
 const MAX_DOWNLOAD_SNAPSHOT_BYTES: usize = 1_500_000;
 
@@ -82,6 +83,7 @@ pub mod download_job_snapshot_keys {
     pub const PHOTOS: u32 = 7;
     pub const FAILURE_LOG: u32 = 8;
     pub const LEASE_TOKEN: u32 = 9;
+    pub const SCOPE_KEY: u32 = 10;
 
     pub const KNOWN_DOWNLOAD_JOB_KEYS: &[(&str, u32)] = &[
         ("SCHEMA_VERSION", SCHEMA_VERSION),
@@ -94,6 +96,7 @@ pub mod download_job_snapshot_keys {
         ("PHOTOS", PHOTOS),
         ("FAILURE_LOG", FAILURE_LOG),
         ("LEASE_TOKEN", LEASE_TOKEN),
+        ("SCOPE_KEY", SCOPE_KEY),
     ];
 
     pub const DOWNLOAD_JOB_KEYS_V1: &[u32] = &[
@@ -107,6 +110,20 @@ pub mod download_job_snapshot_keys {
         PHOTOS,
         FAILURE_LOG,
         LEASE_TOKEN,
+    ];
+
+    pub const DOWNLOAD_JOB_KEYS_V2: &[u32] = &[
+        SCHEMA_VERSION,
+        JOB_ID,
+        ALBUM_ID,
+        CREATED_AT_MS,
+        LAST_UPDATED_AT_MS,
+        STATE,
+        PLAN,
+        PHOTOS,
+        FAILURE_LOG,
+        LEASE_TOKEN,
+        SCOPE_KEY,
     ];
 }
 
@@ -122,6 +139,10 @@ pub struct DownloadJobSnapshot {
     pub photos: Vec<PhotoState>,
     pub failure_log: Vec<DownloadFailureEntry>,
     pub lease_token: Option<LeaseToken>,
+    /// Tray scope key partitioning this job by identity. Format
+    /// `<prefix>:<32-hex>` where prefix is `auth`/`visitor`/`legacy`.
+    /// Derived via [`crate::download::scope`]; ZK-safe to log only the prefix.
+    pub scope_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -295,6 +316,10 @@ impl DownloadJobSnapshot {
                 download_job_snapshot_keys::LEASE_TOKEN,
                 option_lease(self.lease_token),
             ),
+            kv(
+                download_job_snapshot_keys::SCOPE_KEY,
+                Value::Text(self.scope_key.clone()),
+            ),
         ]);
         let mut out = Vec::new();
         ciborium::ser::into_writer(&value, &mut out)
@@ -366,13 +391,25 @@ fn decode_snapshot_value(value: &Value) -> Result<DownloadJobSnapshot, DownloadS
             max_supported: CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION,
         });
     }
-    validate_exact_keys(entries, download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V1)?;
+    let expected_keys = match schema_version {
+        DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1 => download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V1,
+        DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V2 => download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V2,
+        _ => return Err(DownloadSnapshotError::SchemaCorrupt),
+    };
+    validate_exact_keys(entries, expected_keys)?;
+    let job_id = JobId(required_bytes_16(
+        entries,
+        download_job_snapshot_keys::JOB_ID,
+    )?);
+    let scope_key = match schema_version {
+        DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1 => crate::download::scope::legacy_scope_for(&job_id),
+        _ => required_text(entries, download_job_snapshot_keys::SCOPE_KEY)?,
+    };
     let snapshot = DownloadJobSnapshot {
-        schema_version,
-        job_id: JobId(required_bytes_16(
-            entries,
-            download_job_snapshot_keys::JOB_ID,
-        )?),
+        // Migration: in-memory snapshots are always normalized to the
+        // current schema. Re-encoding a v1 input therefore writes v2.
+        schema_version: CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION,
+        job_id,
         album_id: Uuid::from_bytes(required_bytes_16(
             entries,
             download_job_snapshot_keys::ALBUM_ID,
@@ -398,6 +435,7 @@ fn decode_snapshot_value(value: &Value) -> Result<DownloadJobSnapshot, DownloadS
                 .ok_or(DownloadSnapshotError::SchemaCorrupt)?,
         )?,
         lease_token: optional_lease(entries, download_job_snapshot_keys::LEASE_TOKEN)?,
+        scope_key,
     };
     validate_snapshot(&snapshot)?;
     Ok(snapshot)

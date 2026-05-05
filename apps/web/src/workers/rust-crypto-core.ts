@@ -156,6 +156,7 @@ export class RustHandleFacade {
     readonly albumId: string;
     readonly planBytes: Uint8Array;
     readonly nowMs: number;
+    readonly scopeKey: string;
   }): { bodyBytes: Uint8Array; checksum: Uint8Array } {
     const result = rustWasm.downloadInitSnapshotV1(
       encodeDownloadInitSnapshotInput(input),
@@ -866,6 +867,7 @@ export async function rustInitDownloadSnapshot(input: {
   readonly albumId: string;
   readonly planBytes: Uint8Array;
   readonly nowMs: number;
+  readonly scopeKey: string;
 }): Promise<{ bodyBytes: Uint8Array; checksum: Uint8Array }> {
   return (await getRustFacade()).initDownloadSnapshot(input);
 }
@@ -1122,6 +1124,7 @@ function encodeDownloadInitSnapshotInput(input: {
   readonly albumId: string;
   readonly planBytes: Uint8Array;
   readonly nowMs: number;
+  readonly scopeKey: string;
 }): Uint8Array {
   if (input.jobId.length !== 16) {
     throw new WorkerCryptoError(
@@ -1129,11 +1132,19 @@ function encodeDownloadInitSnapshotInput(input: {
       'downloadInitSnapshotV1 requires a 16-byte jobId',
     );
   }
+  if (input.scopeKey.length === 0) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidInputLength,
+      'downloadInitSnapshotV1 requires a non-empty scopeKey',
+    );
+  }
+  // Plan-input key 4 mirrors the Rust parser in mosaic-wasm/src/lib.rs.
   return cborMap([
     [0, cborBytes(input.jobId)],
     [1, cborText(input.albumId)],
     [2, cborBytes(input.planBytes)],
     [3, cborUint(input.nowMs)],
+    [4, cborText(input.scopeKey)],
   ]);
 }
 

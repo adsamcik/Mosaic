@@ -13,6 +13,7 @@ const baseJob: JobSummary = {
   failureCount: 0,
   createdAtMs: 1,
   lastUpdatedAtMs: 1,
+  scopeKey: 'auth:00000000000000000000000000000000',
 };
 
 afterEach(() => document.body.replaceChildren());

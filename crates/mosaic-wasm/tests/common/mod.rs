@@ -64,10 +64,21 @@ pub fn plan_input_cbor(tier: u8) -> Result<Vec<u8>, String> {
 }
 
 pub fn init_snapshot_input_cbor(plan_cbor: Vec<u8>) -> Result<Vec<u8>, String> {
+    init_snapshot_input_cbor_with_scope(
+        plan_cbor,
+        "legacy:00000000000000000000000000000000",
+    )
+}
+
+pub fn init_snapshot_input_cbor_with_scope(
+    plan_cbor: Vec<u8>,
+    scope_key: &str,
+) -> Result<Vec<u8>, String> {
     encode(&Value::Map(vec![
         kv(0, Value::Bytes(JOB_ID.to_vec())),
         kv(1, Value::Bytes(ALBUM_ID.to_vec())),
         kv(2, Value::Bytes(plan_cbor)),
         kv(3, uint(1_700_000_000_000)),
+        kv(4, Value::Text(scope_key.to_owned())),
     ]))
 }

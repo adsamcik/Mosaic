@@ -58,6 +58,7 @@ fn snapshot(state: DownloadJobState, plan: DownloadPlan) -> DownloadJobSnapshot 
         photos,
         failure_log: Vec::new(),
         lease_token: None,
+        scope_key: String::from("auth:00000000000000000000000000000000"),
     }
 }
 #[test]

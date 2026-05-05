@@ -17,6 +17,7 @@
 
 pub mod error;
 pub mod plan;
+pub mod scope;
 pub mod snapshot;
 pub mod state;
 

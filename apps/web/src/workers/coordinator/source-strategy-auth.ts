@@ -1,5 +1,6 @@
 import { downloadShard, downloadShards } from '../../lib/shard-service';
 import { getOrFetchEpochKey } from '../../lib/epoch-key-service';
+import { deriveAuthScopeKey } from '../../lib/scope-key';
 import type { SourceStrategy } from './source-strategy';
 
 const DEFAULT_MAX_CONCURRENT = 4;
@@ -8,12 +9,18 @@ const DEFAULT_MAX_CONCURRENT = 4;
  * Authenticated viewer source strategy.
  *
  * Wraps the `/api/shards/{id}` endpoint and the user's epoch-key service.
- * Behavior matches the pre-existing hard-coded coordinator path; this is a
- * pure refactor for the auth path.
+ *
+ * `accountId` is the non-secret stable account identifier used to derive the
+ * tray scope key. Caller MUST await `ensureScopeKeySodiumReady()` before
+ * calling this factory so `getScopeKey()` can stay synchronous.
  */
-export function createAuthenticatedSourceStrategy(): SourceStrategy {
+export function createAuthenticatedSourceStrategy(accountId: string): SourceStrategy {
+  const scopeKey = deriveAuthScopeKey(accountId);
   return {
     kind: 'authenticated',
+    getScopeKey(): string {
+      return scopeKey;
+    },
     async fetchShard(shardId: string, signal: AbortSignal): Promise<Uint8Array> {
       throwIfAborted(signal);
       const bytes = await downloadShard(shardId);

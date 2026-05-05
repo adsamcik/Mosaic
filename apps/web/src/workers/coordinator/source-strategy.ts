@@ -47,4 +47,14 @@ export interface SourceStrategy {
    * (e.g. `AccessRevoked`) when the key cannot be resolved.
    */
   resolveKey(albumId: string, epochId: number): Promise<Uint8Array>;
+
+  /**
+   * Stable per-tray scope key partitioning jobs by identity. Format
+   * `<prefix>:<32-hex>` (`auth`/`visitor`/`legacy`). Only the prefix is safe
+   * to log; the hex tail is opaque (see `apps/web/src/lib/scope-key.ts`).
+   *
+   * **Precondition:** the strategy was constructed after
+   * `ensureScopeKeySodiumReady()` resolved, so this can be a sync getter.
+   */
+  getScopeKey(): string;
 }

@@ -123,6 +123,10 @@ const directSodiumPrimitiveAllowlist = new Map<string, string>([
     'download staging checksum verification compatibility pending Rust download coordinator cutover',
   ],
   [
+    'lib/scope-key.ts',
+    'tray scope key derivation (BLAKE2b-128) needs sync access on the main thread + workers; non-secret inputs only',
+  ],
+  [
     'lib/session.ts',
     'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)',
   ],
