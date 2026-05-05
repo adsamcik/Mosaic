@@ -1567,19 +1567,24 @@ than enforceable runtime invariants.
 | R-C5.5 Migration #1 | link_secret_for_url → link_url_token (BEARER-TOKEN-PERMITTED reclassification) | Done | `8558261` |
 | R-C5.5 Gradle hotfix | Task-graph fail-fast invariant against mixed test+production gradle invocations | Done | `1b66b19` |
 | Wave 2 ledger sweep | §11 cap tightening + AAD label expansion; §12.1 Wave 2 entries | Done | `d7bc035` |
+| Wave 4+R-C5.5 ledger sweep | §11 + §12.1 R-C5.5 migration arc reflected | Done | `6356b1a` |
+| SPEC-FfiSecretClassifiers v1 | Lock classifier vocabulary (SAFE / BEARER-TOKEN-PERMITTED / CORPUS-DRIVER-ONLY / MIGRATION-PENDING) | Done | `a0cfe94` |
+| R-Cl2 | AlbumSync DTO finalization with discriminant pinning | Done | `253998e` |
+| R-C3.1 | Telemetry counter ring buffer (ADR-018) | Done | `1f3f1a9` |
+| R-M3 + R-M4 | EXIF GPS + camera metadata extraction (sidecar tags 3/5/7/8/9 Active) | Done | `3d992a4` |
+| W-A7 + W-pre-2 | Web Rust-core boundary docs + OPFS snapshot compat SPEC | Done | `82066c7` |
+| Q-final-2 | iOS-readiness stub adapter + SPEC-IosReadinessAdapter | Done | `12f3f2c` |
+| P-U4 | UniFFI ClientErrorCode + lock-test surfaces | Done | `564b165` |
+| R-M1 + R-M2 | AVIF + HEIC metadata stripping via shared ISO-BMFF parser | Done | `1432334` |
+| Wave 5 follow-ups | Telemetry compile_fail + privacy invariant clarification + SPEC §4 drift | Done | `0704ef5` |
+| R-M1.1 | iloc offset rewrite for AVIF/HEIC strip (real-world decode-preservation) | Done | `f558afe` |
+| R-M6 + R-M7 | Video container inspect (MP4/MOV/WebM/Matroska) + sidecar tags 10-15 | Done | `e2b455c` |
+| P-W1 | WASM shard-tier surface (ShardTier enum + tier-aware encrypt/decrypt) | Done | `ca45f7e` |
+| P-U3 | UniFFI upload+sync reducers + manifest transcript exports | Done | `9976ece` |
+| R-M6.1 | stco/co64 chunk-offset rewrite for video strip (mirrors R-M1.1) | Done | `227d76a` |
 | R-M5.3 | Sidecar decoder + fuzz + forbidden-name defense | Pending | — |
 | R-C6.3-v2 | Migrate empty-AAD wraps to AAD-bound (v2 protocol break: snapshot version bump + LinkShareRecord migration) | Pending | — |
-| R-C5.5 | Audit architecture-guard allowlist rationales before v1 | Pending | — |
-| R-C7 follow-up DTO defaults | Drop `hasErrorCode = false` and `signPublicKey = ByteArray(0)` defaults; add `init { require(...) }` invariants | Pending | — |
-| R-C7 follow-up round-trip coverage | Add Shell→UniFFI→Shell bidirectional round-trip tests | Pending | — |
-| R-C7 follow-up TS error-codes codegen | Generate WorkerCryptoErrorCode from Rust enum (N3) | Pending | — |
-| M0 follow-up Android parity | Close web↔Android strip parity gap (UniFFI export OR trim SPEC) | Pending | — |
-| M0 follow-up error code 604 | Disambiguate OutputTooLarge vs u32 overflow | Pending | — |
-| R-C5.4 follow-up stacked-test stronger | Strengthen attribute-association assertion | Pending | — |
-| R-C5.4 follow-up Cow bare-name gap | Bare-name `Cow<[u8]>` not caught by producer guard | Pending | — |
-| R-Cl1.2 follow-up phase-list drift | Phase array → discriminant-exhaustive iteration | Pending | — |
-| R-Cl1.2 follow-up legacy snapshot migration | Migrate stuck RetryWaiting+ManifestCommitUnknown | Pending | — |
-| Ledger sweep Wave 2 | This commit: §11 cap tightening + AAD label expansion; §12.1 Wave 2 entries | Done | `d7bc035` |
+| R-C7 follow-up TS error-codes codegen | Generate WorkerCryptoErrorCode from Rust enum (N3) | Done | `b196656` |
 
 | Work item | Scope | Status |
 |-----------|-------|--------|
