@@ -122,15 +122,15 @@ impl SidecarTagRegistryEntry {
 pub mod metadata_field_tags {
     use super::{SidecarTagPrivacyClass, SidecarTagRegistryEntry, SidecarTagStatus};
     pub const ORIENTATION: u16 = 1;
-    pub const DEVICE_TIMESTAMP_MS: u16 = 2;
-    pub const ORIGINAL_DIMENSIONS: u16 = 3;
+    pub const ORIGINAL_DIMENSIONS: u16 = 2;
+    pub const DEVICE_TIMESTAMP_MS: u16 = 3;
     pub const MIME_OVERRIDE: u16 = 4;
-    pub const CAPTION: u16 = 5;
+    pub const CAMERA_MAKE: u16 = 5;
     // Tag 6 is permanently reserved for the forbidden filename payload class.
     // Do not expose a friendly public constant; production callers must not
     // accidentally encode filenames into sidecar plaintext.
-    pub const CAMERA_MAKE: u16 = 7;
-    pub const CAMERA_MODEL: u16 = 8;
+    pub const CAMERA_MODEL: u16 = 7;
+    pub const SUBSECONDS_MS: u16 = 8;
     pub const GPS: u16 = 9;
     pub const KNOWN_FIELD_TAGS: &[SidecarTagRegistryEntry] = &[
         SidecarTagRegistryEntry::new(
@@ -140,16 +140,16 @@ pub mod metadata_field_tags {
             SidecarTagPrivacyClass::RenderingOnly,
         ),
         SidecarTagRegistryEntry::new(
-            DEVICE_TIMESTAMP_MS,
-            "device_timestamp_ms",
-            SidecarTagStatus::ReservedNumberPending,
-            SidecarTagPrivacyClass::SensitiveTimestamp,
-        ),
-        SidecarTagRegistryEntry::new(
             ORIGINAL_DIMENSIONS,
             "original_dimensions",
             SidecarTagStatus::Active,
             SidecarTagPrivacyClass::RenderingOnly,
+        ),
+        SidecarTagRegistryEntry::new(
+            DEVICE_TIMESTAMP_MS,
+            "device_timestamp_ms",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::SensitiveTimestamp,
         ),
         SidecarTagRegistryEntry::new(
             MIME_OVERRIDE,
@@ -158,10 +158,10 @@ pub mod metadata_field_tags {
             SidecarTagPrivacyClass::ContainerTechnical,
         ),
         SidecarTagRegistryEntry::new(
-            CAPTION,
-            "caption",
-            SidecarTagStatus::ReservedNumberPending,
-            SidecarTagPrivacyClass::UserContent,
+            CAMERA_MAKE,
+            "camera_make",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::DeviceFingerprint,
         ),
         SidecarTagRegistryEntry::new(
             6,
@@ -170,21 +170,21 @@ pub mod metadata_field_tags {
             SidecarTagPrivacyClass::UserContent,
         ),
         SidecarTagRegistryEntry::new(
-            CAMERA_MAKE,
-            "camera_make",
-            SidecarTagStatus::ReservedNumberPending,
+            CAMERA_MODEL,
+            "camera_model",
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::DeviceFingerprint,
         ),
         SidecarTagRegistryEntry::new(
-            CAMERA_MODEL,
-            "camera_model",
-            SidecarTagStatus::ReservedNumberPending,
-            SidecarTagPrivacyClass::DeviceFingerprint,
+            SUBSECONDS_MS,
+            "subseconds_ms",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::SensitiveTimestamp,
         ),
         SidecarTagRegistryEntry::new(
             GPS,
             "gps",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::SensitiveLocation,
         ),
         SidecarTagRegistryEntry::new(
@@ -613,6 +613,9 @@ fn canonical_metadata_sidecar_bytes_inner(
         if field.value().is_empty() {
             return Err(MetadataSidecarError::EmptyFieldValue { tag: field.tag() });
         }
+        if enforce_active_tags {
+            validate_active_sidecar_field(field)?;
+        }
         let value_len = checked_metadata_sidecar_len("field_value", field.value().len())?;
         let projected_len = bytes
             .len()
@@ -651,6 +654,136 @@ pub fn canonical_metadata_sidecar_bytes_from_raw_fields_for_test(
         &MetadataSidecar::new(album_id, photo_id, epoch_id, &fields),
         false,
     )
+}
+
+fn validate_active_sidecar_field(
+    field: &MetadataSidecarField<'_>,
+) -> Result<(), MetadataSidecarError> {
+    use metadata_field_tags::{
+        CAMERA_MAKE, CAMERA_MODEL, DEVICE_TIMESTAMP_MS, GPS, MIME_OVERRIDE, ORIENTATION,
+        ORIGINAL_DIMENSIONS, SUBSECONDS_MS,
+    };
+
+    match field.tag() {
+        ORIENTATION => validate_orientation_field(field.value()),
+        ORIGINAL_DIMENSIONS => validate_dimensions_field(field.value()),
+        DEVICE_TIMESTAMP_MS => validate_exact_len(field.tag(), field.value(), 8),
+        MIME_OVERRIDE => validate_utf8_field(field.tag(), field.value()),
+        CAMERA_MAKE | CAMERA_MODEL => validate_capped_utf8_field(field.tag(), field.value(), 64),
+        SUBSECONDS_MS => validate_subseconds_field(field.value()),
+        GPS => validate_gps_field(field.value()),
+        _ => Ok(()),
+    }
+}
+
+fn validate_exact_len(_tag: u16, value: &[u8], len: usize) -> Result<(), MetadataSidecarError> {
+    if value.len() == len {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
+}
+
+fn validate_utf8_field(_tag: u16, value: &[u8]) -> Result<(), MetadataSidecarError> {
+    if std::str::from_utf8(value).is_ok() {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
+}
+
+fn validate_capped_utf8_field(
+    tag: u16,
+    value: &[u8],
+    max_len: usize,
+) -> Result<(), MetadataSidecarError> {
+    if value.len() > max_len {
+        return Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value_bytes",
+            actual: value.len(),
+        });
+    }
+    validate_utf8_field(tag, value)
+}
+
+fn validate_orientation_field(value: &[u8]) -> Result<(), MetadataSidecarError> {
+    if value.len() != 2 {
+        return Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        });
+    }
+    let orientation = u16::from_le_bytes([value[0], value[1]]);
+    if (1..=8).contains(&orientation) {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
+}
+
+fn validate_dimensions_field(value: &[u8]) -> Result<(), MetadataSidecarError> {
+    if value.len() != 8 {
+        return Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        });
+    }
+    let width = u32::from_le_bytes([value[0], value[1], value[2], value[3]]);
+    let height = u32::from_le_bytes([value[4], value[5], value[6], value[7]]);
+    if width != 0 && height != 0 {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
+}
+
+fn validate_subseconds_field(value: &[u8]) -> Result<(), MetadataSidecarError> {
+    if value.len() != 4 {
+        return Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        });
+    }
+    let millis = u32::from_le_bytes([value[0], value[1], value[2], value[3]]);
+    if millis <= 999 {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
+}
+
+fn validate_gps_field(value: &[u8]) -> Result<(), MetadataSidecarError> {
+    if value.len() != 14 {
+        return Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        });
+    }
+    let lat = i32::from_le_bytes([value[0], value[1], value[2], value[3]]);
+    let lon = i32::from_le_bytes([value[4], value[5], value[6], value[7]]);
+    if (-90_000_000..=90_000_000).contains(&lat) && (-180_000_000..=180_000_000).contains(&lon) {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
 }
 
 fn checked_metadata_sidecar_len(

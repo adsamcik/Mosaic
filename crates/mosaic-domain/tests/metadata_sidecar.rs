@@ -59,7 +59,7 @@ fn metadata_sidecar_serializes_to_fixed_canonical_golden_bytes() {
     assert_eq!(bytes.len(), 97);
     assert_eq!(
         hex(&bytes),
-        "4d6f736169635f4d657461646174615f763101000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f04030201030000000100020000000600030008000000c00f0000d00b000004000a000000696d6167652f6a706567"
+        "4d6f736169635f4d657461646174615f763101000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f04030201030000000100020000000600020008000000c00f0000d00b000004000a000000696d6167652f6a706567"
     );
 }
 
@@ -323,7 +323,12 @@ fn worst_case_active_tag_sidecar_fits_within_cap() {
         vec![
             metadata_field_tags::ORIENTATION,
             metadata_field_tags::ORIGINAL_DIMENSIONS,
-            metadata_field_tags::MIME_OVERRIDE
+            metadata_field_tags::DEVICE_TIMESTAMP_MS,
+            metadata_field_tags::MIME_OVERRIDE,
+            metadata_field_tags::CAMERA_MAKE,
+            metadata_field_tags::CAMERA_MODEL,
+            metadata_field_tags::SUBSECONDS_MS,
+            metadata_field_tags::GPS,
         ],
         "new Active tags must re-evaluate MAX_SIDECAR_TOTAL_BYTES"
     );
@@ -336,10 +341,24 @@ fn worst_case_active_tag_sidecar_fits_within_cap() {
         bytes
     };
     let mime_override = b"image/jpeg";
+    let timestamp = u64::MAX.to_le_bytes();
+    let camera_make = [b'M'; 64];
+    let camera_model = [b'Z'; 64];
+    let subseconds = 999_u32.to_le_bytes();
+    let mut gps = [0_u8; 14];
+    gps[..4].copy_from_slice(&90_000_000_i32.to_le_bytes());
+    gps[4..8].copy_from_slice(&180_000_000_i32.to_le_bytes());
+    gps[8..12].copy_from_slice(&i32::MAX.to_le_bytes());
+    gps[12..14].copy_from_slice(&u16::MAX.to_le_bytes());
     let fields = [
         MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &orientation),
         MetadataSidecarField::new(metadata_field_tags::ORIGINAL_DIMENSIONS, &dimensions),
+        MetadataSidecarField::new(metadata_field_tags::DEVICE_TIMESTAMP_MS, &timestamp),
         MetadataSidecarField::new(metadata_field_tags::MIME_OVERRIDE, mime_override),
+        MetadataSidecarField::new(metadata_field_tags::CAMERA_MAKE, &camera_make),
+        MetadataSidecarField::new(metadata_field_tags::CAMERA_MODEL, &camera_model),
+        MetadataSidecarField::new(metadata_field_tags::SUBSECONDS_MS, &subseconds),
+        MetadataSidecarField::new(metadata_field_tags::GPS, &gps),
     ];
 
     let bytes = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
@@ -350,12 +369,17 @@ fn worst_case_active_tag_sidecar_fits_within_cap() {
     };
 
     let expected_len = FIXED_METADATA_SIDECAR_HEADER_BYTES
-        + (3 * TLV_RECORD_HEADER_BYTES)
+        + (8 * TLV_RECORD_HEADER_BYTES)
         + orientation.len()
         + dimensions.len()
-        + mime_override.len();
+        + timestamp.len()
+        + mime_override.len()
+        + camera_make.len()
+        + camera_model.len()
+        + subseconds.len()
+        + gps.len();
     assert_eq!(bytes.len(), expected_len);
-    assert_eq!(bytes.len(), 97);
+    assert_eq!(bytes.len(), 281);
     assert!(bytes.len() < MAX_SIDECAR_TOTAL_BYTES);
 }
 

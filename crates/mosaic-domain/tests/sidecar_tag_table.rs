@@ -48,18 +48,14 @@ fn expected_and_live_tables_agree() {
         live,
         vec![
             (1, "orientation", SidecarTagStatus::Active),
-            (
-                2,
-                "device_timestamp_ms",
-                SidecarTagStatus::ReservedNumberPending
-            ),
-            (3, "original_dimensions", SidecarTagStatus::Active),
+            (2, "original_dimensions", SidecarTagStatus::Active),
+            (3, "device_timestamp_ms", SidecarTagStatus::Active),
             (4, "mime_override", SidecarTagStatus::Active),
-            (5, "caption", SidecarTagStatus::ReservedNumberPending),
+            (5, "camera_make", SidecarTagStatus::Active),
             (6, "filename", SidecarTagStatus::Forbidden),
-            (7, "camera_make", SidecarTagStatus::ReservedNumberPending),
-            (8, "camera_model", SidecarTagStatus::ReservedNumberPending),
-            (9, "gps", SidecarTagStatus::ReservedNumberPending),
+            (7, "camera_model", SidecarTagStatus::Active),
+            (8, "subseconds_ms", SidecarTagStatus::Active),
+            (9, "gps", SidecarTagStatus::Active),
             (10, "codec_fourcc", SidecarTagStatus::ReservedNumberPending),
             (11, "duration_ms", SidecarTagStatus::ReservedNumberPending),
             (
@@ -122,13 +118,13 @@ fn sidecar_tag_privacy_classes_match_spec_table() {
     use SidecarTagPrivacyClass::*;
     let expected = [
         (1, RenderingOnly),
-        (2, SensitiveTimestamp),
-        (3, RenderingOnly),
+        (2, RenderingOnly),
+        (3, SensitiveTimestamp),
         (4, ContainerTechnical),
-        (5, UserContent),
+        (5, DeviceFingerprint),
         (6, UserContent),
         (7, DeviceFingerprint),
-        (8, DeviceFingerprint),
+        (8, SensitiveTimestamp),
         (9, SensitiveLocation),
         (10, ContainerTechnical),
         (11, ContainerTechnical),
@@ -185,4 +181,76 @@ fn lock_test_for_every_forbidden_tag() {
             Err(MetadataSidecarError::ForbiddenTag { tag })
         );
     }
+}
+
+#[test]
+fn rm3_rm4_promoted_tags_are_active() {
+    for tag in [
+        metadata_field_tags::DEVICE_TIMESTAMP_MS,
+        metadata_field_tags::CAMERA_MAKE,
+        metadata_field_tags::CAMERA_MODEL,
+        metadata_field_tags::SUBSECONDS_MS,
+        metadata_field_tags::GPS,
+    ] {
+        assert_eq!(
+            metadata_field_tags::status(tag),
+            Some(SidecarTagStatus::Active)
+        );
+    }
+}
+
+#[test]
+fn max_length_camera_make_and_model_encode() {
+    let make = [b'M'; 64];
+    let model = [b'Z'; 64];
+    let fields = [
+        MetadataSidecarField::new(metadata_field_tags::CAMERA_MAKE, &make),
+        MetadataSidecarField::new(metadata_field_tags::CAMERA_MODEL, &model),
+    ];
+
+    let bytes = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
+        ALBUM_ID, PHOTO_ID, 1, &fields,
+    )) {
+        Ok(bytes) => bytes,
+        Err(error) => panic!("max-length camera fields should encode: {error:?}"),
+    };
+
+    assert_eq!(bytes.len(), 59 + (2 * 6) + 64 + 64);
+}
+
+#[test]
+fn each_active_tag_encodes_through_canonical_sidecar_builder() {
+    let orientation = 1_u16.to_le_bytes();
+    let mut dimensions = [0_u8; 8];
+    dimensions[..4].copy_from_slice(&4032_u32.to_le_bytes());
+    dimensions[4..].copy_from_slice(&3024_u32.to_le_bytes());
+    let timestamp = 1_704_157_445_123_u64.to_le_bytes();
+    let mime = b"image/jpeg";
+    let make = b"MosaicCam";
+    let model = b"Model Z";
+    let subseconds = 123_u32.to_le_bytes();
+    let mut gps = [0_u8; 14];
+    gps[..4].copy_from_slice(&50_091_667_i32.to_le_bytes());
+    gps[4..8].copy_from_slice(&14_416_667_i32.to_le_bytes());
+    gps[8..12].copy_from_slice(&250_i32.to_le_bytes());
+    gps[12..14].copy_from_slice(&7_u16.to_le_bytes());
+    let fields = [
+        MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &orientation),
+        MetadataSidecarField::new(metadata_field_tags::ORIGINAL_DIMENSIONS, &dimensions),
+        MetadataSidecarField::new(metadata_field_tags::DEVICE_TIMESTAMP_MS, &timestamp),
+        MetadataSidecarField::new(metadata_field_tags::MIME_OVERRIDE, mime),
+        MetadataSidecarField::new(metadata_field_tags::CAMERA_MAKE, make),
+        MetadataSidecarField::new(metadata_field_tags::CAMERA_MODEL, model),
+        MetadataSidecarField::new(metadata_field_tags::SUBSECONDS_MS, &subseconds),
+        MetadataSidecarField::new(metadata_field_tags::GPS, &gps),
+    ];
+
+    let bytes = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
+        ALBUM_ID, PHOTO_ID, 1, &fields,
+    )) {
+        Ok(bytes) => bytes,
+        Err(error) => panic!("all active tags should encode: {error:?}"),
+    };
+
+    assert_eq!(bytes.len(), 59 + (8 * 6) + 2 + 8 + 8 + 10 + 9 + 7 + 4 + 14);
 }

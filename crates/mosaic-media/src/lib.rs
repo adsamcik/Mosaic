@@ -6,6 +6,12 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
+mod exif_sidecar;
+pub use exif_sidecar::{
+    ExtractedGpsFields, ExtractedSidecarFields, SidecarExtractResult,
+    extract_canonical_sidecar_fields,
+};
+
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 const WEBP_VP8X_ICC_FLAG: u8 = 0b0010_0000;
 const WEBP_VP8X_EXIF_FLAG: u8 = 0b0000_0100;
