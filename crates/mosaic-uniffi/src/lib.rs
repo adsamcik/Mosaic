@@ -2,13 +2,38 @@
 
 #![forbid(unsafe_code)]
 
-use std::fmt;
+use std::{fmt, sync::Mutex};
 
 use mosaic_domain::{
     EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MetadataSidecar,
     MetadataSidecarError, MetadataSidecarField, ShardTier,
 };
+use self_cell::self_cell;
 use zeroize::Zeroizing;
+
+type CryptoStreamingEncryptor<'a> = mosaic_crypto::StreamingEncryptor<'a>;
+type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
+
+struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
+struct CryptoStreamingDecryptorState<'a>(Option<CryptoStreamingDecryptor<'a>>);
+
+self_cell!(
+    struct StreamingEncryptorCell {
+        owner: mosaic_crypto::EpochKeyMaterial,
+
+        #[not_covariant]
+        dependent: CryptoStreamingEncryptorState,
+    }
+);
+
+self_cell!(
+    struct StreamingDecryptorCell {
+        owner: mosaic_crypto::EpochKeyMaterial,
+
+        #[not_covariant]
+        dependent: CryptoStreamingDecryptorState,
+    }
+);
 
 /// Stable client error codes exported through UniFFI.
 ///
@@ -217,6 +242,28 @@ impl ClientErrorCode {
     }
 }
 
+/// UniFFI error for stateful streaming AEAD objects.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
+pub enum MosaicError {
+    Client { code: u16 },
+    Crypto { code: u16 },
+    InternalStatePoisoned,
+    AlreadyFinalized,
+}
+
+impl fmt::Display for MosaicError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Client { code } => write!(f, "Mosaic client error code {code}"),
+            Self::Crypto { code } => write!(f, "Mosaic crypto error code {code}"),
+            Self::InternalStatePoisoned => f.write_str("Mosaic internal state was poisoned"),
+            Self::AlreadyFinalized => f.write_str("Mosaic streaming object was already finalized"),
+        }
+    }
+}
+
+impl std::error::Error for MosaicError {}
+
 /// UniFFI record for header parse results.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct HeaderResult {
@@ -387,6 +434,22 @@ impl fmt::Debug for EncryptedShardResult {
             .field("code", &self.code)
             .field("envelope_bytes_len", &self.envelope_bytes.len())
             .field("sha256", &self.sha256)
+            .finish()
+    }
+}
+
+/// UniFFI record for one encrypted v0x04 streaming AEAD frame.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct EncryptedFrame {
+    pub frame_index: u32,
+    pub bytes: Vec<u8>,
+}
+
+impl fmt::Debug for EncryptedFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptedFrame")
+            .field("frame_index", &self.frame_index)
+            .field("bytes_len", &self.bytes.len())
             .finish()
     }
 }
@@ -715,6 +778,133 @@ advance_album_sync_uniffi(ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncEvent)-
 ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncTransition,ClientCoreAlbumSyncEffect) \
 manifest_transcript(manifest_transcript_bytes_uniffi(ClientCoreManifestTranscriptInputs)->Vec<u8>,\
 ClientCoreManifestTranscriptInputs,ClientCoreManifestShardRef)";
+
+/// Stateful UniFFI wrapper around the v0x04 streaming AEAD encryptor.
+#[derive(uniffi::Object)]
+pub struct StreamingEncryptor {
+    inner: Mutex<Option<StreamingEncryptorCell>>,
+}
+
+/// Stateful UniFFI wrapper around the v0x04 streaming AEAD decryptor.
+#[derive(uniffi::Object)]
+pub struct StreamingDecryptor {
+    inner: Mutex<Option<StreamingDecryptorCell>>,
+}
+
+#[uniffi::export]
+impl StreamingEncryptor {
+    /// Creates a v0x04 streaming AEAD encryptor for a Rust-owned epoch handle.
+    #[uniffi::constructor]
+    pub fn new(
+        epoch_handle_id: u64,
+        tier: u8,
+        expected_frame_count: Option<u32>,
+    ) -> Result<Self, MosaicError> {
+        let key_material = mosaic_client::epoch_key_material_for_handle(epoch_handle_id)
+            .map_err(mosaic_error_from_client)?;
+        let tier = ShardTier::try_from(tier).map_err(|_| MosaicError::Client {
+            code: mosaic_client::ClientErrorCode::InvalidTier.as_u16(),
+        })?;
+        let cell = StreamingEncryptorCell::try_new(key_material, |handle| {
+            mosaic_crypto::streaming_encrypt_init(handle, tier, expected_frame_count)
+                .map(|inner| CryptoStreamingEncryptorState(Some(inner)))
+        })
+        .map_err(mosaic_error_from_crypto)?;
+        Ok(Self {
+            inner: Mutex::new(Some(cell)),
+        })
+    }
+
+    /// Encrypts one 64 KiB-or-final plaintext frame.
+    pub fn encrypt_frame(&self, plaintext: Vec<u8>) -> Result<EncryptedFrame, MosaicError> {
+        let plaintext = Zeroizing::new(plaintext);
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        let cell = guard.as_mut().ok_or(MosaicError::AlreadyFinalized)?;
+        cell.with_dependent_mut(|_, state| {
+            let encryptor = state.0.as_mut().ok_or(MosaicError::AlreadyFinalized)?;
+            encryptor
+                .encrypt_frame(&plaintext)
+                .map(|frame| EncryptedFrame {
+                    frame_index: frame.frame_index,
+                    bytes: frame.bytes,
+                })
+                .map_err(mosaic_error_from_crypto)
+        })
+    }
+
+    /// Finalizes the stream and returns the complete v0x04 envelope bytes.
+    pub fn finalize(&self) -> Result<Vec<u8>, MosaicError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        let mut cell = guard.take().ok_or(MosaicError::AlreadyFinalized)?;
+        cell.with_dependent_mut(|_, state| {
+            let encryptor = state.0.take().ok_or(MosaicError::AlreadyFinalized)?;
+            encryptor
+                .finalize()
+                .map(|envelope| envelope.bytes)
+                .map_err(mosaic_error_from_crypto)
+        })
+    }
+}
+
+#[uniffi::export]
+impl StreamingDecryptor {
+    /// Creates a v0x04 streaming AEAD decryptor from envelope header bytes.
+    #[uniffi::constructor]
+    pub fn new(epoch_handle_id: u64, envelope: Vec<u8>) -> Result<Self, MosaicError> {
+        let key_material = mosaic_client::epoch_key_material_for_handle(epoch_handle_id)
+            .map_err(mosaic_error_from_client)?;
+        let cell = StreamingDecryptorCell::try_new(key_material, |handle| {
+            mosaic_crypto::streaming_decrypt_init(handle, &envelope)
+                .map(|inner| CryptoStreamingDecryptorState(Some(inner)))
+        })
+        .map_err(mosaic_error_from_crypto)?;
+        Ok(Self {
+            inner: Mutex::new(Some(cell)),
+        })
+    }
+
+    /// Decrypts the next serialized streaming AEAD frame.
+    pub fn decrypt_frame(&self, frame: Vec<u8>) -> Result<Vec<u8>, MosaicError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        let cell = guard.as_mut().ok_or(MosaicError::AlreadyFinalized)?;
+        cell.with_dependent_mut(|_, state| {
+            let decryptor = state.0.as_mut().ok_or(MosaicError::AlreadyFinalized)?;
+            decryptor
+                .decrypt_frame(&frame)
+                .map_err(mosaic_error_from_crypto)
+        })
+    }
+
+    /// Finalizes the stream and verifies all declared frames arrived.
+    pub fn finalize(&self) -> Result<(), MosaicError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        let mut cell = guard.take().ok_or(MosaicError::AlreadyFinalized)?;
+        cell.with_dependent_mut(|_, state| {
+            let decryptor = state.0.take().ok_or(MosaicError::AlreadyFinalized)?;
+            decryptor.finalize().map_err(mosaic_error_from_crypto)
+        })
+    }
+}
+
+/// Dispatches v0x03/v0x04 envelope decryption through the shared Rust crypto path.
+#[uniffi::export]
+pub fn decrypt_envelope(epoch_handle_id: u64, envelope: Vec<u8>) -> Result<Vec<u8>, MosaicError> {
+    let key_material = mosaic_client::epoch_key_material_for_handle(epoch_handle_id)
+        .map_err(mosaic_error_from_client)?;
+    mosaic_crypto::decrypt_envelope(&key_material, &envelope).map_err(mosaic_error_from_crypto)
+}
 
 /// Parses a shard envelope header through the UniFFI export surface.
 #[uniffi::export]
@@ -1457,6 +1647,18 @@ fn decrypted_shard_result_from_client(
     DecryptedShardResult {
         code: result.code.as_u16(),
         plaintext: std::mem::take(&mut result.plaintext),
+    }
+}
+
+fn mosaic_error_from_client(error: mosaic_client::ClientError) -> MosaicError {
+    MosaicError::Client {
+        code: error.code.as_u16(),
+    }
+}
+
+fn mosaic_error_from_crypto(error: mosaic_crypto::MosaicCryptoError) -> MosaicError {
+    MosaicError::Crypto {
+        code: map_crypto_error_uniffi(error),
     }
 }
 

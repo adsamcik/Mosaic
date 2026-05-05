@@ -141,6 +141,10 @@ record EncryptedShardResult
   envelope_bytes: Vec<u8>
   sha256: String
 end
+record EncryptedFrame
+  frame_index: u32
+  bytes: Vec<u8>
+end
 record DecryptedShardResult
   code: u16
   plaintext: Vec<u8>
@@ -354,6 +358,21 @@ record MediaTierLayoutResult
   original: MediaTierDimensions
 end
 export pub fn protocol_version() -> String
+object StreamingEncryptor
+end
+object StreamingDecryptor
+end
+impl StreamingEncryptor
+  constructor pub fn new( epoch_handle_id: u64, tier: u8, expected_frame_count: Option<u32>, ) -> Result<Self, MosaicError>
+  method pub fn encrypt_frame(&self, plaintext: Vec<u8>) -> Result<EncryptedFrame, MosaicError>
+  method pub fn finalize(&self) -> Result<Vec<u8>, MosaicError>
+end
+impl StreamingDecryptor
+  constructor pub fn new(epoch_handle_id: u64, envelope: Vec<u8>) -> Result<Self, MosaicError>
+  method pub fn decrypt_frame(&self, frame: Vec<u8>) -> Result<Vec<u8>, MosaicError>
+  method pub fn finalize(&self) -> Result<(), MosaicError>
+end
+export pub fn decrypt_envelope(epoch_handle_id: u64, envelope: Vec<u8>) -> Result<Vec<u8>, MosaicError>
 export pub fn parse_envelope_header(bytes: Vec<u8>) -> HeaderResult
 export pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> ProgressResult
 export pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> AccountUnlockResult

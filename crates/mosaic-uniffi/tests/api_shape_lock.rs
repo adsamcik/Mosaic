@@ -4,9 +4,18 @@ use std::{
     path::PathBuf,
 };
 
+use zeroize::Zeroizing;
+
 const SOURCE: &str = include_str!("../src/lib.rs");
 const CLIENT_SOURCE: &str = include_str!("../../mosaic-client/src/lib.rs");
 const GOLDEN: &str = include_str!("golden/uniffi_api.txt");
+const PASSWORD: &[u8] = b"correct horse battery staple";
+const USER_SALT: [u8; 16] = [
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+];
+const ACCOUNT_SALT: [u8; 16] = [
+    0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
+];
 
 /// Locks the actual UniFFI export surface by introspecting the crate source for
 /// `#[uniffi::export]` functions and `uniffi::Record` DTOs. UniFFI 0.31.1 does
@@ -86,6 +95,14 @@ fn canonical_uniffi_api_shape_for_features(
                 }
             }
 
+            if attr_has_uniffi_marker(&attr, "Object") {
+                if let Some((next_index, object)) = parse_object(&lines, next_attr_index) {
+                    output.push_str(&object);
+                    index = next_index;
+                    continue;
+                }
+            }
+
             if attr_has_uniffi_marker(&attr, "Enum") {
                 if let Some((next_index, enum_shape)) = parse_enum(&lines, next_attr_index) {
                     output.push_str(&enum_shape);
@@ -107,6 +124,16 @@ fn canonical_uniffi_api_shape_for_features(
                 continue;
             }
 
+            if is_uniffi_export_attr(&attr)
+                && cfg_attrs_enabled(&pending_attrs, cross_client_vectors_enabled)
+                && let Some((next_index, impl_shape)) = parse_exported_impl(&lines, next_attr_index)
+            {
+                output.push_str(&impl_shape);
+                index = next_index;
+                pending_attrs.clear();
+                continue;
+            }
+
             index = next_attr_index;
             continue;
         }
@@ -116,6 +143,37 @@ fn canonical_uniffi_api_shape_for_features(
     }
 
     output
+}
+
+fn parse_object(lines: &[&str], start: usize) -> Option<(usize, String)> {
+    let mut index = start;
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if let Some(name) = line
+            .strip_prefix("pub struct ")
+            .and_then(|rest| rest.split_whitespace().next())
+        {
+            let name = name.trim_end_matches('{');
+            while index < lines.len() {
+                if lines[index].trim().starts_with('}') {
+                    return Some((index + 1, format!("object {name}\nend\n")));
+                }
+                index += 1;
+            }
+            return None;
+        }
+        if starts_attribute(line) {
+            let (next_index, _) = collect_attribute(lines, index);
+            index = next_index;
+            continue;
+        }
+        if line.starts_with("///") || line.is_empty() {
+            index += 1;
+            continue;
+        }
+        return None;
+    }
+    None
 }
 
 fn parse_record(lines: &[&str], start: usize) -> Option<(usize, String)> {
@@ -214,6 +272,87 @@ fn parse_enum_variant(line: &str) -> Option<String> {
     Some(normalize_whitespace(line))
 }
 
+fn parse_exported_impl(lines: &[&str], start: usize) -> Option<(usize, String)> {
+    let mut index = start;
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if starts_attribute(line) {
+            let (next_index, _) = collect_attribute(lines, index);
+            index = next_index;
+            continue;
+        }
+        if line.starts_with("///") || line.is_empty() {
+            index += 1;
+            continue;
+        }
+        let name = line
+            .strip_prefix("impl ")
+            .and_then(|rest| rest.split_whitespace().next())?;
+        let name = name.trim_end_matches('{');
+        let mut output = format!("impl {name}\n");
+        index += 1;
+        let mut pending_constructor = false;
+        while index < lines.len() {
+            let line = lines[index].trim();
+            if line.starts_with('}') {
+                output.push_str("end\n");
+                return Some((index + 1, output));
+            }
+            if starts_attribute(line) {
+                let (next_index, attr) = collect_attribute(lines, index);
+                pending_constructor |= attr.contains("constructor");
+                index = next_index;
+                continue;
+            }
+            if (line.starts_with("pub fn ") || line.starts_with("pub async fn "))
+                && let Some((next_method_index, signature)) = parse_exported_function(lines, index)
+            {
+                output.push_str("  ");
+                output.push_str(if pending_constructor {
+                    "constructor"
+                } else {
+                    "method"
+                });
+                output.push(' ');
+                output.push_str(&signature);
+                output.push('\n');
+                pending_constructor = false;
+                index = skip_rust_block(lines, next_method_index - 1);
+                continue;
+            }
+            if !(line.starts_with("///") || line.is_empty()) {
+                pending_constructor = false;
+            }
+            index += 1;
+        }
+        return None;
+    }
+    None
+}
+
+fn skip_rust_block(lines: &[&str], start: usize) -> usize {
+    let mut depth = 0_i32;
+    let mut saw_open = false;
+    let mut index = start;
+    while index < lines.len() {
+        for character in lines[index].chars() {
+            match character {
+                '{' => {
+                    depth += 1;
+                    saw_open = true;
+                }
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        index += 1;
+        if saw_open && depth <= 0 {
+            break;
+        }
+    }
+    index
+}
+
 fn parse_exported_function(lines: &[&str], start: usize) -> Option<(usize, String)> {
     let mut index = start;
     while index < lines.len() {
@@ -293,6 +432,106 @@ fn manifest_transcript_uniffi_export_is_present() {
         actual.contains("record ClientCoreManifestTranscriptInputs"),
         "manifest transcript input record must be locked"
     );
+}
+
+#[test]
+fn streaming_aead_uniffi_export_is_present() {
+    let actual = canonical_uniffi_api_shape(SOURCE);
+
+    assert!(
+        actual.contains("record EncryptedFrame\n  frame_index: u32\n  bytes: Vec<u8>\nend"),
+        "encrypted streaming frame record must be locked"
+    );
+    assert!(
+        actual.contains("object StreamingEncryptor\nend"),
+        "streaming encryptor object must be locked"
+    );
+    assert!(
+        actual.contains("object StreamingDecryptor\nend"),
+        "streaming decryptor object must be locked"
+    );
+    assert!(
+        actual.contains("impl StreamingEncryptor")
+            && actual.contains("constructor pub fn new(")
+            && actual.contains("method pub fn encrypt_frame(&self, plaintext: Vec<u8>) -> Result<EncryptedFrame, MosaicError>")
+            && actual.contains("method pub fn finalize(&self) -> Result<Vec<u8>, MosaicError>"),
+        "streaming encryptor constructor and methods must be locked"
+    );
+    assert!(
+        actual.contains("impl StreamingDecryptor")
+            && actual.contains(
+                "method pub fn decrypt_frame(&self, frame: Vec<u8>) -> Result<Vec<u8>, MosaicError>"
+            )
+            && actual.contains("method pub fn finalize(&self) -> Result<(), MosaicError>"),
+        "streaming decryptor constructor and methods must be locked"
+    );
+    assert!(
+        actual.contains(
+            "export pub fn decrypt_envelope(epoch_handle_id: u64, envelope: Vec<u8>) -> Result<Vec<u8>, MosaicError>"
+        ),
+        "v0x03/v0x04 decrypt_envelope dispatcher export must be locked"
+    );
+}
+
+#[test]
+fn streaming_aead_round_trip_through_uniffi() {
+    let account = mosaic_uniffi::unlock_account_key(
+        PASSWORD.to_vec(),
+        mosaic_uniffi::AccountUnlockRequest {
+            user_salt: USER_SALT.to_vec(),
+            account_salt: ACCOUNT_SALT.to_vec(),
+            wrapped_account_key: wrapped_account_key(),
+            kdf_memory_kib: mosaic_crypto::MIN_KDF_MEMORY_KIB,
+            kdf_iterations: mosaic_crypto::MIN_KDF_ITERATIONS,
+            kdf_parallelism: 1,
+        },
+    );
+    assert_eq!(account.code, 0);
+    let epoch = mosaic_uniffi::create_epoch_key_handle(account.handle, 42);
+    assert_eq!(epoch.code, 0);
+
+    let frames = [
+        vec![0x11; 64 * 1024],
+        vec![0x22; 64 * 1024],
+        b"final streaming frame".to_vec(),
+    ];
+    let encryptor =
+        mosaic_uniffi::StreamingEncryptor::new(epoch.handle, 2, Some(frames.len() as u32))
+            .unwrap_or_else(|error| panic!("streaming encryptor should initialize: {error:?}"));
+    let encrypted_frames = frames
+        .iter()
+        .map(|frame| {
+            encryptor
+                .encrypt_frame(frame.clone())
+                .unwrap_or_else(|error| panic!("frame should encrypt: {error:?}"))
+        })
+        .collect::<Vec<_>>();
+    let envelope = encryptor
+        .finalize()
+        .unwrap_or_else(|error| panic!("stream should finalize: {error:?}"));
+
+    let decryptor = mosaic_uniffi::StreamingDecryptor::new(epoch.handle, envelope.clone())
+        .unwrap_or_else(|error| panic!("streaming decryptor should initialize: {error:?}"));
+    let recovered = encrypted_frames
+        .iter()
+        .map(|frame| {
+            decryptor
+                .decrypt_frame(frame.bytes.clone())
+                .unwrap_or_else(|error| panic!("frame should decrypt: {error:?}"))
+        })
+        .collect::<Vec<_>>();
+    decryptor
+        .finalize()
+        .unwrap_or_else(|error| panic!("stream should finalize: {error:?}"));
+    assert_eq!(recovered, frames);
+    assert_eq!(
+        mosaic_uniffi::decrypt_envelope(epoch.handle, envelope)
+            .unwrap_or_else(|error| panic!("dispatcher should decrypt: {error:?}")),
+        frames.concat()
+    );
+
+    assert_eq!(mosaic_uniffi::close_epoch_key_handle(epoch.handle), 0);
+    assert_eq!(mosaic_uniffi::close_account_key_handle(account.handle), 0);
 }
 
 #[test]
@@ -568,13 +807,12 @@ fn client_error_code_uniffi_discriminants_match_rust_source() {
 }
 
 #[test]
-fn golden_parser_has_no_unhandled_uniffi_object_surfaces() {
-    let attrs = collect_source_attributes(SOURCE);
+fn golden_parser_locks_uniffi_object_surfaces() {
+    let actual = canonical_uniffi_api_shape(SOURCE);
     assert!(
-        attrs
-            .iter()
-            .all(|attr| !attr_has_uniffi_marker(attr, "Object")),
-        "api_shape_lock.rs must parse UniFFI object methods before adding uniffi::Object"
+        actual.contains("object StreamingEncryptor\nend")
+            && actual.contains("object StreamingDecryptor\nend"),
+        "api_shape_lock.rs must parse UniFFI objects and methods"
     );
 }
 
@@ -597,6 +835,23 @@ fn uniffi_enum_and_object_canary_detection_accepts_derive_format_variants() {
         "#[derive(Debug, uniffi::Record)]",
         "Enum"
     ));
+}
+
+fn wrapped_account_key() -> Vec<u8> {
+    let profile = mosaic_crypto::KdfProfile::new(
+        mosaic_crypto::MIN_KDF_MEMORY_KIB,
+        mosaic_crypto::MIN_KDF_ITERATIONS,
+        1,
+    )
+    .unwrap_or_else(|error| panic!("minimum Mosaic profile should be valid: {error:?}"));
+    let material = mosaic_crypto::derive_account_key(
+        Zeroizing::new(PASSWORD.to_vec()),
+        &USER_SALT,
+        &ACCOUNT_SALT,
+        profile,
+    )
+    .unwrap_or_else(|error| panic!("account key should derive: {error:?}"));
+    material.wrapped_account_key
 }
 
 fn client_error_code_variants(source: &str) -> BTreeMap<String, u16> {
@@ -678,25 +933,6 @@ fn compact_attr(attr: &str) -> String {
 
 fn starts_attribute(line: &str) -> bool {
     compact_attr(line).starts_with("#[")
-}
-
-fn collect_source_attributes(source: &str) -> Vec<String> {
-    let lines: Vec<&str> = source.lines().collect();
-    let mut attrs = Vec::new();
-    let mut index = 0;
-
-    while index < lines.len() {
-        let line = lines[index].trim();
-        if starts_attribute(line) {
-            let (next_index, attr) = collect_attribute(&lines, index);
-            attrs.push(attr);
-            index = next_index;
-        } else {
-            index += 1;
-        }
-    }
-
-    attrs
 }
 
 fn collect_attribute(lines: &[&str], start: usize) -> (usize, String) {

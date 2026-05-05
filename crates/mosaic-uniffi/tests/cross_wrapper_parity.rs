@@ -82,6 +82,143 @@ fn media_exports_match_between_wasm_and_uniffi() {
     );
 }
 
+#[test]
+fn streaming_aead_wasm_and_uniffi_surfaces_keep_parity() {
+    let uniffi_exports = parse_uniffi_streaming_surface(UNIFFI_SOURCE);
+    assert_eq!(
+        BTreeSet::from([
+            "StreamingEncryptor",
+            "StreamingEncryptor::new",
+            "StreamingEncryptor::encrypt_frame",
+            "StreamingEncryptor::finalize",
+            "StreamingDecryptor",
+            "StreamingDecryptor::new",
+            "StreamingDecryptor::decrypt_frame",
+            "StreamingDecryptor::finalize",
+            "EncryptedFrame",
+            "decrypt_envelope",
+        ]),
+        uniffi_exports,
+        "P-U5 UniFFI streaming AEAD surface drifted"
+    );
+
+    let wasm_exports = parse_wasm_streaming_surface(WASM_SOURCE);
+    assert_eq!(
+        BTreeSet::from([
+            "StreamingShardEncryptor",
+            "StreamingShardEncryptor::new",
+            "StreamingShardEncryptor::encrypt_frame",
+            "StreamingShardEncryptor::finalize",
+            "StreamingShardDecryptor",
+            "StreamingShardDecryptor::new",
+            "StreamingShardDecryptor::decrypt_frame",
+            "StreamingShardDecryptor::finalize",
+            "StreamingFrameResult",
+            "StreamingEnvelopeResult",
+            "decryptEnvelope",
+        ]),
+        wasm_exports,
+        "P-W5 WASM streaming AEAD surface drifted"
+    );
+}
+
+fn parse_uniffi_streaming_surface(source: &str) -> BTreeSet<&'static str> {
+    let mut surface = BTreeSet::new();
+    if source.contains("pub struct StreamingEncryptor") {
+        surface.insert("StreamingEncryptor");
+    }
+    if source.contains("pub struct StreamingDecryptor") {
+        surface.insert("StreamingDecryptor");
+    }
+    if source.contains("pub struct EncryptedFrame") {
+        surface.insert("EncryptedFrame");
+    }
+    if source.contains("pub fn decrypt_envelope(") {
+        surface.insert("decrypt_envelope");
+    }
+    for (needle, name) in [
+        ("impl StreamingEncryptor", "StreamingEncryptor"),
+        (
+            "expected_frame_count: Option<u32>",
+            "StreamingEncryptor::new",
+        ),
+        (
+            "pub fn encrypt_frame(&self",
+            "StreamingEncryptor::encrypt_frame",
+        ),
+        (
+            "pub fn finalize(&self) -> Result<Vec<u8>, MosaicError>",
+            "StreamingEncryptor::finalize",
+        ),
+        ("impl StreamingDecryptor", "StreamingDecryptor"),
+        ("pub fn new(epoch_handle_id", "StreamingDecryptor::new"),
+        (
+            "pub fn decrypt_frame(&self",
+            "StreamingDecryptor::decrypt_frame",
+        ),
+        (
+            "pub fn finalize(&self) -> Result<(), MosaicError>",
+            "StreamingDecryptor::finalize",
+        ),
+    ] {
+        if source.contains(needle) {
+            surface.insert(name);
+        }
+    }
+    surface
+}
+
+fn parse_wasm_streaming_surface(source: &str) -> BTreeSet<&'static str> {
+    let mut surface = BTreeSet::new();
+    for (needle, name) in [
+        (
+            "pub struct StreamingShardEncryptor",
+            "StreamingShardEncryptor",
+        ),
+        (
+            "pub fn new(_epoch_handle_id: u64, _tier: u8, _expected_frame_count: Option<u32>) -> Self",
+            "StreamingShardEncryptor::new",
+        ),
+        (
+            "pub fn encrypt_frame(&mut self, _plaintext: Vec<u8>) -> JsValue",
+            "StreamingShardEncryptor::encrypt_frame",
+        ),
+        (
+            "pub fn finalize(self) -> JsValue",
+            "StreamingShardEncryptor::finalize",
+        ),
+        (
+            "pub struct StreamingShardDecryptor",
+            "StreamingShardDecryptor",
+        ),
+        (
+            "pub fn new(_epoch_handle_id: u64, _envelope_header: Vec<u8>) -> Self",
+            "StreamingShardDecryptor::new",
+        ),
+        (
+            "pub fn decrypt_frame(&mut self, _frame: Vec<u8>) -> JsValue",
+            "StreamingShardDecryptor::decrypt_frame",
+        ),
+        ("pub struct StreamingFrameResult", "StreamingFrameResult"),
+        (
+            "pub struct StreamingEnvelopeResult",
+            "StreamingEnvelopeResult",
+        ),
+        (
+            "#[wasm_bindgen(js_name = decryptEnvelope)]",
+            "decryptEnvelope",
+        ),
+    ] {
+        if source.contains(needle) {
+            surface.insert(name);
+        }
+    }
+    if source.matches("pub fn finalize(self) -> JsValue").count() >= 2 {
+        surface.insert("StreamingShardDecryptor::finalize");
+    }
+    surface
+}
+
 fn assert_matching_field_shapes(uniffi_source: &str, wasm_source: &str) {
     let uniffi_records = parse_uniffi_records(uniffi_source);
     let wasm_structs = parse_wasm_structs(wasm_source);

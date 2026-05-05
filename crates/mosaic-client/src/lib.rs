@@ -1593,6 +1593,16 @@ pub fn decrypt_shard_with_epoch_handle(handle: u64, envelope_bytes: &[u8]) -> De
     }
 }
 
+/// Reconstructs epoch key material for Rust wrapper facades that need to hold
+/// stateful crypto objects without borrowing the client registry lock.
+///
+/// The raw epoch seed is cloned only into zeroizing memory, re-derived into
+/// Rust-owned key material, and never crosses an FFI boundary.
+pub fn epoch_key_material_for_handle(handle: u64) -> Result<EpochKeyMaterial, ClientError> {
+    let (epoch_id, mut epoch_seed) = clone_epoch_seed_for_handle(handle)?;
+    derive_epoch_key_material(epoch_id, epoch_seed.as_mut_slice()).map_err(client_error_from_crypto)
+}
+
 /// Handle-API wrapper for the legacy raw-key fallback. The handle resolves to
 /// an opaque epoch state inside the secret registry; the raw seed never
 /// crosses the FFI boundary.
