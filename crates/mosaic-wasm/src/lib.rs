@@ -4786,14 +4786,85 @@ fn download_init_snapshot_input_from_cbor(
     if !is_valid_scope_key(&scope_key) {
         return Err(mosaic_client::ClientErrorCode::DownloadInvalidPlan);
     }
+    // Plan-input key 5: optional v3 schedule. Wire format mirrors the
+    // canonical snapshot encoding in mosaic_client::download::snapshot::
+    // schedule_value (key 0=KIND, 1=WINDOW_START_HOUR, 2=WINDOW_END_HOUR,
+    // 3=MAX_DELAY_MS). Absent or Null => Immediate (None).
+    let schedule = match optional_entry(entries, 5)? {
+        Some(value) => decode_download_schedule_value(value)?,
+        None => None,
+    };
     Ok(DownloadInitSnapshotInput {
         job_id,
         album_id,
         plan,
         now_ms,
         scope_key,
-        schedule: None,
+        schedule,
     })
+}
+
+fn optional_entry(
+    entries: &[(Value, Value)],
+    key: u32,
+) -> Result<Option<&Value>, mosaic_client::ClientErrorCode> {
+    let found = entries.iter().find_map(|(candidate, value)| {
+        match candidate
+            .as_integer()
+            .and_then(|integer| u32::try_from(integer).ok())
+        {
+            Some(found) if found == key => Some(value),
+            _ => None,
+        }
+    });
+    match found {
+        Some(Value::Null) | None => Ok(None),
+        Some(value) => Ok(Some(value)),
+    }
+}
+
+/// Decodes the optional v3 schedule value sitting at key 5 of the plan-input
+/// CBOR map. Mirrors mosaic_client::download::snapshot::decode_schedule
+/// (private to the snapshot module). Returns Ok(None) when the caller
+/// supplies CBOR null or the IMMEDIATE kind code.
+fn decode_download_schedule_value(
+    value: &Value,
+) -> Result<
+    Option<mosaic_client::download::snapshot::DownloadSchedule>,
+    mosaic_client::ClientErrorCode,
+> {
+    use mosaic_client::download::snapshot::DownloadSchedule;
+    use mosaic_client::download::snapshot::download_schedule_keys as keys;
+    use mosaic_client::download::snapshot::download_schedule_kind_codes as kinds;
+
+    if matches!(value, Value::Null) {
+        return Ok(None);
+    }
+    let fields = map_entries(value)?;
+    let kind = u8_from_value(required_entry(fields, keys::KIND)?)?;
+    let max_delay_ms = match optional_entry(fields, keys::MAX_DELAY_MS)? {
+        Some(value) => Some(u64_from_value(value)?),
+        None => None,
+    };
+    match kind {
+        kinds::IMMEDIATE => Ok(None),
+        kinds::WIFI => Ok(Some(DownloadSchedule::Wifi { max_delay_ms })),
+        kinds::WIFI_CHARGING => Ok(Some(DownloadSchedule::WifiCharging { max_delay_ms })),
+        kinds::IDLE => Ok(Some(DownloadSchedule::Idle { max_delay_ms })),
+        kinds::WINDOW => {
+            let start_hour = u8_from_value(required_entry(fields, keys::WINDOW_START_HOUR)?)?;
+            let end_hour = u8_from_value(required_entry(fields, keys::WINDOW_END_HOUR)?)?;
+            if start_hour > 23 || end_hour > 23 {
+                return Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt);
+            }
+            Ok(Some(DownloadSchedule::Window {
+                start_hour,
+                end_hour,
+                max_delay_ms,
+            }))
+        }
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
 }
 
 fn is_valid_scope_key(value: &str) -> bool {
@@ -5959,4 +6030,3 @@ mod tests {
 }
 
 // ---------------------------------------------------------------------------
-
