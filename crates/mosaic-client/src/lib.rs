@@ -32,6 +32,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub mod snapshot_schema;
 pub mod state_machine;
+pub mod telemetry;
 pub use snapshot_schema::{
     AlbumSyncSnapshotPlaceholder, CURRENT_SNAPSHOT_SCHEMA_VERSION, FORBIDDEN_FIELD_NAMES,
     SCHEMA_VERSION_KEY, SNAPSHOT_SCHEMA_VERSION_V1, SnapshotMigrationError, album_sync_phase_codes,
