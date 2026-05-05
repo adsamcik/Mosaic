@@ -138,6 +138,7 @@ vi.mock('../../lib/opfs-staging', () => ({
 
 import { CoordinatorWorker, __coordinatorWorkerTestUtils as cbor } from '../coordinator.worker';
 import * as opfsStaging from '../../lib/opfs-staging';
+import type { SourceStrategy } from '../coordinator/source-strategy';
 
 const albumId = '018f0000-0000-7000-8000-000000000002';
 const nowMs = 1_700_000_000_000;
@@ -932,6 +933,68 @@ describe('CoordinatorWorker', () => {
       unchanged: [],
       shardChanged: ['a'],
     });
+  });
+
+  // ----- SourceStrategy integration -----
+  it('routes pipeline shard + key requests through the provided source strategy', async () => {
+    interface FullDeps {
+      readonly fetchShards: (ids: ReadonlyArray<string>, signal: AbortSignal) => Promise<Uint8Array[]>;
+      readonly getEpochSeed: (albumId: string, epochId: number) => Promise<Uint8Array>;
+    }
+    const fetchSpy = vi.fn(async (_ids: ReadonlyArray<string>, _signal: AbortSignal): Promise<Uint8Array[]> => [new Uint8Array([1, 2, 3])]);
+    const resolveSpy = vi.fn(async (_albumId: string, _epochId: number): Promise<Uint8Array> => new Uint8Array(32).fill(9));
+    const customSource: SourceStrategy = {
+      kind: 'share-link',
+      fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
+      fetchShards: fetchSpy,
+      resolveKey: resolveSpy,
+    };
+    pipelineMocks.executePhotoTask.mockImplementation(async (_input, deps) => {
+      const full = deps as unknown as FullDeps;
+      const shards = await full.fetchShards(['shard-x'], new AbortController().signal);
+      const key = await full.getEpochSeed(albumId, 7);
+      expect(shards).toHaveLength(1);
+      expect(key).toHaveLength(32);
+      return { kind: 'done', bytesWritten: 123 };
+    });
+    cbor.setExecutePhotoTask(pipelineMocks.executePhotoTask);
+
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const { jobId } = await worker.startJob({ ...validInput(), source: customSource });
+    await cbor.awaitScheduledDriver(worker, jobId);
+
+    expect(cbor.getJobSource(worker, jobId)).toBe(customSource);
+    expect(fetchSpy).toHaveBeenCalledWith(['shard-x'], expect.any(AbortSignal));
+    expect(resolveSpy).toHaveBeenCalledWith(albumId, 7);
+    expect((await worker.getJob(jobId))?.phase).toBe('Done');
+  });
+
+  it('defaults to the authenticated source when StartJobInput.source is omitted', async () => {
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const { jobId } = await worker.startJob(validInput());
+    await cbor.awaitScheduledDriver(worker, jobId);
+    // No per-job source registered: pipelineDeps will resolve via the lazy
+    // default authenticated source on each driver tick.
+    expect(cbor.getJobSource(worker, jobId)).toBeNull();
+    expect((await worker.getJob(jobId))?.phase).toBe('Done');
+    expect(pipelineMocks.executePhotoTask).toHaveBeenCalled();
+  });
+
+  it('reconstructed jobs have no per-job source and fall back to authenticated on resume', async () => {
+    const reconstructedJobId = persistSnapshotJob(42, 'Running', photoSpecs(0, 1));
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    // No per-job source survives a worker restart.
+    expect(cbor.getJobSource(worker, reconstructedJobId)).toBeNull();
+    // Resume re-spins the driver using the default authenticated source.
+    pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'done', bytesWritten: 50 });
+    cbor.setExecutePhotoTask(pipelineMocks.executePhotoTask);
+    await worker.resumeJob(reconstructedJobId);
+    await cbor.awaitScheduledDriver(worker, reconstructedJobId);
+    expect(cbor.getJobSource(worker, reconstructedJobId)).toBeNull();
+    expect(pipelineMocks.executePhotoTask).toHaveBeenCalled();
   });
 });
 

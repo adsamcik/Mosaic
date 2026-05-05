@@ -8,12 +8,17 @@
  *   - The UI must call `resumeJob(jobId, { mode })` to re-register the user's
  *     chosen output mode before the driver / finalizer is started.
  * Persisting output mode in the snapshot is tracked for Phase 3.
+ *
+ * SourceStrategy is also held in-memory only on the coordinator and is NOT
+ * persisted into the Rust snapshot. Reconstructed jobs default to the
+ * authenticated source on resume; a future Phase 3 schema bump can persist
+ * the strategy keying for visitor / share-link sessions if needed.
  */
 import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import * as opfsStaging from '../lib/opfs-staging';
-import { downloadShards } from '../lib/shard-service';
-import { getOrFetchEpochKey } from '../lib/epoch-key-service';
+import { createAuthenticatedSourceStrategy } from './coordinator/source-strategy-auth';
+import type { SourceStrategy } from './coordinator/source-strategy';
 import {
   ensureRustReady,
   rustApplyDownloadEvent,
@@ -170,6 +175,13 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   /** Per-job output mode, kept in-memory only (Phase 2). See file header. */
   private readonly jobOutputModes = new Map<string, DownloadOutputMode>();
   /**
+   * Per-job source strategy (in-memory only). Reconstructed jobs fall back
+   * to {@link getDefaultAuthSource}. See file header.
+   */
+  private readonly jobSources = new Map<string, SourceStrategy>();
+  /** Lazy-built default authenticated source (created on first use). */
+  private defaultAuthSource: SourceStrategy | null = null;
+  /**
    * Per-job, per-photo export-side failure reasons (Phase 2 in-memory only).
    * Tracks per-file finalizer write failures WITHOUT mutating the source-side
    * photo status (which tracks staging, not export). Cleared on worker
@@ -222,6 +234,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     const job = createInMemoryJob(updatedBody, committed.checksum);
     this.jobs.set(jobId, job);
     this.jobOutputModes.set(jobId, outputMode);
+    if (input.source) {
+      this.jobSources.set(jobId, input.source);
+    }
     log.info('Job started', { jobId: shortId(jobId), outputMode: outputMode.kind });
     this.emitJobChanged(job);
     await this.sendEvent(jobId, { kind: 'PlanReady' });
@@ -262,6 +277,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       await opfsStaging.purgeJob(jobId);
       this.jobs.delete(jobId);
       this.jobOutputModes.delete(jobId);
+      this.jobSources.delete(jobId);
       this.jobExportFailures.delete(jobId);
       this.emitProgress(summaryToProgress(updated));
       this.broadcast(updated);
@@ -409,6 +425,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     for (const jobId of result.purged) {
       this.jobs.delete(jobId);
       this.jobOutputModes.delete(jobId);
+      this.jobSources.delete(jobId);
       this.jobExportFailures.delete(jobId);
     }
     return { purged: result.purged };
@@ -546,7 +563,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
           entry,
           resumeFromBytes: photo.bytesWritten,
           signal: abortController.signal,
-        }, this.pipelineDeps(pool));
+        }, this.pipelineDeps(pool, this.jobSources.get(jobId) ?? this.getDefaultAuthSource()));
         await this.handlePhotoOutcome(jobId, photo.photoId, outcome);
       });
 
@@ -569,20 +586,18 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     }
   }
 
-  private pipelineDeps(pool: CryptoPool): Parameters<typeof executePhotoTask>[1] {
+  private getDefaultAuthSource(): SourceStrategy {
+    if (this.defaultAuthSource === null) {
+      this.defaultAuthSource = createAuthenticatedSourceStrategy();
+    }
+    return this.defaultAuthSource;
+  }
+
+  private pipelineDeps(pool: CryptoPool, source: SourceStrategy): Parameters<typeof executePhotoTask>[1] {
     return {
       pool,
-      fetchShards: async (shardIds: string[], signal: AbortSignal): Promise<Uint8Array[]> => {
-        if (signal.aborted) {
-          throw new DOMException('Download aborted', 'AbortError');
-        }
-        const shards = await downloadShards(shardIds, undefined, 4);
-        if (signal.aborted) {
-          throw new DOMException('Download aborted', 'AbortError');
-        }
-        return shards;
-      },
-      getEpochSeed: async (albumId: string, epochId: number): Promise<Uint8Array> => (await getOrFetchEpochKey(albumId, epochId)).epochSeed,
+      fetchShards: (shardIds: string[], signal: AbortSignal): Promise<Uint8Array[]> => source.fetchShards(shardIds, signal),
+      getEpochSeed: (albumId: string, epochId: number): Promise<Uint8Array> => source.resolveKey(albumId, epochId),
       writePhotoChunk: opfsStaging.writePhotoChunk,
       truncatePhoto: opfsStaging.truncatePhotoTo,
       getPhotoFileLength: opfsStaging.getPhotoFileLength,
@@ -1559,6 +1574,10 @@ export const __coordinatorWorkerTestUtils = {
   },
   runJobDriver(worker: CoordinatorWorker, jobId: string): Promise<void> {
     return worker.runJobDriver(jobId);
+  },
+  getJobSource(worker: CoordinatorWorker, jobId: string): SourceStrategy | null {
+    interface SourceMapHolder { readonly jobSources: Map<string, SourceStrategy> }
+    return (worker as unknown as SourceMapHolder).jobSources.get(jobId) ?? null;
   },
   awaitScheduledDriver(worker: CoordinatorWorker, jobId: string): Promise<void> {
     interface DriverMapHolder { readonly jobDrivers: Map<string, Promise<void>> }

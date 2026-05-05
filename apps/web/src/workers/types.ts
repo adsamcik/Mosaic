@@ -2,6 +2,7 @@
  * Shared types for worker communication
  */
 import type { EncryptedShard } from '@mosaic/crypto';
+import type { SourceStrategy } from './coordinator/source-strategy';
 
 // Re-export EncryptedShard from crypto lib (single source of truth)
 export type { EncryptedShard };
@@ -1322,6 +1323,13 @@ export interface StartJobInput extends DownloadBuildPlanInput {
    * (not in the Rust snapshot); see top-of-file comment in coordinator.worker.ts.
    */
   readonly outputMode?: DownloadOutputMode;
+  /**
+   * Source strategy for fetching shards + resolving per-epoch keys.
+   * Defaults to authenticated when omitted. NOT persisted across worker
+   * restart; reconstructed jobs fall back to the authenticated source.
+   * See top-of-file comment in coordinator.worker.ts.
+   */
+  readonly source?: SourceStrategy;
 }
 
 /** Stable JS event shape for the Rust `DownloadJobEvent` transition table. */
