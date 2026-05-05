@@ -32,6 +32,7 @@ weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-client/weak-kdf"]
 # non-default and only activated during test builds, so production builds
 # of `mosaic-client` remain free of `strum`.
 mosaic-client = { path = "../mosaic-client", version = "0.1.0", features = ["__variant-introspection"] }
+blake3 = "=1.8.2"
 strum = { version = "=0.28.0", default-features = false }
 
 [lints]

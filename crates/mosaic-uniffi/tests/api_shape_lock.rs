@@ -59,11 +59,14 @@ fn uniffi_exported_api_shape_matches_golden() {
 }
 
 #[test]
-fn uniffi_api_snapshot_lock_v1() {
+fn uniffi_api_v1_baseline_signature_unchanged() {
+    let v1_baseline_blake3 = "ff907d6218ec4efac9cfc902648e26f58103a56edd1dba3af03d448f43b883e6";
+    let actual = blake3::hash(canonical_uniffi_api_shape(SOURCE).as_bytes()).to_hex();
+
     assert_eq!(
-        normalize_newlines(GOLDEN),
-        canonical_uniffi_api_shape(SOURCE),
-        "UniFFI v1 API snapshot drift detected; review raw-secret exposure before regenerating"
+        actual.as_str(),
+        v1_baseline_blake3,
+        "v1 API surface changed — review IRREVERSIBILITY before regenerating"
     );
 }
 

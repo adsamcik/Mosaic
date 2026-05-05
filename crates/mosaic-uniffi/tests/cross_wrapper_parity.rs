@@ -9,6 +9,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const UNIFFI_SOURCE: &str = include_str!("../src/lib.rs");
 const WASM_SOURCE: &str = include_str!("../../mosaic-wasm/src/lib.rs");
+const WASM_ONLY_MEDIA_EXPORTS: &[&str] = &[
+    // UniFFI exposes these through strip_known_metadata(format, bytes) instead
+    // of per-format convenience functions.
+    "stripJpegMetadata",
+    "stripPngMetadata",
+    "stripWebpMetadata",
+];
 
 const REQUIRED_SHARED_DTOS: &[&str] = &[
     "IdentityHandleResult",
@@ -29,6 +36,8 @@ const REQUIRED_SHARED_DTOS: &[&str] = &[
     "StripResult",
     "ImageInspectResult",
     "VideoInspectResult",
+    "MediaTierDimensions",
+    "MediaTierLayoutResult",
     "HeaderResult",
     "CryptoDomainGoldenVectorSnapshot",
 ];
@@ -60,26 +69,19 @@ fn uniffi_records_and_wasm_structs_keep_matching_field_shapes() {
 
 #[test]
 fn media_exports_match_between_wasm_and_uniffi() {
-    let uniffi_exports = parse_uniffi_exported_function_names(UNIFFI_SOURCE);
-    let wasm_exports = parse_wasm_media_export_names(WASM_SOURCE);
-    let expected = expected_media_export_names();
+    assert_media_exports_match(UNIFFI_SOURCE, WASM_SOURCE);
+}
 
-    assert_eq!(
-        expected, wasm_exports,
-        "P-W2 WASM media export surface drifted; update the parity map intentionally"
+#[test]
+#[should_panic(expected = "UniFFI media export `strip_gif_metadata` is missing for P-W2 parity")]
+fn new_wasm_media_export_without_uniffi_mirror_fails_parity() {
+    let wasm_source = format!(
+        "{WASM_SOURCE}\n\
+         #[wasm_bindgen(js_name = stripGifMetadata)]\n\
+         pub fn strip_gif_metadata() -> JsValue {{ JsValue::NULL }}\n"
     );
 
-    for export in &expected {
-        assert!(
-            uniffi_exports.contains(*export),
-            "UniFFI media export `{export}` is missing for P-W2 parity"
-        );
-    }
-
-    assert!(
-        uniffi_exports.contains("strip_known_metadata"),
-        "UniFFI generic media-strip convenience export must remain available"
-    );
+    assert_media_exports_match(UNIFFI_SOURCE, &wasm_source);
 }
 
 #[test]
@@ -281,16 +283,26 @@ fn assert_matching_field_shapes(uniffi_source: &str, wasm_source: &str) {
     );
 }
 
-fn expected_media_export_names() -> BTreeSet<&'static str> {
-    BTreeSet::from([
-        "strip_avif_metadata",
-        "strip_heic_metadata",
-        "strip_video_metadata",
-        "inspect_image",
-        "inspect_video_container",
-        "canonical_metadata_sidecar_bytes",
-        "canonical_video_sidecar_bytes",
-    ])
+fn assert_media_exports_match(uniffi_source: &str, wasm_source: &str) {
+    let uniffi_exports = parse_uniffi_exported_function_names(uniffi_source);
+    let wasm_exports = parse_wasm_media_export_names(wasm_source);
+
+    assert!(
+        !wasm_exports.is_empty(),
+        "P-W2 WASM media export parser found no exports; update the parity parser"
+    );
+
+    for export in &wasm_exports {
+        assert!(
+            uniffi_exports.contains(export),
+            "UniFFI media export `{export}` is missing for P-W2 parity"
+        );
+    }
+
+    assert!(
+        uniffi_exports.contains("strip_known_metadata"),
+        "UniFFI generic media-strip convenience export must remain available"
+    );
 }
 
 fn parse_uniffi_exported_function_names(source: &str) -> BTreeSet<String> {
@@ -316,7 +328,7 @@ fn parse_uniffi_exported_function_names(source: &str) -> BTreeSet<String> {
     exports
 }
 
-fn parse_wasm_media_export_names(source: &str) -> BTreeSet<&'static str> {
+fn parse_wasm_media_export_names(source: &str) -> BTreeSet<String> {
     let lines = source.lines().collect::<Vec<_>>();
     let mut exports = BTreeSet::new();
     let mut index = 0;
@@ -325,9 +337,12 @@ fn parse_wasm_media_export_names(source: &str) -> BTreeSet<&'static str> {
         if starts_attribute(line) {
             let (next_index, attr) = collect_attribute(&lines, index);
             if let Some(js_name) = wasm_js_name(&attr)
-                && let Some(uniffi_name) = wasm_media_export_to_uniffi_name(&js_name)
+                && is_media_export(&js_name)
+                && !WASM_ONLY_MEDIA_EXPORTS.contains(&js_name.as_str())
                 && next_function_name(&lines, next_index).is_some()
             {
+                let uniffi_name = wasm_media_export_to_uniffi_name(&js_name)
+                    .unwrap_or_else(|error| panic!("{error}"));
                 exports.insert(uniffi_name);
             }
             index = next_index;
@@ -336,6 +351,13 @@ fn parse_wasm_media_export_names(source: &str) -> BTreeSet<&'static str> {
         index += 1;
     }
     exports
+}
+
+fn is_media_export(js_name: &str) -> bool {
+    js_name.starts_with("strip")
+        || js_name.starts_with("inspect")
+        || js_name == "canonicalTierLayout"
+        || (js_name.starts_with("canonical") && js_name.contains("Sidecar"))
 }
 
 fn is_uniffi_export_attr(attr: &str) -> bool {
@@ -351,17 +373,38 @@ fn wasm_js_name(attr: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn wasm_media_export_to_uniffi_name(js_name: &str) -> Option<&'static str> {
-    match js_name {
-        "stripAvifMetadata" => Some("strip_avif_metadata"),
-        "stripHeicMetadata" => Some("strip_heic_metadata"),
-        "stripVideoMetadata" => Some("strip_video_metadata"),
-        "inspectImage" => Some("inspect_image"),
-        "inspectVideoContainer" => Some("inspect_video_container"),
-        "canonicalMetadataSidecarBytes" => Some("canonical_metadata_sidecar_bytes"),
-        "canonicalVideoSidecarBytes" => Some("canonical_video_sidecar_bytes"),
-        _ => None,
+fn wasm_media_export_to_uniffi_name(js_name: &str) -> Result<String, String> {
+    camel_case_to_snake_case(js_name)
+        .map_err(|reason| format!("unmappable WASM media export `{js_name}`: {reason}"))
+}
+
+fn camel_case_to_snake_case(name: &str) -> Result<String, &'static str> {
+    if name.is_empty() {
+        return Err("name is empty");
     }
+    if !name
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric())
+    {
+        return Err("name contains non-ASCII-alphanumeric characters");
+    }
+
+    let mut snake = String::with_capacity(name.len());
+    let mut previous_was_lower_or_digit = false;
+    for character in name.chars() {
+        if character.is_ascii_uppercase() {
+            if previous_was_lower_or_digit {
+                snake.push('_');
+            }
+            snake.push(character.to_ascii_lowercase());
+            previous_was_lower_or_digit = false;
+        } else {
+            snake.push(character);
+            previous_was_lower_or_digit =
+                character.is_ascii_lowercase() || character.is_ascii_digit();
+        }
+    }
+    Ok(snake)
 }
 
 fn next_function_name<'a>(lines: &'a [&str], start: usize) -> Option<(usize, &'a str)> {

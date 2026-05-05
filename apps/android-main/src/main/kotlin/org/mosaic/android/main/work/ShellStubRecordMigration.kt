@@ -23,10 +23,10 @@ object ShellStubRecordMigration {
   data class Result(val cleared: Boolean, val removedKeys: Set<String>)
 
   fun clearOnFirstLaunch(context: Context): Result {
-    val appContext = context.applicationContext
+    val appContext = runCatching { context.applicationContext }.getOrNull() ?: context
     return clearOnFirstLaunch(
-      migrationPreferences = appContext.getSharedPreferences(MIGRATION_PREFS_NAME, Context.MODE_PRIVATE),
-      shellStubPreferences = appContext.getSharedPreferences(SHELL_STUB_PREFS_NAME, Context.MODE_PRIVATE),
+      migrationPreferences = openSharedPreferences(appContext, MIGRATION_PREFS_NAME),
+      shellStubPreferences = openSharedPreferences(appContext, SHELL_STUB_PREFS_NAME),
     )
   }
 
@@ -53,4 +53,15 @@ object ShellStubRecordMigration {
 
     return Result(cleared = true, removedKeys = keysToRemove)
   }
+
+  internal var sharedPreferencesOpener: (Context, String) -> SharedPreferences = { context, name ->
+    context.getSharedPreferences(name, Context.MODE_PRIVATE)
+  }
+
+  internal fun resetTestHooks() {
+    sharedPreferencesOpener = { context, name -> context.getSharedPreferences(name, Context.MODE_PRIVATE) }
+  }
+
+  private fun openSharedPreferences(context: Context, name: String): SharedPreferences =
+    sharedPreferencesOpener(context, name)
 }

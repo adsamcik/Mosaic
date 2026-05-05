@@ -1,6 +1,7 @@
 package org.mosaic.android.main
 
 import android.app.Application
+import android.util.Log
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
 import org.mosaic.android.main.work.AutoImportRuntime
 import org.mosaic.android.main.work.AutoImportWorkScheduler
@@ -23,9 +24,32 @@ import org.mosaic.android.main.work.ShellStubRecordMigration
 class MosaicApplication : Application() {
   override fun onCreate() {
     super.onCreate()
-    AndroidRustCoreLibraryLoader.warmUp()
-    ShellStubRecordMigration.clearOnFirstLaunch(this)
-    AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(this))
-    AutoImportWorkScheduler.enqueueIfPolicyAllows(this)
+    rustCoreWarmUp()
+    runCatching { ShellStubRecordMigration.clearOnFirstLaunch(this) }
+      .onFailure { Log.w(TAG, "A-pre-1 cleanup failed", it) }
+    installAutoImportRuntime(this)
+    enqueueAutoImportIfPolicyAllows(this)
+  }
+
+  companion object {
+    private const val TAG = "MosaicApplication"
+
+    internal var rustCoreWarmUp: () -> Unit = AndroidRustCoreLibraryLoader::warmUp
+    internal var installAutoImportRuntime: (MosaicApplication) -> Unit = { application ->
+      AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(application))
+    }
+    internal var enqueueAutoImportIfPolicyAllows: (MosaicApplication) -> Unit = { application ->
+      AutoImportWorkScheduler.enqueueIfPolicyAllows(application)
+    }
+
+    internal fun resetTestHooks() {
+      rustCoreWarmUp = AndroidRustCoreLibraryLoader::warmUp
+      installAutoImportRuntime = { application ->
+        AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(application))
+      }
+      enqueueAutoImportIfPolicyAllows = { application ->
+        AutoImportWorkScheduler.enqueueIfPolicyAllows(application)
+      }
+    }
   }
 }
