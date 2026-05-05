@@ -4,6 +4,8 @@
 import type { EncryptedShard } from '@mosaic/crypto';
 import { WorkerCryptoErrorCode } from './worker-crypto-error-code.generated';
 
+export type ShardTier = import('../generated/mosaic-wasm/mosaic_wasm.js').ShardTier;
+
 // Re-export EncryptedShard from crypto lib (single source of truth)
 export type { EncryptedShard };
 export { WorkerCryptoErrorCode };
@@ -935,7 +937,7 @@ export interface CryptoWorkerApi {
     epochHandleId: EpochHandleId,
     plaintext: Uint8Array,
     shardIndex: number,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ envelopeBytes: Uint8Array; sha256: string }>;
 
   /**
@@ -966,7 +968,7 @@ export interface CryptoWorkerApi {
   createLinkShareHandle(
     albumId: string,
     epochHandleId: EpochHandleId,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{
     linkShareHandleId: LinkShareHandleId;
     linkId: Uint8Array;
@@ -986,7 +988,7 @@ export interface CryptoWorkerApi {
   wrapLinkTierHandle(
     linkShareHandleId: LinkShareHandleId,
     epochHandleId: EpochHandleId,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
 
   importLinkTierHandle(
@@ -994,7 +996,7 @@ export interface CryptoWorkerApi {
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     albumId: string,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ linkTierHandleId: LinkTierHandleId; linkId: Uint8Array; tier: number }>;
 
   decryptShardWithLinkTierHandle(

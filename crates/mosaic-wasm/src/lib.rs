@@ -4,10 +4,31 @@
 
 use std::fmt;
 
-use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::prelude::{JsError, wasm_bindgen};
 use zeroize::Zeroizing;
 
-use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
+use mosaic_domain::{
+    MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier as DomainShardTier,
+};
+
+/// WASM-visible shard tiers pinned to the Mosaic envelope wire protocol.
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShardTier {
+    Thumbnail = 1,
+    Preview = 2,
+    Original = 3,
+}
+
+impl From<ShardTier> for DomainShardTier {
+    fn from(tier: ShardTier) -> Self {
+        match tier {
+            ShardTier::Thumbnail => Self::Thumbnail,
+            ShardTier::Preview => Self::Preview,
+            ShardTier::Original => Self::Original,
+        }
+    }
+}
 
 /// Rust-side WASM facade result for header parsing.
 #[derive(Clone, PartialEq, Eq)]
@@ -1457,6 +1478,35 @@ pub const fn protocol_version() -> &'static str {
     mosaic_client::protocol_version()
 }
 
+/// Returns the protocol byte pinned for a WASM shard tier.
+#[must_use]
+pub const fn shard_tier_byte(tier: ShardTier) -> u8 {
+    tier as u8
+}
+
+/// Parses a protocol byte into a typed WASM shard tier.
+///
+/// Valid bytes are pinned by `mosaic_domain::ShardTier`: 1=thumbnail,
+/// 2=preview, 3=original.
+pub fn shard_tier_from_byte(byte: u8) -> Result<ShardTier, JsError> {
+    match byte {
+        1 => Ok(ShardTier::Thumbnail),
+        2 => Ok(ShardTier::Preview),
+        3 => Ok(ShardTier::Original),
+        _ => Err(JsError::new("invalid shard tier byte")),
+    }
+}
+
+/// Lists all protocol-supported shard tiers in ascending wire-byte order.
+#[must_use]
+pub fn list_shard_tiers() -> Vec<ShardTier> {
+    vec![
+        ShardTier::Thumbnail,
+        ShardTier::Preview,
+        ShardTier::Original,
+    ]
+}
+
 /// Returns the historical WASM API changelog label for diagnostics.
 ///
 /// This string is documentation only. The authoritative API-shape lock is
@@ -1713,7 +1763,7 @@ pub fn encrypt_metadata_sidecar_with_epoch_handle(
         handle,
         &plaintext,
         shard_index,
-        ShardTier::Thumbnail.to_byte(),
+        DomainShardTier::Thumbnail.to_byte(),
     ))
 }
 
@@ -1782,6 +1832,22 @@ pub fn encrypt_shard_with_epoch_handle(
     ))
 }
 
+/// Encrypts shard bytes with a Rust-owned epoch-key handle and typed shard tier.
+#[must_use]
+pub fn encrypt_shard_with_tier(
+    handle: u64,
+    plaintext: Vec<u8>,
+    shard_index: u32,
+    tier: ShardTier,
+) -> EncryptedShardResult {
+    encrypt_shard_with_epoch_handle(
+        handle,
+        plaintext,
+        shard_index,
+        DomainShardTier::from(tier).to_byte(),
+    )
+}
+
 /// Decrypts shard envelope bytes with a Rust-owned epoch-key handle.
 #[must_use]
 pub fn decrypt_shard_with_epoch_handle(
@@ -1792,6 +1858,18 @@ pub fn decrypt_shard_with_epoch_handle(
         handle,
         &envelope_bytes,
     ))
+}
+
+/// Decrypts shard envelope bytes and returns plaintext bytes.
+///
+/// The shard tier is read from the envelope header by the client core.
+#[must_use]
+pub fn decrypt_shard_with_tier(handle: u64, envelope_bytes: Vec<u8>) -> BytesResult {
+    let result = decrypt_shard_with_epoch_handle(handle, envelope_bytes);
+    BytesResult {
+        code: result.code,
+        bytes: result.plaintext,
+    }
 }
 
 /// Decrypts a legacy raw-key shard envelope with a Rust-owned epoch-key handle.
@@ -2220,6 +2298,26 @@ pub fn parse_envelope_header_js(bytes: Vec<u8>) -> JsHeaderResult {
     }
 }
 
+/// Returns the protocol byte pinned for a WASM shard tier.
+#[wasm_bindgen(js_name = shardTierByte)]
+#[must_use]
+pub fn shard_tier_byte_js(tier: ShardTier) -> u8 {
+    shard_tier_byte(tier)
+}
+
+/// Parses a protocol byte into a typed WASM shard tier.
+#[wasm_bindgen(js_name = shardTierFromByte)]
+pub fn shard_tier_from_byte_js(byte: u8) -> Result<ShardTier, JsError> {
+    shard_tier_from_byte(byte)
+}
+
+/// Lists all protocol-supported shard tiers in ascending wire-byte order.
+#[wasm_bindgen(js_name = listShardTiers)]
+#[must_use]
+pub fn list_shard_tiers_js() -> Vec<ShardTier> {
+    list_shard_tiers()
+}
+
 /// Runs the progress probe through the generated WASM binding surface.
 #[wasm_bindgen(js_name = progressProbe)]
 #[must_use]
@@ -2567,6 +2665,32 @@ pub fn decrypt_shard_with_epoch_handle_js(
     envelope_bytes: Vec<u8>,
 ) -> JsDecryptedShardResult {
     js_decrypted_shard_result_from_rust(decrypt_shard_with_epoch_handle(handle, envelope_bytes))
+}
+
+/// Encrypts shard bytes with an epoch-key handle and typed shard tier through WASM.
+#[wasm_bindgen(js_name = encryptShardWithTier)]
+#[must_use]
+pub fn encrypt_shard_with_tier_js(
+    handle: u64,
+    plaintext: Vec<u8>,
+    shard_index: u32,
+    tier: ShardTier,
+) -> JsEncryptedShardResult {
+    js_encrypted_shard_result_from_rust(encrypt_shard_with_tier(
+        handle,
+        plaintext,
+        shard_index,
+        tier,
+    ))
+}
+
+/// Decrypts shard envelope bytes with an epoch-key handle through WASM.
+///
+/// The shard tier is read from the envelope header by the client core.
+#[wasm_bindgen(js_name = decryptShardWithTier)]
+#[must_use]
+pub fn decrypt_shard_with_tier_js(handle: u64, envelope_bytes: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(decrypt_shard_with_tier(handle, envelope_bytes))
 }
 
 /// Decrypts a legacy raw-key shard envelope with an epoch-key handle through WASM.

@@ -1268,6 +1268,16 @@ export class SealedBundleResult {
 if (Symbol.dispose) SealedBundleResult.prototype[Symbol.dispose] = SealedBundleResult.prototype.free;
 
 /**
+ * WASM-visible shard tiers pinned to the Mosaic envelope wire protocol.
+ * @enum {1 | 2 | 3}
+ */
+export const ShardTier = Object.freeze({
+    Thumbnail: 1, "1": "Thumbnail",
+    Preview: 2, "2": "Preview",
+    Original: 3, "3": "Original",
+});
+
+/**
  * WASM-bindgen class for metadata stripping results.
  */
 export class StripResult {
@@ -1766,6 +1776,21 @@ export function decryptShardWithLinkTierHandle(link_tier_handle, envelope_bytes)
 }
 
 /**
+ * Decrypts shard envelope bytes with an epoch-key handle through WASM.
+ *
+ * The shard tier is read from the envelope header by the client core.
+ * @param {bigint} handle
+ * @param {Uint8Array} envelope_bytes
+ * @returns {BytesResult}
+ */
+export function decryptShardWithTier(handle, envelope_bytes) {
+    const ptr0 = passArray8ToWasm0(envelope_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decryptShardWithTier(handle, ptr0, len0);
+    return BytesResult.__wrap(ret);
+}
+
+/**
  * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
  * @param {bigint} account_handle
  * @returns {AuthKeypairResult}
@@ -1843,6 +1868,21 @@ export function encryptShardWithEpochHandle(handle, plaintext, shard_index, tier
     const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.encryptShardWithEpochHandle(handle, ptr0, len0, shard_index, tier_byte);
+    return EncryptedShardResult.__wrap(ret);
+}
+
+/**
+ * Encrypts shard bytes with an epoch-key handle and typed shard tier through WASM.
+ * @param {bigint} handle
+ * @param {Uint8Array} plaintext
+ * @param {number} shard_index
+ * @param {ShardTier} tier
+ * @returns {EncryptedShardResult}
+ */
+export function encryptShardWithTier(handle, plaintext, shard_index, tier) {
+    const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.encryptShardWithTier(handle, ptr0, len0, shard_index, tier);
     return EncryptedShardResult.__wrap(ret);
 }
 
@@ -2006,6 +2046,24 @@ export function initUploadJob(job_id, album_id, asset_id, idempotency_key, max_r
 }
 
 /**
+ * Lists all protocol-supported shard tiers in ascending wire-byte order.
+ * @returns {any[]}
+ */
+export function listShardTiers() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.listShardTiers(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayJsValueFromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
  * Opens an epoch-key handle through WASM.
  * @param {Uint8Array} wrapped_epoch_seed
  * @param {bigint} account_key_handle
@@ -2072,6 +2130,37 @@ export function sealBundleWithEpochHandle(identity_handle, epoch_handle, recipie
     const len1 = WASM_VECTOR_LEN;
     const ret = wasm.sealBundleWithEpochHandle(identity_handle, epoch_handle, ptr0, len0, ptr1, len1);
     return SealedBundleResult.__wrap(ret);
+}
+
+/**
+ * Returns the protocol byte pinned for a WASM shard tier.
+ * @param {ShardTier} tier
+ * @returns {number}
+ */
+export function shardTierByte(tier) {
+    const ret = wasm.shardTierByte(tier);
+    return ret;
+}
+
+/**
+ * Parses a protocol byte into a typed WASM shard tier.
+ * @param {number} byte
+ * @returns {ShardTier}
+ */
+export function shardTierFromByte(byte) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.shardTierFromByte(retptr, byte);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return r0;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
@@ -2299,12 +2388,21 @@ export function wrapWithAccountHandle(account_handle, plaintext) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg_Error_960c155d3d49e4c2: function(arg0, arg1) {
+            const ret = Error(getStringFromWasm0(arg0, arg1));
+            return addHeapObject(ret);
+        },
         __wbg___wbindgen_throw_6b64449b9b9ed33c: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
         __wbg_getRandomValues_76dfc69825c9c552: function() { return handleError(function (arg0, arg1) {
             globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
         }, arguments); },
+        __wbindgen_cast_0000000000000001: function(arg0) {
+            // Cast intrinsic for `F64 -> Externref`.
+            const ret = arg0;
+            return addHeapObject(ret);
+        },
         __wbindgen_object_drop_ref: function(arg0) {
             takeObject(arg0);
         },
@@ -2392,6 +2490,16 @@ function dropObject(idx) {
     if (idx < 1028) return;
     heap[idx] = heap_next;
     heap_next = idx;
+}
+
+function getArrayJsValueFromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    const mem = getDataViewMemory0();
+    const result = [];
+    for (let i = ptr; i < ptr + 4 * len; i += 4) {
+        result.push(takeObject(mem.getUint32(i, true)));
+    }
+    return result;
 }
 
 function getArrayU32FromWasm0(ptr, len) {

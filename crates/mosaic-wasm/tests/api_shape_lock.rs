@@ -88,6 +88,48 @@ fn generated_wasm_typescript_declarations_do_not_export_raw_epoch_keys() {
 }
 
 #[test]
+fn shard_tier_wasm_export_discriminants_match_protocol() {
+    let golden = normalize_newlines(GOLDEN);
+
+    for declaration in [
+        "export enum ShardTier {",
+        "    Thumbnail = 1,",
+        "    Preview = 2,",
+        "    Original = 3,",
+        "export function shardTierByte(tier: ShardTier): number;",
+        "export function shardTierFromByte(byte: number): ShardTier;",
+        "export function listShardTiers(): any[];",
+    ] {
+        assert!(
+            golden.contains(declaration),
+            "WASM shard-tier golden is missing pinned declaration: {declaration}"
+        );
+    }
+}
+
+#[test]
+fn shard_tier_wasm_export_is_byte_pinned() {
+    use mosaic_domain::ShardTier as DomainShardTier;
+    use mosaic_wasm::ShardTier as WasmShardTier;
+
+    assert_eq!(
+        WasmShardTier::Thumbnail as u8,
+        DomainShardTier::Thumbnail.to_byte(),
+        "thumbnail shard tier byte must stay protocol-pinned"
+    );
+    assert_eq!(
+        WasmShardTier::Preview as u8,
+        DomainShardTier::Preview.to_byte(),
+        "preview shard tier byte must stay protocol-pinned"
+    );
+    assert_eq!(
+        WasmShardTier::Original as u8,
+        DomainShardTier::Original.to_byte(),
+        "original shard tier byte must stay protocol-pinned"
+    );
+}
+
+#[test]
 fn generated_wasm_typescript_declarations_do_not_export_raw_wrap_keys() {
     let generated_path = project_root()
         .join("apps")

@@ -15,6 +15,7 @@ import {
   type LinkDecryptionKey,
   type OpenEpochKeyBundleOptions,
   type PhotoMeta,
+  type ShardTier,
   type WorkerKdfParams,
 } from './types';
 
@@ -1748,7 +1749,7 @@ class CryptoWorker implements CryptoWorkerApi {
     epochHandleId: EpochHandleId,
     plaintext: Uint8Array,
     shardIndex: number,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ envelopeBytes: Uint8Array; sha256: string }> {
     const facade = await getRustFacade();
     return this.handleRegistry.withLease(
@@ -1802,7 +1803,7 @@ class CryptoWorker implements CryptoWorkerApi {
   async createLinkShareHandle(
     albumId: string,
     epochHandleId: EpochHandleId,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{
     linkShareHandleId: LinkShareHandleId;
     linkId: Uint8Array;
@@ -1841,7 +1842,7 @@ class CryptoWorker implements CryptoWorkerApi {
   async wrapLinkTierHandle(
     linkShareHandleId: LinkShareHandleId,
     epochHandleId: EpochHandleId,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }> {
     const facade = await getRustFacade();
     return this.handleRegistry.withLease(linkShareHandleId, 'linkShare', (rustLink) =>
@@ -1856,7 +1857,7 @@ class CryptoWorker implements CryptoWorkerApi {
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     albumId: string,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ linkTierHandleId: LinkTierHandleId; linkId: Uint8Array; tier: number }> {
     const facade = await getRustFacade();
     const imported = facade.importLinkTierHandle(

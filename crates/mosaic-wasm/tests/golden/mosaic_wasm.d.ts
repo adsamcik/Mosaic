@@ -417,6 +417,15 @@ export class SealedBundleResult {
 }
 
 /**
+ * WASM-visible shard tiers pinned to the Mosaic envelope wire protocol.
+ */
+export enum ShardTier {
+    Thumbnail = 1,
+    Preview = 2,
+    Original = 3,
+}
+
+/**
  * WASM-bindgen class for metadata stripping results.
  */
 export class StripResult {
@@ -567,6 +576,13 @@ export function decryptShardWithLegacyRawKeyHandle(handle: bigint, envelope_byte
 export function decryptShardWithLinkTierHandle(link_tier_handle: bigint, envelope_bytes: Uint8Array): DecryptedShardResult;
 
 /**
+ * Decrypts shard envelope bytes with an epoch-key handle through WASM.
+ *
+ * The shard tier is read from the envelope header by the client core.
+ */
+export function decryptShardWithTier(handle: bigint, envelope_bytes: Uint8Array): BytesResult;
+
+/**
  * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
  */
 export function deriveAuthKeypairFromAccount(account_handle: bigint): AuthKeypairResult;
@@ -594,6 +610,11 @@ export function encryptMetadataSidecarWithEpochHandle(handle: bigint, album_id: 
  * Encrypts shard bytes with an epoch-key handle through WASM.
  */
 export function encryptShardWithEpochHandle(handle: bigint, plaintext: Uint8Array, shard_index: number, tier_byte: number): EncryptedShardResult;
+
+/**
+ * Encrypts shard bytes with an epoch-key handle and typed shard tier through WASM.
+ */
+export function encryptShardWithTier(handle: bigint, plaintext: Uint8Array, shard_index: number, tier: ShardTier): EncryptedShardResult;
 
 /**
  * Returns epoch-key handle status through WASM.
@@ -642,6 +663,11 @@ export function initAlbumSync(album_id: string, request_id: string, start_cursor
 export function initUploadJob(job_id: string, album_id: string, asset_id: string, idempotency_key: string, max_retry_count: number): string;
 
 /**
+ * Lists all protocol-supported shard tiers in ascending wire-byte order.
+ */
+export function listShardTiers(): any[];
+
+/**
  * Opens an epoch-key handle through WASM.
  */
 export function openEpochKeyHandle(wrapped_epoch_seed: Uint8Array, account_key_handle: bigint, epoch_id: number): EpochKeyHandleResult;
@@ -667,6 +693,16 @@ export function progressProbe(total_steps: number, cancel_after: bigint): Progre
  * the FFI boundary.
  */
 export function sealBundleWithEpochHandle(identity_handle: bigint, epoch_handle: bigint, recipient_pubkey: Uint8Array, album_id: string): SealedBundleResult;
+
+/**
+ * Returns the protocol byte pinned for a WASM shard tier.
+ */
+export function shardTierByte(tier: ShardTier): number;
+
+/**
+ * Parses a protocol byte into a typed WASM shard tier.
+ */
+export function shardTierFromByte(byte: number): ShardTier;
 
 /**
  * Signs a LocalAuth challenge transcript with an account-key handle through WASM.
@@ -808,11 +844,13 @@ export interface InitOutput {
     readonly decryptShardWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithLegacyRawKeyHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithLinkTierHandle: (a: bigint, b: number, c: number) => number;
+    readonly decryptShardWithTier: (a: bigint, b: number, c: number) => number;
     readonly deriveAuthKeypairFromAccount: (a: bigint) => number;
     readonly deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly encryptAlbumContent: (a: bigint, b: number, c: number) => number;
     readonly encryptMetadataSidecarWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly encryptShardWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number) => number;
+    readonly encryptShardWithTier: (a: bigint, b: number, c: number, d: number, e: number) => number;
     readonly encryptedcontentresult_ciphertext: (a: number, b: number) => void;
     readonly encryptedcontentresult_code: (a: number) => number;
     readonly encryptedcontentresult_nonce: (a: number, b: number) => void;
@@ -842,6 +880,7 @@ export interface InitOutput {
     readonly initAlbumSync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: number) => void;
     readonly initUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
     readonly linktierhandleresult_tier: (a: number) => number;
+    readonly listShardTiers: (a: number) => void;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly openIdentityHandle: (a: number, b: number, c: bigint) => number;
     readonly parseEnvelopeHeader: (a: number, b: number) => number;
@@ -855,6 +894,8 @@ export interface InitOutput {
     readonly sealedbundleresult_sealed: (a: number, b: number) => void;
     readonly sealedbundleresult_sharerPubkey: (a: number, b: number) => void;
     readonly sealedbundleresult_signature: (a: number, b: number) => void;
+    readonly shardTierByte: (a: number) => number;
+    readonly shardTierFromByte: (a: number, b: number) => void;
     readonly signAuthChallengeWithAccount: (a: bigint, b: number, c: number) => number;
     readonly signAuthChallengeWithPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly signManifestWithEpochHandle: (a: bigint, b: number, c: number) => number;
@@ -882,20 +923,20 @@ export interface InitOutput {
     readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
     readonly epochkeyhandlestatusresult_code: (a: number) => number;
-    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
-    readonly encryptedshardresult_code: (a: number) => number;
-    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
     readonly wrappedtierkeyresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
     readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
+    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
+    readonly encryptedshardresult_code: (a: number) => number;
     readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedcontentresult_code: (a: number) => number;
     readonly decryptedshardresult_code: (a: number) => number;
     readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
-    readonly decryptedcontentresult_code: (a: number) => number;
     readonly bytesresult_bytes: (a: number, b: number) => void;
     readonly bytesresult_code: (a: number) => number;
-    readonly linktierhandleresult_handle: (a: number) => bigint;
     readonly linktierhandleresult_linkId: (a: number, b: number) => void;
     readonly linktierhandleresult_code: (a: number) => number;
+    readonly linktierhandleresult_handle: (a: number) => bigint;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export2: (a: number, b: number) => number;
