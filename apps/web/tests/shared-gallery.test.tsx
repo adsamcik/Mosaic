@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   startDownload: vi.fn(),
   cancelDownload: vi.fn(),
   visitorHookOpts: null as null | { linkId: string; grantToken: string | null; getTier3Key: (e: number) => unknown },
-  modePickerPrompt: vi.fn(async (_args: unknown) => ({ kind: 'zip' as const, fileName: 'a.zip' })),
+  modePickerPrompt: vi.fn(async (_args: unknown) => ({ mode: { kind: 'zip' as const, fileName: 'a.zip' }, schedule: { kind: 'immediate' as const } })),
   albumDownloadState: {
     isDownloading: false,
     progress: null as null | {
@@ -202,7 +202,7 @@ describe('SharedGallery', () => {
     mocks.albumDownloadState.progress = null;
     mocks.albumDownloadState.error = null;
     mocks.startDownload.mockResolvedValue(undefined);
-    mocks.modePickerPrompt.mockResolvedValue({ kind: 'zip' as const, fileName: 'a.zip' });
+    mocks.modePickerPrompt.mockResolvedValue({ mode: { kind: 'zip' as const, fileName: 'a.zip' }, schedule: { kind: 'immediate' as const } });
     mocks.visitorHookOpts = null;
 
     // Default successful photo response
