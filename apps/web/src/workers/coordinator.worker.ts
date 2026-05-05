@@ -56,6 +56,8 @@ import type {
 } from './types';
 import { runZipFinalizer as defaultRunZipFinalizer, type ZipFinalizerDeps } from './coordinator/zip-finalizer';
 import { runPerFileFinalizer as defaultRunPerFileFinalizer, type PerFileFinalizerDeps } from './coordinator/per-file-finalizer';
+import { createShardMirror, type ShardMirror, type ShardMirrorStats } from './coordinator/shard-mirror';
+import { createDecryptCache, type DecryptCache } from './coordinator/decrypt-cache';
 
 
 const log = createLogger('CoordinatorWorker');
@@ -204,6 +206,10 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private readonly jobExportFailures = new Map<string, Map<string, DownloadErrorReason>>();
   /** Main-thread provider for opening writable byte sinks during finalize. */
   private saveTargetProvider: RemoteSaveTargetProvider | null = null;
+  /** Ambient encrypted-shard mirror (OPFS-backed) shared across all jobs. */
+  private readonly shardMirror: ShardMirror = createShardMirror();
+  /** In-memory LRU of derived epoch keys; zeroed on clear/eviction. */
+  private readonly decryptCache: DecryptCache = createDecryptCache();
 
   constructor(opts: CoordinatorWorkerOptions = {}) {
     this.byteProgressRateLimitMs = opts.byteProgressRateLimitMs ?? DEFAULT_BYTE_PROGRESS_RATE_LIMIT_MS;
@@ -604,6 +610,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
           const mode = this.jobOutputModes.get(jobId) ?? { kind: 'keepOffline' };
           await this.runFinalizer(jobId, mode, abortController.signal);
           await this.sendEvent(jobId, { kind: 'FinalizationDone' });
+          // Non-blocking opportunistic trim after a successful job completion.
+          void this.shardMirror.trim().catch(() => undefined);
         } catch (err) {
           log.warn('Finalizer failed', { jobId: shortId(jobId), errorName: err instanceof Error ? err.name : 'Unknown' });
           await this.sendEvent(jobId, { kind: 'ErrorEncountered', reason: 'IllegalState' });
@@ -634,6 +642,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       reportBytesWritten: (jobId: string, photoId: string, bytesWritten: number): void => {
         this.handleBytesWritten(jobId, photoId, bytesWritten);
       },
+      mirror: this.shardMirror,
+      decryptCache: this.decryptCache,
     };
   }
 
@@ -760,7 +770,26 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     // keepOffline. Reconstructed jobs surface via listResumableJobs() and
     // the UI must call resumeJob({ mode }) once the user re-picks.
     log.info('Coordinator initialized', { reconstructedJobs });
+    // Enforce mirror budget across runs. Non-blocking; errors are logged and swallowed.
+    void this.shardMirror.trim().catch((error: unknown) => {
+      log.warn('Shard mirror trim on startup failed', {
+        errorName: error instanceof Error ? error.name : 'Unknown',
+      });
+    });
     return { reconstructedJobs };
+  }
+
+  /** Diagnostic: return current shard-mirror stats. */
+  async getShardMirrorStats(): Promise<ShardMirrorStats> {
+    return this.shardMirror.stats();
+  }
+
+  /**
+   * Clear in-memory derived-key state. Safe to call on logout / scope change.
+   * Zeroes every cached epoch key before dropping it.
+   */
+  clearCaches(): void {
+    this.decryptCache.clear();
   }
 
   private scheduleFinalizingResume(jobId: string): void {
