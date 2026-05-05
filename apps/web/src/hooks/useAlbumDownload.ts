@@ -4,6 +4,8 @@ import { createLogger } from '../lib/logger';
 import { useWakeLock } from './useWakeLock';
 import { useDownloadManager } from './useDownloadManager';
 import { runCoordinatorDownload } from './coordinator-download-runner';
+import { maybeStartBackgroundFetch } from '../lib/background-fetch-launcher';
+import { useBackgroundFetch } from './useBackgroundFetch';
 import type {
   DownloadOutputMode,
   JobProgressEvent,
@@ -67,6 +69,7 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
   const activeJobIdRef = useRef<string | null>(null);
   const { acquire: acquireWakeLock, release: releaseWakeLock } = useWakeLock();
   const manager = useDownloadManager();
+  const bgFetch = useBackgroundFetch();
 
   const cancel = useCallback((): void => {
     abortControllerRef.current?.abort();
@@ -122,6 +125,22 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
         throw new Error('Download manager is not ready');
       }
       const mode = options?.mode ?? { kind: 'keepOffline' };
+
+      // Best-effort Background Fetch handoff for large jobs (Chromium-only).
+      // Failures here are non-fatal; the foreground coordinator pipeline runs
+      // either way. If BG-Fetch succeeds while the tab is suspended, the SW
+      // populates mosaic-bgfetch-cache and the coordinator's shard-service
+      // peeks the cache before going to the network. ZK invariant preserved:
+      // the SW only sees encrypted bytes.
+      const allShardIds = photos
+        .flatMap((p) => p.originalShardIds ?? (p.shardIds.length > 2 ? p.shardIds.slice(2) : p.shardIds));
+      void maybeStartBackgroundFetch(bgFetch, {
+        jobId: `mosaic-bgfetch:${albumId}`,
+        title: `Downloading ${albumName}`,
+        shardIds: allShardIds,
+        photoCount: photos.length,
+      }).catch(() => undefined);
+
       await runCoordinatorDownload({
         api,
         albumId,
@@ -146,7 +165,7 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
       abortControllerRef.current = null;
       activeJobIdRef.current = null;
     }
-  }, [acquireWakeLock, isDownloading, manager, releaseWakeLock]);
+  }, [acquireWakeLock, bgFetch, isDownloading, manager, releaseWakeLock]);
 
   return {
     isDownloading,
