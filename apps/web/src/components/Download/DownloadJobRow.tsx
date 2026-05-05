@@ -2,6 +2,7 @@ import { useMemo, useState, type JSX, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { JobProgressEvent, JobSummary } from '../../workers/types';
 import { DownloadFailureList, type DownloadFailureListEntry } from './DownloadFailureList';
+import type { JobThumbnail } from '../../hooks/useJobThumbnails';
 
 /**
  * Map raw schedule-evaluation reasons (from ScheduleManager.evaluateSchedule)
@@ -49,6 +50,15 @@ export interface DownloadJobRowProps {
    * Optional — when omitted the link is hidden.
    */
   readonly onEditSchedule?: (jobId: string) => void;
+  /**
+   * In-app preview thumbnails for this job, most-recent first. ZK-safe to
+   * render: blob URLs are scoped to the in-page session and ARE NEVER
+   * included in any export output (zip / per-file / fsAccessDirectory).
+   * When omitted or empty, the strip is collapsed to a hint or hidden.
+   */
+  readonly thumbnails?: ReadonlyArray<JobThumbnail>;
+  /** Maximum thumbnails visible in the strip before "+N more" indicator. Default 8. */
+  readonly thumbnailVisibleLimit?: number;
 }
 
 /** Presentational row for one persistent coordinator download job. */
@@ -63,6 +73,8 @@ export function DownloadJobRow({
   failures = [],
   onForceStart,
   onEditSchedule,
+  thumbnails = [],
+  thumbnailVisibleLimit = 8,
 }: DownloadJobRowProps): JSX.Element {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -189,6 +201,7 @@ export function DownloadJobRow({
           </button>
         )}
       </div>
+      <DownloadJobThumbnailStrip thumbnails={thumbnails} visibleLimit={thumbnailVisibleLimit} phase={phase} />
       {expanded && (
         <div className="download-tray-job-details">
           <dl className="download-tray-counts">
@@ -204,6 +217,74 @@ export function DownloadJobRow({
             </button>
           )}
           <DownloadFailureList failures={failures} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Horizontal strip of in-app preview thumbnails. Renders nothing when no
+ * thumbnails are available and the job is in a "no work happening yet"
+ * phase (Idle / Cancelled), otherwise shows a "no previews yet" hint.
+ *
+ * a11y: respects `prefers-reduced-motion` by omitting any transition
+ * styling (none is currently applied; documented for future-proofing).
+ *
+ * NOT exported: blob URLs are NEVER threaded into any finalizer.
+ */
+function DownloadJobThumbnailStrip({
+  thumbnails,
+  visibleLimit,
+  phase,
+}: {
+  readonly thumbnails: ReadonlyArray<JobThumbnail>;
+  readonly visibleLimit: number;
+  readonly phase: string;
+}): JSX.Element | null {
+  const { t } = useTranslation();
+  const visible = thumbnails.slice(0, visibleLimit);
+  const overflow = Math.max(0, thumbnails.length - visible.length);
+  if (thumbnails.length === 0) {
+    if (phase === 'Idle' || phase === 'Cancelled') {
+      // Scheduled or cancelled: no work happening — collapse the strip.
+      return null;
+    }
+    return (
+      <div className="download-tray-thumbnails download-tray-thumbnails--empty" data-testid="download-tray-thumbnails-empty">
+        <span>{t('download.tray.thumbnails.empty')}</span>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="download-tray-thumbnails"
+      data-testid="download-tray-thumbnails"
+      role="list"
+      aria-label={t('download.tray.thumbnails.empty')}
+    >
+      {visible.map((thumb) => (
+        <div key={thumb.photoId} className="download-tray-thumbnail" role="listitem">
+          <img
+            src={thumb.blobUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            width={64}
+            height={64}
+            onError={(event): void => {
+              // Hide the failed image; we keep the slot to avoid layout jump.
+              const img = event.currentTarget;
+              img.style.visibility = 'hidden';
+              img.setAttribute('data-error', 'true');
+              img.setAttribute('aria-label', t('download.tray.thumbnails.error'));
+            }}
+          />
+        </div>
+      ))}
+      {overflow > 0 && (
+        <div className="download-tray-thumbnail download-tray-thumbnail--more" data-testid="download-tray-thumbnails-more" role="listitem">
+          {t('download.tray.thumbnails.morePhotos', { count: overflow })}
         </div>
       )}
     </div>

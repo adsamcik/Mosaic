@@ -342,7 +342,12 @@
         "windowMisconfigured": "schedule misconfigured",
         "unknown": "waiting"
       },
-      "editScheduleTitle": "Edit download schedule"
+      "editScheduleTitle": "Edit download schedule",
+      "thumbnails": {
+        "empty": "Previews will appear as photos download",
+        "morePhotos": "+{{count}} more",
+        "error": "Preview unavailable"
+      }
     },
     "diff": {
       "title": "Album has changed",
