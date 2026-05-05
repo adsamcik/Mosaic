@@ -36,6 +36,10 @@ let jobs: ReadonlyArray<JobSummary> = [];
 let resumableJobs: ReadonlyArray<ResumableJobSummary> = [];
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
+let mockScopeKey: string | null = 'auth:00000000000000000000000000000000';
+vi.mock('../../../hooks/useDownloadScopeKey', () => ({
+  useDownloadScopeKey: (): string | null => mockScopeKey,
+}));
 vi.mock('../../../hooks/useDownloadManager', () => ({
   useDownloadManager: (): UseDownloadManagerResult => {
     useSyncExternalStore(
@@ -148,6 +152,84 @@ describe('DownloadTray', () => {
     await keyDown('Escape');
     expect(rendered.container.querySelector('.download-tray-panel')).toBeNull();
     await rendered.unmount();
+  });
+
+  // ----- Scope filtering (Phase 3 visitor tray) -----
+  describe('scope filtering', () => {
+    const authScope = 'auth:00000000000000000000000000000000';
+    const otherAuthScope = 'auth:11111111111111111111111111111111';
+    const visitorScope = 'visitor:22222222222222222222222222222222';
+    const otherVisitorScope = 'visitor:33333333333333333333333333333333';
+
+    afterEach(() => {
+      mockScopeKey = authScope;
+    });
+
+    it('hides jobs when currentScope is null', async () => {
+      mockScopeKey = null;
+      jobs = [baseJob];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).toBeNull();
+      await rendered.unmount();
+    });
+
+    it('shows jobs whose scopeKey exactly matches the current scope', async () => {
+      mockScopeKey = authScope;
+      jobs = [baseJob];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).not.toBeNull();
+      await rendered.unmount();
+    });
+
+    it('hides jobs from a different auth scope', async () => {
+      mockScopeKey = authScope;
+      jobs = [{ ...baseJob, scopeKey: otherAuthScope }];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).toBeNull();
+      await rendered.unmount();
+    });
+
+    it('hides jobs from a different visitor scope', async () => {
+      mockScopeKey = visitorScope;
+      jobs = [{ ...baseJob, scopeKey: otherVisitorScope }];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).toBeNull();
+      await rendered.unmount();
+    });
+
+    it('auth scope sees legacy: jobs (v1 migration safety net)', async () => {
+      mockScopeKey = authScope;
+      jobs = [{ ...baseJob, scopeKey: 'legacy:abcdef0123456789abcdef0123456789' }];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).not.toBeNull();
+      await rendered.unmount();
+    });
+
+    it('visitor scope does NOT see legacy: jobs', async () => {
+      mockScopeKey = visitorScope;
+      jobs = [{ ...baseJob, scopeKey: 'legacy:abcdef0123456789abcdef0123456789' }];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).toBeNull();
+      await rendered.unmount();
+    });
+
+    it('visitor sees only their visitor:* jobs', async () => {
+      mockScopeKey = visitorScope;
+      jobs = [
+        { ...baseJob, jobId: 'a'.repeat(32), scopeKey: visitorScope },
+        { ...baseJob, jobId: 'b'.repeat(32), scopeKey: otherVisitorScope },
+        { ...baseJob, jobId: 'c'.repeat(32), scopeKey: authScope },
+      ];
+      const rendered = await render(<DownloadTray />);
+      const rows = rendered.container.querySelectorAll('[data-testid="download-job-row"]');
+      // Tray collapsed by default; expand to see rows.
+      await click(requireElement(rendered.container.querySelector('.download-tray-summary')));
+      const expandedRows = rendered.container.querySelectorAll('[data-testid="download-job-row"]');
+      expect(rows.length + expandedRows.length).toBeGreaterThan(0);
+      // Only the matching visitor scope is in the summary count.
+      expect(textContent(rendered.container)).toContain('1 downloading');
+      await rendered.unmount();
+    });
   });
 });
 
