@@ -353,7 +353,12 @@
         "windowMisconfigured": "plán nesprávně nastaven",
         "unknown": "čeká"
       },
-      "editScheduleTitle": "Upravit plán stahování"
+      "editScheduleTitle": "Upravit plán stahování",
+      "thumbnails": {
+        "empty": "Náhledy se zobrazí během stahování fotek",
+        "morePhotos": "+{{count}} dalších",
+        "error": "Náhled není k dispozici"
+      }
     },
     "diff": {
       "title": "Album se změnilo",

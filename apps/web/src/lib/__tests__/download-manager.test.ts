@@ -57,6 +57,7 @@ function createApi(): CoordinatorWorkerApi & { [releaseProxy]: () => void } {
     setSaveTargetProvider: vi.fn(async () => undefined),
     forceStartJob: vi.fn(async () => undefined),
     updateJobSchedule: vi.fn(async () => undefined),
+  subscribeToThumbnails: vi.fn(async () => ({ unsubscribe: vi.fn() })),
     [releaseProxy]: vi.fn(),
   };
 }

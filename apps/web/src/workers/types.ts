@@ -1343,6 +1343,24 @@ export interface StartJobInput extends DownloadBuildPlanInput {
    * Scheduled phase via the in-worker {@link ScheduleManager}.
    */
   readonly schedule?: DownloadSchedule;
+  /**
+   * Optional in-app thumbnail manifest. When provided, the coordinator
+   * exposes per-photo tier-1 thumbnail bytes via `subscribeToThumbnails`.
+   * Thumbnails are NEVER persisted into snapshots and NEVER reach any
+   * export pipeline (zip / per-file / fsAccessDirectory). They live only as
+   * Blob URLs scoped to the in-page session for tray previews.
+   */
+  readonly thumbnails?: ReadonlyArray<JobThumbnailManifestEntry>;
+}
+
+/**
+ * One entry in a job's in-app thumbnail manifest. Identifies the tier-1
+ * shard that backs a single photo's preview thumbnail.
+ */
+export interface JobThumbnailManifestEntry {
+  readonly photoId: string;
+  readonly epochId: string;
+  readonly thumbShardId: string;
 }
 
 /** Stable JS event shape for the Rust `DownloadJobEvent` transition table. */
@@ -1482,6 +1500,17 @@ export interface CoordinatorWorkerApi {
   getJob(jobId: string): Promise<JobSummary | null>;
   /** Subscribe to progress events for one job. Caller must unsubscribe. */
   subscribe(jobId: string, callback: (event: JobProgressEvent) => void): Promise<{ unsubscribe: () => void }>;
+  /**
+   * Subscribe to in-app thumbnail Blob URLs for one job. Returns an
+   * `unsubscribe` Comlink-proxied handle. The worker is the authoritative
+   * owner of the underlying blob URLs and revokes them when:
+   *   - the last subscriber unsubscribes,
+   *   - the job transitions to Done / Cancelled / Errored,
+   *   - or the worker is cleared.
+   *
+   * Thumbnails are NEVER persisted and NEVER part of any export output.
+   */
+  subscribeToThumbnails(jobId: string, callback: (photoId: string, blobUrl: string) => void): Promise<{ unsubscribe: () => void }>;
   /** Garbage-collect stale OPFS jobs. */
   gc(opts: {
     readonly nowMs: number;
