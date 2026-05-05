@@ -16,9 +16,11 @@ import { createLogger } from '../../lib/logger';
 import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
 import { DownloadTray } from '../Download/DownloadTray';
 import { DownloadScopeProvider } from '../../contexts/DownloadScopeContext';
-import { deriveVisitorScopeKey, ensureScopeKeySodiumReady } from '../../lib/scope-key';
+import { deriveVisitorScopeKey, ensureScopeKeySodiumReady, scopeKeyPrefix } from '../../lib/scope-key';
+import { useVisitorDownloadDisclosure } from '../../hooks/useVisitorDownloadDisclosure';
 import { SharedMosaicPhotoGrid } from './SharedMosaicPhotoGrid';
 import { SharedPhotoGrid } from './SharedPhotoGrid';
+import { VisitorDownloadDisclosure } from './VisitorDownloadDisclosure';
 
 const log = createLogger('SharedGallery');
 
@@ -304,7 +306,18 @@ export function SharedGallery({
   });
   const modePicker = useAlbumDownloadModePicker();
 
-  const handleDownloadAll = useCallback(async (): Promise<void> => {
+  // Per-share-link disclosure gate. Acknowledgement is keyed off the
+  // visitor scope key, so consenting on link A does NOT leak trust onto
+  // link B. While `visitorScopeKey === null` (libsodium still warming up)
+  // the hook reports `acknowledged === false` and the gate cannot be
+  // opened — clicks are no-ops.
+  const disclosure = useVisitorDownloadDisclosure(visitorScopeKey);
+  const [showDisclosure, setShowDisclosure] = useState(false);
+
+  // Run the actual download flow (mode picker -> coordinator). Split out
+  // so both the post-acknowledge path and the already-acknowledged path
+  // share one implementation.
+  const proceedToDownload = useCallback(async (): Promise<void> => {
     if (photos.length === 0) return;
     const name = albumName ?? 'Shared Album';
     // `keepOffline` is hidden for visitors: anonymous viewers have no
@@ -318,6 +331,38 @@ export function SharedGallery({
     if (mode === null) return;
     await albumDownload.startDownload(albumId, name, photos, mode);
   }, [photos, albumId, albumName, albumDownload, modePicker]);
+
+  const handleDownloadAll = useCallback(async (): Promise<void> => {
+    if (photos.length === 0) return;
+    if (visitorScopeKey === null) {
+      // Scope key not yet derived — wait for it. The button will become
+      // responsive once libsodium initialises.
+      log.debug('Download click ignored: visitor scope key not ready');
+      return;
+    }
+    if (!disclosure.acknowledged) {
+      log.info('Showing visitor disclosure gate', {
+        scopePrefix: scopeKeyPrefix(visitorScopeKey),
+      });
+      setShowDisclosure(true);
+      return;
+    }
+    await proceedToDownload();
+  }, [photos.length, visitorScopeKey, disclosure.acknowledged, proceedToDownload]);
+
+  const handleDisclosureAcknowledge = useCallback((): void => {
+    setShowDisclosure(false);
+    void proceedToDownload();
+  }, [proceedToDownload]);
+
+  const handleDisclosureCancel = useCallback((): void => {
+    if (visitorScopeKey !== null) {
+      log.info('Visitor disclosure cancelled', {
+        scopePrefix: scopeKeyPrefix(visitorScopeKey),
+      });
+    }
+    setShowDisclosure(false);
+  }, [visitorScopeKey]);
 
   // Loading state
   if (isLoading || isLoadingKeys) {
@@ -472,6 +517,13 @@ export function SharedGallery({
       </div>
 
       {modePicker.pickerElement}
+      {showDisclosure && visitorScopeKey !== null && (
+        <VisitorDownloadDisclosure
+          scopeKey={visitorScopeKey}
+          onAcknowledge={handleDisclosureAcknowledge}
+          onCancel={handleDisclosureCancel}
+        />
+      )}
       <DownloadTray />
     </div>
     </DownloadScopeProvider>
