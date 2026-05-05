@@ -22,6 +22,9 @@
 # R-C5.5.1 mechanical enforcement: rationales shorter than 40 chars or
 # matching banned phrases ('reviewed existing api', 'internal use', etc.)
 # fail at script execution time. See R-C5.5 audit checkpoint above.
+# Classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md (v1).
+# Permitted classifiers: SAFE, BEARER-TOKEN-PERMITTED, CORPUS-DRIVER-ONLY,
+# MIGRATION-PENDING. Adding a new classifier requires a SPEC amendment.
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -70,6 +73,8 @@ $BannedRationalePhrases = @(
 )
 $MinRationaleLength = 40
 $RationaleFixSuggestion = 'Replace with a sentence stating the SPECIFIC bytes returned and why an attacker gains no advantage.'
+$PermittedClassifiers = @('SAFE', 'BEARER-TOKEN-PERMITTED', 'CORPUS-DRIVER-ONLY', 'MIGRATION-PENDING')
+$ClassifierPattern = '^([A-Z][A-Z0-9-]+):'
 
 function Get-AllowlistRationaleErrors([hashtable[]]$AllowlistTables) {
   $rationaleErrors = New-Object System.Collections.Generic.List[string]
@@ -82,6 +87,12 @@ function Get-AllowlistRationaleErrors([hashtable[]]$AllowlistTables) {
       foreach ($phrase in $BannedRationalePhrases) {
         if ($rationale.ToLowerInvariant().Contains($phrase)) {
           $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed banned phrase check ('$phrase'): `"$rationale`" ($RationaleFixSuggestion)")
+        }
+      }
+      if ($rationale -match $ClassifierPattern) {
+        $classifier = $Matches[1]
+        if ($PermittedClassifiers -notcontains $classifier) {
+          $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed classifier check ('$classifier'): classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md")
         }
       }
     }
@@ -141,6 +152,7 @@ Assert-RationaleQualityFixtureCaught 'rationale-trust-me' 'trust me' 'banned phr
 Assert-RationaleQualityFixtureCaught 'rationale-fixme' 'fixme' 'banned phrase check'
 Assert-RationaleQualityFixtureCaught 'rationale-tbd' 'tbd' 'banned phrase check'
 Assert-RationaleQualityFixtureCaught 'rationale-short' 'short' 'length check'
+Assert-RationaleQualityFixtureCaught 'rationale-unknown-classifier' 'BACKWARD-COMPAT-LEGACY: Returns placeholder bytes with a long enough rationale for classifier validation.' 'classifier check'
 Invoke-AllowlistRationaleQualityCheck @($AllowlistedFiles)
 
 $violations = New-Object System.Collections.Generic.List[string]

@@ -19,6 +19,9 @@ set -euo pipefail
 # R-C5.5.1 mechanical enforcement: rationales shorter than 40 chars or
 # matching banned phrases ('reviewed existing api', 'internal use', etc.)
 # fail at script execution time. See R-C5.5 audit checkpoint above.
+# Classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md (v1).
+# Permitted classifiers: SAFE, BEARER-TOKEN-PERMITTED, CORPUS-DRIVER-ONLY,
+# MIGRATION-PENDING. Adding a new classifier requires a SPEC amendment.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -132,6 +135,8 @@ banned_rationale_phrases = [
 ]
 min_rationale_length = 40
 rationale_fix_suggestion = "Replace with a sentence stating the SPECIFIC bytes returned and why an attacker gains no advantage."
+permitted_classifiers = {"SAFE", "BEARER-TOKEN-PERMITTED", "CORPUS-DRIVER-ONLY", "MIGRATION-PENDING"}
+classifier_pattern = re.compile(r"^([A-Z][A-Z0-9-]+):")
 
 def get_allowlist_rationale_errors(*allowlist_tables):
     rationale_errors = []
@@ -144,6 +149,12 @@ def get_allowlist_rationale_errors(*allowlist_tables):
             for phrase in banned_rationale_phrases:
                 if phrase in lowered:
                     rationale_errors.append(f"Allowlist entry '{name}' failed banned phrase check ('{phrase}'): \"{rationale}\" ({rationale_fix_suggestion})")
+            classifier_match = classifier_pattern.match(rationale)
+            if classifier_match and classifier_match.group(1) not in permitted_classifiers:
+                rationale_errors.append(
+                    f"Allowlist entry '{name}' failed classifier check ('{classifier_match.group(1)}'): "
+                    "classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md"
+                )
     return rationale_errors
 
 def assert_rationale_quality_fixture_caught(name, rationale, expected_check):
@@ -261,6 +272,11 @@ def invoke_negative_fixtures() -> None:
     assert_rationale_quality_fixture_caught("rationale-fixme", "fixme", "banned phrase check")
     assert_rationale_quality_fixture_caught("rationale-tbd", "tbd", "banned phrase check")
     assert_rationale_quality_fixture_caught("rationale-short", "short", "length check")
+    assert_rationale_quality_fixture_caught(
+        "rationale-unknown-classifier",
+        "BACKWARD-COMPAT-LEGACY: Returns placeholder bytes with a long enough rationale for classifier validation.",
+        "classifier check",
+    )
 
 invoke_negative_fixtures()
 invoke_allowlist_rationale_quality_check(allowlist, struct_field_allowlist, dts_allowlist)
