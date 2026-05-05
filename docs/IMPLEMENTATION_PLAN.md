@@ -1508,6 +1508,8 @@ These elements from the original design remain unchanged:
 | Auth & bundle contexts | `Mosaic_Auth_Challenge_v1`, `Mosaic_EpochBundle_v1` | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::auth_challenge_context_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::bundle_sign_context_label_is_frozen` | Frozen by G0.6, restored by G0.7 |
 | Metadata sidecar total byte cap | `MAX_SIDECAR_TOTAL_BYTES = 65_536` (64 KiB) for complete canonical sidecar buffers; tightened from R-M5.2.1's initial 1.5 MB before v1 freeze | `crates/mosaic-domain/tests/sidecar_tag_table.rs::max_sidecar_total_bytes_is_frozen`; `crates/mosaic-domain/tests/sidecar_tag_table.rs::worst_case_active_tag_sidecar_fits_within_cap` | Frozen by R-M5.2.2 |
 | Forbidden sidecar tag error contract | `SidecarTagStatus::Forbidden` dispatches to `MetadataSidecarError::ForbiddenTag`, not `ReservedTagNotPromoted` | `crates/mosaic-domain/tests/sidecar_tag_table.rs::lock_test_for_every_forbidden_tag` | Frozen by R-M5.2.1 |
+| Streaming shard envelope wire format | Magic `SGzk`; version `0x04`; 64-byte header layout: 4-byte magic + 1-byte version + 1-byte tier + 4-byte epoch + 4-byte shard + 16-byte stream_salt + 4-byte frame_count + 4-byte final_frame_size + 26 reserved-zero bytes; per-frame layout: nonce(24) ‖ ciphertext ‖ tag(16); 64 KiB frame size; deterministic per-frame nonce from `(stream_salt, frame_index)`; final-frame AAD binds frame_count + final_frame_size; v0x03 backward-compat via `decrypt_envelope` dispatcher routing on byte 4 | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::streaming_shard_envelope_v04_layout_is_frozen`; `::streaming_shard_envelope_version_is_frozen_at_0x04`; `::streaming_shard_stream_salt_is_frozen_at_16_bytes`; `::streaming_shard_frame_size_is_frozen_at_64_kib`; `::streaming_shard_reserved_bytes_are_zero_checked_on_decode`; `::streaming_shard_final_frame_size_zero_is_rejected`; `crates/mosaic-crypto/tests/envelope_crypto.rs` v0x04 replay tests | Frozen by R-C4 (commit `563e7d6`) |
+| Streaming AEAD frame labels | `mosaic:stream-frame-key:v1` (HKDF info for per-frame key derivation), `mosaic:stream-frame:v1` (AEAD AAD prefix for each frame); bound into XChaCha20-Poly1305 AAD so cross-context replay MUST fail | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::stream_frame_key_aad_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::stream_frame_aad_label_is_frozen` | Frozen by R-C4 (commit `563e7d6`) |
 
 ---
 
@@ -1585,6 +1587,22 @@ than enforceable runtime invariants.
 | R-M5.3 | Sidecar decoder + fuzz + forbidden-name defense | Pending | — |
 | R-C6.3-v2 | Migrate empty-AAD wraps to AAD-bound (v2 protocol break: snapshot version bump + LinkShareRecord migration) | Pending | — |
 | R-C7 follow-up TS error-codes codegen | Generate WorkerCryptoErrorCode from Rust enum (N3) | Done | `b196656` |
+| R-C5.5 Migration #4+#5 follow-ups | derive_link_keys + derive_identity feature-gates wired with prod-bridge stub paths | Done | (folded into `6701059`) |
+| R-C5.5 Migration #6 (Slice 0C) | Cross-client cryptographic vector parity (Android) | Done | `acabf28` |
+| R-C5.5 Migration #6.1 | Slice 0C residual hardening (manifest_secret_for_canonical_round_trip) | Done | `bd60b6c` |
+| Wave 5 ledger sweep | §11 + §12.1 + R-Cl2/R-C3.1 bisect-skip note + Q-final-2/W-A7/W-pre-2 | Done | `f20d19f` |
+| R-C4 | Streaming AEAD encryptor/decryptor + envelope v0x04 wire format (IRREVERSIBLE) | Done | `563e7d6` |
+| R-C5 | Strip parity hardening (98.32% line / 100% mutation kill / 37 fuzz fixtures / hard-timeout via mpsc::recv_timeout) | Done | `23c2124` |
+| P-W2 | WASM media inspect/strip/sidecar surface (7 exports: stripAvif/stripHeic/stripVideo/inspectImage/inspectVideoContainer/canonicalVideoSidecarBytes/+migration) | Done | `7c386e4` |
+| Wave 8 follow-ups | shard-cache.ts split + duplicate sidecar export removal + R-C5 hard-timeout via thread::spawn+mpsc | Done | `1549056` |
+| P-U1+P-U2+P-U6 | UniFFI media surface (8 exports + MediaFormat enum + uniffi_api_snapshot_lock_v1 + cross-wrapper parity) | Done | `db5b58b` |
+| A-pre-1+A1+A-CanonicalDimensions | Android foundation guards: ShellStubRecordMigration / MergedManifestInvariantsTest / TierDimensionsParityTest | Done | `2ca271f` |
+| ROADMAP.md authored | Single-source human-readable programme view (10 sections, ~400 lines) | Done | `57dc984` |
+| A2a+A2b+A4 | Android Room queue/staging/snapshot schemas + OkHttp client (TLS 1.2/1.3, ADR-019 cert pinning, no-body logging) | Done | `b0951e3` |
+| P-U5 | UniFFI streaming AEAD (StreamingEncryptor/Decryptor + EncryptedFrame + decrypt_envelope dispatcher; mirrors R-C4 v0x04) | Done | `0dd8f03` |
+| P-W3+P-W4+P-W5 | WASM video inspect (P-W3 covered by P-W2) + reducer locks + manifestTranscriptBytes + StreamingShardEncryptor/Decryptor + decryptEnvelope | Done | `57520ee` |
+| W-pre-1+W-I2 | Web upload-queue legacy IDB drainer (detect/drain/strand/reset + telemetry) + PNG/WebP/AVIF/HEIC strip parity (4 fixtures, JPEG flip deferred to W-I3) | Done | `abfab8b` |
+| Wave 8+9+10 ledger sweep | §11 R-C4 wire format + 2 streaming AEAD labels + §12.1 entries for waves 8-10 | Done | (this commit) |
 
 | Work item | Scope | Status |
 |-----------|-------|--------|
