@@ -44,7 +44,16 @@ export function DownloadJobRow({
   const isRunning = phase === 'Running' || phase === 'Preparing' || phase === 'Finalizing';
   const isPaused = phase === 'Paused';
   const isTerminal = phase === 'Done' || phase === 'Cancelled' || phase === 'Errored';
-  const statusLabel = t(`download.tray.phase.${phase}`, { defaultValue: phase });
+  // Visitor-aware terminal copy: a revoked share link is the most common
+  // failure for visitor downloads, so surface it explicitly. Auth jobs that
+  // fail with AccessRevoked still see the generic "Access revoked" code
+  // label via the failure list — they are not visitor-link errors.
+  const isShareLinkRevoked = phase === 'Errored'
+    && job.lastErrorReason === 'AccessRevoked'
+    && job.scopeKey.startsWith('visitor:');
+  const statusLabel = isShareLinkRevoked
+    ? t('download.tray.shareLinkRevoked')
+    : t(`download.tray.phase.${phase}`, { defaultValue: phase });
   const safeAlbumId = useMemo(() => shortId(job.albumId), [job.albumId]);
 
   const handleRowClick = (): void => {

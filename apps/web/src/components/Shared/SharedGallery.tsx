@@ -15,6 +15,8 @@ import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { createLogger } from '../../lib/logger';
 import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
 import { DownloadTray } from '../Download/DownloadTray';
+import { useDownloadManager } from '../../hooks/useDownloadManager';
+import { useTranslation } from 'react-i18next';
 import { DownloadScopeProvider } from '../../contexts/DownloadScopeContext';
 import { deriveVisitorScopeKey, ensureScopeKeySodiumReady, scopeKeyPrefix } from '../../lib/scope-key';
 import { useVisitorDownloadDisclosure } from '../../hooks/useVisitorDownloadDisclosure';
@@ -312,6 +314,17 @@ export function SharedGallery({
   // the hook reports `acknowledged === false` and the gate cannot be
   // opened — clicks are no-ops.
   const disclosure = useVisitorDownloadDisclosure(visitorScopeKey);
+  // Surface AccessRevoked clearly: if any job in this visitor scope has
+  // failed with AccessRevoked, show a non-blocking banner so the viewer
+  // understands why the download stalled and that the link is dead. We
+  // do NOT auto-redirect; cached thumbnails remain viewable.
+  const downloadManager = useDownloadManager();
+  const { t: translate } = useTranslation();
+  const shareLinkRevoked = visitorScopeKey !== null && downloadManager.jobs.some(
+    (job) => job.scopeKey === visitorScopeKey
+      && job.phase === 'Errored'
+      && job.lastErrorReason === 'AccessRevoked',
+  );
   const [showDisclosure, setShowDisclosure] = useState(false);
 
   // Run the actual download flow (mode picker -> coordinator). Split out
@@ -364,10 +377,22 @@ export function SharedGallery({
     setShowDisclosure(false);
   }, [visitorScopeKey]);
 
+  const revokedBanner = shareLinkRevoked ? (
+    <div
+      role="status"
+      className="shared-gallery-revoked-banner"
+      data-testid="shared-gallery-revoked-banner"
+    >
+      <strong>{translate('download.tray.shareLinkRevoked')}</strong>
+      <span> {translate('download.tray.shareLinkRevokedBody')}</span>
+    </div>
+  ) : null;
+
   // Loading state
   if (isLoading || isLoadingKeys) {
     return (
       <div className="shared-gallery" data-testid="shared-gallery">
+        {revokedBanner}
         <div className="gallery-loading">
           <div className="loading-spinner" />
           <p>
@@ -382,6 +407,7 @@ export function SharedGallery({
   if (error) {
     return (
       <div className="shared-gallery" data-testid="shared-gallery">
+        {revokedBanner}
         <div className="gallery-error">
           <span className="error-icon">⚠️</span>
           <p>Failed to load photos: {error.message}</p>
@@ -394,6 +420,7 @@ export function SharedGallery({
   if (photos.length === 0) {
     return (
       <div className="shared-gallery" data-testid="shared-gallery">
+        {revokedBanner}
         <div className="gallery-empty">
           <span className="empty-icon">📷</span>
           <p>No photos in this album.</p>
@@ -405,6 +432,7 @@ export function SharedGallery({
   return (
     <DownloadScopeProvider scopeKey={visitorScopeKey}>
     <div className="shared-gallery" data-testid="shared-gallery">
+      {revokedBanner}
       <div className="gallery-header">
         <h2 className="gallery-title">
           {albumName || 'Shared Album'}

@@ -208,7 +208,8 @@ describe('useVisitorAlbumDownload', () => {
     // Allow effect microtasks to drain.
     await act(async () => { await flushMicrotasks(); await flushMicrotasks(); });
     expect(rebind).toHaveBeenCalledTimes(1);
-    expect(rebind.mock.calls[0]?.[0]).toBe('match');
+    const firstCall = rebind.mock.calls[0] as [string, unknown] | undefined;
+    expect(firstCall?.[0]).toBe('match');
     await r.unmount();
   });
 
