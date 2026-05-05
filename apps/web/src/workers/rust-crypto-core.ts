@@ -349,8 +349,8 @@ export class RustHandleFacade {
     handle: bigint,
     envelopeBytes: Uint8Array,
   ): Uint8Array {
-    const result = rustWasm.decryptShardWithEpochHandle(handle, envelopeBytes);
-    return consumeResult(result, 'decryptShardWithEpochHandle', (r) =>
+    const result = rustWasm.decryptEnvelope(handle, envelopeBytes);
+    return consumeResult(result, 'decryptEnvelope', (r) =>
       copyBytes(r.plaintext),
     );
   }

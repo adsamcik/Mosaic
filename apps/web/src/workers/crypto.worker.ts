@@ -8,6 +8,7 @@ import {
   type AccountHandleId,
   type CryptoWorkerApi,
   type EncryptedShard,
+  type EnvelopeHeader,
   type EpochHandleId,
   type IdentityHandleId,
   type LinkShareHandleId,
@@ -50,6 +51,104 @@ import {
 
 // Create scoped logger for crypto worker
 const log = createLogger('CryptoWorker');
+
+const ENVELOPE_HEADER_BYTES = 64;
+const ENVELOPE_MAGIC = 'SGzk';
+const ENVELOPE_MAGIC_BYTES = new TextEncoder().encode(ENVELOPE_MAGIC);
+const ENVELOPE_VERSION_V03 = 0x03;
+const ENVELOPE_VERSION_V04 = 0x04;
+const V03_RESERVED_OFFSET = 38;
+const V03_RESERVED_END = 64;
+const V04_RESERVED_OFFSET = 30;
+const V04_RESERVED_END = 64;
+
+function readU32Le(bytes: Uint8Array, offset: number): number {
+  return (
+    bytes[offset]! |
+    (bytes[offset + 1]! << 8) |
+    (bytes[offset + 2]! << 16) |
+    (bytes[offset + 3]! << 24)
+  ) >>> 0;
+}
+
+function assertEnvelopeMagic(header: Uint8Array): void {
+  for (let i = 0; i < ENVELOPE_MAGIC_BYTES.length; i += 1) {
+    if (header[i] !== ENVELOPE_MAGIC_BYTES[i]) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidMagic,
+        'envelope header has invalid magic',
+      );
+    }
+  }
+}
+
+function assertReservedZeros(
+  header: Uint8Array,
+  startInclusive: number,
+  endExclusive: number,
+): void {
+  for (let offset = startInclusive; offset < endExclusive; offset += 1) {
+    if (header[offset] !== 0) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.NonZeroReservedByte,
+        `envelope header reserved byte at offset ${String(offset)} is non-zero`,
+      );
+    }
+  }
+}
+
+function ensureNonNullRawEpochHandle(epochHandleId: bigint): void {
+  if (epochHandleId === 0n) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.HandleNotFound,
+      'epoch handle ID 0 is not a valid WASM handle',
+    );
+  }
+}
+
+function parseEnvelopeHeader(envelope: Uint8Array): EnvelopeHeader {
+  if (envelope.length < ENVELOPE_HEADER_BYTES) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidHeaderLength,
+      `envelope must contain at least ${String(ENVELOPE_HEADER_BYTES)} header bytes`,
+    );
+  }
+
+  const header = envelope.subarray(0, ENVELOPE_HEADER_BYTES);
+  assertEnvelopeMagic(header);
+
+  const version = header[4];
+  if (version === ENVELOPE_VERSION_V03) {
+    assertReservedZeros(header, V03_RESERVED_OFFSET, V03_RESERVED_END);
+    return {
+      magic: ENVELOPE_MAGIC,
+      version: ENVELOPE_VERSION_V03,
+      epoch: readU32Le(header, 5),
+      shard: readU32Le(header, 9),
+      nonce: new Uint8Array(header.subarray(13, 37)),
+      tier: header[37]!,
+    };
+  }
+
+  if (version === ENVELOPE_VERSION_V04) {
+    assertReservedZeros(header, V04_RESERVED_OFFSET, V04_RESERVED_END);
+    return {
+      magic: ENVELOPE_MAGIC,
+      version: ENVELOPE_VERSION_V04,
+      epoch: 0,
+      shard: 0,
+      tier: header[5]!,
+      streamSalt: new Uint8Array(header.subarray(6, 22)),
+      frameCount: readU32Le(header, 22),
+      finalFrameSize: readU32Le(header, 26),
+    };
+  }
+
+  throw new WorkerCryptoError(
+    WorkerCryptoErrorCode.UnsupportedVersion,
+    `unsupported envelope version ${String(version)}`,
+  );
+}
 
 // =============================================================================
 // Slice 1 — Handle registry & lifetime semantics
@@ -1772,6 +1871,64 @@ class CryptoWorker implements CryptoWorkerApi {
     );
   }
 
+  async encryptShardWithEpochHandle(
+    epochHandleId: EpochHandleId | bigint,
+    plaintext: Uint8Array,
+    tier: number,
+    shardIndex: number,
+  ): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    const encrypt = (rustEpoch: bigint): Uint8Array =>
+      facade.encryptShardWithEpochHandle(
+        rustEpoch,
+        plaintext,
+        shardIndex,
+        tier,
+      ).envelopeBytes;
+
+    if (typeof epochHandleId === 'bigint') {
+      ensureNonNullRawEpochHandle(epochHandleId);
+      return encrypt(epochHandleId);
+    }
+
+    return this.handleRegistry.withLease(epochHandleId, 'epoch', encrypt);
+  }
+
+  async decryptShardWithEpochHandle(
+    epochHandleId: EpochHandleId | bigint,
+    envelope: Uint8Array,
+  ): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    const decrypt = (rustEpoch: bigint): Uint8Array =>
+      facade.decryptShardWithEpochHandle(rustEpoch, envelope);
+
+    if (typeof epochHandleId === 'bigint') {
+      ensureNonNullRawEpochHandle(epochHandleId);
+      return decrypt(epochHandleId);
+    }
+
+    return this.handleRegistry.withLease(epochHandleId, 'epoch', decrypt);
+  }
+
+  async verifyShardIntegrity(
+    envelope: Uint8Array,
+    expectedSha256: Uint8Array,
+  ): Promise<boolean> {
+    await this.ensureSodiumReady();
+    if (envelope.length < ENVELOPE_HEADER_BYTES || expectedSha256.length !== 32) {
+      return false;
+    }
+
+    const actual = sodium.crypto_hash_sha256(
+      envelope.subarray(ENVELOPE_HEADER_BYTES),
+    );
+    return sodium.memcmp(actual, expectedSha256);
+  }
+
+  async peekEnvelopeHeader(envelope: Uint8Array): Promise<EnvelopeHeader> {
+    return parseEnvelopeHeader(envelope);
+  }
+
   async encryptMetadataSidecarWithEpoch(
     epochHandleId: EpochHandleId,
     albumId: Uint8Array,
@@ -1938,5 +2095,5 @@ class CryptoWorker implements CryptoWorkerApi {
 }
 
 // Create worker instance and expose via Comlink
-const worker = new CryptoWorker();
-Comlink.expose(worker);
+export const cryptoWorker = new CryptoWorker();
+Comlink.expose(cryptoWorker);

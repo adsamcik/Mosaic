@@ -109,6 +109,26 @@ export type LinkShareHandleId = string & { readonly __brand: 'LinkShareHandleId'
 export type LinkTierHandleId = string & { readonly __brand: 'LinkTierHandleId' };
 export type LinkDecryptionKey = Uint8Array | LinkTierHandleId;
 
+export type EnvelopeHeader =
+  | {
+      readonly version: 0x03;
+      readonly magic: 'SGzk';
+      readonly epoch: number;
+      readonly shard: number;
+      readonly tier: number;
+      readonly nonce: Uint8Array;
+    }
+  | {
+      readonly version: 0x04;
+      readonly magic: 'SGzk';
+      readonly epoch: 0;
+      readonly shard: 0;
+      readonly tier: number;
+      readonly streamSalt: Uint8Array;
+      readonly frameCount: number;
+      readonly finalFrameSize: number;
+    };
+
 /** Photo metadata stored in local SQLite */
 export interface PhotoMeta {
   id: string;
@@ -964,6 +984,35 @@ export interface CryptoWorkerApi {
     epochHandleId: EpochHandleId,
     envelopeBytes: Uint8Array,
   ): Promise<Uint8Array>;
+
+  encryptShardWithEpochHandle(
+    epochHandleId: bigint,
+    plaintext: Uint8Array,
+    tier: number,
+    shardIndex: number,
+  ): Promise<Uint8Array>;
+  encryptShardWithEpochHandle(
+    epochHandleId: EpochHandleId,
+    plaintext: Uint8Array,
+    tier: number,
+    shardIndex: number,
+  ): Promise<Uint8Array>;
+
+  decryptShardWithEpochHandle(
+    epochHandleId: bigint,
+    envelope: Uint8Array,
+  ): Promise<Uint8Array>;
+  decryptShardWithEpochHandle(
+    epochHandleId: EpochHandleId,
+    envelope: Uint8Array,
+  ): Promise<Uint8Array>;
+
+  verifyShardIntegrity(
+    envelope: Uint8Array,
+    expectedSha256: Uint8Array,
+  ): Promise<boolean>;
+
+  peekEnvelopeHeader(envelope: Uint8Array): Promise<EnvelopeHeader>;
 
   /**
    * Encrypt a metadata sidecar using the epoch handle. Output is a shard
