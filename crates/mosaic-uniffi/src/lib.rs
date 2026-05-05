@@ -7,6 +7,213 @@ use std::fmt;
 use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
 use zeroize::Zeroizing;
 
+/// Stable client error codes exported through UniFFI.
+///
+/// This mirrors `mosaic_client::ClientErrorCode`, which remains the single
+/// Rust source of truth for v1-frozen numeric error codes. TypeScript bindings
+/// are generated from that source enum, while UniFFI exposes this wrapper enum
+/// so Android/iOS clients can consume native variants without hand-written
+/// integer maps. Adding a variant requires updating the Rust source enum,
+/// regenerating the TypeScript codegen output, regenerating the UniFFI API
+/// golden, and keeping the parity/lock tests green.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[repr(u16)]
+pub enum ClientErrorCode {
+    Ok = 0,
+    InvalidHeaderLength = 100,
+    InvalidMagic = 101,
+    UnsupportedVersion = 102,
+    InvalidTier = 103,
+    NonZeroReservedByte = 104,
+    EmptyContext = 200,
+    InvalidKeyLength = 201,
+    InvalidInputLength = 202,
+    InvalidEnvelope = 203,
+    MissingCiphertext = 204,
+    AuthenticationFailed = 205,
+    RngFailure = 206,
+    WrappedKeyTooShort = 207,
+    KdfProfileTooWeak = 208,
+    InvalidSaltLength = 209,
+    KdfFailure = 210,
+    InvalidSignatureLength = 211,
+    InvalidPublicKey = 212,
+    InvalidUsername = 213,
+    KdfProfileTooCostly = 214,
+    LinkTierMismatch = 215,
+    BundleSignatureInvalid = 216,
+    BundleAlbumIdEmpty = 217,
+    BundleAlbumIdMismatch = 218,
+    BundleEpochTooOld = 219,
+    BundleRecipientMismatch = 220,
+    BundleJsonParse = 221,
+    BundleSealOpenFailed = 222,
+    ShardIntegrityFailed = 223,
+    LegacyRawKeyDecryptFallback = 224,
+    StreamingChunkOutOfOrder = 225,
+    StreamingTotalChunkMismatch = 226,
+    StreamingPlaintextDivergence = 227,
+    OperationCancelled = 300,
+    SecretHandleNotFound = 400,
+    IdentityHandleNotFound = 401,
+    HandleSpaceExhausted = 402,
+    EpochHandleNotFound = 403,
+    InternalStatePoisoned = 500,
+    UnsupportedMediaFormat = 600,
+    InvalidMediaContainer = 601,
+    InvalidMediaDimensions = 602,
+    MediaOutputTooLarge = 603,
+    MediaMetadataMismatch = 604,
+    InvalidMediaSidecar = 605,
+    MediaAdapterOutputMismatch = 606,
+    VideoContainerInvalid = 607,
+    MediaInspectFailed = 608,
+    MediaStripFailed = 609,
+    SidecarFieldOverflow = 610,
+    SidecarTagUnknown = 611,
+    MalformedSidecar = 612,
+    MakerNoteRejected = 613,
+    ExifTraversalLimitExceeded = 614,
+    VideoTooLargeForV1 = 615,
+    VideoSourceUnreadable = 616,
+    VideoTierShapeRejected = 617,
+    MetadataSidecarReservedTagNotPromoted = 618,
+    ClientCoreInvalidTransition = 700,
+    ClientCoreMissingEventPayload = 701,
+    ClientCoreRetryBudgetExhausted = 702,
+    ClientCoreSyncPageDidNotAdvance = 703,
+    ClientCoreManifestOutcomeUnknown = 704,
+    ClientCoreUnsupportedSnapshotVersion = 705,
+    ClientCoreInvalidSnapshot = 706,
+    ManifestShapeRejected = 707,
+    IdempotencyExpired = 708,
+    ManifestSetConflict = 709,
+    BackendIdempotencyConflict = 710,
+    VideoPosterExtractionFailed = 711,
+    PinValidationFailed = 800,
+}
+
+impl ClientErrorCode {
+    /// Returns the stable numeric representation used across generated bindings.
+    #[must_use]
+    pub const fn as_u16(self) -> u16 {
+        self as u16
+    }
+
+    /// Converts the Rust source-of-truth error code into the UniFFI wrapper.
+    #[must_use]
+    pub const fn from_client_code(code: mosaic_client::ClientErrorCode) -> Self {
+        match code {
+            mosaic_client::ClientErrorCode::Ok => Self::Ok,
+            mosaic_client::ClientErrorCode::InvalidHeaderLength => Self::InvalidHeaderLength,
+            mosaic_client::ClientErrorCode::InvalidMagic => Self::InvalidMagic,
+            mosaic_client::ClientErrorCode::UnsupportedVersion => Self::UnsupportedVersion,
+            mosaic_client::ClientErrorCode::InvalidTier => Self::InvalidTier,
+            mosaic_client::ClientErrorCode::NonZeroReservedByte => Self::NonZeroReservedByte,
+            mosaic_client::ClientErrorCode::EmptyContext => Self::EmptyContext,
+            mosaic_client::ClientErrorCode::InvalidKeyLength => Self::InvalidKeyLength,
+            mosaic_client::ClientErrorCode::InvalidInputLength => Self::InvalidInputLength,
+            mosaic_client::ClientErrorCode::InvalidEnvelope => Self::InvalidEnvelope,
+            mosaic_client::ClientErrorCode::MissingCiphertext => Self::MissingCiphertext,
+            mosaic_client::ClientErrorCode::AuthenticationFailed => Self::AuthenticationFailed,
+            mosaic_client::ClientErrorCode::RngFailure => Self::RngFailure,
+            mosaic_client::ClientErrorCode::WrappedKeyTooShort => Self::WrappedKeyTooShort,
+            mosaic_client::ClientErrorCode::KdfProfileTooWeak => Self::KdfProfileTooWeak,
+            mosaic_client::ClientErrorCode::InvalidSaltLength => Self::InvalidSaltLength,
+            mosaic_client::ClientErrorCode::KdfFailure => Self::KdfFailure,
+            mosaic_client::ClientErrorCode::InvalidSignatureLength => Self::InvalidSignatureLength,
+            mosaic_client::ClientErrorCode::InvalidPublicKey => Self::InvalidPublicKey,
+            mosaic_client::ClientErrorCode::InvalidUsername => Self::InvalidUsername,
+            mosaic_client::ClientErrorCode::KdfProfileTooCostly => Self::KdfProfileTooCostly,
+            mosaic_client::ClientErrorCode::LinkTierMismatch => Self::LinkTierMismatch,
+            mosaic_client::ClientErrorCode::BundleSignatureInvalid => Self::BundleSignatureInvalid,
+            mosaic_client::ClientErrorCode::BundleAlbumIdEmpty => Self::BundleAlbumIdEmpty,
+            mosaic_client::ClientErrorCode::BundleAlbumIdMismatch => Self::BundleAlbumIdMismatch,
+            mosaic_client::ClientErrorCode::BundleEpochTooOld => Self::BundleEpochTooOld,
+            mosaic_client::ClientErrorCode::BundleRecipientMismatch => {
+                Self::BundleRecipientMismatch
+            }
+            mosaic_client::ClientErrorCode::BundleJsonParse => Self::BundleJsonParse,
+            mosaic_client::ClientErrorCode::BundleSealOpenFailed => Self::BundleSealOpenFailed,
+            mosaic_client::ClientErrorCode::ShardIntegrityFailed => Self::ShardIntegrityFailed,
+            mosaic_client::ClientErrorCode::LegacyRawKeyDecryptFallback => {
+                Self::LegacyRawKeyDecryptFallback
+            }
+            mosaic_client::ClientErrorCode::StreamingChunkOutOfOrder => {
+                Self::StreamingChunkOutOfOrder
+            }
+            mosaic_client::ClientErrorCode::StreamingTotalChunkMismatch => {
+                Self::StreamingTotalChunkMismatch
+            }
+            mosaic_client::ClientErrorCode::StreamingPlaintextDivergence => {
+                Self::StreamingPlaintextDivergence
+            }
+            mosaic_client::ClientErrorCode::OperationCancelled => Self::OperationCancelled,
+            mosaic_client::ClientErrorCode::SecretHandleNotFound => Self::SecretHandleNotFound,
+            mosaic_client::ClientErrorCode::IdentityHandleNotFound => Self::IdentityHandleNotFound,
+            mosaic_client::ClientErrorCode::HandleSpaceExhausted => Self::HandleSpaceExhausted,
+            mosaic_client::ClientErrorCode::EpochHandleNotFound => Self::EpochHandleNotFound,
+            mosaic_client::ClientErrorCode::InternalStatePoisoned => Self::InternalStatePoisoned,
+            mosaic_client::ClientErrorCode::UnsupportedMediaFormat => Self::UnsupportedMediaFormat,
+            mosaic_client::ClientErrorCode::InvalidMediaContainer => Self::InvalidMediaContainer,
+            mosaic_client::ClientErrorCode::InvalidMediaDimensions => Self::InvalidMediaDimensions,
+            mosaic_client::ClientErrorCode::MediaOutputTooLarge => Self::MediaOutputTooLarge,
+            mosaic_client::ClientErrorCode::MediaMetadataMismatch => Self::MediaMetadataMismatch,
+            mosaic_client::ClientErrorCode::InvalidMediaSidecar => Self::InvalidMediaSidecar,
+            mosaic_client::ClientErrorCode::MediaAdapterOutputMismatch => {
+                Self::MediaAdapterOutputMismatch
+            }
+            mosaic_client::ClientErrorCode::VideoContainerInvalid => Self::VideoContainerInvalid,
+            mosaic_client::ClientErrorCode::MediaInspectFailed => Self::MediaInspectFailed,
+            mosaic_client::ClientErrorCode::MediaStripFailed => Self::MediaStripFailed,
+            mosaic_client::ClientErrorCode::SidecarFieldOverflow => Self::SidecarFieldOverflow,
+            mosaic_client::ClientErrorCode::SidecarTagUnknown => Self::SidecarTagUnknown,
+            mosaic_client::ClientErrorCode::MalformedSidecar => Self::MalformedSidecar,
+            mosaic_client::ClientErrorCode::MakerNoteRejected => Self::MakerNoteRejected,
+            mosaic_client::ClientErrorCode::ExifTraversalLimitExceeded => {
+                Self::ExifTraversalLimitExceeded
+            }
+            mosaic_client::ClientErrorCode::VideoTooLargeForV1 => Self::VideoTooLargeForV1,
+            mosaic_client::ClientErrorCode::VideoSourceUnreadable => Self::VideoSourceUnreadable,
+            mosaic_client::ClientErrorCode::VideoTierShapeRejected => Self::VideoTierShapeRejected,
+            mosaic_client::ClientErrorCode::MetadataSidecarReservedTagNotPromoted => {
+                Self::MetadataSidecarReservedTagNotPromoted
+            }
+            mosaic_client::ClientErrorCode::ClientCoreInvalidTransition => {
+                Self::ClientCoreInvalidTransition
+            }
+            mosaic_client::ClientErrorCode::ClientCoreMissingEventPayload => {
+                Self::ClientCoreMissingEventPayload
+            }
+            mosaic_client::ClientErrorCode::ClientCoreRetryBudgetExhausted => {
+                Self::ClientCoreRetryBudgetExhausted
+            }
+            mosaic_client::ClientErrorCode::ClientCoreSyncPageDidNotAdvance => {
+                Self::ClientCoreSyncPageDidNotAdvance
+            }
+            mosaic_client::ClientErrorCode::ClientCoreManifestOutcomeUnknown => {
+                Self::ClientCoreManifestOutcomeUnknown
+            }
+            mosaic_client::ClientErrorCode::ClientCoreUnsupportedSnapshotVersion => {
+                Self::ClientCoreUnsupportedSnapshotVersion
+            }
+            mosaic_client::ClientErrorCode::ClientCoreInvalidSnapshot => {
+                Self::ClientCoreInvalidSnapshot
+            }
+            mosaic_client::ClientErrorCode::ManifestShapeRejected => Self::ManifestShapeRejected,
+            mosaic_client::ClientErrorCode::IdempotencyExpired => Self::IdempotencyExpired,
+            mosaic_client::ClientErrorCode::ManifestSetConflict => Self::ManifestSetConflict,
+            mosaic_client::ClientErrorCode::BackendIdempotencyConflict => {
+                Self::BackendIdempotencyConflict
+            }
+            mosaic_client::ClientErrorCode::VideoPosterExtractionFailed => {
+                Self::VideoPosterExtractionFailed
+            }
+            mosaic_client::ClientErrorCode::PinValidationFailed => Self::PinValidationFailed,
+        }
+    }
+}
+
 /// UniFFI record for header parse results.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct HeaderResult {
@@ -1746,6 +1953,21 @@ fn required_event_error_code(
 pub const fn client_error_code_from_u16(value: u16) -> Option<mosaic_client::ClientErrorCode> {
     mosaic_client::ClientErrorCode::try_from_u16(value)
 }
+
+/// Converts a stable `ClientErrorCode` number into the native UniFFI enum.
+#[uniffi::export]
+#[must_use]
+pub fn client_error_code_enum_from_u16(value: u16) -> Option<ClientErrorCode> {
+    client_error_code_from_u16(value).map(ClientErrorCode::from_client_code)
+}
+
+/// Converts the native UniFFI error enum back to its stable wire number.
+#[uniffi::export]
+#[must_use]
+pub fn client_error_code_to_u16(code: ClientErrorCode) -> u16 {
+    code.as_u16()
+}
+
 fn empty_upload_snapshot() -> ClientCoreUploadJobSnapshot {
     ClientCoreUploadJobSnapshot {
         schema_version: 0,

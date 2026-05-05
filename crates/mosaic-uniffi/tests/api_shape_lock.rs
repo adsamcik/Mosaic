@@ -1,6 +1,11 @@
-use std::{env, fs, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env, fs,
+    path::PathBuf,
+};
 
 const SOURCE: &str = include_str!("../src/lib.rs");
+const CLIENT_SOURCE: &str = include_str!("../../mosaic-client/src/lib.rs");
 const GOLDEN: &str = include_str!("golden/uniffi_api.txt");
 
 /// Locks the actual UniFFI export surface by introspecting the crate source for
@@ -72,6 +77,14 @@ fn canonical_uniffi_api_shape_for_features(
                 }
             }
 
+            if attr_has_uniffi_marker(&attr, "Enum") {
+                if let Some((next_index, enum_shape)) = parse_enum(&lines, next_attr_index) {
+                    output.push_str(&enum_shape);
+                    index = next_index;
+                    continue;
+                }
+            }
+
             if is_uniffi_export_attr(&attr)
                 && cfg_attrs_enabled(&pending_attrs, cross_client_vectors_enabled)
                 && let Some((next_index, signature)) =
@@ -134,6 +147,62 @@ fn parse_record(lines: &[&str], start: usize) -> Option<(usize, String)> {
         return None;
     }
     None
+}
+
+fn parse_enum(lines: &[&str], start: usize) -> Option<(usize, String)> {
+    let mut index = start;
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if let Some(name) = line
+            .strip_prefix("pub enum ")
+            .and_then(|rest| rest.split_whitespace().next())
+        {
+            let name = name.trim_end_matches('{');
+            let mut output = format!("enum {name}\n");
+            index += 1;
+            while index < lines.len() {
+                let variant = lines[index].trim();
+                if variant.starts_with('}') {
+                    output.push_str("end\n");
+                    return Some((index + 1, output));
+                }
+                if let Some(variant) = parse_enum_variant(variant) {
+                    output.push_str("  ");
+                    output.push_str(&variant);
+                    output.push('\n');
+                }
+                index += 1;
+            }
+            return None;
+        }
+        if starts_attribute(line) {
+            let (next_index, _) = collect_attribute(lines, index);
+            index = next_index;
+            continue;
+        }
+        if line.starts_with("///") || line.is_empty() {
+            index += 1;
+            continue;
+        }
+        return None;
+    }
+    None
+}
+
+fn parse_enum_variant(line: &str) -> Option<String> {
+    let line = line
+        .split_once("//")
+        .map_or(line, |(prefix, _)| prefix)
+        .trim();
+    if line.is_empty() || line.starts_with("///") || line.starts_with("#[") {
+        return None;
+    }
+    let line = line.trim_end_matches(',');
+    let name = line.split_once('=').map_or(line, |(name, _)| name).trim();
+    if name.is_empty() {
+        return None;
+    }
+    Some(normalize_whitespace(line))
 }
 
 fn parse_exported_function(lines: &[&str], start: usize) -> Option<(usize, String)> {
@@ -291,14 +360,41 @@ fn exported_api_parser_keeps_async_functions_in_shape_lock() {
 }
 
 #[test]
-fn golden_parser_has_no_unhandled_uniffi_enum_or_object_surfaces() {
-    let attrs = collect_source_attributes(SOURCE);
-    assert!(
-        attrs
-            .iter()
-            .all(|attr| !attr_has_uniffi_marker(attr, "Enum")),
-        "api_shape_lock.rs must parse UniFFI enum variants before adding uniffi::Enum"
+fn client_error_code_uniffi_export_includes_all_variants() {
+    let source_variants = client_error_code_variants(CLIENT_SOURCE);
+    let golden_variants = uniffi_enum_variants(GOLDEN, "ClientErrorCode");
+
+    assert_eq!(
+        source_variants.keys().collect::<BTreeSet<_>>(),
+        golden_variants.keys().collect::<BTreeSet<_>>(),
+        "UniFFI ClientErrorCode enum must export every source ClientErrorCode variant"
     );
+}
+
+#[test]
+fn client_error_code_uniffi_discriminants_match_rust_source() {
+    let source_variants = client_error_code_variants(CLIENT_SOURCE);
+
+    for (variant, expected) in source_variants {
+        let code = mosaic_uniffi::client_error_code_enum_from_u16(expected)
+            .unwrap_or_else(|| panic!("UniFFI rejected source ClientErrorCode::{variant}"));
+
+        assert_eq!(
+            format!("{code:?}"),
+            variant,
+            "UniFFI numeric conversion returned the wrong variant for {expected}"
+        );
+        assert_eq!(
+            mosaic_uniffi::client_error_code_to_u16(code),
+            expected,
+            "UniFFI ClientErrorCode::{variant} discriminant drifted from Rust source"
+        );
+    }
+}
+
+#[test]
+fn golden_parser_has_no_unhandled_uniffi_object_surfaces() {
+    let attrs = collect_source_attributes(SOURCE);
     assert!(
         attrs
             .iter()
@@ -326,6 +422,57 @@ fn uniffi_enum_and_object_canary_detection_accepts_derive_format_variants() {
         "#[derive(Debug, uniffi::Record)]",
         "Enum"
     ));
+}
+
+fn client_error_code_variants(source: &str) -> BTreeMap<String, u16> {
+    let body = enum_body(source, "ClientErrorCode")
+        .unwrap_or_else(|| panic!("missing ClientErrorCode enum in source"));
+    let mut variants = BTreeMap::new();
+    for line in body.lines() {
+        let Some(variant) = parse_enum_variant(line) else {
+            continue;
+        };
+        let Some((name, value)) = variant.split_once('=') else {
+            panic!("ClientErrorCode variant must pin an explicit discriminant: {variant}");
+        };
+        let value = value.trim().parse::<u16>().unwrap_or_else(|error| {
+            panic!("invalid ClientErrorCode discriminant {variant}: {error}")
+        });
+        variants.insert(name.trim().to_owned(), value);
+    }
+    variants
+}
+
+fn uniffi_enum_variants(source: &str, enum_name: &str) -> BTreeMap<String, u16> {
+    let body = golden_enum_body(source, enum_name)
+        .unwrap_or_else(|| panic!("missing {enum_name} enum in UniFFI golden"));
+    body.lines()
+        .filter_map(parse_enum_variant)
+        .map(|variant| {
+            let Some((name, value)) = variant.split_once('=') else {
+                panic!("UniFFI golden enum variant must pin a discriminant: {variant}");
+            };
+            let value = value.trim().parse::<u16>().unwrap_or_else(|error| {
+                panic!("invalid UniFFI golden discriminant {variant}: {error}")
+            });
+            (name.trim().to_owned(), value)
+        })
+        .collect()
+}
+
+fn enum_body<'a>(source: &'a str, enum_name: &str) -> Option<&'a str> {
+    source
+        .split_once(&format!("enum {enum_name}"))
+        .and_then(|(_, rest)| rest.split_once('{'))
+        .and_then(|(_, rest)| rest.split_once('}'))
+        .map(|(body, _)| body)
+}
+
+fn golden_enum_body<'a>(source: &'a str, enum_name: &str) -> Option<&'a str> {
+    source
+        .split_once(&format!("enum {enum_name}\n"))
+        .and_then(|(_, rest)| rest.split_once("\nend"))
+        .map(|(body, _)| body)
 }
 
 fn cfg_attrs_enabled(attrs: &[String], cross_client_vectors_enabled: bool) -> bool {
