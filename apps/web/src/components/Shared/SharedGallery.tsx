@@ -6,14 +6,15 @@
  * based on the access tier granted by the link.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useAlbumDownload } from '../../hooks/useAlbumDownload';
+import { useCallback, useEffect, useState } from 'react';
+import { AccessTier as AccessTierConst } from '../../lib/api-types';
+import { useVisitorAlbumDownload } from '../../hooks/useVisitorAlbumDownload';
+import { useAlbumDownloadModePicker } from '../../hooks/useAlbumDownloadModePicker';
 import type { TierKey } from '../../hooks/useLinkKeys';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { createLogger } from '../../lib/logger';
-import { createShareLinkOriginalResolver } from '../../lib/shared-album-download';
 import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
-import { DownloadProgressOverlay } from '../Gallery/DownloadProgressOverlay';
+import { DownloadTray } from '../Download/DownloadTray';
 import { SharedMosaicPhotoGrid } from './SharedMosaicPhotoGrid';
 import { SharedPhotoGrid } from './SharedPhotoGrid';
 
@@ -272,27 +273,34 @@ export function SharedGallery({
     [tierKeys],
   );
 
-  const albumDownload = useAlbumDownload();
+  // Visitor (share-link) download — drives the coordinator worker through a
+  // `share-link` SourceStrategy. The tier-3 gate below is the access
+  // contract: only links granting full-access expose the download UI.
+  const albumDownload = useVisitorAlbumDownload({
+    linkId,
+    grantToken: grantToken ?? null,
+    getTier3Key: useCallback(
+      (epochId: number): LinkDecryptionKey | undefined =>
+        getTierKey(epochId, AccessTierConst.FULL),
+      [getTierKey],
+    ),
+  });
+  const modePicker = useAlbumDownloadModePicker();
 
-  const downloadResolver = useMemo(
-    () =>
-      createShareLinkOriginalResolver({
-        linkId,
-        grantToken: grantToken ?? undefined,
-        getTierKey,
-      }),
-    [linkId, grantToken, getTierKey],
-  );
-
-  const handleDownloadAll = useCallback(() => {
+  const handleDownloadAll = useCallback(async (): Promise<void> => {
     if (photos.length === 0) return;
-    void albumDownload.startDownload(
+    const name = albumName ?? 'Shared Album';
+    // `keepOffline` is hidden for visitors: anonymous viewers have no
+    // per-account scope key (tracked as `p3-visitor-job-scope`).
+    const mode = await modePicker.prompt({
       albumId,
-      albumName ?? 'Shared Album',
+      suggestedFileName: name,
       photos,
-      downloadResolver,
-    );
-  }, [photos, albumId, albumName, albumDownload, downloadResolver]);
+      hideKeepOffline: true,
+    });
+    if (mode === null) return;
+    await albumDownload.startDownload(albumId, name, photos, mode);
+  }, [photos, albumId, albumName, albumDownload, modePicker]);
 
   // Loading state
   if (isLoading || isLoadingKeys) {
@@ -351,14 +359,14 @@ export function SharedGallery({
           )}
         </div>
 
-        {accessTier === 3 && photos.length > 0 && (
+        {accessTier === AccessTierConst.FULL && photos.length > 0 && (
           <button
             type="button"
             className="button-secondary gallery-download-all-btn"
-            onClick={handleDownloadAll}
+            onClick={(): void => { void handleDownloadAll(); }}
             disabled={albumDownload.isDownloading}
             data-testid="shared-gallery-download-all"
-            title="Download all photos as ZIP"
+            title="Download all photos"
           >
             {albumDownload.isDownloading
               ? 'Downloading...'
@@ -445,12 +453,8 @@ export function SharedGallery({
         )}
       </div>
 
-      {albumDownload.isDownloading && albumDownload.progress && (
-        <DownloadProgressOverlay
-          progress={albumDownload.progress}
-          onCancel={albumDownload.cancel}
-        />
-      )}
+      {modePicker.pickerElement}
+      <DownloadTray />
     </div>
   );
 }
