@@ -360,7 +360,12 @@ function photoSpecs(doneCount: number, totalCount: number): SnapshotPhotoSpec[] 
   }));
 }
 
-function persistSnapshotJob(seed: number, phase: DownloadPhase, photos: readonly SnapshotPhotoSpec[]): string {
+function persistSnapshotJob(
+  seed: number,
+  phase: DownloadPhase,
+  photos: readonly SnapshotPhotoSpec[],
+  options: { readonly scopeKey?: string; readonly lastUpdatedAtMs?: number } = {},
+): string {
   const jobIdBytes = testJobIdBytes(seed);
   const jobId = hex(jobIdBytes);
   opfsState.dirs.add(jobId);
@@ -369,9 +374,10 @@ function persistSnapshotJob(seed: number, phase: DownloadPhase, photos: readonly
       jobIdBytes,
       phase,
       createdAtMs: nowMs - seed,
-      lastUpdatedAtMs: nowMs + seed,
+      lastUpdatedAtMs: options.lastUpdatedAtMs ?? nowMs + seed,
       photoCount: photos.length,
       photos,
+      ...(options.scopeKey === undefined ? {} : { scopeKey: options.scopeKey }),
     }),
     checksum: checksum(seed),
   });
@@ -1031,6 +1037,114 @@ describe('CoordinatorWorker', () => {
     const { jobId } = await worker.startJob(validInput());
     const summary = (await worker.getJob(jobId)) ?? null;
     expect(summary?.scopeKey).toMatch(/^auth:[0-9a-f]{32}$/u);
+  });
+
+  // ----- Visitor cluster: pause + rebind on reconstruct (Phase 3) -----
+  describe('visitor reconstruct: pause-no-source + rebind', () => {
+    const visitorScope = 'visitor:11111111111111111111111111111111';
+    const otherVisitorScope = 'visitor:22222222222222222222222222222222';
+
+    function makeSource(scopeKey: string): SourceStrategy {
+      return {
+        kind: 'share-link',
+        fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
+        fetchShards: vi.fn(async (): Promise<Uint8Array[]> => []),
+        resolveKey: vi.fn(async (): Promise<Uint8Array> => new Uint8Array(32)),
+        getScopeKey: () => scopeKey,
+      };
+    }
+
+    it('marks reconstructed visitor jobs as pausedNoSource and surfaces them in resume prompt', async () => {
+      const jobId = persistSnapshotJob(50, 'Paused', photoSpecs(1, 2), { scopeKey: visitorScope });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      const resumable = await worker.listResumableJobs();
+      const item = resumable.find((s) => s.jobId === jobId);
+      expect(item).toBeDefined();
+      expect(item?.pausedNoSource).toBe(true);
+    });
+
+    it('does NOT mark auth or legacy reconstructed jobs as pausedNoSource', async () => {
+      const authId = persistSnapshotJob(51, 'Paused', photoSpecs(1, 2), { scopeKey: 'auth:00000000000000000000000000000000' });
+      const legacyId = persistSnapshotJob(52, 'Paused', photoSpecs(1, 2));
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      const resumable = await worker.listResumableJobs();
+      const auth = resumable.find((s) => s.jobId === authId);
+      const legacy = resumable.find((s) => s.jobId === legacyId);
+      expect(auth?.pausedNoSource).toBe(false);
+      expect(legacy?.pausedNoSource).toBe(false);
+    });
+
+    it('resumeJob rejects DownloadIllegalState until rebind succeeds', async () => {
+      const jobId = persistSnapshotJob(53, 'Paused', photoSpecs(1, 2), { scopeKey: visitorScope });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      await expect(worker.resumeJob(jobId)).rejects.toBeInstanceOf(WorkerCryptoError);
+      await worker.rebindJobSource(jobId, makeSource(visitorScope));
+      const resumable = await worker.listResumableJobs();
+      expect(resumable.find((s) => s.jobId === jobId)?.pausedNoSource).toBe(false);
+    });
+
+    it('rebindJobSource rejects when supplied source scope does not match the job scope', async () => {
+      const jobId = persistSnapshotJob(54, 'Paused', photoSpecs(1, 2), { scopeKey: visitorScope });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      await expect(
+        worker.rebindJobSource(jobId, makeSource(otherVisitorScope)),
+      ).rejects.toBeInstanceOf(WorkerCryptoError);
+      // Still paused-no-source after a failed rebind.
+      const resumable = await worker.listResumableJobs();
+      expect(resumable.find((s) => s.jobId === jobId)?.pausedNoSource).toBe(true);
+    });
+
+    it('hard-cancel of a paused-no-source visitor job clears the flag and purges OPFS', async () => {
+      const jobId = persistSnapshotJob(55, 'Paused', photoSpecs(1, 2), { scopeKey: visitorScope });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      await worker.cancelJob(jobId, { soft: false });
+      expect(opfsState.snapshots.has(jobId)).toBe(false);
+    });
+  });
+
+  // ----- Visitor cluster: GC sweep on initialize (Phase 3) -----
+  describe('visitor GC on startup', () => {
+    const visitorScope = 'visitor:99999999999999999999999999999999';
+    const ONE_DAY = 24 * 60 * 60 * 1_000;
+
+    it('sweeps a visitor terminal job older than the TTL', async () => {
+      const oldJobId = persistSnapshotJob(60, 'Done', photoSpecs(1, 1), {
+        scopeKey: visitorScope,
+        lastUpdatedAtMs: nowMs - 30 * ONE_DAY,
+      });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      const jobs = await worker.listJobs();
+      expect(jobs.find((s) => s.jobId === oldJobId)).toBeUndefined();
+      expect(opfsState.snapshots.has(oldJobId)).toBe(false);
+    });
+
+    it('keeps an auth terminal job at the same age (visitor rule does not apply)', async () => {
+      const authJobId = persistSnapshotJob(61, 'Done', photoSpecs(1, 1), {
+        scopeKey: 'auth:00000000000000000000000000000000',
+        lastUpdatedAtMs: nowMs - 30 * ONE_DAY,
+      });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      const jobs = await worker.listJobs();
+      expect(jobs.find((s) => s.jobId === authJobId)).toBeDefined();
+      expect(opfsState.snapshots.has(authJobId)).toBe(true);
+    });
+
+    it('keeps a recent visitor non-terminal job', async () => {
+      const fresh = persistSnapshotJob(62, 'Paused', photoSpecs(1, 2), {
+        scopeKey: visitorScope,
+        lastUpdatedAtMs: nowMs - 1 * ONE_DAY,
+      });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      expect(opfsState.snapshots.has(fresh)).toBe(true);
+    });
   });
 });
 
