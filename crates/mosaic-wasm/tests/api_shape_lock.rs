@@ -150,7 +150,6 @@ fn metadata_strip_inspect_and_sidecar_exports_are_locked() {
         "export function stripPngMetadata(input_bytes: Uint8Array): StripResult;",
         "export function stripVideoMetadata(input_bytes: Uint8Array): StripResult;",
         "export function stripWebpMetadata(input_bytes: Uint8Array): StripResult;",
-        "export function videoMetadataSidecarBytes(album_id: Uint8Array, photo_id: Uint8Array, epoch_id: number, input_bytes: Uint8Array): BytesResult;",
     ] {
         assert!(
             golden.contains(declaration),

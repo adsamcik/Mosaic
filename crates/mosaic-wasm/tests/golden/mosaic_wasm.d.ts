@@ -909,11 +909,6 @@ export function verifyManifestWithEpoch(transcript_bytes: Uint8Array, signature:
 export function verifyManifestWithIdentity(transcript_bytes: Uint8Array, signature: Uint8Array, public_key: Uint8Array): number;
 
 /**
- * Builds canonical video metadata sidecar bytes through WASM.
- */
-export function videoMetadataSidecarBytes(album_id: Uint8Array, photo_id: Uint8Array, epoch_id: number, input_bytes: Uint8Array): BytesResult;
-
-/**
  * Wraps an epoch tier for an existing share-link handle through WASM.
  */
 export function wrapLinkTierHandle(link_share_handle: bigint, epoch_handle: bigint, tier_byte: number): WrappedTierKeyResult;
@@ -1093,7 +1088,6 @@ export interface InitOutput {
     readonly wrapLinkTierHandle: (a: bigint, b: bigint, c: number) => number;
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly wrappedtierkeyresult_tier: (a: number) => number;
-    readonly videoMetadataSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
     readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;

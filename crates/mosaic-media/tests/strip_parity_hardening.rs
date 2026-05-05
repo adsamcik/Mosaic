@@ -1,6 +1,10 @@
 #![allow(clippy::expect_used)]
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::mpsc,
+    thread,
+    time::{Duration, Instant},
+};
 
 use mosaic_media::{
     MediaFormat, MetadataKind, MosaicMediaError, extract_exif_orientation, inspect_image,
@@ -198,21 +202,30 @@ fn strip_fuzz_fixtures_do_not_panic_hang_or_leave_metadata_after_ok() {
 
     for case in cases {
         let started = Instant::now();
-        let result = strip_known_metadata(case.format, &case.bytes);
+        let (tx, rx) = mpsc::channel();
+        let case_name = case.name;
+        let case_format = case.format;
+        let case_bytes = case.bytes;
+        let _strip_thread = thread::spawn(move || {
+            let result = strip_known_metadata(case_format, &case_bytes);
+            let _ = tx.send(result);
+        });
+        let result = rx.recv_timeout(Duration::from_secs(1)).unwrap_or_else(|_| {
+            panic!("strip_known_metadata hung beyond 1s timeout for fuzz fixture {case_name}")
+        });
         let elapsed = started.elapsed();
         assert!(
             elapsed < Duration::from_secs(1),
-            "{} should complete within one second, took {elapsed:?}",
-            case.name
+            "{case_name} should complete within one second, took {elapsed:?}",
         );
         match result {
-            Ok(stripped) => assert_no_metadata_for_format(case.format, &stripped.bytes),
+            Ok(stripped) => assert_no_metadata_for_format(case_format, &stripped.bytes),
             Err(
                 MosaicMediaError::InvalidJpeg
                 | MosaicMediaError::InvalidPng
                 | MosaicMediaError::InvalidWebP,
             ) => {}
-            Err(other) => panic!("{} returned unexpected error: {other:?}", case.name),
+            Err(other) => panic!("{case_name} returned unexpected error: {other:?}"),
         }
     }
 }

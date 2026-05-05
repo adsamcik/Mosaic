@@ -166,7 +166,6 @@ export const videoinspectresult_widthPx: (a: number) => number;
 export const wrapLinkTierHandle: (a: bigint, b: bigint, c: number) => number;
 export const wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
 export const wrappedtierkeyresult_tier: (a: number) => number;
-export const videoMetadataSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
 export const __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
 export const __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
 export const __wbg_encryptedshardresult_free: (a: number, b: number) => void;

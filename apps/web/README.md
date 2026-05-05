@@ -105,7 +105,7 @@ implemented in `apps/web/src/lib/exif-stripper.ts`.
 - Source-preserved video uses `stripVideoMetadata` for supported MP4/MOV/WebM/
   Matroska containers.
 - `inspectImage`, `inspectVideoContainer`, `canonicalMetadataSidecarBytes`, and
-  `videoMetadataSidecarBytes` expose client-local inspection/sidecar helpers
+  `canonicalVideoSidecarBytes` expose client-local inspection/sidecar helpers
   through WASM without adding server plaintext behavior.
 - Canvas-generated AVIF originals bypass strip because browser re-encoding
   sheds the source metadata before encryption.

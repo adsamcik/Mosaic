@@ -2773,25 +2773,6 @@ export function verifyManifestWithIdentity(transcript_bytes, signature, public_k
 }
 
 /**
- * Builds canonical video metadata sidecar bytes through WASM.
- * @param {Uint8Array} album_id
- * @param {Uint8Array} photo_id
- * @param {number} epoch_id
- * @param {Uint8Array} input_bytes
- * @returns {BytesResult}
- */
-export function videoMetadataSidecarBytes(album_id, photo_id, epoch_id, input_bytes) {
-    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(photo_id, wasm.__wbindgen_export2);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
-    const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.videoMetadataSidecarBytes(ptr0, len0, ptr1, len1, epoch_id, ptr2, len2);
-    return BytesResult.__wrap(ret);
-}
-
-/**
  * Wraps an epoch tier for an existing share-link handle through WASM.
  * @param {bigint} link_share_handle
  * @param {bigint} epoch_handle

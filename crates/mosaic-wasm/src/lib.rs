@@ -3202,9 +3202,9 @@ pub fn canonical_metadata_sidecar_bytes_js(
 }
 
 /// Builds canonical video metadata sidecar bytes through WASM.
-#[wasm_bindgen(js_name = videoMetadataSidecarBytes)]
+#[wasm_bindgen(js_name = canonicalVideoSidecarBytes)]
 #[must_use]
-pub fn video_metadata_sidecar_bytes_js(
+pub fn canonical_video_sidecar_bytes_js(
     album_id: Vec<u8>,
     photo_id: Vec<u8>,
     epoch_id: u32,
@@ -3216,18 +3216,6 @@ pub fn video_metadata_sidecar_bytes_js(
         epoch_id,
         input_bytes,
     ))
-}
-
-/// Builds canonical video metadata sidecar bytes through WASM.
-#[wasm_bindgen(js_name = canonicalVideoSidecarBytes)]
-#[must_use]
-pub fn canonical_video_sidecar_bytes_js(
-    album_id: Vec<u8>,
-    photo_id: Vec<u8>,
-    epoch_id: u32,
-    input_bytes: Vec<u8>,
-) -> JsBytesResult {
-    video_metadata_sidecar_bytes_js(album_id, photo_id, epoch_id, input_bytes)
 }
 
 /// Encrypts metadata sidecar bytes with an epoch handle through WASM.
