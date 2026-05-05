@@ -100,8 +100,13 @@ implemented in `apps/web/src/lib/exif-stripper.ts`.
 - JPEG uses `stripJpegMetadata`.
 - PNG uses `stripPngMetadata`.
 - WebP uses `stripWebpMetadata`.
-- Source-preserved HEIC/HEIF, AVIF, and video uploads fail closed before
-  encryption/TUS until the Rust media strip support for those formats ships.
+- Source-preserved AVIF uses `stripAvifMetadata`.
+- Source-preserved HEIC/HEIF uses `stripHeicMetadata`.
+- Source-preserved video uses `stripVideoMetadata` for supported MP4/MOV/WebM/
+  Matroska containers.
+- `inspectImage`, `inspectVideoContainer`, `canonicalMetadataSidecarBytes`, and
+  `videoMetadataSidecarBytes` expose client-local inspection/sidecar helpers
+  through WASM without adding server plaintext behavior.
 - Canvas-generated AVIF originals bypass strip because browser re-encoding
   sheds the source metadata before encryption.
 

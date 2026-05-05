@@ -1042,6 +1042,215 @@ export class IdentityHandleResult {
 if (Symbol.dispose) IdentityHandleResult.prototype[Symbol.dispose] = IdentityHandleResult.prototype.free;
 
 /**
+ * WASM-bindgen class for image inspection results.
+ */
+export class ImageInspectResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(ImageInspectResult.prototype);
+        obj.__wbg_ptr = ptr;
+        ImageInspectResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ImageInspectResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_imageinspectresult_free(ptr, 0);
+    }
+    /**
+     * Camera make extracted from EXIF, or empty when absent.
+     * @returns {string}
+     */
+    get cameraMake() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.imageinspectresult_cameraMake(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Camera model extracted from EXIF, or empty when absent.
+     * @returns {string}
+     */
+    get cameraModel() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.imageinspectresult_cameraModel(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.imageinspectresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Device timestamp extracted from EXIF, valid when `hasDeviceTimestampMs` is true.
+     * @returns {bigint}
+     */
+    get deviceTimestampMs() {
+        const ret = wasm.imageinspectresult_deviceTimestampMs(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Compact encoded canonical metadata sidecar fields.
+     * @returns {Uint8Array}
+     */
+    get encodedSidecarFields() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.imageinspectresult_encodedSidecarFields(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Stable media format code derived from container bytes (JPEG=1, PNG=2, WebP=3, AVIF=4, HEIC=5).
+     * @returns {number}
+     */
+    get format() {
+        const ret = wasm.imageinspectresult_format(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get gpsAccuracyMeters() {
+        const ret = wasm.imageinspectresult_gpsAccuracyMeters(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get gpsAltitudeMeters() {
+        const ret = wasm.imageinspectresult_gpsAltitudeMeters(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get gpsLatMicrodegrees() {
+        const ret = wasm.imageinspectresult_gpsLatMicrodegrees(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get gpsLonMicrodegrees() {
+        const ret = wasm.imageinspectresult_gpsLonMicrodegrees(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Whether `deviceTimestampMs` carries an extracted EXIF timestamp.
+     * @returns {boolean}
+     */
+    get hasDeviceTimestampMs() {
+        const ret = wasm.imageinspectresult_hasDeviceTimestampMs(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Whether GPS fields were extracted from EXIF.
+     * @returns {boolean}
+     */
+    get hasGps() {
+        const ret = wasm.imageinspectresult_hasGps(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Whether `subsecondsMs` carries extracted EXIF subseconds.
+     * @returns {boolean}
+     */
+    get hasSubsecondsMs() {
+        const ret = wasm.imageinspectresult_hasSubsecondsMs(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Display height after orientation normalization.
+     * @returns {number}
+     */
+    get height() {
+        const ret = wasm.imageinspectresult_height(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Trusted MIME type derived from container bytes.
+     * @returns {string}
+     */
+    get mimeType() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.imageinspectresult_mimeType(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * EXIF orientation value normalized by the Rust media parser.
+     * @returns {number}
+     */
+    get orientation() {
+        const ret = wasm.imageinspectresult_orientation(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * EXIF subseconds in milliseconds, valid when `hasSubsecondsMs` is true.
+     * @returns {number}
+     */
+    get subsecondsMs() {
+        const ret = wasm.imageinspectresult_subsecondsMs(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Display width after orientation normalization.
+     * @returns {number}
+     */
+    get width() {
+        const ret = wasm.imageinspectresult_width(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) ImageInspectResult.prototype[Symbol.dispose] = ImageInspectResult.prototype.free;
+
+/**
  * WASM-bindgen class for imported link-tier handle results.
  */
 export class LinkTierHandleResult {
@@ -1315,7 +1524,7 @@ export class StripResult {
         return ret >>> 0;
     }
     /**
-     * Image bytes after metadata stripping.
+     * Image or video bytes after metadata stripping.
      * @returns {Uint8Array}
      */
     get strippedBytes() {
@@ -1333,6 +1542,130 @@ export class StripResult {
     }
 }
 if (Symbol.dispose) StripResult.prototype[Symbol.dispose] = StripResult.prototype.free;
+
+/**
+ * WASM-bindgen class for video inspection results.
+ */
+export class VideoInspectResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(VideoInspectResult.prototype);
+        obj.__wbg_ptr = ptr;
+        VideoInspectResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        VideoInspectResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_videoinspectresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.videoinspectresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Trusted video container label derived from bytes.
+     * @returns {string}
+     */
+    get container() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.videoinspectresult_container(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Video duration in milliseconds.
+     * @returns {bigint}
+     */
+    get durationMs() {
+        const ret = wasm.videoinspectresult_durationMs(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Video frame rate in frames per second, or NaN when unavailable.
+     * @returns {number}
+     */
+    get frameRateFps() {
+        const ret = wasm.videoinspectresult_frameRateFps(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Video track height in pixels.
+     * @returns {number}
+     */
+    get heightPx() {
+        const ret = wasm.videoinspectresult_heightPx(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Rotation label, or empty string when unavailable.
+     * @returns {string}
+     */
+    get orientation() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.videoinspectresult_orientation(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Trusted codec label, or empty string when unavailable.
+     * @returns {string}
+     */
+    get videoCodec() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.videoinspectresult_videoCodec(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Video track width in pixels.
+     * @returns {number}
+     */
+    get widthPx() {
+        const ret = wasm.videoinspectresult_widthPx(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) VideoInspectResult.prototype[Symbol.dispose] = VideoInspectResult.prototype.free;
 
 /**
  * WASM-bindgen class for wrapped tier key results.
@@ -1579,6 +1912,25 @@ export function canonicalMetadataSidecarBytes(album_id, photo_id, epoch_id, enco
     const ptr2 = passArray8ToWasm0(encoded_fields, wasm.__wbindgen_export2);
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.canonicalMetadataSidecarBytes(ptr0, len0, ptr1, len1, epoch_id, ptr2, len2);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Builds canonical video metadata sidecar bytes through WASM.
+ * @param {Uint8Array} album_id
+ * @param {Uint8Array} photo_id
+ * @param {number} epoch_id
+ * @param {Uint8Array} input_bytes
+ * @returns {BytesResult}
+ */
+export function canonicalVideoSidecarBytes(album_id, photo_id, epoch_id, input_bytes) {
+    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(photo_id, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.canonicalVideoSidecarBytes(ptr0, len0, ptr1, len1, epoch_id, ptr2, len2);
     return BytesResult.__wrap(ret);
 }
 
@@ -2046,6 +2398,30 @@ export function initUploadJob(job_id, album_id, asset_id, idempotency_key, max_r
 }
 
 /**
+ * Inspects image container metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {ImageInspectResult}
+ */
+export function inspectImage(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.inspectImage(ptr0, len0);
+    return ImageInspectResult.__wrap(ret);
+}
+
+/**
+ * Inspects video container metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {VideoInspectResult}
+ */
+export function inspectVideoContainer(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.inspectVideoContainer(ptr0, len0);
+    return VideoInspectResult.__wrap(ret);
+}
+
+/**
  * Lists all protocol-supported shard tiers in ascending wire-byte order.
  * @returns {any[]}
  */
@@ -2226,6 +2602,30 @@ export function signManifestWithIdentity(handle, transcript_bytes) {
 }
 
 /**
+ * Strips AVIF metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {StripResult}
+ */
+export function stripAvifMetadata(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.stripAvifMetadata(ptr0, len0);
+    return StripResult.__wrap(ret);
+}
+
+/**
+ * Strips HEIC/HEIF metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {StripResult}
+ */
+export function stripHeicMetadata(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.stripHeicMetadata(ptr0, len0);
+    return StripResult.__wrap(ret);
+}
+
+/**
  * Strips JPEG metadata through the shared Rust media parser.
  * @param {Uint8Array} input_bytes
  * @returns {StripResult}
@@ -2246,6 +2646,18 @@ export function stripPngMetadata(input_bytes) {
     const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.stripPngMetadata(ptr0, len0);
+    return StripResult.__wrap(ret);
+}
+
+/**
+ * Strips video container metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {StripResult}
+ */
+export function stripVideoMetadata(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.stripVideoMetadata(ptr0, len0);
     return StripResult.__wrap(ret);
 }
 
@@ -2361,6 +2773,25 @@ export function verifyManifestWithIdentity(transcript_bytes, signature, public_k
 }
 
 /**
+ * Builds canonical video metadata sidecar bytes through WASM.
+ * @param {Uint8Array} album_id
+ * @param {Uint8Array} photo_id
+ * @param {number} epoch_id
+ * @param {Uint8Array} input_bytes
+ * @returns {BytesResult}
+ */
+export function videoMetadataSidecarBytes(album_id, photo_id, epoch_id, input_bytes) {
+    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(photo_id, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.videoMetadataSidecarBytes(ptr0, len0, ptr1, len1, epoch_id, ptr2, len2);
+    return BytesResult.__wrap(ret);
+}
+
+/**
  * Wraps an epoch tier for an existing share-link handle through WASM.
  * @param {bigint} link_share_handle
  * @param {bigint} epoch_handle
@@ -2458,6 +2889,9 @@ const HeaderResultFinalization = (typeof FinalizationRegistry === 'undefined')
 const IdentityHandleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_identityhandleresult_free(ptr >>> 0, 1));
+const ImageInspectResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_imageinspectresult_free(ptr >>> 0, 1));
 const LinkTierHandleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_linktierhandleresult_free(ptr >>> 0, 1));
@@ -2473,6 +2907,9 @@ const SealedBundleResultFinalization = (typeof FinalizationRegistry === 'undefin
 const StripResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_stripresult_free(ptr >>> 0, 1));
+const VideoInspectResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_videoinspectresult_free(ptr >>> 0, 1));
 const WrappedTierKeyResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wrappedtierkeyresult_free(ptr >>> 0, 1));

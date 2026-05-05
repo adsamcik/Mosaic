@@ -41,7 +41,7 @@ The post-Wave-5 iOS surface is expected to match Android's UniFFI surface:
 | Upload state machine | `UploadJobSnapshot`, upload events, upload effects, and pinned phase discriminants are exported. |
 | Sidecar tags 1-9 | Active sidecar tag discriminants remain stable for clients. |
 | Error codes | `ClientErrorCode` provides stable client-visible error mapping. |
-| Metadata stripping | JPEG, PNG, and WebP stripping are available; AVIF and HEIC are tracked by media follow-up work. |
+| Metadata stripping | JPEG, PNG, WebP, AVIF, HEIC/HEIF, and supported video stripping are available in Rust core; future iOS upload wiring must call the same inspect/strip/sidecar path before encryption. |
 
 ## Regression harness
 
@@ -60,6 +60,7 @@ A production iOS app still needs:
 - TUS upload integration.
 - BGTaskScheduler-based background upload orchestration.
 - Photos framework import/export integration.
+- AVIF/HEIC/video upload adapter wiring to call Rust media inspect, strip, and sidecar generation before encryption.
 - App lifecycle handling for key wiping and worker shutdown.
 - XCTest and UI test suites for iOS-specific behavior.
 

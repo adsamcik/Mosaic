@@ -130,6 +130,36 @@ fn shard_tier_wasm_export_is_byte_pinned() {
 }
 
 #[test]
+fn metadata_strip_inspect_and_sidecar_exports_are_locked() {
+    let golden = normalize_newlines(GOLDEN);
+
+    for declaration in [
+        "export class ImageInspectResult {",
+        "export class VideoInspectResult {",
+        "export class StripResult {",
+        "    readonly encodedSidecarFields: Uint8Array;",
+        "    readonly format: number;",
+        "    readonly hasGps: boolean;",
+        "export function canonicalMetadataSidecarBytes(album_id: Uint8Array, photo_id: Uint8Array, epoch_id: number, encoded_fields: Uint8Array): BytesResult;",
+        "export function canonicalVideoSidecarBytes(album_id: Uint8Array, photo_id: Uint8Array, epoch_id: number, input_bytes: Uint8Array): BytesResult;",
+        "export function inspectImage(input_bytes: Uint8Array): ImageInspectResult;",
+        "export function inspectVideoContainer(input_bytes: Uint8Array): VideoInspectResult;",
+        "export function stripAvifMetadata(input_bytes: Uint8Array): StripResult;",
+        "export function stripHeicMetadata(input_bytes: Uint8Array): StripResult;",
+        "export function stripJpegMetadata(input_bytes: Uint8Array): StripResult;",
+        "export function stripPngMetadata(input_bytes: Uint8Array): StripResult;",
+        "export function stripVideoMetadata(input_bytes: Uint8Array): StripResult;",
+        "export function stripWebpMetadata(input_bytes: Uint8Array): StripResult;",
+        "export function videoMetadataSidecarBytes(album_id: Uint8Array, photo_id: Uint8Array, epoch_id: number, input_bytes: Uint8Array): BytesResult;",
+    ] {
+        assert!(
+            golden.contains(declaration),
+            "WASM media golden is missing pinned declaration: {declaration}"
+        );
+    }
+}
+
+#[test]
 fn generated_wasm_typescript_declarations_do_not_export_raw_wrap_keys() {
     let generated_path = project_root()
         .join("apps")

@@ -6,8 +6,11 @@
  */
 
 import initRustWasm, {
+  stripAvifMetadata,
+  stripHeicMetadata,
   stripJpegMetadata,
   stripPngMetadata,
+  stripVideoMetadata,
   stripWebpMetadata,
   type StripResult,
 } from '../generated/mosaic-wasm/mosaic_wasm.js';
@@ -28,7 +31,7 @@ const WEBP_MIME_TYPES = new Set(['image/webp']);
 const HEIC_MIME_TYPES = new Set(['image/heic', 'image/heif']);
 const AVIF_MIME_TYPES = new Set(['image/avif']);
 
-type SupportedFormat = 'jpeg' | 'png' | 'webp';
+type SupportedFormat = 'jpeg' | 'png' | 'webp' | 'avif' | 'heic' | 'video';
 type StripFunction = (inputBytes: Uint8Array) => StripResult;
 
 let rustReadyPromise: Promise<void> | null = null;
@@ -42,13 +45,13 @@ function formatForMimeType(mimeType: string): SupportedFormat | null {
   if (JPEG_MIME_TYPES.has(mimeType)) return 'jpeg';
   if (PNG_MIME_TYPES.has(mimeType)) return 'png';
   if (WEBP_MIME_TYPES.has(mimeType)) return 'webp';
+  if (AVIF_MIME_TYPES.has(mimeType)) return 'avif';
+  if (HEIC_MIME_TYPES.has(mimeType)) return 'heic';
+  if (mimeType.startsWith('video/')) return 'video';
   return null;
 }
 
-function unsupportedReasonForMimeType(mimeType: string): string {
-  if (HEIC_MIME_TYPES.has(mimeType)) return 'unsupported-heic';
-  if (AVIF_MIME_TYPES.has(mimeType)) return 'unsupported-avif';
-  if (mimeType.startsWith('video/')) return 'unsupported-video';
+function unsupportedReasonForMimeType(): string {
   return 'unsupported-mime';
 }
 
@@ -60,6 +63,12 @@ function stripFunctionForFormat(format: SupportedFormat): StripFunction {
       return stripPngMetadata;
     case 'webp':
       return stripWebpMetadata;
+    case 'avif':
+      return stripAvifMetadata;
+    case 'heic':
+      return stripHeicMetadata;
+    case 'video':
+      return stripVideoMetadata;
   }
 }
 
@@ -82,7 +91,7 @@ export async function stripExifFromBlob(blob: Blob, mimeType: string): Promise<S
   const normalizedMimeType = mimeType.trim().toLowerCase();
   const format = formatForMimeType(normalizedMimeType);
   if (format === null) {
-    return { bytes, stripped: false, skippedReason: unsupportedReasonForMimeType(normalizedMimeType) };
+    return { bytes, stripped: false, skippedReason: unsupportedReasonForMimeType() };
   }
   try {
     await ensureRustReady();

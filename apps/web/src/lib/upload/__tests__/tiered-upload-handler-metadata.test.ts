@@ -95,6 +95,9 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
     ['image/jpeg', 'malformed-jpeg', /malformed image\/jpeg/],
     ['image/png', 'malformed-png', /malformed image\/png/],
     ['image/webp', 'malformed-webp', /malformed image\/webp/],
+    ['image/heic', 'malformed-heic', /malformed image\/heic/],
+    ['image/avif', 'malformed-avif', /malformed image\/avif/],
+    ['video/mp4', 'malformed-video', /malformed video\/mp4/],
   ])('rejects %s originals when stripper reports %s before encryption or TUS upload', async (mimeType, skippedReason, messagePattern) => {
     mocks.stripExifFromBlob.mockResolvedValueOnce({ bytes: new Uint8Array([3]), stripped: false, skippedReason });
     const task = createTask(mimeType);
@@ -109,9 +112,6 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
   });
 
   it.each([
-    ['image/heic', /R-M1/],
-    ['image/avif', /R-M2/],
-    ['video/mp4', /R-M6/],
     ['image/gif', /metadata stripping is unsupported/],
     ['image/bmp', /metadata stripping is unsupported/],
   ])('rejects preserve-original %s before tier generation when stripping is required', async (mimeType, messagePattern) => {

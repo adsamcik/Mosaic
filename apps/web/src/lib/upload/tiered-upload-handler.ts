@@ -19,26 +19,27 @@ import { uint8ArrayToBase64 } from './types';
 const log = createLogger('TieredUploadHandler');
 
 const FAIL_CLOSED_STRIP_REASONS = new Set([
-  'unsupported-heic',
-  'unsupported-avif',
-  'unsupported-video',
   'unsupported-mime',
   'wasm-strip-failed',
   'malformed-jpeg',
   'malformed-png',
   'malformed-webp',
+  'malformed-avif',
+  'malformed-heic',
+  'malformed-video',
 ]);
 
 function unsupportedStripReasonForMimeType(mimeType: string): string | null {
-  if (mimeType === 'image/heic' || mimeType === 'image/heif') return 'unsupported-heic';
-  if (mimeType === 'image/avif') return 'unsupported-avif';
-  if (mimeType.startsWith('video/')) return 'unsupported-video';
   if (
     mimeType !== 'image/jpeg'
     && mimeType !== 'image/jpg'
     && mimeType !== 'image/pjpeg'
     && mimeType !== 'image/png'
     && mimeType !== 'image/webp'
+    && mimeType !== 'image/heic'
+    && mimeType !== 'image/heif'
+    && mimeType !== 'image/avif'
+    && !mimeType.startsWith('video/')
   ) {
     return 'unsupported-mime';
   }
@@ -47,12 +48,6 @@ function unsupportedStripReasonForMimeType(mimeType: string): string | null {
 
 function stripRejectionMessage(reason: string, mimeType: string): string {
   switch (reason) {
-    case 'unsupported-heic':
-      return 'Upload rejected: HEIC original metadata stripping is not available until R-M1.';
-    case 'unsupported-avif':
-      return 'Upload rejected: AVIF original metadata stripping is not available until R-M2.';
-    case 'unsupported-video':
-      return 'Upload rejected: video metadata stripping is not available until R-M6.';
     case 'unsupported-mime':
       return `Upload rejected: metadata stripping is unsupported for ${mimeType} originals.`;
     case 'wasm-strip-failed':
@@ -60,6 +55,9 @@ function stripRejectionMessage(reason: string, mimeType: string): string {
     case 'malformed-jpeg':
     case 'malformed-png':
     case 'malformed-webp':
+    case 'malformed-avif':
+    case 'malformed-heic':
+    case 'malformed-video':
       return `Upload rejected: malformed ${mimeType} original cannot be safely stripped.`;
     default:
       return `Upload rejected: metadata stripping did not complete for ${mimeType} originals.`;

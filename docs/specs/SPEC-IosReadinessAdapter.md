@@ -32,8 +32,8 @@ Adjust the library path for the active host or Apple target. Production iOS pack
 | Upload state machine | ✅ Available | `UploadJobSnapshot` / Event / Effect; phase discriminants pinned per R-Cl1.2. |
 | Sidecar tags 1-9 | ✅ Available | All active per R-M3 + R-M4. |
 | ClientErrorCode | ✅ Available | Enum exported per P-U4. |
-| Metadata strip | ✅ Available | JPEG / PNG / WebP via M0; AVIF / HEIC pending R-M1 / R-M2. |
-| Video container | ⏸ Pending | R-M6 + R-M7. |
+| Metadata strip | ✅ Available | JPEG / PNG / WebP via M0; AVIF / HEIC via R-M1 / R-M2 and web WASM P-W2. |
+| Video container | ✅ Core available | R-M6 + P-W2 expose inspect/strip/video sidecar through Rust/WASM; iOS still needs platform upload wiring. |
 | Streaming AEAD | ⏸ Pending | R-C4. |
 
 ## 4. Cross-Platform Parity
@@ -52,6 +52,7 @@ A full iOS client needs:
 - TUS upload library integration, analogous to tus-android.
 - Background processing through BGTaskScheduler, analogous to WorkManager.
 - Photos framework integration, analogous to Android Photo Picker.
+- Platform upload wiring that calls the Rust media inspect/strip/sidecar path for AVIF, HEIC/HEIF, and supported video before encryption.
 - App lifecycle hooks that wipe sensitive client memory before suspension or logout.
 
 These are outside Q-final-2. The readiness stub only proves the Swift packaging and FFI contract story.

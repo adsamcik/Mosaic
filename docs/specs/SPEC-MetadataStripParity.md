@@ -12,11 +12,13 @@ M0 makes browser upload metadata stripping use the same dependency-free Rust `mo
 
 1. `apps/web/src/lib/upload/tiered-upload-handler.ts` decides whether the original tier is source-preserved or canvas-reencoded AVIF.
 2. Canvas-reencoded AVIF originals are metadata-clean by construction and bypass stripping.
-3. Preserved JPEG/PNG/WebP originals call `stripExifFromBlob(blob, mimeType)`.
-4. `stripExifFromBlob` reads the `Blob` into a `Uint8Array` and calls `stripJpegMetadata`, `stripPngMetadata`, or `stripWebpMetadata`.
-5. `crates/mosaic-wasm` calls `mosaic_media::strip_known_metadata(MediaFormat::{Jpeg,Png,WebP}, bytes)` or the dedicated `strip_video_metadata` path once wrappers expose R-M6.
+3. Preserved JPEG/PNG/WebP/AVIF/HEIC/HEIF/video originals call `stripExifFromBlob(blob, mimeType)`.
+4. `stripExifFromBlob` reads the `Blob` into a `Uint8Array` and calls `stripJpegMetadata`, `stripPngMetadata`, `stripWebpMetadata`, `stripAvifMetadata`, `stripHeicMetadata`, or `stripVideoMetadata`.
+5. `crates/mosaic-wasm` calls `mosaic_media::strip_known_metadata(MediaFormat::{Jpeg,Png,WebP}, bytes)`, `strip_avif_metadata`, `strip_heic_metadata`, or `strip_video_metadata`.
 6. WASM returns `{ code, strippedBytes, removedMetadataCount, free() }`.
 7. Web returns `{ bytes, stripped, skippedReason? }`; fail-closed upload handling rejects unsupported or malformed source-preserved originals before encryption or TUS upload.
+8. Inspection helpers return client-local compact DTOs: `inspectImage(inputBytes)` returns `{ code, format, mimeType, width, height, orientation, encodedSidecarFields, cameraMake, cameraModel, ...gps }` with stable numeric format codes (JPEG=1, PNG=2, WebP=3, AVIF=4, HEIC=5); `inspectVideoContainer(inputBytes)` returns `{ code, container, videoCodec, widthPx, heightPx, durationMs, frameRateFps, orientation }`.
+9. `canonicalMetadataSidecarBytes` remains the canonical generic sidecar export. `videoMetadataSidecarBytes` derives active video sidecar fields from `mosaic_media::inspect_video_container` and serializes them through the same domain canonical sidecar path.
 
 ## Per-format normative strip set
 
@@ -88,19 +90,20 @@ If a future Android caller strips outside `generate_tiers_*`, file a new ticket 
 ```text
 tiered-upload-handler.ts
   -> stripExifFromBlob(blob, mimeType)
-       -> MIME gate: JPEG / PNG / WebP / explicit unsupported formats
+       -> MIME gate: JPEG / PNG / WebP / AVIF / HEIC / HEIF / video / explicit unsupported formats
        -> generated mosaic_wasm init
-       -> strip{Jpeg,Png,Webp}Metadata(inputBytes)
+       -> strip{Jpeg,Png,Webp,Avif,Heic,Video}Metadata(inputBytes)
             -> crates/mosaic-wasm
-                 -> mosaic_media::strip_known_metadata(format, bytes)
+                 -> mosaic_media::{strip_known_metadata, strip_avif_metadata, strip_heic_metadata, strip_video_metadata}
 ```
 
 ## Verification Plan
 
-- `crates/mosaic-wasm` API-shape lock includes `StripResult` and the three strip exports.
-- `apps/web/src/lib/__tests__/exif-stripper.test.ts` verifies web delegation, never-throws fallback, malformed mapping, and HEIC/AVIF/video rejection classification.
+- `crates/mosaic-wasm` API-shape lock includes `StripResult`, `ImageInspectResult`, `VideoInspectResult`, generic canonical sidecar, video sidecar, strip, and inspect exports.
+- `apps/web/src/lib/__tests__/exif-stripper.test.ts` verifies web delegation, never-throws fallback, malformed mapping, and unsupported-MIME rejection classification.
 - `apps/web/src/lib/upload/__tests__/tiered-upload-handler-metadata.test.ts` verifies fail-closed upload behavior before encryption/TUS.
 - `apps/web/tests/strip-parity.test.ts` loads generated WASM bytes and compares JPEG/PNG/WebP output against golden corpus files.
+- `apps/web/tests/avif-heic-strip-roundtrip.test.ts` loads generated WASM bytes and asserts AVIF/HEIC `ftyp` + `mdat` preservation, metadata marker removal, `iloc` extents inside `mdat`, and video chunk offsets inside `mdat`.
 - `crates/mosaic-media/tests/strip_corpus.rs` reads the same web corpus/goldens and asserts native Rust output bytes and removed counts match.
 - Architecture guards verify Rust crate dependency boundaries and raw-secret FFI constraints.
 
@@ -109,4 +112,5 @@ tiered-upload-handler.ts
 - R-M1 (AVIF strip) - landed; source-preserved AVIF uses bounded ISO-BMFF strip.
 - R-M2 (HEIC strip) - landed; source-preserved HEIC/HEIF uses bounded ISO-BMFF strip.
 - R-M6 (video strip) - landed; MP4/MOV/WebM/Matroska use `strip_video_metadata`.
-- M0 - current SPEC anchor.
+- P-W2 - WASM AVIF/HEIC/video strip, inspect, and video sidecar exports.
+- M0 - original JPEG/PNG/WebP strip SPEC anchor.

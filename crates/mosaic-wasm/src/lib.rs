@@ -90,6 +90,42 @@ pub struct StripResult {
     pub removed_metadata_count: u32,
 }
 
+/// Rust-side WASM facade result for image container inspection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageInspectResult {
+    pub code: u16,
+    pub format: u8,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub orientation: u8,
+    pub encoded_sidecar_fields: Vec<u8>,
+    pub camera_make: String,
+    pub camera_model: String,
+    pub device_timestamp_ms: u64,
+    pub has_device_timestamp_ms: bool,
+    pub subseconds_ms: u32,
+    pub has_subseconds_ms: bool,
+    pub gps_lat_microdegrees: i32,
+    pub gps_lon_microdegrees: i32,
+    pub gps_altitude_meters: i32,
+    pub gps_accuracy_meters: u16,
+    pub has_gps: bool,
+}
+
+/// Rust-side WASM facade result for video container inspection.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VideoInspectResult {
+    pub code: u16,
+    pub container: String,
+    pub video_codec: String,
+    pub width_px: u32,
+    pub height_px: u32,
+    pub duration_ms: u64,
+    pub frame_rate_fps: f64,
+    pub orientation: String,
+}
+
 impl fmt::Debug for StripResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StripResult")
@@ -852,7 +888,7 @@ impl JsStripResult {
         self.code
     }
 
-    /// Image bytes after metadata stripping.
+    /// Image or video bytes after metadata stripping.
     #[wasm_bindgen(getter, js_name = strippedBytes)]
     #[must_use]
     pub fn stripped_bytes(&self) -> Vec<u8> {
@@ -864,6 +900,226 @@ impl JsStripResult {
     #[must_use]
     pub fn removed_metadata_count(&self) -> u32 {
         self.removed_metadata_count
+    }
+}
+
+/// WASM-bindgen class for image inspection results.
+#[wasm_bindgen(js_name = ImageInspectResult)]
+pub struct JsImageInspectResult {
+    code: u16,
+    format: u8,
+    mime_type: String,
+    width: u32,
+    height: u32,
+    orientation: u8,
+    encoded_sidecar_fields: Vec<u8>,
+    camera_make: String,
+    camera_model: String,
+    device_timestamp_ms: u64,
+    has_device_timestamp_ms: bool,
+    subseconds_ms: u32,
+    has_subseconds_ms: bool,
+    gps_lat_microdegrees: i32,
+    gps_lon_microdegrees: i32,
+    gps_altitude_meters: i32,
+    gps_accuracy_meters: u16,
+    has_gps: bool,
+}
+
+#[wasm_bindgen(js_class = ImageInspectResult)]
+impl JsImageInspectResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Stable media format code derived from container bytes (JPEG=1, PNG=2, WebP=3, AVIF=4, HEIC=5).
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn format(&self) -> u8 {
+        self.format
+    }
+
+    /// Trusted MIME type derived from container bytes.
+    #[wasm_bindgen(getter, js_name = mimeType)]
+    #[must_use]
+    pub fn mime_type(&self) -> String {
+        self.mime_type.clone()
+    }
+
+    /// Display width after orientation normalization.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Display height after orientation normalization.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// EXIF orientation value normalized by the Rust media parser.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn orientation(&self) -> u8 {
+        self.orientation
+    }
+
+    /// Compact encoded canonical metadata sidecar fields.
+    #[wasm_bindgen(getter, js_name = encodedSidecarFields)]
+    #[must_use]
+    pub fn encoded_sidecar_fields(&self) -> Vec<u8> {
+        self.encoded_sidecar_fields.clone()
+    }
+
+    /// Camera make extracted from EXIF, or empty when absent.
+    #[wasm_bindgen(getter, js_name = cameraMake)]
+    #[must_use]
+    pub fn camera_make(&self) -> String {
+        self.camera_make.clone()
+    }
+
+    /// Camera model extracted from EXIF, or empty when absent.
+    #[wasm_bindgen(getter, js_name = cameraModel)]
+    #[must_use]
+    pub fn camera_model(&self) -> String {
+        self.camera_model.clone()
+    }
+
+    /// Whether `deviceTimestampMs` carries an extracted EXIF timestamp.
+    #[wasm_bindgen(getter, js_name = hasDeviceTimestampMs)]
+    #[must_use]
+    pub fn has_device_timestamp_ms(&self) -> bool {
+        self.has_device_timestamp_ms
+    }
+
+    /// Device timestamp extracted from EXIF, valid when `hasDeviceTimestampMs` is true.
+    #[wasm_bindgen(getter, js_name = deviceTimestampMs)]
+    #[must_use]
+    pub fn device_timestamp_ms(&self) -> u64 {
+        self.device_timestamp_ms
+    }
+
+    /// Whether `subsecondsMs` carries extracted EXIF subseconds.
+    #[wasm_bindgen(getter, js_name = hasSubsecondsMs)]
+    #[must_use]
+    pub fn has_subseconds_ms(&self) -> bool {
+        self.has_subseconds_ms
+    }
+
+    /// EXIF subseconds in milliseconds, valid when `hasSubsecondsMs` is true.
+    #[wasm_bindgen(getter, js_name = subsecondsMs)]
+    #[must_use]
+    pub fn subseconds_ms(&self) -> u32 {
+        self.subseconds_ms
+    }
+
+    /// Whether GPS fields were extracted from EXIF.
+    #[wasm_bindgen(getter, js_name = hasGps)]
+    #[must_use]
+    pub fn has_gps(&self) -> bool {
+        self.has_gps
+    }
+
+    #[wasm_bindgen(getter, js_name = gpsLatMicrodegrees)]
+    #[must_use]
+    pub fn gps_lat_microdegrees(&self) -> i32 {
+        self.gps_lat_microdegrees
+    }
+
+    #[wasm_bindgen(getter, js_name = gpsLonMicrodegrees)]
+    #[must_use]
+    pub fn gps_lon_microdegrees(&self) -> i32 {
+        self.gps_lon_microdegrees
+    }
+
+    #[wasm_bindgen(getter, js_name = gpsAltitudeMeters)]
+    #[must_use]
+    pub fn gps_altitude_meters(&self) -> i32 {
+        self.gps_altitude_meters
+    }
+
+    #[wasm_bindgen(getter, js_name = gpsAccuracyMeters)]
+    #[must_use]
+    pub fn gps_accuracy_meters(&self) -> u16 {
+        self.gps_accuracy_meters
+    }
+}
+
+/// WASM-bindgen class for video inspection results.
+#[wasm_bindgen(js_name = VideoInspectResult)]
+pub struct JsVideoInspectResult {
+    code: u16,
+    container: String,
+    video_codec: String,
+    width_px: u32,
+    height_px: u32,
+    duration_ms: u64,
+    frame_rate_fps: f64,
+    orientation: String,
+}
+
+#[wasm_bindgen(js_class = VideoInspectResult)]
+impl JsVideoInspectResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Trusted video container label derived from bytes.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn container(&self) -> String {
+        self.container.clone()
+    }
+
+    /// Trusted codec label, or empty string when unavailable.
+    #[wasm_bindgen(getter, js_name = videoCodec)]
+    #[must_use]
+    pub fn video_codec(&self) -> String {
+        self.video_codec.clone()
+    }
+
+    /// Video track width in pixels.
+    #[wasm_bindgen(getter, js_name = widthPx)]
+    #[must_use]
+    pub fn width_px(&self) -> u32 {
+        self.width_px
+    }
+
+    /// Video track height in pixels.
+    #[wasm_bindgen(getter, js_name = heightPx)]
+    #[must_use]
+    pub fn height_px(&self) -> u32 {
+        self.height_px
+    }
+
+    /// Video duration in milliseconds.
+    #[wasm_bindgen(getter, js_name = durationMs)]
+    #[must_use]
+    pub fn duration_ms(&self) -> u64 {
+        self.duration_ms
+    }
+
+    /// Video frame rate in frames per second, or NaN when unavailable.
+    #[wasm_bindgen(getter, js_name = frameRateFps)]
+    #[must_use]
+    pub fn frame_rate_fps(&self) -> f64 {
+        self.frame_rate_fps
+    }
+
+    /// Rotation label, or empty string when unavailable.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn orientation(&self) -> String {
+        self.orientation.clone()
     }
 }
 
@@ -1733,6 +1989,42 @@ pub fn canonical_metadata_sidecar_bytes(
     }
 }
 
+/// Builds canonical plaintext video metadata sidecar bytes from inspected video bytes.
+#[must_use]
+pub fn video_metadata_sidecar_bytes(
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    input_bytes: Vec<u8>,
+) -> BytesResult {
+    let inspect = mosaic_media::inspect_video_container(&input_bytes);
+    if inspect.code != 0 {
+        return BytesResult {
+            code: inspect.code,
+            bytes: Vec::new(),
+        };
+    }
+
+    let pairs = mosaic_media::video_metadata_sidecar_fields(&inspect);
+    let mut encoded_fields = Vec::new();
+    for (tag, value) in pairs {
+        let value_len = match u32::try_from(value.len()) {
+            Ok(length) => length,
+            Err(_) => {
+                return BytesResult {
+                    code: mosaic_client::ClientErrorCode::InvalidInputLength.as_u16(),
+                    bytes: Vec::new(),
+                };
+            }
+        };
+        encoded_fields.extend_from_slice(&tag.to_le_bytes());
+        encoded_fields.extend_from_slice(&value_len.to_le_bytes());
+        encoded_fields.extend_from_slice(&value);
+    }
+
+    canonical_metadata_sidecar_bytes(album_id, photo_id, epoch_id, encoded_fields)
+}
+
 /// Encrypts canonical metadata sidecar bytes with a Rust-owned epoch-key handle.
 #[must_use]
 pub fn encrypt_metadata_sidecar_with_epoch_handle(
@@ -2374,7 +2666,13 @@ fn media_error_code(error: mosaic_media::MosaicMediaError) -> u16 {
 }
 
 fn strip_metadata(format: mosaic_media::MediaFormat, input_bytes: Vec<u8>) -> StripResult {
-    match mosaic_media::strip_known_metadata(format, &input_bytes) {
+    strip_with_result(mosaic_media::strip_known_metadata(format, &input_bytes))
+}
+
+fn strip_with_result(
+    result: Result<mosaic_media::StrippedMedia, mosaic_media::MosaicMediaError>,
+) -> StripResult {
+    match result {
         Ok(stripped) => {
             let removed_metadata_count = match u32::try_from(stripped.removed.len()) {
                 Ok(value) => value,
@@ -2400,11 +2698,288 @@ fn strip_metadata(format: mosaic_media::MediaFormat, input_bytes: Vec<u8>) -> St
     }
 }
 
+fn image_format_code(format: mosaic_media::MediaFormat) -> u8 {
+    match format {
+        mosaic_media::MediaFormat::Jpeg => 1,
+        mosaic_media::MediaFormat::Png => 2,
+        mosaic_media::MediaFormat::WebP => 3,
+    }
+}
+
+fn video_container_label(container: mosaic_media::VideoContainer) -> &'static str {
+    match container {
+        mosaic_media::VideoContainer::Mp4 => "mp4",
+        mosaic_media::VideoContainer::Mov => "mov",
+        mosaic_media::VideoContainer::WebM => "webm",
+        mosaic_media::VideoContainer::Matroska => "matroska",
+    }
+}
+
+fn video_codec_label(codec: mosaic_media::VideoCodec) -> &'static str {
+    match codec {
+        mosaic_media::VideoCodec::H264 => "h264",
+        mosaic_media::VideoCodec::H265 => "h265",
+        mosaic_media::VideoCodec::AV1 => "av1",
+        mosaic_media::VideoCodec::VP8 => "vp8",
+        mosaic_media::VideoCodec::VP9 => "vp9",
+    }
+}
+
+fn orientation_label(orientation: mosaic_media::Orientation) -> &'static str {
+    match orientation {
+        mosaic_media::Orientation::Rotate0 => "rotate0",
+        mosaic_media::Orientation::Rotate90 => "rotate90",
+        mosaic_media::Orientation::Rotate180 => "rotate180",
+        mosaic_media::Orientation::Rotate270 => "rotate270",
+    }
+}
+
+fn image_inspect_result_from_media(
+    result: Result<mosaic_media::ImageMetadata, mosaic_media::MosaicMediaError>,
+    input_bytes: &[u8],
+) -> ImageInspectResult {
+    match result {
+        Ok(metadata) => ImageInspectResult {
+            code: 0,
+            format: image_format_code(metadata.format),
+            mime_type: metadata.mime_type.to_owned(),
+            width: metadata.width,
+            height: metadata.height,
+            orientation: metadata.orientation,
+            ..image_sidecar_fields_for_format(input_bytes, metadata.format)
+        },
+        Err(error) => iso_bmff_image_inspect_result(input_bytes)
+            .unwrap_or_else(|| empty_image_inspect_result(media_error_code(error))),
+    }
+}
+
+fn iso_bmff_image_inspect_result(input_bytes: &[u8]) -> Option<ImageInspectResult> {
+    let boxes = mosaic_media::BoxParser::new(input_bytes).parse().ok()?;
+    let ftyp = boxes
+        .iter()
+        .find(|candidate| candidate.box_type == *b"ftyp")?;
+    let (format, mime_type, sidecar_fields) =
+        if iso_bmff_brands(ftyp.payload).any(|brand| matches!(brand, b"avif" | b"avis")) {
+            (
+                4,
+                "image/avif",
+                image_sidecar_fields_from_extract(
+                    mosaic_media::extract_avif_canonical_sidecar_fields(input_bytes),
+                ),
+            )
+        } else if iso_bmff_brands(ftyp.payload).any(|brand| {
+            matches!(
+                brand,
+                b"heic" | b"heix" | b"hevc" | b"hevx" | b"heim" | b"heis" | b"mif1" | b"msf1"
+            )
+        }) {
+            (
+                5,
+                "image/heic",
+                image_sidecar_fields_from_extract(
+                    mosaic_media::extract_heic_canonical_sidecar_fields(input_bytes),
+                ),
+            )
+        } else {
+            return None;
+        };
+
+    let meta = boxes
+        .iter()
+        .find(|candidate| candidate.box_type == *b"meta")?;
+    let (width, height) = find_ispe_dimensions(&meta.children)?;
+    Some(ImageInspectResult {
+        code: 0,
+        format,
+        mime_type: mime_type.to_owned(),
+        width,
+        height,
+        orientation: mosaic_media::NORMAL_EXIF_ORIENTATION,
+        ..sidecar_fields
+    })
+}
+
+fn iso_bmff_brands(payload: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let first = payload.get(..4).into_iter();
+    let compatible = payload
+        .get(8..)
+        .into_iter()
+        .flat_map(|tail| tail.chunks_exact(4));
+    first.chain(compatible)
+}
+
+fn find_ispe_dimensions(boxes: &[mosaic_media::iso_bmff::Box<'_>]) -> Option<(u32, u32)> {
+    for candidate in boxes {
+        if candidate.box_type == *b"ispe" && candidate.payload.len() >= 12 {
+            let width = u32::from_be_bytes(candidate.payload[4..8].try_into().ok()?);
+            let height = u32::from_be_bytes(candidate.payload[8..12].try_into().ok()?);
+            if width > 0 && height > 0 {
+                return Some((width, height));
+            }
+        }
+        if let Some(dimensions) = find_ispe_dimensions(&candidate.children) {
+            return Some(dimensions);
+        }
+    }
+    None
+}
+
+fn empty_image_inspect_result(code: u16) -> ImageInspectResult {
+    ImageInspectResult {
+        code,
+        format: 0,
+        mime_type: String::new(),
+        width: 0,
+        height: 0,
+        orientation: 0,
+        encoded_sidecar_fields: Vec::new(),
+        camera_make: String::new(),
+        camera_model: String::new(),
+        device_timestamp_ms: 0,
+        has_device_timestamp_ms: false,
+        subseconds_ms: 0,
+        has_subseconds_ms: false,
+        gps_lat_microdegrees: 0,
+        gps_lon_microdegrees: 0,
+        gps_altitude_meters: 0,
+        gps_accuracy_meters: 0,
+        has_gps: false,
+    }
+}
+
+fn image_sidecar_fields_for_format(
+    input_bytes: &[u8],
+    format: mosaic_media::MediaFormat,
+) -> ImageInspectResult {
+    image_sidecar_fields_from_extract(mosaic_media::extract_canonical_sidecar_fields(
+        input_bytes,
+        format,
+    ))
+}
+
+fn image_sidecar_fields_from_extract(
+    result: mosaic_media::SidecarExtractResult,
+) -> ImageInspectResult {
+    let mut fields = empty_image_inspect_result(0);
+    let Some(extracted) = result.fields else {
+        return fields;
+    };
+    if let Some(value) = extracted.device_timestamp_ms {
+        fields.has_device_timestamp_ms = true;
+        fields.device_timestamp_ms = value;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::DEVICE_TIMESTAMP_MS,
+            &value.to_le_bytes(),
+        );
+    }
+    if let Some(value) = extracted.camera_make {
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::CAMERA_MAKE,
+            value.as_bytes(),
+        );
+        fields.camera_make = value;
+    }
+    if let Some(value) = extracted.camera_model {
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::CAMERA_MODEL,
+            value.as_bytes(),
+        );
+        fields.camera_model = value;
+    }
+    if let Some(value) = extracted.subseconds_ms {
+        fields.has_subseconds_ms = true;
+        fields.subseconds_ms = value;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::SUBSECONDS_MS,
+            &value.to_le_bytes(),
+        );
+    }
+    if let Some(value) = extracted.gps {
+        fields.has_gps = true;
+        fields.gps_lat_microdegrees = value.lat_microdegrees;
+        fields.gps_lon_microdegrees = value.lon_microdegrees;
+        fields.gps_altitude_meters = value.altitude_meters;
+        fields.gps_accuracy_meters = value.accuracy_meters;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::GPS,
+            &value.to_tag_value_bytes(),
+        );
+    }
+    fields
+}
+
+fn append_encoded_sidecar_field(encoded: &mut Vec<u8>, tag: u16, value: &[u8]) {
+    let Ok(value_len) = u32::try_from(value.len()) else {
+        return;
+    };
+    encoded.extend_from_slice(&tag.to_le_bytes());
+    encoded.extend_from_slice(&value_len.to_le_bytes());
+    encoded.extend_from_slice(value);
+}
+
+fn video_inspect_result_from_media(result: mosaic_media::VideoInspectResult) -> VideoInspectResult {
+    VideoInspectResult {
+        code: result.code,
+        container: video_container_label(result.container).to_owned(),
+        video_codec: result
+            .video_codec
+            .map_or_else(String::new, |codec| video_codec_label(codec).to_owned()),
+        width_px: result.width_px,
+        height_px: result.height_px,
+        duration_ms: result.duration_ms,
+        frame_rate_fps: result.frame_rate_fps.map_or(f64::NAN, f64::from),
+        orientation: result.orientation.map_or_else(String::new, |orientation| {
+            orientation_label(orientation).to_owned()
+        }),
+    }
+}
+
 fn js_strip_result_from_rust(result: StripResult) -> JsStripResult {
     JsStripResult {
         code: result.code,
         stripped_bytes: result.stripped_bytes,
         removed_metadata_count: result.removed_metadata_count,
+    }
+}
+
+fn js_image_inspect_result_from_rust(result: ImageInspectResult) -> JsImageInspectResult {
+    JsImageInspectResult {
+        code: result.code,
+        format: result.format,
+        mime_type: result.mime_type,
+        width: result.width,
+        height: result.height,
+        orientation: result.orientation,
+        encoded_sidecar_fields: result.encoded_sidecar_fields,
+        camera_make: result.camera_make,
+        camera_model: result.camera_model,
+        device_timestamp_ms: result.device_timestamp_ms,
+        has_device_timestamp_ms: result.has_device_timestamp_ms,
+        subseconds_ms: result.subseconds_ms,
+        has_subseconds_ms: result.has_subseconds_ms,
+        gps_lat_microdegrees: result.gps_lat_microdegrees,
+        gps_lon_microdegrees: result.gps_lon_microdegrees,
+        gps_altitude_meters: result.gps_altitude_meters,
+        gps_accuracy_meters: result.gps_accuracy_meters,
+        has_gps: result.has_gps,
+    }
+}
+
+fn js_video_inspect_result_from_rust(result: VideoInspectResult) -> JsVideoInspectResult {
+    JsVideoInspectResult {
+        code: result.code,
+        container: result.container,
+        video_codec: result.video_codec,
+        width_px: result.width_px,
+        height_px: result.height_px,
+        duration_ms: result.duration_ms,
+        frame_rate_fps: result.frame_rate_fps,
+        orientation: result.orientation,
     }
 }
 
@@ -2427,6 +3002,52 @@ pub fn strip_png_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
 #[must_use]
 pub fn strip_webp_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
     js_strip_result_from_rust(strip_metadata(mosaic_media::MediaFormat::WebP, input_bytes))
+}
+
+/// Strips AVIF metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = stripAvifMetadata)]
+#[must_use]
+pub fn strip_avif_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
+    js_strip_result_from_rust(strip_with_result(mosaic_media::strip_avif_metadata(
+        &input_bytes,
+    )))
+}
+
+/// Strips HEIC/HEIF metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = stripHeicMetadata)]
+#[must_use]
+pub fn strip_heic_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
+    js_strip_result_from_rust(strip_with_result(mosaic_media::strip_heic_metadata(
+        &input_bytes,
+    )))
+}
+
+/// Strips video container metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = stripVideoMetadata)]
+#[must_use]
+pub fn strip_video_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
+    js_strip_result_from_rust(strip_with_result(mosaic_media::strip_video_metadata(
+        &input_bytes,
+    )))
+}
+
+/// Inspects image container metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = inspectImage)]
+#[must_use]
+pub fn inspect_image_js(input_bytes: Vec<u8>) -> JsImageInspectResult {
+    js_image_inspect_result_from_rust(image_inspect_result_from_media(
+        mosaic_media::inspect_image(&input_bytes),
+        &input_bytes,
+    ))
+}
+
+/// Inspects video container metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = inspectVideoContainer)]
+#[must_use]
+pub fn inspect_video_container_js(input_bytes: Vec<u8>) -> JsVideoInspectResult {
+    js_video_inspect_result_from_rust(video_inspect_result_from_media(
+        mosaic_media::inspect_video_container(&input_bytes),
+    ))
 }
 
 /// Unwraps an account key through the generated WASM binding surface.
@@ -2578,6 +3199,35 @@ pub fn canonical_metadata_sidecar_bytes_js(
         epoch_id,
         encoded_fields,
     ))
+}
+
+/// Builds canonical video metadata sidecar bytes through WASM.
+#[wasm_bindgen(js_name = videoMetadataSidecarBytes)]
+#[must_use]
+pub fn video_metadata_sidecar_bytes_js(
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    input_bytes: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(video_metadata_sidecar_bytes(
+        album_id,
+        photo_id,
+        epoch_id,
+        input_bytes,
+    ))
+}
+
+/// Builds canonical video metadata sidecar bytes through WASM.
+#[wasm_bindgen(js_name = canonicalVideoSidecarBytes)]
+#[must_use]
+pub fn canonical_video_sidecar_bytes_js(
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    input_bytes: Vec<u8>,
+) -> JsBytesResult {
+    video_metadata_sidecar_bytes_js(album_id, photo_id, epoch_id, input_bytes)
 }
 
 /// Encrypts metadata sidecar bytes with an epoch handle through WASM.
