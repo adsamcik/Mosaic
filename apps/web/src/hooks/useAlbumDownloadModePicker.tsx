@@ -1,5 +1,7 @@
 import { useCallback, useState, type JSX } from 'react';
 import { DownloadModePicker } from '../components/Download/DownloadModePicker';
+import { PersistencePrompt } from '../components/Download/PersistencePrompt';
+import { useStoragePersistence } from './useStoragePersistence';
 import type { DownloadOutputMode, PhotoMeta } from '../workers/types';
 
 /**
@@ -11,6 +13,14 @@ import type { DownloadOutputMode, PhotoMeta } from '../workers/types';
  *
  * Decoupling the picker from the download hook keeps it testable without
  * touching the DOM and gives consumers explicit control.
+ *
+ * For `keepOffline` confirmations, `pickerElement` also renders a
+ * non-blocking {@link PersistencePrompt} after the picker closes. The
+ * prompt asks the browser to promote OPFS storage (via
+ * `navigator.storage.persist()`) so cached photos aren't evicted under
+ * pressure. The download job is started by the consumer as soon as
+ * `prompt()` resolves -- the persistence banner is purely informational
+ * and never gates download progress.
  */
 export interface UseAlbumDownloadModePickerResult {
   /** Mount this somewhere in the tree (e.g. portal). */
@@ -41,6 +51,14 @@ interface PickerSession {
 
 export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
   const [session, setSession] = useState<PickerSession | null>(null);
+  // True only between "user picked keepOffline" and "user resolved the
+  // persistence banner". The banner itself decides whether to render based
+  // on the hook state (supported, persisted, dismissals) -- this flag is
+  // just the single-shot trigger after a keepOffline confirmation.
+  // TODO: Surface a "storage not promoted; eviction possible" notice in
+  // DownloadTray when request() resolves false. Out of scope here.
+  const [persistencePromptActive, setPersistencePromptActive] = useState(false);
+  const persistence = useStoragePersistence();
 
   const prompt = useCallback((args: PromptArgs): Promise<DownloadOutputMode | null> => {
     return new Promise<DownloadOutputMode | null>((resolve) => {
@@ -56,8 +74,14 @@ export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
 
   const handleConfirm = useCallback((mode: DownloadOutputMode): void => {
     if (!session) return;
+    // Resolve the picker promise FIRST so the caller can start the job
+    // immediately. The persistence banner is rendered below in parallel
+    // and never blocks job start.
     session.resolve(mode);
     setSession(null);
+    if (mode.kind === 'keepOffline') {
+      setPersistencePromptActive(true);
+    }
   }, [session]);
 
   const handleClose = useCallback((): void => {
@@ -66,19 +90,32 @@ export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
     setSession(null);
   }, [session]);
 
-  const pickerElement = session
-    ? (
-        <DownloadModePicker
-          open
-          albumId={session.albumId}
-          suggestedFileName={session.suggestedFileName}
-          photos={session.photos}
-          hideKeepOffline={session.hideKeepOffline}
-          onConfirm={handleConfirm}
-          onClose={handleClose}
-        />
-      )
-    : null;
+  const handlePersistenceResolved = useCallback((): void => {
+    setPersistencePromptActive(false);
+  }, []);
+
+  const pickerElement = (
+    <>
+      {session
+        ? (
+            <DownloadModePicker
+              open
+              albumId={session.albumId}
+              suggestedFileName={session.suggestedFileName}
+              photos={session.photos}
+              hideKeepOffline={session.hideKeepOffline}
+              onConfirm={handleConfirm}
+              onClose={handleClose}
+            />
+          )
+        : null}
+      <PersistencePrompt
+        state={persistence}
+        active={persistencePromptActive}
+        onResolved={handlePersistenceResolved}
+      />
+    </>
+  );
 
   return { pickerElement, prompt };
 }
