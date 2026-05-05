@@ -748,7 +748,7 @@ describe('CoordinatorWorker', () => {
   });
 
 
-  it.each(['webShare', 'fsAccessPerFile', 'blobAnchor'] as const)('dispatches perFile finalizer for %s strategy', async (strategy) => {
+  it.each(['webShare', 'fsAccessPerFile', 'fsAccessDirectory', 'blobAnchor'] as const)('dispatches perFile finalizer for %s strategy', async (strategy) => {
     const perFileFinalizer = vi.fn(async () => undefined);
     cbor.setRunPerFileFinalizer(perFileFinalizer as unknown as Parameters<typeof cbor.setRunPerFileFinalizer>[0]);
     const provider = {

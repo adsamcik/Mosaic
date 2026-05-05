@@ -37,11 +37,6 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
   const { t } = useTranslation();
   const [selected, setSelected] = useState<PickerKind>(() => loadLastMode());
 
-  useEffect(() => {
-    if (!props.open) return;
-    setSelected(loadLastMode());
-  }, [props.open]);
-
   const translate = (key: string, opts?: Record<string, unknown>): string => (opts === undefined ? t(key) : t(key, opts));
   const isMobile = useIsMobile();
   const sizeEstimate = useMemo(() => estimateSize(props.photos), [props.photos]);
@@ -51,6 +46,11 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
     : null;
   const perFileDisabled = perFileStrategy === null;
   const perFileSub = getPerFileSubLabel(translate, perFileStrategy, props.photos.length);
+
+  useEffect(() => {
+    if (!props.open) return;
+    setSelected(loadLastMode(perFileStrategy === 'fsAccessDirectory'));
+  }, [props.open, perFileStrategy]);
 
   if (!props.open) return null;
 
@@ -118,6 +118,10 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
         {selected === 'perFile' && perFileRefusal !== null ? (
           <p className="download-mode-picker-status" role="alert">{perFileRefusal}</p>
         ) : null}
+        {/* Directory picking stays in the save-target bridge so the finalizer owns the handle; this is the static pre-pick disclosure. */}
+        {selected === 'perFile' && perFileStrategy === 'fsAccessDirectory' ? (
+          <p className="download-mode-picker-status">{t('download.modePicker.perFileDirectoryDisclosure')}</p>
+        ) : null}
         <StatusRow />
         <div className="download-mode-picker-actions">
           <button type="button" className="download-mode-picker-button" onClick={props.onClose}>
@@ -173,6 +177,8 @@ function getPerFileLabel(t: (key: string, opts?: Record<string, unknown>) => str
   switch (strategy) {
     case 'webShare':
       return t('download.modePicker.perFileWebShare');
+    case 'fsAccessDirectory':
+      return t('download.modePicker.perFile.label');
     case 'fsAccessPerFile':
       return t('download.modePicker.perFileFsAccess', { count });
     case 'blobAnchor':
@@ -190,6 +196,9 @@ function getPerFileSubLabel(t: (key: string, opts?: Record<string, unknown>) => 
   }
   if (strategy === 'webShare') {
     return t('download.modePicker.perFilePromptCountOne');
+  }
+  if (strategy === 'fsAccessDirectory') {
+    return t('download.modePicker.perFileDirectory');
   }
   return t('download.modePicker.perFilePromptCountMany', { count });
 }
@@ -241,7 +250,7 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
-function loadLastMode(): PickerKind {
+function loadLastMode(preferPerFileDirectory = false): PickerKind {
   if (typeof window === 'undefined') return 'zip';
   try {
     const raw = window.localStorage.getItem(LAST_MODE_STORAGE_KEY);
@@ -249,7 +258,7 @@ function loadLastMode(): PickerKind {
   } catch {
     // ignore
   }
-  return 'zip';
+  return preferPerFileDirectory ? 'perFile' : 'zip';
 }
 
 function persistLastMode(kind: PickerKind): void {

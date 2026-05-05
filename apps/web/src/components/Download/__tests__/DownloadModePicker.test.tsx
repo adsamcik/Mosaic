@@ -21,6 +21,7 @@ vi.mock('react-i18next', () => ({
       if (key === 'download.modePicker.battery') return `Battery: ${opts?.['level']}`;
       if (key === 'download.modePicker.perFileFsAccess') return `Save individual files (${opts?.['count']} prompts)`;
       if (key === 'download.modePicker.perFilePromptCountMany') return `${opts?.['count']} prompts`;
+      if (key === 'download.modePicker.perFileDirectory') return 'Save individual files (one prompt — choose a folder)';
       if (key === 'download.modePicker.perFileBlobAnchorRefusal') return `Too many photos (${opts?.['count']}) for individual downloads in this browser. Try Save as ZIP.`;
       const dict: Record<string, string> = {
         'download.modePicker.title': 'Save album',
@@ -37,6 +38,7 @@ vi.mock('react-i18next', () => ({
         'download.modePicker.perFile.sub': 'Coming soon',
         'download.modePicker.perFileWebShare': 'Save individual files (via Share menu)',
         'download.modePicker.perFileBlobAnchor': 'Save individual files (browser may warn)',
+        'download.modePicker.perFileDirectoryDisclosure': "We'll open a folder picker and write each photo into it.",
         'download.modePicker.perFileNotSupported': 'Per-file save not supported in this browser',
         'download.modePicker.perFilePromptCountOne': '1 prompt',
       };
@@ -134,6 +136,19 @@ describe('DownloadModePicker', () => {
     const radio = requireElement<HTMLInputElement>(r.container.querySelector('[data-testid="download-mode-radio-perFile"]'));
     expect(radio.disabled).toBe(false);
     expect(r.container.textContent).toContain('Save individual files (3 prompts)');
+    await r.unmount();
+  });
+
+  it('shows folder-picker copy and preselects per-file for fsAccessDirectory', async () => {
+    saveTargetMocks.strategy = 'fsAccessDirectory';
+    const r = await render(
+      <DownloadModePicker open albumId="alb" suggestedFileName="album" photos={makePhotos(2)} onConfirm={vi.fn()} onClose={vi.fn()} />,
+    );
+    const radio = requireElement<HTMLInputElement>(r.container.querySelector('[data-testid="download-mode-radio-perFile"]'));
+    expect(radio.disabled).toBe(false);
+    expect(radio.checked).toBe(true);
+    expect(r.container.textContent).toContain('Save individual files (one prompt — choose a folder)');
+    expect(r.container.textContent).toContain("We'll open a folder picker and write each photo into it.");
     await r.unmount();
   });
 
