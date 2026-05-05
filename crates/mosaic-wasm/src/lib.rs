@@ -1881,6 +1881,7 @@ pub fn download_init_snapshot_v1(input_cbor: &[u8]) -> SerializeSnapshotResult {
         failure_log: Vec::new(),
         lease_token: None,
         scope_key: input.scope_key,
+        schedule: input.schedule,
     };
     match mosaic_client::download::snapshot::prepare_snapshot_bytes(&snapshot) {
         Ok(bytes) => SerializeSnapshotResult {
@@ -4638,6 +4639,10 @@ struct DownloadInitSnapshotInput {
     /// `<prefix>:<32-hex>` where prefix is one of `auth`/`visitor`/`legacy`.
     /// Required so jobs can be partitioned per identity.
     scope_key: String,
+    /// Optional v3 schedule. Threaded through opaquely; the plan-input
+    /// CBOR contributes only `None` until the host wires schedule
+    /// selection (Step 5/6).
+    schedule: Option<mosaic_client::download::snapshot::DownloadSchedule>,
 }
 
 fn client_ok() -> u32 {
@@ -4787,6 +4792,7 @@ fn download_init_snapshot_input_from_cbor(
         plan,
         now_ms,
         scope_key,
+        schedule: None,
     })
 }
 

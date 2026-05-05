@@ -7,7 +7,8 @@ use mosaic_client::download::*;
 use mosaic_client::download::scope::legacy_scope_for;
 use mosaic_client::download::snapshot::{
     CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION, DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1,
-    DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V2, download_job_snapshot_keys,
+    DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3,
+    download_job_snapshot_keys,
 };
 
 fn uuid(seed: u8) -> Uuid {
@@ -49,8 +50,8 @@ fn synthesize_v1_body(job: JobId, album: Uuid) -> Vec<u8> {
 }
 
 #[test]
-fn current_schema_version_is_v2() {
-    assert_eq!(CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION, DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V2);
+fn current_schema_version_is_v3() {
+    assert_eq!(CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION, DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3);
 }
 
 #[test]
@@ -59,20 +60,20 @@ fn v1_snapshot_loads_and_synthesizes_legacy_scope() {
     let album = uuid(2);
     let bytes = synthesize_v1_body(job, album);
     let snapshot = DownloadJobSnapshot::from_canonical_cbor(&bytes).expect("v1 decodes");
-    assert_eq!(snapshot.schema_version, DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V2);
+    assert_eq!(snapshot.schema_version, DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3);
     assert_eq!(snapshot.scope_key, legacy_scope_for(&job));
     assert!(snapshot.scope_key.starts_with("legacy:"));
 }
 
 #[test]
-fn v1_then_reencode_yields_v2_with_scope_key() {
+fn v1_then_reencode_yields_current_with_scope_key() {
     let job = job_id(3);
     let album = uuid(4);
     let v1_bytes = synthesize_v1_body(job, album);
     let snapshot = DownloadJobSnapshot::from_canonical_cbor(&v1_bytes).expect("v1 decodes");
-    let v2_bytes = snapshot.to_canonical_cbor().expect("v2 encodes");
-    let reloaded = DownloadJobSnapshot::from_canonical_cbor(&v2_bytes).expect("v2 decodes");
-    assert_eq!(reloaded.schema_version, DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V2);
+    let cur_bytes = snapshot.to_canonical_cbor().expect("current encodes");
+    let reloaded = DownloadJobSnapshot::from_canonical_cbor(&cur_bytes).expect("current decodes");
+    assert_eq!(reloaded.schema_version, DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3);
     assert_eq!(reloaded.scope_key, legacy_scope_for(&job));
 }
 
@@ -90,6 +91,7 @@ fn v2_snapshot_round_trips_scope_key() {
         failure_log: Vec::new(),
         lease_token: None,
         scope_key: String::from("auth:abcdef0123456789abcdef0123456789"),
+    schedule: None,
     };
     let bytes = snapshot.to_canonical_cbor().expect("encode v2");
     let reloaded = DownloadJobSnapshot::from_canonical_cbor(&bytes).expect("decode v2");
@@ -118,3 +120,4 @@ fn v1_with_extra_key_is_rejected() {
     ciborium::ser::into_writer(&value, &mut bytes).expect("encode");
     assert!(DownloadJobSnapshot::from_canonical_cbor(&bytes).is_err());
 }
+
