@@ -2,14 +2,39 @@
 
 #![forbid(unsafe_code)]
 
-use std::fmt;
+use std::{fmt, sync::Mutex};
 
-use wasm_bindgen::prelude::{JsError, wasm_bindgen};
+use self_cell::self_cell;
+use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 use zeroize::Zeroizing;
 
 use mosaic_domain::{
     MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier as DomainShardTier,
 };
+
+type CryptoStreamingEncryptor<'a> = mosaic_crypto::StreamingEncryptor<'a>;
+type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
+
+struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
+struct CryptoStreamingDecryptorState<'a>(Option<CryptoStreamingDecryptor<'a>>);
+
+self_cell!(
+    struct StreamingEncryptorCell {
+        owner: mosaic_crypto::EpochKeyMaterial,
+
+        #[not_covariant]
+        dependent: CryptoStreamingEncryptorState,
+    }
+);
+
+self_cell!(
+    struct StreamingDecryptorCell {
+        owner: mosaic_crypto::EpochKeyMaterial,
+
+        #[not_covariant]
+        dependent: CryptoStreamingDecryptorState,
+    }
+);
 
 /// WASM-visible shard tiers pinned to the Mosaic envelope wire protocol.
 #[wasm_bindgen]
@@ -285,6 +310,46 @@ impl fmt::Debug for DecryptedShardResult {
         f.debug_struct("DecryptedShardResult")
             .field("code", &self.code)
             .field("plaintext_len", &self.plaintext.len())
+            .finish()
+    }
+}
+
+/// Rust-side WASM facade streaming encrypted frame result.
+#[derive(Clone, PartialEq, Eq)]
+pub struct StreamingFrameResult {
+    pub code: u16,
+    pub frame_index: u32,
+    pub bytes: Vec<u8>,
+}
+
+impl fmt::Debug for StreamingFrameResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamingFrameResult")
+            .field("code", &self.code)
+            .field("frame_index", &self.frame_index)
+            .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
+}
+
+/// Rust-side WASM facade finalized streaming envelope result.
+#[derive(Clone, PartialEq, Eq)]
+pub struct StreamingEnvelopeResult {
+    pub code: u16,
+    pub header: Vec<u8>,
+    pub bytes: Vec<u8>,
+    pub frame_count: u32,
+    pub final_frame_size: u32,
+}
+
+impl fmt::Debug for StreamingEnvelopeResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamingEnvelopeResult")
+            .field("code", &self.code)
+            .field("header_len", &self.header.len())
+            .field("bytes_len", &self.bytes.len())
+            .field("frame_count", &self.frame_count)
+            .field("final_frame_size", &self.final_frame_size)
             .finish()
     }
 }
@@ -1381,6 +1446,86 @@ impl JsDecryptedShardResult {
     }
 }
 
+/// WASM-bindgen class for streaming encrypted/decrypted frame results.
+#[wasm_bindgen(js_name = StreamingFrameResult)]
+pub struct JsStreamingFrameResult {
+    code: u16,
+    frame_index: u32,
+    bytes: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = StreamingFrameResult)]
+impl JsStreamingFrameResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Zero-based frame index assigned by the streaming encryptor.
+    #[wasm_bindgen(getter, js_name = frameIndex)]
+    #[must_use]
+    pub fn frame_index(&self) -> u32 {
+        self.frame_index
+    }
+
+    /// Serialized frame bytes.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+}
+
+/// WASM-bindgen class for finalized streaming envelope results.
+#[wasm_bindgen(js_name = StreamingEnvelopeResult)]
+pub struct JsStreamingEnvelopeResult {
+    code: u16,
+    header: Vec<u8>,
+    bytes: Vec<u8>,
+    frame_count: u32,
+    final_frame_size: u32,
+}
+
+#[wasm_bindgen(js_class = StreamingEnvelopeResult)]
+impl JsStreamingEnvelopeResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Final v0x04 streaming envelope header bytes.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn header(&self) -> Vec<u8> {
+        self.header.clone()
+    }
+
+    /// Full v0x04 streaming envelope bytes: header followed by frames.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+
+    /// Declared frame count.
+    #[wasm_bindgen(getter, js_name = frameCount)]
+    #[must_use]
+    pub fn frame_count(&self) -> u32 {
+        self.frame_count
+    }
+
+    /// Plaintext byte length of the final frame.
+    #[wasm_bindgen(getter, js_name = finalFrameSize)]
+    #[must_use]
+    pub fn final_frame_size(&self) -> u32 {
+        self.final_frame_size
+    }
+}
+
 /// WASM-bindgen class for public crypto/domain golden-vector snapshots.
 #[wasm_bindgen(js_name = CryptoDomainGoldenVectorSnapshot)]
 pub struct JsCryptoDomainGoldenVectorSnapshot {
@@ -2025,6 +2170,29 @@ pub fn video_metadata_sidecar_bytes(
     canonical_metadata_sidecar_bytes(album_id, photo_id, epoch_id, encoded_fields)
 }
 
+/// Builds canonical manifest transcript bytes from opaque encrypted metadata and shard refs.
+///
+/// `encoded_shards` is a repeated sequence of
+/// `chunk_index:u32le | tier:u8 | shard_id:16 bytes | sha256:32 bytes`.
+#[must_use]
+pub fn manifest_transcript_bytes(
+    album_id: Vec<u8>,
+    epoch_id: u32,
+    encrypted_meta: Vec<u8>,
+    encoded_shards: Vec<u8>,
+) -> BytesResult {
+    match manifest_transcript_bytes_result(&album_id, epoch_id, &encrypted_meta, &encoded_shards) {
+        Ok(bytes) => BytesResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            bytes,
+        },
+        Err(code) => BytesResult {
+            code,
+            bytes: Vec::new(),
+        },
+    }
+}
+
 /// Encrypts canonical metadata sidecar bytes with a Rust-owned epoch-key handle.
 #[must_use]
 pub fn encrypt_metadata_sidecar_with_epoch_handle(
@@ -2162,6 +2330,278 @@ pub fn decrypt_shard_with_tier(handle: u64, envelope_bytes: Vec<u8>) -> BytesRes
         code: result.code,
         bytes: result.plaintext,
     }
+}
+
+fn streaming_frame_error(code: u16) -> StreamingFrameResult {
+    StreamingFrameResult {
+        code,
+        frame_index: 0,
+        bytes: Vec::new(),
+    }
+}
+
+fn streaming_envelope_error(code: u16) -> StreamingEnvelopeResult {
+    StreamingEnvelopeResult {
+        code,
+        header: Vec::new(),
+        bytes: Vec::new(),
+        frame_count: 0,
+        final_frame_size: 0,
+    }
+}
+
+fn already_finalized_code() -> u16 {
+    mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()
+}
+
+/// Stateful v0x04 streaming shard encryptor exposed to WASM.
+#[wasm_bindgen]
+pub struct StreamingShardEncryptor {
+    code: u16,
+    inner: Mutex<Option<StreamingEncryptorCell>>,
+}
+
+#[wasm_bindgen]
+impl StreamingShardEncryptor {
+    /// Initializes a streaming encryptor for an existing epoch handle.
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new(_epoch_handle_id: u64, _tier: u8, _expected_frame_count: Option<u32>) -> Self {
+        let key_material = match mosaic_client::epoch_key_material_for_handle(_epoch_handle_id) {
+            Ok(key_material) => key_material,
+            Err(error) => {
+                return Self {
+                    code: error.code.as_u16(),
+                    inner: Mutex::new(None),
+                };
+            }
+        };
+        let tier = match mosaic_domain::ShardTier::try_from(_tier) {
+            Ok(tier) => tier,
+            Err(_) => {
+                return Self {
+                    code: mosaic_client::ClientErrorCode::InvalidTier.as_u16(),
+                    inner: Mutex::new(None),
+                };
+            }
+        };
+        let cell = match StreamingEncryptorCell::try_new(key_material, |handle| {
+            mosaic_crypto::streaming_encrypt_init(handle, tier, _expected_frame_count)
+                .map(|inner| CryptoStreamingEncryptorState(Some(inner)))
+        }) {
+            Ok(cell) => cell,
+            Err(error) => {
+                return Self {
+                    code: client_error_code_from_crypto(error),
+                    inner: Mutex::new(None),
+                };
+            }
+        };
+        Self {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            inner: Mutex::new(Some(cell)),
+        }
+    }
+
+    /// Encrypts one plaintext frame.
+    #[wasm_bindgen(js_name = encryptFrame)]
+    #[must_use]
+    pub fn encrypt_frame(&mut self, _plaintext: Vec<u8>) -> JsValue {
+        if self.code != 0 {
+            return js_streaming_frame_result_from_rust(streaming_frame_error(self.code)).into();
+        }
+        let plaintext = Zeroizing::new(_plaintext);
+        let result = self
+            .inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let cell = guard.as_mut().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let encryptor = state.0.as_mut().ok_or_else(already_finalized_code)?;
+                    encryptor.encrypt_frame(&plaintext).map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |frame| {
+                            Ok(StreamingFrameResult {
+                                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                                frame_index: frame.frame_index,
+                                bytes: frame.bytes,
+                            })
+                        },
+                    )
+                })
+            })
+            .unwrap_or_else(streaming_frame_error);
+        js_streaming_frame_result_from_rust(result).into()
+    }
+
+    /// Finalizes the stream and returns the v0x04 envelope.
+    #[must_use]
+    pub fn finalize(self) -> JsValue {
+        if self.code != 0 {
+            return js_streaming_envelope_result_from_rust(streaming_envelope_error(self.code))
+                .into();
+        }
+        let result = self
+            .inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let mut cell = guard.take().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let encryptor = state.0.take().ok_or_else(already_finalized_code)?;
+                    encryptor.finalize().map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |envelope| {
+                            Ok(StreamingEnvelopeResult {
+                                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                                header: envelope.header.to_vec(),
+                                bytes: envelope.bytes,
+                                frame_count: envelope.frame_count,
+                                final_frame_size: envelope.final_frame_size,
+                            })
+                        },
+                    )
+                })
+            })
+            .unwrap_or_else(streaming_envelope_error);
+        js_streaming_envelope_result_from_rust(result).into()
+    }
+}
+
+/// Stateful v0x04 streaming shard decryptor exposed to WASM.
+#[wasm_bindgen]
+pub struct StreamingShardDecryptor {
+    code: u16,
+    inner: Mutex<Option<StreamingDecryptorCell>>,
+}
+
+#[wasm_bindgen]
+impl StreamingShardDecryptor {
+    /// Initializes a streaming decryptor from a v0x04 envelope header.
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new(_epoch_handle_id: u64, _envelope_header: Vec<u8>) -> Self {
+        let key_material = match mosaic_client::epoch_key_material_for_handle(_epoch_handle_id) {
+            Ok(key_material) => key_material,
+            Err(error) => {
+                return Self {
+                    code: error.code.as_u16(),
+                    inner: Mutex::new(None),
+                };
+            }
+        };
+        let cell = match StreamingDecryptorCell::try_new(key_material, |handle| {
+            mosaic_crypto::streaming_decrypt_init(handle, &_envelope_header)
+                .map(|inner| CryptoStreamingDecryptorState(Some(inner)))
+        }) {
+            Ok(cell) => cell,
+            Err(error) => {
+                return Self {
+                    code: client_error_code_from_crypto(error),
+                    inner: Mutex::new(None),
+                };
+            }
+        };
+        Self {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            inner: Mutex::new(Some(cell)),
+        }
+    }
+
+    /// Decrypts one serialized streaming frame.
+    #[wasm_bindgen(js_name = decryptFrame)]
+    #[must_use]
+    pub fn decrypt_frame(&mut self, _frame: Vec<u8>) -> JsValue {
+        if self.code != 0 {
+            return js_decrypted_shard_result_from_rust(DecryptedShardResult {
+                code: self.code,
+                plaintext: Vec::new(),
+            })
+            .into();
+        }
+        let result = self
+            .inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let cell = guard.as_mut().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let decryptor = state.0.as_mut().ok_or_else(already_finalized_code)?;
+                    decryptor.decrypt_frame(&_frame).map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |plaintext| {
+                            Ok(DecryptedShardResult {
+                                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                                plaintext,
+                            })
+                        },
+                    )
+                })
+            })
+            .unwrap_or_else(|code| DecryptedShardResult {
+                code,
+                plaintext: Vec::new(),
+            });
+        js_decrypted_shard_result_from_rust(result).into()
+    }
+
+    /// Finalizes the stream state.
+    #[must_use]
+    pub fn finalize(self) -> JsValue {
+        if self.code != 0 {
+            return js_bytes_result_from_rust(BytesResult {
+                code: self.code,
+                bytes: Vec::new(),
+            })
+            .into();
+        }
+        let code = self
+            .inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let mut cell = guard.take().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let decryptor = state.0.take().ok_or_else(already_finalized_code)?;
+                    decryptor.finalize().map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |_| Ok(()),
+                    )
+                })
+            })
+            .map_or_else(|code| code, |_| mosaic_client::ClientErrorCode::Ok.as_u16());
+        js_bytes_result_from_rust(BytesResult {
+            code,
+            bytes: Vec::new(),
+        })
+        .into()
+    }
+}
+
+/// Decrypts a v0x03/v0x04 envelope using the epoch-handle dispatcher surface.
+#[wasm_bindgen(js_name = decryptEnvelope)]
+#[must_use]
+pub fn decrypt_envelope_js(epoch_handle_id: u64, envelope: Vec<u8>) -> JsValue {
+    let result = mosaic_client::epoch_key_material_for_handle(epoch_handle_id).map_or_else(
+        |error| DecryptedShardResult {
+            code: error.code.as_u16(),
+            plaintext: Vec::new(),
+        },
+        |key_material| {
+            mosaic_crypto::decrypt_envelope(&key_material, &envelope).map_or_else(
+                |error| DecryptedShardResult {
+                    code: client_error_code_from_crypto(error),
+                    plaintext: Vec::new(),
+                },
+                |plaintext| DecryptedShardResult {
+                    code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                    plaintext,
+                },
+            )
+        },
+    );
+    js_decrypted_shard_result_from_rust(result).into()
 }
 
 /// Decrypts a legacy raw-key shard envelope with a Rust-owned epoch-key handle.
@@ -3215,6 +3655,26 @@ pub fn canonical_video_sidecar_bytes_js(
         photo_id,
         epoch_id,
         input_bytes,
+    ))
+}
+
+/// Builds canonical manifest transcript bytes through WASM.
+///
+/// `encoded_shards` is a repeated sequence of
+/// `chunk_index:u32le | tier:u8 | shard_id:16 bytes | sha256:32 bytes`.
+#[wasm_bindgen(js_name = manifestTranscriptBytes)]
+#[must_use]
+pub fn manifest_transcript_bytes_js(
+    album_id: Vec<u8>,
+    epoch_id: u32,
+    encrypted_meta: Vec<u8>,
+    encoded_shards: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(manifest_transcript_bytes(
+        album_id,
+        epoch_id,
+        encrypted_meta,
+        encoded_shards,
     ))
 }
 
@@ -4818,6 +5278,21 @@ fn canonical_metadata_sidecar_bytes_result(
     mosaic_domain::canonical_metadata_sidecar_bytes(&sidecar).map_err(map_metadata_sidecar_error)
 }
 
+fn manifest_transcript_bytes_result(
+    album_id: &[u8],
+    epoch_id: u32,
+    encrypted_meta: &[u8],
+    encoded_shards: &[u8],
+) -> Result<Vec<u8>, u16> {
+    let album_id = uuid_bytes(album_id)?;
+    let shards = manifest_shards_from_encoded(encoded_shards)?;
+    let encrypted_meta = mosaic_domain::EncryptedMetadataEnvelope::new(encrypted_meta);
+    let transcript =
+        mosaic_domain::ManifestTranscript::new(album_id, epoch_id, encrypted_meta, &shards);
+    mosaic_domain::canonical_manifest_transcript_bytes(&transcript)
+        .map_err(map_manifest_transcript_error)
+}
+
 fn uuid_bytes(bytes: &[u8]) -> Result<[u8; 16], u16> {
     if bytes.len() != 16 {
         return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
@@ -4825,6 +5300,43 @@ fn uuid_bytes(bytes: &[u8]) -> Result<[u8; 16], u16> {
     let mut value = [0_u8; 16];
     value.copy_from_slice(bytes);
     Ok(value)
+}
+
+fn sha256_bytes(bytes: &[u8]) -> Result<[u8; 32], u16> {
+    if bytes.len() != 32 {
+        return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
+    }
+    let mut value = [0_u8; 32];
+    value.copy_from_slice(bytes);
+    Ok(value)
+}
+
+const ENCODED_MANIFEST_SHARD_REF_BYTES: usize = 4 + 1 + 16 + 32;
+
+fn manifest_shards_from_encoded(
+    encoded_shards: &[u8],
+) -> Result<Vec<mosaic_domain::ManifestShardRef>, u16> {
+    let invalid_input_length = mosaic_client::ClientErrorCode::InvalidInputLength.as_u16();
+    let chunks = encoded_shards.chunks_exact(ENCODED_MANIFEST_SHARD_REF_BYTES);
+    if !chunks.remainder().is_empty() {
+        return Err(invalid_input_length);
+    }
+
+    let mut shards = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        let chunk_index = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        let tier = mosaic_domain::ShardTier::try_from(chunk[4])
+            .map_err(|_| mosaic_client::ClientErrorCode::InvalidTier.as_u16())?;
+        let shard_id = uuid_bytes(&chunk[5..21])?;
+        let sha256 = sha256_bytes(&chunk[21..53])?;
+        shards.push(mosaic_domain::ManifestShardRef::new(
+            chunk_index,
+            shard_id,
+            tier,
+            sha256,
+        ));
+    }
+    Ok(shards)
 }
 
 /// Maximum byte length permitted for a single encoded metadata field value. Larger values
@@ -4885,6 +5397,93 @@ fn map_metadata_sidecar_error(error: MetadataSidecarError) -> u16 {
         | MetadataSidecarError::DuplicateFieldTag { .. }
         | MetadataSidecarError::UnsortedFieldTag { .. } => {
             mosaic_client::ClientErrorCode::MalformedSidecar.as_u16()
+        }
+    }
+}
+
+fn map_manifest_transcript_error(error: mosaic_domain::ManifestTranscriptError) -> u16 {
+    match error {
+        mosaic_domain::ManifestTranscriptError::LengthTooLarge { .. } => {
+            mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()
+        }
+        mosaic_domain::ManifestTranscriptError::EmptyEncryptedMeta
+        | mosaic_domain::ManifestTranscriptError::EmptyShardList
+        | mosaic_domain::ManifestTranscriptError::NonSequentialShardIndex { .. } => {
+            mosaic_client::ClientErrorCode::InvalidEnvelope.as_u16()
+        }
+    }
+}
+
+fn client_error_code_from_crypto(error: mosaic_crypto::MosaicCryptoError) -> u16 {
+    match error {
+        mosaic_crypto::MosaicCryptoError::EmptyContext => {
+            mosaic_client::ClientErrorCode::EmptyContext.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidKeyLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidKeyLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidInputLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidEnvelope => {
+            mosaic_client::ClientErrorCode::InvalidEnvelope.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::MissingCiphertext => {
+            mosaic_client::ClientErrorCode::MissingCiphertext.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::AuthenticationFailed => {
+            mosaic_client::ClientErrorCode::AuthenticationFailed.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::RngFailure => {
+            mosaic_client::ClientErrorCode::RngFailure.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::WrappedKeyTooShort { .. } => {
+            mosaic_client::ClientErrorCode::WrappedKeyTooShort.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::KdfProfileTooWeak => {
+            mosaic_client::ClientErrorCode::KdfProfileTooWeak.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::KdfProfileTooCostly => {
+            mosaic_client::ClientErrorCode::KdfProfileTooCostly.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidSaltLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidSaltLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::KdfFailure => {
+            mosaic_client::ClientErrorCode::KdfFailure.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidSignatureLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidSignatureLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidPublicKey => {
+            mosaic_client::ClientErrorCode::InvalidPublicKey.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidUsername => {
+            mosaic_client::ClientErrorCode::InvalidUsername.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleAlbumIdEmpty => {
+            mosaic_client::ClientErrorCode::BundleAlbumIdEmpty.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleAlbumIdMismatch => {
+            mosaic_client::ClientErrorCode::BundleAlbumIdMismatch.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleEpochTooOld => {
+            mosaic_client::ClientErrorCode::BundleEpochTooOld.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleRecipientMismatch => {
+            mosaic_client::ClientErrorCode::BundleRecipientMismatch.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleJsonParse => {
+            mosaic_client::ClientErrorCode::BundleJsonParse.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleSignatureInvalid => {
+            mosaic_client::ClientErrorCode::BundleSignatureInvalid.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleSealOpenFailed => {
+            mosaic_client::ClientErrorCode::BundleSealOpenFailed.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::LinkTierMismatch { .. } => {
+            mosaic_client::ClientErrorCode::LinkTierMismatch.as_u16()
         }
     }
 }
@@ -4961,6 +5560,26 @@ fn js_decrypted_shard_result_from_rust(result: DecryptedShardResult) -> JsDecryp
     JsDecryptedShardResult {
         code: result.code,
         plaintext: result.plaintext,
+    }
+}
+
+fn js_streaming_frame_result_from_rust(result: StreamingFrameResult) -> JsStreamingFrameResult {
+    JsStreamingFrameResult {
+        code: result.code,
+        frame_index: result.frame_index,
+        bytes: result.bytes,
+    }
+}
+
+fn js_streaming_envelope_result_from_rust(
+    result: StreamingEnvelopeResult,
+) -> JsStreamingEnvelopeResult {
+    JsStreamingEnvelopeResult {
+        code: result.code,
+        header: result.header,
+        bytes: result.bytes,
+        frame_count: result.frame_count,
+        final_frame_size: result.final_frame_size,
     }
 }
 

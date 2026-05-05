@@ -5,6 +5,22 @@ import type { EncryptedShard } from '@mosaic/crypto';
 import { WorkerCryptoErrorCode } from './worker-crypto-error-code.generated';
 
 export type ShardTier = import('../generated/mosaic-wasm/mosaic_wasm.js').ShardTier;
+export type ManifestTranscriptBytesBinding =
+  typeof import('../generated/mosaic-wasm/mosaic_wasm.js').manifestTranscriptBytes;
+export type DecryptEnvelopeBinding =
+  typeof import('../generated/mosaic-wasm/mosaic_wasm.js').decryptEnvelope;
+export type StreamingFrameResult =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').StreamingFrameResult;
+export type StreamingEnvelopeResult =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').StreamingEnvelopeResult;
+export type StreamingShardEncryptor =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').StreamingShardEncryptor;
+export type StreamingShardDecryptor =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').StreamingShardDecryptor;
+export type StreamingDecryptFrameResult =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').DecryptedShardResult;
+export type StreamingFinalizeResult =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').BytesResult;
 
 // Re-export EncryptedShard from crypto lib (single source of truth)
 export type { EncryptedShard };

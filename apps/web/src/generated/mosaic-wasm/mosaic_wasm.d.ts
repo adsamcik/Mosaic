@@ -495,6 +495,96 @@ export enum ShardTier {
 }
 
 /**
+ * WASM-bindgen class for finalized streaming envelope results.
+ */
+export class StreamingEnvelopeResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Full v0x04 streaming envelope bytes: header followed by frames.
+     */
+    readonly bytes: Uint8Array;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Plaintext byte length of the final frame.
+     */
+    readonly finalFrameSize: number;
+    /**
+     * Declared frame count.
+     */
+    readonly frameCount: number;
+    /**
+     * Final v0x04 streaming envelope header bytes.
+     */
+    readonly header: Uint8Array;
+}
+
+/**
+ * WASM-bindgen class for streaming encrypted/decrypted frame results.
+ */
+export class StreamingFrameResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Serialized frame bytes.
+     */
+    readonly bytes: Uint8Array;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Zero-based frame index assigned by the streaming encryptor.
+     */
+    readonly frameIndex: number;
+}
+
+/**
+ * Stateful v0x04 streaming shard decryptor exposed to WASM.
+ */
+export class StreamingShardDecryptor {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Decrypts one serialized streaming frame.
+     */
+    decryptFrame(_frame: Uint8Array): any;
+    /**
+     * Finalizes the stream state.
+     */
+    finalize(): any;
+    /**
+     * Initializes a streaming decryptor from a v0x04 envelope header.
+     */
+    constructor(_epoch_handle_id: bigint, _envelope_header: Uint8Array);
+}
+
+/**
+ * Stateful v0x04 streaming shard encryptor exposed to WASM.
+ */
+export class StreamingShardEncryptor {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Encrypts one plaintext frame.
+     */
+    encryptFrame(_plaintext: Uint8Array): any;
+    /**
+     * Finalizes the stream and returns the v0x04 envelope.
+     */
+    finalize(): any;
+    /**
+     * Initializes a streaming encryptor for an existing epoch handle.
+     */
+    constructor(_epoch_handle_id: bigint, _tier: number, _expected_frame_count?: number | null);
+}
+
+/**
  * WASM-bindgen class for metadata stripping results.
  */
 export class StripResult {
@@ -676,6 +766,11 @@ export function cryptoDomainGoldenVectorSnapshot(): CryptoDomainGoldenVectorSnap
 export function decryptAlbumContent(epoch_handle: bigint, nonce: Uint8Array, ciphertext: Uint8Array): DecryptedContentResult;
 
 /**
+ * Decrypts a v0x03/v0x04 envelope using the epoch-handle dispatcher surface.
+ */
+export function decryptEnvelope(epoch_handle_id: bigint, envelope: Uint8Array): any;
+
+/**
  * Decrypts shard envelope bytes with an epoch-key handle through WASM.
  */
 export function decryptShardWithEpochHandle(handle: bigint, envelope_bytes: Uint8Array): DecryptedShardResult;
@@ -791,6 +886,14 @@ export function inspectVideoContainer(input_bytes: Uint8Array): VideoInspectResu
  * Lists all protocol-supported shard tiers in ascending wire-byte order.
  */
 export function listShardTiers(): any[];
+
+/**
+ * Builds canonical manifest transcript bytes through WASM.
+ *
+ * `encoded_shards` is a repeated sequence of
+ * `chunk_index:u32le | tier:u8 | shard_id:16 bytes | sha256:32 bytes`.
+ */
+export function manifestTranscriptBytes(album_id: Uint8Array, epoch_id: number, encrypted_meta: Uint8Array, encoded_shards: Uint8Array): BytesResult;
 
 /**
  * Opens an epoch-key handle through WASM.
@@ -937,7 +1040,10 @@ export interface InitOutput {
     readonly __wbg_progressevent_free: (a: number, b: number) => void;
     readonly __wbg_progressresult_free: (a: number, b: number) => void;
     readonly __wbg_sealedbundleresult_free: (a: number, b: number) => void;
-    readonly __wbg_stripresult_free: (a: number, b: number) => void;
+    readonly __wbg_streamingenveloperesult_free: (a: number, b: number) => void;
+    readonly __wbg_streamingframeresult_free: (a: number, b: number) => void;
+    readonly __wbg_streamingsharddecryptor_free: (a: number, b: number) => void;
+    readonly __wbg_streamingshardencryptor_free: (a: number, b: number) => void;
     readonly __wbg_videoinspectresult_free: (a: number, b: number) => void;
     readonly accountKeyHandleIsOpen: (a: bigint) => number;
     readonly accountkeyhandlestatusresult_code: (a: number) => number;
@@ -984,6 +1090,7 @@ export interface InitOutput {
     readonly cryptodomaingoldenvectorsnapshot_identitySigningPubkey: (a: number, b: number) => void;
     readonly cryptodomaingoldenvectorsnapshot_manifestTranscript: (a: number, b: number) => void;
     readonly decryptAlbumContent: (a: bigint, b: number, c: number, d: number, e: number) => number;
+    readonly decryptEnvelope: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithLegacyRawKeyHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithLinkTierHandle: (a: bigint, b: number, c: number) => number;
@@ -1044,6 +1151,7 @@ export interface InitOutput {
     readonly inspectVideoContainer: (a: number, b: number) => number;
     readonly linktierhandleresult_tier: (a: number) => number;
     readonly listShardTiers: (a: number) => void;
+    readonly manifestTranscriptBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly openIdentityHandle: (a: number, b: number, c: bigint) => number;
     readonly parseEnvelopeHeader: (a: number, b: number) => number;
@@ -1063,15 +1171,26 @@ export interface InitOutput {
     readonly signAuthChallengeWithPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly signManifestWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly signManifestWithIdentity: (a: bigint, b: number, c: number) => number;
+    readonly streamingenveloperesult_bytes: (a: number, b: number) => void;
+    readonly streamingenveloperesult_code: (a: number) => number;
+    readonly streamingenveloperesult_finalFrameSize: (a: number) => number;
+    readonly streamingenveloperesult_frameCount: (a: number) => number;
+    readonly streamingenveloperesult_header: (a: number, b: number) => void;
+    readonly streamingframeresult_bytes: (a: number, b: number) => void;
+    readonly streamingframeresult_code: (a: number) => number;
+    readonly streamingframeresult_frameIndex: (a: number) => number;
+    readonly streamingsharddecryptor_decryptFrame: (a: number, b: number, c: number) => number;
+    readonly streamingsharddecryptor_finalize: (a: number) => number;
+    readonly streamingsharddecryptor_new: (a: bigint, b: number, c: number) => number;
+    readonly streamingshardencryptor_encryptFrame: (a: number, b: number, c: number) => number;
+    readonly streamingshardencryptor_finalize: (a: number) => number;
+    readonly streamingshardencryptor_new: (a: bigint, b: number, c: number) => number;
     readonly stripAvifMetadata: (a: number, b: number) => number;
     readonly stripHeicMetadata: (a: number, b: number) => number;
     readonly stripJpegMetadata: (a: number, b: number) => number;
     readonly stripPngMetadata: (a: number, b: number) => number;
     readonly stripVideoMetadata: (a: number, b: number) => number;
     readonly stripWebpMetadata: (a: number, b: number) => number;
-    readonly stripresult_code: (a: number) => number;
-    readonly stripresult_removedMetadataCount: (a: number) => number;
-    readonly stripresult_strippedBytes: (a: number, b: number) => void;
     readonly unlockAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly unwrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly verifyAndImportEpochBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
@@ -1092,24 +1211,28 @@ export interface InitOutput {
     readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
-    readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
+    readonly __wbg_stripresult_free: (a: number, b: number) => void;
     readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
+    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
+    readonly encryptedshardresult_code: (a: number) => number;
     readonly epochkeyhandlestatusresult_code: (a: number) => number;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
-    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
-    readonly wrappedtierkeyresult_code: (a: number) => number;
-    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
     readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
-    readonly encryptedshardresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
+    readonly wrappedtierkeyresult_code: (a: number) => number;
     readonly decryptedcontentresult_code: (a: number) => number;
-    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
-    readonly decryptedshardresult_code: (a: number) => number;
     readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
-    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
     readonly bytesresult_code: (a: number) => number;
-    readonly linktierhandleresult_code: (a: number) => number;
+    readonly decryptedshardresult_code: (a: number) => number;
+    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly stripresult_strippedBytes: (a: number, b: number) => void;
+    readonly stripresult_removedMetadataCount: (a: number) => number;
+    readonly stripresult_code: (a: number) => number;
     readonly linktierhandleresult_linkId: (a: number, b: number) => void;
+    readonly linktierhandleresult_code: (a: number) => number;
     readonly linktierhandleresult_handle: (a: number) => bigint;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;

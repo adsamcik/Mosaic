@@ -1487,6 +1487,244 @@ export const ShardTier = Object.freeze({
 });
 
 /**
+ * WASM-bindgen class for finalized streaming envelope results.
+ */
+export class StreamingEnvelopeResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(StreamingEnvelopeResult.prototype);
+        obj.__wbg_ptr = ptr;
+        StreamingEnvelopeResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamingEnvelopeResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamingenveloperesult_free(ptr, 0);
+    }
+    /**
+     * Full v0x04 streaming envelope bytes: header followed by frames.
+     * @returns {Uint8Array}
+     */
+    get bytes() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.streamingenveloperesult_bytes(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.streamingenveloperesult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Plaintext byte length of the final frame.
+     * @returns {number}
+     */
+    get finalFrameSize() {
+        const ret = wasm.streamingenveloperesult_finalFrameSize(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Declared frame count.
+     * @returns {number}
+     */
+    get frameCount() {
+        const ret = wasm.streamingenveloperesult_frameCount(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Final v0x04 streaming envelope header bytes.
+     * @returns {Uint8Array}
+     */
+    get header() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.streamingenveloperesult_header(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) StreamingEnvelopeResult.prototype[Symbol.dispose] = StreamingEnvelopeResult.prototype.free;
+
+/**
+ * WASM-bindgen class for streaming encrypted/decrypted frame results.
+ */
+export class StreamingFrameResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(StreamingFrameResult.prototype);
+        obj.__wbg_ptr = ptr;
+        StreamingFrameResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamingFrameResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamingframeresult_free(ptr, 0);
+    }
+    /**
+     * Serialized frame bytes.
+     * @returns {Uint8Array}
+     */
+    get bytes() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.streamingframeresult_bytes(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.streamingframeresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Zero-based frame index assigned by the streaming encryptor.
+     * @returns {number}
+     */
+    get frameIndex() {
+        const ret = wasm.streamingframeresult_frameIndex(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) StreamingFrameResult.prototype[Symbol.dispose] = StreamingFrameResult.prototype.free;
+
+/**
+ * Stateful v0x04 streaming shard decryptor exposed to WASM.
+ */
+export class StreamingShardDecryptor {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamingShardDecryptorFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamingsharddecryptor_free(ptr, 0);
+    }
+    /**
+     * Decrypts one serialized streaming frame.
+     * @param {Uint8Array} _frame
+     * @returns {any}
+     */
+    decryptFrame(_frame) {
+        const ptr0 = passArray8ToWasm0(_frame, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.streamingsharddecryptor_decryptFrame(this.__wbg_ptr, ptr0, len0);
+        return takeObject(ret);
+    }
+    /**
+     * Finalizes the stream state.
+     * @returns {any}
+     */
+    finalize() {
+        const ptr = this.__destroy_into_raw();
+        const ret = wasm.streamingsharddecryptor_finalize(ptr);
+        return takeObject(ret);
+    }
+    /**
+     * Initializes a streaming decryptor from a v0x04 envelope header.
+     * @param {bigint} _epoch_handle_id
+     * @param {Uint8Array} _envelope_header
+     */
+    constructor(_epoch_handle_id, _envelope_header) {
+        const ptr0 = passArray8ToWasm0(_envelope_header, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.streamingsharddecryptor_new(_epoch_handle_id, ptr0, len0);
+        this.__wbg_ptr = ret >>> 0;
+        StreamingShardDecryptorFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) StreamingShardDecryptor.prototype[Symbol.dispose] = StreamingShardDecryptor.prototype.free;
+
+/**
+ * Stateful v0x04 streaming shard encryptor exposed to WASM.
+ */
+export class StreamingShardEncryptor {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamingShardEncryptorFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamingshardencryptor_free(ptr, 0);
+    }
+    /**
+     * Encrypts one plaintext frame.
+     * @param {Uint8Array} _plaintext
+     * @returns {any}
+     */
+    encryptFrame(_plaintext) {
+        const ptr0 = passArray8ToWasm0(_plaintext, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.streamingshardencryptor_encryptFrame(this.__wbg_ptr, ptr0, len0);
+        return takeObject(ret);
+    }
+    /**
+     * Finalizes the stream and returns the v0x04 envelope.
+     * @returns {any}
+     */
+    finalize() {
+        const ptr = this.__destroy_into_raw();
+        const ret = wasm.streamingshardencryptor_finalize(ptr);
+        return takeObject(ret);
+    }
+    /**
+     * Initializes a streaming encryptor for an existing epoch handle.
+     * @param {bigint} _epoch_handle_id
+     * @param {number} _tier
+     * @param {number | null} [_expected_frame_count]
+     */
+    constructor(_epoch_handle_id, _tier, _expected_frame_count) {
+        const ret = wasm.streamingshardencryptor_new(_epoch_handle_id, _tier, isLikeNone(_expected_frame_count) ? 0x100000001 : (_expected_frame_count) >>> 0);
+        this.__wbg_ptr = ret >>> 0;
+        StreamingShardEncryptorFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) StreamingShardEncryptor.prototype[Symbol.dispose] = StreamingShardEncryptor.prototype.free;
+
+/**
  * WASM-bindgen class for metadata stripping results.
  */
 export class StripResult {
@@ -2089,6 +2327,19 @@ export function decryptAlbumContent(epoch_handle, nonce, ciphertext) {
 }
 
 /**
+ * Decrypts a v0x03/v0x04 envelope using the epoch-handle dispatcher surface.
+ * @param {bigint} epoch_handle_id
+ * @param {Uint8Array} envelope
+ * @returns {any}
+ */
+export function decryptEnvelope(epoch_handle_id, envelope) {
+    const ptr0 = passArray8ToWasm0(envelope, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decryptEnvelope(epoch_handle_id, ptr0, len0);
+    return takeObject(ret);
+}
+
+/**
  * Decrypts shard envelope bytes with an epoch-key handle through WASM.
  * @param {bigint} handle
  * @param {Uint8Array} envelope_bytes
@@ -2437,6 +2688,28 @@ export function listShardTiers() {
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
     }
+}
+
+/**
+ * Builds canonical manifest transcript bytes through WASM.
+ *
+ * `encoded_shards` is a repeated sequence of
+ * `chunk_index:u32le | tier:u8 | shard_id:16 bytes | sha256:32 bytes`.
+ * @param {Uint8Array} album_id
+ * @param {number} epoch_id
+ * @param {Uint8Array} encrypted_meta
+ * @param {Uint8Array} encoded_shards
+ * @returns {BytesResult}
+ */
+export function manifestTranscriptBytes(album_id, epoch_id, encrypted_meta, encoded_shards) {
+    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(encrypted_meta, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(encoded_shards, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.manifestTranscriptBytes(ptr0, len0, epoch_id, ptr1, len1, ptr2, len2);
+    return BytesResult.__wrap(ret);
 }
 
 /**
@@ -2807,9 +3080,25 @@ function __wbg_get_imports() {
         __wbg___wbindgen_throw_6b64449b9b9ed33c: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
+        __wbg_bytesresult_new: function(arg0) {
+            const ret = BytesResult.__wrap(arg0);
+            return addHeapObject(ret);
+        },
+        __wbg_decryptedshardresult_new: function(arg0) {
+            const ret = DecryptedShardResult.__wrap(arg0);
+            return addHeapObject(ret);
+        },
         __wbg_getRandomValues_76dfc69825c9c552: function() { return handleError(function (arg0, arg1) {
             globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
         }, arguments); },
+        __wbg_streamingenveloperesult_new: function(arg0) {
+            const ret = StreamingEnvelopeResult.__wrap(arg0);
+            return addHeapObject(ret);
+        },
+        __wbg_streamingframeresult_new: function(arg0) {
+            const ret = StreamingFrameResult.__wrap(arg0);
+            return addHeapObject(ret);
+        },
         __wbindgen_cast_0000000000000001: function(arg0) {
             // Cast intrinsic for `F64 -> Externref`.
             const ret = arg0;
@@ -2885,6 +3174,12 @@ const ProgressResultFinalization = (typeof FinalizationRegistry === 'undefined')
 const SealedBundleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_sealedbundleresult_free(ptr >>> 0, 1));
+const StreamingEnvelopeResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamingenveloperesult_free(ptr >>> 0, 1));
+const StreamingFrameResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamingframeresult_free(ptr >>> 0, 1));
 const StripResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_stripresult_free(ptr >>> 0, 1));
@@ -2894,6 +3189,12 @@ const VideoInspectResultFinalization = (typeof FinalizationRegistry === 'undefin
 const WrappedTierKeyResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wrappedtierkeyresult_free(ptr >>> 0, 1));
+const StreamingShardDecryptorFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamingsharddecryptor_free(ptr >>> 0, 1));
+const StreamingShardEncryptorFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamingshardencryptor_free(ptr >>> 0, 1));
 
 function addHeapObject(obj) {
     if (heap_next === heap.length) heap.push(heap.length + 1);
@@ -2973,6 +3274,10 @@ let heap = new Array(1024).fill(undefined);
 heap.push(undefined, null, true, false);
 
 let heap_next = heap.length;
+
+function isLikeNone(x) {
+    return x === undefined || x === null;
+}
 
 function passArray8ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 1, 1) >>> 0;

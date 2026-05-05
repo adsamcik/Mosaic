@@ -159,6 +159,29 @@ fn metadata_strip_inspect_and_sidecar_exports_are_locked() {
 }
 
 #[test]
+fn wasm_reducer_manifest_and_streaming_exports_are_locked() {
+    let golden = normalize_newlines(GOLDEN);
+
+    for declaration in [
+        "export class StreamingEnvelopeResult {",
+        "export class StreamingFrameResult {",
+        "export class StreamingShardDecryptor {",
+        "export class StreamingShardEncryptor {",
+        "    decryptFrame(_frame: Uint8Array): any;",
+        "    encryptFrame(_plaintext: Uint8Array): any;",
+        "export function advanceAlbumSync(",
+        "export function advanceUploadJob(",
+        "export function decryptEnvelope(epoch_handle_id: bigint, envelope: Uint8Array): any;",
+        "export function manifestTranscriptBytes(album_id: Uint8Array, epoch_id: number, encrypted_meta: Uint8Array, encoded_shards: Uint8Array): BytesResult;",
+    ] {
+        assert!(
+            golden.contains(declaration),
+            "WASM reducer/streaming golden is missing pinned declaration: {declaration}"
+        );
+    }
+}
+
+#[test]
 fn generated_wasm_typescript_declarations_do_not_export_raw_wrap_keys() {
     let generated_path = project_root()
         .join("apps")
