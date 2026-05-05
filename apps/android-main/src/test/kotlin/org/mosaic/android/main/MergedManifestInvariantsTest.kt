@@ -52,7 +52,10 @@ class MergedManifestInvariantsTest {
 
   @Test
   fun forbiddenInternetPermissionAbsent() {
-    forbidPermission("android.permission.INTERNET")
+    when (INTERNET_PERMISSION_MODE) {
+      InternetPermissionMode.ABSENT_UNTIL_A17 -> forbidPermission("android.permission.INTERNET")
+      InternetPermissionMode.PRESENT_AFTER_A17 -> requirePermission("android.permission.INTERNET")
+    }
   }
 
   @Test
@@ -395,7 +398,21 @@ class MergedManifestInvariantsTest {
   }
 
   companion object {
+    /**
+     * ADR-012 permits the future Android upload trust boundary, but the manifest
+     * permission flip is gated by A15 (foreground-service UX) and A16 (privacy
+     * audit). Keep the current no-network invariant until A17 performs that
+     * gated flip.
+     */
+    private val INTERNET_PERMISSION_MODE = InternetPermissionMode.ABSENT_UNTIL_A17
+
     private const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
     private const val SYSTEM_FOREGROUND_SERVICE = "androidx.work.impl.foreground.SystemForegroundService"
+  }
+
+  private enum class InternetPermissionMode {
+    ABSENT_UNTIL_A17,
+    // TODO(A17): switch INTERNET_PERMISSION_MODE to PRESENT_AFTER_A17 when A15 and A16 are complete.
+    PRESENT_AFTER_A17,
   }
 }

@@ -4,6 +4,7 @@ import android.app.Application
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
 import org.mosaic.android.main.work.AutoImportRuntime
 import org.mosaic.android.main.work.AutoImportWorkScheduler
+import org.mosaic.android.main.work.ShellStubRecordMigration
 
 /**
  * Application entry point. Eagerly initializes the UniFFI library loader so the
@@ -23,6 +24,7 @@ class MosaicApplication : Application() {
   override fun onCreate() {
     super.onCreate()
     AndroidRustCoreLibraryLoader.warmUp()
+    ShellStubRecordMigration.clearOnFirstLaunch(this)
     AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(this))
     AutoImportWorkScheduler.enqueueIfPolicyAllows(this)
   }
