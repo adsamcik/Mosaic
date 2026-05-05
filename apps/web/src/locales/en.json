@@ -376,6 +376,13 @@
       "perFileNotSupported": "Per-file save not supported in this browser",
       "perFilePromptCountOne": "1 prompt",
       "perFilePromptCountMany": "{{count}} prompts"
+    },
+    "persistencePrompt": {
+      "title": "Keep your offline photos safe",
+      "body": "Keeping photos offline uses your browser's storage. Without permission your browser may delete them automatically when storage is low. Granting permission keeps them safe.",
+      "allow": "Allow",
+      "notNow": "Not now",
+      "neverAsk": "Don't ask again"
     }
   },
   "lightbox": {
