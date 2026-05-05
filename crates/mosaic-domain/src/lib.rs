@@ -15,6 +15,24 @@ const SHARD_ENVELOPE_NONCE_LEN: usize = 24;
 const SHARD_ENVELOPE_RESERVED_OFFSET: usize = 38;
 const SHARD_ENVELOPE_RESERVED_LEN: usize = 26;
 
+/// Streaming shard envelope magic bytes for v0x04.
+pub const STREAMING_SHARD_ENVELOPE_MAGIC: [u8; 4] = *b"SGzk";
+
+/// Streaming shard envelope version byte.
+pub const SHARD_ENVELOPE_VERSION_V04: u8 = 0x04;
+
+/// Byte length of the v0x04 streaming shard envelope header.
+pub const STREAMING_SHARD_ENVELOPE_HEADER_LEN: usize = 64;
+
+/// v0x04 streaming AEAD frame plaintext size: 64 KiB.
+pub const STREAMING_SHARD_FRAME_SIZE: usize = 64 * 1024;
+
+/// Byte length of the v0x04 per-stream public salt.
+pub const STREAMING_SHARD_SALT_LEN: usize = 16;
+
+const STREAMING_SHARD_RESERVED_OFFSET: usize = 30;
+const STREAMING_SHARD_RESERVED_LEN: usize = 34;
+
 /// Current pre-release Mosaic protocol version used by Rust client-core fixtures.
 pub const PROTOCOL_VERSION: &str = "mosaic-v1";
 
@@ -1053,6 +1071,120 @@ impl ShardEnvelopeHeader {
     #[must_use]
     pub const fn tier(&self) -> ShardTier {
         self.tier
+    }
+}
+
+/// Parsed v0x04 streaming shard envelope header.
+///
+/// Layout (64 bytes): magic `SGzk` (4), version `0x04` (1), tier (1),
+/// stream_salt (16), frame_count u32 LE (4), final_frame_size u32 LE (4),
+/// reserved zero bytes (34).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamingShardEnvelopeHeader {
+    tier: ShardTier,
+    stream_salt: [u8; STREAMING_SHARD_SALT_LEN],
+    frame_count: u32,
+    final_frame_size: u32,
+}
+
+impl StreamingShardEnvelopeHeader {
+    /// Creates a v0x04 streaming header from validated field values.
+    ///
+    /// # Errors
+    /// Returns [`MosaicDomainError::InvalidHeaderLength`] for zero frames,
+    /// empty final frames, or final-frame sizes above 64 KiB.
+    pub const fn new(
+        tier: ShardTier,
+        stream_salt: [u8; STREAMING_SHARD_SALT_LEN],
+        frame_count: u32,
+        final_frame_size: u32,
+    ) -> Result<Self, MosaicDomainError> {
+        if frame_count == 0 {
+            return Err(MosaicDomainError::InvalidHeaderLength { actual: 0 });
+        }
+        if final_frame_size == 0 {
+            return Err(MosaicDomainError::InvalidHeaderLength { actual: 0 });
+        }
+        if final_frame_size as usize > STREAMING_SHARD_FRAME_SIZE {
+            return Err(MosaicDomainError::InvalidHeaderLength {
+                actual: final_frame_size as usize,
+            });
+        }
+        Ok(Self {
+            tier,
+            stream_salt,
+            frame_count,
+            final_frame_size,
+        })
+    }
+
+    /// Parses and validates a raw v0x04 streaming envelope header.
+    pub fn parse(bytes: &[u8]) -> Result<Self, MosaicDomainError> {
+        if bytes.len() != STREAMING_SHARD_ENVELOPE_HEADER_LEN {
+            return Err(MosaicDomainError::InvalidHeaderLength {
+                actual: bytes.len(),
+            });
+        }
+        if bytes[0..4] != STREAMING_SHARD_ENVELOPE_MAGIC {
+            return Err(MosaicDomainError::InvalidMagic);
+        }
+        if bytes[4] != SHARD_ENVELOPE_VERSION_V04 {
+            return Err(MosaicDomainError::UnsupportedVersion { version: bytes[4] });
+        }
+        for (relative_offset, value) in bytes[STREAMING_SHARD_RESERVED_OFFSET
+            ..STREAMING_SHARD_RESERVED_OFFSET + STREAMING_SHARD_RESERVED_LEN]
+            .iter()
+            .enumerate()
+        {
+            if *value != 0 {
+                return Err(MosaicDomainError::NonZeroReservedByte {
+                    offset: STREAMING_SHARD_RESERVED_OFFSET + relative_offset,
+                });
+            }
+        }
+        let tier = ShardTier::try_from(bytes[5])?;
+        let mut stream_salt = [0_u8; STREAMING_SHARD_SALT_LEN];
+        stream_salt.copy_from_slice(&bytes[6..22]);
+        let frame_count = u32::from_le_bytes([bytes[22], bytes[23], bytes[24], bytes[25]]);
+        let final_frame_size = u32::from_le_bytes([bytes[26], bytes[27], bytes[28], bytes[29]]);
+        Self::new(tier, stream_salt, frame_count, final_frame_size)
+    }
+
+    /// Serializes the header to its exact 64-byte wire representation.
+    #[must_use]
+    pub fn to_bytes(&self) -> [u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN] {
+        let mut bytes = [0_u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN];
+        bytes[0..4].copy_from_slice(&STREAMING_SHARD_ENVELOPE_MAGIC);
+        bytes[4] = SHARD_ENVELOPE_VERSION_V04;
+        bytes[5] = self.tier.to_byte();
+        bytes[6..22].copy_from_slice(&self.stream_salt);
+        bytes[22..26].copy_from_slice(&self.frame_count.to_le_bytes());
+        bytes[26..30].copy_from_slice(&self.final_frame_size.to_le_bytes());
+        bytes
+    }
+
+    /// Returns the shard tier.
+    #[must_use]
+    pub const fn tier(&self) -> ShardTier {
+        self.tier
+    }
+
+    /// Returns the per-stream salt.
+    #[must_use]
+    pub const fn stream_salt(&self) -> &[u8; STREAMING_SHARD_SALT_LEN] {
+        &self.stream_salt
+    }
+
+    /// Returns the declared frame count.
+    #[must_use]
+    pub const fn frame_count(&self) -> u32 {
+        self.frame_count
+    }
+
+    /// Returns the declared final-frame plaintext size.
+    #[must_use]
+    pub const fn final_frame_size(&self) -> u32 {
+        self.final_frame_size
     }
 }
 

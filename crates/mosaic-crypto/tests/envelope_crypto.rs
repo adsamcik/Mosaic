@@ -1,12 +1,17 @@
 // TODO(R-C6.3): migrate legacy empty-AAD wrap/unwrap_key test coverage.
 #![allow(deprecated)]
+#![allow(clippy::expect_used)]
 
 use mosaic_crypto::{
     ACCOUNT_DATA_AAD, AuthSigningSecretKey, EPOCH_SEED_AAD, IdentitySigningSecretKey,
-    ManifestSigningSecretKey, MosaicCryptoError, SecretKey, decrypt_shard, encrypt_shard,
-    sha256_bytes, unwrap_key, unwrap_secret_with_aad, wrap_key, wrap_secret_with_aad,
+    ManifestSigningSecretKey, MosaicCryptoError, SecretKey, decrypt_envelope, decrypt_shard,
+    derive_epoch_key_material, encrypt_shard, get_tier_key, sha256_bytes, streaming_decrypt_init,
+    streaming_encrypt_init, unwrap_key, unwrap_secret_with_aad, wrap_key, wrap_secret_with_aad,
 };
-use mosaic_domain::{SHARD_ENVELOPE_HEADER_LEN, ShardEnvelopeHeader, ShardTier};
+use mosaic_domain::{
+    SHARD_ENVELOPE_HEADER_LEN, SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_FRAME_SIZE,
+    ShardEnvelopeHeader, ShardTier,
+};
 
 const KEY_BYTES: [u8; 32] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
@@ -23,6 +28,11 @@ fn secret_key_from(mut bytes: [u8; 32]) -> SecretKey {
         Ok(value) => value,
         Err(error) => panic!("test key bytes should be accepted: {error:?}"),
     }
+}
+
+fn epoch_material() -> mosaic_crypto::EpochKeyMaterial {
+    let mut seed = KEY_BYTES;
+    derive_epoch_key_material(7, &mut seed).expect("epoch material")
 }
 
 #[test]
@@ -390,5 +400,238 @@ fn key_wrap_rejects_empty_payload_and_detects_nonce_or_tag_tampering() {
     assert_eq!(
         unwrap_key(&tampered_tag, &wrapper),
         Err(MosaicCryptoError::AuthenticationFailed)
+    );
+}
+
+#[test]
+fn streaming_sequential_frames_decrypt_correctly() {
+    let epoch = epoch_material();
+    let mut encryptor =
+        streaming_encrypt_init(&epoch, ShardTier::Original, Some(3)).expect("stream init");
+    let first_plain = vec![0x11_u8; STREAMING_SHARD_FRAME_SIZE];
+    let second_plain = vec![0x22_u8; STREAMING_SHARD_FRAME_SIZE];
+    let final_plain = b"tail".to_vec();
+    let first = encryptor.encrypt_frame(&first_plain).expect("frame 0");
+    let second = encryptor.encrypt_frame(&second_plain).expect("frame 1");
+    let final_frame = encryptor.encrypt_frame(&final_plain).expect("frame 2");
+    let envelope = encryptor.finalize().expect("finalize");
+
+    let mut decryptor = streaming_decrypt_init(&epoch, &envelope.header).expect("decrypt init");
+    assert_eq!(
+        decryptor.decrypt_frame(&first.bytes).expect("decrypt 0"),
+        first_plain
+    );
+    assert_eq!(
+        decryptor.decrypt_frame(&second.bytes).expect("decrypt 1"),
+        second_plain
+    );
+    assert_eq!(
+        decryptor
+            .decrypt_frame(&final_frame.bytes)
+            .expect("decrypt 2"),
+        final_plain
+    );
+    decryptor.finalize().expect("complete stream");
+}
+
+#[test]
+fn streaming_permuted_frames_fail_authentication() {
+    let epoch = epoch_material();
+    let mut encryptor =
+        streaming_encrypt_init(&epoch, ShardTier::Preview, Some(2)).expect("stream init");
+    let first_plain = vec![0x11_u8; STREAMING_SHARD_FRAME_SIZE];
+    let second_plain = b"tail".to_vec();
+    let first = encryptor.encrypt_frame(&first_plain).expect("frame 0");
+    let second = encryptor.encrypt_frame(&second_plain).expect("frame 1");
+    let envelope = encryptor.finalize().expect("finalize");
+
+    let mut decryptor = streaming_decrypt_init(&epoch, &envelope.header).expect("decrypt init");
+    assert_eq!(
+        decryptor.decrypt_frame(&second.bytes),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+    assert_eq!(first.frame_index, 0);
+}
+
+#[test]
+fn streaming_truncated_tail_fails_finalize() {
+    let epoch = epoch_material();
+    let mut encryptor =
+        streaming_encrypt_init(&epoch, ShardTier::Original, Some(2)).expect("stream init");
+    let first_plain = vec![0x33_u8; STREAMING_SHARD_FRAME_SIZE];
+    let first = encryptor.encrypt_frame(&first_plain).expect("frame 0");
+    let _second = encryptor.encrypt_frame(b"tail").expect("frame 1");
+    let envelope = encryptor.finalize().expect("finalize");
+
+    let mut decryptor = streaming_decrypt_init(&epoch, &envelope.header).expect("decrypt init");
+    assert_eq!(
+        decryptor.decrypt_frame(&first.bytes).expect("decrypt 0"),
+        first_plain
+    );
+    assert_eq!(
+        decryptor.finalize(),
+        Err(MosaicCryptoError::InvalidInputLength { actual: 1 })
+    );
+}
+
+#[test]
+fn streaming_header_count_mutation_plus_truncation_fails_authentication() {
+    let epoch = epoch_material();
+    let mut encryptor =
+        streaming_encrypt_init(&epoch, ShardTier::Original, Some(3)).expect("stream init");
+    let first = encryptor
+        .encrypt_frame(&vec![0x44_u8; STREAMING_SHARD_FRAME_SIZE])
+        .expect("frame 0");
+    let second = encryptor
+        .encrypt_frame(&vec![0x55_u8; STREAMING_SHARD_FRAME_SIZE])
+        .expect("frame 1");
+    let _third = encryptor.encrypt_frame(b"tail").expect("frame 2");
+    let envelope = encryptor.finalize().expect("finalize");
+
+    let mut truncated = envelope.bytes.clone();
+    truncated[22..26].copy_from_slice(&2_u32.to_le_bytes());
+    truncated[26..30].copy_from_slice(&(STREAMING_SHARD_FRAME_SIZE as u32).to_le_bytes());
+    truncated.truncate(SHARD_ENVELOPE_HEADER_LEN + first.bytes.len() + second.bytes.len());
+
+    assert_eq!(
+        decrypt_envelope(&epoch, &truncated),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+}
+
+#[test]
+fn streaming_encrypt_requires_declared_count_and_fixed_non_final_frames() {
+    let epoch = epoch_material();
+    assert_eq!(
+        streaming_encrypt_init(&epoch, ShardTier::Original, None).map(|_| ()),
+        Err(MosaicCryptoError::InvalidInputLength { actual: 0 })
+    );
+
+    let mut non_final_short =
+        streaming_encrypt_init(&epoch, ShardTier::Original, Some(2)).expect("stream init");
+    let non_final_error = match non_final_short.encrypt_frame(b"short") {
+        Ok(_) => panic!("short non-final frame should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        non_final_error,
+        MosaicCryptoError::InvalidInputLength { actual: 5 }
+    );
+
+    let mut empty_final =
+        streaming_encrypt_init(&epoch, ShardTier::Original, Some(1)).expect("stream init");
+    let empty_final_error = match empty_final.encrypt_frame(b"") {
+        Ok(_) => panic!("empty final frame should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        empty_final_error,
+        MosaicCryptoError::InvalidInputLength { actual: 0 }
+    );
+}
+
+#[test]
+fn streaming_cross_stream_replay_fails() {
+    let epoch = epoch_material();
+    let mut first_stream =
+        streaming_encrypt_init(&epoch, ShardTier::Thumbnail, Some(1)).expect("stream 1");
+    let replayed = first_stream.encrypt_frame(b"same").expect("frame").bytes;
+    let _first_envelope = first_stream.finalize().expect("finalize 1");
+
+    let mut second_stream =
+        streaming_encrypt_init(&epoch, ShardTier::Thumbnail, Some(1)).expect("stream 2");
+    let _second_frame = second_stream.encrypt_frame(b"same").expect("frame 2");
+    let second_envelope = second_stream.finalize().expect("finalize 2");
+
+    let mut decryptor =
+        streaming_decrypt_init(&epoch, &second_envelope.header).expect("decrypt init");
+    assert_eq!(
+        decryptor.decrypt_frame(&replayed),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+}
+
+#[test]
+fn streaming_salt_uniqueness_same_plaintext_different_ciphertext_both_decrypt() {
+    let epoch = epoch_material();
+    let mut first = streaming_encrypt_init(&epoch, ShardTier::Preview, Some(1)).expect("init 1");
+    let first_frame = first.encrypt_frame(b"same plaintext").expect("frame 1");
+    let first_envelope = first.finalize().expect("final 1");
+    let mut second = streaming_encrypt_init(&epoch, ShardTier::Preview, Some(1)).expect("init 2");
+    let second_frame = second.encrypt_frame(b"same plaintext").expect("frame 2");
+    let second_envelope = second.finalize().expect("final 2");
+
+    assert_ne!(first_envelope.header[6..22], second_envelope.header[6..22]);
+    assert_ne!(first_frame.bytes, second_frame.bytes);
+    assert_eq!(
+        decrypt_envelope(&epoch, &first_envelope.bytes).expect("decrypt first"),
+        b"same plaintext"
+    );
+    assert_eq!(
+        decrypt_envelope(&epoch, &second_envelope.bytes).expect("decrypt second"),
+        b"same plaintext"
+    );
+}
+
+#[test]
+fn streaming_frame_count_enforcement_rejects_extra_frame() {
+    let epoch = epoch_material();
+    let mut encryptor =
+        streaming_encrypt_init(&epoch, ShardTier::Original, Some(3)).expect("stream init");
+    encryptor
+        .encrypt_frame(&vec![0_u8; STREAMING_SHARD_FRAME_SIZE])
+        .expect("frame 0");
+    encryptor
+        .encrypt_frame(&vec![1_u8; STREAMING_SHARD_FRAME_SIZE])
+        .expect("frame 1");
+    encryptor.encrypt_frame(b"tail").expect("frame 2");
+    let error = match encryptor.encrypt_frame(b"extra") {
+        Ok(_) => panic!("extra frame should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(error, MosaicCryptoError::InvalidInputLength { actual: 3 });
+}
+
+#[test]
+fn streaming_dispatcher_interops_v03_and_v04_and_rejects_bad_versions() {
+    let epoch = epoch_material();
+    let v03 = encrypt_shard(
+        b"legacy v03",
+        get_tier_key(&epoch, ShardTier::Preview),
+        epoch.epoch_id(),
+        1,
+        ShardTier::Preview,
+    )
+    .expect("v03 encrypt");
+    assert_eq!(
+        decrypt_envelope(&epoch, &v03.bytes).expect("v03 dispatcher"),
+        b"legacy v03"
+    );
+
+    let mut encryptor =
+        streaming_encrypt_init(&epoch, ShardTier::Original, Some(1)).expect("stream init");
+    encryptor.encrypt_frame(b"stream v04").expect("frame");
+    let v04 = encryptor.finalize().expect("finalize");
+    assert_eq!(v04.header[4], SHARD_ENVELOPE_VERSION_V04);
+    assert_eq!(
+        decrypt_envelope(&epoch, &v04.bytes).expect("v04 dispatcher"),
+        b"stream v04"
+    );
+
+    let mut bad_magic = v04.bytes.clone();
+    bad_magic[0] ^= 0x01;
+    assert_eq!(
+        decrypt_envelope(&epoch, &bad_magic),
+        Err(MosaicCryptoError::InvalidEnvelope)
+    );
+    let mut bad_version = v04.bytes.clone();
+    bad_version[4] = 0x05;
+    assert_eq!(
+        decrypt_envelope(&epoch, &bad_version),
+        Err(MosaicCryptoError::InvalidEnvelope)
+    );
+    assert_eq!(
+        decrypt_envelope(&epoch, &v04.bytes[..SHARD_ENVELOPE_HEADER_LEN - 1]),
+        Err(MosaicCryptoError::InvalidEnvelope)
     );
 }
