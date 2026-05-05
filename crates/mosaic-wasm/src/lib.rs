@@ -1880,6 +1880,12 @@ pub fn download_init_snapshot_v1(input_cbor: &[u8]) -> SerializeSnapshotResult {
         photos,
         failure_log: Vec::new(),
         lease_token: None,
+        // Transitional: a real scope_key is threaded through the plan input
+        // in a follow-up commit. Until then we synthesize a stable legacy
+        // scope from the job id so existing callers see a non-empty value.
+        scope_key: mosaic_client::download::scope::legacy_scope_for(
+            &mosaic_client::download::snapshot::JobId::from_bytes(input.job_id),
+        ),
     };
     match mosaic_client::download::snapshot::prepare_snapshot_bytes(&snapshot) {
         Ok(bytes) => SerializeSnapshotResult {

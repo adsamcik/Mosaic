@@ -26,7 +26,7 @@ fn init_commit_load_round_trip_and_rejects_corrupt_body() -> Result<(), String> 
 
     let load = download_load_snapshot_v1(&init.body, &commit.checksum);
     assert_eq!(load.code, u32::from(ClientErrorCode::Ok.as_u16()));
-    assert_eq!(load.schema_version_loaded, 1);
+    assert_eq!(load.schema_version_loaded, 2);
     assert_eq!(load.snapshot_cbor, init.body);
 
     let snapshot = DownloadJobSnapshot::from_canonical_cbor(&load.snapshot_cbor)
