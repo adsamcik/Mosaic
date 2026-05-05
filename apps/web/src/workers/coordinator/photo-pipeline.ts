@@ -6,6 +6,9 @@ import {
   rustOpenStreamingShard,
   type StreamingShardDecryptor,
 } from '../rust-crypto-core';
+import type { ShardMirror } from './shard-mirror';
+import { shardMirrorKey } from './shard-mirror';
+import type { DecryptCache } from './decrypt-cache';
 
 /** A download plan entry in the coordinator's per-photo pipeline. */
 export interface DownloadPlanEntry {
@@ -34,6 +37,13 @@ export interface PhotoPipelineDeps {
    * fake to exercise the streaming path without WASM.
    */
   readonly openStreamingShard?: (envelopeHeader: Uint8Array, key: Uint8Array) => Promise<StreamingShardDecryptor>;
+  /**
+   * Optional ambient mirror — peeked before each shard fetch and populated on
+   * miss after integrity verification. Caches encrypted bytes only.
+   */
+  readonly mirror?: ShardMirror;
+  /** Optional epoch-key cache shared across photos in the same album. */
+  readonly decryptCache?: DecryptCache;
 }
 
 /** Stable reasons for non-fatal per-photo skips. */
@@ -82,14 +92,14 @@ export async function executePhotoTask(input: PhotoTaskInput, deps: PhotoPipelin
       return { kind: 'done', bytesWritten: 0 };
     }
 
-    const epochSeed = await deps.getEpochSeed(input.albumId, input.entry.epochId);
+    const epochSeed = await resolveEpochSeed(input, deps);
     let lastTransientRetryAfterMs = backoffMs(1);
 
     for (let attempt = 1; attempt <= MAX_NETWORK_ATTEMPTS; attempt += 1) {
       try {
-        const encryptedShards = await deps.fetchShards([...input.entry.shardIds], input.signal);
+        const fetched = await fetchShardsWithMirror(input, deps);
         throwIfAborted(input.signal);
-        const outcome = await verifyDecryptAndWrite(encryptedShards, epochSeed, input, deps);
+        const outcome = await verifyDecryptAndWrite(fetched.shards, fetched.fromMirror, epochSeed, input, deps);
         if (outcome.kind !== 'done') {
           return outcome;
         }
@@ -141,6 +151,7 @@ export async function executePhotoTask(input: PhotoTaskInput, deps: PhotoPipelin
 
 async function verifyDecryptAndWrite(
   encryptedShards: readonly Uint8Array[],
+  fromMirror: readonly boolean[],
   epochSeed: Uint8Array,
   input: PhotoTaskInput,
   deps: PhotoPipelineDeps,
@@ -169,6 +180,22 @@ async function verifyDecryptAndWrite(
         continue;
       }
       return { kind: 'failed', code: classified };
+    }
+  }
+
+  // After verification, persist freshly-fetched (non-mirror) shards into the
+  // ambient mirror. Mirror failures are non-fatal optimization losses.
+  if (deps.mirror) {
+    for (let index = 0; index < encryptedShards.length; index += 1) {
+      if (fromMirror[index]) continue;
+      const shard = encryptedShards[index];
+      const expected = input.entry.expectedHashes[index];
+      if (!shard || !expected) continue;
+      try {
+        await deps.mirror.put(shardMirrorKey(expected), shard);
+      } catch {
+        // Non-fatal — caching is opportunistic.
+      }
     }
   }
 
@@ -321,6 +348,80 @@ function throwIfAborted(signal: AbortSignal): void {
 
 function backoffMs(attempt: number): number {
   return Math.min(30_000, 500 * 2 ** Math.max(0, attempt - 1));
+}
+
+async function fetchShardsWithMirror(
+  input: PhotoTaskInput,
+  deps: PhotoPipelineDeps,
+): Promise<{ shards: Uint8Array[]; fromMirror: boolean[] }> {
+  const { shardIds, expectedHashes } = input.entry;
+  if (shardIds.length !== expectedHashes.length) {
+    throw new DownloadError('IllegalState', 'shardIds/expectedHashes length mismatch');
+  }
+  const shards: Uint8Array[] = new Array(shardIds.length);
+  const fromMirror: boolean[] = new Array(shardIds.length).fill(false) as boolean[];
+  const missingIndices: number[] = [];
+
+  if (deps.mirror) {
+    for (let i = 0; i < shardIds.length; i += 1) {
+      const expected = expectedHashes[i];
+      if (!expected) {
+        missingIndices.push(i);
+        continue;
+      }
+      let cached: Uint8Array | null = null;
+      try {
+        cached = await deps.mirror.get(shardMirrorKey(expected));
+      } catch {
+        cached = null;
+      }
+      if (cached) {
+        shards[i] = cached;
+        fromMirror[i] = true;
+      } else {
+        missingIndices.push(i);
+      }
+    }
+  } else {
+    for (let i = 0; i < shardIds.length; i += 1) missingIndices.push(i);
+  }
+
+  if (missingIndices.length > 0) {
+    const missingShardIds = missingIndices.map((i): string => {
+      const id = shardIds[i];
+      if (id === undefined) {
+        throw new DownloadError('IllegalState', 'shardId index out of range');
+      }
+      return id;
+    });
+    const fetched = await deps.fetchShards(missingShardIds, input.signal);
+    if (fetched.length !== missingIndices.length) {
+      throw new DownloadError('IllegalState', 'fetchShards returned wrong count');
+    }
+    for (let j = 0; j < missingIndices.length; j += 1) {
+      const target = missingIndices[j];
+      const bytes = fetched[j];
+      if (target === undefined || !bytes) {
+        throw new DownloadError('IllegalState', 'fetched shard missing');
+      }
+      shards[target] = bytes;
+    }
+  }
+
+  return { shards, fromMirror };
+}
+
+async function resolveEpochSeed(input: PhotoTaskInput, deps: PhotoPipelineDeps): Promise<Uint8Array> {
+  const cache = deps.decryptCache;
+  if (!cache) {
+    return deps.getEpochSeed(input.albumId, input.entry.epochId);
+  }
+  const cacheKey = input.albumId + ':' + String(input.entry.epochId);
+  const hit = cache.get(cacheKey);
+  if (hit) return hit.epochKey;
+  const seed = await deps.getEpochSeed(input.albumId, input.entry.epochId);
+  cache.put({ epochId: cacheKey, epochKey: seed });
+  return seed;
 }
 
 export const __photoPipelineTestUtils = {

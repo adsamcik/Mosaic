@@ -130,6 +130,14 @@ const directSodiumPrimitiveAllowlist = new Map<string, string>([
     'lib/session.ts',
     'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)',
   ],
+  [
+    'workers/coordinator/decrypt-cache.ts',
+    'sodium.memzero used to wipe cached epoch keys on eviction / clear (memory hygiene only; no protocol primitives)',
+  ],
+  [
+    'workers/coordinator/shard-mirror.ts',
+    'sodium.crypto_hash_sha256 fallback for content-hash verification when SubtleCrypto is unavailable; encrypted bytes only',
+  ],
   ['workers/crypto.worker.ts', 'central TypeScript crypto compatibility facade'],
 ]);
 
