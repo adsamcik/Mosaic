@@ -36,6 +36,13 @@ pub use ts_canonical::{
     derive_root_key_blake2b, unwrap_account_key_v1, unwrap_key_secretbox, wrap_key_secretbox,
 };
 
+pub mod streaming;
+pub use streaming::{
+    MAX_STREAMING_CHUNK_BYTES, MIN_STREAMING_CHUNK_BYTES, STREAMING_CHUNK_TAG_BYTES,
+    STREAMING_ENVELOPE_VARIANT, StreamingShardDecryptor, encrypt_streaming_shard,
+    open_streaming_shard,
+};
+
 /// Maximum allowed plaintext size for shard encryption (100 MiB).
 const MAX_SHARD_BYTES: usize = 100 * 1024 * 1024;
 
