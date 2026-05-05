@@ -2,7 +2,8 @@
 
 use mosaic_client::{
     AlbumSyncEffect, AlbumSyncEvent, AlbumSyncPhase, AlbumSyncRequest, AlbumSyncSnapshot,
-    ClientErrorCode, SyncPageSummary, advance_album_sync, new_album_sync,
+    ClientErrorCode, SyncPageSummary, advance_album_sync, album_sync_snapshot_schema_version,
+    new_album_sync,
 };
 
 fn request() -> AlbumSyncRequest {
@@ -34,6 +35,215 @@ fn assert_invalid_transition(
         result.expect_err("transition should be rejected").code,
         ClientErrorCode::ClientCoreInvalidTransition
     );
+}
+
+#[test]
+fn album_sync_phase_discriminants_are_frozen() {
+    assert_eq!(AlbumSyncPhase::Idle as u8, 0);
+    assert_eq!(AlbumSyncPhase::FetchingPage as u8, 1);
+    assert_eq!(AlbumSyncPhase::ApplyingPage as u8, 2);
+    assert_eq!(AlbumSyncPhase::RetryWaiting as u8, 3);
+    assert_eq!(AlbumSyncPhase::Completed as u8, 4);
+    assert_eq!(AlbumSyncPhase::Cancelled as u8, 5);
+    assert_eq!(AlbumSyncPhase::Failed as u8, 6);
+
+    assert_eq!(AlbumSyncPhase::Idle.to_u8(), 0);
+    assert_eq!(AlbumSyncPhase::Failed.to_u8(), 6);
+}
+
+#[test]
+fn album_sync_phase_iteration_is_discriminant_exhaustive() {
+    let mut all_phases = Vec::new();
+    for byte in 0..=u8::MAX {
+        if let Some(phase) = AlbumSyncPhase::try_from_u8(byte) {
+            all_phases.push(phase);
+        }
+    }
+
+    assert_eq!(
+        all_phases,
+        vec![
+            AlbumSyncPhase::Idle,
+            AlbumSyncPhase::FetchingPage,
+            AlbumSyncPhase::ApplyingPage,
+            AlbumSyncPhase::RetryWaiting,
+            AlbumSyncPhase::Completed,
+            AlbumSyncPhase::Cancelled,
+            AlbumSyncPhase::Failed,
+        ],
+        "Add new AlbumSyncPhase values append-only and update try_from_u8 plus SPEC-ClientCoreStateMachines"
+    );
+    assert_eq!(all_phases.len(), 7);
+    assert_eq!(AlbumSyncPhase::try_from_u8(7), None);
+}
+
+#[test]
+fn album_sync_dto_field_shape_is_locked() {
+    let snapshot = AlbumSyncSnapshot {
+        schema_version: album_sync_snapshot_schema_version(),
+        sync_id: "sync-shape-lock".to_owned(),
+        album_id: "album-shape-lock".to_owned(),
+        phase: AlbumSyncPhase::RetryWaiting,
+        initial_page_token: Some("initial".to_owned()),
+        next_page_token: Some("next".to_owned()),
+        current_page: Some(SyncPageSummary {
+            previous_page_token: Some("previous".to_owned()),
+            next_page_token: Some("pending".to_owned()),
+            reached_end: false,
+            encrypted_item_count: 42,
+        }),
+        rerun_requested: true,
+        completed_cycle_count: 3,
+        retry: mosaic_client::AlbumSyncRetryMetadata {
+            attempt_count: 2,
+            max_attempts: 5,
+            retry_after_ms: Some(1_500),
+            last_error_code: Some(ClientErrorCode::AuthenticationFailed),
+            last_error_stage: Some(AlbumSyncPhase::FetchingPage),
+            retry_target_phase: Some(AlbumSyncPhase::ApplyingPage),
+        },
+        failure_code: Some(ClientErrorCode::AuthenticationFailed),
+    };
+
+    let AlbumSyncSnapshot {
+        schema_version,
+        sync_id,
+        album_id,
+        phase,
+        initial_page_token,
+        next_page_token,
+        current_page,
+        rerun_requested,
+        completed_cycle_count,
+        retry,
+        failure_code,
+    } = snapshot;
+
+    let _: u16 = schema_version;
+    let _: String = sync_id;
+    let _: String = album_id;
+    let _: AlbumSyncPhase = phase;
+    let _: Option<String> = initial_page_token;
+    let _: Option<String> = next_page_token;
+    let current_page: Option<SyncPageSummary> = current_page;
+    let _: bool = rerun_requested;
+    let _: u32 = completed_cycle_count;
+    let retry: mosaic_client::AlbumSyncRetryMetadata = retry;
+    let _: Option<ClientErrorCode> = failure_code;
+
+    let page = current_page.expect("shape-lock snapshot carries a current page");
+    let SyncPageSummary {
+        previous_page_token,
+        next_page_token,
+        reached_end,
+        encrypted_item_count,
+    } = page;
+    let _: Option<String> = previous_page_token;
+    let _: Option<String> = next_page_token;
+    let _: bool = reached_end;
+    let _: u32 = encrypted_item_count;
+
+    let mosaic_client::AlbumSyncRetryMetadata {
+        attempt_count,
+        max_attempts,
+        retry_after_ms,
+        last_error_code,
+        last_error_stage,
+        retry_target_phase,
+    } = retry;
+    let _: u32 = attempt_count;
+    let _: u32 = max_attempts;
+    let _: Option<u64> = retry_after_ms;
+    let _: Option<ClientErrorCode> = last_error_code;
+    let _: Option<AlbumSyncPhase> = last_error_stage;
+    let _: Option<AlbumSyncPhase> = retry_target_phase;
+}
+
+#[test]
+fn album_sync_event_and_effect_field_shapes_are_locked() {
+    let request_event = AlbumSyncEvent::SyncRequested {
+        request: Some(request()),
+    };
+    assert!(matches!(
+        request_event,
+        AlbumSyncEvent::SyncRequested {
+            request: Some(AlbumSyncRequest { .. })
+        }
+    ));
+
+    let fetched_event = AlbumSyncEvent::PageFetched {
+        page: Some(page(false)),
+    };
+    assert!(matches!(
+        fetched_event,
+        AlbumSyncEvent::PageFetched {
+            page: Some(SyncPageSummary { .. })
+        }
+    ));
+
+    let retry_event = AlbumSyncEvent::RetryableFailure {
+        code: ClientErrorCode::InvalidInputLength,
+        retry_after_ms: Some(250),
+    };
+    assert!(matches!(
+        retry_event,
+        AlbumSyncEvent::RetryableFailure {
+            code: ClientErrorCode::InvalidInputLength,
+            retry_after_ms: Some(250)
+        }
+    ));
+
+    let non_retry_event = AlbumSyncEvent::NonRetryableFailure {
+        code: ClientErrorCode::InvalidPublicKey,
+    };
+    assert!(matches!(
+        non_retry_event,
+        AlbumSyncEvent::NonRetryableFailure {
+            code: ClientErrorCode::InvalidPublicKey
+        }
+    ));
+
+    assert!(matches!(
+        AlbumSyncEvent::PageApplied,
+        AlbumSyncEvent::PageApplied
+    ));
+    assert!(matches!(
+        AlbumSyncEvent::RetryTimerElapsed,
+        AlbumSyncEvent::RetryTimerElapsed
+    ));
+    assert!(matches!(
+        AlbumSyncEvent::CancelRequested,
+        AlbumSyncEvent::CancelRequested
+    ));
+
+    assert!(matches!(
+        AlbumSyncEffect::FetchPage {
+            page_token: Some("cursor".to_owned())
+        },
+        AlbumSyncEffect::FetchPage {
+            page_token: Some(_)
+        }
+    ));
+    assert!(matches!(
+        AlbumSyncEffect::ApplyPage {
+            encrypted_item_count: 7
+        },
+        AlbumSyncEffect::ApplyPage {
+            encrypted_item_count: 7
+        }
+    ));
+    assert!(matches!(
+        AlbumSyncEffect::ScheduleRetry {
+            attempt: 1,
+            retry_after_ms: 1_000,
+            target_phase: AlbumSyncPhase::FetchingPage
+        },
+        AlbumSyncEffect::ScheduleRetry {
+            attempt: 1,
+            retry_after_ms: 1_000,
+            target_phase: AlbumSyncPhase::FetchingPage
+        }
+    ));
 }
 
 #[test]

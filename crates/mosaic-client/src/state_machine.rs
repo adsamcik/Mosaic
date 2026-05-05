@@ -4,9 +4,10 @@ use std::fmt;
 use ciborium::value::{Integer, Value};
 
 use crate::snapshot_schema::{
-    self, SNAPSHOT_SCHEMA_VERSION_V1, SnapshotMigrationError, upload_job_phase_codes,
-    upload_job_snapshot_keys,
+    self, SNAPSHOT_SCHEMA_VERSION_V1, SnapshotMigrationError, album_sync_phase_codes,
+    upload_job_phase_codes, upload_job_snapshot_keys,
 };
+use crate::telemetry::{TelemetryRingBuffer, counters};
 use crate::{ClientError, ClientErrorCode};
 
 pub const CLIENT_CORE_SNAPSHOT_SCHEMA_VERSION: u16 = SNAPSHOT_SCHEMA_VERSION_V1;
@@ -553,12 +554,34 @@ pub fn advance_upload_job<S>(
 where
     S: Borrow<UploadJobSnapshot>,
 {
+    advance_upload_job_inner(snapshot, event, None)
+}
+
+pub fn advance_upload_job_with_telemetry<S>(
+    snapshot: S,
+    event: UploadJobEvent,
+    telemetry: &mut TelemetryRingBuffer,
+) -> Result<UploadJobTransition, ClientError>
+where
+    S: Borrow<UploadJobSnapshot>,
+{
+    advance_upload_job_inner(snapshot, event, Some(telemetry))
+}
+
+fn advance_upload_job_inner<S>(
+    snapshot: S,
+    event: UploadJobEvent,
+    mut telemetry: Option<&mut TelemetryRingBuffer>,
+) -> Result<UploadJobTransition, ClientError>
+where
+    S: Borrow<UploadJobSnapshot>,
+{
     let snapshot = snapshot.borrow();
     validate_upload_snapshot(snapshot)?;
     let event_effect_id = event.effect_id();
     validate_uuid_v7(event_effect_id)?;
     if matches!(event, UploadJobEvent::EffectAck { .. }) {
-        return acknowledge_effect(snapshot, event_effect_id);
+        return acknowledge_effect(snapshot, event_effect_id, &mut telemetry);
     }
     if Some(event_effect_id) == snapshot.last_applied_event_id {
         return Ok(upload_transition(snapshot.clone(), Vec::new()));
@@ -688,6 +711,7 @@ where
             now_ms,
             base_backoff_ms,
             server_retry_after_ms,
+            &mut telemetry,
         ),
         UploadJobEvent::SyncConfirmed { effect_id } => {
             if !matches!(
@@ -717,6 +741,7 @@ where
             now_ms,
             base_backoff_ms,
             server_retry_after_ms,
+            &mut telemetry,
         ),
         UploadJobEvent::RetryTimerElapsed {
             effect_id,
@@ -869,13 +894,27 @@ impl UploadJobSnapshot {
     }
 
     pub fn from_canonical_cbor(bytes: &[u8]) -> Result<Self, SnapshotMigrationError> {
+        Self::from_canonical_cbor_inner(bytes, None)
+    }
+
+    pub fn from_canonical_cbor_with_telemetry(
+        bytes: &[u8],
+        telemetry: &mut TelemetryRingBuffer,
+    ) -> Result<Self, SnapshotMigrationError> {
+        Self::from_canonical_cbor_inner(bytes, Some(telemetry))
+    }
+
+    fn from_canonical_cbor_inner(
+        bytes: &[u8],
+        mut telemetry: Option<&mut TelemetryRingBuffer>,
+    ) -> Result<Self, SnapshotMigrationError> {
         if bytes.len() > MAX_UPLOAD_SNAPSHOT_CBOR_BYTES {
             return Err(SnapshotMigrationError::SchemaCorrupt);
         }
         let value: Value = ciborium::de::from_reader(std::io::Cursor::new(bytes))
             .map_err(|_| SnapshotMigrationError::CborDecodeFailed)?;
         validate_cbor_value(&value, 0)?;
-        let decoded = decode_upload_snapshot_value(&value)?;
+        let decoded = decode_upload_snapshot_value(&value, &mut telemetry)?;
         if decoded.snapshot.to_canonical_cbor() != bytes && !decoded.migrated_legacy_retry_target {
             return Err(SnapshotMigrationError::SchemaCorrupt);
         }
@@ -949,6 +988,7 @@ fn manifest_recovery(
     now_ms: i64,
     base_backoff_ms: u64,
     server_retry_after_ms: Option<u64>,
+    telemetry: &mut Option<&mut TelemetryRingBuffer>,
 ) -> Result<UploadJobTransition, ClientError> {
     require_upload_phase(snapshot.phase, UploadJobPhase::ManifestCommitUnknown)?;
     match outcome {
@@ -976,6 +1016,7 @@ fn manifest_recovery(
             now_ms,
             base_backoff_ms,
             server_retry_after_ms,
+            telemetry,
         ),
     }
 }
@@ -987,8 +1028,12 @@ fn retryable_failure(
     now_ms: i64,
     base_backoff_ms: u64,
     server_retry_after_ms: Option<u64>,
+    telemetry: &mut Option<&mut TelemetryRingBuffer>,
 ) -> Result<UploadJobTransition, ClientError> {
     if !upload_phase_allows_retry(snapshot.phase) {
+        if snapshot.phase == UploadJobPhase::ManifestCommitUnknown {
+            increment_telemetry(telemetry, counters::MANIFEST_COMMIT_UNKNOWN_RETRY_REJECTED);
+        }
         return Err(invalid_transition_error("invalid state transition"));
     }
     if snapshot.retry_count >= snapshot.max_retry_count {
@@ -1025,6 +1070,7 @@ fn schedule_manifest_retry(
     now_ms: i64,
     base_backoff_ms: u64,
     server_retry_after_ms: Option<u64>,
+    _telemetry: &mut Option<&mut TelemetryRingBuffer>,
 ) -> Result<UploadJobTransition, ClientError> {
     if snapshot.retry_count >= snapshot.max_retry_count {
         return failed(
@@ -1098,9 +1144,11 @@ fn base_next(snapshot: &UploadJobSnapshot, effect_id: Uuid) -> UploadJobSnapshot
 fn acknowledge_effect(
     snapshot: &UploadJobSnapshot,
     effect_id: Uuid,
+    telemetry: &mut Option<&mut TelemetryRingBuffer>,
 ) -> Result<UploadJobTransition, ClientError> {
     validate_uuid_v7(effect_id)?;
     if Some(effect_id) == snapshot.last_acknowledged_effect_id {
+        increment_telemetry(telemetry, counters::EFFECT_ACK_DEDUP_DROP);
         return Ok(upload_transition(snapshot.clone(), Vec::new()));
     }
     if let Some(previous) = snapshot.last_acknowledged_effect_id {
@@ -1112,6 +1160,12 @@ fn acknowledge_effect(
     next.snapshot_revision = next.snapshot_revision.saturating_add(1);
     next.last_acknowledged_effect_id = Some(effect_id);
     Ok(upload_transition(next, Vec::new()))
+}
+
+fn increment_telemetry(telemetry: &mut Option<&mut TelemetryRingBuffer>, name: &'static str) {
+    if let Some(buffer) = telemetry.as_deref_mut() {
+        buffer.increment(name);
+    }
 }
 
 fn reset_retry(snapshot: &mut UploadJobSnapshot) {
@@ -1389,6 +1443,7 @@ struct DecodedUploadSnapshot {
 
 fn decode_upload_snapshot_value(
     value: &Value,
+    telemetry: &mut Option<&mut TelemetryRingBuffer>,
 ) -> Result<DecodedUploadSnapshot, SnapshotMigrationError> {
     let Value::Map(entries) = value else {
         return Err(SnapshotMigrationError::SchemaVersionMissing);
@@ -1451,8 +1506,11 @@ fn decode_upload_snapshot_value(
         )?,
         failure_code: optional_client_error_code(entries, upload_job_snapshot_keys::FAILURE_CODE)?,
     };
-    let migrated_legacy_retry_target =
-        migrate_legacy_upload_retry_target_phase(&mut snapshot, legacy_retry_target_phase)?;
+    let migrated_legacy_retry_target = migrate_legacy_upload_retry_target_phase(
+        &mut snapshot,
+        legacy_retry_target_phase,
+        telemetry,
+    )?;
     validate_decoded_upload_snapshot(&snapshot)?;
     Ok(DecodedUploadSnapshot {
         snapshot,
@@ -1478,26 +1536,20 @@ fn legacy_upload_retry_target_phase(
 fn migrate_legacy_upload_retry_target_phase(
     snapshot: &mut UploadJobSnapshot,
     legacy_retry_target_phase: Option<UploadJobPhase>,
+    telemetry: &mut Option<&mut TelemetryRingBuffer>,
 ) -> Result<bool, SnapshotMigrationError> {
     match (snapshot.phase, legacy_retry_target_phase) {
         (UploadJobPhase::RetryWaiting, Some(UploadJobPhase::ManifestCommitUnknown)) => {
             snapshot.phase = UploadJobPhase::ManifestCommitUnknown;
-            emit_upload_snapshot_migration_telemetry(snapshot);
+            increment_telemetry(
+                telemetry,
+                counters::LEGACY_RETRY_WAITING_MANIFEST_COMMIT_UNKNOWN_MIGRATED,
+            );
             Ok(true)
         }
         (_, Some(_)) => Err(SnapshotMigrationError::SchemaCorrupt),
         (_, None) => Ok(false),
     }
-}
-
-fn emit_upload_snapshot_migration_telemetry(snapshot: &UploadJobSnapshot) {
-    // Stderr key=value line. mosaic-client has no `tracing`/`log` dependency
-    // today; when a logger is adopted, swap this for `tracing::warn!` with
-    // explicit fields. Tracked under `wave3-1-tracing` follow-up.
-    eprintln!(
-        "level=warn event=legacy_upload_retry_waiting_manifest_commit_unknown_migrated schema_version={} retry_count={} max_retry_count={}",
-        snapshot.schema_version, snapshot.retry_count, snapshot.max_retry_count,
-    );
 }
 
 fn validate_decoded_upload_snapshot(
@@ -1789,15 +1841,37 @@ pub struct AlbumSyncRequest {
     pub initial_page_token: Option<String>,
     pub max_retry_count: u32,
 }
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AlbumSyncPhase {
-    Idle,
-    FetchingPage,
-    ApplyingPage,
-    RetryWaiting,
-    Completed,
-    Cancelled,
-    Failed,
+    Idle = album_sync_phase_codes::IDLE,
+    FetchingPage = album_sync_phase_codes::FETCHING_PAGE,
+    ApplyingPage = album_sync_phase_codes::APPLYING_PAGE,
+    RetryWaiting = album_sync_phase_codes::RETRY_WAITING,
+    Completed = album_sync_phase_codes::COMPLETED,
+    Cancelled = album_sync_phase_codes::CANCELLED,
+    Failed = album_sync_phase_codes::FAILED,
+}
+
+impl AlbumSyncPhase {
+    #[must_use]
+    pub const fn to_u8(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn try_from_u8(value: u8) -> Option<Self> {
+        match value {
+            album_sync_phase_codes::IDLE => Some(Self::Idle),
+            album_sync_phase_codes::FETCHING_PAGE => Some(Self::FetchingPage),
+            album_sync_phase_codes::APPLYING_PAGE => Some(Self::ApplyingPage),
+            album_sync_phase_codes::RETRY_WAITING => Some(Self::RetryWaiting),
+            album_sync_phase_codes::COMPLETED => Some(Self::Completed),
+            album_sync_phase_codes::CANCELLED => Some(Self::Cancelled),
+            album_sync_phase_codes::FAILED => Some(Self::Failed),
+            _ => None,
+        }
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlbumSyncSnapshot {
@@ -1898,6 +1972,22 @@ pub fn new_album_sync(request: AlbumSyncRequest) -> Result<AlbumSyncSnapshot, Cl
 pub fn advance_album_sync(
     snapshot: &AlbumSyncSnapshot,
     event: AlbumSyncEvent,
+) -> Result<AlbumSyncTransition, ClientError> {
+    advance_album_sync_inner(snapshot, event, None)
+}
+
+pub fn advance_album_sync_with_telemetry(
+    snapshot: &AlbumSyncSnapshot,
+    event: AlbumSyncEvent,
+    telemetry: &mut TelemetryRingBuffer,
+) -> Result<AlbumSyncTransition, ClientError> {
+    advance_album_sync_inner(snapshot, event, Some(telemetry))
+}
+
+fn advance_album_sync_inner(
+    snapshot: &AlbumSyncSnapshot,
+    event: AlbumSyncEvent,
+    mut telemetry: Option<&mut TelemetryRingBuffer>,
 ) -> Result<AlbumSyncTransition, ClientError> {
     match event {
         AlbumSyncEvent::SyncRequested { request } => {
@@ -2004,6 +2094,12 @@ pub fn advance_album_sync(
                 return Err(invalid_transition_error("invalid state transition"));
             }
             if snapshot.retry.attempt_count >= snapshot.retry.max_attempts {
+                if code != ClientErrorCode::ClientCoreRetryBudgetExhausted {
+                    increment_telemetry(
+                        &mut telemetry,
+                        counters::ALBUM_SYNC_EXHAUSTION_WITH_ORIGINATING_CODE,
+                    );
+                }
                 let mut next = snapshot.clone();
                 next.phase = AlbumSyncPhase::Failed;
                 next.failure_code = Some(code);
