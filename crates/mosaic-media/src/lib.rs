@@ -7,10 +7,12 @@ use std::fmt;
 use zeroize::Zeroizing;
 
 mod exif_sidecar;
+pub mod iso_bmff;
 pub use exif_sidecar::{
     ExtractedGpsFields, ExtractedSidecarFields, SidecarExtractResult,
     extract_canonical_sidecar_fields,
 };
+pub use iso_bmff::BoxParser;
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 const WEBP_VP8X_ICC_FLAG: u8 = 0b0010_0000;
@@ -249,6 +251,44 @@ pub fn strip_known_metadata(
         MediaFormat::Png => strip_png_metadata(bytes),
         MediaFormat::WebP => strip_webp_metadata(bytes),
     }
+}
+
+/// Removes recognized metadata carriers from an AVIF ISO-BMFF image container.
+///
+/// # Errors
+/// Returns `UnsupportedFormat` when ISO-BMFF boundaries or AVIF brands are malformed.
+pub fn strip_avif_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
+    iso_bmff::strip_avif_metadata(input)
+}
+
+/// Removes recognized metadata carriers from a HEIC/HEIF ISO-BMFF image container.
+///
+/// # Errors
+/// Returns `UnsupportedFormat` when ISO-BMFF boundaries or HEIC brands are malformed.
+pub fn strip_heic_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
+    iso_bmff::strip_heic_metadata(input)
+}
+
+/// Extracts canonical EXIF sidecar fields from an AVIF EXIF item before stripping.
+#[must_use]
+pub fn extract_avif_canonical_sidecar_fields(input: &[u8]) -> SidecarExtractResult {
+    iso_bmff::extract_exif_item_payload(input, iso_bmff::IsoBmffFormat::Avif)
+        .map(exif_sidecar::extract_exif_payload_canonical_sidecar_fields)
+        .unwrap_or(SidecarExtractResult {
+            code: 0,
+            fields: None,
+        })
+}
+
+/// Extracts canonical EXIF sidecar fields from a HEIC/HEIF EXIF item before stripping.
+#[must_use]
+pub fn extract_heic_canonical_sidecar_fields(input: &[u8]) -> SidecarExtractResult {
+    iso_bmff::extract_exif_item_payload(input, iso_bmff::IsoBmffFormat::Heic)
+        .map(exif_sidecar::extract_exif_payload_canonical_sidecar_fields)
+        .unwrap_or(SidecarExtractResult {
+            code: 0,
+            fields: None,
+        })
 }
 
 /// Inspects supported image bytes and returns dependency-free container metadata.

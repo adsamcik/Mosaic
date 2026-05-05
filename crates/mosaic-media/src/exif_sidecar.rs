@@ -61,6 +61,35 @@ pub fn extract_canonical_sidecar_fields(input: &[u8], format: MediaFormat) -> Si
     }
 }
 
+pub(crate) fn extract_exif_payload_canonical_sidecar_fields(
+    payload: &[u8],
+) -> SidecarExtractResult {
+    let tiff = if let Some(tiff) = payload.strip_prefix(b"Exif\0\0") {
+        tiff
+    } else if let Some(offset_bytes) = payload.get(..4) {
+        let offset = u32::from_be_bytes([
+            offset_bytes[0],
+            offset_bytes[1],
+            offset_bytes[2],
+            offset_bytes[3],
+        ]);
+        match usize::try_from(offset)
+            .ok()
+            .and_then(|offset| payload.get(4_usize.saturating_add(offset)..))
+        {
+            Some(tiff) => tiff,
+            None => payload,
+        }
+    } else {
+        payload
+    };
+
+    SidecarExtractResult {
+        code: 0,
+        fields: parse_tiff_canonical_sidecar_fields(tiff),
+    }
+}
+
 #[derive(Default)]
 struct ExifParseState {
     fields: ExtractedSidecarFields,
