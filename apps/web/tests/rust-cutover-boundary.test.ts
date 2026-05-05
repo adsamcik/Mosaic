@@ -282,6 +282,7 @@ describe('web Rust crypto cutover boundaries', () => {
       importersMatching(/from\s+['"][^'"]*rust-crypto-core['"]/),
     ).toEqual([
         'workers/coordinator.worker.ts',
+        'workers/coordinator/photo-pipeline.ts',
         'workers/crypto.worker-pool-member.ts',
         'workers/crypto.worker.ts',
       ]);

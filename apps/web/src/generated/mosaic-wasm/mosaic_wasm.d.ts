@@ -476,6 +476,23 @@ export class SerializeSnapshotResult {
     readonly code: number;
 }
 
+export class StreamingShardChunkResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly code: number;
+    readonly plaintext: Uint8Array;
+}
+
+export class StreamingShardOpenResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly chunkSizeBytes: number;
+    readonly code: number;
+    readonly handleId: number;
+}
+
 /**
  * WASM-bindgen class for metadata stripping results.
  */
@@ -767,6 +784,8 @@ export function openEpochKeyHandle(wrapped_epoch_seed: Uint8Array, account_key_h
  */
 export function openIdentityHandle(wrapped_identity_seed: Uint8Array, account_key_handle: bigint): IdentityHandleResult;
 
+export function openStreamingShardV1(envelope_header: Uint8Array, key: Uint8Array): StreamingShardOpenResult;
+
 /**
  * Parses a shard envelope header through the generated WASM binding surface.
  */
@@ -805,6 +824,10 @@ export function signManifestWithEpochHandle(handle: bigint, transcript_bytes: Ui
  * Signs manifest transcript bytes through WASM.
  */
 export function signManifestWithIdentity(handle: bigint, transcript_bytes: Uint8Array): BytesResult;
+
+export function streamingShardCloseV1(handle_id: number): number;
+
+export function streamingShardProcessChunkV1(handle_id: number, chunk: Uint8Array, is_final: boolean): StreamingShardChunkResult;
 
 /**
  * Strips JPEG metadata through the shared Rust media parser.
@@ -883,6 +906,7 @@ export interface InitOutput {
     readonly __wbg_progressevent_free: (a: number, b: number) => void;
     readonly __wbg_progressresult_free: (a: number, b: number) => void;
     readonly __wbg_sealedbundleresult_free: (a: number, b: number) => void;
+    readonly __wbg_streamingshardopenresult_free: (a: number, b: number) => void;
     readonly __wbg_verifyshardresult_free: (a: number, b: number) => void;
     readonly __wbg_verifysnapshotresult_free: (a: number, b: number) => void;
     readonly accountKeyHandleIsOpen: (a: bigint) => number;
@@ -982,6 +1006,7 @@ export interface InitOutput {
     readonly loadsnapshotresult_snapshotCbor: (a: number, b: number) => void;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly openIdentityHandle: (a: number, b: number, c: bigint) => number;
+    readonly openStreamingShardV1: (a: number, b: number, c: number, d: number) => number;
     readonly parseEnvelopeHeader: (a: number, b: number) => number;
     readonly progressProbe: (a: number, b: bigint) => number;
     readonly progressevent_completedSteps: (a: number) => number;
@@ -997,6 +1022,11 @@ export interface InitOutput {
     readonly signAuthChallengeWithPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly signManifestWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly signManifestWithIdentity: (a: bigint, b: number, c: number) => number;
+    readonly streamingShardCloseV1: (a: number) => number;
+    readonly streamingShardProcessChunkV1: (a: number, b: number, c: number, d: number) => number;
+    readonly streamingshardopenresult_chunkSizeBytes: (a: number) => number;
+    readonly streamingshardopenresult_code: (a: number) => number;
+    readonly streamingshardopenresult_handleId: (a: number) => number;
     readonly stripJpegMetadata: (a: number, b: number) => number;
     readonly stripPngMetadata: (a: number, b: number) => number;
     readonly stripWebpMetadata: (a: number, b: number) => number;
@@ -1012,45 +1042,48 @@ export interface InitOutput {
     readonly wrapLinkTierHandle: (a: bigint, b: bigint, c: number) => number;
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly wrappedtierkeyresult_tier: (a: number) => number;
+    readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
     readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
     readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
+    readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedcontentresult_free: (a: number, b: number) => void;
     readonly __wbg_serializesnapshotresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
-    readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
-    readonly __wbg_commitsnapshotresult_free: (a: number, b: number) => void;
     readonly __wbg_bytesresult_free: (a: number, b: number) => void;
-    readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
-    readonly __wbg_stripresult_free: (a: number, b: number) => void;
-    readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
+    readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
     readonly __wbg_authkeypairresult_free: (a: number, b: number) => void;
-    readonly verifysnapshotresult_code: (a: number) => number;
+    readonly __wbg_streamingshardchunkresult_free: (a: number, b: number) => void;
+    readonly __wbg_stripresult_free: (a: number, b: number) => void;
+    readonly __wbg_commitsnapshotresult_free: (a: number, b: number) => void;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
     readonly epochkeyhandlestatusresult_code: (a: number) => number;
+    readonly verifysnapshotresult_code: (a: number) => number;
     readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
-    readonly encryptedcontentresult_nonce: (a: number, b: number) => void;
+    readonly encryptedshardresult_sha256: (a: number, b: number) => void;
+    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
     readonly wrappedtierkeyresult_code: (a: number) => number;
     readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
+    readonly encryptedcontentresult_nonce: (a: number, b: number) => void;
+    readonly encryptedshardresult_code: (a: number) => number;
     readonly serializesnapshotresult_checksum: (a: number, b: number) => void;
-    readonly serializesnapshotresult_code: (a: number) => number;
     readonly serializesnapshotresult_body: (a: number, b: number) => void;
-    readonly decryptedshardresult_code: (a: number) => number;
-    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
-    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
-    readonly decryptedcontentresult_code: (a: number) => number;
-    readonly commitsnapshotresult_checksum: (a: number, b: number) => void;
-    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly serializesnapshotresult_code: (a: number) => number;
     readonly bytesresult_code: (a: number) => number;
+    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
+    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly decryptedcontentresult_code: (a: number) => number;
+    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
+    readonly linktierhandleresult_code: (a: number) => number;
     readonly linktierhandleresult_handle: (a: number) => bigint;
     readonly linktierhandleresult_linkId: (a: number, b: number) => void;
-    readonly linktierhandleresult_code: (a: number) => number;
+    readonly decryptedshardresult_code: (a: number) => number;
+    readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
+    readonly streamingshardchunkresult_code: (a: number) => number;
+    readonly streamingshardchunkresult_plaintext: (a: number, b: number) => void;
     readonly stripresult_removedMetadataCount: (a: number) => number;
     readonly stripresult_strippedBytes: (a: number, b: number) => void;
-    readonly encryptedshardresult_code: (a: number) => number;
-    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
-    readonly encryptedshardresult_sha256: (a: number, b: number) => void;
-    readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
     readonly commitsnapshotresult_code: (a: number) => number;
+    readonly commitsnapshotresult_checksum: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export2: (a: number, b: number) => number;

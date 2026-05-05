@@ -1578,6 +1578,92 @@ export class SerializeSnapshotResult {
 }
 if (Symbol.dispose) SerializeSnapshotResult.prototype[Symbol.dispose] = SerializeSnapshotResult.prototype.free;
 
+export class StreamingShardChunkResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(StreamingShardChunkResult.prototype);
+        obj.__wbg_ptr = ptr;
+        StreamingShardChunkResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamingShardChunkResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamingshardchunkresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.streamingshardchunkresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get plaintext() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.streamingshardchunkresult_plaintext(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) StreamingShardChunkResult.prototype[Symbol.dispose] = StreamingShardChunkResult.prototype.free;
+
+export class StreamingShardOpenResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(StreamingShardOpenResult.prototype);
+        obj.__wbg_ptr = ptr;
+        StreamingShardOpenResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamingShardOpenResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamingshardopenresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get chunkSizeBytes() {
+        const ret = wasm.streamingshardopenresult_chunkSizeBytes(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.streamingshardopenresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get handleId() {
+        const ret = wasm.streamingshardopenresult_handleId(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) StreamingShardOpenResult.prototype[Symbol.dispose] = StreamingShardOpenResult.prototype.free;
+
 /**
  * WASM-bindgen class for metadata stripping results.
  */
@@ -2507,6 +2593,20 @@ export function openIdentityHandle(wrapped_identity_seed, account_key_handle) {
 }
 
 /**
+ * @param {Uint8Array} envelope_header
+ * @param {Uint8Array} key
+ * @returns {StreamingShardOpenResult}
+ */
+export function openStreamingShardV1(envelope_header, key) {
+    const ptr0 = passArray8ToWasm0(envelope_header, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(key, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.openStreamingShardV1(ptr0, len0, ptr1, len1);
+    return StreamingShardOpenResult.__wrap(ret);
+}
+
+/**
  * Parses a shard envelope header through the generated WASM binding surface.
  * @param {Uint8Array} bytes
  * @returns {HeaderResult}
@@ -2608,6 +2708,28 @@ export function signManifestWithIdentity(handle, transcript_bytes) {
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.signManifestWithIdentity(handle, ptr0, len0);
     return BytesResult.__wrap(ret);
+}
+
+/**
+ * @param {number} handle_id
+ * @returns {number}
+ */
+export function streamingShardCloseV1(handle_id) {
+    const ret = wasm.streamingShardCloseV1(handle_id);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} handle_id
+ * @param {Uint8Array} chunk
+ * @param {boolean} is_final
+ * @returns {StreamingShardChunkResult}
+ */
+export function streamingShardProcessChunkV1(handle_id, chunk, is_final) {
+    const ptr0 = passArray8ToWasm0(chunk, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.streamingShardProcessChunkV1(handle_id, ptr0, len0, is_final);
+    return StreamingShardChunkResult.__wrap(ret);
 }
 
 /**
@@ -2879,6 +3001,12 @@ const SealedBundleResultFinalization = (typeof FinalizationRegistry === 'undefin
 const SerializeSnapshotResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_serializesnapshotresult_free(ptr >>> 0, 1));
+const StreamingShardChunkResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamingshardchunkresult_free(ptr >>> 0, 1));
+const StreamingShardOpenResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamingshardopenresult_free(ptr >>> 0, 1));
 const StripResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_stripresult_free(ptr >>> 0, 1));

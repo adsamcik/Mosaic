@@ -5479,6 +5479,297 @@ fn js_verify_snapshot_result_from_rust(result: VerifySnapshotResult) -> JsVerify
         valid: result.valid,
     }
 }
+
+// ---------------------------------------------------------------------------
+// Streaming-AEAD shard decryptor (envelope variant 1).
+//
+// A simple Mutex<HashMap<u32, StreamingShardDecryptor>> registry keyed by an
+// AtomicU32 id. Lifetime is owned by the worker; callers MUST invoke
+// streaming_shard_close_v1 (or successfully reach the final chunk, which
+// removes the entry automatically) to avoid leaking decryptors.
+// ---------------------------------------------------------------------------
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Mutex, OnceLock};
+
+use mosaic_crypto::StreamingShardDecryptor;
+use mosaic_domain::SHARD_ENVELOPE_HEADER_LEN;
+
+fn streaming_registry() -> &'static Mutex<HashMap<u32, StreamingShardDecryptor>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<u32, StreamingShardDecryptor>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn streaming_next_handle_id() -> u32 {
+    static NEXT_ID: AtomicU32 = AtomicU32::new(1);
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamingShardOpenResult {
+    pub code: u32,
+    pub handle_id: u32,
+    pub chunk_size_bytes: u32,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct StreamingShardChunkResult {
+    pub code: u32,
+    pub plaintext: Vec<u8>,
+}
+
+impl Drop for StreamingShardChunkResult {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
+}
+
+impl fmt::Debug for StreamingShardChunkResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamingShardChunkResult")
+            .field("code", &self.code)
+            .field("plaintext_len", &self.plaintext.len())
+            .finish()
+    }
+}
+
+#[must_use]
+pub fn open_streaming_shard_v1(envelope_header: &[u8], key: &[u8]) -> StreamingShardOpenResult {
+    let header_array = match <[u8; SHARD_ENVELOPE_HEADER_LEN]>::try_from(envelope_header) {
+        Ok(value) => value,
+        Err(_) => {
+            return StreamingShardOpenResult {
+                code: client_code(mosaic_client::ClientErrorCode::InvalidHeaderLength),
+                handle_id: 0,
+                chunk_size_bytes: 0,
+            };
+        }
+    };
+
+    let mut key_bytes = Zeroizing::new(key.to_vec());
+    let secret_key = match mosaic_crypto::SecretKey::from_bytes(key_bytes.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => {
+            return StreamingShardOpenResult {
+                code: download_decrypt_error_code(error),
+                handle_id: 0,
+                chunk_size_bytes: 0,
+            };
+        }
+    };
+
+    let decryptor = match mosaic_crypto::open_streaming_shard(&header_array, &secret_key) {
+        Ok(value) => value,
+        Err(error) => {
+            return StreamingShardOpenResult {
+                code: download_decrypt_error_code(error),
+                handle_id: 0,
+                chunk_size_bytes: 0,
+            };
+        }
+    };
+    let chunk_size_bytes = decryptor.chunk_size_bytes();
+
+    let handle_id = streaming_next_handle_id();
+    let registry = streaming_registry();
+    match registry.lock() {
+        Ok(mut guard) => {
+            guard.insert(handle_id, decryptor);
+        }
+        Err(_) => {
+            return StreamingShardOpenResult {
+                code: client_code(mosaic_client::ClientErrorCode::InternalStatePoisoned),
+                handle_id: 0,
+                chunk_size_bytes: 0,
+            };
+        }
+    }
+
+    StreamingShardOpenResult {
+        code: client_ok(),
+        handle_id,
+        chunk_size_bytes,
+    }
+}
+
+#[must_use]
+pub fn streaming_shard_process_chunk_v1(
+    handle_id: u32,
+    chunk: &[u8],
+    is_final: bool,
+) -> StreamingShardChunkResult {
+    let registry = streaming_registry();
+
+    if is_final {
+        let mut decryptor = {
+            let mut guard = match registry.lock() {
+                Ok(value) => value,
+                Err(_) => {
+                    return StreamingShardChunkResult {
+                        code: client_code(mosaic_client::ClientErrorCode::InternalStatePoisoned),
+                        plaintext: Vec::new(),
+                    };
+                }
+            };
+            match guard.remove(&handle_id) {
+                Some(value) => value,
+                None => {
+                    return StreamingShardChunkResult {
+                        code: client_code(mosaic_client::ClientErrorCode::SecretHandleNotFound),
+                        plaintext: Vec::new(),
+                    };
+                }
+            }
+        };
+        match decryptor.finish_chunk(chunk) {
+            Ok(plaintext) => StreamingShardChunkResult {
+                code: client_ok(),
+                plaintext: plaintext.to_vec(),
+            },
+            Err(error) => StreamingShardChunkResult {
+                code: download_decrypt_error_code(error),
+                plaintext: Vec::new(),
+            },
+        }
+    } else {
+        let mut guard = match registry.lock() {
+            Ok(value) => value,
+            Err(_) => {
+                return StreamingShardChunkResult {
+                    code: client_code(mosaic_client::ClientErrorCode::InternalStatePoisoned),
+                    plaintext: Vec::new(),
+                };
+            }
+        };
+        let decryptor = match guard.get_mut(&handle_id) {
+            Some(value) => value,
+            None => {
+                return StreamingShardChunkResult {
+                    code: client_code(mosaic_client::ClientErrorCode::SecretHandleNotFound),
+                    plaintext: Vec::new(),
+                };
+            }
+        };
+        match decryptor.process_chunk(chunk) {
+            Ok(plaintext) => StreamingShardChunkResult {
+                code: client_ok(),
+                plaintext: plaintext.to_vec(),
+            },
+            Err(error) => {
+                guard.remove(&handle_id);
+                StreamingShardChunkResult {
+                    code: download_decrypt_error_code(error),
+                    plaintext: Vec::new(),
+                }
+            }
+        }
+    }
+}
+
+#[must_use]
+pub fn streaming_shard_close_v1(handle_id: u32) -> u32 {
+    let registry = streaming_registry();
+    match registry.lock() {
+        Ok(mut guard) => {
+            guard.remove(&handle_id);
+            client_ok()
+        }
+        Err(_) => client_code(mosaic_client::ClientErrorCode::InternalStatePoisoned),
+    }
+}
+
+#[wasm_bindgen(js_name = StreamingShardOpenResult)]
+#[derive(Clone, Copy)]
+pub struct JsStreamingShardOpenResult {
+    code: u32,
+    handle_id: u32,
+    chunk_size_bytes: u32,
+}
+
+#[wasm_bindgen(js_class = StreamingShardOpenResult)]
+impl JsStreamingShardOpenResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[wasm_bindgen(getter, js_name = handleId)]
+    #[must_use]
+    pub fn handle_id(&self) -> u32 {
+        self.handle_id
+    }
+
+    #[wasm_bindgen(getter, js_name = chunkSizeBytes)]
+    #[must_use]
+    pub fn chunk_size_bytes(&self) -> u32 {
+        self.chunk_size_bytes
+    }
+}
+
+#[wasm_bindgen(js_name = StreamingShardChunkResult)]
+pub struct JsStreamingShardChunkResult {
+    code: u32,
+    plaintext: Vec<u8>,
+}
+
+impl Drop for JsStreamingShardChunkResult {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
+}
+
+#[wasm_bindgen(js_class = StreamingShardChunkResult)]
+impl JsStreamingShardChunkResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn plaintext(&self) -> Vec<u8> {
+        self.plaintext.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = openStreamingShardV1)]
+#[must_use]
+pub fn open_streaming_shard_v1_js(
+    envelope_header: Vec<u8>,
+    key: Vec<u8>,
+) -> JsStreamingShardOpenResult {
+    let result = open_streaming_shard_v1(&envelope_header, &key);
+    JsStreamingShardOpenResult {
+        code: result.code,
+        handle_id: result.handle_id,
+        chunk_size_bytes: result.chunk_size_bytes,
+    }
+}
+
+#[wasm_bindgen(js_name = streamingShardProcessChunkV1)]
+#[must_use]
+pub fn streaming_shard_process_chunk_v1_js(
+    handle_id: u32,
+    chunk: Vec<u8>,
+    is_final: bool,
+) -> JsStreamingShardChunkResult {
+    let mut result = streaming_shard_process_chunk_v1(handle_id, &chunk, is_final);
+    let plaintext = std::mem::take(&mut result.plaintext);
+    JsStreamingShardChunkResult {
+        code: result.code,
+        plaintext,
+    }
+}
+
+#[wasm_bindgen(js_name = streamingShardCloseV1)]
+#[must_use]
+pub fn streaming_shard_close_v1_js(handle_id: u32) -> u32 {
+    streaming_shard_close_v1(handle_id)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -5635,3 +5926,6 @@ mod tests {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+
