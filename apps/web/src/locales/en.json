@@ -383,6 +383,14 @@
       "allow": "Allow",
       "notNow": "Not now",
       "neverAsk": "Don't ask again"
+    },
+    "visitorDisclosure": {
+      "title": "Before you start the download",
+      "body1": "To download this album, your browser will temporarily save the decrypted photos in this device's local storage (OPFS) while the download runs.",
+      "body2": "The decrypted photos stay on this device until the download finishes and the file is saved. You can safely close the tab — the download is resumable when you come back.",
+      "body3": "On a shared device, anyone using this browser profile could potentially access the staging area while a download is in progress. Continue only if that is acceptable.",
+      "acknowledge": "I understand, continue",
+      "cancel": "Cancel"
     }
   },
   "lightbox": {

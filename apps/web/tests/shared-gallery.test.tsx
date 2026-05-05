@@ -742,6 +742,20 @@ describe('SharedGallery', () => {
       ) as HTMLButtonElement;
       await act(async () => {
         button.click();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Visitor flow now gates downloads behind a per-share-link disclosure.
+      // Acknowledge it so the mode-picker assertions below run.
+      await waitFor(
+        () => getByTestId('visitor-download-disclosure-acknowledge') !== null,
+      );
+      const ackButton = getByTestId(
+        'visitor-download-disclosure-acknowledge',
+      ) as HTMLButtonElement;
+      await act(async () => {
+        ackButton.click();
         // Let the mode-picker prompt + startDownload promises settle.
         await Promise.resolve();
         await Promise.resolve();

@@ -394,6 +394,14 @@
       "allow": "Povolit",
       "notNow": "Teď ne",
       "neverAsk": "Příště se neptat"
+    },
+    "visitorDisclosure": {
+      "title": "Než začnete stahovat",
+      "body1": "Při stahování tohoto alba prohlížeč dočasně uloží dešifrované fotky do lokálního úložiště tohoto zařízení (OPFS).",
+      "body2": "Dešifrované fotky zůstanou v tomto zařízení, dokud stahování neskončí a soubor se neuloží. Záložku můžete bezpečně zavřít — stahování lze po návratu obnovit.",
+      "body3": "Na sdíleném zařízení by k odkládacímu úložišti mohl po dobu stahování přistupovat kdokoli, kdo používá tento profil prohlížeče. Pokračujte, jen pokud je to v pořádku.",
+      "acknowledge": "Rozumím, pokračovat",
+      "cancel": "Zrušit"
     }
   },
   "lightbox": {
