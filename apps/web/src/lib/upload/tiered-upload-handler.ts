@@ -271,6 +271,7 @@ export async function processTieredUpload(
       thumbHeight: task.thumbHeight,
       originalWidth: task.originalWidth,
       originalHeight: task.originalHeight,
+      tieredShards,
     };
     if (task.thumbnailBase64)
       persistedUpdate.thumbnailBase64 = task.thumbnailBase64;

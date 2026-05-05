@@ -11,6 +11,7 @@ import {
   UploadErrorCode,
 } from '../src/contexts/UploadContext';
 import { UploadErrorToast } from '../src/components/Upload/UploadErrorToast';
+import { uploadQueue } from '../src/lib/upload-queue';
 
 // Mock dependencies
 vi.mock('../src/lib/epoch-key-service', () => ({
@@ -69,6 +70,7 @@ describe('UploadContext', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     vi.clearAllMocks();
+    vi.mocked(uploadQueue.init).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -101,6 +103,43 @@ describe('UploadContext', () => {
     expect(contextValue!.error).toBeNull();
     expect(typeof contextValue!.upload).toBe('function');
     expect(typeof contextValue!.clearError).toBe('function');
+  });
+
+  it('initializes the upload queue when the provider mounts', async () => {
+    await act(async () => {
+      root.render(
+        createElement(
+          UploadProvider,
+          null,
+          createElement(TestConsumer, { onContext: () => {} }),
+        ),
+      );
+    });
+
+    expect(uploadQueue.init).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not crash the provider when mount-time upload queue initialization fails', async () => {
+    vi.mocked(uploadQueue.init).mockRejectedValueOnce(new Error('idb unavailable'));
+    let contextValue: ReturnType<typeof useUploadContext> | null = null;
+
+    await act(async () => {
+      root.render(
+        createElement(
+          UploadProvider,
+          null,
+          createElement(TestConsumer, {
+            onContext: (ctx) => {
+              contextValue = ctx;
+            },
+          }),
+        ),
+      );
+    });
+
+    expect(uploadQueue.init).toHaveBeenCalledTimes(1);
+    expect(contextValue).not.toBeNull();
+    expect(contextValue!.error).toBeNull();
   });
 
   it('throws error when used outside provider', () => {

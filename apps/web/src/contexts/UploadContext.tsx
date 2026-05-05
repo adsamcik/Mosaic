@@ -33,6 +33,8 @@ interface UploadContextValue {
   upload: (file: File, albumId: string) => Promise<void>;
   /** Clear the current error */
   clearError: () => void;
+  /** Clear legacy pre-migration upload queue records */
+  resetLegacyUploadQueue: () => Promise<number>;
 }
 
 const UploadContext = createContext<UploadContextValue | null>(null);
@@ -142,8 +144,19 @@ export function UploadProvider({ children }: UploadProviderProps) {
       setIsUploading(false);
     };
 
+    let cancelled = false;
+    void uploadQueue.init().catch((err: unknown) => {
+      if (cancelled) return;
+      log.warn('Upload queue initialization failed:', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
     // Cleanup: bridge cleanup will restore original callbacks
-    return bridgeCleanup;
+    return () => {
+      cancelled = true;
+      bridgeCleanup();
+    };
   }, []);
 
   // Warn user before leaving page during upload
@@ -216,10 +229,22 @@ export function UploadProvider({ children }: UploadProviderProps) {
     setError(null);
   }, []);
 
+  const resetLegacyUploadQueue = useCallback(async (): Promise<number> => {
+    await uploadQueue.init();
+    return uploadQueue.resetLegacyUploadQueue();
+  }, []);
+
   // Memoize context value to prevent unnecessary re-renders of consumers
   const contextValue = useMemo<UploadContextValue>(
-    () => ({ isUploading, progress, error, upload, clearError }),
-    [isUploading, progress, error, upload, clearError],
+    () => ({
+      isUploading,
+      progress,
+      error,
+      upload,
+      clearError,
+      resetLegacyUploadQueue,
+    }),
+    [isUploading, progress, error, upload, clearError, resetLegacyUploadQueue],
   );
 
   return (

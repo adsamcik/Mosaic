@@ -230,6 +230,7 @@ export async function processVideoUpload(
       thumbHeight: task.thumbHeight,
       originalWidth: task.originalWidth,
       originalHeight: task.originalHeight,
+      tieredShards,
       ...(task.videoMetadata ? { videoMetadata: task.videoMetadata } : {}),
     };
     if (task.thumbnailBase64) persistedUpdate.thumbnailBase64 = task.thumbnailBase64;

@@ -293,6 +293,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Frontend Context | [contexts/UploadContext.tsx](../apps/web/src/contexts/UploadContext.tsx)      |
 | Frontend Hook    | [hooks/useUpload.ts](../apps/web/src/hooks/useUpload.ts)                      |
 | Frontend UI      | [components/Upload/](../apps/web/src/components/Upload/)                      |
+| Frontend Upload Queue | [lib/upload/](../apps/web/src/lib/upload/)                              |
 
 **Features:**
 - Client-side encryption before upload
@@ -301,6 +302,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 - EXIF extraction (date, GPS, camera info)
 - Thumbnail generation (256px, 512px)
 - Video file support (MP4, WebM, MOV, MKV) with automatic frame extraction
+- Legacy IndexedDB upload queue drain/reset path for pre-R-Cl1 records
+- PNG/WebP/AVIF/HEIC metadata-strip migration parity through Rust WASM
 
 ---
 
@@ -941,6 +944,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-05-05 | Web Upload Queue Migration  | Added    | Added legacy IndexedDB upload task detection/drain/reset telemetry and PNG/WebP/AVIF/HEIC strip parity coverage |
 | 2026-05-04 | Web Metadata Strip Parity (M0) | Added | Web JPEG/PNG/WebP stripping now delegates to Rust `mosaic-media` WASM; HEIC/AVIF/video source originals reject until parser support lands |
 | 2026-04-30 | Cross-client cryptographic vector parity (Android, Slice 0C) | Added | 7 new raw-input UniFFI exports + 5 Generated*Bridge contracts + 5 AndroidRust*Api adapters + 30 round-trip tests; closes 5 `TODO Slice 0C:` markers in `CrossClientVectorTest.kt`; new `kotlin-raw-input-ffi` architecture guard; new `error_code_table.rs` snapshot test |
 | 2026-04-30 | TS-Canonical Cryptographic Primitives | Added | `mosaic-crypto::ts_canonical` module: BLAKE2b-keyed link IDs, BLAKE2b auth-key + L1 derivation, XSalsa20-Poly1305 (`crypto_secretbox`) wrap/unwrap; reproduces TS reference byte-exact for `auth_keypair.json`, `account_unlock.json`, `link_keys.json` corpora |

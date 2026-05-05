@@ -1,4 +1,5 @@
 import type { EpochHandleId, TieredShardIds } from '../../workers/types';
+import { SNAPSHOT_VERSION } from './legacy-drainer';
 
 /** Chunk size for splitting files (6MB) */
 export const CHUNK_SIZE = 6 * 1024 * 1024;
@@ -124,6 +125,9 @@ export interface UploadTask {
 /** Persisted task state (for resume after reload) */
 export interface PersistedTask {
   id: string;
+  schemaVersion?: typeof SNAPSHOT_VERSION;
+  snapshotVersion?: typeof SNAPSHOT_VERSION;
+  idempotencyKey?: string;
   albumId: string;
   fileName: string;
   fileSize: number;
@@ -147,6 +151,8 @@ export interface PersistedTask {
   originalHeight?: number;
   /** ThumbHash string for instant placeholder (~25 bytes base64) */
   thumbhash?: string;
+  /** Tiered shard IDs persisted after tiered/video upload completion */
+  tieredShards?: TieredShardIds;
   /** Video metadata (persisted for resume) */
   videoMetadata?: VideoUploadMetadata;
 }
