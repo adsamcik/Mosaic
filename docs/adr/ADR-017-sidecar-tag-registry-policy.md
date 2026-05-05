@@ -12,12 +12,14 @@ Mosaic's encrypted metadata sidecar (`Mosaic_Metadata_v1`, 64-byte version envel
 - prose in `SPEC-RustEncryptedMetadataSidecar.md`,
 - the encoded fields produced by `canonical_media_metadata_sidecar_bytes` and consumed by web/Android.
 
-Tags 1 (orientation), 2 (original_dimensions), 3 (device_timestamp_ms), 4 (mime_override), 5 (camera_make), 7 (camera_model), 8 (subseconds_ms), and 9 (gps) are active v1 image-class sidecar tags after R-M3/R-M4. The Rust core completion programme also reserves:
+Tags 1 (orientation), 2 (original_dimensions), 3 (device_timestamp_ms), 4 (mime_override), 5 (camera_make), 7 (camera_model), 8 (subseconds_ms), and 9 (gps) are active v1 image-class sidecar tags after R-M3/R-M4. R-M7 promotes the Rust core completion programme video-class tags:
 
 - tag 10 (codec_fourcc, R-M7),
 - tag 11 (duration_ms, R-M7),
 - tag 12 (frame_rate_x100, R-M7),
-- tag 13 (video_orientation, R-M7).
+- tag 13 (video_orientation, R-M7),
+- tag 14 (video_dimensions, R-M7),
+- tag 15 (video_container_format, R-M7).
 
 The 3-reviewer pass (`files/reviews/R3-opus47-coherence.md`) flagged that **once a sidecar tag number is written into encrypted bytes that ship to a user's device, the (tag → meaning, layout) mapping is forever-frozen** — exactly like a `ClientErrorCode` numeric or an envelope version. Without governance:
 
@@ -39,7 +41,7 @@ Sidecar tag numbers are governed by an **append-only, lock-tested, ADR-changeabl
 4. **No tag may carry plaintext content** that is not already part of the v1 sidecar privacy classes (orientation, dimensions, MIME, GPS, timestamps, camera identity, video codec). All sidecar TLV bytes are encrypted before server transit; per-tag privacy classes are registry metadata describing client-local plaintext sensitivity for future redaction, logging, and platform handling. They are not currently a runtime-enforced redaction hook. New privacy classes require a separate ADR amending `SPEC-LateV1ProtocolFreeze.md` §"Frozen now" item 5.
 5. **No tag may carry secret material** (keys, password hashes, biometric data, account identifiers, raw URIs, file names). Tag 6 remains numerically reserved as `filename`, but filenames are forbidden payloads and producers must not emit that tag. Encoders reject `Forbidden` tags with `MetadataSidecarError::ForbiddenTag`, distinct from `ReservedNumberPending` tags rejected as `ReservedTagNotPromoted`. The R-M5.3 decoder target includes a defense-in-depth forbidden-name check before any decoder becomes a v1 invariant.
 6. **Cross-implementation consistency.** Native Rust, WASM (P-W2), and UniFFI (P-U1) all consume the same numeric registry; cross-wrapper byte-equality tests (Q-final-1) include sidecar bytes for every supported tag combination.
-7. **Total sidecar cap.** `MAX_SIDECAR_TOTAL_BYTES` is locked at `65_536` bytes (64 KiB) for v1 by R-M5.2.2. The current active-tag worst case after R-M3/R-M4 is 281 bytes (`59 + (8 * 6) + 2 + 8 + 8 + 10 + 64 + 64 + 4 + 14`), so 64 KiB provides large headroom while reducing the allocation/DoS surface from the provisional R-M5.2.1 `1_500_000` byte (1.5 MB) value. Tightening or relaxing the cap after v1 freeze is protocol-visible; a future Active tag that cannot fit must be redesigned or deferred to a v2 breaking cap relaxation with migration handlers.
+7. **Total sidecar cap.** `MAX_SIDECAR_TOTAL_BYTES` is locked at `65_536` bytes (64 KiB) for v1 by R-M5.2.2. The current active-tag worst case after R-M7 is 340 bytes (`59 + (14 * 6) + 2 + 8 + 8 + 10 + 64 + 64 + 4 + 14 + 1 + 8 + 4 + 1 + 8 + 1`), so 64 KiB provides large headroom while reducing the allocation/DoS surface from the provisional R-M5.2.1 `1_500_000` byte (1.5 MB) value. Tightening or relaxing the cap after v1 freeze is protocol-visible; a future Active tag that cannot fit must be redesigned or deferred to a v2 breaking cap relaxation with migration handlers.
 
 ### Lock test (`sidecar_tag_table.rs`)
 
@@ -54,10 +56,12 @@ const REGISTRY_V1: &[(u16, &str, TagLayout, TagStatus)] = &[
     (7, "camera_model", TagLayout::Utf8Bytes { max_bytes: 64 }, TagStatus::Active),
     (8, "subseconds_ms", TagLayout::U32LeRange { min: 0, max: 999 }, TagStatus::Active),
     (9, "gps", TagLayout::PackedGpsMicrodegrees, TagStatus::Active),
-    (10, "codec_fourcc", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
-    (11, "duration_ms", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
-    (12, "frame_rate_x100", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
-    (13, "video_orientation", TagLayout::ReservedAwaitingLayout, TagStatus::ReservedNumberPending),
+    (10, "codec_fourcc", TagLayout::U8VideoCodecEnum, TagStatus::Active),
+    (11, "duration_ms", TagLayout::U64LeDurationMillis, TagStatus::Active),
+    (12, "frame_rate_x100", TagLayout::U32LeMilliFps, TagStatus::Active),
+    (13, "video_orientation", TagLayout::U8VideoRotationEnum, TagStatus::Active),
+    (14, "video_dimensions", TagLayout::DimensionsLe, TagStatus::Active),
+    (15, "video_container_format", TagLayout::U8VideoContainerEnum, TagStatus::Active),
 ];
 
 #[test]
@@ -74,8 +78,8 @@ Tag *numbers* are locked by this ADR and by `sidecar_tag_table.rs`; *byte layout
 - **0** is reserved (signal "absent" in some contexts; never allocated).
 - **1–4** are v1.0 image-class tags (already shipped).
 - **5–9** are R-M3/R-M4 image-extension allocations except tag 6, which remains permanently forbidden as `filename`.
-- **10–13** are this programme's video-class allocations (R-M7).
-- **14–127** are reserved for media-class extensions (image, video, audio if added).
+- **10–15** are this programme's active video-class allocations (R-M7).
+- **16–127** are reserved for media-class extensions (image, video, audio if added).
 - **128–255** are reserved for future "non-media" structured fields (not used in v1).
 - **256–4095** are reserved for vendor / experimental tags; allocated only with an ADR.
 - **4096–32767** are reserved for future protocol extensions; never allocated without a major version bump.

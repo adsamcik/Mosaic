@@ -329,6 +329,12 @@ fn worst_case_active_tag_sidecar_fits_within_cap() {
             metadata_field_tags::CAMERA_MODEL,
             metadata_field_tags::SUBSECONDS_MS,
             metadata_field_tags::GPS,
+            metadata_field_tags::CODEC_FOURCC,
+            metadata_field_tags::DURATION_MS,
+            metadata_field_tags::FRAME_RATE_X100,
+            metadata_field_tags::VIDEO_ORIENTATION,
+            metadata_field_tags::VIDEO_DIMENSIONS,
+            metadata_field_tags::VIDEO_CONTAINER_FORMAT,
         ],
         "new Active tags must re-evaluate MAX_SIDECAR_TOTAL_BYTES"
     );
@@ -350,6 +356,14 @@ fn worst_case_active_tag_sidecar_fits_within_cap() {
     gps[4..8].copy_from_slice(&180_000_000_i32.to_le_bytes());
     gps[8..12].copy_from_slice(&i32::MAX.to_le_bytes());
     gps[12..14].copy_from_slice(&u16::MAX.to_le_bytes());
+    let codec = [u8::MAX];
+    let video_duration = u64::MAX.to_le_bytes();
+    let frame_rate = u32::MAX.to_le_bytes();
+    let video_orientation = [u8::MAX];
+    let mut video_dimensions = [0_u8; 8];
+    video_dimensions[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+    video_dimensions[4..].copy_from_slice(&u32::MAX.to_le_bytes());
+    let video_container = [u8::MAX];
     let fields = [
         MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &orientation),
         MetadataSidecarField::new(metadata_field_tags::ORIGINAL_DIMENSIONS, &dimensions),
@@ -359,6 +373,15 @@ fn worst_case_active_tag_sidecar_fits_within_cap() {
         MetadataSidecarField::new(metadata_field_tags::CAMERA_MODEL, &camera_model),
         MetadataSidecarField::new(metadata_field_tags::SUBSECONDS_MS, &subseconds),
         MetadataSidecarField::new(metadata_field_tags::GPS, &gps),
+        MetadataSidecarField::new(metadata_field_tags::CODEC_FOURCC, &codec),
+        MetadataSidecarField::new(metadata_field_tags::DURATION_MS, &video_duration),
+        MetadataSidecarField::new(metadata_field_tags::FRAME_RATE_X100, &frame_rate),
+        MetadataSidecarField::new(metadata_field_tags::VIDEO_ORIENTATION, &video_orientation),
+        MetadataSidecarField::new(metadata_field_tags::VIDEO_DIMENSIONS, &video_dimensions),
+        MetadataSidecarField::new(
+            metadata_field_tags::VIDEO_CONTAINER_FORMAT,
+            &video_container,
+        ),
     ];
 
     let bytes = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
@@ -369,7 +392,7 @@ fn worst_case_active_tag_sidecar_fits_within_cap() {
     };
 
     let expected_len = FIXED_METADATA_SIDECAR_HEADER_BYTES
-        + (8 * TLV_RECORD_HEADER_BYTES)
+        + (14 * TLV_RECORD_HEADER_BYTES)
         + orientation.len()
         + dimensions.len()
         + timestamp.len()
@@ -377,9 +400,15 @@ fn worst_case_active_tag_sidecar_fits_within_cap() {
         + camera_make.len()
         + camera_model.len()
         + subseconds.len()
-        + gps.len();
+        + gps.len()
+        + codec.len()
+        + video_duration.len()
+        + frame_rate.len()
+        + video_orientation.len()
+        + video_dimensions.len()
+        + video_container.len();
     assert_eq!(bytes.len(), expected_len);
-    assert_eq!(bytes.len(), 281);
+    assert_eq!(bytes.len(), 340);
     assert!(bytes.len() < MAX_SIDECAR_TOTAL_BYTES);
 }
 

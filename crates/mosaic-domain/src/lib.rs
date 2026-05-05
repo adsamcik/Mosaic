@@ -132,6 +132,12 @@ pub mod metadata_field_tags {
     pub const CAMERA_MODEL: u16 = 7;
     pub const SUBSECONDS_MS: u16 = 8;
     pub const GPS: u16 = 9;
+    pub const CODEC_FOURCC: u16 = 10;
+    pub const DURATION_MS: u16 = 11;
+    pub const FRAME_RATE_X100: u16 = 12;
+    pub const VIDEO_ORIENTATION: u16 = 13;
+    pub const VIDEO_DIMENSIONS: u16 = 14;
+    pub const VIDEO_CONTAINER_FORMAT: u16 = 15;
     pub const KNOWN_FIELD_TAGS: &[SidecarTagRegistryEntry] = &[
         SidecarTagRegistryEntry::new(
             ORIENTATION,
@@ -188,28 +194,40 @@ pub mod metadata_field_tags {
             SidecarTagPrivacyClass::SensitiveLocation,
         ),
         SidecarTagRegistryEntry::new(
-            10,
+            CODEC_FOURCC,
             "codec_fourcc",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::ContainerTechnical,
         ),
         SidecarTagRegistryEntry::new(
-            11,
+            DURATION_MS,
             "duration_ms",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::ContainerTechnical,
         ),
         SidecarTagRegistryEntry::new(
-            12,
+            FRAME_RATE_X100,
             "frame_rate_x100",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::ContainerTechnical,
         ),
         SidecarTagRegistryEntry::new(
-            13,
+            VIDEO_ORIENTATION,
             "video_orientation",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::RenderingOnly,
+        ),
+        SidecarTagRegistryEntry::new(
+            VIDEO_DIMENSIONS,
+            "video_dimensions",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::RenderingOnly,
+        ),
+        SidecarTagRegistryEntry::new(
+            VIDEO_CONTAINER_FORMAT,
+            "video_container_format",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::ContainerTechnical,
         ),
     ];
     #[must_use]

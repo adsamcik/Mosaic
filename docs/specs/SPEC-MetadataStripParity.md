@@ -6,7 +6,7 @@
 
 ## Purpose
 
-M0 makes browser upload metadata stripping use the same dependency-free Rust `mosaic-media` container parsers as native clients. The web layer delegates JPEG, PNG, and WebP to `mosaic-wasm`; HEIC, AVIF, and video are rejected before encryption/TUS when the source original would otherwise be preserved.
+M0 makes browser upload metadata stripping use the same dependency-free Rust `mosaic-media` container parsers as native clients. The web layer delegates JPEG, PNG, and WebP to `mosaic-wasm`; HEIC and AVIF are handled by the ISO-BMFF strip path, and R-M6 adds video strip support for MP4/MOV/WebM/Matroska before encryption/TUS when the source original would otherwise be preserved.
 
 ## Data Flow
 
@@ -14,7 +14,7 @@ M0 makes browser upload metadata stripping use the same dependency-free Rust `mo
 2. Canvas-reencoded AVIF originals are metadata-clean by construction and bypass stripping.
 3. Preserved JPEG/PNG/WebP originals call `stripExifFromBlob(blob, mimeType)`.
 4. `stripExifFromBlob` reads the `Blob` into a `Uint8Array` and calls `stripJpegMetadata`, `stripPngMetadata`, or `stripWebpMetadata`.
-5. `crates/mosaic-wasm` calls `mosaic_media::strip_known_metadata(MediaFormat::{Jpeg,Png,WebP}, bytes)`.
+5. `crates/mosaic-wasm` calls `mosaic_media::strip_known_metadata(MediaFormat::{Jpeg,Png,WebP}, bytes)` or the dedicated `strip_video_metadata` path once wrappers expose R-M6.
 6. WASM returns `{ code, strippedBytes, removedMetadataCount, free() }`.
 7. Web returns `{ bytes, stripped, skippedReason? }`; fail-closed upload handling rejects unsupported or malformed source-preserved originals before encryption or TUS upload.
 
@@ -61,13 +61,13 @@ M0 makes browser upload metadata stripping use the same dependency-free Rust `mo
 
 | Action | Rationale |
 |---|---|
-| Reject source-preserved upload before encryption/TUS until R-M1/R-M2 land HEIC/AVIF strip support. Canvas-reencoded AVIF originals are allowed because browser re-encoding sheds source metadata. | No HEIC/AVIF box parser in M0; safer to reject source originals than risk ZK metadata leakage. |
+| Strip ISO-BMFF metadata carriers before encryption/TUS for supported AVIF/HEIC/HEIF originals. Canvas-reencoded AVIF originals remain metadata-clean by construction and may bypass stripping. | R-M1/R-M2 added bounded ISO-BMFF parsing and metadata item removal while preserving `mdat` image bytes. |
 
-### Video (MP4, MOV)
+### Video (MP4, MOV, WebM, Matroska)
 
 | Action | Rationale |
 |---|---|
-| Reject source-preserved upload before encryption/TUS until R-M6 lands video strip support. | No MP4/MOV box parser in M0; safer to reject than risk metadata leakage. |
+| Strip supported video metadata before encryption/TUS via `strip_video_metadata`. MP4/MOV remove `udta` and `meta` metadata boxes while preserving `mdat`; WebM/Matroska remove `Tags` and `Attachments` while preserving `Cluster`. | R-M6 adds bounded ISO-BMFF and EBML container parsing for video; no frame re-encoding occurs. Cross-platform parity is verified by corpus goldens as wrappers expose the same Rust core. |
 
 ## Cross-platform parity rule
 
@@ -106,7 +106,7 @@ tiered-upload-handler.ts
 
 ## Forward links
 
-- R-M1 (AVIF strip) - when this lands, update SPEC to allow source-preserved AVIF.
-- R-M2 (HEIC strip) - when this lands, update SPEC to allow source-preserved HEIC/HEIF.
-- R-M6 (video strip) - when this lands, update SPEC to allow MP4/MOV.
+- R-M1 (AVIF strip) - landed; source-preserved AVIF uses bounded ISO-BMFF strip.
+- R-M2 (HEIC strip) - landed; source-preserved HEIC/HEIF uses bounded ISO-BMFF strip.
+- R-M6 (video strip) - landed; MP4/MOV/WebM/Matroska use `strip_video_metadata`.
 - M0 - current SPEC anchor.

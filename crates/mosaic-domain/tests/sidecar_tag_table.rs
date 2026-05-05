@@ -56,18 +56,12 @@ fn expected_and_live_tables_agree() {
             (7, "camera_model", SidecarTagStatus::Active),
             (8, "subseconds_ms", SidecarTagStatus::Active),
             (9, "gps", SidecarTagStatus::Active),
-            (10, "codec_fourcc", SidecarTagStatus::ReservedNumberPending),
-            (11, "duration_ms", SidecarTagStatus::ReservedNumberPending),
-            (
-                12,
-                "frame_rate_x100",
-                SidecarTagStatus::ReservedNumberPending
-            ),
-            (
-                13,
-                "video_orientation",
-                SidecarTagStatus::ReservedNumberPending
-            ),
+            (10, "codec_fourcc", SidecarTagStatus::Active),
+            (11, "duration_ms", SidecarTagStatus::Active),
+            (12, "frame_rate_x100", SidecarTagStatus::Active),
+            (13, "video_orientation", SidecarTagStatus::Active),
+            (14, "video_dimensions", SidecarTagStatus::Active),
+            (15, "video_container_format", SidecarTagStatus::Active),
         ]
     );
 }
@@ -130,6 +124,8 @@ fn sidecar_tag_privacy_classes_match_spec_table() {
         (11, ContainerTechnical),
         (12, ContainerTechnical),
         (13, RenderingOnly),
+        (14, RenderingOnly),
+        (15, ContainerTechnical),
     ];
     for (tag, class) in expected {
         assert_eq!(metadata_field_tags::privacy_class(tag), Some(class));
@@ -234,6 +230,14 @@ fn each_active_tag_encodes_through_canonical_sidecar_builder() {
     gps[4..8].copy_from_slice(&14_416_667_i32.to_le_bytes());
     gps[8..12].copy_from_slice(&250_i32.to_le_bytes());
     gps[12..14].copy_from_slice(&7_u16.to_le_bytes());
+    let codec = [1_u8];
+    let video_duration = 12_345_u64.to_le_bytes();
+    let frame_rate = 29_970_u32.to_le_bytes();
+    let video_orientation = [1_u8];
+    let mut video_dimensions = [0_u8; 8];
+    video_dimensions[..4].copy_from_slice(&1920_u32.to_le_bytes());
+    video_dimensions[4..].copy_from_slice(&1080_u32.to_le_bytes());
+    let video_container = [1_u8];
     let fields = [
         MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &orientation),
         MetadataSidecarField::new(metadata_field_tags::ORIGINAL_DIMENSIONS, &dimensions),
@@ -243,6 +247,15 @@ fn each_active_tag_encodes_through_canonical_sidecar_builder() {
         MetadataSidecarField::new(metadata_field_tags::CAMERA_MODEL, model),
         MetadataSidecarField::new(metadata_field_tags::SUBSECONDS_MS, &subseconds),
         MetadataSidecarField::new(metadata_field_tags::GPS, &gps),
+        MetadataSidecarField::new(metadata_field_tags::CODEC_FOURCC, &codec),
+        MetadataSidecarField::new(metadata_field_tags::DURATION_MS, &video_duration),
+        MetadataSidecarField::new(metadata_field_tags::FRAME_RATE_X100, &frame_rate),
+        MetadataSidecarField::new(metadata_field_tags::VIDEO_ORIENTATION, &video_orientation),
+        MetadataSidecarField::new(metadata_field_tags::VIDEO_DIMENSIONS, &video_dimensions),
+        MetadataSidecarField::new(
+            metadata_field_tags::VIDEO_CONTAINER_FORMAT,
+            &video_container,
+        ),
     ];
 
     let bytes = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
@@ -252,5 +265,8 @@ fn each_active_tag_encodes_through_canonical_sidecar_builder() {
         Err(error) => panic!("all active tags should encode: {error:?}"),
     };
 
-    assert_eq!(bytes.len(), 59 + (8 * 6) + 2 + 8 + 8 + 10 + 9 + 7 + 4 + 14);
+    assert_eq!(
+        bytes.len(),
+        59 + (14 * 6) + 2 + 8 + 8 + 10 + 9 + 7 + 4 + 14 + 1 + 8 + 4 + 1 + 8 + 1
+    );
 }

@@ -8,11 +8,16 @@ use zeroize::Zeroizing;
 
 mod exif_sidecar;
 pub mod iso_bmff;
+mod video;
 pub use exif_sidecar::{
     ExtractedGpsFields, ExtractedSidecarFields, SidecarExtractResult,
     extract_canonical_sidecar_fields,
 };
 pub use iso_bmff::BoxParser;
+pub use video::{
+    VideoCodec, VideoContainer, VideoInspectResult, inspect_video_container,
+    video_metadata_sidecar_fields,
+};
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 const WEBP_VP8X_ICC_FLAG: u8 = 0b0010_0000;
@@ -52,6 +57,15 @@ impl MediaFormat {
     }
 }
 
+/// Canonical rotation metadata extracted from video track transforms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Orientation {
+    Rotate0,
+    Rotate90,
+    Rotate180,
+    Rotate270,
+}
+
 /// Recognized metadata categories stripped from gallery tier bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MetadataKind {
@@ -65,6 +79,8 @@ pub enum MetadataKind {
     PhysicalDimensions,
     SuggestedPalette,
     RenderingHint,
+    VideoMetadata,
+    Attachment,
 }
 
 /// Media processing errors.
@@ -251,6 +267,14 @@ pub fn strip_known_metadata(
         MediaFormat::Png => strip_png_metadata(bytes),
         MediaFormat::WebP => strip_webp_metadata(bytes),
     }
+}
+
+/// Removes recognized metadata carriers from supported video containers.
+///
+/// # Errors
+/// Returns `UnsupportedFormat` when the container cannot be parsed safely.
+pub fn strip_video_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
+    video::strip_video_metadata(input)
 }
 
 /// Removes recognized metadata carriers from an AVIF ISO-BMFF image container.
