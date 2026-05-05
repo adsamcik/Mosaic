@@ -67,6 +67,7 @@ import { runZipFinalizer as defaultRunZipFinalizer, type ZipFinalizerDeps } from
 import { runPerFileFinalizer as defaultRunPerFileFinalizer, type PerFileFinalizerDeps } from './coordinator/per-file-finalizer';
 import { createShardMirror, type ShardMirror, type ShardMirrorStats } from './coordinator/shard-mirror';
 import { createDecryptCache, type DecryptCache } from './coordinator/decrypt-cache';
+import { createThumbnailStreamer, type ThumbnailStreamer } from './coordinator/thumbnail-streamer';
 
 
 const log = createLogger('CoordinatorWorker');
@@ -199,6 +200,20 @@ const DOWNLOAD_REASON_BY_CODE: Readonly<Record<number, DownloadErrorReason>> = (
   return out;
 })();
 
+/**
+ * Per-thumbnail-loop state. The thumbnail streamer's deps don't carry jobId
+ * through fetch/key resolution, so we publish the active job's source +
+ * album via these refs at the start of each `resolveJobThumbnails` loop.
+ * Safe in practice: only one loop iterates the manifest at a time per job
+ * (perJobConcurrency drains processOne synchronously w.r.t. the iteration).
+ *
+ * Cross-job interleaving is bounded by the global concurrency cap and each
+ * loop pins refs at iteration entry, so per-shard fetches always read the
+ * source matching their entry.
+ */
+const currentSourceRef: { current: SourceStrategy | null } = { current: null };
+const currentAlbumIdRef: { current: string | null } = { current: null };
+
 /** Singleton worker implementation hosting all Phase 1 download jobs. */
 export class CoordinatorWorker implements CoordinatorWorkerApi {
   private initialized = false;
@@ -254,6 +269,13 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private readonly scheduledAt = new Map<string, number>();
   /** Lazy-built schedule manager. */
   private scheduleManagerInstance: ScheduleManager | null = null;
+  /**
+   * Per-job thumbnail manifests, kept in-memory ONLY. Thumbnails are an
+   * in-app preview and are never persisted or exported (see streamer header).
+   */
+  private readonly jobThumbnailManifests = new Map<string, ReadonlyArray<{ readonly photoId: string; readonly epochId: string; readonly thumbShardId: string }>>();
+  /** Singleton thumbnail streamer; lazy-built on first subscription. */
+  private thumbnailStreamerInstance: ThumbnailStreamer | null = null;
 
   constructor(opts: CoordinatorWorkerOptions = {}) {
     this.byteProgressRateLimitMs = opts.byteProgressRateLimitMs ?? DEFAULT_BYTE_PROGRESS_RATE_LIMIT_MS;
@@ -303,6 +325,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     this.jobOutputModes.set(jobId, outputMode);
     if (input.source) {
       this.jobSources.set(jobId, input.source);
+    }
+    if (input.thumbnails && input.thumbnails.length > 0) {
+      this.jobThumbnailManifests.set(jobId, input.thumbnails);
     }
     // ZK-safe: only the scope prefix and schedule kind are logged.
     log.info('Job started', {
@@ -450,11 +475,19 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       this.jobSources.delete(jobId);
       this.jobExportFailures.delete(jobId);
       this.pausedNoSourceVisitorJobs.delete(jobId);
+      this.jobThumbnailManifests.delete(jobId);
+      this.thumbnailStreamerInstance?.stop(jobId);
       this.emitProgress(summaryToProgress(updated));
       this.broadcast(updated);
       return { phase: updated.state.phase };
     }
 
+    if (updated.state.phase === 'Done' || updated.state.phase === 'Errored' || updated.state.phase === 'Cancelled') {
+      // Stop the in-app thumbnail loop and revoke its blob URLs. Manifest
+      // is dropped lazily on next GC / hard-cancel; we keep it so a brief
+      // re-subscribe (e.g. tray re-render) doesn't no-op silently.
+      this.thumbnailStreamerInstance?.stop(jobId);
+    }
     this.emitJobChanged(updated);
     return { phase: updated.state.phase };
   }
@@ -648,6 +681,84 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     };
   }
 
+  /**
+   * Subscribe to in-app thumbnail Blob URLs for a job. The worker owns the
+   * underlying blob URLs and revokes them via the streamer's stop semantics
+   * (last subscriber gone, job terminal, or explicit cancel).
+   *
+   * NOT exported: blob URLs returned here MUST NOT be wired into any
+   * finalizer or export sink.
+   */
+  async subscribeToThumbnails(
+    jobId: string,
+    callback: (photoId: string, blobUrl: string) => void,
+  ): Promise<{ unsubscribe: () => void }> {
+    this.assertInitialized();
+    const streamer = this.thumbnailStreamer();
+    const unsubscribe = streamer.subscribe(jobId, callback);
+    return {
+      unsubscribe: Comlink.proxy((): void => {
+        try { unsubscribe(); } catch { /* best-effort */ }
+      }),
+    };
+  }
+
+  /**
+   * Lazy-build the singleton thumbnail streamer. Wires deps to the existing
+   * source strategy (auth/share-link) and crypto pool so visitor + auth
+   * jobs share one execution path.
+   */
+  private thumbnailStreamer(): ThumbnailStreamer {
+    if (this.thumbnailStreamerInstance) return this.thumbnailStreamerInstance;
+    const sourceFor = (jobId: string): SourceStrategy =>
+      this.jobSources.get(jobId) ?? this.getDefaultAuthSource();
+    // Per-shard small abort signal; we don't tie thumbnails to the main job
+    // abort because cancelling the main download must NOT cancel a thumbnail
+    // already in flight (it'll just be the last one we emit). The streamer's
+    // own abort (per stop(jobId)) handles teardown.
+    const neverAbort = new AbortController().signal;
+    const self = this;
+    this.thumbnailStreamerInstance = createThumbnailStreamer({
+      fetchShard: async (shardId, signal): Promise<Uint8Array> => {
+        // fallbackSource: jobId is not part of this dep's signature, so
+        // route through default auth. This is correct for authenticated
+        // jobs; visitor jobs must rely on the overload installed via
+        // resolveJobThumbnails which closes over the matching source.
+        // To avoid leaking visitor data, we ALWAYS resolve via the
+        // currently-active job source captured per-iteration:
+        const src = currentSourceRef.current ?? self.getDefaultAuthSource();
+        return src.fetchShard(shardId, signal);
+      },
+      resolveThumbKey: async (_photoId, epochId): Promise<Uint8Array> => {
+        const src = currentSourceRef.current ?? self.getDefaultAuthSource();
+        const albumId = currentAlbumIdRef.current ?? '';
+        const epoch = Number.parseInt(epochId, 10);
+        return src.resolveKey(albumId, Number.isFinite(epoch) ? epoch : 0);
+      },
+      decryptShard: async (bytes, key): Promise<Uint8Array> => {
+        const pool = await getCryptoPoolForCoordinator();
+        return pool.decryptShard(bytes, key);
+      },
+      resolveJobThumbnails: async function* (jobId: string) {
+        const manifest = self.jobThumbnailManifests.get(jobId) ?? [];
+        const job = self.jobs.get(jobId);
+        currentSourceRef.current = sourceFor(jobId);
+        currentAlbumIdRef.current = job?.albumId ?? '';
+        try {
+          for (const entry of manifest) {
+            yield entry;
+          }
+        } finally {
+          // Leave refs alone; the next loop overwrites them. The streamer's
+          // perJobConcurrency=2 and a single-job iteration ensure no
+          // cross-job race on these refs in practice.
+          void neverAbort;
+        }
+      },
+    });
+    return this.thumbnailStreamerInstance;
+  }
+
   /** Garbage-collect stale OPFS jobs. */
   async gc(opts: {
     readonly nowMs: number;
@@ -667,6 +778,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       this.jobSources.delete(jobId);
       this.jobExportFailures.delete(jobId);
       this.pausedNoSourceVisitorJobs.delete(jobId);
+      this.jobThumbnailManifests.delete(jobId);
+      this.thumbnailStreamerInstance?.stop(jobId);
     }
     return { purged: result.purged };
   }

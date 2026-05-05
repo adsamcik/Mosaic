@@ -436,6 +436,61 @@ afterEach(() => {
 });
 
 describe('CoordinatorWorker', () => {
+  it('subscribeToThumbnails emits each thumbnail from the in-memory manifest', async () => {
+    vi.useRealTimers();
+    // Mock crypto pool so decryptShard returns the input bytes (identity).
+    const decrypt = vi.fn(async (bytes: Uint8Array) => bytes);
+    cbor.setCryptoPoolFactory(async () => ({
+      size: 1,
+      decryptShard: decrypt,
+      decryptShardWithTierKey: vi.fn(),
+    } as unknown as Awaited<ReturnType<typeof cryptoPoolMocks.getCryptoPool>>));
+    const fetched: string[] = [];
+    const fakeSource: SourceStrategy = {
+      kind: 'authenticated',
+      getScopeKey: (): string => 'auth:00000000000000000000000000000000',
+      fetchShard: async (id: string): Promise<Uint8Array> => { fetched.push(id); return new Uint8Array([id.charCodeAt(0)]); },
+      fetchShards: async (): Promise<Uint8Array[]> => [],
+      resolveKey: async (): Promise<Uint8Array> => new Uint8Array(32),
+    };
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const { jobId } = await worker.startJob({
+      ...validInput(),
+      source: fakeSource,
+      thumbnails: [
+        { photoId: 'p-A', epochId: '7', thumbShardId: 'shard-aaaa' },
+        { photoId: 'p-B', epochId: '7', thumbShardId: 'shard-bbbb' },
+      ],
+    });
+    // Provide URL.createObjectURL stub for the test environment.
+    const created: string[] = [];
+    const revoked: string[] = [];
+    let n = 0;
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = (_b: Blob): string => { n += 1; const u = 'blob:int#' + n; created.push(u); return u; };
+    URL.revokeObjectURL = (u: string): void => { revoked.push(u); };
+    try {
+      const received: Array<{ photoId: string; blobUrl: string }> = [];
+      const sub = await worker.subscribeToThumbnails(jobId, (photoId, blobUrl): void => {
+        received.push({ photoId, blobUrl });
+      });
+      await vi.waitFor(() => {
+        expect(received.length).toBe(2);
+      });
+      expect(received.map((r) => r.photoId).sort()).toEqual(['p-A', 'p-B']);
+      expect(fetched.sort()).toEqual(['shard-aaaa', 'shard-bbbb']);
+      sub.unsubscribe();
+      // Allow stop's microtask to revoke.
+      await new Promise((r) => setTimeout(r, 10));
+      expect(revoked.length).toBe(created.length);
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
+  });
+
   it('initializes empty state', async () => {
     const worker = new CoordinatorWorker();
     await expect(worker.initialize({ nowMs })).resolves.toEqual({ reconstructedJobs: 0 });
