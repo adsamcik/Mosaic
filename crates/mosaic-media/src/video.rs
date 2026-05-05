@@ -2,7 +2,10 @@ use zeroize::Zeroizing;
 
 use crate::{
     MetadataKind, MosaicMediaError, Orientation, StrippedMedia,
-    iso_bmff::{Box as IsoBox, BoxParser},
+    iso_bmff::{
+        Box as IsoBox, BoxParser, BoxSizeChange, append_box, compute_pre_mdat_delta,
+        rewrite_co64_payload, rewrite_stco_payload, total_box_size,
+    },
 };
 
 const EBML_HEADER_ID: u64 = 0x1a45dfa3;
@@ -158,6 +161,12 @@ pub fn video_metadata_sidecar_fields(result: &VideoInspectResult) -> Vec<(u16, V
 }
 
 /// Removes video metadata boxes/elements without re-encoding frame payloads.
+///
+/// CONSTRAINT (extended R-M6.1): P-W2 (WASM exports for media strip) MUST NOT
+/// dispatch before BOTH AVIF/HEIC iloc offset rewrite and MP4/MOV stco/co64
+/// chunk-offset rewrite are verified against real-encoder fixtures. Synthetic
+/// corpora alone are insufficient because zero-entry offset tables hide mdat
+/// shifts.
 pub fn strip_video_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
     match detect_video_container(input).ok_or(MosaicMediaError::UnsupportedFormat)? {
         VideoContainer::Mp4 | VideoContainer::Mov => strip_iso_video_metadata(input),
@@ -380,10 +389,70 @@ fn strip_iso_video_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaEr
     {
         return Err(MosaicMediaError::UnsupportedFormat);
     }
-    let mut removed = Vec::new();
+    let mut planned_boxes = Vec::with_capacity(boxes.len());
+    for bmff_box in boxes {
+        let original_total_size = total_box_size(bmff_box.header_size, bmff_box.payload.len())?;
+        let stripped = strip_iso_video_box(&bmff_box, 0, false)?;
+        if let Some(stripped) = stripped {
+            let output_total_size = total_box_size(bmff_box.header_size, stripped.payload.len())?;
+            planned_boxes.push(PlannedIsoVideoBox {
+                box_type: bmff_box.box_type,
+                payload: stripped.payload,
+                header_size: bmff_box.header_size,
+                removed: stripped.removed,
+                original_total_size,
+                output_total_size,
+                original_box: bmff_box,
+            });
+        } else {
+            planned_boxes.push(PlannedIsoVideoBox {
+                box_type: bmff_box.box_type,
+                payload: Vec::new(),
+                header_size: bmff_box.header_size,
+                removed: vec![MetadataKind::VideoMetadata],
+                original_total_size,
+                output_total_size: 0,
+                original_box: bmff_box,
+            });
+        }
+    }
+
+    let size_changes = planned_boxes
+        .iter()
+        .map(|bmff_box| BoxSizeChange {
+            box_type: bmff_box.box_type,
+            original_total_size: bmff_box.original_total_size,
+            output_total_size: bmff_box.output_total_size,
+        })
+        .collect::<Vec<_>>();
+    let chunk_offset_delta = compute_pre_mdat_delta(&size_changes)?;
     let mut output: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(input.len()));
-    for bmff_box in &boxes {
-        append_iso_video_box(&mut output, bmff_box, &mut removed)?;
+    let mut removed = Vec::new();
+    for planned_box in planned_boxes {
+        if planned_box.output_total_size == 0 {
+            removed.extend(planned_box.removed);
+            continue;
+        }
+        if chunk_offset_delta > 0 {
+            let stripped =
+                strip_iso_video_box(&planned_box.original_box, chunk_offset_delta, false)?
+                    .ok_or(MosaicMediaError::UnsupportedFormat)?;
+            append_box(
+                &mut output,
+                planned_box.box_type,
+                &stripped.payload,
+                planned_box.header_size,
+            )?;
+            removed.extend(stripped.removed);
+        } else {
+            append_box(
+                &mut output,
+                planned_box.box_type,
+                &planned_box.payload,
+                planned_box.header_size,
+            )?;
+            removed.extend(planned_box.removed);
+        }
     }
     Ok(StrippedMedia {
         bytes: std::mem::take(&mut *output),
@@ -391,19 +460,44 @@ fn strip_iso_video_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaEr
     })
 }
 
-fn append_iso_video_box(
-    output: &mut Vec<u8>,
+struct PlannedIsoVideoBox<'a> {
+    box_type: [u8; 4],
+    payload: Vec<u8>,
+    header_size: usize,
+    removed: Vec<MetadataKind>,
+    original_total_size: usize,
+    output_total_size: usize,
+    original_box: IsoBox<'a>,
+}
+
+struct StrippedIsoVideoBox {
+    payload: Vec<u8>,
+    removed: Vec<MetadataKind>,
+}
+
+fn strip_iso_video_box(
     bmff_box: &IsoBox<'_>,
-    removed: &mut Vec<MetadataKind>,
-) -> Result<(), MosaicMediaError> {
+    chunk_offset_delta: u64,
+    inside_stbl: bool,
+) -> Result<Option<StrippedIsoVideoBox>, MosaicMediaError> {
     if bmff_box.box_type == *b"udta" || bmff_box.box_type == *b"meta" {
-        removed.push(MetadataKind::VideoMetadata);
-        return Ok(());
+        return Ok(None);
     }
     if bmff_box.children.is_empty() {
-        append_bmff_box(output, bmff_box.box_type, bmff_box.payload)
+        let payload = if inside_stbl && bmff_box.box_type == *b"stco" {
+            rewrite_stco_payload(bmff_box.payload, chunk_offset_delta)?
+        } else if inside_stbl && bmff_box.box_type == *b"co64" {
+            rewrite_co64_payload(bmff_box.payload, chunk_offset_delta)?
+        } else {
+            bmff_box.payload.to_vec()
+        };
+        Ok(Some(StrippedIsoVideoBox {
+            payload,
+            removed: Vec::new(),
+        }))
     } else {
         let mut payload = Vec::with_capacity(bmff_box.payload.len());
+        let mut removed = Vec::new();
         if bmff_box.box_type == *b"meta" {
             payload.extend_from_slice(
                 bmff_box
@@ -413,26 +507,22 @@ fn append_iso_video_box(
             );
         }
         for child in &bmff_box.children {
-            append_iso_video_box(&mut payload, child, removed)?;
+            let child_inside_stbl = inside_stbl || bmff_box.box_type == *b"stbl";
+            match strip_iso_video_box(child, chunk_offset_delta, child_inside_stbl)? {
+                Some(stripped) => {
+                    append_box(
+                        &mut payload,
+                        child.box_type,
+                        &stripped.payload,
+                        child.header_size,
+                    )?;
+                    removed.extend(stripped.removed);
+                }
+                None => removed.push(MetadataKind::VideoMetadata),
+            }
         }
-        append_bmff_box(output, bmff_box.box_type, &payload)
+        Ok(Some(StrippedIsoVideoBox { payload, removed }))
     }
-}
-
-fn append_bmff_box(
-    output: &mut Vec<u8>,
-    box_type: [u8; 4],
-    payload: &[u8],
-) -> Result<(), MosaicMediaError> {
-    let size = payload
-        .len()
-        .checked_add(8)
-        .ok_or(MosaicMediaError::OutputTooLarge)?;
-    let size = u32::try_from(size).map_err(|_| MosaicMediaError::OutputTooLarge)?;
-    output.extend_from_slice(&size.to_be_bytes());
-    output.extend_from_slice(&box_type);
-    output.extend_from_slice(payload);
-    Ok(())
 }
 
 fn detect_ebml_container(input: &[u8]) -> Result<Option<VideoContainer>, MosaicMediaError> {
@@ -581,6 +671,9 @@ fn strip_ebml_video_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaE
     let elements = parse_ebml_elements(input, 0, &mut budget)?;
     let mut removed = Vec::new();
     let mut output: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(input.len()));
+    // EBML/WebM media blocks are nested Cluster elements, not global absolute
+    // byte offsets like ISO-BMFF stco/co64 tables, so stripping sibling Tags or
+    // Attachments does not require chunk-offset rewrites.
     for element in elements {
         append_stripped_ebml_element(&mut output, element, 0, &mut removed)?;
     }

@@ -195,10 +195,11 @@ pub fn strip_heic_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaErr
 /// - Preserves extended-size (64-bit) box headers from the input, avoiding the
 ///   8-byte header downgrade that would compound the offset shift.
 ///
-/// CONSTRAINT: P-W2 (WASM exports) MUST NOT dispatch before this function is
-/// verified against a real-encoder fixture (avif_heic_real_decode.rs). The
-/// synthetic corpus in avif_heic_strip.rs uses extent_count=0 and does not
-/// exercise the iloc offset rewrite path.
+/// CONSTRAINT (extended R-M6.1): P-W2 (WASM exports for media strip) MUST NOT
+/// dispatch before BOTH (a) AVIF/HEIC iloc rewrite is verified against a
+/// real-encoder fixture (R-M1.1), AND (b) MP4/MOV stco/co64 rewrite is verified
+/// against a real-encoder fixture (R-M6.1). Synthetic corpora alone are
+/// insufficient.
 pub fn strip_iso_bmff_metadata(
     input: &[u8],
     format: IsoBmffFormat,
@@ -236,7 +237,15 @@ pub fn strip_iso_bmff_metadata(
         }
     }
 
-    let bytes_removed_before_mdat = bytes_removed_before_mdat(&planned_boxes)?;
+    let box_size_changes = planned_boxes
+        .iter()
+        .map(|bmff_box| BoxSizeChange {
+            box_type: bmff_box.box_type,
+            original_total_size: bmff_box.original_total_size,
+            output_total_size: bmff_box.output_total_size,
+        })
+        .collect::<Vec<_>>();
+    let bytes_removed_before_mdat = compute_pre_mdat_delta(&box_size_changes)?;
     let mut output: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(input.len()));
     let mut removed = Vec::new();
     for planned_box in planned_boxes {
@@ -313,6 +322,12 @@ struct PlannedTopBox<'a> {
     is_meta: bool,
 }
 
+pub(crate) struct BoxSizeChange {
+    pub(crate) box_type: [u8; 4],
+    pub(crate) original_total_size: usize,
+    pub(crate) output_total_size: usize,
+}
+
 struct ParsedMeta<'a> {
     full_box_header: &'a [u8],
     children: Vec<Box<'a>>,
@@ -328,13 +343,16 @@ fn is_container_box(box_type: [u8; 4]) -> bool {
     CONTAINER_BOX_TYPES.contains(&box_type)
 }
 
-fn total_box_size(header_size: usize, payload_len: usize) -> Result<usize, MosaicMediaError> {
+pub(crate) fn total_box_size(
+    header_size: usize,
+    payload_len: usize,
+) -> Result<usize, MosaicMediaError> {
     header_size
         .checked_add(payload_len)
         .ok_or(MosaicMediaError::OutputTooLarge)
 }
 
-fn bytes_removed_before_mdat(boxes: &[PlannedTopBox<'_>]) -> Result<u64, MosaicMediaError> {
+pub(crate) fn compute_pre_mdat_delta(boxes: &[BoxSizeChange]) -> Result<u64, MosaicMediaError> {
     let mut removed = 0_u64;
     for bmff_box in boxes {
         if bmff_box.box_type == *b"mdat" {
@@ -349,6 +367,87 @@ fn bytes_removed_before_mdat(boxes: &[PlannedTopBox<'_>]) -> Result<u64, MosaicM
             .ok_or(MosaicMediaError::OutputTooLarge)?;
     }
     Ok(removed)
+}
+
+pub(crate) fn rewrite_stco_payload(
+    payload: &[u8],
+    delta: u64,
+) -> Result<Vec<u8>, MosaicMediaError> {
+    rewrite_chunk_offset_payload(payload, delta, 4)
+}
+
+pub(crate) fn rewrite_co64_payload(
+    payload: &[u8],
+    delta: u64,
+) -> Result<Vec<u8>, MosaicMediaError> {
+    rewrite_chunk_offset_payload(payload, delta, 8)
+}
+
+fn rewrite_chunk_offset_payload(
+    payload: &[u8],
+    delta: u64,
+    entry_size: usize,
+) -> Result<Vec<u8>, MosaicMediaError> {
+    payload
+        .get(..8)
+        .ok_or(MosaicMediaError::UnsupportedFormat)?;
+    let entry_count = u32::from_be_bytes([payload[4], payload[5], payload[6], payload[7]]);
+    let entries_len = usize::try_from(entry_count)
+        .map_err(|_| MosaicMediaError::UnsupportedFormat)?
+        .checked_mul(entry_size)
+        .ok_or(MosaicMediaError::UnsupportedFormat)?;
+    let expected_len = 8_usize
+        .checked_add(entries_len)
+        .ok_or(MosaicMediaError::UnsupportedFormat)?;
+    if payload.len() != expected_len {
+        return Err(MosaicMediaError::UnsupportedFormat);
+    }
+    if delta == 0 {
+        return Ok(payload.to_vec());
+    }
+
+    let mut output = payload.to_vec();
+    for entry_index in
+        0..usize::try_from(entry_count).map_err(|_| MosaicMediaError::UnsupportedFormat)?
+    {
+        let offset = 8_usize
+            .checked_add(
+                entry_index
+                    .checked_mul(entry_size)
+                    .ok_or(MosaicMediaError::UnsupportedFormat)?,
+            )
+            .ok_or(MosaicMediaError::UnsupportedFormat)?;
+        if entry_size == 4 {
+            let value = u64::from(u32::from_be_bytes([
+                payload[offset],
+                payload[offset + 1],
+                payload[offset + 2],
+                payload[offset + 3],
+            ]));
+            let rewritten = value
+                .checked_sub(delta)
+                .ok_or(MosaicMediaError::UnsupportedFormat)?;
+            let rewritten =
+                u32::try_from(rewritten).map_err(|_| MosaicMediaError::UnsupportedFormat)?;
+            output[offset..offset + 4].copy_from_slice(&rewritten.to_be_bytes());
+        } else {
+            let value = u64::from_be_bytes([
+                payload[offset],
+                payload[offset + 1],
+                payload[offset + 2],
+                payload[offset + 3],
+                payload[offset + 4],
+                payload[offset + 5],
+                payload[offset + 6],
+                payload[offset + 7],
+            ]);
+            let rewritten = value
+                .checked_sub(delta)
+                .ok_or(MosaicMediaError::UnsupportedFormat)?;
+            output[offset..offset + 8].copy_from_slice(&rewritten.to_be_bytes());
+        }
+    }
+    Ok(output)
 }
 
 fn strip_meta_box_payload(
@@ -954,7 +1053,7 @@ fn brands(payload: &[u8]) -> impl Iterator<Item = &[u8]> {
     std::iter::once(&payload[..4]).chain(payload[8..].chunks_exact(4))
 }
 
-fn append_box(
+pub(crate) fn append_box(
     output: &mut Vec<u8>,
     box_type: [u8; 4],
     payload: &[u8],
