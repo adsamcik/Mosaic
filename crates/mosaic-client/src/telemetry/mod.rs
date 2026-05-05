@@ -1,12 +1,38 @@
+//! Client-core ADR-018 counter-only telemetry.
+//!
+//! # Privacy Invariants
+//!
+//! ## Compile-time enforcement
+//! Counter names must be `&'static str` (i.e., compile-time string literals
+//! or static-lifetime constants). This prevents runtime-built strings
+//! constructed via `format!()`, `String::from()`, etc., which is the
+//! most common accidental privacy leak.
+//!
+//! ## Discipline-based enforcement
+//! Compile-time `&'static str` does NOT prevent intentional misuse:
+//! a malicious or careless contributor could declare `const USER_42: &str
+//! = "user_42";` and pass it as a counter name. The privacy guarantee
+//! requires reviewer discipline plus the documented counter naming convention
+//! (see SPEC-ClientCoreStateMachines.md §"Telemetry counter names").
+//!
+//! ## Privacy classes by counter category
+//! - State-machine inflection counters (e.g.,
+//!   `manifest_commit_unknown_retry_rejected`): public protocol-level events;
+//!   aggregable; no identifier.
+//! - User actions (e.g., `share_link_minted`): aggregable count of operations,
+//!   not the identifiers operated upon.
+//! - Forbidden patterns: counters whose names embed user IDs, asset IDs,
+//!   IP addresses, or any other PII. Reviewers must reject PRs that introduce
+//!   such patterns.
+
 use std::collections::{HashMap, VecDeque};
 
 /// Compile-time-known ADR-018 counter names.
 ///
-/// These names are intentionally static, snake_case strings. Callers cannot
-/// pass runtime-formatted identifiers, network strings, UUIDs, asset IDs,
-/// album IDs, account IDs, encrypted bytes, or any other correlatable payload
-/// through [`TelemetryRingBuffer::increment`], because it accepts only
-/// `&'static str`.
+/// These names are intentionally static, snake_case strings. Because
+/// [`TelemetryRingBuffer::increment`] accepts only `&'static str`, callers
+/// cannot pass runtime-formatted identifiers. Reviewers must still reject
+/// static names that embed correlatable identifiers or other PII.
 pub mod counters {
     /// Generic RetryableFailure was rejected while recovering an unknown
     /// manifest commit outcome.
@@ -62,8 +88,25 @@ impl TelemetryRingBuffer {
         }
     }
 
-    /// Increment a counter. If buffer is at capacity and `name` is new, the
+    /// Increments a counter.
+    ///
+    /// If the buffer is at capacity and `name` is new, the
     /// least-recently-incremented counter is evicted.
+    ///
+    /// # Privacy invariant
+    ///
+    /// Counter names must be `&'static str`. This is a compile-time-enforced
+    /// invariant for runtime-built strings: values constructed via
+    /// `format!()`, `String::from()`, or other heap/runtime mechanisms cannot
+    /// be passed because their lifetime is shorter than `'static`.
+    ///
+    /// ```compile_fail,E0716
+    /// use mosaic_client::telemetry::TelemetryRingBuffer;
+    ///
+    /// let mut buf = TelemetryRingBuffer::new(8);
+    /// let id = 42;
+    /// buf.increment(&format!("user_{}", id));
+    /// ```
     pub fn increment(&mut self, name: &'static str) {
         if !self.enabled || self.capacity == 0 {
             return;

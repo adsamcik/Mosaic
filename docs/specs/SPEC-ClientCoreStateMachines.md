@@ -151,10 +151,16 @@ Because the frozen snapshot has no retry-target key, `RetryTimerElapsed` carries
 The Rust client core exposes an ADR-018 counter-only telemetry ring buffer at
 `mosaic_client::telemetry::TelemetryRingBuffer`. Counters are local-first,
 bounded, aggregable diagnostics; they carry no event payloads and no
-correlatable identifiers. Counter names are compile-time `&'static str`
-constants, so callers cannot construct names from `job_id`, `asset_id`,
-`album_id`, `account_id`, server response strings, encrypted bytes, or any
-other user-correlatable value.
+correlatable identifiers. Counter names must be `&'static str` (compile-time
+string literals or static-lifetime constants). This prevents accidental
+runtime-built names from `format!()`, `String::from()`, server responses,
+encrypted bytes, or other request-local values.
+
+The `&'static str` type is not a complete privacy proof: a static constant
+could still embed a correlatable value. Privacy therefore also depends on
+reviewer discipline and the naming convention below. Reviewers must reject
+counter names that include user IDs, asset IDs, album IDs, account IDs, IP
+addresses, or any other PII/correlatable identifier.
 
 The buffer retains at most `DEFAULT_CAPACITY = 256` distinct counter names.
 When full, incrementing a new counter evicts the least-recently-incremented

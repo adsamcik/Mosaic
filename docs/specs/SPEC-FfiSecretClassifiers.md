@@ -16,7 +16,7 @@ The complete classifier vocabulary is:
 
 | Classifier | Semantic | Cardinality |
 |---|---|---|
-| `SAFE` | Symbol returns or accepts data that is publicly observable, encrypted, signed, or handle-scoped and poses no compositional attack risk. Existing unprefixed allowlist rationales are interpreted as `SAFE`. | Many |
+| `SAFE` | Symbol returns or accepts data that is publicly observable, encrypted, signed, or handle-scoped and poses no compositional attack risk. | Many |
 | `BEARER-TOKEN-PERMITTED` | Symbol returns or accepts a bearer credential by design. The threat model is bearer-token: anyone with the bytes has access. The bytes are intended to be externally serialized into a user-shareable URL or similar artifact. | Few (≤3 expected at v1) |
 | `CORPUS-DRIVER-ONLY` | Symbol exists only for cross-client parity testing and is feature-gated out of production builds via Cargo `cross-client-vectors` feature. The Gradle invariant in `apps/android-main/build.gradle.kts` forbids scheduling test and production tasks in the same invocation. | Few (≤5 expected at v1) |
 | `MIGRATION-PENDING` | Symbol is a tracked migration target with a sibling ticket. Time-limited classifier; it must resolve to one of the above before v1 freeze. | Zero at v1 freeze |
@@ -35,8 +35,6 @@ The rationale must:
 2. Explain why an attacker gains no plaintext, signing, wrapping, bearer-token, or compositional advantage from those bytes.
 
 Example: `SAFE: Returns 32-byte X25519 public key; no plaintext advantage to attacker.`
-
-Unprefixed legacy rationales are treated as `SAFE` only when they meet the same content standard.
 
 ### `BEARER-TOKEN-PERMITTED`
 
@@ -77,11 +75,12 @@ R-C5.5.1 added allowlist-rationale quality checks to the architecture guards:
 
 - rationale length must be at least 40 characters;
 - the seven banned phrases `reviewed existing api`, `internal use`, `not a secret`, `todo`, `trust me`, `fixme`, and `tbd` are rejected case-insensitively;
-- negative fixtures prove the length and banned-phrase checks execute in both `.ps1` and `.sh` variants.
+- every allowlist rationale must start with an explicit classifier prefix from §2;
+- negative fixtures prove the length, banned-phrase, missing-classifier, and unknown-classifier checks execute in both `.ps1` and `.sh` variants.
 
 Any allowlist entry's rationale comment that fails the R-C5.5.1 mechanical check is rejected at script execution. Adding a new classifier requires extending the R-C5.5.1 classifier check in all four guard scripts (`no-raw-secret-ffi-export.{ps1,sh}` and `web-raw-input-ffi.{ps1,sh}`) and adding a negative fixture for the rejected old vocabulary.
 
-The v1 guard behavior treats an explicit leading `UPPER-CASE-CLASSIFIER:` as a classifier. If present, it must be one of the four classifiers in §2; if absent, the entry is treated as `SAFE` and still must meet the `SAFE` rationale standard.
+The v1 guard behavior requires an explicit leading `UPPER-CASE-CLASSIFIER:` classifier on every allowlist rationale. It must be one of the four classifiers in §2; absent classifiers are rejected instead of falling back to `SAFE`.
 
 ## 5. Lifecycle
 

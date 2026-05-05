@@ -14,12 +14,12 @@
 #
 # Allowlist audit checkpoint:
 # Last full audit: R-C5.5 at 2d17c47
-# Each allowlist entry below MUST carry a SPECIFIC cryptographic safety
-# argument as its rationale comment. "Reviewed existing API" / "Internal
+# Each allowlist entry below MUST carry an explicit classifier prefix and a
+# SPECIFIC cryptographic safety argument as its rationale comment. "Reviewed existing API" / "Internal
 # use" / "Not a secret" are NOT acceptable rationales. Audits should be
 # repeated whenever an entry is added; v1 freeze checkpoint should re-run
 # this audit.
-# R-C5.5.1 mechanical enforcement: rationales shorter than 40 chars or
+# R-C5.5.1 mechanical enforcement: rationales missing a classifier, shorter than 40 chars, or
 # matching banned phrases ('reviewed existing api', 'internal use', etc.)
 # fail at script execution time. See R-C5.5 audit checkpoint above.
 # Classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md (v1).
@@ -62,7 +62,7 @@ namespace_import_pattern = re.compile(r"\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\b")
 
 allowlisted_files = {
     # Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.
-    "apps/web/tests/cross-client-vectors.test.ts": "Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.",
+    "apps/web/tests/cross-client-vectors.test.ts": "SAFE: Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.",
 }
 
 banned_rationale_phrases = [
@@ -91,10 +91,16 @@ def get_allowlist_rationale_errors(*allowlist_tables):
                 if phrase in lowered:
                     rationale_errors.append(f"Allowlist entry '{name}' failed banned phrase check ('{phrase}'): \"{rationale}\" ({rationale_fix_suggestion})")
             classifier_match = classifier_pattern.match(rationale)
-            if classifier_match and classifier_match.group(1) not in permitted_classifiers:
+            if classifier_match:
+                if classifier_match.group(1) not in permitted_classifiers:
+                    rationale_errors.append(
+                        f"Allowlist entry '{name}' failed classifier check ('{classifier_match.group(1)}'): "
+                        "classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md"
+                    )
+            else:
                 rationale_errors.append(
-                    f"Allowlist entry '{name}' failed classifier check ('{classifier_match.group(1)}'): "
-                    "classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md"
+                    f"Allowlist entry '{name}' failed missing classifier check: "
+                    "rationale must start with one of the permitted classifiers followed by ':'"
                 )
     return rationale_errors
 
@@ -143,6 +149,11 @@ assert_rationale_quality_fixture_caught("rationale-trust-me", "trust me", "banne
 assert_rationale_quality_fixture_caught("rationale-fixme", "fixme", "banned phrase check")
 assert_rationale_quality_fixture_caught("rationale-tbd", "tbd", "banned phrase check")
 assert_rationale_quality_fixture_caught("rationale-short", "short", "length check")
+assert_rationale_quality_fixture_caught(
+    "rationale-missing-classifier",
+    "Returns placeholder bytes with a long enough rationale for classifier validation.",
+    "missing classifier check",
+)
 assert_rationale_quality_fixture_caught(
     "rationale-unknown-classifier",
     "BACKWARD-COMPAT-LEGACY: Returns placeholder bytes with a long enough rationale for classifier validation.",
