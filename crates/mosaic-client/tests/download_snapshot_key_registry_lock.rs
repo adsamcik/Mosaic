@@ -58,6 +58,7 @@ fn snapshot(state: DownloadJobState, plan: DownloadPlan) -> DownloadJobSnapshot 
         photos,
         failure_log: Vec::new(),
         lease_token: None,
+        scope_key: String::from("auth:00000000000000000000000000000000"),
     }
 }
 #[test]
@@ -75,6 +76,7 @@ fn download_snapshot_key_registry_matches_expected() {
             ("PHOTOS", 7),
             ("FAILURE_LOG", 8),
             ("LEASE_TOKEN", 9),
+            ("SCOPE_KEY", 10),
         ]
     );
 }
