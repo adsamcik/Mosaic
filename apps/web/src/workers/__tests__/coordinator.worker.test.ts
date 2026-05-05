@@ -6,7 +6,7 @@ const rustMocks = vi.hoisted(() => ({
   rustApplyDownloadEvent: vi.fn<(stateBytes: Uint8Array, eventBytes: Uint8Array) => Promise<{ newStateBytes: Uint8Array }>>(),
   rustBuildDownloadPlan: vi.fn<(input: { readonly photos: readonly { readonly shards: readonly { readonly tier: number }[] }[] }) => Promise<{ planBytes: Uint8Array }>>(),
   rustCommitDownloadSnapshot: vi.fn<(snapshotBytes: Uint8Array) => Promise<{ checksum: Uint8Array }>>(),
-  rustInitDownloadSnapshot: vi.fn<(input: { readonly jobId: Uint8Array; readonly albumId: string; readonly planBytes: Uint8Array; readonly nowMs: number }) => Promise<{ bodyBytes: Uint8Array; checksum: Uint8Array }>>(),
+  rustInitDownloadSnapshot: vi.fn<(input: { readonly jobId: Uint8Array; readonly albumId: string; readonly planBytes: Uint8Array; readonly nowMs: number; readonly scopeKey: string }) => Promise<{ bodyBytes: Uint8Array; checksum: Uint8Array }>>(),
   rustLoadDownloadSnapshot: vi.fn<(snapshotBytes: Uint8Array, checksum: Uint8Array) => Promise<{ snapshotBytes: Uint8Array; schemaVersionLoaded: number }>>(),
   rustVerifyDownloadSnapshot: vi.fn<(snapshotBytes: Uint8Array, checksum: Uint8Array) => Promise<{ valid: boolean }>>(),
 }));
@@ -253,6 +253,7 @@ function snapshotBody(opts: {
   readonly lastUpdatedAtMs: number;
   readonly photoCount: number;
   readonly photos?: readonly SnapshotPhotoSpec[];
+  readonly scopeKey?: string;
 }): Uint8Array {
   const photos = opts.photos ?? Array.from({ length: opts.photoCount }, (): SnapshotPhotoSpec => ({
     photoId: '018f0000-0000-7000-8000-000000000101',
@@ -282,6 +283,9 @@ function snapshotBody(opts: {
     ])) }),
     mapEntry(8, { kind: 'array', value: [] }),
     mapEntry(9, { kind: 'null' }),
+    ...(opts.scopeKey === undefined
+      ? []
+      : [mapEntry(10, { kind: 'text' as const, value: opts.scopeKey })]),
   ]));
 }
 
@@ -399,6 +403,7 @@ beforeEach(() => {
       createdAtMs: input.nowMs,
       lastUpdatedAtMs: input.nowMs,
       photoCount: planPhotoCount,
+      scopeKey: input.scopeKey,
     }),
     checksum: checksum(),
   }));
@@ -996,6 +1001,36 @@ describe('CoordinatorWorker', () => {
     await cbor.awaitScheduledDriver(worker, reconstructedJobId);
     expect(cbor.getJobSource(worker, reconstructedJobId)).toBeNull();
     expect(pipelineMocks.executePhotoTask).toHaveBeenCalled();
+  });
+
+  // ----- Scope key persistence (Phase 3 visitor tray) -----
+  it('persists scope_key from input source onto the snapshot and JobSummary', async () => {
+    const visitorScope = 'visitor:11111111111111111111111111111111';
+    const visitorSource: SourceStrategy = {
+      kind: 'share-link',
+      fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
+      fetchShards: vi.fn(async (): Promise<Uint8Array[]> => []),
+      resolveKey: vi.fn(async (): Promise<Uint8Array> => new Uint8Array(32)),
+      getScopeKey: () => visitorScope,
+    };
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const { jobId } = await worker.startJob({ ...validInput(), source: visitorSource });
+    const summaries = await worker.listJobs();
+    const summary = summaries.find((s) => s.jobId === jobId);
+    expect(summary?.scopeKey).toBe(visitorScope);
+    // Verify the scope_key was passed through to the WASM init call.
+    expect(rustMocks.rustInitDownloadSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeKey: visitorScope }),
+    );
+  });
+
+  it('falls back to the configured accountId scope when source is omitted', async () => {
+    const worker = new CoordinatorWorker({ accountId: 'acct-xyz' });
+    await worker.initialize({ nowMs });
+    const { jobId } = await worker.startJob(validInput());
+    const summary = (await worker.getJob(jobId)) ?? null;
+    expect(summary?.scopeKey).toMatch(/^auth:[0-9a-f]{32}$/u);
   });
 });
 

@@ -1351,6 +1351,12 @@ export interface JobSummary {
   readonly failureCount: number;
   readonly createdAtMs: number;
   readonly lastUpdatedAtMs: number;
+  /**
+   * Tray scope key partitioning this job by identity. Format
+   * `<prefix>:<32-hex>` where prefix is `auth`/`visitor`/`legacy`.
+   * Only the prefix is safe to log; treat the hex tail as opaque.
+   */
+  readonly scopeKey: string;
 }
 
 /** Job summary useful for resuming a partially completed non-terminal download. */

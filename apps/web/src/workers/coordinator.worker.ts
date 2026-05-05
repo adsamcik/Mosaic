@@ -97,6 +97,8 @@ interface InMemoryJob {
   readonly plan: DownloadPlanEntry[];
   createdAtMs: number;
   lastUpdatedAtMs: number;
+  /** Tray scope key (`auth:|visitor:|legacy:` + 32-hex). ZK-safe to log only the prefix. */
+  readonly scopeKey: string;
 }
 
 type SubscriptionCallback = (event: JobProgressEvent) => void;
@@ -124,6 +126,8 @@ interface ParsedSnapshotView {
   readonly photos: DownloadPhotoStateView[];
   readonly failureLog: DownloadFailureView[];
   readonly plan: DownloadPlanEntry[];
+  /** Tray scope key (CBOR snapshot key 10). v1 snapshots get a synthesized legacy fallback. */
+  readonly scopeKey: string;
 }
 
 const PHASE_BY_CODE: Readonly<Record<number, DownloadPhase>> = {
@@ -225,11 +229,17 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     const jobIdBytes = randomJobIdBytes();
     const jobId = bytesToHex(jobIdBytes);
     const nowMs = Date.now();
+    // Resolve the tray scope key from the per-job source (when supplied) or
+    // from the default authenticated source. Persisted in the v2 snapshot so
+    // the tray can filter jobs by identity across worker restarts.
+    const sourceForScope = input.source ?? this.getDefaultAuthSource();
+    const scopeKey = sourceForScope.getScopeKey();
     const initialized = await rustInitDownloadSnapshot({
       jobId: jobIdBytes,
       albumId: input.albumId,
       planBytes,
       nowMs,
+      scopeKey,
     });
 
     await opfsStaging.createJobDir(jobId);
@@ -248,7 +258,12 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     if (input.source) {
       this.jobSources.set(jobId, input.source);
     }
-    log.info('Job started', { jobId: shortId(jobId), outputMode: outputMode.kind });
+    // ZK-safe: only the scope prefix is logged; the hex tail is opaque.
+    log.info('Job started', {
+      jobId: shortId(jobId),
+      outputMode: outputMode.kind,
+      scopePrefix: scopeKey.slice(0, scopeKey.indexOf(':')),
+    });
     this.emitJobChanged(job);
     await this.sendEvent(jobId, { kind: 'PlanReady' });
     this.scheduleJobDriver(jobId);
@@ -958,6 +973,7 @@ function createInMemoryJob(snapshotBytes: Uint8Array, checksum: Uint8Array): InM
     plan: view.plan,
     createdAtMs: view.createdAtMs,
     lastUpdatedAtMs: view.lastUpdatedAtMs,
+    scopeKey: view.scopeKey,
   };
 }
 
@@ -970,6 +986,7 @@ function toJobSummary(job: InMemoryJob): JobSummary {
     failureCount: job.failureLog.length,
     createdAtMs: job.createdAtMs,
     lastUpdatedAtMs: job.lastUpdatedAtMs,
+    scopeKey: job.scopeKey,
   };
 }
 
@@ -1050,6 +1067,10 @@ function parseSnapshotView(bytes: Uint8Array): ParsedSnapshotView {
   const fields = expectMap(root);
   const jobId = bytesToHex(expectBytes(requiredMapValue(fields, 1)));
   const albumBytes = expectBytes(requiredMapValue(fields, 2));
+  // Snapshot key 10 = scope_key (v2). v1 snapshots are migrated by Rust to
+  // synthesize a `legacy:<jobIdHex>` value, so this is always present after
+  // load. Treat unexpected absence as `legacy:<jobIdHex>` for robustness.
+  const scopeKey = optionalMapValue(fields, 10);
   return {
     jobId,
     albumId: uuidBytesToString(albumBytes),
@@ -1059,6 +1080,7 @@ function parseSnapshotView(bytes: Uint8Array): ParsedSnapshotView {
     plan: expectArray(requiredMapValue(fields, 6)).map(parsePlanEntry),
     photos: expectArray(requiredMapValue(fields, 7)).map(parsePhoto),
     failureLog: expectArray(requiredMapValue(fields, 8)).map(parseFailure),
+    scopeKey: scopeKey === null ? `legacy:${jobId}` : expectText(scopeKey),
   };
 }
 
@@ -1504,6 +1526,11 @@ function requiredMapValue(entries: readonly CborMapEntry[], key: number): CborVa
     throw new Error('Missing CBOR map key');
   }
   return entry.value;
+}
+
+function optionalMapValue(entries: readonly CborMapEntry[], key: number): CborValue | null {
+  const entry = entries.find((candidate) => candidate.key.kind === 'uint' && candidate.key.value === key);
+  return entry ? entry.value : null;
 }
 
 function uintValue(value: number): CborValue {
