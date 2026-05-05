@@ -14,6 +14,7 @@
  * authenticated source on resume; a future Phase 3 schema bump can persist
  * the strategy keying for visitor / share-link sessions if needed.
  */
+import type { DownloadSchedule } from '../lib/download-schedule';
 import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import * as opfsStaging from '../lib/opfs-staging';
@@ -553,6 +554,28 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   setSaveTargetProvider(provider: RemoteSaveTargetProvider | null): Promise<void> {
     this.saveTargetProvider = provider;
     return Promise.resolve();
+  }
+
+  // NOTE: pp-cron-wire step 3 (ScheduleManager wiring) is a follow-up. The
+  // API surface lands in this PR so consumers can be developed in parallel,
+  // but no jobs currently enter the `Scheduled` phase, so:
+  //   - forceStartJob is a no-op (idempotent per JSDoc) for any known job
+  //   - updateJobSchedule is rejected with a clear NotImplemented marker.
+  // Both methods exist on the interface so the tray + mode picker work
+  // already lands in pp-cron-wire-ui. See ROADMAP.md / `feat/conditional-cron-wire`.
+  forceStartJob(jobId: string): Promise<void> {
+    if (!this.jobs.has(jobId)) {
+      // Unknown job id ⇒ resolve quietly to keep `Start now` idempotent across
+      // tab restarts. Logging is ZK-safe: only the existence of an unknown id.
+      return Promise.resolve();
+    }
+    return Promise.resolve();
+  }
+
+  updateJobSchedule(_jobId: string, _schedule: DownloadSchedule | null): Promise<void> {
+    return Promise.reject(
+      new Error('updateJobSchedule is not yet wired (pp-cron-wire step 3)'),
+    );
   }
 
   /** Dispatch to the appropriate finalizer for this job's output mode. */
@@ -1183,6 +1206,7 @@ function toJobSummary(job: InMemoryJob): JobSummary {
     lastUpdatedAtMs: job.lastUpdatedAtMs,
     scopeKey: job.scopeKey,
     lastErrorReason: job.lastErrorReason,
+    schedule: null,
   };
 }
 

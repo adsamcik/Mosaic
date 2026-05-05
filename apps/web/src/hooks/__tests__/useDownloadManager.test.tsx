@@ -52,6 +52,7 @@ const baseJob: JobSummary = {
   lastUpdatedAtMs: 1,
   scopeKey: 'auth:00000000000000000000000000000000',
   lastErrorReason: null,
+  schedule: null,
 };
 
 function phaseResult(phase: DownloadPhase): Promise<{ phase: DownloadPhase }> {
@@ -85,6 +86,8 @@ const api: CoordinatorWorkerApi = {
   }),
   gc: vi.fn(async () => ({ purged: [] })),
   setSaveTargetProvider: vi.fn(async () => undefined),
+  forceStartJob: vi.fn(async () => undefined),
+  updateJobSchedule: vi.fn(async () => undefined),
 };
 
 class MockBroadcastChannel {

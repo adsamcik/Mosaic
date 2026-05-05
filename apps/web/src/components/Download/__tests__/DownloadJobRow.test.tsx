@@ -15,6 +15,7 @@ const baseJob: JobSummary = {
   lastUpdatedAtMs: 1,
   scopeKey: 'auth:00000000000000000000000000000000',
   lastErrorReason: null,
+  schedule: null,
 };
 
 afterEach(() => document.body.replaceChildren());
@@ -50,6 +51,7 @@ describe('DownloadJobRow', () => {
       ...baseJob,
       phase: 'Errored',
       lastErrorReason: 'AccessRevoked',
+  schedule: null,
       scopeKey: 'visitor:11111111111111111111111111111111',
     };
     const rendered = await render(
@@ -70,6 +72,7 @@ describe('DownloadJobRow', () => {
       ...baseJob,
       phase: 'Errored',
       lastErrorReason: 'AccessRevoked',
+  schedule: null,
       scopeKey: 'auth:00000000000000000000000000000000',
     };
     const rendered = await render(

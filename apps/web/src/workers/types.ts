@@ -3,6 +3,7 @@
  */
 import type { EncryptedShard } from '@mosaic/crypto';
 import type { SourceStrategy } from './coordinator/source-strategy';
+import type { DownloadSchedule, ScheduleEvaluation } from '../lib/download-schedule';
 
 // Re-export EncryptedShard from crypto lib (single source of truth)
 export type { EncryptedShard };
@@ -1335,6 +1336,13 @@ export interface StartJobInput extends DownloadBuildPlanInput {
    * See top-of-file comment in coordinator.worker.ts.
    */
   readonly source?: SourceStrategy;
+  /**
+   * Optional conditional schedule. When omitted (or kind === 'immediate'),
+   * the job dispatches as soon as the worker is ready. Non-trivial schedules
+   * are persisted into the v3 snapshot and gate the transition out of the
+   * Scheduled phase via the in-worker {@link ScheduleManager}.
+   */
+  readonly schedule?: DownloadSchedule;
 }
 
 /** Stable JS event shape for the Rust `DownloadJobEvent` transition table. */
@@ -1367,6 +1375,18 @@ export interface JobSummary {
    * Used by the tray to surface visitor-specific copy for `AccessRevoked`.
    */
   readonly lastErrorReason: DownloadErrorReason | null;
+  /**
+   * Conditional schedule attached to the job, or null for plain immediate
+   * downloads. Mirrors the persisted DownloadSchedule round-tripped through
+   * the v3 snapshot.
+   */
+  readonly schedule: DownloadSchedule | null;
+  /**
+   * Latest schedule evaluation snapshot from the in-worker ScheduleManager.
+   * null when the job has no schedule, or the manager has not yet produced
+   * an evaluation. undefined is reserved for older serialized summaries.
+   */
+  readonly scheduleEvaluation?: ScheduleEvaluation | null;
 }
 
 /** Job summary useful for resuming a partially completed non-terminal download. */
@@ -1474,4 +1494,17 @@ export interface CoordinatorWorkerApi {
    * `outputMode.kind === 'zip'` or `perFile`; otherwise finalization fails with IllegalState.
    */
   setSaveTargetProvider(provider: RemoteSaveTargetProvider | null): Promise<void>;
+  /**
+   * Override a Scheduled job's gate and dispatch it immediately. Removes
+   * the job from the ScheduleManager. No-op (resolves) when the job is
+   * not currently scheduled, so the tray's Start-now button is idempotent.
+   */
+  forceStartJob(jobId: string): Promise<void>;
+  /**
+   * Replace a job's conditional schedule. The coordinator re-encodes the
+   * snapshot, re-registers with the ScheduleManager, and re-evaluates
+   * immediately. Pass null (or an immediate schedule) to clear the gate
+   * and dispatch.
+   */
+  updateJobSchedule(jobId: string, schedule: DownloadSchedule | null): Promise<void>;
 }
