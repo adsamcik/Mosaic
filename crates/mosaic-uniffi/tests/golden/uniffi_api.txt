@@ -157,6 +157,18 @@ record ClientCoreUploadShardRef
   envelope_version: u8
   uploaded: bool
 end
+record ClientCoreManifestShardRef
+  tier: u8
+  shard_index: u32
+  shard_id: String
+  sha256: Vec<u8>
+end
+record ClientCoreManifestTranscriptInputs
+  album_id: Vec<u8>
+  epoch_id: u32
+  encrypted_metadata_envelope: Vec<u8>
+  shards: Vec<ClientCoreManifestShardRef>
+end
 record ClientCoreUploadJobRequest
   job_id: String
   album_id: String
@@ -330,8 +342,11 @@ export pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVector
 export pub fn client_core_state_machine_snapshot() -> String
 export pub fn init_upload_job(request: ClientCoreUploadJobRequest) -> ClientCoreUploadJobResult
 export pub fn advance_upload_job( snapshot: ClientCoreUploadJobSnapshot, event: ClientCoreUploadJobEvent, ) -> ClientCoreUploadJobTransitionResult
+export pub fn advance_upload_job_uniffi( snapshot: ClientCoreUploadJobSnapshot, event: ClientCoreUploadJobEvent, ) -> ClientCoreUploadJobTransition
 export pub fn init_album_sync(request: ClientCoreAlbumSyncRequest) -> ClientCoreAlbumSyncResult
 export pub fn advance_album_sync( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransitionResult
+export pub fn advance_album_sync_uniffi( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransition
+export pub fn manifest_transcript_bytes_uniffi(inputs: ClientCoreManifestTranscriptInputs) -> Vec<u8>
 export pub fn client_error_code_enum_from_u16(value: u16) -> Option<ClientErrorCode>
 export pub fn client_error_code_to_u16(code: ClientErrorCode) -> u16
 record LinkKeysFfiResult

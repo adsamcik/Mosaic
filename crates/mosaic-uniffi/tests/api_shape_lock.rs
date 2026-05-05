@@ -243,6 +243,172 @@ fn normalize_field(field: &str) -> String {
 }
 
 #[test]
+fn upload_reducer_uniffi_export_is_present() {
+    let actual = canonical_uniffi_api_shape(SOURCE);
+
+    assert!(
+        actual.contains(
+            "export pub fn advance_upload_job_uniffi( snapshot: ClientCoreUploadJobSnapshot, event: ClientCoreUploadJobEvent, ) -> ClientCoreUploadJobTransition"
+        ),
+        "direct upload reducer export must be present in UniFFI API shape"
+    );
+}
+
+#[test]
+fn sync_reducer_uniffi_export_is_present() {
+    let actual = canonical_uniffi_api_shape(SOURCE);
+
+    assert!(
+        actual.contains(
+            "export pub fn advance_album_sync_uniffi( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransition"
+        ),
+        "direct album sync reducer export must be present in UniFFI API shape"
+    );
+}
+
+#[test]
+fn manifest_transcript_uniffi_export_is_present() {
+    let actual = canonical_uniffi_api_shape(SOURCE);
+
+    assert!(
+        actual.contains(
+            "export pub fn manifest_transcript_bytes_uniffi(inputs: ClientCoreManifestTranscriptInputs) -> Vec<u8>"
+        ),
+        "manifest transcript bytes export must be present in UniFFI API shape"
+    );
+    assert!(
+        actual.contains("record ClientCoreManifestShardRef"),
+        "manifest shard input record must be locked"
+    );
+    assert!(
+        actual.contains("record ClientCoreManifestTranscriptInputs"),
+        "manifest transcript input record must be locked"
+    );
+}
+
+#[test]
+fn upload_transition_round_trips_through_uniffi() {
+    let initialized = mosaic_uniffi::init_upload_job(mosaic_uniffi::ClientCoreUploadJobRequest {
+        job_id: "018f0000-0000-7000-8000-000000000001".to_owned(),
+        album_id: "018f0000-0000-7000-8000-000000000002".to_owned(),
+        asset_id: "018f0000-0000-7000-8000-000000000003".to_owned(),
+        idempotency_key: "018f0000-0000-7000-8000-000000000004".to_owned(),
+        max_retry_count: 5,
+    });
+    assert_eq!(initialized.code, 0);
+
+    let event = mosaic_uniffi::ClientCoreUploadJobEvent {
+        kind: "StartRequested".to_owned(),
+        effect_id: "018f0000-0000-7000-8000-000000000005".to_owned(),
+        tier: 0,
+        shard_index: 0,
+        shard_id: String::new(),
+        sha256: Vec::new(),
+        content_length: 0,
+        envelope_version: 0,
+        uploaded: false,
+        tiered_shards: Vec::new(),
+        shard_set_hash: Vec::new(),
+        asset_id: String::new(),
+        since_metadata_version: 0,
+        recovery_outcome: String::new(),
+        now_ms: 0,
+        base_backoff_ms: 0,
+        server_retry_after_ms: 0,
+        has_server_retry_after_ms: false,
+        has_error_code: false,
+        error_code: 0,
+        target_phase: String::new(),
+    };
+
+    let wrapped = mosaic_uniffi::advance_upload_job(initialized.snapshot.clone(), event.clone());
+    let direct = mosaic_uniffi::advance_upload_job_uniffi(initialized.snapshot, event);
+
+    assert_eq!(wrapped.code, 0);
+    assert_eq!(
+        wrapped.transition.next_snapshot.phase,
+        "AwaitingPreparedMedia"
+    );
+    assert_eq!(
+        direct.next_snapshot.phase,
+        wrapped.transition.next_snapshot.phase
+    );
+    assert_eq!(
+        direct.next_snapshot.max_retry_count,
+        wrapped.transition.next_snapshot.max_retry_count
+    );
+}
+
+#[test]
+fn album_sync_transition_round_trips_through_uniffi() {
+    let snapshot = mosaic_uniffi::ClientCoreAlbumSyncSnapshot {
+        schema_version: 1,
+        album_id: "album-direct-sync-regression".to_owned(),
+        phase: "Idle".to_owned(),
+        active_cursor: String::new(),
+        pending_cursor: String::new(),
+        rerun_requested: false,
+        retry_count: 0,
+        max_retry_count: 5,
+        next_retry_unix_ms: 0,
+        last_error_code: 0,
+        last_error_stage: String::new(),
+        updated_at_unix_ms: 1_700_000_000_000,
+    };
+    let event = mosaic_uniffi::ClientCoreAlbumSyncEvent {
+        kind: "SyncRequested".to_owned(),
+        fetched_cursor: String::new(),
+        next_cursor: String::new(),
+        applied_count: 0,
+        observed_asset_ids: Vec::new(),
+        retry_after_unix_ms: 0,
+        has_error_code: false,
+        error_code: 0,
+    };
+
+    let wrapped = mosaic_uniffi::advance_album_sync(snapshot.clone(), event.clone());
+    let direct = mosaic_uniffi::advance_album_sync_uniffi(snapshot, event);
+
+    assert_eq!(wrapped.code, 0);
+    assert_eq!(direct, wrapped.transition);
+    assert_eq!(direct.snapshot.phase, "FetchingPage");
+    assert_eq!(direct.snapshot.max_retry_count, 5);
+}
+
+#[test]
+fn manifest_transcript_bytes_uniffi_matches_domain_vector() {
+    let shards = vec![
+        mosaic_uniffi::ClientCoreManifestShardRef {
+            tier: 3,
+            shard_index: 1,
+            shard_id: "20212223-2425-2627-2829-2a2b2c2d2e2f".to_owned(),
+            sha256: vec![0x22; 32],
+        },
+        mosaic_uniffi::ClientCoreManifestShardRef {
+            tier: 1,
+            shard_index: 0,
+            shard_id: "10111213-1415-1617-1819-1a1b1c1d1e1f".to_owned(),
+            sha256: vec![0x11; 32],
+        },
+    ];
+    let inputs = mosaic_uniffi::ClientCoreManifestTranscriptInputs {
+        album_id: (0_u8..16).collect(),
+        epoch_id: 7,
+        encrypted_metadata_envelope: vec![0xaa, 0xbb, 0xcc],
+        shards,
+    };
+
+    let result = mosaic_uniffi::manifest_transcript_bytes_uniffi(inputs);
+
+    assert_eq!(
+        result,
+        match mosaic_domain::golden_vectors::manifest_transcript_bytes() {
+            Ok(bytes) => bytes,
+            Err(error) => panic!("domain manifest transcript vector is invalid: {error:?}"),
+        }
+    );
+}
+#[test]
 fn default_api_shape_excludes_cross_client_vector_seed_verifier() {
     let actual = canonical_uniffi_api_shape_for_features(SOURCE, false);
 
@@ -468,11 +634,12 @@ fn enum_body<'a>(source: &'a str, enum_name: &str) -> Option<&'a str> {
         .map(|(body, _)| body)
 }
 
-fn golden_enum_body<'a>(source: &'a str, enum_name: &str) -> Option<&'a str> {
+fn golden_enum_body(source: &str, enum_name: &str) -> Option<String> {
+    let source = normalize_newlines(source);
     source
         .split_once(&format!("enum {enum_name}\n"))
         .and_then(|(_, rest)| rest.split_once("\nend"))
-        .map(|(body, _)| body)
+        .map(|(body, _)| body.to_owned())
 }
 
 fn cfg_attrs_enabled(attrs: &[String], cross_client_vectors_enabled: bool) -> bool {

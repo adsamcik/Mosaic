@@ -4,7 +4,10 @@
 
 use std::fmt;
 
-use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
+use mosaic_domain::{
+    EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MetadataSidecar,
+    MetadataSidecarError, MetadataSidecarField, ShardTier,
+};
 use zeroize::Zeroizing;
 
 /// Stable client error codes exported through UniFFI.
@@ -399,6 +402,27 @@ pub struct ClientCoreUploadShardRef {
     pub uploaded: bool,
 }
 
+/// UniFFI record for one opaque shard reference bound into a manifest transcript.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreManifestShardRef {
+    pub tier: u8,
+    pub shard_index: u32,
+    pub shard_id: String,
+    pub sha256: Vec<u8>,
+}
+
+/// UniFFI record for canonical manifest transcript inputs.
+///
+/// `encrypted_metadata_envelope` must contain encrypted/opaque sidecar envelope
+/// bytes. Plaintext metadata must not be supplied to this transcript binding.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreManifestTranscriptInputs {
+    pub album_id: Vec<u8>,
+    pub epoch_id: u32,
+    pub encrypted_metadata_envelope: Vec<u8>,
+    pub shards: Vec<ClientCoreManifestShardRef>,
+}
+
 /// UniFFI record for initializing a client-core upload job state machine.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ClientCoreUploadJobRequest {
@@ -614,16 +638,20 @@ pub fn protocol_version() -> String {
 /// UniFFI records and `#[uniffi::export]` functions in this crate.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v10 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt)->EpochKeyHandleResult{code,handle,epoch_id,wrapped_epoch_seed,sign_public_key} metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
+    "mosaic-uniffi ffi-spike:v10 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt)->EpochKeyHandleResult{code,handle,epoch_id,wrapped_epoch_seed,sign_public_key} metadata(canonical/encrypt,media-canonical/media-encrypt,manifest-transcript) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance/upload-advance-uniffi,sync-init/sync-advance/sync-advance-uniffi) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
 }
 
 const CLIENT_CORE_STATE_MACHINE_SURFACE: &str = "client-core-state-machines:v1 \
 upload(init_upload_job(ClientCoreUploadJobRequest)->ClientCoreUploadJobResult,\
 advance_upload_job(ClientCoreUploadJobSnapshot,ClientCoreUploadJobEvent)->ClientCoreUploadJobTransitionResult,\
+advance_upload_job_uniffi(ClientCoreUploadJobSnapshot,ClientCoreUploadJobEvent)->ClientCoreUploadJobTransition,\
 ClientCoreUploadJobSnapshot,ClientCoreUploadJobTransition,ClientCoreUploadJobEffect) \
 sync(init_album_sync(ClientCoreAlbumSyncRequest)->ClientCoreAlbumSyncResult,\
 advance_album_sync(ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncEvent)->ClientCoreAlbumSyncTransitionResult,\
-ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncTransition,ClientCoreAlbumSyncEffect)";
+advance_album_sync_uniffi(ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncEvent)->ClientCoreAlbumSyncTransition,\
+ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncTransition,ClientCoreAlbumSyncEffect) \
+manifest_transcript(manifest_transcript_bytes_uniffi(ClientCoreManifestTranscriptInputs)->Vec<u8>,\
+ClientCoreManifestTranscriptInputs,ClientCoreManifestShardRef)";
 
 /// Parses a shard envelope header through the UniFFI export surface.
 #[uniffi::export]
@@ -1140,6 +1168,29 @@ pub fn advance_upload_job(
     }
 }
 
+/// Advances a client-core upload job through a direct UniFFI transition surface.
+///
+/// Invalid host DTOs and reducer errors return an empty transition because this
+/// direct export intentionally has no error channel. Call `advance_upload_job`
+/// when the stable numeric error code is required.
+#[uniffi::export]
+#[must_use]
+pub fn advance_upload_job_uniffi(
+    snapshot: ClientCoreUploadJobSnapshot,
+    event: ClientCoreUploadJobEvent,
+) -> ClientCoreUploadJobTransition {
+    let Ok(snapshot) = upload_snapshot_to_client(snapshot) else {
+        return empty_upload_transition();
+    };
+    let Ok(event) = upload_event_to_client(event) else {
+        return empty_upload_transition();
+    };
+    match mosaic_client::advance_upload_job(&snapshot, event) {
+        Ok(transition) => upload_transition_from_client(transition),
+        Err(_) => empty_upload_transition(),
+    }
+}
+
 /// Initializes an album sync coordinator through the UniFFI DTO surface.
 #[uniffi::export]
 #[must_use]
@@ -1191,6 +1242,39 @@ pub fn advance_album_sync(
             transition: empty_album_sync_transition(),
         },
     }
+}
+
+/// Advances an album sync coordinator through a direct UniFFI transition surface.
+///
+/// Invalid host DTOs and reducer errors return an empty transition because this
+/// direct export intentionally has no error channel. Call `advance_album_sync`
+/// when the stable numeric error code is required.
+#[uniffi::export]
+#[must_use]
+pub fn advance_album_sync_uniffi(
+    snapshot: ClientCoreAlbumSyncSnapshot,
+    event: ClientCoreAlbumSyncEvent,
+) -> ClientCoreAlbumSyncTransition {
+    let Ok(snapshot) = album_sync_snapshot_to_client(snapshot) else {
+        return empty_album_sync_transition();
+    };
+    let Ok(event) = album_sync_event_to_client(event, &snapshot.album_id) else {
+        return empty_album_sync_transition();
+    };
+    match mosaic_client::advance_album_sync(&snapshot, event) {
+        Ok(transition) => album_sync_transition_from_client(transition),
+        Err(_) => empty_album_sync_transition(),
+    }
+}
+
+/// Returns canonical manifest transcript bytes for encrypted metadata/shard refs.
+///
+/// Invalid host DTOs or rejected transcript shapes return an empty byte vector.
+/// The metadata input is encrypted/opaque bytes and is never parsed as plaintext.
+#[uniffi::export]
+#[must_use]
+pub fn manifest_transcript_bytes_uniffi(inputs: ClientCoreManifestTranscriptInputs) -> Vec<u8> {
+    manifest_transcript_bytes_result(inputs).unwrap_or_default()
 }
 
 fn identity_result_from_client(
@@ -1431,6 +1515,31 @@ fn upload_transition_from_client(
             .map(upload_effect_from_client)
             .collect(),
     }
+}
+
+fn manifest_transcript_bytes_result(
+    inputs: ClientCoreManifestTranscriptInputs,
+) -> Result<Vec<u8>, u16> {
+    let album_id = uuid_bytes(&inputs.album_id)?;
+    let shards = inputs
+        .shards
+        .iter()
+        .map(manifest_shard_to_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let encrypted_meta = EncryptedMetadataEnvelope::new(&inputs.encrypted_metadata_envelope);
+    let transcript = ManifestTranscript::new(album_id, inputs.epoch_id, encrypted_meta, &shards);
+    mosaic_domain::canonical_manifest_transcript_bytes(&transcript)
+        .map_err(|_| mosaic_client::ClientErrorCode::ManifestShapeRejected.as_u16())
+}
+
+fn manifest_shard_to_domain(shard: &ClientCoreManifestShardRef) -> Result<ManifestShardRef, u16> {
+    Ok(ManifestShardRef::new(
+        shard.shard_index,
+        uuid_bytes_from_string(&shard.shard_id)?,
+        ShardTier::try_from(shard.tier)
+            .map_err(|_| mosaic_client::ClientErrorCode::InvalidTier.as_u16())?,
+        bytes_32(&shard.sha256)?,
+    ))
 }
 
 fn album_sync_request_to_client(
@@ -1851,6 +1960,36 @@ fn uuid_from_string(value: &str) -> Result<mosaic_client::Uuid, u16> {
         return Err(invalid_snapshot);
     }
     Ok(uuid)
+}
+
+fn uuid_bytes_from_string(value: &str) -> Result<[u8; 16], u16> {
+    let invalid_input_length = mosaic_client::ClientErrorCode::InvalidInputLength.as_u16();
+    let mut hex = String::with_capacity(32);
+    for character in value.chars() {
+        if character == '-' {
+            continue;
+        }
+        if !character.is_ascii_hexdigit() {
+            return Err(invalid_input_length);
+        }
+        hex.push(character);
+    }
+    if hex.len() != 32 {
+        return Err(invalid_input_length);
+    }
+    let mut bytes = [0_u8; 16];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        let start = index * 2;
+        let end = start + 2;
+        let Some(pair) = hex.get(start..end) else {
+            return Err(invalid_input_length);
+        };
+        let Ok(parsed) = u8::from_str_radix(pair, 16) else {
+            return Err(invalid_input_length);
+        };
+        *byte = parsed;
+    }
+    Ok(bytes)
 }
 
 fn optional_uuid_from_string(value: &str) -> Result<Option<mosaic_client::Uuid>, u16> {
