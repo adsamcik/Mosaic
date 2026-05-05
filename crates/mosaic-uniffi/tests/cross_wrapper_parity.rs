@@ -26,6 +26,9 @@ const REQUIRED_SHARED_DTOS: &[&str] = &[
     "ClientCoreAlbumSyncEffect",
     "ClientCoreAlbumSyncTransition",
     "BytesResult",
+    "StripResult",
+    "ImageInspectResult",
+    "VideoInspectResult",
     "HeaderResult",
     "CryptoDomainGoldenVectorSnapshot",
 ];
@@ -53,6 +56,30 @@ struct ExpectedDivergence {
 #[test]
 fn uniffi_records_and_wasm_structs_keep_matching_field_shapes() {
     assert_matching_field_shapes(UNIFFI_SOURCE, WASM_SOURCE);
+}
+
+#[test]
+fn media_exports_match_between_wasm_and_uniffi() {
+    let uniffi_exports = parse_uniffi_exported_function_names(UNIFFI_SOURCE);
+    let wasm_exports = parse_wasm_media_export_names(WASM_SOURCE);
+    let expected = expected_media_export_names();
+
+    assert_eq!(
+        expected, wasm_exports,
+        "P-W2 WASM media export surface drifted; update the parity map intentionally"
+    );
+
+    for export in &expected {
+        assert!(
+            uniffi_exports.contains(*export),
+            "UniFFI media export `{export}` is missing for P-W2 parity"
+        );
+    }
+
+    assert!(
+        uniffi_exports.contains("strip_known_metadata"),
+        "UniFFI generic media-strip convenience export must remain available"
+    );
 }
 
 fn assert_matching_field_shapes(uniffi_source: &str, wasm_source: &str) {
@@ -115,6 +142,111 @@ fn assert_matching_field_shapes(uniffi_source: &str, wasm_source: &str) {
         matched.len() >= REQUIRED_SHARED_DTOS.len(),
         "expected broad UniFFI/WASM DTO parity coverage, matched only {matched:?}"
     );
+}
+
+fn expected_media_export_names() -> BTreeSet<&'static str> {
+    BTreeSet::from([
+        "strip_avif_metadata",
+        "strip_heic_metadata",
+        "strip_video_metadata",
+        "inspect_image",
+        "inspect_video_container",
+        "canonical_metadata_sidecar_bytes",
+        "canonical_video_sidecar_bytes",
+    ])
+}
+
+fn parse_uniffi_exported_function_names(source: &str) -> BTreeSet<String> {
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut exports = BTreeSet::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if starts_attribute(line) {
+            let (next_index, attr) = collect_attribute(&lines, index);
+            if is_uniffi_export_attr(&attr)
+                && let Some((function_index, name)) = next_function_name(&lines, next_index)
+            {
+                exports.insert(name.to_owned());
+                index = function_index + 1;
+                continue;
+            }
+            index = next_index;
+            continue;
+        }
+        index += 1;
+    }
+    exports
+}
+
+fn parse_wasm_media_export_names(source: &str) -> BTreeSet<&'static str> {
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut exports = BTreeSet::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if starts_attribute(line) {
+            let (next_index, attr) = collect_attribute(&lines, index);
+            if let Some(js_name) = wasm_js_name(&attr)
+                && let Some(uniffi_name) = wasm_media_export_to_uniffi_name(&js_name)
+                && next_function_name(&lines, next_index).is_some()
+            {
+                exports.insert(uniffi_name);
+            }
+            index = next_index;
+            continue;
+        }
+        index += 1;
+    }
+    exports
+}
+
+fn is_uniffi_export_attr(attr: &str) -> bool {
+    let compact = compact_attr(attr);
+    compact.starts_with("#[uniffi::export") || compact.starts_with("#[::uniffi::export")
+}
+
+fn wasm_js_name(attr: &str) -> Option<String> {
+    let compact = compact_attr(attr);
+    compact
+        .strip_prefix("#[wasm_bindgen(js_name=")
+        .and_then(|rest| rest.strip_suffix(")]"))
+        .map(str::to_owned)
+}
+
+fn wasm_media_export_to_uniffi_name(js_name: &str) -> Option<&'static str> {
+    match js_name {
+        "stripAvifMetadata" => Some("strip_avif_metadata"),
+        "stripHeicMetadata" => Some("strip_heic_metadata"),
+        "stripVideoMetadata" => Some("strip_video_metadata"),
+        "inspectImage" => Some("inspect_image"),
+        "inspectVideoContainer" => Some("inspect_video_container"),
+        "canonicalMetadataSidecarBytes" => Some("canonical_metadata_sidecar_bytes"),
+        "canonicalVideoSidecarBytes" => Some("canonical_video_sidecar_bytes"),
+        _ => None,
+    }
+}
+
+fn next_function_name<'a>(lines: &'a [&str], start: usize) -> Option<(usize, &'a str)> {
+    let mut index = start;
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if starts_attribute(line) || line.starts_with("///") || line.is_empty() {
+            if starts_attribute(line) {
+                let (next_index, _) = collect_attribute(lines, index);
+                index = next_index;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        return line
+            .strip_prefix("pub fn ")
+            .and_then(|rest| rest.split('(').next())
+            .filter(|name| !name.is_empty())
+            .map(|name| (index, name));
+    }
+    None
 }
 
 fn parse_uniffi_records(source: &str) -> BTreeMap<String, StructShape> {

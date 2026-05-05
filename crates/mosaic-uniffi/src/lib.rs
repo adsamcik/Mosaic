@@ -257,6 +257,33 @@ impl fmt::Debug for BytesResult {
     }
 }
 
+/// UniFFI media format selector for dependency-free generic metadata stripping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[repr(u8)]
+pub enum MediaFormat {
+    Jpeg = 1,
+    Png = 2,
+    WebP = 3,
+}
+
+/// UniFFI result for metadata stripping.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct StripResult {
+    pub code: u16,
+    pub stripped_bytes: Vec<u8>,
+    pub removed_metadata_count: u32,
+}
+
+impl fmt::Debug for StripResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StripResult")
+            .field("code", &self.code)
+            .field("stripped_bytes_len", &self.stripped_bytes.len())
+            .field("removed_metadata_count", &self.removed_metadata_count)
+            .finish()
+    }
+}
+
 /// UniFFI record for account unlock parameters.
 #[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct AccountUnlockRequest {
@@ -601,6 +628,42 @@ pub struct MediaMetadataResult {
     pub orientation: u8,
 }
 
+/// UniFFI result for image container inspection.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ImageInspectResult {
+    pub code: u16,
+    pub format: u8,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub orientation: u8,
+    pub encoded_sidecar_fields: Vec<u8>,
+    pub camera_make: String,
+    pub camera_model: String,
+    pub device_timestamp_ms: u64,
+    pub has_device_timestamp_ms: bool,
+    pub subseconds_ms: u32,
+    pub has_subseconds_ms: bool,
+    pub gps_lat_microdegrees: i32,
+    pub gps_lon_microdegrees: i32,
+    pub gps_altitude_meters: i32,
+    pub gps_accuracy_meters: u16,
+    pub has_gps: bool,
+}
+
+/// UniFFI result for video container inspection.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct VideoInspectResult {
+    pub code: u16,
+    pub container: String,
+    pub video_codec: String,
+    pub width_px: u32,
+    pub height_px: u32,
+    pub duration_ms: u64,
+    pub frame_rate_fps: f64,
+    pub orientation: String,
+}
+
 /// UniFFI record for one planned media tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
 pub struct MediaTierDimensions {
@@ -822,6 +885,41 @@ pub fn canonical_metadata_sidecar_bytes(
     }
 }
 
+/// Strips recognized metadata from JPEG/PNG/WebP media through the shared parser.
+#[uniffi::export]
+#[must_use]
+pub fn strip_known_metadata(format: MediaFormat, input_bytes: Vec<u8>) -> StripResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    strip_with_result(mosaic_media::strip_known_metadata(
+        media_format_to_core(format),
+        &input_bytes,
+    ))
+}
+
+/// Strips AVIF metadata through the shared Rust media parser.
+#[uniffi::export]
+#[must_use]
+pub fn strip_avif_metadata(input_bytes: Vec<u8>) -> StripResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    strip_with_result(mosaic_media::strip_avif_metadata(&input_bytes))
+}
+
+/// Strips HEIC/HEIF metadata through the shared Rust media parser.
+#[uniffi::export]
+#[must_use]
+pub fn strip_heic_metadata(input_bytes: Vec<u8>) -> StripResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    strip_with_result(mosaic_media::strip_heic_metadata(&input_bytes))
+}
+
+/// Strips video container metadata through the shared Rust media parser.
+#[uniffi::export]
+#[must_use]
+pub fn strip_video_metadata(input_bytes: Vec<u8>) -> StripResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    strip_with_result(mosaic_media::strip_video_metadata(&input_bytes))
+}
+
 /// Encrypts canonical metadata sidecar bytes with a Rust-owned epoch-key handle.
 ///
 /// `encoded_fields` is wrapped in `Zeroizing` so the caller-owned buffer is
@@ -880,6 +978,22 @@ pub fn inspect_media_image(bytes: Vec<u8>) -> MediaMetadataResult {
     }
 }
 
+/// Inspects image container metadata through the shared Rust media parser.
+#[uniffi::export]
+#[must_use]
+pub fn inspect_image(input_bytes: Vec<u8>) -> ImageInspectResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    image_inspect_result_from_media(mosaic_media::inspect_image(&input_bytes), &input_bytes)
+}
+
+/// Inspects video container metadata through the shared Rust media parser.
+#[uniffi::export]
+#[must_use]
+pub fn inspect_video_container(input_bytes: Vec<u8>) -> VideoInspectResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    video_inspect_result_from_media(mosaic_media::inspect_video_container(&input_bytes))
+}
+
 /// Plans canonical thumbnail, preview, and original tier dimensions.
 #[uniffi::export]
 #[must_use]
@@ -916,6 +1030,27 @@ pub fn canonical_media_metadata_sidecar_bytes(
     media_bytes: Vec<u8>,
 ) -> BytesResult {
     match media_metadata_sidecar_bytes_result(&album_id, &photo_id, epoch_id, media_bytes) {
+        Ok(bytes) => BytesResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            bytes,
+        },
+        Err(code) => BytesResult {
+            code,
+            bytes: Vec::new(),
+        },
+    }
+}
+
+/// Builds canonical plaintext video metadata sidecar bytes from inspected video bytes.
+#[uniffi::export]
+#[must_use]
+pub fn canonical_video_sidecar_bytes(
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    input_bytes: Vec<u8>,
+) -> BytesResult {
+    match video_metadata_sidecar_bytes_result(&album_id, &photo_id, epoch_id, input_bytes) {
         Ok(bytes) => BytesResult {
             code: mosaic_client::ClientErrorCode::Ok.as_u16(),
             bytes,
@@ -2191,6 +2326,33 @@ fn media_metadata_sidecar_bytes_result(
         .map_err(map_media_error)
 }
 
+fn video_metadata_sidecar_bytes_result(
+    album_id: &[u8],
+    photo_id: &[u8],
+    epoch_id: u32,
+    input_bytes: Vec<u8>,
+) -> Result<Vec<u8>, u16> {
+    let input_bytes = Zeroizing::new(input_bytes);
+    let inspect = mosaic_media::inspect_video_container(&input_bytes);
+    if inspect.code != 0 {
+        return Err(inspect.code);
+    }
+
+    let pairs = mosaic_media::video_metadata_sidecar_fields(&inspect);
+    let mut encoded_fields = Vec::new();
+    for (tag, value) in pairs {
+        let value_len = match u32::try_from(value.len()) {
+            Ok(length) => length,
+            Err(_) => return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()),
+        };
+        encoded_fields.extend_from_slice(&tag.to_le_bytes());
+        encoded_fields.extend_from_slice(&value_len.to_le_bytes());
+        encoded_fields.extend_from_slice(&value);
+    }
+
+    canonical_metadata_sidecar_bytes_result(album_id, photo_id, epoch_id, &encoded_fields)
+}
+
 fn uuid_bytes(bytes: &[u8]) -> Result<[u8; 16], u16> {
     if bytes.len() != 16 {
         return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
@@ -2290,6 +2452,52 @@ fn map_media_error(error: mosaic_media::MosaicMediaError) -> u16 {
     }
 }
 
+const MEDIA_INVALID_JPEG_CODE: u16 = 601;
+const MEDIA_INVALID_PNG_CODE: u16 = 602;
+const MEDIA_INVALID_WEBP_CODE: u16 = 603;
+const MEDIA_OUTPUT_TOO_LARGE_CODE: u16 = 604;
+const METADATA_STRIP_OVERFLOW_CODE: u16 = 605;
+const MEDIA_UNKNOWN_ERROR_CODE: u16 = 699;
+
+fn media_error_code(error: mosaic_media::MosaicMediaError) -> u16 {
+    match error {
+        mosaic_media::MosaicMediaError::InvalidJpeg => MEDIA_INVALID_JPEG_CODE,
+        mosaic_media::MosaicMediaError::InvalidPng => MEDIA_INVALID_PNG_CODE,
+        mosaic_media::MosaicMediaError::InvalidWebP => MEDIA_INVALID_WEBP_CODE,
+        mosaic_media::MosaicMediaError::OutputTooLarge => MEDIA_OUTPUT_TOO_LARGE_CODE,
+        _ => MEDIA_UNKNOWN_ERROR_CODE,
+    }
+}
+
+fn strip_with_result(
+    result: Result<mosaic_media::StrippedMedia, mosaic_media::MosaicMediaError>,
+) -> StripResult {
+    match result {
+        Ok(stripped) => {
+            let removed_metadata_count = match u32::try_from(stripped.removed.len()) {
+                Ok(value) => value,
+                Err(_) => {
+                    return StripResult {
+                        code: METADATA_STRIP_OVERFLOW_CODE,
+                        stripped_bytes: Vec::new(),
+                        removed_metadata_count: 0,
+                    };
+                }
+            };
+            StripResult {
+                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                stripped_bytes: stripped.bytes,
+                removed_metadata_count,
+            }
+        }
+        Err(error) => StripResult {
+            code: media_error_code(error),
+            stripped_bytes: Vec::new(),
+            removed_metadata_count: 0,
+        },
+    }
+}
+
 fn media_metadata_result_ok(metadata: mosaic_media::ImageMetadata) -> MediaMetadataResult {
     MediaMetadataResult {
         code: mosaic_client::ClientErrorCode::Ok.as_u16(),
@@ -2301,11 +2509,260 @@ fn media_metadata_result_ok(metadata: mosaic_media::ImageMetadata) -> MediaMetad
     }
 }
 
+const fn media_format_to_core(format: MediaFormat) -> mosaic_media::MediaFormat {
+    match format {
+        MediaFormat::Jpeg => mosaic_media::MediaFormat::Jpeg,
+        MediaFormat::Png => mosaic_media::MediaFormat::Png,
+        MediaFormat::WebP => mosaic_media::MediaFormat::WebP,
+    }
+}
+
 const fn media_format_name(format: mosaic_media::MediaFormat) -> &'static str {
     match format {
         mosaic_media::MediaFormat::Jpeg => "jpeg",
         mosaic_media::MediaFormat::Png => "png",
         mosaic_media::MediaFormat::WebP => "webp",
+    }
+}
+
+const fn image_format_code(format: mosaic_media::MediaFormat) -> u8 {
+    match format {
+        mosaic_media::MediaFormat::Jpeg => 1,
+        mosaic_media::MediaFormat::Png => 2,
+        mosaic_media::MediaFormat::WebP => 3,
+    }
+}
+
+const fn video_container_label(container: mosaic_media::VideoContainer) -> &'static str {
+    match container {
+        mosaic_media::VideoContainer::Mp4 => "mp4",
+        mosaic_media::VideoContainer::Mov => "mov",
+        mosaic_media::VideoContainer::WebM => "webm",
+        mosaic_media::VideoContainer::Matroska => "matroska",
+    }
+}
+
+const fn video_codec_label(codec: mosaic_media::VideoCodec) -> &'static str {
+    match codec {
+        mosaic_media::VideoCodec::H264 => "h264",
+        mosaic_media::VideoCodec::H265 => "h265",
+        mosaic_media::VideoCodec::AV1 => "av1",
+        mosaic_media::VideoCodec::VP8 => "vp8",
+        mosaic_media::VideoCodec::VP9 => "vp9",
+    }
+}
+
+const fn orientation_label(orientation: mosaic_media::Orientation) -> &'static str {
+    match orientation {
+        mosaic_media::Orientation::Rotate0 => "rotate0",
+        mosaic_media::Orientation::Rotate90 => "rotate90",
+        mosaic_media::Orientation::Rotate180 => "rotate180",
+        mosaic_media::Orientation::Rotate270 => "rotate270",
+    }
+}
+
+fn image_inspect_result_from_media(
+    result: Result<mosaic_media::ImageMetadata, mosaic_media::MosaicMediaError>,
+    input_bytes: &[u8],
+) -> ImageInspectResult {
+    match result {
+        Ok(metadata) => ImageInspectResult {
+            code: 0,
+            format: image_format_code(metadata.format),
+            mime_type: metadata.mime_type.to_owned(),
+            width: metadata.width,
+            height: metadata.height,
+            orientation: metadata.orientation,
+            ..image_sidecar_fields_for_format(input_bytes, metadata.format)
+        },
+        Err(error) => iso_bmff_image_inspect_result(input_bytes)
+            .unwrap_or_else(|| empty_image_inspect_result(media_error_code(error))),
+    }
+}
+
+fn iso_bmff_image_inspect_result(input_bytes: &[u8]) -> Option<ImageInspectResult> {
+    let boxes = mosaic_media::BoxParser::new(input_bytes).parse().ok()?;
+    let ftyp = boxes
+        .iter()
+        .find(|candidate| candidate.box_type == *b"ftyp")?;
+    let (format, mime_type, sidecar_fields) =
+        if iso_bmff_brands(ftyp.payload).any(|brand| matches!(brand, b"avif" | b"avis")) {
+            (
+                4,
+                "image/avif",
+                image_sidecar_fields_from_extract(
+                    mosaic_media::extract_avif_canonical_sidecar_fields(input_bytes),
+                ),
+            )
+        } else if iso_bmff_brands(ftyp.payload).any(|brand| {
+            matches!(
+                brand,
+                b"heic" | b"heix" | b"hevc" | b"hevx" | b"heim" | b"heis" | b"mif1" | b"msf1"
+            )
+        }) {
+            (
+                5,
+                "image/heic",
+                image_sidecar_fields_from_extract(
+                    mosaic_media::extract_heic_canonical_sidecar_fields(input_bytes),
+                ),
+            )
+        } else {
+            return None;
+        };
+
+    let meta = boxes
+        .iter()
+        .find(|candidate| candidate.box_type == *b"meta")?;
+    let (width, height) = find_ispe_dimensions(&meta.children)?;
+    Some(ImageInspectResult {
+        code: 0,
+        format,
+        mime_type: mime_type.to_owned(),
+        width,
+        height,
+        orientation: mosaic_media::NORMAL_EXIF_ORIENTATION,
+        ..sidecar_fields
+    })
+}
+
+fn iso_bmff_brands(payload: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let first = payload.get(..4).into_iter();
+    let compatible = payload
+        .get(8..)
+        .into_iter()
+        .flat_map(|tail| tail.chunks_exact(4));
+    first.chain(compatible)
+}
+
+fn find_ispe_dimensions(boxes: &[mosaic_media::iso_bmff::Box<'_>]) -> Option<(u32, u32)> {
+    for candidate in boxes {
+        if candidate.box_type == *b"ispe" && candidate.payload.len() >= 12 {
+            let width = u32::from_be_bytes(candidate.payload[4..8].try_into().ok()?);
+            let height = u32::from_be_bytes(candidate.payload[8..12].try_into().ok()?);
+            if width > 0 && height > 0 {
+                return Some((width, height));
+            }
+        }
+        if let Some(dimensions) = find_ispe_dimensions(&candidate.children) {
+            return Some(dimensions);
+        }
+    }
+    None
+}
+
+fn empty_image_inspect_result(code: u16) -> ImageInspectResult {
+    ImageInspectResult {
+        code,
+        format: 0,
+        mime_type: String::new(),
+        width: 0,
+        height: 0,
+        orientation: 0,
+        encoded_sidecar_fields: Vec::new(),
+        camera_make: String::new(),
+        camera_model: String::new(),
+        device_timestamp_ms: 0,
+        has_device_timestamp_ms: false,
+        subseconds_ms: 0,
+        has_subseconds_ms: false,
+        gps_lat_microdegrees: 0,
+        gps_lon_microdegrees: 0,
+        gps_altitude_meters: 0,
+        gps_accuracy_meters: 0,
+        has_gps: false,
+    }
+}
+
+fn image_sidecar_fields_for_format(
+    input_bytes: &[u8],
+    format: mosaic_media::MediaFormat,
+) -> ImageInspectResult {
+    image_sidecar_fields_from_extract(mosaic_media::extract_canonical_sidecar_fields(
+        input_bytes,
+        format,
+    ))
+}
+
+fn image_sidecar_fields_from_extract(
+    result: mosaic_media::SidecarExtractResult,
+) -> ImageInspectResult {
+    let mut fields = empty_image_inspect_result(0);
+    let Some(extracted) = result.fields else {
+        return fields;
+    };
+    if let Some(value) = extracted.device_timestamp_ms {
+        fields.has_device_timestamp_ms = true;
+        fields.device_timestamp_ms = value;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::DEVICE_TIMESTAMP_MS,
+            &value.to_le_bytes(),
+        );
+    }
+    if let Some(value) = extracted.camera_make {
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::CAMERA_MAKE,
+            value.as_bytes(),
+        );
+        fields.camera_make = value;
+    }
+    if let Some(value) = extracted.camera_model {
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::CAMERA_MODEL,
+            value.as_bytes(),
+        );
+        fields.camera_model = value;
+    }
+    if let Some(value) = extracted.subseconds_ms {
+        fields.has_subseconds_ms = true;
+        fields.subseconds_ms = value;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::SUBSECONDS_MS,
+            &value.to_le_bytes(),
+        );
+    }
+    if let Some(value) = extracted.gps {
+        fields.has_gps = true;
+        fields.gps_lat_microdegrees = value.lat_microdegrees;
+        fields.gps_lon_microdegrees = value.lon_microdegrees;
+        fields.gps_altitude_meters = value.altitude_meters;
+        fields.gps_accuracy_meters = value.accuracy_meters;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::GPS,
+            &value.to_tag_value_bytes(),
+        );
+    }
+    fields
+}
+
+fn append_encoded_sidecar_field(encoded: &mut Vec<u8>, tag: u16, value: &[u8]) {
+    let Ok(value_len) = u32::try_from(value.len()) else {
+        return;
+    };
+    encoded.extend_from_slice(&tag.to_le_bytes());
+    encoded.extend_from_slice(&value_len.to_le_bytes());
+    encoded.extend_from_slice(value);
+}
+
+fn video_inspect_result_from_media(result: mosaic_media::VideoInspectResult) -> VideoInspectResult {
+    VideoInspectResult {
+        code: result.code,
+        container: video_container_label(result.container).to_owned(),
+        video_codec: result
+            .video_codec
+            .map_or_else(String::new, |codec| video_codec_label(codec).to_owned()),
+        width_px: result.width_px,
+        height_px: result.height_px,
+        duration_ms: result.duration_ms,
+        frame_rate_fps: result.frame_rate_fps.map_or(f64::NAN, f64::from),
+        orientation: result.orientation.map_or_else(String::new, |orientation| {
+            orientation_label(orientation).to_owned()
+        }),
     }
 }
 

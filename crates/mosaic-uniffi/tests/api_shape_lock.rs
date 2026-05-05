@@ -49,6 +49,15 @@ fn uniffi_exported_api_shape_matches_golden() {
     );
 }
 
+#[test]
+fn uniffi_api_snapshot_lock_v1() {
+    assert_eq!(
+        normalize_newlines(GOLDEN),
+        canonical_uniffi_api_shape(SOURCE),
+        "UniFFI v1 API snapshot drift detected; review raw-secret exposure before regenerating"
+    );
+}
+
 fn canonical_uniffi_api_shape(source: &str) -> String {
     canonical_uniffi_api_shape_for_features(source, false)
 }
