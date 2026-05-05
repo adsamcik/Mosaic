@@ -387,6 +387,13 @@
       "perFileNotSupported": "Ukládání po jednotlivých souborech není v tomto prohlížeči podporováno",
       "perFilePromptCountOne": "1 výzva",
       "perFilePromptCountMany": "{{count}} výzev"
+    },
+    "persistencePrompt": {
+      "title": "Uchovejte offline fotky v bezpečí",
+      "body": "Offline fotky se ukládají do úložiště prohlížeče. Bez oprávnění je může prohlížeč automaticky smazat, když dochází místo. Udělení oprávnění je ochrání.",
+      "allow": "Povolit",
+      "notNow": "Teď ne",
+      "neverAsk": "Příště se neptat"
     }
   },
   "lightbox": {
