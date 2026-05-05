@@ -338,7 +338,22 @@
         "Done": "Hotovo",
         "Errored": "Chyba",
         "Cancelled": "Zrušeno"
-      }
+      },
+      "scheduledBadge": "Naplánováno",
+      "scheduledStartNow": "Spustit teď",
+      "scheduledEdit": "Upravit plán",
+      "scheduledReason": "Čeká: {{reason}}",
+      "scheduledReasons": {
+        "offline": "offline",
+        "dataSaver": "úsporný režim dat",
+        "connectionTooSlow": "pomalé připojení",
+        "notCharging": "bez nabíjení",
+        "userActive": "uživatel aktivní",
+        "outsideWindow": "mimo časové okno",
+        "windowMisconfigured": "plán nesprávně nastaven",
+        "unknown": "čeká"
+      },
+      "editScheduleTitle": "Upravit plán stahování"
     },
     "diff": {
       "title": "Album se změnilo",
@@ -407,6 +422,24 @@
       "body3": "Na sdíleném zařízení by k odkládacímu úložišti mohl po dobu stahování přistupovat kdokoli, kdo používá tento profil prohlížeče. Pokračujte, jen pokud je to v pořádku.",
       "acknowledge": "Rozumím, pokračovat",
       "cancel": "Zrušit"
+    },
+    "schedule": {
+      "title": "Plán",
+      "kind": {
+        "immediate": "Co nejdříve",
+        "wifi": "Pouze na Wi-Fi",
+        "wifiCharging": "Pouze na Wi-Fi při nabíjení",
+        "idle": "Když je zařízení nečinné",
+        "window": "V denním okně"
+      },
+      "windowStart": "Začátek",
+      "windowEnd": "Konec",
+      "maxDelay": "Maximální zpoždění (hodiny)",
+      "maxDelayHelp": "Po tomto počtu hodin spustit bez ohledu na podmínky.",
+      "startNow": "Spustit teď",
+      "editSchedule": "Upravit plán",
+      "cancel": "Zrušit",
+      "save": "Uložit"
     }
   },
   "lightbox": {

@@ -335,14 +335,16 @@ export function SharedGallery({
     const name = albumName ?? 'Shared Album';
     // `keepOffline` is hidden for visitors: anonymous viewers have no
     // per-account scope key (tracked as `p3-visitor-job-scope`).
-    const mode = await modePicker.prompt({
+    const picked = await modePicker.prompt({
       albumId,
       suggestedFileName: name,
       photos,
       hideKeepOffline: true,
     });
-    if (mode === null) return;
-    await albumDownload.startDownload(albumId, name, photos, mode);
+    if (picked === null) return;
+    // Visitor v1: schedule is intentionally NOT forwarded — visitor jobs are
+    // always immediate. See plan `pp-cron-wire` step 4.
+    await albumDownload.startDownload(albumId, name, photos, picked.mode);
   }, [photos, albumId, albumName, albumDownload, modePicker]);
 
   const handleDownloadAll = useCallback(async (): Promise<void> => {

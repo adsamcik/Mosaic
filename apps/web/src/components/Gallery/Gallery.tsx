@@ -488,9 +488,9 @@ export function Gallery({
   const handleDownloadAll = useCallback(async (): Promise<void> => {
     if (photos.length === 0) return;
     const name = albumName ?? 'Album';
-    const mode = await albumDownloadModePicker.prompt({ albumId, suggestedFileName: name, photos });
-    if (mode === null) return;
-    await albumDownload.startDownload(albumId, name, photos, { mode });
+    const picked = await albumDownloadModePicker.prompt({ albumId, suggestedFileName: name, photos });
+    if (picked === null) return;
+    await albumDownload.startDownload(albumId, name, photos, { mode: picked.mode, schedule: picked.schedule });
   }, [photos, albumId, albumName, albumDownload, albumDownloadModePicker]);
 
   // Handle download selected photos: prompt for output mode, then start coordinator download.
@@ -498,9 +498,9 @@ export function Gallery({
     const selectedPhotos = photos.filter((p) => selection.selectedIds.has(p.id));
     if (selectedPhotos.length === 0) return;
     const name = albumName ?? 'Album';
-    const mode = await albumDownloadModePicker.prompt({ albumId, suggestedFileName: name, photos: selectedPhotos });
-    if (mode === null) return;
-    await albumDownload.startDownload(albumId, name, selectedPhotos, { mode });
+    const picked = await albumDownloadModePicker.prompt({ albumId, suggestedFileName: name, photos: selectedPhotos });
+    if (picked === null) return;
+    await albumDownload.startDownload(albumId, name, selectedPhotos, { mode: picked.mode, schedule: picked.schedule });
   }, [photos, selection.selectedIds, albumId, albumName, albumDownload, albumDownloadModePicker]);
 
   // Handle album rename

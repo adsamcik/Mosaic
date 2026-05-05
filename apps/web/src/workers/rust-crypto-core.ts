@@ -16,6 +16,7 @@
  */
 
 import initRustWasm, * as rustWasm from '../generated/mosaic-wasm/mosaic_wasm.js';
+import type { DownloadSchedule } from '../lib/download-schedule';
 import { WorkerCryptoError, WorkerCryptoErrorCode } from './types';
 
 const RUST_OK = 0;
@@ -157,6 +158,7 @@ export class RustHandleFacade {
     readonly planBytes: Uint8Array;
     readonly nowMs: number;
     readonly scopeKey: string;
+    readonly schedule?: DownloadSchedule | null;
   }): { bodyBytes: Uint8Array; checksum: Uint8Array } {
     const result = rustWasm.downloadInitSnapshotV1(
       encodeDownloadInitSnapshotInput(input),
@@ -868,6 +870,7 @@ export async function rustInitDownloadSnapshot(input: {
   readonly planBytes: Uint8Array;
   readonly nowMs: number;
   readonly scopeKey: string;
+  readonly schedule?: DownloadSchedule | null;
 }): Promise<{ bodyBytes: Uint8Array; checksum: Uint8Array }> {
   return (await getRustFacade()).initDownloadSnapshot(input);
 }
@@ -1125,6 +1128,7 @@ function encodeDownloadInitSnapshotInput(input: {
   readonly planBytes: Uint8Array;
   readonly nowMs: number;
   readonly scopeKey: string;
+  readonly schedule?: DownloadSchedule | null;
 }): Uint8Array {
   if (input.jobId.length !== 16) {
     throw new WorkerCryptoError(
@@ -1138,14 +1142,83 @@ function encodeDownloadInitSnapshotInput(input: {
       'downloadInitSnapshotV1 requires a non-empty scopeKey',
     );
   }
-  // Plan-input key 4 mirrors the Rust parser in mosaic-wasm/src/lib.rs.
-  return cborMap([
+  const entries: Array<readonly [number, Uint8Array]> = [
     [0, cborBytes(input.jobId)],
     [1, cborText(input.albumId)],
     [2, cborBytes(input.planBytes)],
     [3, cborUint(input.nowMs)],
     [4, cborText(input.scopeKey)],
-  ]);
+  ];
+  // Plan-input key 5 (v3): optional download schedule. Absent and `null`
+  // both decode to Immediate on the Rust side, so we only encode the
+  // entry when the caller passed a non-trivial schedule.
+  const schedule = input.schedule;
+  if (schedule && schedule.kind !== 'immediate') {
+    entries.push([5, encodeDownloadScheduleValue(schedule)]);
+  }
+  return cborMap(entries);
+}
+
+/**
+ * Encode a {@link DownloadSchedule} as canonical CBOR matching the
+ * Rust-side `download_schedule_kind_codes` + `download_schedule_keys`.
+ *
+ * Wire format (all kinds):
+ *   { 0: kind_code, 3: max_delay_ms ?? null }
+ * Window adds keys 1 (start_hour) + 2 (end_hour).
+ *
+ * The Rust validator strictly requires the per-kind key set; encode
+ * exactly what is needed.
+ */
+function encodeDownloadScheduleValue(schedule: DownloadSchedule): Uint8Array {
+  const maxDelay = schedule.maxDelayMs;
+  const maxDelayValue = maxDelay === undefined ? cborNull() : cborUint(maxDelay);
+  switch (schedule.kind) {
+    case 'wifi':
+      return cborMap([
+        [0, cborUint(1)],
+        [3, maxDelayValue],
+      ]);
+    case 'wifi-charging':
+      return cborMap([
+        [0, cborUint(2)],
+        [3, maxDelayValue],
+      ]);
+    case 'idle':
+      return cborMap([
+        [0, cborUint(3)],
+        [3, maxDelayValue],
+      ]);
+    case 'window': {
+      const start = schedule.windowStartHour ?? 0;
+      const end = schedule.windowEndHour ?? 0;
+      return cborMap([
+        [0, cborUint(4)],
+        [1, cborUint(start)],
+        [2, cborUint(end)],
+        [3, maxDelayValue],
+      ]);
+    }
+    case 'immediate':
+      // The caller filters this out before reaching here, but keep the
+      // exhaustiveness guard so the type-checker catches future kinds.
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidInputLength,
+        'encodeDownloadScheduleValue called with kind=immediate',
+      );
+    default: {
+      const _exhaustive: never = schedule.kind;
+      void _exhaustive;
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidInputLength,
+        'encodeDownloadScheduleValue: unknown kind',
+      );
+    }
+  }
+}
+
+function cborNull(): Uint8Array {
+  return new Uint8Array([0xf6]);
 }
 
 function cborMap(entries: readonly (readonly [number, Uint8Array])[]): Uint8Array {

@@ -327,7 +327,22 @@
         "Done": "Done",
         "Errored": "Error",
         "Cancelled": "Cancelled"
-      }
+      },
+      "scheduledBadge": "Scheduled",
+      "scheduledStartNow": "Start now",
+      "scheduledEdit": "Edit schedule",
+      "scheduledReason": "Waiting: {{reason}}",
+      "scheduledReasons": {
+        "offline": "offline",
+        "dataSaver": "data saver enabled",
+        "connectionTooSlow": "connection too slow",
+        "notCharging": "not charging",
+        "userActive": "user active",
+        "outsideWindow": "outside time window",
+        "windowMisconfigured": "schedule misconfigured",
+        "unknown": "waiting"
+      },
+      "editScheduleTitle": "Edit download schedule"
     },
     "diff": {
       "title": "Album has changed",
@@ -396,6 +411,24 @@
       "body3": "On a shared device, anyone using this browser profile could potentially access the staging area while a download is in progress. Continue only if that is acceptable.",
       "acknowledge": "I understand, continue",
       "cancel": "Cancel"
+    },
+    "schedule": {
+      "title": "Schedule",
+      "kind": {
+        "immediate": "As soon as possible",
+        "wifi": "Only on Wi-Fi",
+        "wifiCharging": "Only on Wi-Fi while charging",
+        "idle": "When the device is idle",
+        "window": "During a daily window"
+      },
+      "windowStart": "Start",
+      "windowEnd": "End",
+      "maxDelay": "Max delay (hours)",
+      "maxDelayHelp": "Force-start after this many hours regardless of conditions.",
+      "startNow": "Start now",
+      "editSchedule": "Edit schedule",
+      "cancel": "Cancel",
+      "save": "Save"
     }
   },
   "lightbox": {

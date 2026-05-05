@@ -26,6 +26,8 @@ const api = vi.hoisted(() => ({
   cancelJob: vi.fn(),
   listJobs: vi.fn(),
   listResumableJobs: vi.fn(),
+  forceStartJob: vi.fn(),
+  updateJobSchedule: vi.fn(),
   computeAlbumDiff: vi.fn(),
   getJob: vi.fn(),
   subscribe: vi.fn(),
@@ -60,6 +62,8 @@ vi.mock('../../../hooks/useDownloadManager', () => ({
       resumeJob: api.resumeJob,
       cancelJob: api.cancelJob,
       computeAlbumDiff: api.computeAlbumDiff,
+      forceStartJob: api.forceStartJob,
+      updateJobSchedule: api.updateJobSchedule,
       subscribe: (jobId: string): (() => void) => {
         let callbacks = store.subscribers.get(jobId);
         if (!callbacks) {
@@ -84,6 +88,7 @@ const baseJob: JobSummary = {
   lastUpdatedAtMs: 1,
   scopeKey: 'auth:00000000000000000000000000000000',
   lastErrorReason: null,
+  schedule: null,
 };
 
 beforeEach(() => {
@@ -94,6 +99,8 @@ beforeEach(() => {
   api.pauseJob.mockResolvedValue({ phase: 'Paused' });
   api.resumeJob.mockResolvedValue({ phase: 'Running' });
   api.cancelJob.mockResolvedValue({ phase: 'Cancelled' });
+  api.forceStartJob.mockResolvedValue(undefined);
+  api.updateJobSchedule.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -277,6 +284,34 @@ describe('DownloadTray', () => {
       await rendered.unmount();
     });
   });
+
+  it('renders Scheduled badge for Idle jobs with a schedule', async () => {
+    jobs = [{
+      ...baseJob,
+      phase: 'Idle',
+      schedule: { kind: 'wifi' },
+      scheduleEvaluation: { canStart: false, reason: 'connection too slow', retryAfterMs: 30_000 },
+    }];
+    const r = await render(<DownloadTray forceVisible />);
+    await click(requireElement(r.container.querySelector('.download-tray-summary')));
+    expect(textContent(r.container)).toContain('Scheduled');
+    await r.unmount();
+  });
+
+  it('Start now invokes forceStartJob', async () => {
+    jobs = [{
+      ...baseJob,
+      phase: 'Idle',
+      schedule: { kind: 'wifi' },
+      scheduleEvaluation: null,
+    }];
+    const r = await render(<DownloadTray forceVisible />);
+    await click(requireElement(r.container.querySelector('.download-tray-summary')));
+    await click(requireElement(r.container.querySelector('[data-testid="download-tray-start-now"]')));
+    await flushMicrotasks();
+    expect(api.forceStartJob).toHaveBeenCalledWith(baseJob.jobId);
+    await r.unmount();
+  });
 });
 
 async function actProgress(jobId: string, event: JobProgressEvent): Promise<void> {
@@ -293,6 +328,13 @@ async function actProgress(jobId: string, event: JobProgressEvent): Promise<void
 
 function translate(key: string, values?: Record<string, unknown>): string {
   const map: Record<string, string> = {
+    'download.tray.scheduledBadge': 'Scheduled',
+    'download.tray.scheduledStartNow': 'Start now',
+    'download.tray.scheduledEdit': 'Edit schedule',
+    'download.tray.scheduledReason': 'Waiting: {{reason}}',
+    'download.tray.scheduledReasons.connectionTooSlow': 'connection too slow',
+    'download.tray.phase.Idle': 'Idle',
+
     'download.tray.title': 'Downloads',
     'download.tray.active': '{{count}} downloading',
     'download.tray.completed': 'Completed',

@@ -26,7 +26,7 @@ fn init_commit_load_round_trip_and_rejects_corrupt_body() -> Result<(), String> 
 
     let load = download_load_snapshot_v1(&init.body, &commit.checksum);
     assert_eq!(load.code, u32::from(ClientErrorCode::Ok.as_u16()));
-    assert_eq!(load.schema_version_loaded, 2);
+    assert_eq!(load.schema_version_loaded, 3);
     assert_eq!(load.snapshot_cbor, init.body);
 
     let snapshot = DownloadJobSnapshot::from_canonical_cbor(&load.snapshot_cbor)
@@ -75,10 +75,22 @@ fn init_rejects_missing_scope_key() -> Result<(), String> {
     assert_eq!(plan.code, u32::from(ClientErrorCode::Ok.as_u16()));
     // Manually craft input WITHOUT key 4 (scope_key).
     let input = Value::Map(vec![
-        (Value::Integer(Integer::from(0u32)), Value::Bytes(common::JOB_ID.to_vec())),
-        (Value::Integer(Integer::from(1u32)), Value::Bytes(common::ALBUM_ID.to_vec())),
-        (Value::Integer(Integer::from(2u32)), Value::Bytes(plan.plan_cbor)),
-        (Value::Integer(Integer::from(3u32)), Value::Integer(Integer::from(1_700_000_000_000u64))),
+        (
+            Value::Integer(Integer::from(0u32)),
+            Value::Bytes(common::JOB_ID.to_vec()),
+        ),
+        (
+            Value::Integer(Integer::from(1u32)),
+            Value::Bytes(common::ALBUM_ID.to_vec()),
+        ),
+        (
+            Value::Integer(Integer::from(2u32)),
+            Value::Bytes(plan.plan_cbor),
+        ),
+        (
+            Value::Integer(Integer::from(3u32)),
+            Value::Integer(Integer::from(1_700_000_000_000u64)),
+        ),
     ]);
     let mut bytes = Vec::new();
     ciborium::ser::into_writer(&input, &mut bytes).map_err(|e| e.to_string())?;

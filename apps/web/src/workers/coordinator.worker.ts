@@ -14,6 +14,9 @@
  * authenticated source on resume; a future Phase 3 schema bump can persist
  * the strategy keying for visitor / share-link sessions if needed.
  */
+import type { DownloadSchedule, ScheduleContext, ScheduleEvaluation } from '../lib/download-schedule';
+import { captureScheduleContext } from '../lib/schedule-context';
+import { ScheduleManager, type ScheduleManagerDeps } from './coordinator/schedule-manager';
 import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import * as opfsStaging from '../lib/opfs-staging';
@@ -109,6 +112,8 @@ interface InMemoryJob {
   readonly scopeKey: string;
   /** Most-recent error reason from the persisted failure log, when any. */
   readonly lastErrorReason: DownloadErrorReason | null;
+  /** Optional v3 schedule decoded from snapshot key 11. Null = Immediate. */
+  schedule: DownloadSchedule | null;
 }
 
 type SubscriptionCallback = (event: JobProgressEvent) => void;
@@ -140,6 +145,8 @@ interface ParsedSnapshotView {
   readonly scopeKey: string;
   /** Last failure reason persisted in the failure log (null when empty). */
   readonly lastErrorReason: DownloadErrorReason | null;
+  /** Optional v3 schedule (CBOR snapshot key 11). Null when absent / Immediate. */
+  readonly schedule: DownloadSchedule | null;
 }
 
 const PHASE_BY_CODE: Readonly<Record<number, DownloadPhase>> = {
@@ -237,6 +244,16 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private readonly shardMirror: ShardMirror = createShardMirror();
   /** In-memory LRU of derived epoch keys; zeroed on clear/eviction. */
   private readonly decryptCache: DecryptCache = createDecryptCache();
+  /**
+   * Per-job most-recent {@link ScheduleEvaluation} snapshot, kept in-memory
+   * only. Drives the `JobSummary.scheduleEvaluation` field exposed to the
+   * tray. ZK-safe: evaluation `reason` strings are generic and ID-free.
+   */
+  private readonly lastEvaluations = new Map<string, ScheduleEvaluation>();
+  /** Wallclock when each scheduled job was registered (manager input). */
+  private readonly scheduledAt = new Map<string, number>();
+  /** Lazy-built schedule manager. */
+  private scheduleManagerInstance: ScheduleManager | null = null;
 
   constructor(opts: CoordinatorWorkerOptions = {}) {
     this.byteProgressRateLimitMs = opts.byteProgressRateLimitMs ?? DEFAULT_BYTE_PROGRESS_RATE_LIMIT_MS;
@@ -257,6 +274,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   async startJob(input: StartJobInput): Promise<{ jobId: string }> {
     this.assertInitialized();
     const outputMode: DownloadOutputMode = input.outputMode ?? { kind: 'keepOffline' };
+    const schedule = input.schedule ?? null;
+    const isScheduled = schedule !== null && schedule.kind !== 'immediate';
     const planInput: DownloadBuildPlanInput = { photos: input.photos };
     const { planBytes } = await rustBuildDownloadPlan(planInput);
     const jobIdBytes = randomJobIdBytes();
@@ -273,34 +292,126 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       planBytes,
       nowMs,
       scopeKey,
+      schedule: isScheduled ? schedule : null,
     });
 
     await opfsStaging.createJobDir(jobId);
     await opfsStaging.writeSnapshot(jobId, initialized.bodyBytes, initialized.checksum);
 
+    const job = createInMemoryJob(initialized.bodyBytes, initialized.checksum);
+    this.jobs.set(jobId, job);
+    this.jobOutputModes.set(jobId, outputMode);
+    if (input.source) {
+      this.jobSources.set(jobId, input.source);
+    }
+    // ZK-safe: only the scope prefix and schedule kind are logged.
+    log.info('Job started', {
+      jobId: shortId(jobId),
+      outputMode: outputMode.kind,
+      scopePrefix: scopeKey.slice(0, scopeKey.indexOf(':')),
+      scheduleKind: schedule?.kind ?? 'immediate',
+    });
+    this.emitJobChanged(job);
+
+    if (isScheduled) {
+      // Hand off to the manager. The job's persisted phase stays at `Idle`
+      // until the manager dispatches it via `dispatchScheduledJob` (which
+      // emits PlanReady → Preparing → Running). Drivers do NOT spin yet.
+      this.scheduledAt.set(jobId, nowMs);
+      this.scheduleManager().add({ jobId, schedule, scheduledAtMs: nowMs });
+      return { jobId };
+    }
+
+    // Immediate path (existing behaviour): apply PlanReady inline.
     const idleState = extractStateValue(initialized.bodyBytes);
     const eventBytes = encodeStartRequestedEvent(jobIdBytes, input.albumId);
     const applied = await rustApplyDownloadEvent(encodeCbor(idleState), eventBytes);
     const updatedBody = patchSnapshotState(initialized.bodyBytes, applied.newStateBytes, Date.now());
     const committed = await rustCommitDownloadSnapshot(updatedBody);
     await opfsStaging.writeSnapshot(jobId, updatedBody, committed.checksum);
-
-    const job = createInMemoryJob(updatedBody, committed.checksum);
-    this.jobs.set(jobId, job);
-    this.jobOutputModes.set(jobId, outputMode);
-    if (input.source) {
-      this.jobSources.set(jobId, input.source);
-    }
-    // ZK-safe: only the scope prefix is logged; the hex tail is opaque.
-    log.info('Job started', {
-      jobId: shortId(jobId),
-      outputMode: outputMode.kind,
-      scopePrefix: scopeKey.slice(0, scopeKey.indexOf(':')),
-    });
-    this.emitJobChanged(job);
+    const updated = createInMemoryJob(updatedBody, committed.checksum);
+    this.jobs.set(jobId, updated);
+    this.emitJobChanged(updated);
     await this.sendEvent(jobId, { kind: 'PlanReady' });
     this.scheduleJobDriver(jobId);
     return { jobId };
+  }
+
+  /**
+   * Lazy-build the schedule manager. The first call also `start()`s it so
+   * timers + visibility/online listeners attach exactly once.
+   */
+  private scheduleManager(): ScheduleManager {
+    if (this.scheduleManagerInstance) return this.scheduleManagerInstance;
+    const deps: ScheduleManagerDeps = {
+      captureContext: (scheduledAtMs: number): Promise<ScheduleContext> => captureScheduleContext(scheduledAtMs),
+      dispatch: (jobId: string, evaluation: ScheduleEvaluation): void => {
+        this.lastEvaluations.set(jobId, evaluation);
+        this.dispatchScheduledJob(jobId).catch((error: unknown) => {
+          log.warn('Scheduled dispatch failed', {
+            jobId: shortId(jobId),
+            errorName: error instanceof Error ? error.name : 'Unknown',
+          });
+        });
+      },
+      onVisibilityChange: (handler: () => void): (() => void) => {
+        if (typeof self === 'undefined' || typeof (self as unknown as { addEventListener?: unknown }).addEventListener !== 'function') {
+          return (): void => undefined;
+        }
+        const target = self as unknown as { addEventListener: (type: string, h: () => void) => void; removeEventListener: (type: string, h: () => void) => void };
+        target.addEventListener('visibilitychange', handler);
+        return (): void => target.removeEventListener('visibilitychange', handler);
+      },
+      onOnlineChange: (handler: () => void): (() => void) => {
+        if (typeof self === 'undefined' || typeof (self as unknown as { addEventListener?: unknown }).addEventListener !== 'function') {
+          return (): void => undefined;
+        }
+        const target = self as unknown as { addEventListener: (type: string, h: () => void) => void; removeEventListener: (type: string, h: () => void) => void };
+        target.addEventListener('online', handler);
+        target.addEventListener('offline', handler);
+        return (): void => {
+          target.removeEventListener('online', handler);
+          target.removeEventListener('offline', handler);
+        };
+      },
+      setTimer: (callback, ms): unknown => setInterval(callback, ms) as unknown,
+      clearTimer: (handle): void => {
+        if (handle !== null && handle !== undefined) {
+          clearInterval(handle as ReturnType<typeof setInterval>);
+        }
+      },
+    };
+    this.scheduleManagerInstance = new ScheduleManager(deps);
+    this.scheduleManagerInstance.start();
+    return this.scheduleManagerInstance;
+  }
+
+  /**
+   * Transition a Scheduled (Idle + schedule) job into the active pipeline.
+   *
+   * Mirrors the immediate-startJob sequence: apply `StartRequested`
+   * (Idle → Preparing) inline, then fire `PlanReady` (Preparing → Running)
+   * through the normal event path so subscribers + driver wake up.
+   *
+   * Idempotent: if the job is missing or no longer Idle (e.g. user already
+   * hit `forceStartJob`, or the job was cancelled), the call is a no-op.
+   */
+  private async dispatchScheduledJob(jobId: string): Promise<void> {
+    const job = this.jobs.get(jobId);
+    if (!job || job.state.phase !== 'Idle') return;
+    this.scheduledAt.delete(jobId);
+    const jobIdBytes = hexToJobIdBytes(jobId);
+    const idleState = extractStateValue(job.snapshotBytes);
+    const eventBytes = encodeStartRequestedEvent(jobIdBytes, job.albumId);
+    const applied = await rustApplyDownloadEvent(encodeCbor(idleState), eventBytes);
+    const updatedBody = patchSnapshotState(job.snapshotBytes, applied.newStateBytes, Date.now());
+    const committed = await rustCommitDownloadSnapshot(updatedBody);
+    await opfsStaging.writeSnapshot(jobId, updatedBody, committed.checksum);
+    const updated = createInMemoryJob(updatedBody, committed.checksum);
+    this.jobs.set(jobId, updated);
+    this.emitJobChanged(updated);
+    await this.sendEvent(jobId, { kind: 'PlanReady' });
+    this.scheduleJobDriver(jobId);
   }
 
   /** Apply a Rust download event, persist the updated snapshot, and emit progress. */
@@ -351,6 +462,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   /** Pause a running job. */
   pauseJob(jobId: string): Promise<{ phase: DownloadPhase }> {
     this.jobAborts.get(jobId)?.abort();
+    this.scheduleManagerInstance?.remove(jobId);
+    this.scheduledAt.delete(jobId);
     return this.sendEvent(jobId, { kind: 'PauseRequested' });
   }
 
@@ -389,8 +502,11 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   }
 
   /** Cancel a job; hard cancel also purges OPFS staging. */
-  cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }> {
+  async cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }> {
     this.jobAborts.get(jobId)?.abort();
+    this.scheduleManagerInstance?.remove(jobId);
+    this.scheduledAt.delete(jobId);
+    this.lastEvaluations.delete(jobId);
     return this.sendEvent(jobId, { kind: 'CancelRequested', soft: opts.soft });
   }
 
@@ -440,7 +556,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   async listJobs(): Promise<JobSummary[]> {
     this.assertInitialized();
     await this.reconcilePersistedJobs();
-    return [...this.jobs.values()].map(toJobSummary).sort((a, b) => a.jobId.localeCompare(b.jobId));
+    return [...this.jobs.values()]
+      .map((job) => toJobSummary(job, this.lastEvaluations.get(job.jobId) ?? null))
+      .sort((a, b) => a.jobId.localeCompare(b.jobId));
   }
 
   /** List non-terminal jobs that should surface in the resume prompt. */
@@ -453,7 +571,11 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     await this.reconcilePersistedJobs();
     return [...this.jobs.values()]
       .filter((job) => this.isJobResumable(job))
-      .map((job) => toResumableJobSummary(job, this.pausedNoSourceVisitorJobs.has(job.jobId)))
+      .map((job) => toResumableJobSummary(
+        job,
+        this.pausedNoSourceVisitorJobs.has(job.jobId),
+        this.lastEvaluations.get(job.jobId) ?? null,
+      ))
       .sort((a, b) => a.jobId.localeCompare(b.jobId));
   }
 
@@ -497,7 +619,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   async getJob(jobId: string): Promise<JobSummary | null> {
     this.assertInitialized();
     const job = this.jobs.get(jobId);
-    return job ? toJobSummary(job) : null;
+    return job ? toJobSummary(job, this.lastEvaluations.get(jobId) ?? null) : null;
   }
 
   /** Subscribe to progress events for one job. Caller must unsubscribe. */
@@ -553,6 +675,73 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   setSaveTargetProvider(provider: RemoteSaveTargetProvider | null): Promise<void> {
     this.saveTargetProvider = provider;
     return Promise.resolve();
+  }
+
+  /**
+   * Override a Scheduled job's gate and dispatch it immediately.
+   *
+   * - Unknown job id: resolves quietly (idempotent across tab restarts; the
+   *   tray's Start-now button must not throw if the user double-clicks).
+   * - Already-running / paused / finalizing / terminal: no-op.
+   * - Scheduled (Idle + present in manager): remove from manager and emit
+   *   PlanReady → drives Preparing → Running on the next tick.
+   */
+  async forceStartJob(jobId: string): Promise<void> {
+    this.assertInitialized();
+    const job = this.jobs.get(jobId);
+    if (!job) return;
+    this.scheduleManagerInstance?.remove(jobId);
+    this.scheduledAt.delete(jobId);
+    this.lastEvaluations.delete(jobId);
+    if (job.state.phase !== 'Idle') return;
+    await this.dispatchScheduledJob(jobId);
+  }
+
+  /**
+   * Replace a job's conditional schedule.
+   *
+   * Patches CBOR snapshot key 11, re-registers with the manager, and
+   * triggers an immediate re-evaluation. Pass `null` (or kind=immediate)
+   * to clear the gate; the next tick will dispatch the job.
+   *
+   * Throws `JobNotFound` for unknown jobs.
+   */
+  async updateJobSchedule(jobId: string, schedule: DownloadSchedule | null): Promise<void> {
+    this.assertInitialized();
+    const job = this.requireJob(jobId);
+    const normalized = schedule && schedule.kind !== 'immediate' ? schedule : null;
+    const action = await this.withJobLock(jobId, async () => {
+      const updatedBody = patchSnapshotSchedule(job.snapshotBytes, normalized, Date.now());
+      const committed = await rustCommitDownloadSnapshot(updatedBody);
+      await opfsStaging.writeSnapshot(jobId, updatedBody, committed.checksum);
+      const updated = createInMemoryJob(updatedBody, committed.checksum);
+      this.jobs.set(jobId, updated);
+      // Always remove first to avoid a double-registration in the manager.
+      this.scheduleManagerInstance?.remove(jobId);
+      this.lastEvaluations.delete(jobId);
+      this.emitJobChanged(updated);
+      if (normalized && updated.state.phase === 'Idle') {
+        const scheduledAtMs = this.scheduledAt.get(jobId) ?? Date.now();
+        this.scheduledAt.set(jobId, scheduledAtMs);
+        this.scheduleManager().add({ jobId, schedule: normalized, scheduledAtMs });
+        return 'evaluate' as const;
+      }
+      if (normalized === null && updated.state.phase === 'Idle') {
+        this.scheduledAt.delete(jobId);
+        return 'dispatch' as const;
+      }
+      this.scheduledAt.delete(jobId);
+      return 'noop' as const;
+    });
+    if (action === 'evaluate') {
+      // Trigger a re-evaluation outside the per-job lock so the manager's
+      // sync `dispatch` callback can re-acquire it without deadlocking.
+      void this.scheduleManager().evaluateAll().catch(() => undefined);
+    } else if (action === 'dispatch') {
+      // Schedule cleared on an Idle job ⇒ dispatch right away. Outside the
+      // lock so dispatchScheduledJob's sendEvent can re-acquire.
+      await this.dispatchScheduledJob(jobId);
+    }
   }
 
   /** Dispatch to the appropriate finalizer for this job's output mode. */
@@ -847,6 +1036,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     const reconstructedJobs = await this.reconcilePersistedJobs();
     await this.sweepStaleVisitorJobsOnStartup();
     this.markPausedNoSourceVisitorJobs();
+    this.reregisterScheduledJobs();
     this.initialized = true;
     // Intentionally NOT auto-spinning drivers for reconstructed jobs:
     // the Rust snapshot does not persist the user's chosen output mode, so
@@ -983,6 +1173,29 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       log.info('Marked visitor jobs paused-no-source', {
         count: this.pausedNoSourceVisitorJobs.size,
       });
+    }
+  }
+
+  /**
+   * After reconcile, re-arm every reconstructed `Idle + schedule` job in the
+   * schedule manager so a tab reload does not drop the user's pending
+   * conditional download. Visitor pausedNoSource jobs are skipped — the
+   * tray surfaces them with Discard-only actions until the share link is
+   * re-opened (see `markPausedNoSourceVisitorJobs`).
+   */
+  private reregisterScheduledJobs(): void {
+    let count = 0;
+    for (const job of this.jobs.values()) {
+      if (job.state.phase !== 'Idle') continue;
+      if (job.schedule === null) continue;
+      if (this.pausedNoSourceVisitorJobs.has(job.jobId)) continue;
+      const scheduledAtMs = job.createdAtMs;
+      this.scheduledAt.set(job.jobId, scheduledAtMs);
+      this.scheduleManager().add({ jobId: job.jobId, schedule: job.schedule, scheduledAtMs });
+      count += 1;
+    }
+    if (count > 0) {
+      log.info('Re-registered scheduled jobs with manager', { count });
     }
   }
 
@@ -1169,10 +1382,11 @@ function createInMemoryJob(snapshotBytes: Uint8Array, checksum: Uint8Array): InM
     lastUpdatedAtMs: view.lastUpdatedAtMs,
     scopeKey: view.scopeKey,
     lastErrorReason: view.lastErrorReason,
+    schedule: view.schedule,
   };
 }
 
-function toJobSummary(job: InMemoryJob): JobSummary {
+function toJobSummary(job: InMemoryJob, scheduleEvaluation: ScheduleEvaluation | null = null): JobSummary {
   return {
     jobId: job.jobId,
     albumId: job.albumId,
@@ -1183,11 +1397,13 @@ function toJobSummary(job: InMemoryJob): JobSummary {
     lastUpdatedAtMs: job.lastUpdatedAtMs,
     scopeKey: job.scopeKey,
     lastErrorReason: job.lastErrorReason,
+    schedule: job.schedule,
+    scheduleEvaluation,
   };
 }
 
-function toResumableJobSummary(job: InMemoryJob, pausedNoSource: boolean): ResumableJobSummary {
-  const summary = toJobSummary(job);
+function toResumableJobSummary(job: InMemoryJob, pausedNoSource: boolean, scheduleEvaluation: ScheduleEvaluation | null = null): ResumableJobSummary {
+  const summary = toJobSummary(job, scheduleEvaluation);
   return {
     ...summary,
     photosDone: summary.photoCounts.done,
@@ -1268,6 +1484,8 @@ function parseSnapshotView(bytes: Uint8Array): ParsedSnapshotView {
   // synthesize a `legacy:<jobIdHex>` value, so this is always present after
   // load. Treat unexpected absence as `legacy:<jobIdHex>` for robustness.
   const scopeKey = optionalMapValue(fields, 10);
+  // Snapshot key 11 = schedule (v3, optional). Absent or Null ⇒ Immediate.
+  const scheduleValue = optionalMapValue(fields, 11);
   return {
     jobId,
     albumId: uuidBytesToString(albumBytes),
@@ -1279,7 +1497,104 @@ function parseSnapshotView(bytes: Uint8Array): ParsedSnapshotView {
     failureLog: expectArray(requiredMapValue(fields, 8)).map(parseFailure),
     scopeKey: scopeKey === null ? `legacy:${jobId}` : expectText(scopeKey),
     lastErrorReason: lastFailureReason(expectArray(requiredMapValue(fields, 8))),
+    schedule: scheduleValue === null || scheduleValue.kind === 'null' ? null : parseScheduleValue(scheduleValue),
   };
+}
+
+/**
+ * Decode a CBOR `schedule_value` (snapshot key 11 OR plan-input key 5).
+ * Mirrors `decode_schedule` in `mosaic-client/src/download/snapshot.rs`.
+ *
+ * Throws on unknown kind codes so a corrupt snapshot does not silently
+ * become an Immediate job.
+ */
+function parseScheduleValue(value: CborValue): DownloadSchedule | null {
+  const fields = expectMap(value);
+  const kind = expectUint(requiredMapValue(fields, 0));
+  const rawDelay = requiredMapValue(fields, 3);
+  const maxDelayMs = rawDelay.kind === 'null' ? undefined : expectUint(rawDelay);
+  switch (kind) {
+    case 0:
+      return null; // IMMEDIATE
+    case 1:
+      return maxDelayMs === undefined ? { kind: 'wifi' } : { kind: 'wifi', maxDelayMs };
+    case 2:
+      return maxDelayMs === undefined ? { kind: 'wifi-charging' } : { kind: 'wifi-charging', maxDelayMs };
+    case 3:
+      return maxDelayMs === undefined ? { kind: 'idle' } : { kind: 'idle', maxDelayMs };
+    case 4: {
+      const start = expectUint(requiredMapValue(fields, 1));
+      const end = expectUint(requiredMapValue(fields, 2));
+      return maxDelayMs === undefined
+        ? { kind: 'window', windowStartHour: start, windowEndHour: end }
+        : { kind: 'window', windowStartHour: start, windowEndHour: end, maxDelayMs };
+    }
+    default:
+      throw new Error(`Unknown download schedule kind code: ${kind}`);
+  }
+}
+
+/**
+ * Encode a {@link DownloadSchedule} into the canonical CBOR `schedule_value`
+ * map. Mirrors `schedule_value` in `mosaic-client/src/download/snapshot.rs`
+ * AND `encodeDownloadScheduleValue` in `rust-crypto-core.ts`.
+ */
+function encodeScheduleValue(schedule: DownloadSchedule): CborValue {
+  const maxDelay = schedule.maxDelayMs;
+  const maxDelayValue: CborValue = maxDelay === undefined
+    ? { kind: 'null' }
+    : uintValue(maxDelay);
+  switch (schedule.kind) {
+    case 'wifi':
+      return { kind: 'map', value: [
+        { key: uintValue(0), value: uintValue(1) },
+        { key: uintValue(3), value: maxDelayValue },
+      ] };
+    case 'wifi-charging':
+      return { kind: 'map', value: [
+        { key: uintValue(0), value: uintValue(2) },
+        { key: uintValue(3), value: maxDelayValue },
+      ] };
+    case 'idle':
+      return { kind: 'map', value: [
+        { key: uintValue(0), value: uintValue(3) },
+        { key: uintValue(3), value: maxDelayValue },
+      ] };
+    case 'window':
+      return { kind: 'map', value: [
+        { key: uintValue(0), value: uintValue(4) },
+        { key: uintValue(1), value: uintValue(schedule.windowStartHour ?? 0) },
+        { key: uintValue(2), value: uintValue(schedule.windowEndHour ?? 0) },
+        { key: uintValue(3), value: maxDelayValue },
+      ] };
+    case 'immediate':
+      throw new Error('encodeScheduleValue: immediate schedules are not persisted');
+    default: {
+      const _exhaustive: never = schedule.kind;
+      void _exhaustive;
+      throw new Error('encodeScheduleValue: unknown schedule kind');
+    }
+  }
+}
+
+/**
+ * Insert/replace/remove key 11 (schedule) in a snapshot CBOR body.
+ * Preserves canonical ascending-key order. Used by `updateJobSchedule`.
+ */
+function patchSnapshotSchedule(snapshotBytes: Uint8Array, schedule: DownloadSchedule | null, nowMs: number): Uint8Array {
+  const root = parseCbor(snapshotBytes);
+  const entries = expectMap(root);
+  const filtered = entries.filter((entry) => {
+    const key = expectUint(entry.key);
+    return key !== 4 && key !== 11;
+  });
+  filtered.push({ key: uintValue(4), value: uintValue(nowMs) });
+  if (schedule && schedule.kind !== 'immediate') {
+    filtered.push({ key: uintValue(11), value: encodeScheduleValue(schedule) });
+  }
+  // Re-sort by ascending uint key for canonical CBOR order.
+  filtered.sort((a, b) => expectUint(a.key) - expectUint(b.key));
+  return encodeCbor({ kind: 'map', value: filtered });
 }
 
 function lastFailureReason(entries: readonly CborValue[]): DownloadErrorReason | null {
@@ -1774,6 +2089,17 @@ function randomJobIdBytes(): Uint8Array {
   return bytes;
 }
 
+function hexToJobIdBytes(hex: string): Uint8Array {
+  if (hex.length !== JOB_ID_HEX_BYTES * 2) {
+    throw new Error('Invalid job id hex length');
+  }
+  const bytes = new Uint8Array(JOB_ID_HEX_BYTES);
+  for (let i = 0; i < JOB_ID_HEX_BYTES; i += 1) {
+    bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
 function bytesToHex(bytes: Uint8Array): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -1838,5 +2164,13 @@ export const __coordinatorWorkerTestUtils = {
     interface DriverMapHolder { readonly jobDrivers: Map<string, Promise<void>> }
     const map = (worker as unknown as DriverMapHolder).jobDrivers;
     return map.get(jobId) ?? Promise.resolve();
+  },
+  getScheduleManager(worker: CoordinatorWorker): ScheduleManager | null {
+    interface MgrHolder { readonly scheduleManagerInstance: ScheduleManager | null }
+    return (worker as unknown as MgrHolder).scheduleManagerInstance;
+  },
+  setLastEvaluation(worker: CoordinatorWorker, jobId: string, evaluation: ScheduleEvaluation): void {
+    interface EvalHolder { readonly lastEvaluations: Map<string, ScheduleEvaluation> }
+    (worker as unknown as EvalHolder).lastEvaluations.set(jobId, evaluation);
   },
 };
