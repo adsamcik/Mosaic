@@ -17,6 +17,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccessTier } from '@mosaic/crypto';
 
+const mocks = vi.hoisted(() => ({
+  mintLinkTierHandleFromRawKey: vi.fn(async (rawKey: Uint8Array) =>
+    `link-tier-handle-${rawKey[0] ?? 0}` as never,
+  ),
+}));
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
@@ -28,6 +34,14 @@ vi.mock('../logger', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   }),
+}));
+
+vi.mock('../crypto-client', () => ({
+  getCryptoClient: vi.fn(() =>
+    Promise.resolve({
+      mintLinkTierHandleFromRawKey: mocks.mintLinkTierHandleFromRawKey,
+    }),
+  ),
 }));
 
 // ---------------------------------------------------------------------------
@@ -179,6 +193,7 @@ describe('link-tier-key-store (H3 security regression)', () => {
   beforeEach(async () => {
     installFakeIndexedDB();
     sessionStorage.clear();
+    vi.clearAllMocks();
     vi.restoreAllMocks();
     // Reset the module so the in-memory `linkEncryptionKey` is fresh per test.
     vi.resetModules();
@@ -285,10 +300,10 @@ describe('link-tier-key-store (H3 security regression)', () => {
     expect(thumb).toBeDefined();
     expect(preview).toBeDefined();
 
-    const expectedThumb = makeTierKey(7, AccessTier.THUMB).key;
-    const expectedPreview = makeTierKey(7, AccessTier.PREVIEW).key;
-    expect(Array.from(thumb!.key!)).toEqual(Array.from(expectedThumb));
-    expect(Array.from(preview!.key!)).toEqual(Array.from(expectedPreview));
+    expect(thumb!.linkTierHandleId).toBe('link-tier-handle-62');
+    expect(preview!.linkTierHandleId).toBe('link-tier-handle-75');
+    expect(thumb!.key).toBeUndefined();
+    expect(preview!.key).toBeUndefined();
   });
 
   it('clearLinkKeyEncryption drops the in-memory key without retaining state', async () => {

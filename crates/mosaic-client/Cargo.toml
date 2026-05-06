@@ -12,6 +12,8 @@ mosaic-crypto = { path = "../mosaic-crypto", version = "0.1.0" }
 mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
 zeroize = "=1.8.2"
 ciborium = "=0.2.2"
+sha2 = { version = "=0.10.9", default-features = false }
+subtle = "=2.6.1"
 # Optional: only pulled in when the `__variant-introspection` feature is
 # enabled (currently only by cross-crate test builds in `mosaic-uniffi`).
 # Keeps strum out of the release dependency closure.

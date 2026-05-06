@@ -2,12 +2,9 @@ import type { AccessTier as AccessTierType } from './api-types';
 import type { AlbumDownloadResolver } from './album-download-service';
 import { getCryptoClient } from './crypto-client';
 import { createLogger } from './logger';
-import {
-  isLinkTierHandleId,
-  verifyDownloadedShard,
-} from './read-path-crypto';
+import { verifyDownloadedShard } from './read-path-crypto';
 import { downloadShardViaShareLink } from './shard-service';
-import type { LinkDecryptionKey, PhotoMeta } from '../workers/types';
+import type { LinkTierHandleId, PhotoMeta } from '../workers/types';
 
 const log = createLogger('SharedAlbumDownload');
 
@@ -18,10 +15,10 @@ export interface SharedAlbumDownloadStrategyOptions {
    * Look up the tier-specific decryption key for the given epoch. Mirrors
    * the lookup used by SharedPhotoLightbox so identical access rules apply.
    */
-  getTierKey: (
+  getTierKeyHandle: (
     epochId: number,
     tier: AccessTierType,
-  ) => LinkDecryptionKey | undefined;
+  ) => LinkTierHandleId | undefined;
 }
 
 /**
@@ -35,7 +32,7 @@ export interface SharedAlbumDownloadStrategyOptions {
 export function createShareLinkOriginalResolver(
   opts: SharedAlbumDownloadStrategyOptions,
 ): AlbumDownloadResolver {
-  const { linkId, grantToken, getTierKey } = opts;
+  const { linkId, grantToken, getTierKeyHandle } = opts;
   const grant = grantToken ?? undefined;
 
   return async (photo: PhotoMeta): Promise<Uint8Array> => {
@@ -81,8 +78,8 @@ export function createShareLinkOriginalResolver(
         );
       }
 
-      const decryptionKey = getTierKey(photo.epochId, 3);
-      if (!decryptionKey) {
+      const tierKeyHandle = getTierKeyHandle(photo.epochId, 3);
+      if (!tierKeyHandle) {
         throw new Error(
           `No tier 3 decryption key available for epoch ${photo.epochId}`,
         );
@@ -90,27 +87,15 @@ export function createShareLinkOriginalResolver(
 
       const chunks: Uint8Array[] = [];
       for (const s of originals) {
-        if (isLinkTierHandleId(decryptionKey)) {
-          chunks.push(
-            await crypto.decryptShardWithLinkTierHandle(decryptionKey, s.data),
-          );
-        } else {
-          chunks.push(
-            await crypto.decryptShardWithTierKey(
-              s.data,
-              // TODO(W-S4): Remove the raw tier-key fallback after all share-link
-              // key resolution paths mint LinkTierHandleId; legacy cached links
-              // only have pre-handle Uint8Array keys.
-              decryptionKey,
-            ),
-          );
-        }
+        chunks.push(
+          await crypto.decryptShardWithLinkTierHandle(tierKeyHandle, s.data),
+        );
       }
       return concat(chunks);
     }
 
-    const decryptionKey = getTierKey(photo.epochId, 3);
-    if (!decryptionKey) {
+    const tierKeyHandle = getTierKeyHandle(photo.epochId, 3);
+    if (!tierKeyHandle) {
       throw new Error(
         `No tier 3 decryption key available for epoch ${photo.epochId}`,
       );
@@ -136,21 +121,9 @@ export function createShareLinkOriginalResolver(
         }
       }
       try {
-        if (isLinkTierHandleId(decryptionKey)) {
-          chunks.push(
-            await crypto.decryptShardWithLinkTierHandle(decryptionKey, data),
-          );
-        } else {
-          chunks.push(
-            await crypto.decryptShardWithTierKey(
-              data,
-              // TODO(W-S4): Remove the raw tier-key fallback after all share-link
-              // key resolution paths mint LinkTierHandleId; legacy cached links
-              // only have pre-handle Uint8Array keys.
-              decryptionKey,
-            ),
-          );
-        }
+        chunks.push(
+          await crypto.decryptShardWithLinkTierHandle(tierKeyHandle, data),
+        );
       } catch (err) {
         log.error(
           `Failed to decrypt original shard ${id} for photo ${photo.id}`,

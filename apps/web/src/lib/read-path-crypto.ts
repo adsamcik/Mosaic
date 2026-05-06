@@ -21,7 +21,7 @@ export function assertValidEpochHandle(
 }
 
 export function isLinkTierHandleId(
-  value: Uint8Array | LinkTierHandleId,
+  value: unknown,
 ): value is LinkTierHandleId {
   return typeof value === 'string' && value.length > 0;
 }

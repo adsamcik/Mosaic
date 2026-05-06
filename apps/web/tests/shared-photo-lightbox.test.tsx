@@ -109,7 +109,7 @@ describe('SharedPhotoLightbox', () => {
         createElement(SharedPhotoLightbox, {
           photo: mockPhoto,
           linkId: 'link-1',
-          tierKey: new Uint8Array(32),
+          tierKey: 'link-tier-handle' as never,
           accessTier: 3,
           onClose: vi.fn(),
           hasNext: false,
@@ -135,7 +135,7 @@ describe('SharedPhotoLightbox', () => {
         createElement(SharedPhotoLightbox, {
           photo: mockPhoto,
           linkId: 'link-1',
-          tierKey: new Uint8Array(32),
+          tierKey: 'link-tier-handle' as never,
           accessTier: 3,
           onClose: vi.fn(),
           hasNext: false,
@@ -158,7 +158,7 @@ describe('SharedPhotoLightbox', () => {
         createElement(SharedPhotoLightbox, {
           photo: mockPhotoWithThumbnail,
           linkId: 'link-1',
-          tierKey: new Uint8Array(32),
+          tierKey: 'link-tier-handle' as never,
           accessTier: 3,
           onClose: vi.fn(),
           hasNext: false,
@@ -187,7 +187,7 @@ describe('SharedPhotoLightbox', () => {
         createElement(SharedPhotoLightbox, {
           photo: mockPhotoWithThumbnail,
           linkId: 'link-1',
-          tierKey: new Uint8Array(32),
+          tierKey: 'link-tier-handle' as never,
           accessTier: 3,
           onClose: vi.fn(),
           hasNext: false,
@@ -216,7 +216,7 @@ describe('SharedPhotoLightbox', () => {
           photo: mockPhotoWithThumbnail,
           linkId: 'link-1',
           grantToken: 'grant-token-123',
-          tierKey: new Uint8Array(32),
+          tierKey: 'link-tier-handle' as never,
           accessTier: 3,
           onClose: vi.fn(),
           hasNext: false,
@@ -248,7 +248,7 @@ describe('SharedPhotoLightbox', () => {
         createElement(SharedPhotoLightbox, {
           photo: mockPhotoWithThumbnail,
           linkId: 'link-1',
-          tierKey: new Uint8Array(32),
+          tierKey: 'link-tier-handle' as never,
           accessTier: 2, // Preview tier - might not be able to decrypt original shards
           onClose: vi.fn(),
           hasNext: false,
@@ -283,7 +283,7 @@ describe('SharedPhotoLightbox', () => {
         createElement(SharedPhotoLightbox, {
           photo: mockPhoto, // No thumbnail
           linkId: 'link-1',
-          tierKey: new Uint8Array(32),
+          tierKey: 'link-tier-handle' as never,
           accessTier: 2,
           onClose: vi.fn(),
           hasNext: false,
@@ -336,7 +336,7 @@ describe('SharedPhotoLightbox', () => {
         createElement(SharedPhotoLightbox, {
           photo: mockPhotoWithThumbnail,
           linkId: 'link-1',
-          tierKey: new Uint8Array(32),
+          tierKey: 'link-tier-handle' as never,
           accessTier: 2,
           onClose: vi.fn(),
           hasNext: false,
@@ -373,7 +373,7 @@ describe('SharedPhotoLightbox', () => {
         createElement(SharedPhotoLightbox, {
           photo: photoWithMultipleShards,
           linkId: 'link-1',
-          tierKey: new Uint8Array(32),
+          tierKey: 'link-tier-handle' as never,
           accessTier: 2, // Preview tier - should NOT decrypt original (tier 3)
           onClose: vi.fn(),
           hasNext: false,
@@ -398,7 +398,7 @@ describe('SharedPhotoLightbox', () => {
   it('uses getTierKey callback when provided to get correct key for shard tier', async () => {
     const mockGetTierKey = vi.fn((epochId: number, tier: number) => {
       // Return different mock keys for different tiers
-      return new Uint8Array(32).fill(tier);
+      return `link-tier-handle-${epochId}-${tier}` as never;
     });
 
     // Set shard tier to 1 (thumb) to test that getTierKey is called with tier 1
@@ -413,7 +413,7 @@ describe('SharedPhotoLightbox', () => {
         createElement(SharedPhotoLightbox, {
           photo: mockPhotoWithThumbnail,
           linkId: 'link-1',
-          tierKey: new Uint8Array(32),
+          tierKey: 'link-tier-handle' as never,
           accessTier: 2,
           onClose: vi.fn(),
           hasNext: false,
@@ -438,7 +438,7 @@ describe('SharedPhotoLightbox', () => {
     const mockGetTierKey = vi.fn((epochId: number, tier: number) => {
       // Return a tier key for tier 3
       if (tier === 3) {
-        return new Uint8Array(32).fill(3);
+        return 'link-tier-handle-3' as never;
       }
       return undefined;
     });
@@ -455,7 +455,7 @@ describe('SharedPhotoLightbox', () => {
         createElement(SharedPhotoLightbox, {
           photo: mockPhotoWithThumbnail,
           linkId: 'link-1',
-          tierKey: new Uint8Array(32).fill(3),
+          tierKey: 'link-tier-handle-3' as never,
           accessTier: 3, // Full access
           onClose: vi.fn(),
           hasNext: false,
@@ -475,7 +475,7 @@ describe('SharedPhotoLightbox', () => {
 
     // The key passed should be the tier 3 key
     const callArgs = mockDecryptShardWithTierKey.mock.calls[0];
-    expect(callArgs![1]).toEqual(new Uint8Array(32).fill(3));
+    expect(callArgs![1]).toBe('link-tier-handle-3');
   });
 
   describe('Tier-Specific Shard ID Selection', () => {
@@ -500,7 +500,7 @@ describe('SharedPhotoLightbox', () => {
           createElement(SharedPhotoLightbox, {
             photo: photoWithTierShards,
             linkId: 'link-1',
-            tierKey: new Uint8Array(32),
+            tierKey: 'link-tier-handle' as never,
             accessTier: 3, // Full access
             onClose: vi.fn(),
             hasNext: false,
@@ -541,7 +541,7 @@ describe('SharedPhotoLightbox', () => {
           createElement(SharedPhotoLightbox, {
             photo: photoWithTierShards,
             linkId: 'link-1',
-            tierKey: new Uint8Array(32),
+            tierKey: 'link-tier-handle' as never,
             accessTier: 2, // Preview access only
             onClose: vi.fn(),
             hasNext: false,
@@ -582,7 +582,7 @@ describe('SharedPhotoLightbox', () => {
           createElement(SharedPhotoLightbox, {
             photo: photoWithTierShards,
             linkId: 'link-1',
-            tierKey: new Uint8Array(32),
+            tierKey: 'link-tier-handle' as never,
             accessTier: 1, // Thumbnail access only
             onClose: vi.fn(),
             hasNext: false,
@@ -619,7 +619,7 @@ describe('SharedPhotoLightbox', () => {
           createElement(SharedPhotoLightbox, {
             photo: photoWithTierShards,
             linkId: 'link-1',
-            tierKey: new Uint8Array(32),
+            tierKey: 'link-tier-handle' as never,
             accessTier: 2, // Preview - should NOT access original even though it exists
             onClose: vi.fn(),
             hasNext: false,
@@ -661,7 +661,7 @@ describe('SharedPhotoLightbox', () => {
           createElement(SharedPhotoLightbox, {
             photo: photoLegacy,
             linkId: 'link-1',
-            tierKey: new Uint8Array(32),
+            tierKey: 'link-tier-handle' as never,
             accessTier: 3,
             onClose: vi.fn(),
             hasNext: false,
@@ -706,7 +706,7 @@ describe('SharedPhotoLightbox', () => {
           createElement(SharedPhotoLightbox, {
             photo: photoPartialTiers,
             linkId: 'link-1',
-            tierKey: new Uint8Array(32),
+            tierKey: 'link-tier-handle' as never,
             accessTier: 3, // Full access, but no original shards
             onClose: vi.fn(),
             hasNext: false,
@@ -746,7 +746,7 @@ describe('SharedPhotoLightbox', () => {
     const merged = {
       photo: mockVideoPhoto,
       linkId: 'link-1',
-      tierKey: new Uint8Array(32),
+      tierKey: 'link-tier-handle' as never,
       accessTier: 3 as import('../src/lib/api-types').AccessTier,
       onClose: vi.fn(),
       onNext: vi.fn(),
@@ -941,7 +941,7 @@ describe('SharedPhotoLightbox', () => {
       const props = {
         photo: mockVideoPhoto,
         linkId: 'link-1',
-        tierKey: new Uint8Array(32),
+        tierKey: 'link-tier-handle' as never,
         accessTier: 3 as import('../src/lib/api-types').AccessTier,
         onClose: vi.fn(),
         onNext: vi.fn(),
@@ -1009,3 +1009,4 @@ describe('SharedPhotoLightbox', () => {
     });
   });
 });
+
